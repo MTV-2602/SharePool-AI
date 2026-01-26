@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* === LEGACY STYLES FROM style.css === */
+:root {
+  --bg-color: #0f172a;
+  --card-bg: #1e293b;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --accent-primary: #3b82f6;
+  --accent-secondary: #8b5cf6;
+  --fire-gradient: linear-gradient(135deg, #f97316 0%, #ef4444 100%);
+  --glass-bg: rgba(30, 41, 59, 0.7);
+  --border-color: #334155;
+  --success: #10b981;
+  --warning: #f59e0b;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  font-family: 'Roboto', sans-serif;
+}
+
+/* Custom Table Styles to match old look exactly */
+.legacy-table th {
+  padding: 15px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+}
+
+.legacy-table td {
+  padding: 15px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.legacy-table tr:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Tags */
+.tag {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.tag-package1 {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.tag-package2 {
+  background: rgba(249, 115, 22, 0.2);
+  color: #fb923c;
+}
+
+/* Modal Overlay (Modified for React) */
+.modal-overlay {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-box {
+  background-color: var(--card-bg);
+  padding: 30px;
+  border: 1px solid var(--border-color);
+  width: 90%;
+  max-width: 500px;
+  border-radius: 15px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Form Styles */
+.form-input {
+  width: 100%;
+  padding: 10px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}

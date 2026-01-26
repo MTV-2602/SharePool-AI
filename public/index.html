@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Tài Khoản</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-tasks"></i> Hệ Thống Quản Lý Tài Khoản</h1>
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('chatgpt')"><i class="fas fa-robot"></i>
+                    ChatGPT</button>
+                <button class="tab-btn" onclick="switchTab('coursera')"><i class="fas fa-graduation-cap"></i>
+                    Coursera</button>
+            </div>
+        </header>
+
+        <!-- ChatGPT Section -->
+        <section id="chatgpt-section" class="active-section">
+            <div class="stats-card">
+                <div class="package-info">
+                    <h3>🔥 Gói 1 – Chia sẻ tiết kiệm</h3>
+                    <p class="price">💰 50.000đ/tháng</p>
+                    <ul>
+                        <li>👥 1 tài khoản / 3 người dùng</li>
+                        <li>🔒 Không đổi mật khẩu</li>
+                    </ul>
+                </div>
+                <div class="package-info highlight">
+                    <h3>🔥 Gói 2 – Tài khoản linh hoạt</h3>
+                    <p class="price">💰 100.000đ/tháng</p>
+                    <ul>
+                        <li>👤 Dùng 1 mình hoặc mua chung</li>
+                        <li>🔑 Tự đổi mật khẩu</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="btn-primary" onclick="openModal('modal-chatgpt')"><i class="fas fa-plus"></i> Thêm Thủ
+                    Công</button>
+                <button class="btn-secondary" onclick="openModal('modal-bulk-chatgpt')"><i
+                        class="fas fa-file-import"></i> Import Raw Data</button>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Loại Gói</th>
+                            <th>Tài Khoản / Mật Khẩu</th>
+                            <th>Link Mail</th>
+                            <th>Slot / Khách Hàng</th>
+                            <th>Hành Động</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chatgpt-list">
+                        <!-- Data will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Coursera Section -->
+        <section id="coursera-section" style="display: none;">
+            <div class="controls">
+                <button class="btn-primary" onclick="openModal('modal-bulk-coursera')"><i
+                        class="fas fa-file-import"></i> Phân Tích & Import Raw Data</button>
+            </div>
+
+            <div class="coursera-container">
+                <!-- Helper / Instructions -->
+                <div class="alert-box"
+                    style="display:block; margin-bottom:15px; border-left: 4px solid #3b82f6; background: rgba(59, 130, 246, 0.1);">
+                    <div style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+                        <strong>📡 Tự Động Hóa (Auto-Fill Sheet)</strong>
+                        <button class="btn-secondary" onclick="toggleConfig()"
+                            style="padding: 4px 8px; font-size: 0.8rem;">
+                            <i class="fas fa-cog"></i> Cấu hình kết nối
+                        </button>
+                    </div>
+
+                    <!-- Hidden Config Area -->
+                    <div id="config-area"
+                        style="display:none; margin-top:10px; padding-top:10px; border-top:1px solid #475569;">
+                        <p style="font-size:0.8rem; margin-bottom:5px; color:#cbd5e1;">Dán URL Web App từ Google Apps
+                            Script v5 vào đây:</p>
+                        <div style="display:flex; gap:10px;">
+                            <input type="password" id="apps-script-url"
+                                placeholder="https://script.google.com/macros/s/..."
+                                style="flex:1; padding:8px; border-radius:4px; border:1px solid #475569; background:#1e293b; color:white;">
+                            <button class="btn-secondary" onclick="saveScriptUrl()">Lưu</button>
+                        </div>
+                        <div style="font-size:0.75rem; margin-top:5px; color:#94a3b8;">
+                            <i class="fas fa-info-circle"></i> URL này dùng để gửi dữ liệu sang Sheet. Chỉ sửa khi có
+                            Script mới.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert-box" style="justify-content: space-between;">
+                    <div><i class="fas fa-info-circle"></i> Kết quả phân tích sẽ tự động gửi vào Sheet (nếu đã cấu hình)
+                        hoặc hiện bên dưới để Copy.</div>
+                    <a href="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit?gid=1338679857#gid=1338679857"
+                        target="_blank" class="btn-primary sheet-btn" style="padding: 5px 10px; font-size: 0.8rem;">
+                        <i class="fas fa-external-link-alt"></i> Mở Google Sheet Quản Lý
+                    </a>
+                </div>
+
+                <!-- Result Area for parsed Coursera Accounts -->
+                <div id="coursera-parsed-result"
+                    style="display:none; margin-bottom: 20px; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
+                    <h4 style="margin-bottom:10px;"><i class="fas fa-check-circle" style="color: var(--success)"></i>
+                        Kết Quả Phân Tích (<span id="parsed-count">0</span>)</h4>
+                    <p style="color:var(--text-secondary); font-size:0.9em; margin-bottom:5px;">Dữ liệu dưới đây đã được
+                        định dạng để paste thẳng vào Google Sheet:</p>
+                    <textarea id="data-clipboard"
+                        style="width:100%; height: 100px; padding:10px; border-radius:4px; border:1px solid #444; background:#222; color:#fff;"
+                        readonly></textarea>
+                    <div style="margin-top:10px;">
+                        <button class="btn-primary" onclick="copyToClipboard()"><i class="fas fa-copy"></i> Copy
+                            Data</button>
+                        <button class="btn-secondary" onclick="clearParsedResult()">Xong</button>
+                    </div>
+                </div>
+
+                <iframe
+                    src="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit?gid=1338679857&amp;single=true&amp;widget=true&amp;headers=false"
+                    class="google-sheet-embed" title="Coursera Sheet">
+                </iframe>
+            </div>
+        </section>
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-chatgpt" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('modal-chatgpt')">&times;</span>
+            <h2>Thêm Tài Khoản ChatGPT</h2>
+            <form id="form-chatgpt">
+                <div class="form-group">
+                    <label>Loại Gói</label>
+                    <select name="type" required>
+                        <option value="package1">Gói 1 - Chia sẻ (50k)</option>
+                        <option value="package2">Gói 2 - Linh hoạt (100k)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Tài Khoản (Email)</label>
+                    <input type="text" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label>Mật Khẩu</label>
+                    <input type="text" name="password" required>
+                </div>
+                <div class="form-group">
+                    <label>Link Mail (Nơi lấy mã)</label>
+                    <input type="text" name="link">
+                </div>
+                <div class="form-group">
+                    <label>Ghi Chú</label>
+                    <textarea name="note"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Lưu</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="modal-bulk-chatgpt" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('modal-bulk-chatgpt')">&times;</span>
+            <h2>Import ChatGPT (Vào Database)</h2>
+            <p><small style="color:#aaa">Mẫu: [Header]Email---Pass---Link</small></p>
+            <form id="form-bulk-chatgpt">
+
+
+                <div class="form-group">
+                    <textarea name="bulkData" rows="10"
+                        placeholder="[邮箱账号----密码----网页取件...]\nUCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/UCanPlus1669@purinikiopiy.asia"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Import vào gói:</label>
+                    <select name="defaultType">
+                        <option value="package1">Gói 1: Chia sẻ</option>
+                        <option value="package2">Gói 2: Linh hoạt</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn-primary">Phân tích & Lưu</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="modal-bulk-coursera" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('modal-bulk-coursera')">&times;</span>
+            <h2>Công Cụ Format Coursera (Copy Sheet)</h2>
+            <p><small>Hỗ trợ: Email,Pass,Mã Môn (hoặc | hoặc ----)</small></p>
+            <form id="form-bulk-coursera">
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label style="display:block; margin-bottom:5px; font-weight:600;">Tên Sheet (Tab Name):</label>
+                    <input type="text" id="coursera-sheet-name" class="form-control"
+                        placeholder="Ví dụ: Sp26, Fall26..."
+                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <small style="color: #666;">Để trống sẽ dùng Sheet đầu tiên.</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Mã Môn (Mặc định nếu thiếu):</label>
+                    <input type="text" name="subjectCode" placeholder="Ví dụ: ENW492c">
+                </div>
+                <div class="form-group">
+                    <label>Dữ liệu Raw (Email[sep]Pass[sep]MãMôn):</label>
+                    <textarea name="bulkData" rows="10"
+                        placeholder="tk1@gmail.com,pass123,MATH101\ntk2@gmail.com|pass456|PHYS202..."></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Phân Tích</button>
+            </form>
+        </div>
+    </div> <!-- End Modal Bulk Coursera -->
+
+    <!-- Modal: Add Customer (FIXED: Moved Outside) -->
+    <div id="modal-add-customer" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <span class="close" onclick="closeModal('modal-add-customer')">&times;</span>
+            <h3>Thêm Khách Hàng</h3>
+            <div class="form-group">
+                <label>Tên Khách / Ghi chú</label>
+                <input type="text" id="new-customer-name" placeholder="Ví dụ: Nguyễn Văn A - 098...">
+                <input type="hidden" id="target-acc-id">
+            </div>
+            <button class="btn-primary" onclick="confirmAddCustomer()" style="width:100%; margin-top:10px;">Lưu</button>
+        </div>
+    </div>
+
+    <!-- Modal: Edit Account (NEW) -->
+    <div id="modal-edit-account" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <span class="close" onclick="closeModal('modal-edit-account')">&times;</span>
+            <h3>✏️ Sửa Tài Khoản</h3>
+            <form id="form-edit-account" onsubmit="saveAccountChanges(event)">
+                <input type="hidden" name="id">
+                <div class="form-group">
+                    <label>Email / Username</label>
+                    <input type="text" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label>Mật khẩu</label>
+                    <input type="text" name="password" required>
+                </div>
+                <div class="form-group">
+                    <label>Loại Gói</label>
+                    <select name="type">
+                        <option value="unassigned">❓ Chưa xác định</option>
+                        <option value="package1">👥 Gói 1: Chia sẻ</option>
+                        <option value="package2">🔒 Gói 2: Linh hoạt</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Link Login / Ghi chú</label>
+                    <input type="text" name="link">
+                </div>
+                <button type="submit" class="btn-primary" style="width:100%; margin-top:10px;">Lưu Thay Đổi</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Confirm Delete -->
+    <div id="modal-confirm-delete" class="modal">
+        <div class="modal-content" style="max-width: 400px; text-align:center;">
+            <h3>⚠️ Xác nhận xóa</h3>
+            <p id="delete-msg">Bạn có chắc muốn xóa tài khoản này?</p>
+            <input type="hidden" id="delete-service-type">
+            <input type="hidden" id="delete-target-id">
+            <div style="display:flex; gap:10px; justify-content:center; margin-top:20px;">
+                <button class="btn-secondary" onclick="closeModal('modal-confirm-delete')">Hủy</button>
+                <button class="btn-primary" style="background:#ef4444;" onclick="executeDelete()">Xóa Luôn</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="config_toggle.js"></script>
+    <script src="app.js?v=102"></script>
+</body>
+
+</html>
