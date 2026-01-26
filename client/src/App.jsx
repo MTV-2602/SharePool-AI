@@ -461,138 +461,140 @@ function App() {
                             border: '1px solid #334155',
                             overflow: 'hidden'
                         }}>
-                            <table className="legacy-table w-full border-collapse">
-                                <thead>
-                                    <tr style={{ background: 'rgba(15, 23, 42, 0.6)' }}>
-                                        <th className="w-40">Loại Gói</th>
-                                        <th>Thông Tin</th>
-                                        <th className="w-32">Link Mail</th>
-                                        <th className="w-64">Slot / Khách (Sửa/Xóa)</th>
-                                        <th className="text-center w-24">Hành Động</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {accounts.map(acc => (
-                                        <tr key={acc.id} className="hover:bg-slate-800/50 transition-colors">
-                                            <td className="align-top">
-                                                <select
-                                                    id={`select-type-${acc.id}`}
-                                                    value={acc.type}
-                                                    onChange={(e) => handleTypeChange(acc, e.target.value)}
-                                                    className={`
-                                      w-full text-xs rounded px-2 py-2 outline-none font-bold border cursor-pointer appearance-none text-center
-                                      ${acc.type === 'package1' ? 'bg-blue-900/40 text-blue-400 border-blue-700/50' :
-                                                            acc.type === 'package2' ? 'bg-purple-900/40 text-purple-400 border-purple-700/50' :
-                                                                'bg-slate-800 text-slate-400 border-slate-700'}
-                                  `}
-                                                >
-                                                    <option value="unassigned">❓ Chọn Gói...</option>
-                                                    <option value="package1">👥 Gói 1: Chia sẻ</option>
-                                                    <option value="package2">🔒 Gói 2: Linh hoạt</option>
-                                                </select>
-                                            </td>
-                                            <td>
-                                                <div className="font-bold text-white mb-1 flex items-center gap-2 text-base">
-                                                    <User size={16} className="text-slate-400" />
-                                                    {acc.username}
-                                                    <Copy size={16} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.username)} title="Copy Username" />
-                                                </div>
-                                                <div className="text-slate-400 flex items-center gap-2 font-mono text-sm">
-                                                    <Shield size={14} className="text-slate-500" />
-                                                    {acc.password}
-                                                    <Copy size={14} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.password)} title="Copy Password" />
-                                                </div>
-                                                {acc.expiredAt && (
-                                                    <div className={`text-xs mt-1 ml-6 ${getExpiryStatus(acc.expiredAt).color}`}>
-                                                        <Calendar size={10} className="inline mr-1" />
-                                                        {formatDate(acc.expiredAt)} {getExpiryStatus(acc.expiredAt).text}
-                                                    </div>
-                                                )}
-                                                {acc.note && <div className="text-xs text-yellow-500/80 italic mt-1 ml-6">{acc.note}</div>}
-                                            </td>
-                                            <td>
-                                                {acc.link ? (
-                                                    <a href={acc.link} target="_blank" className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-md font-bold no-underline inline-flex items-center gap-2 shadow-md transition-all hover:translate-y-[-1px]">
-                                                        <Mail size={14} /> Mở Mail
-                                                    </a>
-                                                ) : <span className="text-slate-600 text-xs">--</span>}
-                                            </td>
-                                            <td>
-                                                {acc.type === 'package1' ? (
-                                                    <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
-                                                        <div className="flex justify-between items-center text-xs mb-2 pb-1 border-b border-slate-700/50">
-                                                            <span style={{ color: acc.users?.length >= 3 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
-                                                                {acc.users?.length || 0}/3 Slot
-                                                            </span>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => openAddUserModal(acc.id)}
-                                                                disabled={acc.users?.length >= 3}
-                                                                className="text-xs px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                                                            >
-                                                                + Khách
-                                                            </button>
-                                                        </div>
-                                                        <div className="space-y-1">
-                                                            {acc.users?.map((u, index) => {
-                                                                const name = getUserName(u);
-                                                                const dateStr = getUserDate(u);
-                                                                const daysUsed = getDaysUsed(u);
-
-                                                                return (
-                                                                    <div key={index} className="flex justify-between items-center text-xs p-2 bg-slate-800 rounded border border-slate-700/50 mb-1">
-                                                                        <div className="flex flex-col">
-                                                                            <span className="font-bold text-white truncate max-w-[120px]" title={name}>👤 {name}</span>
-                                                                            {dateStr ? (
-                                                                                <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                                                                                    <Calendar size={10} /> {dateStr}
-                                                                                    {daysUsed !== null && daysUsed > 0 && <span className="text-blue-400">({daysUsed}d)</span>}
-                                                                                </span>
-                                                                            ) : <span className="text-[10px] text-slate-600 italic">Chưa có ngày</span>}
-                                                                        </div>
-                                                                        <div className="flex gap-2">
-                                                                            <button type="button" onClick={() => openEditUserModal(acc.id, index, u)} className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Sửa tên">
-                                                                                <Pencil size={14} />
-                                                                            </button>
-                                                                            <button type="button" onClick={() => handleDeleteUser(acc.id, index, name)} className="bg-red-600 hover:bg-red-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Xóa người này">
-                                                                                <X size={14} />
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                )
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                ) : acc.type === 'package2' ? (
-                                                    <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
-                                                        {acc.users?.length > 0 ? (
-                                                            <div className="flex justify-between items-center text-sm text-white font-bold p-1">
-                                                                <div>
-                                                                    <span className="flex items-center gap-2">👤 {getUserName(acc.users[0])}</span>
-                                                                    <span className="text-[10px] text-slate-400 block ml-6">{getUserDate(acc.users[0])}</span>
-                                                                </div>
-                                                                <button type="button" onClick={() => openEditUserModal(acc.id, 0, acc.users[0])} className="text-blue-400 hover:text-white"><Pencil size={14} /></button>
-                                                            </div>
-                                                        ) : (
-                                                            <button type="button" onClick={() => openAddUserModal(acc.id)} className="w-full text-center text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-300">Gán Khách</button>
-                                                        )}
-                                                    </div>
-                                                ) : <span className="text-yellow-600 text-xs italic">Chọn gói trước</span>}
-                                            </td>
-                                            <td className="text-center">
-                                                <div className="flex justify-center gap-2">
-                                                    <button type="button" onClick={() => { setEditingAcc(acc); setShowEditModal(true); }} className="bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white p-2 rounded transition-colors" title="Sửa Tài Khoản">
-                                                        <Pencil size={16} />
-                                                    </button>
-                                                    <button type="button" onClick={() => { setDeletingId(acc.id); setShowDeleteModal(true); }} className="bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white p-2 rounded transition-colors" title="Xóa Tài Khoản">
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
-                                            </td>
+                            <div className="overflow-x-auto w-full">
+                                <table className="legacy-table w-full border-collapse min-w-[800px]">
+                                    <thead>
+                                        <tr style={{ background: 'rgba(15, 23, 42, 0.6)' }}>
+                                            <th className="w-40">Loại Gói</th>
+                                            <th>Thông Tin</th>
+                                            <th className="w-32">Link Mail</th>
+                                            <th className="w-64">Slot / Khách (Sửa/Xóa)</th>
+                                            <th className="text-center w-24">Hành Động</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {accounts.map(acc => (
+                                            <tr key={acc.id} className="hover:bg-slate-800/50 transition-colors">
+                                                <td className="align-top">
+                                                    <select
+                                                        id={`select-type-${acc.id}`}
+                                                        value={acc.type}
+                                                        onChange={(e) => handleTypeChange(acc, e.target.value)}
+                                                        className={`
+                                            w-full text-xs rounded px-2 py-2 outline-none font-bold border cursor-pointer appearance-none text-center
+                                            ${acc.type === 'package1' ? 'bg-blue-900/40 text-blue-400 border-blue-700/50' :
+                                                                acc.type === 'package2' ? 'bg-purple-900/40 text-purple-400 border-purple-700/50' :
+                                                                    'bg-slate-800 text-slate-400 border-slate-700'}
+                                        `}
+                                                    >
+                                                        <option value="unassigned">❓ Chọn Gói...</option>
+                                                        <option value="package1">👥 Gói 1: Chia sẻ</option>
+                                                        <option value="package2">🔒 Gói 2: Linh hoạt</option>
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    <div className="font-bold text-white mb-1 flex items-center gap-2 text-base">
+                                                        <User size={16} className="text-slate-400" />
+                                                        {acc.username}
+                                                        <Copy size={16} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.username)} title="Copy Username" />
+                                                    </div>
+                                                    <div className="text-slate-400 flex items-center gap-2 font-mono text-sm">
+                                                        <Shield size={14} className="text-slate-500" />
+                                                        {acc.password}
+                                                        <Copy size={14} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.password)} title="Copy Password" />
+                                                    </div>
+                                                    {acc.expiredAt && (
+                                                        <div className={`text-xs mt-1 ml-6 ${getExpiryStatus(acc.expiredAt).color}`}>
+                                                            <Calendar size={10} className="inline mr-1" />
+                                                            {formatDate(acc.expiredAt)} {getExpiryStatus(acc.expiredAt).text}
+                                                        </div>
+                                                    )}
+                                                    {acc.note && <div className="text-xs text-yellow-500/80 italic mt-1 ml-6">{acc.note}</div>}
+                                                </td>
+                                                <td>
+                                                    {acc.link ? (
+                                                        <a href={acc.link} target="_blank" className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-md font-bold no-underline inline-flex items-center gap-2 shadow-md transition-all hover:translate-y-[-1px]">
+                                                            <Mail size={14} /> Mở Mail
+                                                        </a>
+                                                    ) : <span className="text-slate-600 text-xs">--</span>}
+                                                </td>
+                                                <td>
+                                                    {acc.type === 'package1' ? (
+                                                        <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
+                                                            <div className="flex justify-between items-center text-xs mb-2 pb-1 border-b border-slate-700/50">
+                                                                <span style={{ color: acc.users?.length >= 3 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
+                                                                    {acc.users?.length || 0}/3 Slot
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => openAddUserModal(acc.id)}
+                                                                    disabled={acc.users?.length >= 3}
+                                                                    className="text-xs px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                >
+                                                                    + Khách
+                                                                </button>
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                {acc.users?.map((u, index) => {
+                                                                    const name = getUserName(u);
+                                                                    const dateStr = getUserDate(u);
+                                                                    const daysUsed = getDaysUsed(u);
+
+                                                                    return (
+                                                                        <div key={index} className="flex justify-between items-center text-xs p-2 bg-slate-800 rounded border border-slate-700/50 mb-1">
+                                                                            <div className="flex flex-col">
+                                                                                <span className="font-bold text-white truncate max-w-[120px]" title={name}>👤 {name}</span>
+                                                                                {dateStr ? (
+                                                                                    <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                                                                        <Calendar size={10} /> {dateStr}
+                                                                                        {daysUsed !== null && daysUsed > 0 && <span className="text-blue-400">({daysUsed}d)</span>}
+                                                                                    </span>
+                                                                                ) : <span className="text-[10px] text-slate-600 italic">Chưa có ngày</span>}
+                                                                            </div>
+                                                                            <div className="flex gap-2">
+                                                                                <button type="button" onClick={() => openEditUserModal(acc.id, index, u)} className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Sửa tên">
+                                                                                    <Pencil size={14} />
+                                                                                </button>
+                                                                                <button type="button" onClick={() => handleDeleteUser(acc.id, index, name)} className="bg-red-600 hover:bg-red-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Xóa người này">
+                                                                                    <X size={14} />
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    ) : acc.type === 'package2' ? (
+                                                        <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
+                                                            {acc.users?.length > 0 ? (
+                                                                <div className="flex justify-between items-center text-sm text-white font-bold p-1">
+                                                                    <div>
+                                                                        <span className="flex items-center gap-2">👤 {getUserName(acc.users[0])}</span>
+                                                                        <span className="text-[10px] text-slate-400 block ml-6">{getUserDate(acc.users[0])}</span>
+                                                                    </div>
+                                                                    <button type="button" onClick={() => openEditUserModal(acc.id, 0, acc.users[0])} className="text-blue-400 hover:text-white"><Pencil size={14} /></button>
+                                                                </div>
+                                                            ) : (
+                                                                <button type="button" onClick={() => openAddUserModal(acc.id)} className="w-full text-center text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-300">Gán Khách</button>
+                                                            )}
+                                                        </div>
+                                                    ) : <span className="text-yellow-600 text-xs italic">Chọn gói trước</span>}
+                                                </td>
+                                                <td className="text-center">
+                                                    <div className="flex justify-center gap-2">
+                                                        <button type="button" onClick={() => { setEditingAcc(acc); setShowEditModal(true); }} className="bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white p-2 rounded transition-colors" title="Sửa Tài Khoản">
+                                                            <Pencil size={16} />
+                                                        </button>
+                                                        <button type="button" onClick={() => { setDeletingId(acc.id); setShowDeleteModal(true); }} className="bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white p-2 rounded transition-colors" title="Xóa Tài Khoản">
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 )}
