@@ -1,0 +1,112 @@
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const axios = require('axios');
+const path = require('path');
+const fs = require('fs');
+require('dotenv').config();
+const mongoose = require('mongoose');
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+
+// --- MONGODB CONNECTION ---
+// Cache connection to avoid reconnecting on every request (Vercel specific)
+let isConnected = false;
+
+const connectDB = async () => {
+    if (isConnected) return;
+    try {
+        await mongoose.connect(process.env.MONGO_URI);
+        isConnected = true;
+        console.log("✅ MongoDB Connected via Vercel");
+    } catch (error) {
+        console.error("❌ MongoDB Connection Error:", error);
+    }
+};
+
+// Define Schema
+const accountSchema = new mongoose.Schema({
+    id: { type: String, unique: true },
+    username: { type: String, required: true },
+    password: { type: String, required: true },
+    type: { type: String, default: 'unassigned' },
+    users: [{ name: String, joinedAt: String }],
+    note: String,
+    link: String,
+    status: { type: String, default: 'available' },
+    createdAt: { type: String }
+});
+const Account = mongoose.models.Account || mongoose.model('Account', accountSchema);
+
+// Middleware to ensure DB is connected before processing
+app.use(async (req, res, next) => {
+    await connectDB();
+    next();
+});
+
+// --- API ROUTES ---
+
+// 1. GET ALL DATA
+app.get('/api/data', async (req, res) => {
+    try {
+        const accounts = await Account.find({});
+        res.json({ chatgpt: accounts });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 2. ADD ACCOUNT
+app.post('/api/chatgpt', async (req, res) => {
+    try {
+        const newAcc = {
+            id: Date.now().toString(),
+            ...req.body,
+            createdAt: new Date().toISOString()
+        };
+        await Account.create(newAcc);
+        res.json({ message: 'Added successfully', account: newAcc });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 3. UPDATE ACCOUNT
+app.put('/api/chatgpt/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updated = await Account.findOneAndUpdate({ id: id }, req.body, { new: true });
+        res.json({ message: 'Updated', account: updated });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 4. DELETE ACCOUNT
+app.delete('/api/chatgpt/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await Account.findOneAndDelete({ id: id });
+        res.json({ message: 'Deleted' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 5. PROXY GOOGLE SHEET
+app.post('/api/proxy-sheet', async (req, res) => {
+    try {
+        const { scriptUrl, sheetName, data } = req.body;
+        const response = await axios.post(scriptUrl, { sheetName, data }, { headers: { 'Content-Type': 'application/json' }, maxRedirects: 5 });
+        res.json(response.data);
+    } catch (error) {
+        res.status(500).json({ error: 'Lỗi khi gửi dữ liệu sang Google Sheet' });
+    }
+});
+
+// Helper for Vercel
+module.exports = app;

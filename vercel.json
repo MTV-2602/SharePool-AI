@@ -1,0 +1,18 @@
+{
+    "version": 2,
+    "rewrites": [
+        {
+            "source": "/api/(.*)",
+            "destination": "/api/index.js"
+        },
+        {
+            "source": "/(.*)",
+            "destination": "/client/dist/index.html"
+        }
+    ],
+    "functions": {
+        "api/index.js": {
+            "includeFiles": "database.json"
+        }
+    }
+}
