@@ -111,6 +111,28 @@ function App() {
         return null;
     };
 
+    // Helper to format Date
+    const formatDate = (isoString) => {
+        if (!isoString) return '';
+        try {
+            const d = new Date(isoString);
+            return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+        } catch (e) { return ''; }
+    };
+
+    // Helper to check expiry warning
+    const getExpiryStatus = (isoString) => {
+        if (!isoString) return { text: '', color: 'text-slate-500' };
+        const exp = new Date(isoString);
+        const now = new Date();
+        const diffTime = exp - now;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays < 0) return { text: `(Đã hết hạn ${Math.abs(diffDays)} ngày)`, color: 'text-red-500 font-bold' };
+        if (diffDays <= 3) return { text: `(Còn ${diffDays} ngày)`, color: 'text-red-400 font-bold' };
+        return { text: `(Hết hạn: ${formatDate(isoString)})`, color: 'text-slate-500 italic' };
+    };
+
     const fetchData = async () => {
         setLoading(true);
         try {
@@ -272,7 +294,8 @@ function App() {
         }
         for (const item of foundMatches) {
             if (item.username.length < 3 || item.password.length < 3) { errorCount++; continue; }
-            try { await axios.post('/api/chatgpt', { username: item.username, password: item.password, link: item.link, type: 'unassigned', note: 'Import Nhanh' }); successCount++; } catch (e) { errorCount++; }
+            // REMOVED 'note: Import Nhanh' as requested
+            try { await axios.post('/api/chatgpt', { username: item.username, password: item.password, link: item.link, type: 'unassigned', note: '' }); successCount++; } catch (e) { errorCount++; }
         }
         showAlert('Hoàn Thành', `✅ Đã thêm: ${successCount}\n⚠️ Bỏ qua/Lỗi: ${errorCount}`, 'info');
         setShowImportGPTModal(false); btn.disabled = false; btn.innerText = originalText; fetchData();
@@ -294,17 +317,15 @@ function App() {
 
         if (parsedData.length === 0) return showAlert('Lỗi Format', 'Không đọc được dòng nào hợp lệ!', 'error');
 
-        // SỬ DỤNG CUSTOM CONFIRM THAY CHO NATIVE CONFIRM
         showConfirm(
             "Xác Nhận Gửi",
             `Bạn có chắc muốn gửi ${parsedData.length} dòng này vào Sheet không?`,
             async () => {
-                setImportingSheet(true); // START LOADING
+                setImportingSheet(true);
                 try {
                     await axios.post('/api/proxy-sheet', { scriptUrl: scriptUrl, sheetName, data: parsedData });
                     setImportStatus('success');
                     document.getElementById('bulkCourseraData').value = '';
-                    // THÔNG BÁO THÀNH CÔNG RÕ RÀNG
                     showAlert('Thành Công', `✅ Đã gửi xong ${parsedData.length} dòng lên Google Sheet!`, 'success');
                     setTimeout(() => setImportStatus(null), 5000);
                 } catch (e) {
@@ -312,7 +333,7 @@ function App() {
                     setImportStatus('error');
                     showAlert('Lỗi Gửi Sheet', (e.response?.data?.error || e.message), 'error');
                 } finally {
-                    setImportingSheet(false); // STOP LOADING
+                    setImportingSheet(false);
                 }
             }
         );
@@ -481,6 +502,12 @@ function App() {
                                                     {acc.password}
                                                     <Copy size={14} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.password)} title="Copy Password" />
                                                 </div>
+                                                {acc.expiredAt && (
+                                                    <div className={`text-xs mt-1 ml-6 ${getExpiryStatus(acc.expiredAt).color}`}>
+                                                        <Calendar size={10} className="inline mr-1" />
+                                                        {formatDate(acc.expiredAt)} {getExpiryStatus(acc.expiredAt).text}
+                                                    </div>
+                                                )}
                                                 {acc.note && <div className="text-xs text-yellow-500/80 italic mt-1 ml-6">{acc.note}</div>}
                                             </td>
                                             <td>

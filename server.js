@@ -38,7 +38,8 @@ const accountSchema = new mongoose.Schema({
     note: String,
     link: String,
     status: { type: String, default: 'available' },
-    createdAt: { type: String } // ISO String
+    createdAt: { type: String }, // ISO String
+    expiredAt: { type: String } // New Field
 });
 
 const Account = mongoose.model('Account', accountSchema);

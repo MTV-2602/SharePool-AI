@@ -38,7 +38,8 @@ const accountSchema = new mongoose.Schema({
     note: String,
     link: String,
     status: { type: String, default: 'available' },
-    createdAt: { type: String }
+    createdAt: { type: String },
+    expiredAt: { type: String }
 });
 const Account = mongoose.models.Account || mongoose.model('Account', accountSchema);
 
@@ -63,10 +64,15 @@ app.get('/api/data', async (req, res) => {
 // 2. ADD ACCOUNT
 app.post('/api/chatgpt', async (req, res) => {
     try {
+        const now = new Date();
+        const expiredDate = new Date(now);
+        expiredDate.setDate(expiredDate.getDate() + 30); // Add 30 days
+
         const newAcc = {
             id: Date.now().toString(),
             ...req.body,
-            createdAt: new Date().toISOString()
+            createdAt: now.toISOString(),
+            expiredAt: expiredDate.toISOString()
         };
         await Account.create(newAcc);
         res.json({ message: 'Added successfully', account: newAcc });
