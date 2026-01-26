@@ -651,8 +651,14 @@ function App() {
                             </div>
                         </div>
                         <div style={{ background: '#1e293b', padding: '10px', borderRadius: '15px', border: '1px solid #334155' }}>
-                            <div className="aspect-video w-full rounded-lg overflow-hidden bg-white">
-                                <iframe src="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit?gid=1338679857#gid=1338679857" className="w-full h-full" title="Coursera Sheet"></iframe>
+                            <div className="flex justify-between items-center mb-2 px-1">
+                                <label className="text-sm font-bold text-slate-400">Xem Trước Sheet:</label>
+                                <a href="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit" target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 bg-green-700 hover:bg-green-600 text-white px-2 py-1 rounded shadow-sm transition-transform hover:translate-y-[-1px]">
+                                    <ExternalLink size={12} /> Mở Full Màn Hình (Sửa Dễ Hơn)
+                                </a>
+                            </div>
+                            <div className="aspect-video w-full rounded-lg overflow-hidden bg-white border border-slate-600">
+                                <iframe src="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit?gid=1338679857&rm=minimal" className="w-full h-full" title="Coursera Sheet"></iframe>
                             </div>
                         </div>
                     </div>
