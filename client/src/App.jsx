@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Trash2, UserPlus, Pencil, Copy, ExternalLink, RefreshCw, X, Upload, Loader2, CheckCircle, Mail, User, Shield, AlertCircle, AlertTriangle, Info, Calendar, LogIn, Lock, FileSpreadsheet } from 'lucide-react';
+import { Trash2, UserPlus, Pencil, Copy, ExternalLink, RefreshCw, X, Upload, Loader2, CheckCircle, Mail, User, Shield, AlertCircle, AlertTriangle, Info, Calendar, LogIn, Lock, FileSpreadsheet, ArrowRightLeft, RotateCw } from 'lucide-react';
 
 function App() {
     // LOGIN STATE
@@ -24,6 +24,11 @@ function App() {
     const [showUserModal, setShowUserModal] = useState(false);
     const [userModalMode, setUserModalMode] = useState('add');
     const [currentUserData, setCurrentUserData] = useState({ accId: null, index: null, name: '', joinedAt: null });
+
+    // Move User State
+    const [showMoveUserModal, setShowMoveUserModal] = useState(false);
+    const [movingUser, setMovingUser] = useState(null); // { fromAccId, userIndex, name, joinedAt }
+    const [destinationAccId, setDestinationAccId] = useState('');
 
     // Import State
     const [importingSheet, setImportingSheet] = useState(false);
@@ -103,7 +108,7 @@ function App() {
             try {
                 const start = new Date(u.joinedAt);
                 const now = new Date();
-                const diffTime = Math.abs(now - start);
+                const diffTime = now - start;
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                 return diffDays;
             } catch (e) { return 0; }
@@ -221,6 +226,25 @@ function App() {
         );
     };
 
+    // EXTEND USER logic
+    const handleExtendUser = async (accId, userIndex, userObj) => {
+        const userName = userObj?.name || userObj || 'khách này';
+
+        showConfirm(
+            'Xác nhận gia hạn',
+            `Bạn có chắc muốn gia hạn cho ${userName} thêm 30 ngày không?`,
+            async () => {
+                try {
+                    await axios.post('/api/extend-user', { accId, userIndex });
+                    fetchData();
+                    showAlert('Thành Công', 'Đã gia hạn khách hàng (+30 ngày)!', 'success');
+                } catch (error) {
+                    showAlert('Lỗi', error.response?.data?.error || 'Không thể gia hạn', 'error');
+                }
+            }
+        );
+    };
+
     const handleUpdateAccount = async (e) => {
         e.preventDefault();
         const originalAcc = accounts.find(a => a.id === editingAcc.id);
@@ -239,6 +263,32 @@ function App() {
             setEditingAcc(null);
             fetchData();
         } catch (error) { showAlert('Lỗi', 'Lỗi cập nhật', 'error'); }
+    };
+
+    // MOVE USER LOGIC
+    const openMoveUserModal = (accId, index, userData) => {
+        setMovingUser({ fromAccId: accId, userIndex: index, ...userData });
+        setDestinationAccId('');
+        setShowMoveUserModal(true);
+    };
+
+    const handleSubmitMoveUser = async (e) => {
+        e.preventDefault();
+        if (!destinationAccId) return showAlert('Lỗi', 'Chưa chọn tài khoản đích!', 'warning');
+
+        try {
+            await axios.post('/api/move-user', {
+                fromAccId: movingUser.fromAccId,
+                toAccId: destinationAccId,
+                userIndex: movingUser.userIndex
+            });
+            setShowMoveUserModal(false);
+            setMovingUser(null);
+            fetchData();
+            showAlert('Thành Công', `Đã chuyển khách sang tài khoản mới!`, 'success');
+        } catch (error) {
+            showAlert('Lỗi', error.response?.data?.error || 'Lỗi khi chuyển khách', 'error');
+        }
     };
 
     const handleDeleteAccount = async () => {
@@ -381,6 +431,9 @@ function App() {
                         </div>
                     )}
                 </div>
+
+                {/* GLOBAL EXPIRY ALERT BANNER */}
+
             </div>
         );
     }
@@ -415,6 +468,115 @@ function App() {
 
                 {activeTab === 'chatgpt' && (
                     <div>
+                        {/* GLOBAL EXPIRY / RESCUE BANNER */}
+                        {(() => {
+                            const urgentList = [];
+
+                            accounts.forEach(acc => {
+                                // 1. Check if ACCOUNT itself is expired
+                                const isAccExpired = acc.expiredAt && new Date(acc.expiredAt) < new Date();
+                                const hasUsers = acc.users && acc.users.length > 0;
+
+                                if (hasUsers) {
+                                    acc.users.forEach((u, idx) => {
+                                        const days = getDaysUsed(u);
+                                        const isUserExpired = days !== null && days >= 30;
+
+                                        // Case A: User Expired -> Needs Extension
+                                        if (isUserExpired) {
+                                            urgentList.push({
+                                                type: 'user_expired',
+                                                acc, u, idx, days,
+                                                msg: `Khách hết hạn (${days} ngày)`
+                                            });
+                                        }
+                                        // Case B: Account Expired -> Needs Evacuation (Move)
+                                        else if (isAccExpired) {
+                                            urgentList.push({
+                                                type: 'acc_expired',
+                                                acc, u, idx, days,
+                                                msg: 'CHATGPT ĐÃ HẾT HẠN - CẦN CHUYỂN GẤP!'
+                                            });
+                                        }
+                                    });
+                                } else if (isAccExpired) {
+                                    // Case C: Account Expired & EMPTY -> Needs Deletion
+                                    urgentList.push({
+                                        type: 'acc_empty_expired',
+                                        acc, u: { name: 'CHATGPT TRỐNG' }, idx: -1, days: 0,
+                                        msg: 'ChatGpt hết hạn & Trống -> Cần Xóa!'
+                                    });
+                                }
+                            });
+
+                            if (urgentList.length > 0) {
+                                return (
+                                    <div className="mb-8 bg-red-900/20 border-2 border-red-600 rounded-xl overflow-hidden shadow-2xl animate-fade-in">
+                                        <div className="bg-red-800/80 p-3 flex items-center justify-between">
+                                            <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                                                <AlertTriangle className="text-yellow-300 animate-pulse" />
+                                                DANH SÁCH CẦN XỬ LÝ GẤP ({urgentList.length})
+                                            </h3>
+                                        </div>
+                                        <div className="p-4 space-y-3">
+                                            {urgentList.map(({ type, acc, u, idx, days, msg }, i) => (
+                                                <div key={i} className="flex items-center justify-between bg-slate-900/50 p-3 rounded border border-red-500/30">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`p-2 rounded-full ${type === 'acc_expired' ? 'bg-orange-500/20 text-orange-500' : 'bg-red-500/20 text-red-500'}`}>
+                                                            {type === 'acc_expired' ? <Shield size={20} /> : <User size={20} />}
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-bold text-red-400 text-lg">{u.name || u.email}</div>
+                                                            <div className="text-xs text-slate-400">
+                                                                Tài khoản: <span className="text-white">{acc.username}</span> •
+                                                                <span className="text-red-500 font-bold ml-1">{msg}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex gap-3">
+                                                        {type === 'user_expired' ? (
+                                                            // Action for Expired User: EXTEND
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleExtendUser(acc.id, idx, u)}
+                                                                    className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform"
+                                                                >
+                                                                    <RotateCw size={18} /> GIA HẠN
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteUser(acc.id, idx, u.name)}
+                                                                    className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform"
+                                                                >
+                                                                    <Trash2 size={18} /> XÓA
+                                                                </button>
+                                                            </>
+                                                        ) : type === 'acc_expired' ? (
+                                                            // Action for Expired Account (With Users): MOVE USER (Rescue)
+                                                            <button
+                                                                onClick={() => openMoveUserModal(acc.id, idx, u)}
+                                                                className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform animate-pulse"
+                                                            >
+                                                                <ArrowRightLeft size={18} /> CỨU USER (CHUYỂN GẤP)
+                                                            </button>
+                                                        ) : type === 'acc_empty_expired' ? (
+                                                            // Action for Expired Account (Empty): DELETE ACCOUNT
+                                                            <button
+                                                                onClick={() => { setDeletingId(acc.id); setShowDeleteModal(true); }}
+                                                                className="flex items-center gap-2 bg-red-800 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform animate-pulse border border-red-500"
+                                                            >
+                                                                <Trash2 size={18} /> XÓA CHATGPT RÁC NÀY
+                                                            </button>
+                                                        ) : null}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })()}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                             <div style={{ background: 'rgba(59, 130, 246, 0.1)', borderLeft: '4px solid #3b82f6' }} className="p-6 rounded-lg border border-blue-900/30">
                                 <div className="flex justify-between items-start">
@@ -540,18 +702,46 @@ function App() {
                                                                     const dateStr = getUserDate(u);
                                                                     const daysUsed = getDaysUsed(u);
 
+                                                                    // EXPIRY LOGIC
+                                                                    const isExpired = daysUsed !== null && daysUsed >= 30;
+                                                                    const isNearExpiry = daysUsed !== null && daysUsed >= 27 && daysUsed < 30;
+
                                                                     return (
-                                                                        <div key={index} className="flex justify-between items-center text-xs p-2 bg-slate-800 rounded border border-slate-700/50 mb-1">
+                                                                        <div key={index} className={`flex justify-between items-center text-xs p-2 rounded border mb-1 ${isExpired ? 'bg-red-900/20 border-red-700' : 'bg-slate-800 border-slate-700/50'}`}>
                                                                             <div className="flex flex-col">
-                                                                                <span className="font-bold text-white truncate max-w-[120px]" title={name}>👤 {name}</span>
+                                                                                <span className={`font-bold truncate max-w-[120px] flex items-center gap-1 ${isExpired ? 'text-red-500' : isNearExpiry ? 'text-yellow-400' : 'text-white'}`} title={name}>
+                                                                                    {isExpired && <AlertCircle size={12} />}
+                                                                                    {isNearExpiry && <AlertTriangle size={12} />}
+                                                                                    👤 {name}
+                                                                                </span>
                                                                                 {dateStr ? (
                                                                                     <span className="text-[10px] text-slate-400 flex items-center gap-1">
                                                                                         <Calendar size={10} /> {dateStr}
-                                                                                        {daysUsed !== null && daysUsed > 0 && <span className="text-blue-400">({daysUsed}d)</span>}
+                                                                                        {daysUsed !== null && daysUsed > 0 && (
+                                                                                            <span className={isExpired ? 'text-red-400 font-bold' : isNearExpiry ? 'text-yellow-500 font-bold' : 'text-blue-400'}>
+                                                                                                ({daysUsed}d)
+                                                                                            </span>
+                                                                                        )}
                                                                                     </span>
                                                                                 ) : <span className="text-[10px] text-slate-600 italic">Chưa có ngày</span>}
                                                                             </div>
-                                                                            <div className="flex gap-2">
+                                                                            <div className="flex gap-1">
+                                                                                {/* EXTEND BUTTON (Only for Expired/Near Expiry) */}
+                                                                                {(isExpired || isNearExpiry) && (
+                                                                                    <button type="button" onClick={() => handleExtendUser(acc.id, index, u)} className="bg-green-600 hover:bg-green-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Gia hạn (+30 ngày)">
+                                                                                        <RotateCw size={14} />
+                                                                                    </button>
+                                                                                )}
+
+                                                                                {/* MOVE BUTTON (Blocked if Expired) */}
+                                                                                {!isExpired ? (
+                                                                                    <button type="button" onClick={() => openMoveUserModal(acc.id, index, u)} className="bg-orange-600 hover:bg-orange-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Chuyển khách">
+                                                                                        <ArrowRightLeft size={14} />
+                                                                                    </button>
+                                                                                ) : (
+                                                                                    <span className="text-gray-500 cursor-not-allowed bg-slate-700 p-1.5 rounded" title="Hết hạn: Không thể chuyển"><ArrowRightLeft size={14} /></span>
+                                                                                )}
+
                                                                                 <button type="button" onClick={() => openEditUserModal(acc.id, index, u)} className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Sửa tên">
                                                                                     <Pencil size={14} />
                                                                                 </button>
@@ -564,21 +754,49 @@ function App() {
                                                                 })}
                                                             </div>
                                                         </div>
-                                                    ) : acc.type === 'package2' ? (
-                                                        <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
-                                                            {acc.users?.length > 0 ? (
-                                                                <div className="flex justify-between items-center text-sm text-white font-bold p-1">
-                                                                    <div>
-                                                                        <span className="flex items-center gap-2">👤 {getUserName(acc.users[0])}</span>
-                                                                        <span className="text-[10px] text-slate-400 block ml-6">{getUserDate(acc.users[0])}</span>
+                                                    ) : acc.type === 'package2' ? (() => {
+                                                        const u = acc.users?.[0];
+                                                        const days = u ? getDaysUsed(u) : null;
+                                                        const isExpired = days !== null && days >= 30;
+                                                        const isNearExpiry = days !== null && days >= 27 && days < 30;
+
+                                                        return (
+                                                            <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
+                                                                {acc.users?.length > 0 ? (
+                                                                    <div className={`flex justify-between items-center text-sm font-bold p-1 rounded ${isExpired ? 'bg-red-900/20' : ''}`}>
+                                                                        <div className={isExpired ? 'text-red-400' : 'text-white'}>
+                                                                            <span className="flex items-center gap-2">
+                                                                                {isExpired && <AlertCircle size={14} className="text-red-500" />}
+                                                                                👤 {getUserName(u)}
+                                                                            </span>
+                                                                            <span className={`text-[10px] block ml-6 ${isExpired ? 'text-red-300' : 'text-slate-400'}`}>{getUserDate(u)}</span>
+                                                                        </div>
+                                                                        <div className="flex gap-2">
+                                                                            {/* EXTEND BUTTON (Only for Expired/Near Expiry) */}
+                                                                            {(isExpired || isNearExpiry) && (
+                                                                                <button type="button" onClick={() => handleExtendUser(acc.id, 0, u)} className="text-green-400 hover:text-white" title="Gia hạn (+30 ngày)">
+                                                                                    <RotateCw size={14} />
+                                                                                </button>
+                                                                            )}
+
+                                                                            {/* MOVE BUTTON (Blocked if Expired) */}
+                                                                            {!isExpired ? (
+                                                                                <button type="button" onClick={() => openMoveUserModal(acc.id, 0, u)} className="text-orange-400 hover:text-white" title="Chuyển khách">
+                                                                                    <ArrowRightLeft size={14} />
+                                                                                </button>
+                                                                            ) : (
+                                                                                <span className="text-gray-600 cursor-not-allowed" title="Hết hạn: Không thể chuyển"><ArrowRightLeft size={14} /></span>
+                                                                            )}
+
+                                                                            <button type="button" onClick={() => openEditUserModal(acc.id, 0, u)} className="text-blue-400 hover:text-white"><Pencil size={14} /></button>
+                                                                        </div>
                                                                     </div>
-                                                                    <button type="button" onClick={() => openEditUserModal(acc.id, 0, acc.users[0])} className="text-blue-400 hover:text-white"><Pencil size={14} /></button>
-                                                                </div>
-                                                            ) : (
-                                                                <button type="button" onClick={() => openAddUserModal(acc.id)} className="w-full text-center text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-300">Gán Khách</button>
-                                                            )}
-                                                        </div>
-                                                    ) : <span className="text-yellow-600 text-xs italic">Chọn gói trước</span>}
+                                                                ) : (
+                                                                    <button type="button" onClick={() => openAddUserModal(acc.id)} className="w-full text-center text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-300">Gán Khách</button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })() : <span className="text-yellow-600 text-xs italic">Chọn gói trước</span>}
                                                 </td>
                                                 <td className="text-center">
                                                     <div className="flex justify-center gap-2">
@@ -597,217 +815,349 @@ function App() {
                             </div>
                         </div>
                     </div>
-                )}
+                )
+                }
 
-                {activeTab === 'coursera' && (
-                    <div className="space-y-6">
-                        <details className="mb-2 p-2 rounded-lg border border-slate-700/50 cursor-pointer">
-                            <summary className="text-xs text-slate-500">⚙️ Cấu hình Script</summary>
-                            <div className="mt-2 text-xs">
-                                <input className="form-input text-xs font-mono text-slate-500"
-                                    value={localStorage.getItem('appsScriptUrl') || 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec'}
-                                    onChange={(e) => localStorage.setItem('appsScriptUrl', e.target.value)}
-                                />
-                            </div>
-                        </details>
-
-                        <div style={{ background: '#1e293b', padding: '20px', borderRadius: '15px', border: '1px solid #334155' }}>
-                            <h3 className="text-lg font-bold text-white mb-4 border-b border-slate-700 pb-2">📂 Import Coursera</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <div className="form-group mb-4">
-                                        <label className="block text-slate-400 mb-1 text-sm">Tên Sheet (VD: Sp26)</label>
-                                        <input id="sheetNameInput" className="form-input" placeholder="Ví dụ: Sp26" />
-                                    </div>
-                                    <div className="p-4 bg-yellow-900/10 border border-yellow-700/30 rounded-lg">
-                                        <h4 className="text-yellow-500 text-sm font-bold mb-2 flex items-center gap-2"><AlertCircle size={16} /> Lưu ý Format</h4>
-                                        <p className="text-xs text-slate-400">
-                                            Nhập dữ liệu theo đúng định dạng:<br />
-                                            <code className="text-white bg-slate-800 px-1 rounded">email,pass,mã_môn</code>
-                                        </p>
-                                    </div>
+                {
+                    activeTab === 'coursera' && (
+                        <div className="space-y-6">
+                            <details className="mb-2 p-2 rounded-lg border border-slate-700/50 cursor-pointer">
+                                <summary className="text-xs text-slate-500">⚙️ Cấu hình Script</summary>
+                                <div className="mt-2 text-xs">
+                                    <input className="form-input text-xs font-mono text-slate-500"
+                                        value={localStorage.getItem('appsScriptUrl') || 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec'}
+                                        onChange={(e) => localStorage.setItem('appsScriptUrl', e.target.value)}
+                                    />
                                 </div>
-                                <div className="space-y-4">
+                            </details>
+
+                            <div style={{ background: '#1e293b', padding: '20px', borderRadius: '15px', border: '1px solid #334155' }}>
+                                <h3 className="text-lg font-bold text-white mb-4 border-b border-slate-700 pb-2">📂 Import Coursera</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
-                                        <label className="block text-slate-400 mb-1 text-sm">Dữ Liệu</label>
-                                        <textarea id="bulkCourseraData" className="form-input h-32 font-mono text-xs"
-                                            placeholder="user1@gmail.com,pass123,MATH101&#10;user2@gmail.com,pass456,ENW492c"></textarea>
+                                        <div className="form-group mb-4">
+                                            <label className="block text-slate-400 mb-1 text-sm">Tên Sheet (VD: Sp26)</label>
+                                            <input id="sheetNameInput" className="form-input" placeholder="Ví dụ: Sp26" />
+                                        </div>
+                                        <div className="p-4 bg-yellow-900/10 border border-yellow-700/30 rounded-lg">
+                                            <h4 className="text-yellow-500 text-sm font-bold mb-2 flex items-center gap-2"><AlertCircle size={16} /> Lưu ý Format</h4>
+                                            <p className="text-xs text-slate-400">
+                                                Nhập dữ liệu theo đúng định dạng:<br />
+                                                <code className="text-white bg-slate-800 px-1 rounded">email,pass,mã_môn</code>
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <button
-                                            onClick={handleImportCoursera}
-                                            disabled={importingSheet}
-                                            className={`w-full flex justify-center items-center gap-2 p-3 rounded-lg font-bold transition-all ${importingSheet
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-slate-400 mb-1 text-sm">Dữ Liệu</label>
+                                            <textarea id="bulkCourseraData" className="form-input h-32 font-mono text-xs"
+                                                placeholder="user1@gmail.com,pass123,MATH101&#10;user2@gmail.com,pass456,ENW492c"></textarea>
+                                        </div>
+                                        <div>
+                                            <button
+                                                onClick={handleImportCoursera}
+                                                disabled={importingSheet}
+                                                className={`w-full flex justify-center items-center gap-2 p-3 rounded-lg font-bold transition-all ${importingSheet
                                                     ? 'bg-slate-600 cursor-not-allowed opacity-70'
                                                     : importStatus === 'success'
                                                         ? 'bg-green-600 hover:bg-green-500'
                                                         : 'btn-primary'
-                                                }`}
-                                        >
-                                            {importingSheet ? <><Loader2 size={18} className="animate-spin" /> Đang Gửi Dữ Liệu...</> : importStatus === 'success' ? <><CheckCircle size={18} /> Đã Gửi Thành Công!</> : <><ExternalLink size={16} /> Gửi Vào Sheet</>}
-                                        </button>
+                                                    }`}
+                                            >
+                                                {importingSheet ? <><Loader2 size={18} className="animate-spin" /> Đang Gửi Dữ Liệu...</> : importStatus === 'success' ? <><CheckCircle size={18} /> Đã Gửi Thành Công!</> : <><ExternalLink size={16} /> Gửi Vào Sheet</>}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        <div style={{ background: '#1e293b', padding: '10px', borderRadius: '15px', border: '1px solid #334155' }}>
-                            <div className="flex justify-between items-center mb-2 px-1">
-                                <label className="text-sm font-bold text-slate-400">Xem Trước Sheet:</label>
-                                <a href="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit" target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 bg-green-700 hover:bg-green-600 text-white px-2 py-1 rounded shadow-sm transition-transform hover:translate-y-[-1px]">
-                                    <ExternalLink size={12} /> Mở Full Màn Hình (Sửa Dễ Hơn)
-                                </a>
+                            <div style={{ background: '#1e293b', padding: '10px', borderRadius: '15px', border: '1px solid #334155' }}>
+                                <div className="flex justify-between items-center mb-2 px-1">
+                                    <label className="text-sm font-bold text-slate-400">Xem Trước Sheet:</label>
+                                    <a href="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit" target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 bg-green-700 hover:bg-green-600 text-white px-2 py-1 rounded shadow-sm transition-transform hover:translate-y-[-1px]">
+                                        <ExternalLink size={12} /> Mở Full Màn Hình (Sửa Dễ Hơn)
+                                    </a>
+                                </div>
+                                <div className="aspect-video w-full rounded-lg overflow-hidden bg-white border border-slate-600">
+                                    <iframe src="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit?gid=1338679857&rm=minimal" className="w-full h-full" title="Coursera Sheet"></iframe>
+                                </div>
                             </div>
-                            <div className="aspect-video w-full rounded-lg overflow-hidden bg-white border border-slate-600">
-                                <iframe src="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit?gid=1338679857&rm=minimal" className="w-full h-full" title="Coursera Sheet"></iframe>
-                            </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
-            </div>
+            </div >
 
-            {alertInfo.show && (
-                <div className="modal-overlay" style={{ zIndex: 9999 }}>
-                    <div className="modal-box text-center" style={{ maxWidth: '400px' }}>
-                        <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${alertInfo.type === 'error' ? 'bg-red-900/30 text-red-500' :
+            {
+                alertInfo.show && (
+                    <div className="modal-overlay" style={{ zIndex: 9999 }}>
+                        <div className="modal-box text-center" style={{ maxWidth: '400px' }}>
+                            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${alertInfo.type === 'error' ? 'bg-red-900/30 text-red-500' :
                                 alertInfo.type === 'warning' ? 'bg-yellow-900/30 text-yellow-500' :
                                     alertInfo.type === 'confirm' ? 'bg-blue-900/30 text-blue-500' :
                                         'bg-green-900/30 text-green-500' // Success color
-                            }`}>
-                            {alertInfo.type === 'error' ? <AlertCircle size={32} /> :
-                                alertInfo.type === 'warning' ? <AlertTriangle size={32} /> :
-                                    alertInfo.type === 'success' ? <CheckCircle size={32} /> :
-                                        <Info size={32} />}
-                        </div>
-                        <h3 className="text-xl font-bold text-white mb-2">{alertInfo.title}</h3>
-                        <p className="text-slate-300 mb-6 whitespace-pre-wrap">{alertInfo.message}</p>
-
-                        {alertInfo.type === 'confirm' ? (
-                            <div className="flex justify-center gap-3">
-                                <button onClick={closeAlert} className="btn-secondary">Hủy</button>
-                                <button onClick={executeConfirm} className="btn-primary bg-blue-600 hover:bg-blue-500">Đồng Ý</button>
+                                }`}>
+                                {alertInfo.type === 'error' ? <AlertCircle size={32} /> :
+                                    alertInfo.type === 'warning' ? <AlertTriangle size={32} /> :
+                                        alertInfo.type === 'success' ? <CheckCircle size={32} /> :
+                                            <Info size={32} />}
                             </div>
-                        ) : (
-                            <button onClick={closeAlert} className="btn-primary w-full justify-center">Đã Hiểu</button>
-                        )}
-                    </div>
-                </div>
-            )}
+                            <h3 className="text-xl font-bold text-white mb-2">{alertInfo.title}</h3>
+                            <p className="text-slate-300 mb-6 whitespace-pre-wrap">{alertInfo.message}</p>
 
-            {showUserModal && (
-                <div className="modal-overlay">
-                    <form onSubmit={handleSubmitUser} className="modal-box" style={{ maxWidth: '400px' }}>
-                        <h2 className="text-xl font-bold text-white mb-4">
-                            {userModalMode === 'add' ? 'Thêm Khách Mới' : 'Sửa Tên Khách'}
-                        </h2>
-                        <div className="form-group">
-                            <label>Tên Khách Hàng</label>
-                            <input
-                                autoFocus
-                                className="form-input text-lg"
-                                value={currentUserData.name}
-                                onChange={(e) => setCurrentUserData({ ...currentUserData, name: e.target.value })}
-                                placeholder="Nhập tên..."
-                            />
-                        </div>
-                        {userModalMode === 'edit' && currentUserData.joinedAt && (
-                            <div className="mt-2 text-xs text-slate-500">
-                                Đã tham gia: {new Date(currentUserData.joinedAt).toLocaleString()}
-                            </div>
-                        )}
-
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button type="button" onClick={() => setShowUserModal(false)} className="btn-secondary">Hủy</button>
-                            <button type="submit" className="btn-primary">Lưu Lại</button>
-                        </div>
-                    </form>
-                </div>
-            )}
-
-            {(showAddModal || showEditModal) && (
-                <div className="modal-overlay">
-                    <form onSubmit={showAddModal ? handleAddAccount : handleUpdateAccount} className="modal-box">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold text-white">{showAddModal ? 'Thêm Tài Khoản' : 'Sửa Tài Khoản'}</h2>
-                            <span className="close" onClick={() => { setShowAddModal(false); setShowEditModal(false) }}>&times;</span>
-                        </div>
-
-                        <div className="form-group">
-                            <label>Email / Username</label>
-                            <input required className="form-input" value={showAddModal ? newAcc.username : editingAcc.username}
-                                onChange={e => showAddModal ? setNewAcc({ ...newAcc, username: e.target.value }) : setEditingAcc({ ...editingAcc, username: e.target.value })} />
-                        </div>
-                        <div className="form-group">
-                            <label>Password</label>
-                            <input required className="form-input" value={showAddModal ? newAcc.password : editingAcc.password}
-                                onChange={e => showAddModal ? setNewAcc({ ...newAcc, password: e.target.value }) : setEditingAcc({ ...editingAcc, password: e.target.value })} />
-                        </div>
-                        <div className="form-group">
-                            <label>Loại Gói</label>
-                            <select className="form-input" value={showAddModal ? newAcc.type : editingAcc.type}
-                                onChange={e => showAddModal ? setNewAcc({ ...newAcc, type: e.target.value }) : setEditingAcc({ ...editingAcc, type: e.target.value })}>
-                                <option value="unassigned">❓ Chưa xác định</option>
-                                <option value="package1">👥 Gói 1: Chia sẻ</option>
-                                <option value="package2">🔒 Gói 2: Linh hoạt</option>
-                            </select>
-                        </div>
-                        <div className="form-group">
-                            <label>Link Mail</label>
-                            <input className="form-input" value={showAddModal ? newAcc.link : editingAcc.link}
-                                onChange={e => showAddModal ? setNewAcc({ ...newAcc, link: e.target.value }) : setEditingAcc({ ...editingAcc, link: e.target.value })} />
-                        </div>
-                        <div className="form-group">
-                            <label>Ghi chú</label>
-                            <input className="form-input" value={showAddModal ? newAcc.note : editingAcc.note}
-                                onChange={e => showAddModal ? setNewAcc({ ...newAcc, note: e.target.value }) : setEditingAcc({ ...editingAcc, note: e.target.value })} />
-                        </div>
-
-                        <div className="flex justify-end gap-3 mt-4">
-                            <button type="button" onClick={() => { setShowAddModal(false); setShowEditModal(false) }} className="btn-secondary">Hủy</button>
-                            <button type="submit" className="btn-primary">Lưu</button>
-                        </div>
-                    </form>
-                </div>
-            )}
-
-            {showDeleteModal && (
-                <div className="modal-overlay">
-                    <div className="modal-box text-center">
-                        <div className="w-16 h-16 bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500">
-                            <Trash2 size={32} />
-                        </div>
-                        <h3 className="text-xl font-bold text-white mb-2">Xác nhận xóa?</h3>
-                        <div className="flex justify-center gap-3 mt-6">
-                            <button onClick={() => setShowDeleteModal(false)} className="btn-secondary">Hủy</button>
-                            <button onClick={handleDeleteAccount} className="btn-primary" style={{ backgroundColor: '#ef4444' }}>Xóa Luôn</button>
+                            {alertInfo.type === 'confirm' ? (
+                                <div className="flex justify-center gap-3">
+                                    <button onClick={closeAlert} className="btn-secondary">Hủy</button>
+                                    <button onClick={executeConfirm} className="btn-primary bg-blue-600 hover:bg-blue-500">Đồng Ý</button>
+                                </div>
+                            ) : (
+                                <button onClick={closeAlert} className="btn-primary w-full justify-center">Đã Hiểu</button>
+                            )}
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-            {showImportGPTModal && (
-                <div className="modal-overlay">
-                    <div className="modal-box" style={{ maxWidth: '600px' }}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold text-white">Import ChatGPT Nhanh</h2>
-                            <span className="close" onClick={() => setShowImportGPTModal(false)}>&times;</span>
+
+
+            {
+                showMoveUserModal && movingUser && (
+                    <div className="modal-overlay">
+                        <form onSubmit={handleSubmitMoveUser} className="modal-box" style={{ maxWidth: '450px' }}>
+                            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                                <ArrowRightLeft className="text-orange-500" /> Chuyển Khách Hàng
+                            </h2>
+
+                            <div className="bg-slate-800 p-3 rounded mb-4 border border-slate-700">
+                                <div className="text-sm text-slate-400">Đang chuyển:</div>
+                                <div className="font-bold text-lg text-white">👤 {getUserName(movingUser)}</div>
+                                <div className="text-xs text-slate-500 mt-1">Tham gia: {movingUser.joinedAt ? new Date(movingUser.joinedAt).toLocaleDateString('vi-VN') : 'N/A'}</div>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="text-orange-400 font-bold mb-1 block">Chọn Tài Khoản Đích (Còn trống)</label>
+                                <select
+                                    className="form-input w-full"
+                                    value={destinationAccId}
+                                    onChange={(e) => setDestinationAccId(e.target.value)}
+                                    size={5} // List box style
+                                    required
+                                >
+                                    <option value="" disabled>-- Chọn tài khoản --</option>
+                                    {accounts
+                                        .filter(a => a.id !== movingUser.fromAccId && // Not source
+                                            a.type === 'package1' && // Only Shared Pkg
+                                            (a.users?.length || 0) < 3 && // Has slots
+                                            !getExpiryStatus(a.expiredAt).isExpired // STRICT: Must NOT be expired
+                                        )
+                                        .map(a => {
+                                            const slots = a.users?.length || 0;
+                                            const expiry = getExpiryStatus(a.expiredAt);
+                                            // Truncate username if too long
+                                            const displayUser = a.username.length > 25 ? a.username.substring(0, 22) + '...' : a.username;
+                                            // Short Date
+                                            const dateStr = a.expiredAt ? new Date(a.expiredAt).toLocaleDateString('vi-VN') : 'Vô hạn';
+
+                                            return (
+                                                <option key={a.id} value={a.id} className="py-2 border-b border-slate-700/50">
+                                                    [{slots}/3] {displayUser} (Hết: {dateStr})
+                                                </option>
+                                            );
+                                        })
+                                    }
+                                </select>
+                                <p className="text-xs text-slate-500 mt-2 italic">* Chỉ hiện các tài khoản còn slot trống.</p>
+                            </div>
+
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button type="button" onClick={() => setShowMoveUserModal(false)} className="btn-secondary">Hủy</button>
+                                <button type="submit" className="btn-primary bg-orange-600 hover:bg-orange-500">Xác Nhận Chuyển</button>
+                            </div>
+                        </form>
+                    </div>
+                )
+            }
+
+            {
+                showUserModal && (
+                    <div className="modal-overlay">
+                        <form onSubmit={handleSubmitUser} className="modal-box" style={{ maxWidth: '400px' }}>
+                            <h2 className="text-xl font-bold text-white mb-4">
+                                {userModalMode === 'add' ? 'Thêm Khách Mới' : 'Sửa Tên Khách'}
+                            </h2>
+
+                            {/* EXPIRY WARNING */}
+                            {userModalMode === 'add' && currentUserData.accId && (() => {
+                                const acc = accounts.find(a => a.id === currentUserData.accId);
+                                if (acc && acc.expiredAt) {
+                                    const daysLeft = getExpiryStatus(acc.expiredAt).text;
+                                    // Check simplistic days logic or re-calc
+                                    const exp = new Date(acc.expiredAt);
+                                    const now = new Date();
+                                    const diff = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
+
+                                    if (diff < 30) {
+                                        return (
+                                            <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-600/50 rounded flex gap-2 items-start">
+                                                <AlertTriangle className="text-yellow-500 shrink-0" size={20} />
+                                                <div className="text-xs text-yellow-200">
+                                                    <span className="font-bold block text-sm text-yellow-500">CẢNH BÁO HẠN DÙNG</span>
+                                                    Tài khoản này chỉ còn <b>{diff} ngày</b> (&lt; 30 ngày).
+                                                    <br />Khách mua tháng có thể bị gián đoạn!
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                }
+                                return null;
+                            })()}
+
+                            <div className="form-group">
+                                <label>Tên Khách Hàng</label>
+                                <input
+                                    autoFocus
+                                    className="form-input text-lg"
+                                    value={currentUserData.name}
+                                    onChange={(e) => setCurrentUserData({ ...currentUserData, name: e.target.value })}
+                                    placeholder="Nhập tên..."
+                                />
+                            </div>
+                            <div className="form-group mt-3">
+                                <label className="block text-slate-300 mb-2">
+                                    Ngày Tham Gia
+                                </label>
+                                <input
+                                    type="date"
+                                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                                    value={currentUserData.joinedAt ? new Date(currentUserData.joinedAt).toISOString().split('T')[0] : ''}
+                                    onChange={(e) => {
+                                        setCurrentUserData({
+                                            ...currentUserData,
+                                            joinedAt: e.target.value ? new Date(e.target.value).toISOString() : null
+                                        });
+                                    }}
+                                />
+                            </div>
+
+
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button type="button" onClick={() => setShowUserModal(false)} className="btn-secondary">Hủy</button>
+                                <button type="submit" className="btn-primary">Lưu Lại</button>
+                            </div>
+                        </form>
+                    </div>
+                )
+            }
+
+            {
+                (showAddModal || showEditModal) && (
+                    <div className="modal-overlay">
+                        <form onSubmit={showAddModal ? handleAddAccount : handleUpdateAccount} className="modal-box">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold text-white">{showAddModal ? 'Thêm Tài Khoản' : 'Sửa Tài Khoản'}</h2>
+                                <span className="close" onClick={() => { setShowAddModal(false); setShowEditModal(false) }}>&times;</span>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Email / Username</label>
+                                <input required className="form-input" value={showAddModal ? newAcc.username : editingAcc.username}
+                                    onChange={e => showAddModal ? setNewAcc({ ...newAcc, username: e.target.value }) : setEditingAcc({ ...editingAcc, username: e.target.value })} />
+                            </div>
+                            <div className="form-group">
+                                <label>Password</label>
+                                <input required className="form-input" value={showAddModal ? newAcc.password : editingAcc.password}
+                                    onChange={e => showAddModal ? setNewAcc({ ...newAcc, password: e.target.value }) : setEditingAcc({ ...editingAcc, password: e.target.value })} />
+                            </div>
+                            <div className="form-group">
+                                <label>Loại Gói</label>
+                                <select className="form-input" value={showAddModal ? newAcc.type : editingAcc.type}
+                                    onChange={e => showAddModal ? setNewAcc({ ...newAcc, type: e.target.value }) : setEditingAcc({ ...editingAcc, type: e.target.value })}>
+                                    <option value="unassigned">❓ Chưa xác định</option>
+                                    <option value="package1">👥 Gói 1: Chia sẻ</option>
+                                    <option value="package2">🔒 Gói 2: Linh hoạt</option>
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label>Link Mail</label>
+                                <input className="form-input" value={showAddModal ? newAcc.link : editingAcc.link}
+                                    onChange={e => showAddModal ? setNewAcc({ ...newAcc, link: e.target.value }) : setEditingAcc({ ...editingAcc, link: e.target.value })} />
+                            </div>
+                            <div className="form-group">
+                                <label>Ghi chú</label>
+                                <input className="form-input" value={showAddModal ? newAcc.note : editingAcc.note}
+                                    onChange={e => showAddModal ? setNewAcc({ ...newAcc, note: e.target.value }) : setEditingAcc({ ...editingAcc, note: e.target.value })} />
+                            </div>
+
+                            <div className="form-group mt-3">
+                                <label className="block text-yellow-400 mb-2">
+                                    Ngày Hết Hạn
+                                </label>
+                                <input
+                                    type="date"
+                                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                                    value={
+                                        (showAddModal ? newAcc.expiredAt : editingAcc.expiredAt)
+                                            ? new Date(showAddModal ? newAcc.expiredAt : editingAcc.expiredAt).toISOString().split('T')[0]
+                                            : ''
+                                    }
+                                    onChange={e => {
+                                        const val = e.target.value ? new Date(e.target.value).toISOString() : null;
+                                        if (showAddModal) setNewAcc({ ...newAcc, expiredAt: val });
+                                        else setEditingAcc({ ...editingAcc, expiredAt: val });
+                                    }}
+                                />
+                            </div>
+
+                            <div className="flex justify-end gap-3 mt-4">
+                                <button type="button" onClick={() => { setShowAddModal(false); setShowEditModal(false) }} className="btn-secondary">Hủy</button>
+                                <button type="submit" className="btn-primary">Lưu</button>
+                            </div>
+                        </form>
+                    </div>
+                )
+            }
+
+            {
+                showDeleteModal && (
+                    <div className="modal-overlay">
+                        <div className="modal-box text-center">
+                            <div className="w-16 h-16 bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500">
+                                <Trash2 size={32} />
+                            </div>
+                            <h3 className="text-xl font-bold text-white mb-2">Xác nhận xóa?</h3>
+                            <div className="flex justify-center gap-3 mt-6">
+                                <button onClick={() => setShowDeleteModal(false)} className="btn-secondary">Hủy</button>
+                                <button onClick={handleDeleteAccount} className="btn-primary" style={{ backgroundColor: '#ef4444' }}>Xóa Luôn</button>
+                            </div>
                         </div>
-                        <p className="text-slate-400 text-sm mb-2">
-                            Dán dữ liệu: <code className="bg-slate-700 px-1 rounded">email----pass----link</code>
-                        </p>
-                        <textarea id="bulkGPTData" className="form-input h-64 font-mono text-xs"
-                            placeholder="...
+                    </div>
+                )
+            }
+
+            {
+                showImportGPTModal && (
+                    <div className="modal-overlay">
+                        <div className="modal-box" style={{ maxWidth: '600px' }}>
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold text-white">Import ChatGPT Nhanh</h2>
+                                <span className="close" onClick={() => setShowImportGPTModal(false)}>&times;</span>
+                            </div>
+                            <p className="text-slate-400 text-sm mb-2">
+                                Dán dữ liệu: <code className="bg-slate-700 px-1 rounded">email----pass----link</code>
+                            </p>
+                            <textarea id="bulkGPTData" className="form-input h-64 font-mono text-xs"
+                                placeholder="...
 UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/..."
-                        ></textarea>
-                        <div className="flex justify-end gap-3 mt-4">
-                            <button onClick={() => setShowImportGPTModal(false)} className="btn-secondary">Hủy</button>
-                            <button id="btnImportGPT" onClick={handleBulkImportGPT} className="btn-primary bg-purple-600 hover:bg-purple-500">Nhập Dữ Liệu</button>
+                            ></textarea>
+                            <div className="flex justify-end gap-3 mt-4">
+                                <button onClick={() => setShowImportGPTModal(false)} className="btn-secondary">Hủy</button>
+                                <button id="btnImportGPT" onClick={handleBulkImportGPT} className="btn-primary bg-purple-600 hover:bg-purple-500">Nhập Dữ Liệu</button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-        </div>
+        </div >
     );
 }
 

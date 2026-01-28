@@ -116,6 +116,102 @@ app.delete('/api/chatgpt/:id', async (req, res) => {
     }
 });
 
+// 4.5 MOVE USER (ATOMIC TRANSFER)
+app.post('/api/move-user', async (req, res) => {
+    try {
+        const { fromAccId, toAccId, userIndex } = req.body;
+
+        // Find both accounts
+        const fromAcc = await Account.findOne({ id: fromAccId });
+        const toAcc = await Account.findOne({ id: toAccId });
+
+        if (!fromAcc || !toAcc) {
+            return res.status(404).json({ error: 'One or both accounts not found' });
+        }
+
+        // Validate user index
+        if (!fromAcc.users || !fromAcc.users[userIndex]) {
+            return res.status(400).json({ error: 'User not found in source account' });
+        }
+
+        // Validate destination slot
+        if (toAcc.type !== 'package1') {
+            return res.status(400).json({ error: 'Chỉ được chuyển đến gói Chia Sẻ (Gói 1)' });
+        }
+        if ((toAcc.users?.length || 0) >= 3) {
+            return res.status(400).json({ error: 'Tài khoản đích đã đầy (3/3)' });
+        }
+
+        // STRICT RULE: Cannot transfer to Expired Account
+        if (toAcc.expiredAt && new Date(toAcc.expiredAt) < new Date()) {
+            return res.status(400).json({ error: 'Tài khoản đích ĐÃ HẾT HẠN. Không thể chuyển khách vào!' });
+        }
+
+        // Get user data
+        const userToMove = fromAcc.users[userIndex];
+
+        // 1. Add to destination
+        if (!toAcc.users) toAcc.users = [];
+        toAcc.users.push(userToMove);
+
+        // 2. Remove from source
+        fromAcc.users.splice(userIndex, 1);
+
+        // Save (Atomic simulation)
+        await toAcc.save();
+        await fromAcc.save();
+
+        res.json({ message: 'Moved user successfully', from: fromAcc, to: toAcc });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// EXTEND USER (+30 DAYS)
+app.post('/api/extend-user', async (req, res) => {
+    const { accId, userIndex } = req.body;
+    try {
+        const acc = await Account.findOne({ id: accId });
+        if (!acc || !acc.users[userIndex]) return res.status(404).json({ error: 'User/Account not found' });
+
+        const user = acc.users[userIndex];
+        // Calculate new Expiry Date based on CURRENT status
+        // Logic: Always add +30 days to the JOINED DATE.
+        // Because "Days Used" is calculated from Joined Date.
+        // So bumping Joined Date forward by 30 days effectively resets "Days Used" to 0 (or reduces it by 30).
+
+        // Wait! Bumping JOINED DATE means "resetting usage".
+        // Example: Joined 1/1. Today 1/2. Used 30 days. Expired.
+        // Action: Extend +30 days.
+        // New Joined Date should be: Today (1/2)? Or Joined Date + 30 days (1/31)?
+        // User requested: "Gia han +30 days". Usually means adding time.
+        const now = new Date();
+        const joinedAt = new Date(user.joinedAt || now); // Use 'now' if joinedAt is missing
+
+        // Calculate days used
+        const diffTime = now.getTime() - joinedAt.getTime();
+        const daysUsed = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (daysUsed >= 30) {
+            // If expired (or nearly expired, assuming 30 days is the cycle), reset to NOW
+            user.joinedAt = now.toISOString();
+            user.note = (user.note ? user.note + ' ' : '') + `[Renewed on ${now.toLocaleDateString()}]`;
+        } else {
+            // If not expired, add 30 days to the CURRENT start date (pushing it into future)
+            // This preserves the remaining days.
+            // New JoinedAt = Old JoinedAt + 30 days
+            const newJoinedAt = new Date(joinedAt.getTime() + (30 * 24 * 60 * 60 * 1000));
+            user.joinedAt = newJoinedAt.toISOString();
+            user.note = (user.note ? user.note + ' ' : '') + `[Extended +30d on ${now.toLocaleDateString()}]`;
+        }
+
+        await acc.save();
+        res.json({ message: 'User extended successfully', updatedUser: user });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // 5. PROXY GOOGLE SHEET (Giữ nguyên)
 app.post('/api/proxy-sheet', async (req, res) => {
     try {
