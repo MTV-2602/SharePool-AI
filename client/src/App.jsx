@@ -66,7 +66,6 @@ function App() {
         // Listen for updates from other tabs
         channel.onmessage = (event) => {
             if (event.data.type === 'DATA_UPDATED') {
-                console.log('Received update from another tab');
                 fetchData();
             }
         };
@@ -210,11 +209,9 @@ function App() {
                 });
                 setAccounts(sortedGPT);
             } else {
-                console.error('Invalid data format:', res.data);
                 setAccounts([]);
             }
         } catch (error) { 
-            console.error('Error fetching data:', error);
             showAlert('Lỗi', 'Không thể tải dữ liệu. Vui lòng thử lại.', 'error');
             setAccounts([]);
         }
@@ -372,6 +369,7 @@ function App() {
             setDeletingId(null);
             setShowEditModal(false);
             fetchData();
+            broadcastDataChange();
         } catch (error) { showAlert('Lỗi', 'Lỗi xóa: ' + error.message, 'error'); }
     };
 
@@ -453,7 +451,6 @@ function App() {
                     showAlert('Thành Công', `✅ Đã gửi xong ${parsedData.length} dòng lên Google Sheet!`, 'success');
                     setTimeout(() => setImportStatus(null), 5000);
                 } catch (e) {
-                    console.error(e);
                     setImportStatus('error');
                     showAlert('Lỗi Gửi Sheet', (e.response?.data?.error || e.message), 'error');
                 } finally {
