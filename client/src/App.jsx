@@ -412,27 +412,18 @@ function App() {
         // Check if account has active users (not expired)
         const accToDelete = accounts.find(a => a.id === deletingId);
         
-        console.log('=== DELETE ACCOUNT DEBUG ===');
-        console.log('Account to delete:', accToDelete);
-        console.log('Has users?', accToDelete?.users?.length);
-        
         if (accToDelete && accToDelete.users && accToDelete.users.length > 0) {
             const activeUsers = [];
             
             accToDelete.users.forEach((u, idx) => {
-                console.log(`User ${idx}:`, u);
-                
                 // Check if user object has name (valid user)
                 if (typeof u === 'object' && u !== null && u.name) {
                     const days = getDaysUsed(u);
-                    console.log(`  - Days used: ${days}`);
-                    console.log(`  - joinedAt: ${u.joinedAt}`);
                     
                     // User còn hạn nếu:
                     // - Có joinedAt và daysUsed < 30
                     // - Hoặc không có joinedAt (mới thêm, chưa set ngày) -> coi như còn hạn
                     const isActive = (days !== null && days < 30) || (u.joinedAt === null || u.joinedAt === undefined);
-                    console.log(`  - Is active? ${isActive}`);
                     
                     if (isActive) {
                         activeUsers.push({
@@ -446,21 +437,18 @@ function App() {
                 }
             });
             
-            console.log('Active users found:', activeUsers.length);
-            console.log('Active users:', activeUsers);
-            
             if (activeUsers.length > 0) {
-                // Có user còn hạn - không cho xóa
-                console.log('❌ BLOCKING DELETE - Has active users');
+                // Có user còn hạn - không cho xóa, hiện modal
                 setShowDeleteModal(false);
                 setOrphanedUsers(activeUsers);
                 setShowOrphanedUsersModal(true);
                 return;
             }
+            
+            // Chỉ có users hết hạn hoặc không có users - cho phép xóa
         }
         
-        // Không có user còn hạn - cho phép xóa
-        console.log('✅ ALLOWING DELETE - No active users');
+        // Không có user còn hạn - cho phép xóa (tự động xóa luôn cả expired users)
         setLoadingStates(prev => ({ ...prev, deleteAccount: true }));
         try {
             await axios.delete(`/api/chatgpt/${deletingId}`);
