@@ -10,6 +10,20 @@ function App() {
     const [accounts, setAccounts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('chatgpt');
+    const [searchQuery, setSearchQuery] = useState('');
+
+    // Loading states for buttons
+    const [loadingStates, setLoadingStates] = useState({
+        addUser: false,
+        editUser: false,
+        deleteUser: false,
+        moveUser: false,
+        extendUser: false,
+        addAccount: false,
+        editAccount: false,
+        deleteAccount: false,
+        changeType: {}
+    });
 
     // BroadcastChannel for real-time sync between tabs
     const channelRef = useRef(null);
@@ -220,13 +234,18 @@ function App() {
 
     const handleAddAccount = async (e) => {
         e.preventDefault();
+        setLoadingStates(prev => ({ ...prev, addAccount: true }));
         try {
             await axios.post('/api/chatgpt', newAcc);
             setShowAddModal(false);
             setNewAcc({ username: '', password: '', link: '', type: 'unassigned', note: '' });
             fetchData();
             broadcastDataChange();
-        } catch (error) { showAlert('Error', 'Lỗi khi thêm tài khoản', 'error'); }
+        } catch (error) { 
+            showAlert('Error', 'Lỗi khi thêm tài khoản', 'error'); 
+        } finally {
+            setLoadingStates(prev => ({ ...prev, addAccount: false }));
+        }
     };
 
     const openAddUserModal = (accId) => {
@@ -268,12 +287,18 @@ function App() {
             };
         }
 
+        const loadingKey = userModalMode === 'add' ? 'addUser' : 'editUser';
+        setLoadingStates(prev => ({ ...prev, [loadingKey]: true }));
         try {
             await axios.put(`/api/chatgpt/${accId}`, { users: newUsers });
             setShowUserModal(false);
             fetchData();
             broadcastDataChange();
-        } catch (err) { showAlert('Lỗi', 'Không lưu được khách hàng', 'error'); }
+        } catch (err) { 
+            showAlert('Lỗi', 'Không lưu được khách hàng', 'error'); 
+        } finally {
+            setLoadingStates(prev => ({ ...prev, [loadingKey]: false }));
+        }
     };
 
     const handleDeleteUser = (accId, userIndex, userName) => {
@@ -284,11 +309,16 @@ function App() {
                 const acc = accounts.find(a => a.id === accId);
                 if (!acc) return;
                 const newUsers = acc.users.filter((_, i) => i !== userIndex);
+                setLoadingStates(prev => ({ ...prev, deleteUser: true }));
                 try {
                     await axios.put(`/api/chatgpt/${accId}`, { users: newUsers });
                     fetchData();
                     broadcastDataChange();
-                } catch (err) { showAlert('Lỗi', 'Lỗi xóa khách', 'error'); }
+                } catch (err) { 
+                    showAlert('Lỗi', 'Lỗi xóa khách', 'error'); 
+                } finally {
+                    setLoadingStates(prev => ({ ...prev, deleteUser: false }));
+                }
             }
         );
     };
@@ -301,6 +331,7 @@ function App() {
             'Xác nhận gia hạn',
             `Bạn có chắc muốn gia hạn cho ${userName} thêm 30 ngày không?`,
             async () => {
+                setLoadingStates(prev => ({ ...prev, extendUser: true }));
                 try {
                     await axios.post('/api/extend-user', { accId, userIndex });
                     fetchData();
@@ -308,6 +339,8 @@ function App() {
                     showAlert('Thành Công', 'Đã gia hạn khách hàng (+30 ngày)!', 'success');
                 } catch (error) {
                     showAlert('Lỗi', error.response?.data?.error || 'Không thể gia hạn', 'error');
+                } finally {
+                    setLoadingStates(prev => ({ ...prev, extendUser: false }));
                 }
             }
         );
@@ -325,13 +358,18 @@ function App() {
             }
         }
 
+        setLoadingStates(prev => ({ ...prev, editAccount: true }));
         try {
             await axios.put(`/api/chatgpt/${editingAcc.id}`, editingAcc);
             setShowEditModal(false);
             setEditingAcc(null);
             fetchData();
             broadcastDataChange();
-        } catch (error) { showAlert('Lỗi', 'Lỗi cập nhật', 'error'); }
+        } catch (error) { 
+            showAlert('Lỗi', 'Lỗi cập nhật', 'error'); 
+        } finally {
+            setLoadingStates(prev => ({ ...prev, editAccount: false }));
+        }
     };
 
     // MOVE USER LOGIC
@@ -345,6 +383,7 @@ function App() {
         e.preventDefault();
         if (!destinationAccId) return showAlert('Lỗi', 'Chưa chọn tài khoản đích!', 'warning');
 
+        setLoadingStates(prev => ({ ...prev, moveUser: true }));
         try {
             await axios.post('/api/move-user', {
                 fromAccId: movingUser.fromAccId,
@@ -358,11 +397,14 @@ function App() {
             showAlert('Thành Công', `Đã chuyển khách sang tài khoản mới!`, 'success');
         } catch (error) {
             showAlert('Lỗi', error.response?.data?.error || 'Lỗi khi chuyển khách', 'error');
+        } finally {
+            setLoadingStates(prev => ({ ...prev, moveUser: false }));
         }
     };
 
     const handleDeleteAccount = async () => {
         if (!deletingId) return;
+        setLoadingStates(prev => ({ ...prev, deleteAccount: true }));
         try {
             await axios.delete(`/api/chatgpt/${deletingId}`);
             setShowDeleteModal(false);
@@ -370,7 +412,11 @@ function App() {
             setShowEditModal(false);
             fetchData();
             broadcastDataChange();
-        } catch (error) { showAlert('Lỗi', 'Lỗi xóa: ' + error.message, 'error'); }
+        } catch (error) { 
+            showAlert('Lỗi', 'Lỗi xóa: ' + error.message, 'error'); 
+        } finally {
+            setLoadingStates(prev => ({ ...prev, deleteAccount: false }));
+        }
     };
 
     const handleTypeChange = async (acc, newType) => {
@@ -383,11 +429,16 @@ function App() {
                 return;
             }
         }
+        setLoadingStates(prev => ({ ...prev, changeType: { ...prev.changeType, [acc.id]: true } }));
         try {
             await axios.put(`/api/chatgpt/${acc.id}`, { type: newType });
             fetchData();
             broadcastDataChange();
-        } catch (error) { showAlert('Lỗi', 'Lỗi đổi gói', 'error'); }
+        } catch (error) { 
+            showAlert('Lỗi', 'Lỗi đổi gói', 'error'); 
+        } finally {
+            setLoadingStates(prev => ({ ...prev, changeType: { ...prev.changeType, [acc.id]: false } }));
+        }
     };
 
     const handleCopy = (text) => navigator.clipboard.writeText(text);
@@ -680,8 +731,27 @@ function App() {
                             </div>
                         </div>
 
-                        <div className="flex justify-end mb-4">
-                            <button onClick={() => setShowImportGPTModal(true)} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform w-full md:w-auto justify-center">
+                        <div className="flex flex-col md:flex-row gap-4 justify-between mb-4">
+                            <div className="flex-1 max-w-md">
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="🔍 Tìm kiếm theo email..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    {searchQuery && (
+                                        <button
+                                            onClick={() => setSearchQuery('')}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                        >
+                                            <X size={18} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            <button onClick={() => setShowImportGPTModal(true)} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center">
                                 <Upload size={18} /> Import Nhanh Tài Khoản
                             </button>
                         </div>
@@ -706,15 +776,22 @@ function App() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {accounts.map(acc => (
+                                        {accounts
+                                            .filter(acc => {
+                                                if (!searchQuery.trim()) return true;
+                                                return acc.username.toLowerCase().includes(searchQuery.toLowerCase());
+                                            })
+                                            .map(acc => (
                                             <tr key={acc.id} className="hover:bg-slate-800/50 transition-colors">
                                                 <td className="align-top">
                                                     <select
                                                         id={`select-type-${acc.id}`}
                                                         value={acc.type}
                                                         onChange={(e) => handleTypeChange(acc, e.target.value)}
+                                                        disabled={loadingStates.changeType[acc.id]}
                                                         className={`
                                             w-full text-xs rounded px-2 py-2 outline-none font-bold border cursor-pointer appearance-none text-center
+                                            ${loadingStates.changeType[acc.id] ? 'opacity-50 cursor-wait' : ''}
                                             ${acc.type === 'package1' ? 'bg-blue-900/40 text-blue-400 border-blue-700/50' :
                                                                 acc.type === 'package2' ? 'bg-purple-900/40 text-purple-400 border-purple-700/50' :
                                                                     'bg-slate-800 text-slate-400 border-slate-700'}
@@ -724,6 +801,11 @@ function App() {
                                                         <option value="package1">👥 Gói 1: Chia sẻ</option>
                                                         <option value="package2">🔒 Gói 2: Linh hoạt</option>
                                                     </select>
+                                                    {loadingStates.changeType[acc.id] && (
+                                                        <div className="text-center mt-1">
+                                                            <Loader2 size={14} className="animate-spin inline text-blue-400" />
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td>
                                                     <div className="font-bold text-white mb-1 flex items-center gap-2 text-base">
@@ -1040,9 +1122,17 @@ function App() {
                                 <p className="text-xs text-slate-500 mt-2 italic">* Chỉ hiện gói Shared còn slot trống & chưa hết hạn.</p>
                             </div>
 
-                            <div className="flex justify-end gap-3 mt-6">
-                                <button type="button" onClick={() => setShowMoveUserModal(false)} className="btn-secondary">Hủy</button>
-                                <button type="submit" className="btn-primary bg-orange-600 hover:bg-orange-500">Xác Nhận Chuyển</button>
+                            <div class="flex justify-end gap-3 mt-6">
+                                <button type="button" onClick={() => setShowMoveUserModal(false)} className="btn-secondary" disabled={loadingStates.moveUser}>Hủy</button>
+                                <button type="submit" className="btn-primary bg-orange-600 hover:bg-orange-500 flex items-center gap-2" disabled={loadingStates.moveUser}>
+                                    {loadingStates.moveUser ? (
+                                        <>
+                                            <Loader2 size={18} className="animate-spin" /> Đang chuyển...
+                                        </>
+                                    ) : (
+                                        'Xác Nhận Chuyển'
+                                    )}
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -1112,8 +1202,16 @@ function App() {
 
 
                             <div className="flex justify-end gap-3 mt-6">
-                                <button type="button" onClick={() => setShowUserModal(false)} className="btn-secondary">Hủy</button>
-                                <button type="submit" className="btn-primary">Lưu Lại</button>
+                                <button type="button" onClick={() => setShowUserModal(false)} className="btn-secondary" disabled={loadingStates.addUser || loadingStates.editUser}>Hủy</button>
+                                <button type="submit" className="btn-primary flex items-center gap-2" disabled={loadingStates.addUser || loadingStates.editUser}>
+                                    {(loadingStates.addUser || loadingStates.editUser) ? (
+                                        <>
+                                            <Loader2 size={18} className="animate-spin" /> Đang lưu...
+                                        </>
+                                    ) : (
+                                        'Lưu Lại'
+                                    )}
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -1180,8 +1278,16 @@ function App() {
                             </div>
 
                             <div className="flex justify-end gap-3 mt-4">
-                                <button type="button" onClick={() => { setShowAddModal(false); setShowEditModal(false) }} className="btn-secondary">Hủy</button>
-                                <button type="submit" className="btn-primary">Lưu</button>
+                                <button type="button" onClick={() => { setShowAddModal(false); setShowEditModal(false) }} className="btn-secondary" disabled={loadingStates.addAccount || loadingStates.editAccount}>Hủy</button>
+                                <button type="submit" className="btn-primary flex items-center gap-2" disabled={loadingStates.addAccount || loadingStates.editAccount}>
+                                    {(loadingStates.addAccount || loadingStates.editAccount) ? (
+                                        <>
+                                            <Loader2 size={18} className="animate-spin" /> Đang lưu...
+                                        </>
+                                    ) : (
+                                        'Lưu'
+                                    )}
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -1197,8 +1303,16 @@ function App() {
                             </div>
                             <h3 className="text-xl font-bold text-white mb-2">Xác nhận xóa?</h3>
                             <div className="flex justify-center gap-3 mt-6">
-                                <button onClick={() => setShowDeleteModal(false)} className="btn-secondary">Hủy</button>
-                                <button onClick={handleDeleteAccount} className="btn-primary" style={{ backgroundColor: '#ef4444' }}>Xóa Luôn</button>
+                                <button onClick={() => setShowDeleteModal(false)} className="btn-secondary" disabled={loadingStates.deleteAccount}>Hủy</button>
+                                <button onClick={handleDeleteAccount} className="btn-primary flex items-center gap-2" style={{ backgroundColor: '#ef4444' }} disabled={loadingStates.deleteAccount}>
+                                    {loadingStates.deleteAccount ? (
+                                        <>
+                                            <Loader2 size={18} className="animate-spin" /> Đang xóa...
+                                        </>
+                                    ) : (
+                                        'Xóa Luôn'
+                                    )}
+                                </button>
                             </div>
                         </div>
                     </div>
