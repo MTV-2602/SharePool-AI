@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Trash2, UserPlus, Pencil, Copy, ExternalLink, RefreshCw, X, Upload, Loader2, CheckCircle, Mail, User, Shield, AlertCircle, AlertTriangle, Info, Calendar, LogIn, Lock, FileSpreadsheet, ArrowRightLeft, RotateCw } from 'lucide-react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 function App() {
     // LOGIN STATE
@@ -369,7 +370,7 @@ function App() {
 
         showConfirm(
             "Xác Nhận Gửi",
-            `Bạn có chắc muốn gửi ${parsedData.length} dòng này vào Sheet không?`,
+            `Bạn có chắc muốn g��i ${parsedData.length} dòng này vào Sheet không?`,
             async () => {
                 setImportingSheet(true);
                 try {
@@ -1157,6 +1158,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 )
             }
 
+            <SpeedInsights />
         </div >
     );
 }
