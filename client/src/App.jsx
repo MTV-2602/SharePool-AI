@@ -47,6 +47,10 @@ function App() {
     const [movingUser, setMovingUser] = useState(null); // { fromAccId, userIndex, name, joinedAt }
     const [destinationAccId, setDestinationAccId] = useState('');
 
+    // Orphaned Users Modal (when deleting account with active users)
+    const [showOrphanedUsersModal, setShowOrphanedUsersModal] = useState(false);
+    const [orphanedUsers, setOrphanedUsers] = useState([]);
+
     // Import State
     const [importingSheet, setImportingSheet] = useState(false);
     const [importStatus, setImportStatus] = useState(null);
@@ -404,6 +408,59 @@ function App() {
 
     const handleDeleteAccount = async () => {
         if (!deletingId) return;
+        
+        // Check if account has active users (not expired)
+        const accToDelete = accounts.find(a => a.id === deletingId);
+        
+        console.log('=== DELETE ACCOUNT DEBUG ===');
+        console.log('Account to delete:', accToDelete);
+        console.log('Has users?', accToDelete?.users?.length);
+        
+        if (accToDelete && accToDelete.users && accToDelete.users.length > 0) {
+            const activeUsers = [];
+            
+            accToDelete.users.forEach((u, idx) => {
+                console.log(`User ${idx}:`, u);
+                
+                // Check if user object has name (valid user)
+                if (typeof u === 'object' && u !== null && u.name) {
+                    const days = getDaysUsed(u);
+                    console.log(`  - Days used: ${days}`);
+                    console.log(`  - joinedAt: ${u.joinedAt}`);
+                    
+                    // User còn hạn nếu:
+                    // - Có joinedAt và daysUsed < 30
+                    // - Hoặc không có joinedAt (mới thêm, chưa set ngày) -> coi như còn hạn
+                    const isActive = (days !== null && days < 30) || (u.joinedAt === null || u.joinedAt === undefined);
+                    console.log(`  - Is active? ${isActive}`);
+                    
+                    if (isActive) {
+                        activeUsers.push({
+                            ...u,
+                            fromAccId: accToDelete.id,
+                            userIndex: idx,
+                            accountUsername: accToDelete.username,
+                            daysUsed: days !== null ? days : 0
+                        });
+                    }
+                }
+            });
+            
+            console.log('Active users found:', activeUsers.length);
+            console.log('Active users:', activeUsers);
+            
+            if (activeUsers.length > 0) {
+                // Có user còn hạn - không cho xóa
+                console.log('❌ BLOCKING DELETE - Has active users');
+                setShowDeleteModal(false);
+                setOrphanedUsers(activeUsers);
+                setShowOrphanedUsersModal(true);
+                return;
+            }
+        }
+        
+        // Không có user còn hạn - cho phép xóa
+        console.log('✅ ALLOWING DELETE - No active users');
         setLoadingStates(prev => ({ ...prev, deleteAccount: true }));
         try {
             await axios.delete(`/api/chatgpt/${deletingId}`);
@@ -1312,6 +1369,90 @@ function App() {
                                     ) : (
                                         'Xóa Luôn'
                                     )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {
+                showOrphanedUsersModal && (
+                    <div className="modal-overlay" style={{ zIndex: 10000 }}>
+                        <div className="modal-box" style={{ maxWidth: '600px' }}>
+                            <div className="bg-orange-900/30 p-4 rounded-t-xl border-b-2 border-orange-600 mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 bg-orange-600/30 rounded-full flex items-center justify-center">
+                                        <AlertTriangle size={28} className="text-orange-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xl font-bold text-white">⚠️ KHÔNG THỂ XÓA TÀI KHOẢN</h3>
+                                        <p className="text-sm text-orange-300">Tài khoản có {orphanedUsers.length} khách còn hạn sử dụng</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 mb-4">
+                                <p className="text-slate-300 mb-3">
+                                    <strong className="text-yellow-400">Yêu cầu:</strong> Chuyển hoặc xóa tất cả khách còn hạn trước khi xóa tài khoản.
+                                </p>
+                                <div className="space-y-3">
+                                    {orphanedUsers.map((user, idx) => (
+                                        <div key={idx} className="bg-slate-900 p-3 rounded border border-slate-700 flex justify-between items-center">
+                                            <div>
+                                                <div className="font-bold text-white flex items-center gap-2">
+                                                    <User size={16} className="text-blue-400" />
+                                                    {user.name}
+                                                </div>
+                                                <div className="text-xs text-slate-400 mt-1">
+                                                    Tham gia: {getUserDate(user)} • Đã dùng: {user.daysUsed} ngày • 
+                                                    <span className="text-green-400 font-bold"> Còn {30 - user.daysUsed} ngày</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setShowOrphanedUsersModal(false);
+                                                        openMoveUserModal(user.fromAccId, user.userIndex, user);
+                                                    }}
+                                                    className="flex items-center gap-1 bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded text-sm font-bold"
+                                                >
+                                                    <ArrowRightLeft size={14} /> Chuyển
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setShowOrphanedUsersModal(false);
+                                                        handleDeleteUser(user.fromAccId, user.userIndex, user.name);
+                                                    }}
+                                                    className="flex items-center gap-1 bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded text-sm font-bold"
+                                                >
+                                                    <Trash2 size={14} /> Xóa
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 mb-4">
+                                <div className="flex items-start gap-2">
+                                    <Info size={18} className="text-blue-400 flex-shrink-0 mt-0.5" />
+                                    <p className="text-xs text-blue-200">
+                                        <strong>Gợi ý:</strong> Chuyển khách sang tài khoản Shared còn slot hoặc xóa khách nếu không còn sử dụng. 
+                                        Sau khi xử lý hết, bạn có thể xóa tài khoản này.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={() => {
+                                        setShowOrphanedUsersModal(false);
+                                        setDeletingId(null);
+                                    }}
+                                    className="btn-primary bg-blue-600 hover:bg-blue-500"
+                                >
+                                    Đã Hiểu
                                 </button>
                             </div>
                         </div>
