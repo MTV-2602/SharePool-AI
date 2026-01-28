@@ -52,6 +52,31 @@ function App() {
         }
     }, []);
 
+    // AUTO REFRESH DATA every 30 seconds
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        
+        const interval = setInterval(() => {
+            fetchData();
+        }, 30000); // 30 seconds
+
+        return () => clearInterval(interval);
+    }, [isAuthenticated]);
+
+    // REFRESH when tab becomes visible
+    useEffect(() => {
+        if (!isAuthenticated) return;
+
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                fetchData();
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, [isAuthenticated]);
+
     const handleLogin = (e) => {
         e.preventDefault();
         // HARDCODED CREDENTIALS
