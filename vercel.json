@@ -1,20 +1,18 @@
 {
-    "version": 2,
-    "buildCommand": "npm run build",
-    "rewrites": [
-        {
-            "source": "/api/(.*)",
-            "destination": "/api/index.js"
-        },
-        {
-            "source": "/(.*)",
-            "destination": "/client/dist/index.html"
-        }
-    ],
-    "functions": {
-        "api/index.js": {
-            "includeFiles": "database.json"
-        }
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
     },
-    "outputDirectory": "client/dist"
+    {
+      "source": "/(.*)",
+      "destination": "/client/dist/index.html"
+    }
+  ],
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "database.json"
+    }
+  }
 }
