@@ -103,6 +103,93 @@ app.delete('/api/chatgpt/:id', async (req, res) => {
     }
 });
 
+// 4.5 MOVE USER (ATOMIC TRANSFER)
+app.post('/api/move-user', async (req, res) => {
+    try {
+        const { fromAccId, toAccId, userIndex } = req.body;
+
+        // Find both accounts
+        const fromAcc = await Account.findOne({ id: fromAccId });
+        const toAcc = await Account.findOne({ id: toAccId });
+
+        if (!fromAcc || !toAcc) {
+            return res.status(404).json({ error: 'One or both accounts not found' });
+        }
+
+        // Validate user index
+        if (!fromAcc.users || !fromAcc.users[userIndex]) {
+            return res.status(400).json({ error: 'User not found in source account' });
+        }
+
+        // Only allow transfer to Shared package (package1)
+        if (toAcc.type !== 'package1') {
+            return res.status(400).json({ error: 'Chỉ được chuyển vào gói Chia Sẻ (Shared)' });
+        }
+        
+        // Check if Shared package has available slots
+        const currentUsers = toAcc.users?.length || 0;
+        if (currentUsers >= 3) {
+            return res.status(400).json({ error: 'Tài khoản Shared đã đầy (3/3)' });
+        }
+
+        // STRICT RULE: Cannot transfer to Expired Account
+        if (toAcc.expiredAt && new Date(toAcc.expiredAt) < new Date()) {
+            return res.status(400).json({ error: 'Tài khoản đích ĐÃ HẾT HẠN. Không thể chuyển khách vào!' });
+        }
+
+        // Get user data
+        const userToMove = fromAcc.users[userIndex];
+
+        // 1. Add to destination
+        if (!toAcc.users) toAcc.users = [];
+        toAcc.users.push(userToMove);
+
+        // 2. Remove from source
+        fromAcc.users.splice(userIndex, 1);
+
+        // Save (Atomic simulation)
+        await toAcc.save();
+        await fromAcc.save();
+
+        res.json({ message: 'Moved user successfully', from: fromAcc, to: toAcc });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 4.6 EXTEND USER (+30 DAYS)
+app.post('/api/extend-user', async (req, res) => {
+    const { accId, userIndex } = req.body;
+    try {
+        const acc = await Account.findOne({ id: accId });
+        if (!acc || !acc.users[userIndex]) return res.status(404).json({ error: 'User/Account not found' });
+
+        const user = acc.users[userIndex];
+        const now = new Date();
+        const joinedAt = new Date(user.joinedAt || now);
+
+        // Calculate days used
+        const diffTime = now.getTime() - joinedAt.getTime();
+        const daysUsed = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (daysUsed >= 30) {
+            // If expired, reset to NOW
+            user.joinedAt = now.toISOString();
+            user.note = (user.note ? user.note + ' ' : '') + `[Renewed on ${now.toLocaleDateString()}]`;
+        } else {
+            // If not expired, add 30 days to the CURRENT start date
+            const newJoinedAt = new Date(joinedAt.getTime() + (30 * 24 * 60 * 60 * 1000));
+            user.joinedAt = newJoinedAt.toISOString();
+            user.note = (user.note ? user.note + ' ' : '') + `[Extended +30d on ${now.toLocaleDateString()}]`;
+        }
+
+        await acc.save();
+        res.json({ message: 'User extended successfully', updatedUser: user });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // 5. PROXY GOOGLE SHEET
 app.post('/api/proxy-sheet', async (req, res) => {
     try {

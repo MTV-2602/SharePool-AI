@@ -134,12 +134,15 @@ app.post('/api/move-user', async (req, res) => {
             return res.status(400).json({ error: 'User not found in source account' });
         }
 
-        // Validate destination slot
+        // Only allow transfer to Shared package (package1)
         if (toAcc.type !== 'package1') {
-            return res.status(400).json({ error: 'Chỉ được chuyển đến gói Chia Sẻ (Gói 1)' });
+            return res.status(400).json({ error: 'Chỉ được chuyển vào gói Chia Sẻ (Shared)' });
         }
-        if ((toAcc.users?.length || 0) >= 3) {
-            return res.status(400).json({ error: 'Tài khoản đích đã đầy (3/3)' });
+        
+        // Check if Shared package has available slots
+        const currentUsers = toAcc.users?.length || 0;
+        if (currentUsers >= 3) {
+            return res.status(400).json({ error: 'Tài khoản Shared đã đầy (3/3)' });
         }
 
         // STRICT RULE: Cannot transfer to Expired Account

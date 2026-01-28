@@ -1015,14 +1015,15 @@ function App() {
                                 >
                                     <option value="" disabled>-- Chọn tài khoản --</option>
                                     {accounts
-                                        .filter(a => a.id !== movingUser.fromAccId && // Not source
-                                            a.type === 'package1' && // Only Shared Pkg
-                                            (a.users?.length || 0) < 3 && // Has slots
-                                            !getExpiryStatus(a.expiredAt).isExpired // STRICT: Must NOT be expired
-                                        )
+                                        .filter(a => {
+                                            if (a.id === movingUser.fromAccId) return false; // Not source
+                                            if (a.type !== 'package1') return false; // Only Shared package
+                                            if (getExpiryStatus(a.expiredAt).isExpired) return false; // Must NOT be expired
+                                            const currentUsers = a.users?.length || 0;
+                                            return currentUsers < 3; // Shared: max 3 users
+                                        })
                                         .map(a => {
                                             const slots = a.users?.length || 0;
-                                            const expiry = getExpiryStatus(a.expiredAt);
                                             // Truncate username if too long
                                             const displayUser = a.username.length > 25 ? a.username.substring(0, 22) + '...' : a.username;
                                             // Short Date
@@ -1036,7 +1037,7 @@ function App() {
                                         })
                                     }
                                 </select>
-                                <p className="text-xs text-slate-500 mt-2 italic">* Chỉ hiện các tài khoản còn slot trống.</p>
+                                <p className="text-xs text-slate-500 mt-2 italic">* Chỉ hiện gói Shared còn slot trống & chưa hết hạn.</p>
                             </div>
 
                             <div className="flex justify-end gap-3 mt-6">
