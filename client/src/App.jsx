@@ -184,15 +184,15 @@ function App() {
 
     // Helper to check expiry warning
     const getExpiryStatus = (isoString) => {
-        if (!isoString) return { text: '', color: 'text-slate-500' };
+        if (!isoString) return { text: '', color: 'text-slate-500', isExpired: false };
         const exp = new Date(isoString);
         const now = new Date();
         const diffTime = exp - now;
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-        if (diffDays < 0) return { text: `(Đã hết hạn ${Math.abs(diffDays)} ngày)`, color: 'text-red-500 font-bold' };
-        if (diffDays <= 3) return { text: `(Còn ${diffDays} ngày)`, color: 'text-red-400 font-bold' };
-        return { text: `(Hết hạn: ${formatDate(isoString)})`, color: 'text-slate-500 italic' };
+        if (diffDays < 0) return { text: `(Đã hết hạn ${Math.abs(diffDays)} ngày)`, color: 'text-red-500 font-bold', isExpired: true };
+        if (diffDays <= 3) return { text: `(Còn ${diffDays} ngày)`, color: 'text-red-400 font-bold', isExpired: false };
+        return { text: `(Hết hạn: ${formatDate(isoString)})`, color: 'text-slate-500 italic', isExpired: false };
     };
 
     const fetchData = async () => {
