@@ -1,7 +1,7 @@
 const axios = require('axios');
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const API_URL = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA';
+const API_URL = 'https://web-ban-acc.vercel.app';
 
 // Allowed user IDs (optional)
 const ALLOWED_USER_IDS = process.env.ALLOWED_USER_IDS 
