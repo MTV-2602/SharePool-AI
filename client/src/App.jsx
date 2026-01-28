@@ -47,7 +47,8 @@ function App() {
         const token = localStorage.getItem('admin_token');
         if (token === 'valid_session_team89a6') {
             setIsAuthenticated(true);
-            fetchData();
+            // Delay to ensure DOM is ready
+            setTimeout(() => fetchData(), 100);
         }
     }, []);
 
@@ -141,7 +142,10 @@ function App() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await axios.get('/api/data');
+            const res = await axios.get('/api/data', { 
+                timeout: 10000,
+                headers: { 'Cache-Control': 'no-cache' }
+            });
             if (res.data && res.data.chatgpt) {
                 const sortedGPT = res.data.chatgpt.sort((a, b) => {
                     if (a.type === 'unassigned' && b.type !== 'unassigned') return -1;
@@ -149,8 +153,15 @@ function App() {
                     return new Date(b.createdAt) - new Date(a.createdAt);
                 });
                 setAccounts(sortedGPT);
+            } else {
+                console.error('Invalid data format:', res.data);
+                setAccounts([]);
             }
-        } catch (error) { console.error(error); }
+        } catch (error) { 
+            console.error('Error fetching data:', error);
+            showAlert('Lỗi', 'Không thể tải dữ liệu. Vui lòng thử lại.', 'error');
+            setAccounts([]);
+        }
         finally { setLoading(false); }
     };
 
