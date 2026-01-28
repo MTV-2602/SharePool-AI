@@ -1,5 +1,6 @@
 {
     "version": 2,
+    "buildCommand": "npm run build",
     "rewrites": [
         {
             "source": "/api/(.*)",
@@ -14,5 +15,6 @@
         "api/index.js": {
             "includeFiles": "database.json"
         }
-    }
+    },
+    "outputDirectory": "client/dist"
 }
