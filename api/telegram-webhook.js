@@ -20,6 +20,7 @@ const sendMessage = async (chatId, text, options = {}) => {
       chat_id: chatId,
       text,
       parse_mode: options.parse_mode || 'Markdown',
+      disable_web_page_preview: true, // Tắt preview link
       ...options
     });
   } catch (error) {
