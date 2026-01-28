@@ -3,15 +3,14 @@
   "outputDirectory": "client/dist",
   "framework": null,
   "functions": {
-    "api/*.js": {
-      "runtime": "nodejs20.x",
+    "api/index.js": {
       "includeFiles": "database.json"
     }
   },
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/$1"
+      "destination": "/api/index.js"
     }
   ]
 }
