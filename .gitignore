@@ -2,5 +2,4 @@ node_modules
 client/node_modules
 .env
 database.json
-client/dist
 .DS_Store
