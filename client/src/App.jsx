@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Trash2, UserPlus, Pencil, Copy, ExternalLink, RefreshCw, X, Upload, Loader2, CheckCircle, Mail, User, Shield, AlertCircle, AlertTriangle, Info, Calendar, LogIn, Lock, FileSpreadsheet, ArrowRightLeft, RotateCw } from 'lucide-react';
 
@@ -10,6 +10,9 @@ function App() {
     const [accounts, setAccounts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('chatgpt');
+
+    // BroadcastChannel for real-time sync between tabs
+    const channelRef = useRef(null);
 
     // Modal States
     const [showAddModal, setShowAddModal] = useState(false);
@@ -52,13 +55,41 @@ function App() {
         }
     }, []);
 
-    // AUTO REFRESH DATA every 30 seconds
+    // BROADCAST CHANNEL for real-time sync between tabs/windows
+    useEffect(() => {
+        if (!isAuthenticated) return;
+
+        // Create broadcast channel
+        const channel = new BroadcastChannel('data-sync-channel');
+        channelRef.current = channel;
+
+        // Listen for updates from other tabs
+        channel.onmessage = (event) => {
+            if (event.data.type === 'DATA_UPDATED') {
+                console.log('Received update from another tab');
+                fetchData();
+            }
+        };
+
+        return () => {
+            channel.close();
+        };
+    }, [isAuthenticated]);
+
+    // Helper function to broadcast data changes
+    const broadcastDataChange = () => {
+        if (channelRef.current) {
+            channelRef.current.postMessage({ type: 'DATA_UPDATED', timestamp: Date.now() });
+        }
+    };
+
+    // AUTO REFRESH DATA every 10 seconds (fallback)
     useEffect(() => {
         if (!isAuthenticated) return;
         
         const interval = setInterval(() => {
             fetchData();
-        }, 30000); // 30 seconds
+        }, 10000); // 10 seconds
 
         return () => clearInterval(interval);
     }, [isAuthenticated]);
@@ -197,6 +228,7 @@ function App() {
             setShowAddModal(false);
             setNewAcc({ username: '', password: '', link: '', type: 'unassigned', note: '' });
             fetchData();
+            broadcastDataChange();
         } catch (error) { showAlert('Error', 'Lỗi khi thêm tài khoản', 'error'); }
     };
 
@@ -243,6 +275,7 @@ function App() {
             await axios.put(`/api/chatgpt/${accId}`, { users: newUsers });
             setShowUserModal(false);
             fetchData();
+            broadcastDataChange();
         } catch (err) { showAlert('Lỗi', 'Không lưu được khách hàng', 'error'); }
     };
 
@@ -257,6 +290,7 @@ function App() {
                 try {
                     await axios.put(`/api/chatgpt/${accId}`, { users: newUsers });
                     fetchData();
+                    broadcastDataChange();
                 } catch (err) { showAlert('Lỗi', 'Lỗi xóa khách', 'error'); }
             }
         );
@@ -273,6 +307,7 @@ function App() {
                 try {
                     await axios.post('/api/extend-user', { accId, userIndex });
                     fetchData();
+                    broadcastDataChange();
                     showAlert('Thành Công', 'Đã gia hạn khách hàng (+30 ngày)!', 'success');
                 } catch (error) {
                     showAlert('Lỗi', error.response?.data?.error || 'Không thể gia hạn', 'error');
@@ -298,6 +333,7 @@ function App() {
             setShowEditModal(false);
             setEditingAcc(null);
             fetchData();
+            broadcastDataChange();
         } catch (error) { showAlert('Lỗi', 'Lỗi cập nhật', 'error'); }
     };
 
@@ -321,6 +357,7 @@ function App() {
             setShowMoveUserModal(false);
             setMovingUser(null);
             fetchData();
+            broadcastDataChange();
             showAlert('Thành Công', `Đã chuyển khách sang tài khoản mới!`, 'success');
         } catch (error) {
             showAlert('Lỗi', error.response?.data?.error || 'Lỗi khi chuyển khách', 'error');
@@ -351,6 +388,7 @@ function App() {
         try {
             await axios.put(`/api/chatgpt/${acc.id}`, { type: newType });
             fetchData();
+            broadcastDataChange();
         } catch (error) { showAlert('Lỗi', 'Lỗi đổi gói', 'error'); }
     };
 
