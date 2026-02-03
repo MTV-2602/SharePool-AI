@@ -344,11 +344,11 @@ email,password,courseCode
               const status = daysUsed < 30 ? "✅" : "❌";
 
               message += `${idx + 1}. ${status} 👤 *${r.userName}*\n`;
-              message += `   📧 \`${r.accEmail}\`\n`;
-              message += `   🔑 \`${r.accPassword}\`\n`;
-              if (r.accLink) message += `   🔗 ${r.accLink}\n`;
-              message += `   ${typeEmoji} ${r.accType}\n`;
-              message += `   📅 Từ: ${joinedDate} (${daysUsed} ngày)\n\n`;
+              message += `${typeEmoji} ${r.accType} | 📅 ${joinedDate} (${daysUsed}d)\n`;
+              message += `\`\`\`\n${r.accEmail}\n\`\`\`\n`;
+              message += `\`\`\`\n${r.accPassword}\n\`\`\`\n`;
+              if (r.accLink) message += `${r.accLink}\n`;
+              message += `\n`;
             });
 
             await sendMessage(chatId, message);
@@ -390,16 +390,23 @@ email,password,courseCode
             const expiredAt = found.expiredAt
               ? new Date(found.expiredAt).toLocaleDateString("vi-VN")
               : "N/A";
+            const today = new Date();
+            const daysLeft = found.expiredAt
+              ? Math.ceil(
+                  (new Date(found.expiredAt) - today) / (1000 * 60 * 60 * 24),
+                )
+              : "N/A";
 
             let message = `📋 *THÔNG TIN TÀI KHOẢN*\n\n`;
             message += `${typeEmoji} *Type:* ${found.type}\n`;
-            message += `📧 *Email:* \`${found.username}\`\n`;
-            message += `🔑 *Password:* \`${found.password}\`\n`;
-            if (found.link) message += `🔗 *Recovery URL:* ${found.link}\n`;
-            message += `📅 *Hết hạn:* ${expiredAt}\n\n`;
+            message += `👥 ${found.users?.length || 0} khách | 📅 ${expiredAt} (${daysLeft}d)\n\n`;
+            message += `\`\`\`\n${found.username}\n\`\`\`\n`;
+            message += `\`\`\`\n${found.password}\n\`\`\`\n`;
+            if (found.link) message += `${found.link}\n\n`;
+            else message += `\n`;
 
             if (found.users && found.users.length > 0) {
-              message += `👥 *Khách hàng (${found.users.length}):\n\n*`;
+              message += `👥 *Khách hàng (${found.users.length}):*\n`;
               found.users.forEach((user, idx) => {
                 const joinedDate = user.joinedAt
                   ? new Date(user.joinedAt).toLocaleDateString("vi-VN")
