@@ -2,6 +2,23 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Trash2, UserPlus, Pencil, Copy, ExternalLink, RefreshCw, X, Upload, Loader2, CheckCircle, Mail, User, Shield, AlertCircle, AlertTriangle, Info, Calendar, LogIn, Lock, FileSpreadsheet, ArrowRightLeft, RotateCw } from 'lucide-react';
 
+// Helper: Xóa dấu Tiếng Việt
+const toNonAccentVietnamese = (str) => {
+    if (!str) return '';
+    str = str.toLowerCase();
+    str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+    str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+    str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+    str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+    str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+    str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+    str = str.replace(/đ/g, "d");
+    // Some system encode vietnamese combining accent as individual utf-8 characters
+    str = str.replace(/\u0300|\u0301|\u0303|\u0309|\u0323/g, ""); // Huyền, sắc, hỏi, ngã, nặng 
+    str = str.replace(/\u02C6|\u0306|\u031B/g, ""); // Â, Ê, Ă, Ơ, Ư
+    return str;
+}
+
 function App() {
     // LOGIN STATE
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -103,7 +120,7 @@ function App() {
     // AUTO REFRESH DATA every 10 seconds (fallback)
     useEffect(() => {
         if (!isAuthenticated) return;
-        
+
         const interval = setInterval(() => {
             fetchData();
         }, 10000); // 10 seconds
@@ -215,7 +232,7 @@ function App() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const res = await axios.get('/api/data', { 
+            const res = await axios.get('/api/data', {
                 timeout: 10000,
                 headers: { 'Cache-Control': 'no-cache' }
             });
@@ -229,7 +246,7 @@ function App() {
             } else {
                 setAccounts([]);
             }
-        } catch (error) { 
+        } catch (error) {
             showAlert('Lỗi', 'Không thể tải dữ liệu. Vui lòng thử lại.', 'error');
             setAccounts([]);
         }
@@ -245,8 +262,8 @@ function App() {
             setNewAcc({ username: '', password: '', link: '', type: 'unassigned', note: '' });
             fetchData();
             broadcastDataChange();
-        } catch (error) { 
-            showAlert('Error', 'Lỗi khi thêm tài khoản', 'error'); 
+        } catch (error) {
+            showAlert('Error', 'Lỗi khi thêm tài khoản', 'error');
         } finally {
             setLoadingStates(prev => ({ ...prev, addAccount: false }));
         }
@@ -298,8 +315,8 @@ function App() {
             setShowUserModal(false);
             fetchData();
             broadcastDataChange();
-        } catch (err) { 
-            showAlert('Lỗi', 'Không lưu được khách hàng', 'error'); 
+        } catch (err) {
+            showAlert('Lỗi', 'Không lưu được khách hàng', 'error');
         } finally {
             setLoadingStates(prev => ({ ...prev, [loadingKey]: false }));
         }
@@ -318,8 +335,8 @@ function App() {
                     await axios.put(`/api/chatgpt/${accId}`, { users: newUsers });
                     fetchData();
                     broadcastDataChange();
-                } catch (err) { 
-                    showAlert('Lỗi', 'Lỗi xóa khách', 'error'); 
+                } catch (err) {
+                    showAlert('Lỗi', 'Lỗi xóa khách', 'error');
                 } finally {
                     setLoadingStates(prev => ({ ...prev, deleteUser: false }));
                 }
@@ -369,8 +386,8 @@ function App() {
             setEditingAcc(null);
             fetchData();
             broadcastDataChange();
-        } catch (error) { 
-            showAlert('Lỗi', 'Lỗi cập nhật', 'error'); 
+        } catch (error) {
+            showAlert('Lỗi', 'Lỗi cập nhật', 'error');
         } finally {
             setLoadingStates(prev => ({ ...prev, editAccount: false }));
         }
@@ -408,23 +425,23 @@ function App() {
 
     const handleDeleteAccount = async () => {
         if (!deletingId) return;
-        
+
         // Check if account has active users (not expired)
         const accToDelete = accounts.find(a => a.id === deletingId);
-        
+
         if (accToDelete && accToDelete.users && accToDelete.users.length > 0) {
             const activeUsers = [];
-            
+
             accToDelete.users.forEach((u, idx) => {
                 // Check if user object has name (valid user)
                 if (typeof u === 'object' && u !== null && u.name) {
                     const days = getDaysUsed(u);
-                    
+
                     // User còn hạn nếu:
                     // - Có joinedAt và daysUsed < 30
                     // - Hoặc không có joinedAt (mới thêm, chưa set ngày) -> coi như còn hạn
                     const isActive = (days !== null && days < 30) || (u.joinedAt === null || u.joinedAt === undefined);
-                    
+
                     if (isActive) {
                         activeUsers.push({
                             ...u,
@@ -436,7 +453,7 @@ function App() {
                     }
                 }
             });
-            
+
             if (activeUsers.length > 0) {
                 // Có user còn hạn - không cho xóa, hiện modal
                 setShowDeleteModal(false);
@@ -444,10 +461,10 @@ function App() {
                 setShowOrphanedUsersModal(true);
                 return;
             }
-            
+
             // Chỉ có users hết hạn hoặc không có users - cho phép xóa
         }
-        
+
         // Không có user còn hạn - cho phép xóa (tự động xóa luôn cả expired users)
         setLoadingStates(prev => ({ ...prev, deleteAccount: true }));
         try {
@@ -457,8 +474,8 @@ function App() {
             setShowEditModal(false);
             fetchData();
             broadcastDataChange();
-        } catch (error) { 
-            showAlert('Lỗi', 'Lỗi xóa: ' + error.message, 'error'); 
+        } catch (error) {
+            showAlert('Lỗi', 'Lỗi xóa: ' + error.message, 'error');
         } finally {
             setLoadingStates(prev => ({ ...prev, deleteAccount: false }));
         }
@@ -479,8 +496,8 @@ function App() {
             await axios.put(`/api/chatgpt/${acc.id}`, { type: newType });
             fetchData();
             broadcastDataChange();
-        } catch (error) { 
-            showAlert('Lỗi', 'Lỗi đổi gói', 'error'); 
+        } catch (error) {
+            showAlert('Lỗi', 'Lỗi đổi gói', 'error');
         } finally {
             setLoadingStates(prev => ({ ...prev, changeType: { ...prev.changeType, [acc.id]: false } }));
         }
@@ -824,204 +841,205 @@ function App() {
                                         {accounts
                                             .filter(acc => {
                                                 if (!searchQuery.trim()) return true;
-                                                const query = searchQuery.toLowerCase();
-                                                
-                                                // Tìm theo email
-                                                if (acc.username && acc.username.toLowerCase().includes(query)) {
+                                                const queryNormalized = toNonAccentVietnamese(searchQuery);
+
+                                                // Tìm theo email (normalized)
+                                                if (acc.username && toNonAccentVietnamese(acc.username).includes(queryNormalized)) {
                                                     return true;
                                                 }
-                                                
-                                                // Tìm theo tên khách hàng
+
+                                                // Tìm theo tên khách hàng (normalized)
                                                 if (acc.users && acc.users.length > 0) {
-                                                    return acc.users.some(user => 
-                                                        user.name && user.name.toLowerCase().includes(query)
-                                                    );
+                                                    return acc.users.some(user => {
+                                                        const name = typeof user === 'object' ? user.name : user;
+                                                        return name && toNonAccentVietnamese(name).includes(queryNormalized);
+                                                    });
                                                 }
-                                                
+
                                                 return false;
                                             })
                                             .map(acc => (
-                                            <tr key={acc.id} className="hover:bg-slate-800/50 transition-colors">
-                                                <td className="align-top">
-                                                    <select
-                                                        id={`select-type-${acc.id}`}
-                                                        value={acc.type}
-                                                        onChange={(e) => handleTypeChange(acc, e.target.value)}
-                                                        disabled={loadingStates.changeType[acc.id]}
-                                                        className={`
+                                                <tr key={acc.id} className="hover:bg-slate-800/50 transition-colors">
+                                                    <td className="align-top">
+                                                        <select
+                                                            id={`select-type-${acc.id}`}
+                                                            value={acc.type}
+                                                            onChange={(e) => handleTypeChange(acc, e.target.value)}
+                                                            disabled={loadingStates.changeType[acc.id]}
+                                                            className={`
                                             w-full text-xs rounded px-2 py-2 outline-none font-bold border cursor-pointer appearance-none text-center
                                             ${loadingStates.changeType[acc.id] ? 'opacity-50 cursor-wait' : ''}
                                             ${acc.type === 'package1' ? 'bg-blue-900/40 text-blue-400 border-blue-700/50' :
-                                                                acc.type === 'package2' ? 'bg-purple-900/40 text-purple-400 border-purple-700/50' :
-                                                                    'bg-slate-800 text-slate-400 border-slate-700'}
+                                                                    acc.type === 'package2' ? 'bg-purple-900/40 text-purple-400 border-purple-700/50' :
+                                                                        'bg-slate-800 text-slate-400 border-slate-700'}
                                         `}
-                                                    >
-                                                        <option value="unassigned">❓ Chọn Gói...</option>
-                                                        <option value="package1">👥 Gói 1: Chia sẻ</option>
-                                                        <option value="package2">🔒 Gói 2: Linh hoạt</option>
-                                                    </select>
-                                                    {loadingStates.changeType[acc.id] && (
-                                                        <div className="text-center mt-1">
-                                                            <Loader2 size={14} className="animate-spin inline text-blue-400" />
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td>
-                                                    <div className="font-bold text-white mb-1 flex items-center gap-2 text-base">
-                                                        <User size={16} className="text-slate-400" />
-                                                        {acc.username}
-                                                        <Copy size={16} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.username)} title="Copy Username" />
-                                                    </div>
-                                                    <div className="text-slate-400 flex items-center gap-2 font-mono text-sm">
-                                                        <Shield size={14} className="text-slate-500" />
-                                                        {acc.password}
-                                                        <Copy size={14} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.password)} title="Copy Password" />
-                                                    </div>
-                                                    {acc.expiredAt && (
-                                                        <div className={`text-xs mt-1 ml-6 ${getExpiryStatus(acc.expiredAt).color}`}>
-                                                            <Calendar size={10} className="inline mr-1" />
-                                                            {formatDate(acc.expiredAt)} {getExpiryStatus(acc.expiredAt).text}
-                                                        </div>
-                                                    )}
-                                                    {acc.note && <div className="text-xs text-yellow-500/80 italic mt-1 ml-6">{acc.note}</div>}
-                                                </td>
-                                                <td>
-                                                    {acc.link ? (
-                                                        <a href={acc.link} target="_blank" className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-md font-bold no-underline inline-flex items-center gap-2 shadow-md transition-all hover:translate-y-[-1px]">
-                                                            <Mail size={14} /> Mở Mail
-                                                        </a>
-                                                    ) : <span className="text-slate-600 text-xs">--</span>}
-                                                </td>
-                                                <td>
-                                                    {acc.type === 'package1' ? (
-                                                        <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
-                                                            <div className="flex justify-between items-center text-xs mb-2 pb-1 border-b border-slate-700/50">
-                                                                <span style={{ color: acc.users?.length >= 3 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
-                                                                    {acc.users?.length || 0}/3 Slot
-                                                                </span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => openAddUserModal(acc.id)}
-                                                                    disabled={acc.users?.length >= 3}
-                                                                    className="text-xs px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                >
-                                                                    + Khách
-                                                                </button>
+                                                        >
+                                                            <option value="unassigned">❓ Chọn Gói...</option>
+                                                            <option value="package1">👥 Gói 1: Chia sẻ</option>
+                                                            <option value="package2">🔒 Gói 2: Linh hoạt</option>
+                                                        </select>
+                                                        {loadingStates.changeType[acc.id] && (
+                                                            <div className="text-center mt-1">
+                                                                <Loader2 size={14} className="animate-spin inline text-blue-400" />
                                                             </div>
-                                                            <div className="space-y-1">
-                                                                {acc.users?.map((u, index) => {
-                                                                    const name = getUserName(u);
-                                                                    const dateStr = getUserDate(u);
-                                                                    const daysUsed = getDaysUsed(u);
+                                                        )}
+                                                    </td>
+                                                    <td>
+                                                        <div className="font-bold text-white mb-1 flex items-center gap-2 text-base">
+                                                            <User size={16} className="text-slate-400" />
+                                                            {acc.username}
+                                                            <Copy size={16} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.username)} title="Copy Username" />
+                                                        </div>
+                                                        <div className="text-slate-400 flex items-center gap-2 font-mono text-sm">
+                                                            <Shield size={14} className="text-slate-500" />
+                                                            {acc.password}
+                                                            <Copy size={14} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.password)} title="Copy Password" />
+                                                        </div>
+                                                        {acc.expiredAt && (
+                                                            <div className={`text-xs mt-1 ml-6 ${getExpiryStatus(acc.expiredAt).color}`}>
+                                                                <Calendar size={10} className="inline mr-1" />
+                                                                {formatDate(acc.expiredAt)} {getExpiryStatus(acc.expiredAt).text}
+                                                            </div>
+                                                        )}
+                                                        {acc.note && <div className="text-xs text-yellow-500/80 italic mt-1 ml-6">{acc.note}</div>}
+                                                    </td>
+                                                    <td>
+                                                        {acc.link ? (
+                                                            <a href={acc.link} target="_blank" className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-md font-bold no-underline inline-flex items-center gap-2 shadow-md transition-all hover:translate-y-[-1px]">
+                                                                <Mail size={14} /> Mở Mail
+                                                            </a>
+                                                        ) : <span className="text-slate-600 text-xs">--</span>}
+                                                    </td>
+                                                    <td>
+                                                        {acc.type === 'package1' ? (
+                                                            <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
+                                                                <div className="flex justify-between items-center text-xs mb-2 pb-1 border-b border-slate-700/50">
+                                                                    <span style={{ color: acc.users?.length >= 3 ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>
+                                                                        {acc.users?.length || 0}/3 Slot
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openAddUserModal(acc.id)}
+                                                                        disabled={acc.users?.length >= 3}
+                                                                        className="text-xs px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                    >
+                                                                        + Khách
+                                                                    </button>
+                                                                </div>
+                                                                <div className="space-y-1">
+                                                                    {acc.users?.map((u, index) => {
+                                                                        const name = getUserName(u);
+                                                                        const dateStr = getUserDate(u);
+                                                                        const daysUsed = getDaysUsed(u);
 
-                                                                    // EXPIRY LOGIC
-                                                                    const isExpired = daysUsed !== null && daysUsed >= 30;
-                                                                    const isNearExpiry = daysUsed !== null && daysUsed >= 27 && daysUsed < 30;
+                                                                        // EXPIRY LOGIC
+                                                                        const isExpired = daysUsed !== null && daysUsed >= 30;
+                                                                        const isNearExpiry = daysUsed !== null && daysUsed >= 27 && daysUsed < 30;
 
-                                                                    return (
-                                                                        <div key={index} className={`flex justify-between items-center text-xs p-2 rounded border mb-1 ${isExpired ? 'bg-red-900/20 border-red-700' : 'bg-slate-800 border-slate-700/50'}`}>
-                                                                            <div className="flex flex-col">
-                                                                                <span className={`font-bold truncate max-w-[120px] flex items-center gap-1 ${isExpired ? 'text-red-500' : isNearExpiry ? 'text-yellow-400' : 'text-white'}`} title={name}>
-                                                                                    {isExpired && <AlertCircle size={12} />}
-                                                                                    {isNearExpiry && <AlertTriangle size={12} />}
-                                                                                    👤 {name}
-                                                                                </span>
-                                                                                {dateStr ? (
-                                                                                    <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                                                                                        <Calendar size={10} /> {dateStr}
-                                                                                        {daysUsed !== null && daysUsed > 0 && (
-                                                                                            <span className={isExpired ? 'text-red-400 font-bold' : isNearExpiry ? 'text-yellow-500 font-bold' : 'text-blue-400'}>
-                                                                                                ({daysUsed}d)
-                                                                                            </span>
-                                                                                        )}
+                                                                        return (
+                                                                            <div key={index} className={`flex justify-between items-center text-xs p-2 rounded border mb-1 ${isExpired ? 'bg-red-900/20 border-red-700' : 'bg-slate-800 border-slate-700/50'}`}>
+                                                                                <div className="flex flex-col">
+                                                                                    <span className={`font-bold truncate max-w-[120px] flex items-center gap-1 ${isExpired ? 'text-red-500' : isNearExpiry ? 'text-yellow-400' : 'text-white'}`} title={name}>
+                                                                                        {isExpired && <AlertCircle size={12} />}
+                                                                                        {isNearExpiry && <AlertTriangle size={12} />}
+                                                                                        👤 {name}
                                                                                     </span>
-                                                                                ) : <span className="text-[10px] text-slate-600 italic">Chưa có ngày</span>}
+                                                                                    {dateStr ? (
+                                                                                        <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                                                                            <Calendar size={10} /> {dateStr}
+                                                                                            {daysUsed !== null && daysUsed > 0 && (
+                                                                                                <span className={isExpired ? 'text-red-400 font-bold' : isNearExpiry ? 'text-yellow-500 font-bold' : 'text-blue-400'}>
+                                                                                                    ({daysUsed}d)
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </span>
+                                                                                    ) : <span className="text-[10px] text-slate-600 italic">Chưa có ngày</span>}
+                                                                                </div>
+                                                                                <div className="flex gap-1">
+                                                                                    {/* EXTEND BUTTON (Only for Expired/Near Expiry) */}
+                                                                                    {(isExpired || isNearExpiry) && (
+                                                                                        <button type="button" onClick={() => handleExtendUser(acc.id, index, u)} className="bg-green-600 hover:bg-green-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Gia hạn (+30 ngày)">
+                                                                                            <RotateCw size={14} />
+                                                                                        </button>
+                                                                                    )}
+
+                                                                                    {/* MOVE BUTTON (Blocked if Expired) */}
+                                                                                    {!isExpired ? (
+                                                                                        <button type="button" onClick={() => openMoveUserModal(acc.id, index, u)} className="bg-orange-600 hover:bg-orange-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Chuyển khách">
+                                                                                            <ArrowRightLeft size={14} />
+                                                                                        </button>
+                                                                                    ) : (
+                                                                                        <span className="text-gray-500 cursor-not-allowed bg-slate-700 p-1.5 rounded" title="Hết hạn: Không thể chuyển"><ArrowRightLeft size={14} /></span>
+                                                                                    )}
+
+                                                                                    <button type="button" onClick={() => openEditUserModal(acc.id, index, u)} className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Sửa tên">
+                                                                                        <Pencil size={14} />
+                                                                                    </button>
+                                                                                    <button type="button" onClick={() => handleDeleteUser(acc.id, index, name)} className="bg-red-600 hover:bg-red-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Xóa người này">
+                                                                                        <X size={14} />
+                                                                                    </button>
+                                                                                </div>
                                                                             </div>
-                                                                            <div className="flex gap-1">
+                                                                        )
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        ) : acc.type === 'package2' ? (() => {
+                                                            const u = acc.users?.[0];
+                                                            const days = u ? getDaysUsed(u) : null;
+                                                            const isExpired = days !== null && days >= 30;
+                                                            const isNearExpiry = days !== null && days >= 27 && days < 30;
+
+                                                            return (
+                                                                <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
+                                                                    {acc.users?.length > 0 ? (
+                                                                        <div className={`flex justify-between items-center text-sm font-bold p-1 rounded ${isExpired ? 'bg-red-900/20' : ''}`}>
+                                                                            <div className={isExpired ? 'text-red-400' : 'text-white'}>
+                                                                                <span className="flex items-center gap-2">
+                                                                                    {isExpired && <AlertCircle size={14} className="text-red-500" />}
+                                                                                    👤 {getUserName(u)}
+                                                                                </span>
+                                                                                <span className={`text-[10px] block ml-6 ${isExpired ? 'text-red-300' : 'text-slate-400'}`}>{getUserDate(u)}</span>
+                                                                            </div>
+                                                                            <div className="flex gap-2">
                                                                                 {/* EXTEND BUTTON (Only for Expired/Near Expiry) */}
                                                                                 {(isExpired || isNearExpiry) && (
-                                                                                    <button type="button" onClick={() => handleExtendUser(acc.id, index, u)} className="bg-green-600 hover:bg-green-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Gia hạn (+30 ngày)">
+                                                                                    <button type="button" onClick={() => handleExtendUser(acc.id, 0, u)} className="text-green-400 hover:text-white" title="Gia hạn (+30 ngày)">
                                                                                         <RotateCw size={14} />
                                                                                     </button>
                                                                                 )}
 
                                                                                 {/* MOVE BUTTON (Blocked if Expired) */}
                                                                                 {!isExpired ? (
-                                                                                    <button type="button" onClick={() => openMoveUserModal(acc.id, index, u)} className="bg-orange-600 hover:bg-orange-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Chuyển khách">
+                                                                                    <button type="button" onClick={() => openMoveUserModal(acc.id, 0, u)} className="text-orange-400 hover:text-white" title="Chuyển khách">
                                                                                         <ArrowRightLeft size={14} />
                                                                                     </button>
                                                                                 ) : (
-                                                                                    <span className="text-gray-500 cursor-not-allowed bg-slate-700 p-1.5 rounded" title="Hết hạn: Không thể chuyển"><ArrowRightLeft size={14} /></span>
+                                                                                    <span className="text-gray-600 cursor-not-allowed" title="Hết hạn: Không thể chuyển"><ArrowRightLeft size={14} /></span>
                                                                                 )}
 
-                                                                                <button type="button" onClick={() => openEditUserModal(acc.id, index, u)} className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Sửa tên">
-                                                                                    <Pencil size={14} />
-                                                                                </button>
-                                                                                <button type="button" onClick={() => handleDeleteUser(acc.id, index, name)} className="bg-red-600 hover:bg-red-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105" title="Xóa người này">
-                                                                                    <X size={14} />
-                                                                                </button>
+                                                                                <button type="button" onClick={() => openEditUserModal(acc.id, 0, u)} className="text-blue-400 hover:text-white"><Pencil size={14} /></button>
                                                                             </div>
                                                                         </div>
-                                                                    )
-                                                                })}
-                                                            </div>
+                                                                    ) : (
+                                                                        <button type="button" onClick={() => openAddUserModal(acc.id)} className="w-full text-center text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-300">Gán Khách</button>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })() : <span className="text-yellow-600 text-xs italic">Chọn gói trước</span>}
+                                                    </td>
+                                                    <td className="text-center">
+                                                        <div className="flex justify-center gap-2">
+                                                            <button type="button" onClick={() => { setEditingAcc(acc); setShowEditModal(true); }} className="bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white p-2 rounded transition-colors" title="Sửa Tài Khoản">
+                                                                <Pencil size={16} />
+                                                            </button>
+                                                            <button type="button" onClick={() => { setDeletingId(acc.id); setShowDeleteModal(true); }} className="bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white p-2 rounded transition-colors" title="Xóa Tài Khoản">
+                                                                <Trash2 size={16} />
+                                                            </button>
                                                         </div>
-                                                    ) : acc.type === 'package2' ? (() => {
-                                                        const u = acc.users?.[0];
-                                                        const days = u ? getDaysUsed(u) : null;
-                                                        const isExpired = days !== null && days >= 30;
-                                                        const isNearExpiry = days !== null && days >= 27 && days < 30;
-
-                                                        return (
-                                                            <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
-                                                                {acc.users?.length > 0 ? (
-                                                                    <div className={`flex justify-between items-center text-sm font-bold p-1 rounded ${isExpired ? 'bg-red-900/20' : ''}`}>
-                                                                        <div className={isExpired ? 'text-red-400' : 'text-white'}>
-                                                                            <span className="flex items-center gap-2">
-                                                                                {isExpired && <AlertCircle size={14} className="text-red-500" />}
-                                                                                👤 {getUserName(u)}
-                                                                            </span>
-                                                                            <span className={`text-[10px] block ml-6 ${isExpired ? 'text-red-300' : 'text-slate-400'}`}>{getUserDate(u)}</span>
-                                                                        </div>
-                                                                        <div className="flex gap-2">
-                                                                            {/* EXTEND BUTTON (Only for Expired/Near Expiry) */}
-                                                                            {(isExpired || isNearExpiry) && (
-                                                                                <button type="button" onClick={() => handleExtendUser(acc.id, 0, u)} className="text-green-400 hover:text-white" title="Gia hạn (+30 ngày)">
-                                                                                    <RotateCw size={14} />
-                                                                                </button>
-                                                                            )}
-
-                                                                            {/* MOVE BUTTON (Blocked if Expired) */}
-                                                                            {!isExpired ? (
-                                                                                <button type="button" onClick={() => openMoveUserModal(acc.id, 0, u)} className="text-orange-400 hover:text-white" title="Chuyển khách">
-                                                                                    <ArrowRightLeft size={14} />
-                                                                                </button>
-                                                                            ) : (
-                                                                                <span className="text-gray-600 cursor-not-allowed" title="Hết hạn: Không thể chuyển"><ArrowRightLeft size={14} /></span>
-                                                                            )}
-
-                                                                            <button type="button" onClick={() => openEditUserModal(acc.id, 0, u)} className="text-blue-400 hover:text-white"><Pencil size={14} /></button>
-                                                                        </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    <button type="button" onClick={() => openAddUserModal(acc.id)} className="w-full text-center text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-300">Gán Khách</button>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })() : <span className="text-yellow-600 text-xs italic">Chọn gói trước</span>}
-                                                </td>
-                                                <td className="text-center">
-                                                    <div className="flex justify-center gap-2">
-                                                        <button type="button" onClick={() => { setEditingAcc(acc); setShowEditModal(true); }} className="bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white p-2 rounded transition-colors" title="Sửa Tài Khoản">
-                                                            <Pencil size={16} />
-                                                        </button>
-                                                        <button type="button" onClick={() => { setDeletingId(acc.id); setShowDeleteModal(true); }} className="bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white p-2 rounded transition-colors" title="Xóa Tài Khoản">
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                                    </td>
+                                                </tr>
+                                            ))}
                                     </tbody>
                                 </table>
                             </div>
@@ -1407,7 +1425,7 @@ function App() {
                                                     {user.name}
                                                 </div>
                                                 <div className="text-xs text-slate-400 mt-1">
-                                                    Tham gia: {getUserDate(user)} • Đã dùng: {user.daysUsed} ngày • 
+                                                    Tham gia: {getUserDate(user)} • Đã dùng: {user.daysUsed} ngày •
                                                     <span className="text-green-400 font-bold"> Còn {30 - user.daysUsed} ngày</span>
                                                 </div>
                                             </div>
@@ -1440,7 +1458,7 @@ function App() {
                                 <div className="flex items-start gap-2">
                                     <Info size={18} className="text-blue-400 flex-shrink-0 mt-0.5" />
                                     <p className="text-xs text-blue-200">
-                                        <strong>Gợi ý:</strong> Chuyển khách sang tài khoản Shared còn slot hoặc xóa khách nếu không còn sử dụng. 
+                                        <strong>Gợi ý:</strong> Chuyển khách sang tài khoản Shared còn slot hoặc xóa khách nếu không còn sử dụng.
                                         Sau khi xử lý hết, bạn có thể xóa tài khoản này.
                                     </p>
                                 </div>
