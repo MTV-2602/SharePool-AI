@@ -50,6 +50,31 @@ app.use(async (req, res, next) => {
   next();
 });
 
+// Middleware to verify token (MUST BE DEFINED BEFORE ROUTES)
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  
+  try {
+    // Decode token
+    const decoded = Buffer.from(token, 'base64').toString('utf-8');
+    const [createdAt, expiryTime, email] = decoded.split('_');
+    
+    // Check if token expired
+    if (Date.now() > parseInt(expiryTime)) {
+      return res.status(401).json({ error: 'Token expired. Please login again.' });
+    }
+    
+    req.user = { email };
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
 // --- API ROUTES ---
 
 // 1. GET ALL DATA
@@ -251,31 +276,6 @@ app.post("/api/login", async (req, res) => {
     res.status(500).json({ success: false, message: 'Login error' });
   }
 });
-
-// Middleware to verify token
-const verifyToken = (req, res, next) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-  
-  try {
-    // Decode token
-    const decoded = Buffer.from(token, 'base64').toString('utf-8');
-    const [createdAt, expiryTime, email] = decoded.split('_');
-    
-    // Check if token expired
-    if (Date.now() > parseInt(expiryTime)) {
-      return res.status(401).json({ error: 'Token expired. Please login again.' });
-    }
-    
-    req.user = { email };
-    next();
-  } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-};
 
 // 7. TELEGRAM WEBHOOK
 const telegramWebhook = require("./telegram-webhook");
