@@ -843,28 +843,13 @@ function App() {
                                                 if (!searchQuery.trim()) return true;
                                                 const queryNormalized = toNonAccentVietnamese(searchQuery);
 
-                                                // 1. Tìm theo email/username
-                                                if (acc.username && toNonAccentVietnamese(acc.username).includes(queryNormalized)) return true;
+                                                // Tìm theo email (normalized)
+                                                if (acc.username && toNonAccentVietnamese(acc.username).includes(queryNormalized)) {
+                                                    return true;
+                                                }
 
-                                                // 2. Tìm theo password
-                                                if (acc.password && toNonAccentVietnamese(acc.password).includes(queryNormalized)) return true;
-
-                                                // 3. Tìm theo note (ghi chú)
-                                                if (acc.note && toNonAccentVietnamese(acc.note).includes(queryNormalized)) return true;
-
-                                                // 4. Tìm theo link (mail khôi phục)
-                                                if (acc.link && toNonAccentVietnamese(acc.link).includes(queryNormalized)) return true;
-
-                                                // 5. Tìm theo tên khách hàng (User)
+                                                // Tìm theo tên khách hàng (normalized)
                                                 if (acc.users && acc.users.length > 0) {
-                                                    // FIX: Nếu là Package 2 (chỉ hiện 1 người) -> Chỉ tìm người đầu tiên
-                                                    if (acc.type === 'package2') {
-                                                        const firstUser = acc.users[0];
-                                                        const name = typeof firstUser === 'object' ? firstUser.name : firstUser;
-                                                        return name && toNonAccentVietnamese(name).includes(queryNormalized);
-                                                    }
-
-                                                    // Các gói khác -> Tìm tất cả
                                                     return acc.users.some(user => {
                                                         const name = typeof user === 'object' ? user.name : user;
                                                         return name && toNonAccentVietnamese(name).includes(queryNormalized);

@@ -365,53 +365,82 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
     // AUTO-DETECT: Parse account format
     if (!text.startsWith('/')) {
       // COURSERA AUTO-DETECT: email,password,courseCode format
+      // Support both single line and multiple lines (batch add)
       if (text.includes(',') && text.includes('@') && !text.includes('---')) {
-        const parts = text.split(',').map(p => p.trim());
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        
+        // Parse all lines
+        const accounts = [];
+        for (const line of lines) {
+          const parts = line.split(',').map(p => p.trim());
+          if (parts.length >= 2 && parts.length <= 3) {
+            const [email, password, courseCode] = parts;
+            if (email && password && email.includes('@')) {
+              accounts.push({ email, password, courseCode: courseCode || '' });
+            }
+          }
+        }
 
-        if (parts.length >= 2 && parts.length <= 3) {
-          const [email, password, courseCode] = parts;
+        if (accounts.length > 0) {
+          try {
+            const totalAccounts = accounts.length;
+            await sendMessage(chatId, `⏳ Đang thêm hàng loạt ${totalAccounts} tài khoản Coursera vào Sheet...`);
 
-          if (email && password && email.includes('@')) {
-            try {
-              await sendMessage(chatId, '⏳ Đang thêm tài khoản Coursera vào Sheet...');
+            const expiredAt = new Date();
+            expiredAt.setDate(expiredAt.getDate() + 365);
 
-              const expiredAt = new Date();
-              expiredAt.setDate(expiredAt.getDate() + 365);
+            // Format dữ liệu giống web: [[email, password, courseCode], ...]
+            const sheetData = accounts.map(acc => [
+              acc.email,
+              acc.password,
+              acc.courseCode
+            ]);
 
-              // Format dữ liệu giống web: [email, password, courseCode]
-              const sheetData = [[
-                email,
-                password,
-                courseCode || ''
-              ]];
+            // Script URL từ web (lấy từ App.jsx)
+            const scriptUrl = 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
 
-              // Script URL từ web (lấy từ App.jsx)
-              const scriptUrl = 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
+            // Gọi Google Apps Script trực tiếp (không qua proxy để tránh 404)
+            const response = await axios.post(scriptUrl, {
+              sheetName: '',
+              data: sheetData
+            }, {
+              headers: { 'Content-Type': 'application/json' },
+              maxRedirects: 5,
+              timeout: 30000 // 30 seconds timeout
+            });
 
-              // Gọi qua proxy API giống web
-              const response = await axios.post(`${API_URL}/api/proxy-sheet`, {
-                scriptUrl: scriptUrl,
-                sheetName: '',
-                data: sheetData
-              });
-
+            if (totalAccounts === 1) {
+              const acc = accounts[0];
               const successMessage = `
 ✅ *TỰ ĐỘNG THÊM COURSERA VÀO SHEET THÀNH CÔNG!*
 
-📧 *Email:* \`${email}\`
-🔑 *Password:* \`${password}\`
-${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
+📧 *Email:* \`${acc.email}\`
+🔑 *Password:* \`${acc.password}\`
+${acc.courseCode ? `📚 *Course:* \`${acc.courseCode}\`\n` : ''}📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
 
 💡 *Tip:* Paste format tiếp theo để thêm nhanh!
               `;
-
               await sendMessage(chatId, successMessage);
-            } catch (error) {
-              console.error('Auto-add Coursera error:', error.response?.data || error.message);
-              await sendMessage(chatId, `❌ Lỗi khi thêm Coursera: ${error.response?.data?.error || error.message}`);
+            } else {
+              // Batch success message
+              const successMessage = `
+✅ *THÊM HÀNG LOẠT ${totalAccounts} COURSERA THÀNH CÔNG!*
+
+📊 Danh sách:
+${accounts.slice(0, 5).map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${acc.courseCode}\``).join('\n')}
+${totalAccounts > 5 ? `\n_... và ${totalAccounts - 5} accounts khác_` : ''}
+
+📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
+
+💡 *Tip:* Paste format tiếp theo để thêm nhanh!
+              `;
+              await sendMessage(chatId, successMessage);
             }
-            return res.status(200).json({ ok: true });
+          } catch (error) {
+            console.error('Auto-add Coursera error:', error.response?.data || error.message);
+            await sendMessage(chatId, `❌ Lỗi khi thêm Coursera: ${error.response?.data?.error || error.message}`);
           }
+          return res.status(200).json({ ok: true });
         }
       }
 

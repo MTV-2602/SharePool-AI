@@ -86,9 +86,9 @@ bot.onText(/\/help/, (msg) => {
   bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
 });
 
-// Command: /add (Auto-detect managed in 'message' event)
+// Command: /add REMOVED (Auto-detect only)
 
-
+// Command: /list REMOVED
 
 // Command: /stats
 bot.onText(/\/stats/, async (msg) => {
@@ -103,9 +103,7 @@ bot.onText(/\/stats/, async (msg) => {
     bot.sendMessage(chatId, '⏳ Đang tính toán...');
 
     const response = await axios.get(`${API_URL}/api/data`);
-    // Fix: Access chatgpt array from response data object
-    const data = response.data;
-    const accounts = data.chatgpt || [];
+    const accounts = response.data;
 
     // Calculate stats
     const totalAccounts = accounts.length;
@@ -174,7 +172,7 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
   }
 });
 
-
+// Command: /expire REMOVED
 
 // Error handling
 bot.on('polling_error', (error) => {
@@ -193,78 +191,54 @@ bot.on('message', async (msg) => {
   if (!checkPermission(msg)) return;
 
   // COURSERA AUTO-DETECT: email,password,courseCode format
-  // COURSERA AUTO-DETECT: email,password,courseCode format (Hỗ trợ Bulk Import nhiều dòng)
-  // Logic mới: Check if text contains lines with "," or "|" and "@"
-  const lines = text.split('\n');
-  const validSheetData = [];
+  if (text.includes(',') && text.includes('@') && !text.includes('---')) {
+    const parts = text.split(',').map(p => p.trim());
 
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    let parts;
-    if (line.includes(',')) parts = line.split(',');
-    else if (line.includes('|')) parts = line.split('|');
-    else continue; // Bỏ qua dòng ko đúng format
-
-    parts = parts.map(p => p.trim());
-    if (parts.length >= 2) {
-      const email = parts[0];
-      const password = parts[1];
-      const courseCode = parts[2] || '';
+    if (parts.length >= 2 && parts.length <= 3) {
+      const [email, password, courseCode] = parts;
 
       if (email && password && email.includes('@')) {
-        validSheetData.push([email, password, courseCode]);
-      }
-    }
-  }
+        try {
+          bot.sendMessage(chatId, '⏳ Đang thêm tài khoản Coursera vào Sheet...');
 
-  if (validSheetData.length > 0) {
-    try {
-      if (validSheetData.length === 1) {
-        bot.sendMessage(chatId, '⏳ Đang thêm tài khoản Coursera vào Sheet...');
-      } else {
-        bot.sendMessage(chatId, `⏳ Đang thêm hàng loạt ${validSheetData.length} tài khoản Coursera vào Sheet...`);
-      }
+          const expiredAt = new Date();
+          expiredAt.setDate(expiredAt.getDate() + 365); // Coursera: 1 năm
 
-      // Lấy script URL - dùng mặc định giống web (Updated to match App.jsx)
-      const scriptUrl = process.env.GOOGLE_SHEET_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
+          // Format dữ liệu giống web: [email, password, courseCode]
+          const sheetData = [[
+            email,
+            password,
+            courseCode || ''
+          ]];
 
-      // Gửi lên Google Sheet (Bulk)
-      await axios.post(`${API_URL}/api/proxy-sheet`, {
-        scriptUrl: scriptUrl,
-        sheetName: '', // Để trống sẽ dùng sheet mặc định
-        data: validSheetData
-      });
+          // Lấy script URL - dùng mặc định giống web
+          const scriptUrl = process.env.GOOGLE_SHEET_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwoKnZsauopOfFZfp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZiQ63ZahKnJYNH5cJXsV/exec';
 
-      if (validSheetData.length === 1) {
-        // Single success message
-        const [email, password, courseCode] = validSheetData[0];
-        const successMessage = `
+          // Gửi lên Google Sheet với sheetName mặc định
+          await axios.post(`${API_URL}/api/proxy-sheet`, {
+            scriptUrl: scriptUrl,
+            sheetName: '', // Để trống sẽ dùng sheet mặc định
+            data: sheetData
+          });
+
+          const successMessage = `
 ✅ *TỰ ĐỘNG THÊM COURSERA VÀO SHEET THÀNH CÔNG!*
 
 📧 *Email:* \`${email}\`
 🔑 *Password:* \`${password}\`
-${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}
+${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
+
 💡 *Tip:* Paste format tiếp theo để thêm nhanh!
           `;
-        bot.sendMessage(chatId, successMessage, { parse_mode: 'Markdown' });
-      } else {
-        // Bulk success message
-        const successMessage = `
-✅ *TỰ ĐỘNG THÊM ${validSheetData.length} COURSERA VÀO SHEET THÀNH CÔNG!*
 
-📋 *Danh sách đã thêm:*
-${validSheetData.map(row => `• ${row[0]} | ${row[2] || 'No Code'}`).join('\n')}
-
-💡 *Tip:* Bot hỗ trợ add nhiều dòng cùng lúc!
-          `;
-        bot.sendMessage(chatId, successMessage, { parse_mode: 'Markdown' });
+          bot.sendMessage(chatId, successMessage, { parse_mode: 'Markdown' });
+          return;
+        } catch (error) {
+          console.error('Auto-add Coursera error:', error.response?.data || error.message);
+          bot.sendMessage(chatId, `❌ Lỗi khi thêm Coursera: ${error.response?.data?.error || error.message}`);
+          return;
+        }
       }
-      return;
-
-    } catch (error) {
-      console.error('Auto-add Coursera error:', error.response?.data || error.message);
-      bot.sendMessage(chatId, `❌ Lỗi khi thêm Coursera: ${error.response?.data?.error || error.message}`);
-      return;
     }
   }
 
@@ -330,4 +304,4 @@ ${validSheetData.map(row => `• ${row[0]} | ${row[2] || 'No Code'}`).join('\n')
   }
 });
 
-console.log('✅ Bot V2 đã sẵn sàng! (Đã fix lỗi ngày hết hạn & support add nhiều dòng)');
+console.log('✅ Bot đã sẵn sàng! Gửi /start để bắt đầu.');
