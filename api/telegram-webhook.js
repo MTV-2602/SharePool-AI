@@ -201,7 +201,7 @@ email,password,courseCode
             statsMessage += `\n${idx + 1}. ${emoji} 👥 ${userCount}/3 | 📅 ${expiry} (${daysLeft}d)\n`;
             statsMessage += `\`\`\`\n${acc.username}\n\`\`\`\n`;
             statsMessage += `\`\`\`\n${acc.password}\n\`\`\`\n`;
-            if (acc.link) statsMessage += `\`\`\`\n${acc.link}\n\`\`\`\n`;
+            if (acc.link) statsMessage += `${acc.link}\n`;
 
             if (acc.users && acc.users.length > 0) {
               acc.users.forEach((user, i) => {
@@ -236,7 +236,7 @@ email,password,courseCode
             statsMessage += `\n${idx + 1}. ${emoji} 👥 ${userCount}/1 | 📅 ${expiry} (${daysLeft}d)\n`;
             statsMessage += `\`\`\`\n${acc.username}\n\`\`\`\n`;
             statsMessage += `\`\`\`\n${acc.password}\n\`\`\`\n`;
-            if (acc.link) statsMessage += `\`\`\`\n${acc.link}\n\`\`\`\n`;
+            if (acc.link) statsMessage += `${acc.link}\n`;
 
             if (acc.users && acc.users.length > 0) {
               const user = acc.users[0];
@@ -267,7 +267,7 @@ email,password,courseCode
             statsMessage += `\n${idx + 1}. 📅 ${expiry} (${daysLeft}d)\n`;
             statsMessage += `\`\`\`\n${acc.username}\n\`\`\`\n`;
             statsMessage += `\`\`\`\n${acc.password}\n\`\`\`\n`;
-            if (acc.link) statsMessage += `\`\`\`\n${acc.link}\n\`\`\`\n`;
+            if (acc.link) statsMessage += `${acc.link}\n`;
           });
           statsMessage += `\n`;
         }
