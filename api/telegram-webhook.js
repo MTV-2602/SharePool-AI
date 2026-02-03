@@ -186,9 +186,9 @@ email,password,courseCode
             const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
             
             statsMessage += `\n${idx+1}. ${emoji} 👥 ${userCount}/3 | 📅 ${expiry} (${daysLeft}d)\n`;
-            statsMessage += `\`${acc.username}\`\n`;
-            statsMessage += `\`${acc.password}\`\n`;
-            if (acc.link) statsMessage += `\`${acc.link}\`\n`;
+            statsMessage += `\`\`\`\n${acc.username}\n${acc.password}`;
+            if (acc.link) statsMessage += `\n${acc.link}`;
+            statsMessage += `\n\`\`\`\n`;
             
             if (acc.users && acc.users.length > 0) {
               acc.users.forEach((user, i) => {
@@ -213,9 +213,9 @@ email,password,courseCode
             const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
             
             statsMessage += `\n${idx+1}. ${emoji} 👥 ${userCount}/1 | 📅 ${expiry} (${daysLeft}d)\n`;
-            statsMessage += `\`${acc.username}\`\n`;
-            statsMessage += `\`${acc.password}\`\n`;
-            if (acc.link) statsMessage += `\`${acc.link}\`\n`;
+            statsMessage += `\`\`\`\n${acc.username}\n${acc.password}`;
+            if (acc.link) statsMessage += `\n${acc.link}`;
+            statsMessage += `\n\`\`\`\n`;
             
             if (acc.users && acc.users.length > 0) {
               const user = acc.users[0];
@@ -236,9 +236,9 @@ email,password,courseCode
             const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
             
             statsMessage += `\n${idx+1}. 📅 ${expiry} (${daysLeft}d)\n`;
-            statsMessage += `\`${acc.username}\`\n`;
-            statsMessage += `\`${acc.password}\`\n`;
-            if (acc.link) statsMessage += `\`${acc.link}\`\n`;
+            statsMessage += `\`\`\`\n${acc.username}\n${acc.password}`;
+            if (acc.link) statsMessage += `\n${acc.link}`;
+            statsMessage += `\n\`\`\`\n`;
           });
           statsMessage += `\n`;
         }
