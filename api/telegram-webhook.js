@@ -396,16 +396,16 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
               acc.courseCode
             ]);
 
-            // Script URL từ web (lấy từ App.jsx)
+            // Script URL từ web
             const scriptUrl = 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
 
-            // Gọi qua proxy API
-            const response = await axios.post(`${API_URL}/api/proxy-sheet`, {
-              scriptUrl: scriptUrl,
-              sheetName: '',
-              data: sheetData
-            }, {
-              timeout: 30000 // 30 seconds timeout
+            // Gọi trực tiếp Google Apps Script với GET method và query params
+            const params = new URLSearchParams();
+            params.append('data', JSON.stringify(sheetData));
+            
+            const response = await axios.get(`${scriptUrl}?${params.toString()}`, {
+              timeout: 30000,
+              maxRedirects: 5
             });
 
             if (totalAccounts === 1) {
