@@ -389,17 +389,14 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
                 courseCode || ''
               ]];
               
-              // Script URL từ web (chính xác từ ảnh)
-              const scriptUrl = 'https://script.google.com/macros/s/AKfycbwoKnZsauopOfFZfp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZiQ63ZahKnJYNH5cJXsV/exec';
+              // Script URL từ web (lấy từ App.jsx)
+              const scriptUrl = 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
               
-              // Gửi data giống web - qua proxy với rawJSON format
-              const response = await axios.post(scriptUrl, JSON.stringify({
+              // Gọi qua proxy API giống web
+              const response = await axios.post(`${API_URL}/api/proxy-sheet`, {
+                scriptUrl: scriptUrl,
                 sheetName: '',
                 data: sheetData
-              }), {
-                headers: { 
-                  'Content-Type': 'text/plain;charset=utf-8'
-                }
               });
               
               const successMessage = `
