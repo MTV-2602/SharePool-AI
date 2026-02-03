@@ -1,5 +1,19 @@
 const axios = require("axios");
 const mongoose = require("mongoose");
+require("dotenv").config();
+
+// MongoDB connection
+let isConnected = false;
+const connectDB = async () => {
+  if (isConnected) return;
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    isConnected = true;
+    console.log("✅ MongoDB Connected in Telegram Webhook");
+  } catch (error) {
+    console.error("❌ MongoDB Connection Error:", error);
+  }
+};
 
 // Account Schema (same as index.js)
 const accountSchema = new mongoose.Schema({
@@ -61,6 +75,9 @@ const sendMessage = async (chatId, text, options = {}) => {
 };
 
 module.exports = async (req, res) => {
+  // Ensure MongoDB is connected
+  await connectDB();
+  
   // Only accept POST requests
   if (req.method !== "POST") {
     return res.status(200).json({ ok: true });
