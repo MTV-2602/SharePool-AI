@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import axios from './axiosConfig';
 import { Trash2, UserPlus, Pencil, Copy, ExternalLink, RefreshCw, X, Upload, Loader2, CheckCircle, Mail, User, Shield, AlertCircle, AlertTriangle, Info, Calendar, LogIn, Lock, FileSpreadsheet, ArrowRightLeft, RotateCw } from 'lucide-react';
 
 // Helper: Xóa dấu Tiếng Việt
@@ -154,14 +154,19 @@ function App() {
 
             if (response.data.success) {
                 localStorage.setItem('admin_token', response.data.token);
+                localStorage.setItem('token_expires_at', response.data.expiresAt);
                 setIsAuthenticated(true);
                 fetchData();
-                showAlert('Xin chào', 'Đăng nhập thành công! 👋', 'success');
+                showAlert('Xin chào', response.data.message || 'Đăng nhập thành công! 👋', 'success');
             } else {
                 showAlert('Lỗi', 'Sai email hoặc mật khẩu!', 'error');
             }
         } catch (error) {
-            showAlert('Lỗi', 'Sai email hoặc mật khẩu!', 'error');
+            if (error.response?.status === 401) {
+                showAlert('Lỗi', error.response?.data?.message || 'Sai email hoặc mật khẩu!', 'error');
+            } else {
+                showAlert('Lỗi', 'Không thể kết nối đến server!', 'error');
+            }
         }
     };
 

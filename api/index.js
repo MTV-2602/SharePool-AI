@@ -53,7 +53,7 @@ app.use(async (req, res, next) => {
 // --- API ROUTES ---
 
 // 1. GET ALL DATA
-app.get("/api/data", async (req, res) => {
+app.get("/api/data", verifyToken, async (req, res) => {
   try {
     const accounts = await Account.find({});
     res.json({ chatgpt: accounts });
@@ -63,7 +63,7 @@ app.get("/api/data", async (req, res) => {
 });
 
 // 2. ADD ACCOUNT
-app.post("/api/chatgpt", async (req, res) => {
+app.post("/api/chatgpt", verifyToken, async (req, res) => {
   try {
     const now = new Date();
     const expiredDate = new Date(now);
@@ -83,7 +83,7 @@ app.post("/api/chatgpt", async (req, res) => {
 });
 
 // 3. UPDATE ACCOUNT
-app.put("/api/chatgpt/:id", async (req, res) => {
+app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const updated = await Account.findOneAndUpdate({ id: id }, req.body, {
@@ -96,7 +96,7 @@ app.put("/api/chatgpt/:id", async (req, res) => {
 });
 
 // 4. DELETE ACCOUNT
-app.delete("/api/chatgpt/:id", async (req, res) => {
+app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     await Account.findOneAndDelete({ id: id });
@@ -107,7 +107,7 @@ app.delete("/api/chatgpt/:id", async (req, res) => {
 });
 
 // 4.5 MOVE USER (ATOMIC TRANSFER)
-app.post("/api/move-user", async (req, res) => {
+app.post("/api/move-user", verifyToken, async (req, res) => {
   try {
     const { fromAccId, toAccId, userIndex } = req.body;
 
@@ -169,7 +169,7 @@ app.post("/api/move-user", async (req, res) => {
 });
 
 // 4.6 EXTEND USER (+30 DAYS)
-app.post("/api/extend-user", async (req, res) => {
+app.post("/api/extend-user", verifyToken, async (req, res) => {
   const { accId, userIndex } = req.body;
   try {
     const acc = await Account.findOne({ id: accId });
@@ -223,7 +223,7 @@ app.post("/api/proxy-sheet", async (req, res) => {
   }
 });
 
-// 6. LOGIN ENDPOINT (Secure authentication)
+// 6. LOGIN ENDPOINT (Secure authentication with 7-day expiry)
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -233,9 +233,17 @@ app.post("/api/login", async (req, res) => {
     const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
     
     if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-      // Generate a simple token (in production, use JWT)
-      const token = `valid_session_${Date.now()}`;
-      res.json({ success: true, token });
+      // Generate token with 7-day expiry
+      const now = Date.now();
+      const expiryTime = now + (7 * 24 * 60 * 60 * 1000); // 7 days
+      const token = Buffer.from(`${now}_${expiryTime}_${email}`).toString('base64');
+      
+      res.json({ 
+        success: true, 
+        token,
+        expiresAt: new Date(expiryTime).toISOString(),
+        message: 'Login successful. Token expires in 7 days.'
+      });
     } else {
       res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
@@ -243,6 +251,31 @@ app.post("/api/login", async (req, res) => {
     res.status(500).json({ success: false, message: 'Login error' });
   }
 });
+
+// Middleware to verify token
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  
+  try {
+    // Decode token
+    const decoded = Buffer.from(token, 'base64').toString('utf-8');
+    const [createdAt, expiryTime, email] = decoded.split('_');
+    
+    // Check if token expired
+    if (Date.now() > parseInt(expiryTime)) {
+      return res.status(401).json({ error: 'Token expired. Please login again.' });
+    }
+    
+    req.user = { email };
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
 
 // 7. TELEGRAM WEBHOOK
 const telegramWebhook = require("./telegram-webhook");
