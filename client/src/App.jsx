@@ -843,12 +843,19 @@ function App() {
                                                 if (!searchQuery.trim()) return true;
                                                 const queryNormalized = toNonAccentVietnamese(searchQuery);
 
-                                                // Tìm theo email (normalized)
-                                                if (acc.username && toNonAccentVietnamese(acc.username).includes(queryNormalized)) {
-                                                    return true;
-                                                }
+                                                // 1. Tìm theo email/username
+                                                if (acc.username && toNonAccentVietnamese(acc.username).includes(queryNormalized)) return true;
 
-                                                // Tìm theo tên khách hàng (normalized)
+                                                // 2. Tìm theo password
+                                                if (acc.password && toNonAccentVietnamese(acc.password).includes(queryNormalized)) return true;
+
+                                                // 3. Tìm theo note (ghi chú)
+                                                if (acc.note && toNonAccentVietnamese(acc.note).includes(queryNormalized)) return true;
+
+                                                // 4. Tìm theo link (mail khôi phục)
+                                                if (acc.link && toNonAccentVietnamese(acc.link).includes(queryNormalized)) return true;
+
+                                                // 5. Tìm theo tên khách hàng (User)
                                                 if (acc.users && acc.users.length > 0) {
                                                     return acc.users.some(user => {
                                                         const name = typeof user === 'object' ? user.name : user;

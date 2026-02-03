@@ -86,9 +86,9 @@ bot.onText(/\/help/, (msg) => {
   bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
 });
 
-// Command: /add REMOVED (Auto-detect only)
+// Command: /add (Auto-detect managed in 'message' event)
 
-// Command: /list REMOVED
+
 
 // Command: /stats
 bot.onText(/\/stats/, async (msg) => {
@@ -172,7 +172,7 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
   }
 });
 
-// Command: /expire REMOVED
+
 
 // Error handling
 bot.on('polling_error', (error) => {
