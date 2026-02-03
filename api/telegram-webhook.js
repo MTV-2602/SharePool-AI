@@ -399,13 +399,12 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
             // Script URL từ web (lấy từ App.jsx)
             const scriptUrl = 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
 
-            // Gọi Google Apps Script trực tiếp (không qua proxy để tránh 404)
-            const response = await axios.post(scriptUrl, {
+            // Gọi qua proxy API
+            const response = await axios.post(`${API_URL}/api/proxy-sheet`, {
+              scriptUrl: scriptUrl,
               sheetName: '',
               data: sheetData
             }, {
-              headers: { 'Content-Type': 'application/json' },
-              maxRedirects: 5,
               timeout: 30000 // 30 seconds timeout
             });
 
