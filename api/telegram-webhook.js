@@ -1,11 +1,13 @@
-const axios = require('axios');
+const axios = require("axios");
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA';
-const API_URL = 'https://web-ban-acc.vercel.app';
+const TELEGRAM_BOT_TOKEN =
+  process.env.TELEGRAM_BOT_TOKEN ||
+  "8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA";
+const API_URL = "https://web-ban-acc.vercel.app";
 
 // Allowed user IDs (optional)
 const ALLOWED_USER_IDS = process.env.ALLOWED_USER_IDS
-  ? process.env.ALLOWED_USER_IDS.split(',').map(id => parseInt(id))
+  ? process.env.ALLOWED_USER_IDS.split(",").map((id) => parseInt(id))
   : [];
 
 const checkPermission = (userId) => {
@@ -15,33 +17,36 @@ const checkPermission = (userId) => {
 
 // Normalize Vietnamese text for smart search (remove accents)
 const normalizeVietnamese = (str) => {
-  if (!str) return '';
+  if (!str) return "";
   return str
     .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'd');
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Remove diacritics
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d");
 };
 
 // Send message helper
 const sendMessage = async (chatId, text, options = {}) => {
   try {
-    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      chat_id: chatId,
-      text,
-      parse_mode: options.parse_mode || 'Markdown',
-      disable_web_page_preview: true, // Tắt preview link
-      ...options
-    });
+    await axios.post(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        chat_id: chatId,
+        text,
+        parse_mode: options.parse_mode || "Markdown",
+        disable_web_page_preview: true, // Tắt preview link
+        ...options,
+      },
+    );
   } catch (error) {
-    console.error('Error sending message:', error.message);
+    console.error("Error sending message:", error.message);
   }
 };
 
 module.exports = async (req, res) => {
   // Only accept POST requests
-  if (req.method !== 'POST') {
+  if (req.method !== "POST") {
     return res.status(200).json({ ok: true });
   }
 
@@ -62,12 +67,12 @@ module.exports = async (req, res) => {
 
     // Check permission
     if (!checkPermission(userId)) {
-      await sendMessage(chatId, '❌ Bạn không có quyền sử dụng bot này!');
+      await sendMessage(chatId, "❌ Bạn không có quyền sử dụng bot này!");
       return res.status(200).json({ ok: true });
     }
 
     // Command: /start hoặc /help
-    if (text === '/start' || text === '/help') {
+    if (text === "/start" || text === "/help") {
       const welcomeMessage = `
 🤖 *ChatGPT & Coursera Manager Bot*
 
@@ -93,18 +98,18 @@ email,password,courseCode
     }
 
     // Command: /stats - Thống kê ChatGPT accounts
-    if (text === '/stats') {
+    if (text === "/stats") {
       try {
-        await sendMessage(chatId, '⏳ Đang tính toán...');
+        await sendMessage(chatId, "⏳ Đang tính toán...");
 
         const response = await axios.get(`${API_URL}/api/data`);
         const data = response.data;
         const accounts = data.chatgpt || data || [];
 
         const totalAccounts = accounts.length;
-        const package1Accs = accounts.filter(a => a.type === 'package1');
-        const package2Accs = accounts.filter(a => a.type === 'package2');
-        const unassignedAccs = accounts.filter(a => a.type === 'unassigned');
+        const package1Accs = accounts.filter((a) => a.type === "package1");
+        const package2Accs = accounts.filter((a) => a.type === "package2");
+        const unassignedAccs = accounts.filter((a) => a.type === "unassigned");
 
         let totalUsers = 0;
         let activeUsers = 0;
@@ -114,26 +119,28 @@ email,password,courseCode
         let package2Used = 0;
         let package2Empty = 0;
 
-        accounts.forEach(acc => {
+        accounts.forEach((acc) => {
           const userCount = acc.users?.length || 0;
-          
-          if (acc.type === 'package1') {
+
+          if (acc.type === "package1") {
             if (userCount >= 3) package1Full++;
             else if (userCount > 0) package1Available++;
           }
-          
-          if (acc.type === 'package2') {
+
+          if (acc.type === "package2") {
             if (userCount > 0) package2Used++;
             else package2Empty++;
           }
 
           if (acc.users && acc.users.length > 0) {
             totalUsers += acc.users.length;
-            acc.users.forEach(u => {
+            acc.users.forEach((u) => {
               if (u.joinedAt) {
                 const today = new Date();
                 const joined = new Date(u.joinedAt);
-                const daysUsed = Math.floor((today - joined) / (1000 * 60 * 60 * 24));
+                const daysUsed = Math.floor(
+                  (today - joined) / (1000 * 60 * 60 * 24),
+                );
 
                 if (daysUsed < 30) {
                   activeUsers++;
@@ -148,20 +155,20 @@ email,password,courseCode
         });
 
         const today = new Date();
-        const expiredAccounts = accounts.filter(acc => {
+        const expiredAccounts = accounts.filter((acc) => {
           if (!acc.expiredAt) return false;
           const expiry = new Date(acc.expiredAt);
           return expiry < today;
         }).length;
 
-        const urgentAccounts3Days = accounts.filter(acc => {
+        const urgentAccounts3Days = accounts.filter((acc) => {
           if (!acc.expiredAt) return false;
           const expiry = new Date(acc.expiredAt);
           const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
           return daysLeft <= 3 && daysLeft >= 0;
         }).length;
 
-        const urgentAccounts7Days = accounts.filter(acc => {
+        const urgentAccounts7Days = accounts.filter((acc) => {
           if (!acc.expiredAt) return false;
           const expiry = new Date(acc.expiredAt);
           const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
@@ -170,7 +177,7 @@ email,password,courseCode
 
         // Build detailed message
         let statsMessage = `📊 *THỐNG KÊ CHATGPT CHI TIẾT*\n\n`;
-        
+
         statsMessage += `*📌 TỔNG QUAN:*\n`;
         statsMessage += `├ Tổng TK: ${totalAccounts}\n`;
         statsMessage += `├ 👥 Khách: ${totalUsers} (✅${activeUsers}/❌${expiredUsers})\n`;
@@ -181,20 +188,28 @@ email,password,courseCode
           statsMessage += `*🟢 PACKAGE1 - SHARED (${package1Accs.length}):\n*`;
           package1Accs.forEach((acc, idx) => {
             const userCount = acc.users?.length || 0;
-            const emoji = userCount >= 3 ? '🔴' : userCount > 0 ? '🟡' : '🟢';
-            const expiry = acc.expiredAt ? new Date(acc.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
-            const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
-            
-            statsMessage += `\n${idx+1}. ${emoji} 👥 ${userCount}/3 | 📅 ${expiry} (${daysLeft}d)\n`;
-            statsMessage += `\`\`\`\n${acc.username}\n${acc.password}`;
-            if (acc.link) statsMessage += `\n${acc.link}`;
-            statsMessage += `\n\`\`\`\n`;
-            
+            const emoji = userCount >= 3 ? "🔴" : userCount > 0 ? "🟡" : "🟢";
+            const expiry = acc.expiredAt
+              ? new Date(acc.expiredAt).toLocaleDateString("vi-VN")
+              : "N/A";
+            const daysLeft = acc.expiredAt
+              ? Math.ceil(
+                  (new Date(acc.expiredAt) - today) / (1000 * 60 * 60 * 24),
+                )
+              : "N/A";
+
+            statsMessage += `\n${idx + 1}. ${emoji} 👥 ${userCount}/3 | 📅 ${expiry} (${daysLeft}d)\n`;
+            statsMessage += `\`\`\`\n${acc.username}\n\`\`\`\n`;
+            statsMessage += `\`\`\`\n${acc.password}\n\`\`\`\n`;
+            if (acc.link) statsMessage += `\`\`\`\n${acc.link}\n\`\`\`\n`;
+
             if (acc.users && acc.users.length > 0) {
               acc.users.forEach((user, i) => {
                 const joined = user.joinedAt ? new Date(user.joinedAt) : null;
-                const days = joined ? Math.floor((today - joined) / (1000*60*60*24)) : 0;
-                const status = days < 30 ? '✅' : '❌';
+                const days = joined
+                  ? Math.floor((today - joined) / (1000 * 60 * 60 * 24))
+                  : 0;
+                const status = days < 30 ? "✅" : "❌";
                 statsMessage += `${status} ${user.name} (${days}d) `;
               });
               statsMessage += `\n`;
@@ -208,20 +223,28 @@ email,password,courseCode
           statsMessage += `*🔵 PACKAGE2 - PRIVATE (${package2Accs.length}):\n*`;
           package2Accs.forEach((acc, idx) => {
             const userCount = acc.users?.length || 0;
-            const emoji = userCount > 0 ? '🔵' : '⚪';
-            const expiry = acc.expiredAt ? new Date(acc.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
-            const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
-            
-            statsMessage += `\n${idx+1}. ${emoji} 👥 ${userCount}/1 | 📅 ${expiry} (${daysLeft}d)\n`;
-            statsMessage += `\`\`\`\n${acc.username}\n${acc.password}`;
-            if (acc.link) statsMessage += `\n${acc.link}`;
-            statsMessage += `\n\`\`\`\n`;
-            
+            const emoji = userCount > 0 ? "🔵" : "⚪";
+            const expiry = acc.expiredAt
+              ? new Date(acc.expiredAt).toLocaleDateString("vi-VN")
+              : "N/A";
+            const daysLeft = acc.expiredAt
+              ? Math.ceil(
+                  (new Date(acc.expiredAt) - today) / (1000 * 60 * 60 * 24),
+                )
+              : "N/A";
+
+            statsMessage += `\n${idx + 1}. ${emoji} 👥 ${userCount}/1 | 📅 ${expiry} (${daysLeft}d)\n`;
+            statsMessage += `\`\`\`\n${acc.username}\n\`\`\`\n`;
+            statsMessage += `\`\`\`\n${acc.password}\n\`\`\`\n`;
+            if (acc.link) statsMessage += `\`\`\`\n${acc.link}\n\`\`\`\n`;
+
             if (acc.users && acc.users.length > 0) {
               const user = acc.users[0];
               const joined = user.joinedAt ? new Date(user.joinedAt) : null;
-              const days = joined ? Math.floor((today - joined) / (1000*60*60*24)) : 0;
-              const status = days < 30 ? '✅' : '❌';
+              const days = joined
+                ? Math.floor((today - joined) / (1000 * 60 * 60 * 24))
+                : 0;
+              const status = days < 30 ? "✅" : "❌";
               statsMessage += `${status} ${user.name} (${days}d)\n`;
             }
           });
@@ -232,49 +255,49 @@ email,password,courseCode
         if (unassignedAccs.length > 0) {
           statsMessage += `*⚪ UNASSIGNED (${unassignedAccs.length}):\n*`;
           unassignedAccs.forEach((acc, idx) => {
-            const expiry = acc.expiredAt ? new Date(acc.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
-            const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
-            
-            statsMessage += `\n${idx+1}. 📅 ${expiry} (${daysLeft}d)\n`;
-            statsMessage += `\`\`\`\n${acc.username}\n${acc.password}`;
-            if (acc.link) statsMessage += `\n${acc.link}`;
-            statsMessage += `\n\`\`\`\n`;
+            const expiry = acc.expiredAt
+              ? new Date(acc.expiredAt).toLocaleDateString("vi-VN")
+              : "N/A";
+            const daysLeft = acc.expiredAt
+              ? Math.ceil(
+                  (new Date(acc.expiredAt) - today) / (1000 * 60 * 60 * 24),
+                )
+              : "N/A";
+
+            statsMessage += `\n${idx + 1}. 📅 ${expiry} (${daysLeft}d)\n`;
+            statsMessage += `\`\`\`\n${acc.username}\n\`\`\`\n`;
+            statsMessage += `\`\`\`\n${acc.password}\n\`\`\`\n`;
+            if (acc.link) statsMessage += `\`\`\`\n${acc.link}\n\`\`\`\n`;
           });
           statsMessage += `\n`;
         }
 
-        statsMessage += `_Cập nhật: ${new Date().toLocaleString('vi-VN')}_`;
+        statsMessage += `_Cập nhật: ${new Date().toLocaleString("vi-VN")}_`;
 
         await sendMessage(chatId, statsMessage);
       } catch (error) {
-        await sendMessage(chatId, '❌ Lỗi khi tính thống kê!');
+        await sendMessage(chatId, "❌ Lỗi khi tính thống kê!");
       }
       return res.status(200).json({ ok: true });
     }
 
-
-
-
-
-
-
     // AUTO-DETECT: Parse account format
-    if (!text.startsWith('/')) {
+    if (!text.startsWith("/")) {
       // SEARCH BY CUSTOMER NAME: Plain text without special characters
       // If no @, no ---, no comma -> search customer name
-      if (!text.includes('@') && !text.includes('---') && !text.includes(',')) {
+      if (!text.includes("@") && !text.includes("---") && !text.includes(",")) {
         const searchName = text.trim();
         const normalizedSearch = normalizeVietnamese(searchName);
-        
+
         try {
-          await sendMessage(chatId, '🔍 Đang tìm khách hàng...');
+          await sendMessage(chatId, "🔍 Đang tìm khách hàng...");
 
           const response = await axios.get(`${API_URL}/api/data`);
           const data = response.data;
           const accounts = data.chatgpt || data || [];
 
           let results = [];
-          accounts.forEach(acc => {
+          accounts.forEach((acc) => {
             if (acc.users && acc.users.length > 0) {
               acc.users.forEach((user, idx) => {
                 if (user.name) {
@@ -287,7 +310,7 @@ email,password,courseCode
                       accType: acc.type,
                       accLink: acc.link,
                       joinedAt: user.joinedAt,
-                      userIndex: idx
+                      userIndex: idx,
                     });
                   }
                 }
@@ -296,17 +319,29 @@ email,password,courseCode
           });
 
           if (results.length === 0) {
-            await sendMessage(chatId, `❌ Không tìm thấy khách hàng với tên "${searchName}"`);
+            await sendMessage(
+              chatId,
+              `❌ Không tìm thấy khách hàng với tên "${searchName}"`,
+            );
           } else {
             let message = `🔍 *TÌM THẤY ${results.length} KẾT QUẢ*\n\nTừ khóa: "${searchName}"\n\n`;
 
             results.forEach((r, idx) => {
-              const typeEmoji = r.accType === 'package1' ? '🟢' : r.accType === 'package2' ? '🔵' : '⚪';
-              const joinedDate = r.joinedAt ? new Date(r.joinedAt).toLocaleDateString('vi-VN') : 'N/A';
+              const typeEmoji =
+                r.accType === "package1"
+                  ? "🟢"
+                  : r.accType === "package2"
+                    ? "🔵"
+                    : "⚪";
+              const joinedDate = r.joinedAt
+                ? new Date(r.joinedAt).toLocaleDateString("vi-VN")
+                : "N/A";
               const today = new Date();
               const joined = new Date(r.joinedAt);
-              const daysUsed = Math.floor((today - joined) / (1000 * 60 * 60 * 24));
-              const status = daysUsed < 30 ? '✅' : '❌';
+              const daysUsed = Math.floor(
+                (today - joined) / (1000 * 60 * 60 * 24),
+              );
+              const status = daysUsed < 30 ? "✅" : "❌";
 
               message += `${idx + 1}. ${status} 👤 *${r.userName}*\n`;
               message += `   📧 \`${r.accEmail}\`\n`;
@@ -319,33 +354,43 @@ email,password,courseCode
             await sendMessage(chatId, message);
           }
         } catch (error) {
-          await sendMessage(chatId, '❌ Lỗi khi tìm kiếm!');
+          await sendMessage(chatId, "❌ Lỗi khi tìm kiếm!");
         }
         return res.status(200).json({ ok: true });
       }
 
       // SEARCH CHATGPT ACCOUNT: Just email input (no format)
       // Check if it's a simple email search (contains @ but no special format)
-      if (text.includes('@') && !text.includes('---') && !text.includes(',')) {
+      if (text.includes("@") && !text.includes("---") && !text.includes(",")) {
         const searchEmail = text.trim().toLowerCase();
-        
+
         try {
-          await sendMessage(chatId, '🔍 Đang tìm tài khoản...');
+          await sendMessage(chatId, "🔍 Đang tìm tài khoản...");
 
           const response = await axios.get(`${API_URL}/api/data`);
           const data = response.data;
           const accounts = data.chatgpt || data || [];
 
-          const found = accounts.find(acc => 
-            acc.username && acc.username.toLowerCase() === searchEmail
+          const found = accounts.find(
+            (acc) => acc.username && acc.username.toLowerCase() === searchEmail,
           );
 
           if (!found) {
-            await sendMessage(chatId, `❌ Không tìm thấy tài khoản: \`${searchEmail}\``);
+            await sendMessage(
+              chatId,
+              `❌ Không tìm thấy tài khoản: \`${searchEmail}\``,
+            );
           } else {
-            const typeEmoji = found.type === 'package1' ? '🟢' : found.type === 'package2' ? '🔵' : '⚪';
-            const expiredAt = found.expiredAt ? new Date(found.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
-            
+            const typeEmoji =
+              found.type === "package1"
+                ? "🟢"
+                : found.type === "package2"
+                  ? "🔵"
+                  : "⚪";
+            const expiredAt = found.expiredAt
+              ? new Date(found.expiredAt).toLocaleDateString("vi-VN")
+              : "N/A";
+
             let message = `📋 *THÔNG TIN TÀI KHOẢN*\n\n`;
             message += `${typeEmoji} *Type:* ${found.type}\n`;
             message += `📧 *Email:* \`${found.username}\`\n`;
@@ -356,12 +401,16 @@ email,password,courseCode
             if (found.users && found.users.length > 0) {
               message += `👥 *Khách hàng (${found.users.length}):\n\n*`;
               found.users.forEach((user, idx) => {
-                const joinedDate = user.joinedAt ? new Date(user.joinedAt).toLocaleDateString('vi-VN') : 'N/A';
+                const joinedDate = user.joinedAt
+                  ? new Date(user.joinedAt).toLocaleDateString("vi-VN")
+                  : "N/A";
                 const today = new Date();
                 const joined = new Date(user.joinedAt);
-                const daysUsed = Math.floor((today - joined) / (1000 * 60 * 60 * 24));
-                const status = daysUsed < 30 ? '✅' : '❌';
-                
+                const daysUsed = Math.floor(
+                  (today - joined) / (1000 * 60 * 60 * 24),
+                );
+                const status = daysUsed < 30 ? "✅" : "❌";
+
                 message += `${idx + 1}. ${status} *${user.name}*\n`;
                 message += `   📅 Từ: ${joinedDate} (${daysUsed} ngày)\n`;
               });
@@ -372,24 +421,27 @@ email,password,courseCode
             await sendMessage(chatId, message);
           }
         } catch (error) {
-          await sendMessage(chatId, '❌ Lỗi khi tìm kiếm!');
+          await sendMessage(chatId, "❌ Lỗi khi tìm kiếm!");
         }
         return res.status(200).json({ ok: true });
       }
 
       // COURSERA AUTO-DETECT: email,password,courseCode format
       // Support both single line and multiple lines (batch add)
-      if (text.includes(',') && text.includes('@') && !text.includes('---')) {
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        
+      if (text.includes(",") && text.includes("@") && !text.includes("---")) {
+        const lines = text
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0);
+
         // Parse all lines
         const accounts = [];
         for (const line of lines) {
-          const parts = line.split(',').map(p => p.trim());
+          const parts = line.split(",").map((p) => p.trim());
           if (parts.length >= 2 && parts.length <= 3) {
             const [email, password, courseCode] = parts;
-            if (email && password && email.includes('@')) {
-              accounts.push({ email, password, courseCode: courseCode || '' });
+            if (email && password && email.includes("@")) {
+              accounts.push({ email, password, courseCode: courseCode || "" });
             }
           }
         }
@@ -397,29 +449,37 @@ email,password,courseCode
         if (accounts.length > 0) {
           try {
             const totalAccounts = accounts.length;
-            await sendMessage(chatId, `⏳ Đang thêm hàng loạt ${totalAccounts} tài khoản Coursera vào Sheet...`);
+            await sendMessage(
+              chatId,
+              `⏳ Đang thêm hàng loạt ${totalAccounts} tài khoản Coursera vào Sheet...`,
+            );
 
             const expiredAt = new Date();
             expiredAt.setDate(expiredAt.getDate() + 365);
 
             // Format dữ liệu giống web: [[email, password, courseCode], ...]
-            const sheetData = accounts.map(acc => [
+            const sheetData = accounts.map((acc) => [
               acc.email,
               acc.password,
-              acc.courseCode
+              acc.courseCode,
             ]);
 
             // Script URL từ web
-            const scriptUrl = 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
+            const scriptUrl =
+              "https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec";
 
             // POST qua proxy API (giống web)
-            const response = await axios.post(`${API_URL}/api/proxy-sheet`, {
-              scriptUrl: scriptUrl,
-              sheetName: '',
-              data: sheetData
-            }, {
-              timeout: 30000
-            });
+            const response = await axios.post(
+              `${API_URL}/api/proxy-sheet`,
+              {
+                scriptUrl: scriptUrl,
+                sheetName: "",
+                data: sheetData,
+              },
+              {
+                timeout: 30000,
+              },
+            );
 
             if (totalAccounts === 1) {
               const acc = accounts[0];
@@ -428,7 +488,7 @@ email,password,courseCode
 
 📧 *Email:* \`${acc.email}\`
 🔑 *Password:* \`${acc.password}\`
-${acc.courseCode ? `📚 *Course:* \`${acc.courseCode}\`\n` : ''}
+${acc.courseCode ? `📚 *Course:* \`${acc.courseCode}\`\n` : ""}
 💡 *Tip:* Paste format tiếp theo để thêm nhanh!
               `;
               await sendMessage(chatId, successMessage);
@@ -438,15 +498,21 @@ ${acc.courseCode ? `📚 *Course:* \`${acc.courseCode}\`\n` : ''}
 ✅ *THÊM HÀNG LOẠT ${totalAccounts} COURSERA THÀNH CÔNG!*
 
 📊 Danh sách:
-${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${acc.courseCode}\``).join('\n')}
+${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${acc.courseCode}\``).join("\n")}
 
  *Tip:* Paste format tiếp theo để thêm nhanh!
               `;
               await sendMessage(chatId, successMessage);
             }
           } catch (error) {
-            console.error('Auto-add Coursera error:', error.response?.data || error.message);
-            await sendMessage(chatId, `❌ Lỗi khi thêm Coursera: ${error.response?.data?.error || error.message}`);
+            console.error(
+              "Auto-add Coursera error:",
+              error.response?.data || error.message,
+            );
+            await sendMessage(
+              chatId,
+              `❌ Lỗi khi thêm Coursera: ${error.response?.data?.error || error.message}`,
+            );
           }
           return res.status(200).json({ ok: true });
         }
@@ -454,26 +520,26 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
 
       // CHATGPT AUTO-DETECT: email---password---recoveryUrl format
       const hasChinesePrefix = text.match(/^\[.*?\]/);
-      const hasDelimiters = text.includes('---') || text.includes('----');
-      const hasAtSign = text.includes('@');
+      const hasDelimiters = text.includes("---") || text.includes("----");
+      const hasAtSign = text.includes("@");
 
       if (hasDelimiters && hasAtSign) {
         let input = text;
 
         // Remove Chinese prefix
-        input = input.replace(/^\[.*?\]/, '').trim();
+        input = input.replace(/^\[.*?\]/, "").trim();
 
         // Normalize: convert ---- to ---
-        input = input.replace(/----/g, '---');
+        input = input.replace(/----/g, "---");
 
-        const parts = input.split('---').map(p => p.trim());
+        const parts = input.split("---").map((p) => p.trim());
 
         if (parts.length === 3) {
           const [email, password, recoveryMailUrl] = parts;
 
           if (email && password) {
             try {
-              await sendMessage(chatId, '⏳ Đang thêm account...');
+              await sendMessage(chatId, "⏳ Đang thêm account...");
 
               // Calculate expiredAt: +30 days
               const expiredAt = new Date();
@@ -484,9 +550,9 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
                 username: email,
                 password,
                 link: recoveryMailUrl,
-                type: 'unassigned',
+                type: "unassigned",
                 expiredAt: expiredAtStr,
-                note: ''
+                note: "",
               });
 
               const successMessage = `
@@ -496,15 +562,21 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
 🔑 *Password:* \`${password}\`
 📬 *Recovery URL:* ${recoveryMailUrl}
 📦 *Type:* unassigned
-📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
+📅 *Hết hạn:* ${expiredAt.toLocaleDateString("vi-VN")}
 
 💡 *Tip:* Paste format tiếp theo để thêm nhanh!
               `;
 
               await sendMessage(chatId, successMessage);
             } catch (error) {
-              console.error('Auto-add error:', error.response?.data || error.message);
-              await sendMessage(chatId, `❌ Lỗi khi thêm account: ${error.response?.data?.error || error.message}`);
+              console.error(
+                "Auto-add error:",
+                error.response?.data || error.message,
+              );
+              await sendMessage(
+                chatId,
+                `❌ Lỗi khi thêm account: ${error.response?.data?.error || error.message}`,
+              );
             }
           }
         }
@@ -513,7 +585,7 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('Webhook error:', error);
+    console.error("Webhook error:", error);
     return res.status(200).json({ ok: true });
   }
 };
