@@ -330,4 +330,4 @@ ${validSheetData.map(row => `• ${row[0]} | ${row[2] || 'No Code'}`).join('\n')
   }
 });
 
-console.log('✅ Bot đã sẵn sàng! Gửi /start để bắt đầu.');
+console.log('✅ Bot V2 đã sẵn sàng! (Đã fix lỗi ngày hết hạn & support add nhiều dòng)');
