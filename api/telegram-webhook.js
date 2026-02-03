@@ -185,17 +185,19 @@ email,password,courseCode
             const expiry = acc.expiredAt ? new Date(acc.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
             const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
             
-            statsMessage += `\n${idx+1}. ${emoji} \`${acc.username}\`\n`;
-            statsMessage += `   🔑 \`${acc.password}\`\n`;
-            statsMessage += `   👥 ${userCount}/3 | 📅 ${expiry} (${daysLeft} ngày)\n`;
+            statsMessage += `\n${idx+1}. ${emoji} 👥 ${userCount}/3 | 📅 ${expiry} (${daysLeft}d)\n`;
+            statsMessage += `\`${acc.username}\`\n`;
+            statsMessage += `\`${acc.password}\`\n`;
+            if (acc.link) statsMessage += `\`${acc.link}\`\n`;
             
             if (acc.users && acc.users.length > 0) {
               acc.users.forEach((user, i) => {
                 const joined = user.joinedAt ? new Date(user.joinedAt) : null;
                 const days = joined ? Math.floor((today - joined) / (1000*60*60*24)) : 0;
                 const status = days < 30 ? '✅' : '❌';
-                statsMessage += `   ${status} ${user.name} (${days}d)\n`;
+                statsMessage += `${status} ${user.name} (${days}d) `;
               });
+              statsMessage += `\n`;
             }
           });
           statsMessage += `\n`;
@@ -210,16 +212,17 @@ email,password,courseCode
             const expiry = acc.expiredAt ? new Date(acc.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
             const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
             
-            statsMessage += `\n${idx+1}. ${emoji} \`${acc.username}\`\n`;
-            statsMessage += `   🔑 \`${acc.password}\`\n`;
-            statsMessage += `   👥 ${userCount}/1 | 📅 ${expiry} (${daysLeft} ngày)\n`;
+            statsMessage += `\n${idx+1}. ${emoji} 👥 ${userCount}/1 | 📅 ${expiry} (${daysLeft}d)\n`;
+            statsMessage += `\`${acc.username}\`\n`;
+            statsMessage += `\`${acc.password}\`\n`;
+            if (acc.link) statsMessage += `\`${acc.link}\`\n`;
             
             if (acc.users && acc.users.length > 0) {
               const user = acc.users[0];
               const joined = user.joinedAt ? new Date(user.joinedAt) : null;
               const days = joined ? Math.floor((today - joined) / (1000*60*60*24)) : 0;
               const status = days < 30 ? '✅' : '❌';
-              statsMessage += `   ${status} ${user.name} (${days}d)\n`;
+              statsMessage += `${status} ${user.name} (${days}d)\n`;
             }
           });
           statsMessage += `\n`;
@@ -232,7 +235,10 @@ email,password,courseCode
             const expiry = acc.expiredAt ? new Date(acc.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
             const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
             
-            statsMessage += `${idx+1}. \`${acc.username}\` | 📅 ${expiry} (${daysLeft}d)\n`;
+            statsMessage += `\n${idx+1}. 📅 ${expiry} (${daysLeft}d)\n`;
+            statsMessage += `\`${acc.username}\`\n`;
+            statsMessage += `\`${acc.password}\`\n`;
+            if (acc.link) statsMessage += `\`${acc.link}\`\n`;
           });
           statsMessage += `\n`;
         }
