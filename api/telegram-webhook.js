@@ -163,6 +163,66 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
 
     // AUTO-DETECT: Parse account format
     if (!text.startsWith('/')) {
+      // SEARCH BY CUSTOMER NAME: Plain text without special characters
+      // If no @, no ---, no comma -> search customer name
+      if (!text.includes('@') && !text.includes('---') && !text.includes(',')) {
+        const searchName = text.trim().toLowerCase();
+        
+        try {
+          await sendMessage(chatId, '🔍 Đang tìm khách hàng...');
+
+          const response = await axios.get(`${API_URL}/api/data`);
+          const data = response.data;
+          const accounts = data.chatgpt || data || [];
+
+          let results = [];
+          accounts.forEach(acc => {
+            if (acc.users && acc.users.length > 0) {
+              acc.users.forEach((user, idx) => {
+                if (user.name && user.name.toLowerCase().includes(searchName)) {
+                  results.push({
+                    userName: user.name,
+                    accEmail: acc.username,
+                    accPassword: acc.password,
+                    accType: acc.type,
+                    accLink: acc.link,
+                    joinedAt: user.joinedAt,
+                    userIndex: idx
+                  });
+                }
+              });
+            }
+          });
+
+          if (results.length === 0) {
+            await sendMessage(chatId, `❌ Không tìm thấy khách hàng với tên "${searchName}"`);
+          } else {
+            let message = `🔍 *TÌM THẤY ${results.length} KẾT QUẢ*\n\nTừ khóa: "${searchName}"\n\n`;
+
+            results.forEach((r, idx) => {
+              const typeEmoji = r.accType === 'package1' ? '🟢' : r.accType === 'package2' ? '🔵' : '⚪';
+              const joinedDate = r.joinedAt ? new Date(r.joinedAt).toLocaleDateString('vi-VN') : 'N/A';
+              const today = new Date();
+              const joined = new Date(r.joinedAt);
+              const daysUsed = Math.floor((today - joined) / (1000 * 60 * 60 * 24));
+              const status = daysUsed < 30 ? '✅' : '❌';
+
+              message += `${idx + 1}. ${status} 👤 *${r.userName}*\n`;
+              message += `   📧 \`${r.accEmail}\`\n`;
+              message += `   🔑 \`${r.accPassword}\`\n`;
+              if (r.accLink) message += `   🔗 ${r.accLink}\n`;
+              message += `   ${typeEmoji} ${r.accType}\n`;
+              message += `   📅 Từ: ${joinedDate} (${daysUsed} ngày)\n\n`;
+            });
+
+            await sendMessage(chatId, message);
+          }
+        } catch (error) {
+          await sendMessage(chatId, '❌ Lỗi khi tìm kiếm!');
+        }
+        return res.status(200).json({ ok: true });
+      }
+
       // SEARCH CHATGPT ACCOUNT: Just email input (no format)
       // Check if it's a simple email search (contains @ but no special format)
       if (text.includes('@') && !text.includes('---') && !text.includes(',')) {
@@ -272,13 +332,12 @@ ${acc.courseCode ? `📚 *Course:* \`${acc.courseCode}\`\n` : ''}
               `;
               await sendMessage(chatId, successMessage);
             } else {
-              // Batch success message
+              // Batch success message - show all
               const successMessage = `
 ✅ *THÊM HÀNG LOẠT ${totalAccounts} COURSERA THÀNH CÔNG!*
 
 📊 Danh sách:
-${accounts.slice(0, 5).map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${acc.courseCode}\``).join('\n')}
-${totalAccounts > 5 ? `\n_... và ${totalAccounts - 5} accounts khác_` : ''}
+${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${acc.courseCode}\``).join('\n')}
 
  *Tip:* Paste format tiếp theo để thêm nhanh!
               `;
