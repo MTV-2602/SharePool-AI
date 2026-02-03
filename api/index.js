@@ -201,5 +201,9 @@ app.post('/api/proxy-sheet', async (req, res) => {
     }
 });
 
+// 6. TELEGRAM WEBHOOK
+const telegramWebhook = require('./telegram-webhook');
+app.post('/api/telegram-webhook', telegramWebhook);
+
 // Helper for Vercel
 module.exports = app;
