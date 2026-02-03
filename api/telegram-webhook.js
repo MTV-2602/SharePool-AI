@@ -607,7 +607,7 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
 🔑 *Password:* \`${password}\`
 📬 *Recovery URL:* ${recoveryMailUrl}
 📦 *Type:* unassigned
-📅 *Hết hạn:* ${expiredAt.toLocaleDateString("vi-VN")}
+📅 *Hết hạn:* ${expiredDate.toLocaleDateString("vi-VN")}
 
 💡 *Tip:* Paste format tiếp theo để thêm nhanh!
               `;
