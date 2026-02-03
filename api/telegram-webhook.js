@@ -133,13 +133,14 @@ email,password,courseCode
       return res.status(200).json({ ok: true });
     }
 
-    // Command: /stats
+    // Command: /stats - Thống kê ChatGPT accounts
     if (text === '/stats') {
       try {
         await sendMessage(chatId, '⏳ Đang tính toán...');
 
         const response = await axios.get(`${API_URL}/api/data`);
-        const accounts = response.data;
+        const data = response.data;
+        const accounts = data.chatgpt || data || [];
 
         const totalAccounts = accounts.length;
         const package1Count = accounts.filter(a => a.type === 'package1').length;
@@ -180,16 +181,16 @@ email,password,courseCode
         }).length;
 
         const statsMessage = `
-📊 *THỐNG KÊ HỆ THỐNG*
+📊 *THỐNG KÊ CHATGPT*
 
-*📦 ACCOUNTS:*
-├ Tổng: ${totalAccounts}
-├ 🟢 Package1: ${package1Count}
-├ 🔵 Package2: ${package2Count}
+*📦 TÀI KHOẢN:*
+├ 📌 Tổng: ${totalAccounts}
+├ 🟢 Package1 (Shared): ${package1Count}
+├ 🔵 Package2 (Private): ${package2Count}
 └ ⚪ Unassigned: ${unassignedCount}
 
-*👥 USERS:*
-├ Tổng: ${totalUsers}
+*👥 KHÁCH HÀNG:*
+├ 📌 Tổng: ${totalUsers}
 ├ ✅ Active: ${activeUsers}
 └ ❌ Expired: ${expiredUsers}
 
@@ -415,8 +416,7 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
 
 📧 *Email:* \`${acc.email}\`
 🔑 *Password:* \`${acc.password}\`
-${acc.courseCode ? `📚 *Course:* \`${acc.courseCode}\`\n` : ''}📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
-
+${acc.courseCode ? `📚 *Course:* \`${acc.courseCode}\`\n` : ''}
 💡 *Tip:* Paste format tiếp theo để thêm nhanh!
               `;
               await sendMessage(chatId, successMessage);
@@ -429,9 +429,7 @@ ${acc.courseCode ? `📚 *Course:* \`${acc.courseCode}\`\n` : ''}📅 *Hết h�
 ${accounts.slice(0, 5).map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${acc.courseCode}\``).join('\n')}
 ${totalAccounts > 5 ? `\n_... và ${totalAccounts - 5} accounts khác_` : ''}
 
-📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
-
-💡 *Tip:* Paste format tiếp theo để thêm nhanh!
+ *Tip:* Paste format tiếp theo để thêm nhanh!
               `;
               await sendMessage(chatId, successMessage);
             }
