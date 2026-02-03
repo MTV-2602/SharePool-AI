@@ -393,12 +393,12 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
               const scriptUrl = 'https://script.google.com/macros/s/AKfycbwoKnZsauopOfFZfp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZiQ63ZahKnJYNH5cJXsV/exec';
               
               // Gửi data giống web - qua proxy với rawJSON format
-              const response = await axios.post(scriptUrl, {
+              const response = await axios.post(scriptUrl, JSON.stringify({
                 sheetName: '',
                 data: sheetData
-              }, {
+              }), {
                 headers: { 
-                  'Content-Type': 'application/json'
+                  'Content-Type': 'text/plain;charset=utf-8'
                 }
               });
               
