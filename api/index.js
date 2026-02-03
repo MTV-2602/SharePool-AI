@@ -125,7 +125,7 @@ app.post('/api/move-user', async (req, res) => {
         if (toAcc.type !== 'package1') {
             return res.status(400).json({ error: 'Chỉ được chuyển vào gói Chia Sẻ (Shared)' });
         }
-        
+
         // Check if Shared package has available slots
         const currentUsers = toAcc.users?.length || 0;
         if (currentUsers >= 3) {
@@ -197,7 +197,9 @@ app.post('/api/proxy-sheet', async (req, res) => {
         const response = await axios.post(scriptUrl, { sheetName, data }, { headers: { 'Content-Type': 'application/json' }, maxRedirects: 5 });
         res.json(response.data);
     } catch (error) {
-        res.status(500).json({ error: 'Lỗi khi gửi dữ liệu sang Google Sheet' });
+        const errData = error.response?.data || error.message;
+        console.error("Proxy Error:", errData);
+        res.status(500).json({ error: 'Lỗi khi gửi dữ liệu sang Google Sheet', details: errData });
     }
 });
 

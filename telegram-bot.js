@@ -225,8 +225,8 @@ bot.on('message', async (msg) => {
         bot.sendMessage(chatId, `⏳ Đang thêm hàng loạt ${validSheetData.length} tài khoản Coursera vào Sheet...`);
       }
 
-      // Lấy script URL - dùng mặc định giống web
-      const scriptUrl = process.env.GOOGLE_SHEET_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwoKnZsauopOfFZfp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZiQ63ZahKnJYNH5cJXsV/exec';
+      // Lấy script URL - dùng mặc định giống web (Updated to match App.jsx)
+      const scriptUrl = process.env.GOOGLE_SHEET_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
 
       // Gửi lên Google Sheet (Bulk)
       await axios.post(`${API_URL}/api/proxy-sheet`, {
