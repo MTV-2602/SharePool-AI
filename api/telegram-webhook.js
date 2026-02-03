@@ -58,7 +58,7 @@ module.exports = async (req, res) => {
     // Command: /start
     if (text === '/start') {
       const welcomeMessage = `
-🤖 *ChatGPT Manager Bot*
+🤖 *ChatGPT & Coursera Manager Bot*
 
 📋 *LỆNH CÓ SẴN:*
 
@@ -66,24 +66,30 @@ module.exports = async (req, res) => {
 /list - Xem danh sách accounts
 /stats - Thống kê tổng quan
 /expire - Accounts sắp hết hạn
+/finduser <tên> - Tìm khách hàng
+/findacc <email> - Tìm tài khoản
 /help - Hướng dẫn
 
 ---
 
 📝 *CÁCH THÊM ACCOUNT:*
 
-Chỉ cần paste format này:
-
+*ChatGPT:* Paste format:
 \`\`\`
 email---password---recoveryUrl
 \`\`\`
 
-*Ví dụ:*
+*Coursera:* Paste format:
 \`\`\`
-UCanPlus1669@purinikiopiy.asia---zxcvbnm666..---https://mail.chatgpt.org.uk/UCanPlus1669
+email,password,courseCode
 \`\`\`
 
-💡 *Bot tự động nhận cả* \`---\` *và* \`----\`
+*Ví dụ Coursera:*
+\`\`\`
+duyh28421@gmail.com,Duyh27092006,wed201c
+\`\`\`
+
+💡 *Bot tự động nhận diện loại tài khoản!*
       `;
       await sendMessage(chatId, welcomeMessage);
       return res.status(200).json({ ok: true });
@@ -95,32 +101,37 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..---https://mail.chatgpt.org.uk/UCan
 📖 *HƯỚNG DẪN SỬ DỤNG*
 
 *1️⃣ THÊM ACCOUNT:*
-Paste format:
+
+📦 *ChatGPT:*
 \`\`\`
 email---password---recoveryUrl
 \`\`\`
 
-*Ví dụ:*
+📚 *Coursera:*
 \`\`\`
-UCanPlus1669@purinikiopiy.asia---zxcvbnm666..---https://mail.chatgpt.org.uk/UCanPlus1669
+email,password,courseCode
 \`\`\`
+*Ví dụ:* \`duyh28421@gmail.com,Duyh27092006,wed201c\`
 
-💡 *Bot tự động nhận cả* \`---\` *và* \`----\`
+*2️⃣ TÌM KIẾM:*
+\`/finduser <tên>\` - Tìm khách hàng
+\`/findacc <email>\` - Tìm tài khoản
 
-*2️⃣ XEM DANH SÁCH:*
+*3️⃣ XEM DANH SÁCH:*
 \`/list\` - Xem tất cả accounts
 
-*3️⃣ THỐNG KÊ:*
+*4️⃣ THỐNG KÊ:*
 \`/stats\` - Tổng quan hệ thống
 
-*4️⃣ CẢNH BÁO:*
+*5️⃣ CẢNH BÁO:*
 \`/expire\` - Accounts hết hạn trong 7 ngày
 
 ---
 
 ⚠️ *LƯU Ý:*
-- Account mặc định là *unassigned*
-- Hết hạn: +30 ngày từ hôm nay
+- ChatGPT: hết hạn +30 ngày
+- Coursera: hết hạn +365 ngày
+- Bot tự động nhận diện loại tài khoản
       `;
       await sendMessage(chatId, helpMessage);
       return res.status(200).json({ ok: true });
@@ -205,26 +216,46 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
         await sendMessage(chatId, '⏳ Đang tải dữ liệu...');
         
         const response = await axios.get(`${API_URL}/api/data`);
-        let accounts = response.data;
+        const data = response.data;
+        const accounts = data.chatgpt || data || [];
+        const coursera = data.coursera || [];
         
-        if (accounts.length === 0) {
+        if (accounts.length === 0 && coursera.length === 0) {
           await sendMessage(chatId, '📭 Không có account nào!');
           return res.status(200).json({ ok: true });
         }
         
-        let message = `📋 *DANH SÁCH ACCOUNTS* (${accounts.length})\n\n`;
+        let message = `📋 *DANH SÁCH ACCOUNTS*\n\n`;
         
-        accounts.slice(0, 20).forEach((acc, idx) => {
-          const typeEmoji = acc.type === 'package1' ? '🟢' : acc.type === 'package2' ? '🔵' : '⚪';
-          const userCount = acc.users?.length || 0;
+        if (accounts.length > 0) {
+          message += `🤖 *ChatGPT* (${accounts.length}):\n\n`;
+          accounts.slice(0, 15).forEach((acc, idx) => {
+            const typeEmoji = acc.type === 'package1' ? '🟢' : acc.type === 'package2' ? '🔵' : '⚪';
+            const userCount = acc.users?.length || 0;
+            
+            message += `${idx + 1}. ${typeEmoji} *${acc.type}*\n`;
+            message += `   📧 \`${acc.username}\`\n`;
+            message += `   👥 ${userCount} users\n\n`;
+          });
           
-          message += `${idx + 1}. ${typeEmoji} *${acc.type}*\n`;
-          message += `   📧 \`${acc.username}\`\n`;
-          message += `   👥 ${userCount} users\n\n`;
-        });
+          if (accounts.length > 15) {
+            message += `_... và ${accounts.length - 15} ChatGPT accounts khác_\n\n`;
+          }
+        }
         
-        if (accounts.length > 20) {
-          message += `_... và ${accounts.length - 20} accounts khác_`;
+        if (coursera.length > 0) {
+          message += `\n📚 *Coursera* (${coursera.length}):\n\n`;
+          coursera.slice(0, 10).forEach((acc, idx) => {
+            const userCount = acc.users?.length || 0;
+            
+            message += `${idx + 1}. 📘 *Coursera*\n`;
+            message += `   📧 \`${acc.username}\`\n`;
+            message += `   👥 ${userCount} users\n\n`;
+          });
+          
+          if (coursera.length > 10) {
+            message += `_... và ${coursera.length - 10} Coursera accounts khác_`;
+          }
         }
         
         await sendMessage(chatId, message);
@@ -234,8 +265,160 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
       return res.status(200).json({ ok: true });
     }
 
+    // Command: /finduser <name>
+    if (text.startsWith('/finduser ')) {
+      const searchName = text.replace('/finduser ', '').trim().toLowerCase();
+      
+      if (!searchName) {
+        await sendMessage(chatId, '❌ Vui lòng nhập tên khách cần tìm!\n\n*Cú pháp:* `/finduser <tên>`');
+        return res.status(200).json({ ok: true });
+      }
+      
+      try {
+        await sendMessage(chatId, '🔍 Đang tìm kiếm...');
+        
+        const response = await axios.get(`${API_URL}/api/data`);
+        const accounts = response.data;
+        
+        let results = [];
+        accounts.forEach(acc => {
+          if (acc.users && acc.users.length > 0) {
+            acc.users.forEach((user, idx) => {
+              if (user.name && user.name.toLowerCase().includes(searchName)) {
+                results.push({
+                  userName: user.name,
+                  accEmail: acc.username,
+                  accType: acc.type,
+                  joinedAt: user.joinedAt,
+                  userIndex: idx
+                });
+              }
+            });
+          }
+        });
+        
+        if (results.length === 0) {
+          await sendMessage(chatId, `❌ Không tìm thấy khách hàng với tên "${searchName}"`);
+        } else {
+          let message = `🔍 *TÌM THẤY ${results.length} KẾT QUẢ*\n\nTừ khóa: "${searchName}"\n\n`;
+          
+          results.forEach((r, idx) => {
+            const typeEmoji = r.accType === 'package1' ? '🟢' : r.accType === 'package2' ? '🔵' : '⚪';
+            const joinedDate = r.joinedAt ? new Date(r.joinedAt).toLocaleDateString('vi-VN') : 'N/A';
+            
+            message += `${idx + 1}. 👤 *${r.userName}*\n`;
+            message += `   📧 \`${r.accEmail}\`\n`;
+            message += `   ${typeEmoji} ${r.accType}\n`;
+            message += `   📅 Từ: ${joinedDate}\n\n`;
+          });
+          
+          await sendMessage(chatId, message);
+        }
+      } catch (error) {
+        await sendMessage(chatId, '❌ Lỗi khi tìm kiếm!');
+      }
+      return res.status(200).json({ ok: true });
+    }
+
+    // Command: /findacc <email>
+    if (text.startsWith('/findacc ')) {
+      const searchEmail = text.replace('/findacc ', '').trim().toLowerCase();
+      
+      if (!searchEmail) {
+        await sendMessage(chatId, '❌ Vui lòng nhập email cần tìm!\n\n*Cú pháp:* `/findacc <email>`');
+        return res.status(200).json({ ok: true });
+      }
+      
+      try {
+        await sendMessage(chatId, '🔍 Đang tìm kiếm...');
+        
+        const response = await axios.get(`${API_URL}/api/data`);
+        const accounts = response.data;
+        
+        const results = accounts.filter(acc => 
+          acc.username && acc.username.toLowerCase().includes(searchEmail)
+        );
+        
+        if (results.length === 0) {
+          await sendMessage(chatId, `❌ Không tìm thấy tài khoản với email "${searchEmail}"`);
+        } else {
+          let message = `🔍 *TÌM THẤY ${results.length} TÀI KHOẢN*\n\nTừ khóa: "${searchEmail}"\n\n`;
+          
+          results.forEach((acc, idx) => {
+            const typeEmoji = acc.type === 'package1' ? '🟢' : acc.type === 'package2' ? '🔵' : '⚪';
+            const userCount = acc.users?.length || 0;
+            const expiredAt = acc.expiredAt ? new Date(acc.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
+            
+            message += `${idx + 1}. ${typeEmoji} *${acc.type}*\n`;
+            message += `   📧 \`${acc.username}\`\n`;
+            message += `   🔑 \`${acc.password}\`\n`;
+            message += `   👥 ${userCount} users\n`;
+            message += `   📅 Hết hạn: ${expiredAt}\n`;
+            if (acc.link) message += `   🔗 ${acc.link}\n`;
+            message += `\n`;
+          });
+          
+          await sendMessage(chatId, message);
+        }
+      } catch (error) {
+        await sendMessage(chatId, '❌ Lỗi khi tìm kiếm!');
+      }
+      return res.status(200).json({ ok: true });
+    }
+
     // AUTO-DETECT: Parse account format
     if (!text.startsWith('/')) {
+      // COURSERA AUTO-DETECT: email,password,courseCode format
+      if (text.includes(',') && text.includes('@') && !text.includes('---')) {
+        const parts = text.split(',').map(p => p.trim());
+        
+        if (parts.length >= 2 && parts.length <= 3) {
+          const [email, password, courseCode] = parts;
+          
+          if (email && password && email.includes('@')) {
+            try {
+              await sendMessage(chatId, '⏳ Đang thêm tài khoản Coursera vào Sheet...');
+              
+              const expiredAt = new Date();
+              expiredAt.setDate(expiredAt.getDate() + 365);
+              
+              // Format dữ liệu giống web: [email, password, courseCode]
+              const sheetData = [[
+                email,
+                password,
+                courseCode || ''
+              ]];
+              
+              // Lấy script URL - dùng mặc định giống web
+              const scriptUrl = process.env.GOOGLE_SHEET_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwoKnZsauopOfFZfp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZiQ63ZahKnJYNH5cJXsV/exec';
+              
+              await axios.post(`${API_URL}/api/proxy-sheet`, {
+                scriptUrl: scriptUrl,
+                sheetName: '',
+                data: sheetData
+              });
+              
+              const successMessage = `
+✅ *TỰ ĐỘNG THÊM COURSERA VÀO SHEET THÀNH CÔNG!*
+
+📧 *Email:* \`${email}\`
+🔑 *Password:* \`${password}\`
+${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
+
+💡 *Tip:* Paste format tiếp theo để thêm nhanh!
+              `;
+              
+              await sendMessage(chatId, successMessage);
+            } catch (error) {
+              console.error('Auto-add Coursera error:', error.response?.data || error.message);
+              await sendMessage(chatId, `❌ Lỗi khi thêm Coursera: ${error.response?.data?.error || error.message}`);
+            }
+            return res.status(200).json({ ok: true });
+          }
+        }
+      }
+      
+      // CHATGPT AUTO-DETECT: email---password---recoveryUrl format
       const hasChinesePrefix = text.match(/^\[.*?\]/);
       const hasDelimiters = text.includes('---') || text.includes('----');
       const hasAtSign = text.includes('@');

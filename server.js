@@ -25,7 +25,7 @@ mongoose.connect(MONGO_URI)
     })
     .catch(err => console.error("❌ MongoDB Connection Error:", err));
 
-// Define Schema for Accounts
+// Define Schema for Accounts (ChatGPT)
 const accountSchema = new mongoose.Schema({
     id: { type: String, unique: true }, // Keep string ID compatibility
     username: { type: String, required: true },
@@ -42,7 +42,24 @@ const accountSchema = new mongoose.Schema({
     expiredAt: { type: String } // New Field
 });
 
+// Define Schema for Coursera Accounts
+const courseraSchema = new mongoose.Schema({
+    id: { type: String, unique: true },
+    username: { type: String, required: true },
+    password: { type: String, required: true },
+    type: { type: String, default: 'coursera' },
+    users: [{
+        name: String,
+        joinedAt: String
+    }],
+    note: String,
+    status: { type: String, default: 'available' },
+    createdAt: { type: String },
+    expiredAt: { type: String }
+});
+
 const Account = mongoose.model('Account', accountSchema);
+const Coursera = mongoose.model('Coursera', courseraSchema);
 
 // --- MIGRATION LOGIC (Tự động chuyển dữ liệu cũ lên Cloud) ---
 async function migrateDataIfNeeded() {
@@ -71,8 +88,9 @@ async function migrateDataIfNeeded() {
 app.get('/api/data', async (req, res) => {
     try {
         const accounts = await Account.find({});
+        const coursera = await Coursera.find({});
         // Format response to match old structure for Frontend compatibility
-        res.json({ chatgpt: accounts });
+        res.json({ chatgpt: accounts, coursera: coursera });
     } catch (error) {
         res.status(500).json({ error: 'Database Error' });
     }
@@ -115,6 +133,48 @@ app.delete('/api/chatgpt/:id', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// === COURSERA API ROUTES ===
+
+// ADD COURSERA ACCOUNT
+app.post('/api/coursera', async (req, res) => {
+    try {
+        const newCourseraAcc = {
+            id: Date.now().toString(),
+            ...req.body,
+            createdAt: new Date().toISOString()
+        };
+        await Coursera.create(newCourseraAcc);
+        res.json({ message: 'Added Coursera successfully', account: newCourseraAcc });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// UPDATE COURSERA ACCOUNT
+app.put('/api/coursera/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updated = await Coursera.findOneAndUpdate({ id: id }, req.body, { new: true });
+        if (!updated) return res.status(404).json({ error: 'Coursera account not found' });
+        res.json({ message: 'Updated Coursera', account: updated });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE COURSERA ACCOUNT
+app.delete('/api/coursera/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await Coursera.findOneAndDelete({ id: id });
+        res.json({ message: 'Deleted Coursera' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// === END COURSERA ROUTES ===
 
 // 4.5 MOVE USER (ATOMIC TRANSFER)
 app.post('/api/move-user', async (req, res) => {

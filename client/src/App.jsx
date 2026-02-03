@@ -781,7 +781,7 @@ function App() {
                                 <div className="relative">
                                     <input
                                         type="text"
-                                        placeholder="🔍 Tìm kiếm theo email..."
+                                        placeholder="🔍 Tìm kiếm theo email hoặc tên khách..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -824,7 +824,21 @@ function App() {
                                         {accounts
                                             .filter(acc => {
                                                 if (!searchQuery.trim()) return true;
-                                                return acc.username.toLowerCase().includes(searchQuery.toLowerCase());
+                                                const query = searchQuery.toLowerCase();
+                                                
+                                                // Tìm theo email
+                                                if (acc.username && acc.username.toLowerCase().includes(query)) {
+                                                    return true;
+                                                }
+                                                
+                                                // Tìm theo tên khách hàng
+                                                if (acc.users && acc.users.length > 0) {
+                                                    return acc.users.some(user => 
+                                                        user.name && user.name.toLowerCase().includes(query)
+                                                    );
+                                                }
+                                                
+                                                return false;
                                             })
                                             .map(acc => (
                                             <tr key={acc.id} className="hover:bg-slate-800/50 transition-colors">

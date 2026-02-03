@@ -33,7 +33,7 @@ bot.onText(/\/start/, (msg) => {
   }
   
   const welcomeMessage = `
-🤖 *ChatGPT Manager Bot*
+🤖 *ChatGPT & Coursera Manager Bot*
 
 📋 *LỆNH CÓ SẴN:*
 
@@ -45,23 +45,19 @@ bot.onText(/\/start/, (msg) => {
 
 ---
 
-📝 *FORMAT THÊM ACCOUNT:*
+📝 *CÁCH THÊM ACCOUNT:*
 
+*ChatGPT:* Paste format:
 \`\`\`
-/add email---password---recoveryUrl
-\`\`\`
-
-*Ví dụ:*
-\`\`\`
-/add UCanPlus1669@purinikiopiy.asia---zxcvbnm666..---https://mail.chatgpt.org.uk/UCanPlus1669
+email---password---recoveryUrl
 \`\`\`
 
-*Hoặc copy nguyên format gốc (3 hoặc 4 dấu gạch đều OK):*
+*Coursera:* Paste format:
 \`\`\`
-/add [邮箱账号----密码----网页取件]email---pass---url
+email,password,courseCode
 \`\`\`
 
-💡 *Tips:* Bot tự động nhận cả \`---\` và \`----\`
+💡 *Bot tự động nhận diện loại tài khoản!*
   `;
   
   bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
@@ -408,8 +404,59 @@ bot.on('message', async (msg) => {
   if (!text) return;
   if (!checkPermission(msg)) return;
   
-  // Check nếu text match format account
-  // Format: [optional text]email---password---url
+  // COURSERA AUTO-DETECT: email,password,courseCode format
+  if (text.includes(',') && text.includes('@') && !text.includes('---')) {
+    const parts = text.split(',').map(p => p.trim());
+    
+    if (parts.length >= 2 && parts.length <= 3) {
+      const [email, password, courseCode] = parts;
+      
+      if (email && password && email.includes('@')) {
+        try {
+          bot.sendMessage(chatId, '⏳ Đang thêm tài khoản Coursera vào Sheet...');
+          
+          const expiredAt = new Date();
+          expiredAt.setDate(expiredAt.getDate() + 365); // Coursera: 1 năm
+          
+          // Format dữ liệu giống web: [email, password, courseCode]
+          const sheetData = [[
+            email,
+            password,
+            courseCode || ''
+          ]];
+          
+          // Lấy script URL - dùng mặc định giống web
+          const scriptUrl = process.env.GOOGLE_SHEET_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwoKnZsauopOfFZfp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZiQ63ZahKnJYNH5cJXsV/exec';
+          
+          // Gửi lên Google Sheet với sheetName mặc định
+          await axios.post(`${API_URL}/api/proxy-sheet`, {
+            scriptUrl: scriptUrl,
+            sheetName: '', // Để trống sẽ dùng sheet mặc định
+            data: sheetData
+          });
+          
+          const successMessage = `
+✅ *TỰ ĐỘNG THÊM COURSERA VÀO SHEET THÀNH CÔNG!*
+
+📧 *Email:* \`${email}\`
+🔑 *Password:* \`${password}\`
+${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
+
+💡 *Tip:* Paste format tiếp theo để thêm nhanh!
+          `;
+          
+          bot.sendMessage(chatId, successMessage, { parse_mode: 'Markdown' });
+          return;
+        } catch (error) {
+          console.error('Auto-add Coursera error:', error.response?.data || error.message);
+          bot.sendMessage(chatId, `❌ Lỗi khi thêm Coursera: ${error.response?.data?.error || error.message}`);
+          return;
+        }
+      }
+    }
+  }
+  
+  // CHATGPT AUTO-DETECT: email---password---url format
   const hasChinesePrefix = text.match(/^\[.*?\]/);
   const hasDelimiters = text.includes('---') || text.includes('----');
   const hasAtSign = text.includes('@');
