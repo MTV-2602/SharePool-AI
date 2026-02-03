@@ -13,6 +13,17 @@ const checkPermission = (userId) => {
   return ALLOWED_USER_IDS.includes(userId);
 };
 
+// Normalize Vietnamese text for smart search (remove accents)
+const normalizeVietnamese = (str) => {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd');
+};
+
 // Send message helper
 const sendMessage = async (chatId, text, options = {}) => {
   try {
@@ -166,7 +177,8 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
       // SEARCH BY CUSTOMER NAME: Plain text without special characters
       // If no @, no ---, no comma -> search customer name
       if (!text.includes('@') && !text.includes('---') && !text.includes(',')) {
-        const searchName = text.trim().toLowerCase();
+        const searchName = text.trim();
+        const normalizedSearch = normalizeVietnamese(searchName);
         
         try {
           await sendMessage(chatId, '🔍 Đang tìm khách hàng...');
@@ -179,16 +191,19 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
           accounts.forEach(acc => {
             if (acc.users && acc.users.length > 0) {
               acc.users.forEach((user, idx) => {
-                if (user.name && user.name.toLowerCase().includes(searchName)) {
-                  results.push({
-                    userName: user.name,
-                    accEmail: acc.username,
-                    accPassword: acc.password,
-                    accType: acc.type,
-                    accLink: acc.link,
-                    joinedAt: user.joinedAt,
-                    userIndex: idx
-                  });
+                if (user.name) {
+                  const normalizedUserName = normalizeVietnamese(user.name);
+                  if (normalizedUserName.includes(normalizedSearch)) {
+                    results.push({
+                      userName: user.name,
+                      accEmail: acc.username,
+                      accPassword: acc.password,
+                      accType: acc.type,
+                      accLink: acc.link,
+                      joinedAt: user.joinedAt,
+                      userIndex: idx
+                    });
+                  }
                 }
               });
             }
