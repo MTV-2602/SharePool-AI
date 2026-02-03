@@ -223,7 +223,28 @@ app.post("/api/proxy-sheet", async (req, res) => {
   }
 });
 
-// 6. TELEGRAM WEBHOOK
+// 6. LOGIN ENDPOINT (Secure authentication)
+app.post("/api/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    // Get credentials from environment variables
+    const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
+    
+    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+      // Generate a simple token (in production, use JWT)
+      const token = `valid_session_${Date.now()}`;
+      res.json({ success: true, token });
+    } else {
+      res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Login error' });
+  }
+});
+
+// 7. TELEGRAM WEBHOOK
 const telegramWebhook = require("./telegram-webhook");
 app.post("/api/telegram-webhook", telegramWebhook);
 

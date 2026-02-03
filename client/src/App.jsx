@@ -142,15 +142,25 @@ function App() {
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, [isAuthenticated]);
 
-    const handleLogin = (e) => {
+    const handleLogin = async (e) => {
         e.preventDefault();
-        // HARDCODED CREDENTIALS
-        if (loginForm.email.toLowerCase() === 'team89a6@gmail.com' && loginForm.password === 'helloem1') {
-            localStorage.setItem('admin_token', 'valid_session_team89a6');
-            setIsAuthenticated(true);
-            fetchData();
-            showAlert('Xin chào', 'Đăng nhập thành công! 👋', 'success');
-        } else {
+        
+        try {
+            // Backend authentication
+            const response = await axios.post('/api/login', {
+                email: loginForm.email.toLowerCase(),
+                password: loginForm.password
+            });
+
+            if (response.data.success) {
+                localStorage.setItem('admin_token', response.data.token);
+                setIsAuthenticated(true);
+                fetchData();
+                showAlert('Xin chào', 'Đăng nhập thành công! 👋', 'success');
+            } else {
+                showAlert('Lỗi', 'Sai email hoặc mật khẩu!', 'error');
+            }
+        } catch (error) {
             showAlert('Lỗi', 'Sai email hoặc mật khẩu!', 'error');
         }
     };
