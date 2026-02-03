@@ -168,46 +168,76 @@ email,password,courseCode
           return daysLeft <= 7 && daysLeft >= 0;
         }).length;
 
-        // Calculate available slots for Package1
-        let totalSlots = package1Accs.length * 3;
-        let usedSlots = 0;
-        package1Accs.forEach(acc => {
-          usedSlots += acc.users?.length || 0;
-        });
-        const availableSlots = totalSlots - usedSlots;
+        // Build detailed message
+        let statsMessage = `📊 *THỐNG KÊ CHATGPT CHI TIẾT*\n\n`;
+        
+        statsMessage += `*📌 TỔNG QUAN:*\n`;
+        statsMessage += `├ Tổng TK: ${totalAccounts}\n`;
+        statsMessage += `├ 👥 Khách: ${totalUsers} (✅${activeUsers}/❌${expiredUsers})\n`;
+        statsMessage += `└ ⚠️ Hết hạn: 🔴${expiredAccounts} | 🟠${urgentAccounts3Days} | 🟡${urgentAccounts7Days}\n\n`;
 
-        const statsMessage = `
-📊 *THỐNG KÊ CHATGPT CHI TIẾT*
+        // Package1 Details
+        if (package1Accs.length > 0) {
+          statsMessage += `*🟢 PACKAGE1 - SHARED (${package1Accs.length}):\n*`;
+          package1Accs.forEach((acc, idx) => {
+            const userCount = acc.users?.length || 0;
+            const emoji = userCount >= 3 ? '🔴' : userCount > 0 ? '🟡' : '🟢';
+            const expiry = acc.expiredAt ? new Date(acc.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
+            const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
+            
+            statsMessage += `\n${idx+1}. ${emoji} \`${acc.username}\`\n`;
+            statsMessage += `   🔑 \`${acc.password}\`\n`;
+            statsMessage += `   👥 ${userCount}/3 | 📅 ${expiry} (${daysLeft} ngày)\n`;
+            
+            if (acc.users && acc.users.length > 0) {
+              acc.users.forEach((user, i) => {
+                const joined = user.joinedAt ? new Date(user.joinedAt) : null;
+                const days = joined ? Math.floor((today - joined) / (1000*60*60*24)) : 0;
+                const status = days < 30 ? '✅' : '❌';
+                statsMessage += `   ${status} ${user.name} (${days}d)\n`;
+              });
+            }
+          });
+          statsMessage += `\n`;
+        }
 
-*📦 TÀI KHOẢN (${totalAccounts}):*
-├ 🟢 *Package1 (Shared): ${package1Accs.length}*
-│  ├ Đầy (3/3): ${package1Full}
-│  ├ Còn slot: ${package1Available}
-│  └ Slots trống: ${availableSlots}/${totalSlots}
-├ 🔵 *Package2 (Private): ${package2Accs.length}*
-│  ├ Đang dùng: ${package2Used}
-│  └ Trống: ${package2Empty}
-└ ⚪ *Unassigned: ${unassignedAccs.length}*
+        // Package2 Details
+        if (package2Accs.length > 0) {
+          statsMessage += `*🔵 PACKAGE2 - PRIVATE (${package2Accs.length}):\n*`;
+          package2Accs.forEach((acc, idx) => {
+            const userCount = acc.users?.length || 0;
+            const emoji = userCount > 0 ? '🔵' : '⚪';
+            const expiry = acc.expiredAt ? new Date(acc.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
+            const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
+            
+            statsMessage += `\n${idx+1}. ${emoji} \`${acc.username}\`\n`;
+            statsMessage += `   🔑 \`${acc.password}\`\n`;
+            statsMessage += `   👥 ${userCount}/1 | 📅 ${expiry} (${daysLeft} ngày)\n`;
+            
+            if (acc.users && acc.users.length > 0) {
+              const user = acc.users[0];
+              const joined = user.joinedAt ? new Date(user.joinedAt) : null;
+              const days = joined ? Math.floor((today - joined) / (1000*60*60*24)) : 0;
+              const status = days < 30 ? '✅' : '❌';
+              statsMessage += `   ${status} ${user.name} (${days}d)\n`;
+            }
+          });
+          statsMessage += `\n`;
+        }
 
-*👥 KHÁCH HÀNG (${totalUsers}):*
-├ ✅ Active: ${activeUsers}
-└ ❌ Expired: ${expiredUsers}
+        // Unassigned Details
+        if (unassignedAccs.length > 0) {
+          statsMessage += `*⚪ UNASSIGNED (${unassignedAccs.length}):\n*`;
+          unassignedAccs.forEach((acc, idx) => {
+            const expiry = acc.expiredAt ? new Date(acc.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
+            const daysLeft = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - today) / (1000*60*60*24)) : 'N/A';
+            
+            statsMessage += `${idx+1}. \`${acc.username}\` | 📅 ${expiry} (${daysLeft}d)\n`;
+          });
+          statsMessage += `\n`;
+        }
 
-*⚠️ CẢNH BÁO:*
-├ 🔴 Đã hết hạn: ${expiredAccounts}
-├ 🟠 < 3 ngày: ${urgentAccounts3Days}
-└ 🟡 < 7 ngày: ${urgentAccounts7Days}
-
-*📋 CHI TIẾT PACKAGE1:*
-${package1Accs.slice(0, 5).map((acc, i) => {
-  const users = acc.users?.length || 0;
-  const emoji = users >= 3 ? '🔴' : users > 0 ? '🟡' : '🟢';
-  return `${emoji} \`${acc.username}\` (${users}/3)`;
-}).join('\n')}
-${package1Accs.length > 5 ? `_... và ${package1Accs.length - 5} accounts khác_` : ''}
-
-_Cập nhật: ${new Date().toLocaleString('vi-VN')}_
-        `;
+        statsMessage += `_Cập nhật: ${new Date().toLocaleString('vi-VN')}_`;
 
         await sendMessage(chatId, statsMessage);
       } catch (error) {
