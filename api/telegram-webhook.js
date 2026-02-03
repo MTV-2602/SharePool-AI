@@ -1,4 +1,20 @@
 const axios = require("axios");
+const mongoose = require("mongoose");
+
+// Account Schema (same as index.js)
+const accountSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  username: { type: String, required: true },
+  password: { type: String, required: true },
+  type: { type: String, default: "unassigned" },
+  users: [{ name: String, joinedAt: String }],
+  note: String,
+  link: String,
+  status: { type: String, default: "available" },
+  createdAt: { type: String },
+  expiredAt: { type: String },
+});
+const Account = mongoose.models.Account || mongoose.model("Account", accountSchema);
 
 const TELEGRAM_BOT_TOKEN =
   process.env.TELEGRAM_BOT_TOKEN ||
@@ -549,18 +565,23 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
               await sendMessage(chatId, "⏳ Đang thêm account...");
 
               // Calculate expiredAt: +30 days
-              const expiredAt = new Date();
-              expiredAt.setDate(expiredAt.getDate() + 30);
-              const expiredAtStr = expiredAt.toISOString();
+              const now = new Date();
+              const expiredDate = new Date(now);
+              expiredDate.setDate(expiredDate.getDate() + 30);
 
-              await axios.post(`${API_URL}/api/chatgpt`, {
+              // Create account directly in MongoDB
+              const newAcc = {
+                id: Date.now().toString(),
                 username: email,
                 password,
                 link: recoveryMailUrl,
                 type: "unassigned",
-                expiredAt: expiredAtStr,
+                createdAt: now.toISOString(),
+                expiredAt: expiredDate.toISOString(),
                 note: "",
-              });
+              };
+              
+              await Account.create(newAcc);
 
               const successMessage = `
 ✅ *TỰ ĐỘNG THÊM THÀNH CÔNG!*
