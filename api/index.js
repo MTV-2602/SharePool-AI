@@ -257,6 +257,8 @@ app.post("/api/login", async (req, res) => {
     const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
     const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
     
+    console.log('Login attempt:', { email, hasPassword: !!password, envEmail: ADMIN_EMAIL });
+    
     if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
       // Generate token with 7-day expiry
       const now = Date.now();
@@ -270,10 +272,12 @@ app.post("/api/login", async (req, res) => {
         message: 'Login successful. Token expires in 7 days.'
       });
     } else {
+      console.log('Login failed: Invalid credentials');
       res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Login error' });
+    console.error('Login error:', error);
+    res.status(500).json({ success: false, message: 'Login error', error: error.message });
   }
 });
 

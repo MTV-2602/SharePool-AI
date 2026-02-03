@@ -4,7 +4,8 @@ import axios from 'axios';
 axios.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('admin_token');
-    if (token && !config.url.includes('/api/login')) {
+    // Only add Authorization header if token exists AND not login endpoint
+    if (token && !config.url.includes('/api/login') && !config.url.includes('/api/telegram-webhook')) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
