@@ -80,13 +80,26 @@ function App() {
         username: '', password: '', link: '', type: 'unassigned', note: ''
     });
 
-    // CHECK LOGIN ON LOAD
+    // CHECK LOGIN ON LOAD - Verify token from localStorage
     useEffect(() => {
         const token = localStorage.getItem('admin_token');
-        if (token === 'valid_session_team89a6') {
-            setIsAuthenticated(true);
-            // Delay to ensure DOM is ready
-            setTimeout(() => fetchData(), 100);
+        const expiresAt = localStorage.getItem('token_expires_at');
+        
+        if (token && expiresAt) {
+            // Check if token is still valid
+            const expiryTime = new Date(expiresAt).getTime();
+            const now = Date.now();
+            
+            if (now < expiryTime) {
+                // Token still valid
+                setIsAuthenticated(true);
+                setTimeout(() => fetchData(), 100);
+            } else {
+                // Token expired, clear storage
+                localStorage.removeItem('admin_token');
+                localStorage.removeItem('token_expires_at');
+                showAlert('Phiên hết hạn', 'Token đã hết hạn. Vui lòng đăng nhập lại.', 'error');
+            }
         }
     }, []);
 
