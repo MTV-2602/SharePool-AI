@@ -2,7 +2,8 @@ const axios = require("axios");
 const mongoose = require("mongoose");
 require("dotenv").config();
 
-// MongoDB connection
+// MongoDB connection (not needed anymore if using API)
+// But keep for reading data via /api/data-public
 let isConnected = false;
 const connectDB = async () => {
   if (isConnected) return;
@@ -15,21 +16,7 @@ const connectDB = async () => {
   }
 };
 
-// Account Schema (same as index.js)
-const accountSchema = new mongoose.Schema({
-  id: { type: String, unique: true },
-  username: { type: String, required: true },
-  password: { type: String, required: true },
-  type: { type: String, default: "unassigned" },
-  users: [{ name: String, joinedAt: String }],
-  note: String,
-  link: String,
-  status: { type: String, default: "available" },
-  createdAt: { type: String },
-  expiredAt: { type: String },
-});
-const Account = mongoose.models.Account || mongoose.model("Account", accountSchema);
-
+// No need for Account model anymore - using API instead
 const TELEGRAM_BOT_TOKEN =
   process.env.TELEGRAM_BOT_TOKEN ||
   "8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA";
@@ -75,8 +62,7 @@ const sendMessage = async (chatId, text, options = {}) => {
 };
 
 module.exports = async (req, res) => {
-  // Ensure MongoDB is connected
-  await connectDB();
+  // No need to connect DB - using API endpoints instead
   
   // Only accept POST requests
   if (req.method !== "POST") {
@@ -581,24 +567,14 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
             try {
               await sendMessage(chatId, "⏳ Đang thêm account...");
 
-              // Calculate expiredAt: +30 days
-              const now = new Date();
-              const expiredDate = new Date(now);
-              expiredDate.setDate(expiredDate.getDate() + 30);
-
-              // Create account directly in MongoDB
-              const newAcc = {
-                id: Date.now().toString(),
+              // Call public API endpoint
+              await axios.post(`${API_URL}/api/chatgpt-public`, {
                 username: email,
                 password,
                 link: recoveryMailUrl,
                 type: "unassigned",
-                createdAt: now.toISOString(),
-                expiredAt: expiredDate.toISOString(),
                 note: "",
-              };
-              
-              await Account.create(newAcc);
+              });
 
               const successMessage = `
 ✅ *TỰ ĐỘNG THÊM THÀNH CÔNG!*
@@ -607,7 +583,6 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
 🔑 *Password:* \`${password}\`
 📬 *Recovery URL:* ${recoveryMailUrl}
 📦 *Type:* unassigned
-📅 *Hết hạn:* ${expiredDate.toLocaleDateString("vi-VN")}
 
 💡 *Tip:* Paste format tiếp theo để thêm nhanh!
               `;

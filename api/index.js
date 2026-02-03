@@ -111,8 +111,28 @@ app.get("/api/data-public", async (req, res) => {
   }
 });
 
-// 2. ADD ACCOUNT
+// 2. ADD ACCOUNT (Protected - requires token)
 app.post("/api/chatgpt", verifyToken, async (req, res) => {
+  try {
+    const now = new Date();
+    const expiredDate = new Date(now);
+    expiredDate.setDate(expiredDate.getDate() + 30); // Add 30 days
+
+    const newAcc = {
+      id: Date.now().toString(),
+      ...req.body,
+      createdAt: now.toISOString(),
+      expiredAt: expiredDate.toISOString(),
+    };
+    await Account.create(newAcc);
+    res.json({ message: "Added successfully", account: newAcc });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2.5 ADD ACCOUNT (Public - for Telegram bot)
+app.post("/api/chatgpt-public", async (req, res) => {
   try {
     const now = new Date();
     const expiredDate = new Date(now);
