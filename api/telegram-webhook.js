@@ -163,6 +163,59 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
 
     // AUTO-DETECT: Parse account format
     if (!text.startsWith('/')) {
+      // SEARCH CHATGPT ACCOUNT: Just email input (no format)
+      // Check if it's a simple email search (contains @ but no special format)
+      if (text.includes('@') && !text.includes('---') && !text.includes(',')) {
+        const searchEmail = text.trim().toLowerCase();
+        
+        try {
+          await sendMessage(chatId, '🔍 Đang tìm tài khoản...');
+
+          const response = await axios.get(`${API_URL}/api/data`);
+          const data = response.data;
+          const accounts = data.chatgpt || data || [];
+
+          const found = accounts.find(acc => 
+            acc.username && acc.username.toLowerCase() === searchEmail
+          );
+
+          if (!found) {
+            await sendMessage(chatId, `❌ Không tìm thấy tài khoản: \`${searchEmail}\``);
+          } else {
+            const typeEmoji = found.type === 'package1' ? '🟢' : found.type === 'package2' ? '🔵' : '⚪';
+            const expiredAt = found.expiredAt ? new Date(found.expiredAt).toLocaleDateString('vi-VN') : 'N/A';
+            
+            let message = `📋 *THÔNG TIN TÀI KHOẢN*\n\n`;
+            message += `${typeEmoji} *Type:* ${found.type}\n`;
+            message += `📧 *Email:* \`${found.username}\`\n`;
+            message += `🔑 *Password:* \`${found.password}\`\n`;
+            if (found.link) message += `🔗 *Recovery URL:* ${found.link}\n`;
+            message += `📅 *Hết hạn:* ${expiredAt}\n\n`;
+
+            if (found.users && found.users.length > 0) {
+              message += `👥 *Khách hàng (${found.users.length}):\n\n*`;
+              found.users.forEach((user, idx) => {
+                const joinedDate = user.joinedAt ? new Date(user.joinedAt).toLocaleDateString('vi-VN') : 'N/A';
+                const today = new Date();
+                const joined = new Date(user.joinedAt);
+                const daysUsed = Math.floor((today - joined) / (1000 * 60 * 60 * 24));
+                const status = daysUsed < 30 ? '✅' : '❌';
+                
+                message += `${idx + 1}. ${status} *${user.name}*\n`;
+                message += `   📅 Từ: ${joinedDate} (${daysUsed} ngày)\n`;
+              });
+            } else {
+              message += `👥 *Khách hàng:* Chưa có`;
+            }
+
+            await sendMessage(chatId, message);
+          }
+        } catch (error) {
+          await sendMessage(chatId, '❌ Lỗi khi tìm kiếm!');
+        }
+        return res.status(200).json({ ok: true });
+      }
+
       // COURSERA AUTO-DETECT: email,password,courseCode format
       // Support both single line and multiple lines (batch add)
       if (text.includes(',') && text.includes('@') && !text.includes('---')) {
