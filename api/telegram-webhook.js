@@ -102,15 +102,31 @@ email,password,courseCode
         const accounts = data.chatgpt || data || [];
 
         const totalAccounts = accounts.length;
-        const package1Count = accounts.filter(a => a.type === 'package1').length;
-        const package2Count = accounts.filter(a => a.type === 'package2').length;
-        const unassignedCount = accounts.filter(a => a.type === 'unassigned').length;
+        const package1Accs = accounts.filter(a => a.type === 'package1');
+        const package2Accs = accounts.filter(a => a.type === 'package2');
+        const unassignedAccs = accounts.filter(a => a.type === 'unassigned');
 
         let totalUsers = 0;
         let activeUsers = 0;
         let expiredUsers = 0;
+        let package1Full = 0;
+        let package1Available = 0;
+        let package2Used = 0;
+        let package2Empty = 0;
 
         accounts.forEach(acc => {
+          const userCount = acc.users?.length || 0;
+          
+          if (acc.type === 'package1') {
+            if (userCount >= 3) package1Full++;
+            else if (userCount > 0) package1Available++;
+          }
+          
+          if (acc.type === 'package2') {
+            if (userCount > 0) package2Used++;
+            else package2Empty++;
+          }
+
           if (acc.users && acc.users.length > 0) {
             totalUsers += acc.users.length;
             acc.users.forEach(u => {
@@ -132,29 +148,63 @@ email,password,courseCode
         });
 
         const today = new Date();
-        const urgentAccounts = accounts.filter(acc => {
+        const expiredAccounts = accounts.filter(acc => {
+          if (!acc.expiredAt) return false;
+          const expiry = new Date(acc.expiredAt);
+          return expiry < today;
+        }).length;
+
+        const urgentAccounts3Days = accounts.filter(acc => {
+          if (!acc.expiredAt) return false;
+          const expiry = new Date(acc.expiredAt);
+          const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+          return daysLeft <= 3 && daysLeft >= 0;
+        }).length;
+
+        const urgentAccounts7Days = accounts.filter(acc => {
           if (!acc.expiredAt) return false;
           const expiry = new Date(acc.expiredAt);
           const daysLeft = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
           return daysLeft <= 7 && daysLeft >= 0;
         }).length;
 
+        // Calculate available slots for Package1
+        let totalSlots = package1Accs.length * 3;
+        let usedSlots = 0;
+        package1Accs.forEach(acc => {
+          usedSlots += acc.users?.length || 0;
+        });
+        const availableSlots = totalSlots - usedSlots;
+
         const statsMessage = `
-📊 *THỐNG KÊ CHATGPT*
+📊 *THỐNG KÊ CHATGPT CHI TIẾT*
 
-*📦 TÀI KHOẢN:*
-├ 📌 Tổng: ${totalAccounts}
-├ 🟢 Package1 (Shared): ${package1Count}
-├ 🔵 Package2 (Private): ${package2Count}
-└ ⚪ Unassigned: ${unassignedCount}
+*📦 TÀI KHOẢN (${totalAccounts}):*
+├ 🟢 *Package1 (Shared): ${package1Accs.length}*
+│  ├ Đầy (3/3): ${package1Full}
+│  ├ Còn slot: ${package1Available}
+│  └ Slots trống: ${availableSlots}/${totalSlots}
+├ 🔵 *Package2 (Private): ${package2Accs.length}*
+│  ├ Đang dùng: ${package2Used}
+│  └ Trống: ${package2Empty}
+└ ⚪ *Unassigned: ${unassignedAccs.length}*
 
-*👥 KHÁCH HÀNG:*
-├ 📌 Tổng: ${totalUsers}
+*👥 KHÁCH HÀNG (${totalUsers}):*
 ├ ✅ Active: ${activeUsers}
 └ ❌ Expired: ${expiredUsers}
 
 *⚠️ CẢNH BÁO:*
-└ ${urgentAccounts} accounts hết hạn trong 7 ngày
+├ 🔴 Đã hết hạn: ${expiredAccounts}
+├ 🟠 < 3 ngày: ${urgentAccounts3Days}
+└ 🟡 < 7 ngày: ${urgentAccounts7Days}
+
+*📋 CHI TIẾT PACKAGE1:*
+${package1Accs.slice(0, 5).map((acc, i) => {
+  const users = acc.users?.length || 0;
+  const emoji = users >= 3 ? '🔴' : users > 0 ? '🟡' : '🟢';
+  return `${emoji} \`${acc.username}\` (${users}/3)`;
+}).join('\n')}
+${package1Accs.length > 5 ? `_... và ${package1Accs.length - 5} accounts khác_` : ''}
 
 _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
         `;
