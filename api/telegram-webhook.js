@@ -102,7 +102,7 @@ email,password,courseCode
       try {
         await sendMessage(chatId, "⏳ Đang tính toán...");
 
-        const response = await axios.get(`${API_URL}/api/data`);
+        const response = await axios.get(`${API_URL}/api/data-public`);
         const data = response.data;
         const accounts = data.chatgpt || data || [];
 
@@ -292,7 +292,7 @@ email,password,courseCode
         try {
           await sendMessage(chatId, "🔍 Đang tìm khách hàng...");
 
-          const response = await axios.get(`${API_URL}/api/data`);
+          const response = await axios.get(`${API_URL}/api/data-public`);
           const data = response.data;
           const accounts = data.chatgpt || data || [];
 
@@ -367,7 +367,7 @@ email,password,courseCode
         try {
           await sendMessage(chatId, "🔍 Đang tìm tài khoản...");
 
-          const response = await axios.get(`${API_URL}/api/data`);
+          const response = await axios.get(`${API_URL}/api/data-public`);
           const data = response.data;
           const accounts = data.chatgpt || data || [];
 

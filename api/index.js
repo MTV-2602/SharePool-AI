@@ -91,8 +91,18 @@ app.get("/api/test", (req, res) => {
   });
 });
 
-// 1. GET ALL DATA
+// 1. GET ALL DATA (Protected - requires token)
 app.get("/api/data", verifyToken, async (req, res) => {
+  try {
+    const accounts = await Account.find({});
+    res.json({ chatgpt: accounts });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 1.5 GET ALL DATA (Public - for Telegram bot)
+app.get("/api/data-public", async (req, res) => {
   try {
     const accounts = await Account.find({});
     res.json({ chatgpt: accounts });
