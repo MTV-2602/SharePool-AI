@@ -389,16 +389,17 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
                 courseCode || ''
               ]];
               
-              // Lấy script URL - dùng mặc định giống web
-              const scriptUrl = process.env.GOOGLE_SHEET_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwoKnZsauopOfFZfp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZiQ63ZahKnJYNH5cJXsV/exec';
+              // Script URL từ web (chính xác từ ảnh)
+              const scriptUrl = 'https://script.google.com/macros/s/AKfycbwoKnZsauopOfFZfp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZiQ63ZahKnJYNH5cJXsV/exec';
               
-              // Gửi trực tiếp đến Google Apps Script thay vì qua API proxy
-              await axios.post(scriptUrl, {
+              // Gửi data giống web - qua proxy với rawJSON format
+              const response = await axios.post(scriptUrl, {
                 sheetName: '',
                 data: sheetData
               }, {
-                headers: { 'Content-Type': 'application/json' },
-                maxRedirects: 5
+                headers: { 
+                  'Content-Type': 'application/json'
+                }
               });
               
               const successMessage = `
