@@ -77,6 +77,20 @@ const verifyToken = (req, res, next) => {
 
 // --- API ROUTES ---
 
+// TEST ENDPOINT
+app.get("/api/test", (req, res) => {
+  res.json({ 
+    status: "OK", 
+    timestamp: new Date().toISOString(),
+    env: {
+      hasMongoUri: !!process.env.MONGO_URI,
+      hasAdminEmail: !!process.env.ADMIN_EMAIL,
+      hasAdminPassword: !!process.env.ADMIN_PASSWORD,
+      adminEmail: process.env.ADMIN_EMAIL || 'NOT SET'
+    }
+  });
+});
+
 // 1. GET ALL DATA
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
