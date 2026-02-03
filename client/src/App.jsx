@@ -857,6 +857,14 @@ function App() {
 
                                                 // 5. Tìm theo tên khách hàng (User)
                                                 if (acc.users && acc.users.length > 0) {
+                                                    // FIX: Nếu là Package 2 (chỉ hiện 1 người) -> Chỉ tìm người đầu tiên
+                                                    if (acc.type === 'package2') {
+                                                        const firstUser = acc.users[0];
+                                                        const name = typeof firstUser === 'object' ? firstUser.name : firstUser;
+                                                        return name && toNonAccentVietnamese(name).includes(queryNormalized);
+                                                    }
+
+                                                    // Các gói khác -> Tìm tất cả
                                                     return acc.users.some(user => {
                                                         const name = typeof user === 'object' ? user.name : user;
                                                         return name && toNonAccentVietnamese(name).includes(queryNormalized);

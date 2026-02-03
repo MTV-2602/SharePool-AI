@@ -103,7 +103,9 @@ bot.onText(/\/stats/, async (msg) => {
     bot.sendMessage(chatId, '⏳ Đang tính toán...');
 
     const response = await axios.get(`${API_URL}/api/data`);
-    const accounts = response.data;
+    // Fix: Access chatgpt array from response data object
+    const data = response.data;
+    const accounts = data.chatgpt || [];
 
     // Calculate stats
     const totalAccounts = accounts.length;
@@ -226,8 +228,7 @@ bot.on('message', async (msg) => {
 
 📧 *Email:* \`${email}\`
 🔑 *Password:* \`${password}\`
-${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
-
+${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}
 💡 *Tip:* Paste format tiếp theo để thêm nhanh!
           `;
 
