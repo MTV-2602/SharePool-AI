@@ -958,7 +958,7 @@ function App() {
               onClick={() => setActiveTab("chatgpt")}
               className={`px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "chatgpt" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
-              ChatGPT / Claude
+              ChatGPT
             </button>
             <button
               onClick={() => setActiveTab("netflix")}
