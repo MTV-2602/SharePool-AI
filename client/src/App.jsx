@@ -354,16 +354,9 @@ function App() {
   };
 
   // Helper to check expiry warning
-  const getExpiryStatus = (isoString, accCreatedAt = null, accDuration = null) => {
-    let expDate;
-    if (accCreatedAt && accDuration) {
-      const start = new Date(accCreatedAt);
-      const totalDays = getDurationDays(accDuration);
-      expDate = new Date(start.getTime() + totalDays * 24 * 60 * 60 * 1000);
-    } else {
-      if (!isoString) return { text: "", color: "text-slate-500", isExpired: false, dateStr: "" };
-      expDate = new Date(isoString);
-    }
+  const getExpiryStatus = (isoString) => {
+    if (!isoString) return { text: "", color: "text-slate-500", isExpired: false, dateStr: "" };
+    const expDate = new Date(isoString);
 
     const now = new Date();
     const diffTime = expDate - now;
@@ -2565,10 +2558,10 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   {filtered.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-500 italic">Chưa có dữ liệu</td></tr>}
                   {filtered.map((acc, idx) => {
                     const u = acc.users?.[0];
-                    const daysRemaining = getDaysRemaining(u, acc.duration);
+                    const accExpiry = getExpiryStatus(acc.expiredAt);
+                    const daysRemaining = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - new Date()) / (1000 * 60 * 60 * 24)) : null;
                     const isExpired = daysRemaining !== null && daysRemaining <= 0;
                     const isNearExpiry = daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 3;
-                    const accExpiry = getExpiryStatus(acc.expiredAt, acc.createdAt, acc.duration);
                     return (
                       <tr key={acc.id} className={`border-t border-slate-700/50 transition-colors ${accExpiry.isExpired ? "bg-red-950/20" : "hover:bg-slate-800/50"}`}>
                         <td className="p-3 text-slate-500 font-mono text-xs">{idx + 1}</td>
