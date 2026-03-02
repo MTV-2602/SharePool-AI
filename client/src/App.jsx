@@ -2461,11 +2461,19 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 
         const handleAssignUser = async (acc) => {
           if (acc.users?.length >= 1) return alert(`Giới hạn: ${label} chỉ được 1 khách!`);
-          const name = prompt("Tên khách hàng:");
-          if (!name?.trim()) return;
+          setAssignUserAcc(acc);
+          setAssignUserName("");
+          setShowAssignUserModal(true);
+        };
+
+        const executeAssignUser = async (e) => {
+          e.preventDefault();
+          if (!assignUserName?.trim() || !assignUserAcc) return;
           try {
-            const newUsers = [{ name: name.trim(), joinedAt: new Date().toISOString() }];
-            await axios.put(`/api/${platform}/${acc.id}`, { users: newUsers });
+            const newUsers = [{ name: assignUserName.trim(), joinedAt: new Date().toISOString() }];
+            await axios.put(`/api/${platform}/${assignUserAcc.id}`, { users: newUsers });
+            setShowAssignUserModal(false);
+            setAssignUserAcc(null);
             fetchData();
           } catch (e) { alert("Lỗi gán khách"); }
         };
@@ -2656,6 +2664,50 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
               <div className="flex gap-3 mt-5">
                 <button type="button" onClick={() => setShowSimpleAddModal(false)} className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white">Hủy</button>
                 <button type="submit" className="flex-1 p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold">Thêm</button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
+
+      {/* ========================================================= */}
+      {/* MODAL GÁN KHÁCH (NETFLIX, CAPCUT, CANVA)                    */}
+      {/* ========================================================= */}
+      {showAssignUserModal && assignUserAcc && (() => {
+        const platformLabel = { netflix: "Netflix", capcut: "CapCut", canva: "Canva" }[activeTab] || activeTab;
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <form onSubmit={executeAssignUser} className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full shadow-2xl" style={{ maxWidth: "400px" }}>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <UserPlus size={20} className="text-blue-400" />
+                  Gán Khách Hàng
+                </h2>
+                <button type="button" onClick={() => setShowAssignUserModal(false)} className="text-slate-400 hover:text-white"><X size={20} /></button>
+              </div>
+
+              <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700/50 mb-4">
+                <div className="text-sm text-slate-400">Tài khoản {platformLabel}:</div>
+                <div className="font-mono text-white font-bold">{assignUserAcc.username}</div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">Tên khách hàng *</label>
+                  <input
+                    required
+                    autoFocus
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                    value={assignUserName}
+                    onChange={e => setAssignUserName(e.target.value)}
+                    placeholder="Nhập tên khách..."
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button type="button" onClick={() => setShowAssignUserModal(false)} className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors">Hủy</button>
+                <button type="submit" className="flex-1 p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold transition-colors">Xác Nhận</button>
               </div>
             </form>
           </div>
