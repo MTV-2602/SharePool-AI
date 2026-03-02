@@ -327,7 +327,7 @@ const makeSingleUserRoutes = (router, Model, platformRoute) => {
       const newAcc = {
         id: Date.now().toString(),
         ...req.body,
-        users: [],
+        users: req.body.users || [],
         createdAt: now.toISOString()
       };
       await Model.create(newAcc);

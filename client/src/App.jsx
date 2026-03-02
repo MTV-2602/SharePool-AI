@@ -53,7 +53,7 @@ function App() {
   const [capcutAccounts, setCapcutAccounts] = useState([]);
   const [showSimpleAddModal, setShowSimpleAddModal] = useState(false);
   const [simpleAddPlatform, setSimpleAddPlatform] = useState("netflix");
-  const [simpleAddForm, setSimpleAddForm] = useState({ username: "", password: "", duration: "1M", note: "" });
+  const [simpleAddForm, setSimpleAddForm] = useState({ username: "", password: "", duration: "1M", note: "", customerName: "" });
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("chatgpt");
   const [searchQuery, setSearchQuery] = useState("");

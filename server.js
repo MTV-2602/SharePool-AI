@@ -361,7 +361,7 @@ const makeSingleUserRoutes = (router, Model, platformRoute) => {
     router.post(`/api/${platformRoute}`, async (req, res) => { // using public without token explicitly per server.js style (wait, server.js uses some without token, but app router uses verifyToken mostly, let's omit verifyToken here if server.js doesn't use it on extend-user)
         try {
             const now = new Date();
-            const newAcc = { id: Date.now().toString(), ...req.body, users: [], createdAt: now.toISOString() };
+            const newAcc = { id: Date.now().toString(), ...req.body, users: req.body.users || [], createdAt: now.toISOString() };
             await Model.create(newAcc);
             res.json({ message: "Added successfully", account: newAcc });
         } catch (error) { res.status(500).json({ error: error.message }); }
