@@ -354,36 +354,48 @@ function App() {
   };
 
   // Helper to check expiry warning
-  const getExpiryStatus = (isoString) => {
-    if (!isoString)
-      return { text: "", color: "text-slate-500", isExpired: false };
-    const exp = new Date(isoString);
-    const now = new Date();
-    const diffTime = exp - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const getExpiryStatus = (isoString, accCreatedAt = null, accDuration = null) => {
+    let expDate;
+    if (accCreatedAt && accDuration) {
+      const start = new Date(accCreatedAt);
+      const totalDays = getDurationDays(accDuration);
+      expDate = new Date(start.getTime() + totalDays * 24 * 60 * 60 * 1000);
+    } else {
+      if (!isoString) return { text: "", color: "text-slate-500", isExpired: false, dateStr: "" };
+      expDate = new Date(isoString);
+    }
 
-    if (diffDays < 0)
+    const now = new Date();
+    const diffTime = expDate - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const dateStr = `${expDate.getDate()}/${expDate.getMonth() + 1}/${expDate.getFullYear()}`;
+
+    if (diffDays <= 0)
       return {
         text: `Đã hết hạn ${Math.abs(diffDays)} ngày`,
         color: "text-red-500 font-bold",
         isExpired: true,
+        dateStr,
       };
     if (diffDays <= 3)
       return {
         text: `Còn ${diffDays} ngày`,
         color: "text-red-400 font-bold",
         isExpired: false,
+        dateStr,
       };
     if (diffDays <= 7)
       return {
         text: `Còn ${diffDays} ngày`,
         color: "text-yellow-400 font-bold",
         isExpired: false,
+        dateStr,
       };
     return {
       text: `Còn ${diffDays} ngày`,
       color: "text-emerald-500",
       isExpired: false,
+      dateStr,
     };
   };
 
@@ -2556,7 +2568,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     const daysRemaining = getDaysRemaining(u, acc.duration);
                     const isExpired = daysRemaining !== null && daysRemaining <= 0;
                     const isNearExpiry = daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 3;
-                    const accExpiry = getExpiryStatus(acc.expiredAt);
+                    const accExpiry = getExpiryStatus(acc.expiredAt, acc.createdAt, acc.duration);
                     return (
                       <tr key={acc.id} className={`border-t border-slate-700/50 transition-colors ${accExpiry.isExpired ? "bg-red-950/20" : "hover:bg-slate-800/50"}`}>
                         <td className="p-3 text-slate-500 font-mono text-xs">{idx + 1}</td>
@@ -2570,11 +2582,11 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                             {acc.password || <span className="opacity-50">Không mật khẩu</span>}
                             {acc.password && <Copy size={12} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.password)} />}
                           </div>
-                          {acc.expiredAt && (
+                          {accExpiry.text && (
                             <div className={`text-xs mt-1 ml-6 flex items-center gap-1 ${accExpiry.color}`}>
                               <Calendar size={10} />
                               <span>{accExpiry.text}</span>
-                              <span className="text-slate-600 italic">({formatDate(acc.expiredAt)})</span>
+                              <span className="text-slate-600 italic">({accExpiry.dateStr})</span>
                             </div>
                           )}
                           {acc.note && <div className="text-xs text-yellow-500/80 italic mt-1 ml-6">{acc.note}</div>}
@@ -2701,6 +2713,14 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
         const durOpts = opts[activeTab] || opts.netflix;
         const isCanva = activeTab === "canva";
 
+        const handleDurationChange = (e) => {
+          const newDur = e.target.value;
+          const d = new Date();
+          const m = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
+          d.setDate(d.getDate() + (m[newDur] || 30));
+          setSimpleEditForm(p => ({ ...p, duration: newDur, expiredAt: d.toISOString().split('T')[0] }));
+        };
+
         const handleEditSubmit = async (e) => {
           e.preventDefault();
           try {
@@ -2740,7 +2760,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 )}
                 <div>
                   <label className="text-slate-400 text-sm block mb-1">Gói linh hoạt (hiện tại)</label>
-                  <select className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" value={simpleEditForm.duration} onChange={e => setSimpleEditForm(p => ({ ...p, duration: e.target.value }))}>
+                  <select className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" value={simpleEditForm.duration} onChange={handleDurationChange}>
                     {durOpts.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
                   </select>
                 </div>
