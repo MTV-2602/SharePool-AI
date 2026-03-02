@@ -312,18 +312,30 @@ function App() {
     return null;
   };
 
-  // Helper to calculate days remaining (positive = còn hạn, âm = đã quá hạn)
-  const getDaysRemaining = (u) => {
-    const used = getDaysUsed(u);
-    if (used === null) return null;
-    return 30 - used; // Có thể > 30 sau khi gia hạn
+  const getDurationDays = (durationStr) => {
+    switch (durationStr) {
+      case "1M": return 30;
+      case "3M": return 90;
+      case "6M": return 180;
+      case "1Y": return 365;
+      default: return 30; // default for chatgpt etc
+    }
   };
 
-  // Helper: tính ngày hết hạn của khách = joinedAt + 30 ngày
-  const getUserExpiryDate = (u) => {
+  // Helper to calculate days remaining (positive = còn hạn, âm = đã quá hạn)
+  const getDaysRemaining = (u, accDuration = "1M") => {
+    const used = getDaysUsed(u);
+    if (used === null) return null;
+    const totalDays = getDurationDays(accDuration);
+    return totalDays - used;
+  };
+
+  // Helper: tính ngày hết hạn của khách = joinedAt + duration days
+  const getUserExpiryDate = (u, accDuration = "1M") => {
     if (typeof u === "object" && u !== null && u.joinedAt) {
       try {
-        const d = new Date(new Date(u.joinedAt).getTime() + 30 * 24 * 60 * 60 * 1000);
+        const totalDays = getDurationDays(accDuration);
+        const d = new Date(new Date(u.joinedAt).getTime() + totalDays * 24 * 60 * 60 * 1000);
         return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
       } catch (e) { return ""; }
     }
@@ -2541,7 +2553,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   {filtered.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-500 italic">Chưa có dữ liệu</td></tr>}
                   {filtered.map((acc, idx) => {
                     const u = acc.users?.[0];
-                    const daysRemaining = getDaysRemaining(u);
+                    const daysRemaining = getDaysRemaining(u, acc.duration);
                     const isExpired = daysRemaining !== null && daysRemaining <= 0;
                     const isNearExpiry = daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 3;
                     const accExpiry = getExpiryStatus(acc.expiredAt);
