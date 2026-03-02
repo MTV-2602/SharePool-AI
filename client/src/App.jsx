@@ -61,6 +61,8 @@ function App() {
   // Loading states for buttons
 
   const [showAssignUserModal, setShowAssignUserModal] = useState(false);
+  const [showSimpleEditModal, setShowSimpleEditModal] = useState(false);
+  const [simpleEditForm, setSimpleEditForm] = useState({ id: "", username: "", password: "", duration: "1M", note: "", expiredAt: "" });
   const [assignUserAcc, setAssignUserAcc] = useState(null);
   const [assignUserName, setAssignUserName] = useState("");
 
@@ -2455,13 +2457,25 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           setShowSimpleAddModal(true);
         };
 
-        const handleDeleteSimpleAcc = async (acc) => {
-          if (window.confirm(`Xóa tài khoản ${acc.username}?`)) {
+        const handleEditSimpleAcc = (acc) => {
+          setSimpleEditForm({
+            id: acc.id,
+            username: acc.username || "",
+            password: acc.password || "",
+            duration: acc.duration || "1M",
+            note: acc.note || "",
+            expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split('T')[0] : "",
+          });
+          setShowSimpleEditModal(true);
+        };
+
+        const handleDeleteSimpleAcc = (acc) => {
+          showConfirm("Xóa Tài Khoản", `Bạn có chắc muốn xóa tài khoản ${acc.username}?`, async () => {
             try {
               await axios.delete(`/api/${platform}/${acc.id}`);
               fetchData();
-            } catch (e) { alert("Xóa thất bại"); }
-          }
+            } catch (e) { showAlert("Lỗi", "Xóa thất bại", "error"); }
+          });
         };
 
         const handleAssignUser = async (acc) => {
@@ -2471,15 +2485,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           setShowAssignUserModal(true);
         };
 
-
-
-        const handleRemoveUser = async (acc) => {
-          if (window.confirm(`Xóa khách khỏi ${acc.username}?`)) {
+        const handleRemoveUser = (acc) => {
+          showConfirm("Xóa Khách", `Bạn có chắc muốn xóa khách khỏi ${acc.username}?`, async () => {
             try {
               await axios.put(`/api/${platform}/${acc.id}`, { users: [] });
               fetchData();
-            } catch (e) { alert("Xóa thất bại"); }
-          }
+            } catch (e) { showAlert("Lỗi", "Xóa thất bại", "error"); }
+          });
         };
 
         const handleExtendSimpleUser = async (acc) => {
@@ -2582,6 +2594,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           <div className="flex flex-col gap-1 items-center">
                             {u && (isExpired || isNearExpiry) && <button onClick={() => handleExtendSimpleUser(acc)} className="bg-green-600 hover:bg-green-500 text-white px-2 py-1 rounded text-xs w-full text-center">Gia Hạn</button>}
                             {u && <button onClick={() => handleRemoveUser(acc)} className="bg-orange-700 hover:bg-orange-600 text-white px-2 py-1 rounded text-xs flex items-center w-full justify-center">Xóa Khách</button>}
+                            <button onClick={() => handleEditSimpleAcc(acc)} className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded text-xs flex items-center gap-1 w-full justify-center"><Pencil size={12} /> Sửa Acc</button>
                             <button onClick={() => handleDeleteSimpleAcc(acc)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex items-center gap-1 w-full justify-center"><Trash2 size={12} /> Xóa Acc</button>
                           </div>
                         </td>
@@ -2664,6 +2677,79 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           </div>
         );
       })()}
+
+      {/* EDIT MODAL */}
+      {showSimpleEditModal && (() => {
+        const platformLabel = { netflix: "Netflix", capcut: "CapCut", canva: "Canva" }[activeTab] || activeTab;
+        const opts = {
+          netflix: [{ v: "1M", l: "1 tháng" }, { v: "3M", l: "3 tháng" }, { v: "6M", l: "6 tháng" }, { v: "1Y", l: "1 năm" }],
+          capcut: [{ v: "1M", l: "1 tháng" }, { v: "3M", l: "3 tháng" }, { v: "6M", l: "6 tháng" }],
+          canva: [{ v: "1M", l: "1 tháng" }, { v: "3M", l: "3 tháng" }, { v: "6M", l: "6 tháng" }, { v: "1Y", l: "1 năm" }],
+        };
+        const durOpts = opts[activeTab] || opts.netflix;
+        const isCanva = activeTab === "canva";
+
+        const handleEditSubmit = async (e) => {
+          e.preventDefault();
+          try {
+            const bodyData = {
+              username: simpleEditForm.username.trim(),
+              password: simpleEditForm.password.trim(),
+              note: simpleEditForm.note.trim(),
+              duration: simpleEditForm.duration,
+            };
+            if (simpleEditForm.expiredAt) {
+              bodyData.expiredAt = new Date(simpleEditForm.expiredAt).toISOString();
+            }
+            await axios.put(`/api/${activeTab}/${simpleEditForm.id}`, bodyData);
+            setShowSimpleEditModal(false);
+            fetchData();
+            showAlert("Thành công", "Đã cập nhật tài khoản", "success");
+          } catch (err) { showAlert("Lỗi", "Cập nhật thất bại", "error"); }
+        };
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <form onSubmit={handleEditSubmit} className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full shadow-2xl" style={{ maxWidth: "480px" }}>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white flex gap-2 items-center"><Pencil size={20} className="text-blue-400" />Sửa Tài Khoản {platformLabel}</h2>
+                <button type="button" onClick={() => setShowSimpleEditModal(false)} className="text-slate-400 hover:text-white"><X size={20} /></button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">Email / Username *</label>
+                  <input required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" value={simpleEditForm.username} onChange={e => setSimpleEditForm(p => ({ ...p, username: e.target.value }))} />
+                </div>
+                {!isCanva && (
+                  <div>
+                    <label className="text-slate-400 text-sm block mb-1">Mật khẩu</label>
+                    <input className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white font-mono" value={simpleEditForm.password} onChange={e => setSimpleEditForm(p => ({ ...p, password: e.target.value }))} />
+                  </div>
+                )}
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">Gói linh hoạt (hiện tại)</label>
+                  <select className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" value={simpleEditForm.duration} onChange={e => setSimpleEditForm(p => ({ ...p, duration: e.target.value }))}>
+                    {durOpts.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">Ngày Hết Hạn Tính Tiền Mới</label>
+                  <input type="date" className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" value={simpleEditForm.expiredAt} onChange={e => setSimpleEditForm(p => ({ ...p, expiredAt: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">Ghi chú</label>
+                  <input className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" value={simpleEditForm.note} onChange={e => setSimpleEditForm(p => ({ ...p, note: e.target.value }))} />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-5">
+                <button type="button" onClick={() => setShowSimpleEditModal(false)} className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors">Hủy</button>
+                <button type="submit" className="flex-1 p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold transition-colors">Lưu Cập Nhật</button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
+
 
       {/* ========================================================= */}
       {/* MODAL GÁN KHÁCH (NETFLIX, CAPCUT, CANVA)                    */}
