@@ -1,32 +1,39 @@
-import axios from 'axios';
+import axios from "axios";
 
 // Add request interceptor to include token in all requests
 axios.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('admin_token');
+    const token = localStorage.getItem("admin_token");
     // Only add Authorization header if token exists AND not login endpoint
-    if (token && !config.url.includes('/api/login') && !config.url.includes('/api/telegram-webhook')) {
+    if (
+      token &&
+      !config.url.includes("/api/login") &&
+      !config.url.includes("/api/telegram-webhook")
+    ) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
   (error) => {
     return Promise.reject(error);
-  }
+  },
 );
 
 // Add response interceptor to handle 401 errors globally
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && !error.config.url.includes('/api/login')) {
+    if (
+      error.response?.status === 401 &&
+      !error.config.url.includes("/api/login")
+    ) {
       // Token expired or invalid
-      localStorage.removeItem('admin_token');
-      localStorage.removeItem('token_expires_at');
+      localStorage.removeItem("admin_token");
+      localStorage.removeItem("token_expires_at");
       window.location.reload();
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export default axios;

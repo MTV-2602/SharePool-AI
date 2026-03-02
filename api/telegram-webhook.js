@@ -63,7 +63,7 @@ const sendMessage = async (chatId, text, options = {}) => {
 
 module.exports = async (req, res) => {
   // No need to connect DB - using API endpoints instead
-  
+
   // Only accept POST requests
   if (req.method !== "POST") {
     return res.status(200).json({ ok: true });

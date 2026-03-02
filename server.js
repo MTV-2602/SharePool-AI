@@ -84,20 +84,62 @@ async function migrateDataIfNeeded() {
 
 // --- API ROUTES (REWRITTEN FOR MONGODB) ---
 
+// Middleware xác thực token (Base64, 7 ngày)
+const verifyToken = (req, res, next) => {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'No token provided' });
+    try {
+        const decoded = Buffer.from(token, 'base64').toString('utf-8');
+        const [createdAt, expiryTime, email] = decoded.split('_');
+        if (Date.now() > parseInt(expiryTime)) {
+            return res.status(401).json({ error: 'Token expired. Please login again.' });
+        }
+        req.user = { email };
+        next();
+    } catch (error) {
+        return res.status(401).json({ error: 'Invalid token' });
+    }
+};
+
+// LOGIN ENDPOINT
+app.post('/api/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'admin@example.com').toLowerCase();
+        const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
+
+        if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+            const now = Date.now();
+            const expiryTime = now + 7 * 24 * 60 * 60 * 1000; // 7 ngày
+            const token = Buffer.from(`${now}_${expiryTime}_${email}`).toString('base64');
+            res.json({
+                success: true,
+                token,
+                expiresAt: new Date(expiryTime).toISOString(),
+                message: 'Login successful. Token expires in 7 days.',
+            });
+        } else {
+            res.status(401).json({ success: false, message: 'Sai email hoặc mật khẩu!' });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Login error', error: error.message });
+    }
+});
+
 // 1. GET ALL DATA
-app.get('/api/data', async (req, res) => {
+app.get('/api/data', verifyToken, async (req, res) => {
     try {
         const accounts = await Account.find({});
         const coursera = await Coursera.find({});
-        // Format response to match old structure for Frontend compatibility
         res.json({ chatgpt: accounts, coursera: coursera });
     } catch (error) {
         res.status(500).json({ error: 'Database Error' });
     }
 });
 
+
 // 2. ADD ACCOUNT
-app.post('/api/chatgpt', async (req, res) => {
+app.post('/api/chatgpt', verifyToken, async (req, res) => {
     try {
         const newAcc = {
             id: Date.now().toString(),
@@ -112,9 +154,19 @@ app.post('/api/chatgpt', async (req, res) => {
 });
 
 // 3. UPDATE ACCOUNT (PUT)
-app.put('/api/chatgpt/:id', async (req, res) => {
+app.put('/api/chatgpt/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Validate package2: chỉ được tối đa 1 khách hàng
+        if (req.body.users !== undefined) {
+            const existingAcc = await Account.findOne({ id: id });
+            const targetType = req.body.type || existingAcc?.type;
+            if (targetType === 'package2' && req.body.users.length > 1) {
+                return res.status(400).json({ error: 'Gói Private (Gói 2) chỉ được tối đa 1 khách hàng' });
+            }
+        }
+
         const updated = await Account.findOneAndUpdate({ id: id }, req.body, { new: true });
         if (!updated) return res.status(404).json({ error: 'Account not found' });
         res.json({ message: 'Updated', account: updated });
@@ -124,7 +176,7 @@ app.put('/api/chatgpt/:id', async (req, res) => {
 });
 
 // 4. DELETE ACCOUNT
-app.delete('/api/chatgpt/:id', async (req, res) => {
+app.delete('/api/chatgpt/:id', verifyToken, async (req, res) => {
     try {
         const { id } = req.params;
         await Account.findOneAndDelete({ id: id });
@@ -181,7 +233,6 @@ app.post('/api/move-user', async (req, res) => {
     try {
         const { fromAccId, toAccId, userIndex } = req.body;
 
-        // Find both accounts
         const fromAcc = await Account.findOne({ id: fromAccId });
         const toAcc = await Account.findOne({ id: toAccId });
 
@@ -189,20 +240,8 @@ app.post('/api/move-user', async (req, res) => {
             return res.status(404).json({ error: 'One or both accounts not found' });
         }
 
-        // Validate user index
         if (!fromAcc.users || !fromAcc.users[userIndex]) {
             return res.status(400).json({ error: 'User not found in source account' });
-        }
-
-        // Only allow transfer to Shared package (package1)
-        if (toAcc.type !== 'package1') {
-            return res.status(400).json({ error: 'Chỉ được chuyển vào gói Chia Sẻ (Shared)' });
-        }
-        
-        // Check if Shared package has available slots
-        const currentUsers = toAcc.users?.length || 0;
-        if (currentUsers >= 3) {
-            return res.status(400).json({ error: 'Tài khoản Shared đã đầy (3/3)' });
         }
 
         // STRICT RULE: Cannot transfer to Expired Account
@@ -210,17 +249,43 @@ app.post('/api/move-user', async (req, res) => {
             return res.status(400).json({ error: 'Tài khoản đích ĐÃ HẾT HẠN. Không thể chuyển khách vào!' });
         }
 
-        // Get user data
-        const userToMove = fromAcc.users[userIndex];
+        const sourceType = fromAcc.type; // Loại gói nguồn
+        const currentUsers = toAcc.users?.length || 0;
 
-        // 1. Add to destination
+        if (toAcc.type === sourceType) {
+            // Cùng loại gói: kiểm tra slot
+            if (sourceType === 'package1' && currentUsers >= 3) {
+                return res.status(400).json({ error: 'Tài khoản Shared đích đã đầy (3/3)' });
+            }
+            if (sourceType === 'package2' && currentUsers >= 1) {
+                return res.status(400).json({ error: 'Tài khoản Private đích đã có người dùng (1/1)' });
+            }
+        } else if (toAcc.type === 'unassigned') {
+            // Đích là unassigned: tự động đổi type sang loại của nguồn
+            if (sourceType === 'package2' && currentUsers >= 1) {
+                return res.status(400).json({ error: 'Tài khoản đích đã có người dùng' });
+            }
+            if (sourceType === 'package1' && currentUsers >= 3) {
+                return res.status(400).json({ error: 'Tài khoản đích đã đầy slot' });
+            }
+            // Tự động đổi type của tài khoản đích theo loại nguồn
+            toAcc.type = sourceType;
+        } else {
+            // Khác loại và không phải unassigned -> từ chối
+            const typeLabel = sourceType === 'package1' ? 'Chia Sẻ' : 'Private';
+            return res.status(400).json({
+                error: `Chỉ được chuyển vào gói cùng loại (${typeLabel}) hoặc tài khoản chưa phân loại`,
+            });
+        }
+
+        const userToMove = fromAcc.users[userIndex];
         if (!toAcc.users) toAcc.users = [];
         toAcc.users.push(userToMove);
-
-        // 2. Remove from source
         fromAcc.users.splice(userIndex, 1);
 
-        // Save (Atomic simulation)
+        toAcc.markModified('users');
+        fromAcc.markModified('users');
+
         await toAcc.save();
         await fromAcc.save();
 
@@ -238,36 +303,26 @@ app.post('/api/extend-user', async (req, res) => {
         if (!acc || !acc.users[userIndex]) return res.status(404).json({ error: 'User/Account not found' });
 
         const user = acc.users[userIndex];
-        // Calculate new Expiry Date based on CURRENT status
-        // Logic: Always add +30 days to the JOINED DATE.
-        // Because "Days Used" is calculated from Joined Date.
-        // So bumping Joined Date forward by 30 days effectively resets "Days Used" to 0 (or reduces it by 30).
-
-        // Wait! Bumping JOINED DATE means "resetting usage".
-        // Example: Joined 1/1. Today 1/2. Used 30 days. Expired.
-        // Action: Extend +30 days.
-        // New Joined Date should be: Today (1/2)? Or Joined Date + 30 days (1/31)?
-        // User requested: "Gia han +30 days". Usually means adding time.
         const now = new Date();
-        const joinedAt = new Date(user.joinedAt || now); // Use 'now' if joinedAt is missing
+        const joinedAt = new Date(user.joinedAt || now);
 
-        // Calculate days used
         const diffTime = now.getTime() - joinedAt.getTime();
         const daysUsed = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (daysUsed >= 30) {
-            // If expired (or nearly expired, assuming 30 days is the cycle), reset to NOW
+            // Đã hết hạn: reset về hôm nay → thêm đúng 30 ngày mới
             user.joinedAt = now.toISOString();
             user.note = (user.note ? user.note + ' ' : '') + `[Renewed on ${now.toLocaleDateString()}]`;
         } else {
-            // If not expired, add 30 days to the CURRENT start date (pushing it into future)
-            // This preserves the remaining days.
-            // New JoinedAt = Old JoinedAt + 30 days
+            // Chưa hết hạn: thêm 30 ngày vào ngày hết hạn hiện tại
+            // Expiry hiện tại = joinedAt + 30, Expiry mới = joinedAt + 60 (còn lại + 30 ngày)
             const newJoinedAt = new Date(joinedAt.getTime() + (30 * 24 * 60 * 60 * 1000));
             user.joinedAt = newJoinedAt.toISOString();
             user.note = (user.note ? user.note + ' ' : '') + `[Extended +30d on ${now.toLocaleDateString()}]`;
         }
 
+        // markModified để Mongoose detect thay đổi trong subdocument array
+        acc.markModified('users');
         await acc.save();
         res.json({ message: 'User extended successfully', updatedUser: user });
     } catch (error) {
