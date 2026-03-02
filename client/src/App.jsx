@@ -935,11 +935,11 @@ function App() {
   // MAIN DASHBOARD
   return (
     <div
-      className="min-h-screen text-slate-200 p-8 font-sans"
+      className="min-h-screen text-slate-200 p-2 sm:p-4 md:p-8 font-sans overflow-x-hidden"
       style={{ backgroundColor: "#0f172a" }}
     >
       <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-700 max-w-full overflow-hidden">
           <div className="mb-4 md:mb-0">
             <h1
               className="text-3xl font-bold"
@@ -953,34 +953,34 @@ function App() {
               Quản Lý Tài Khoản
             </h1>
           </div>
-          <div className="flex bg-slate-900 p-1 rounded-3xl border border-slate-700 items-center">
+          <div className="flex bg-slate-900 p-1 rounded-3xl border border-slate-700 items-center overflow-x-auto w-full max-w-full no-scrollbar">
             <button
               onClick={() => setActiveTab("chatgpt")}
-              className={`px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "chatgpt" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "chatgpt" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               ChatGPT
             </button>
             <button
               onClick={() => setActiveTab("netflix")}
-              className={`px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "netflix" ? "bg-red-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "netflix" ? "bg-red-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Netflix
             </button>
             <button
               onClick={() => setActiveTab("capcut")}
-              className={`px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "capcut" ? "bg-green-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "capcut" ? "bg-green-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               CapCut
             </button>
             <button
               onClick={() => setActiveTab("canva")}
-              className={`px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "canva" ? "bg-purple-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "canva" ? "bg-purple-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Canva
             </button>
             <button
               onClick={() => setActiveTab("coursera")}
-              className={`px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "coursera" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "coursera" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Coursera Plus
             </button>
