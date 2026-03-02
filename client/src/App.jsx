@@ -2551,8 +2551,8 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
               </button>
             </div>
 
-            <div className="rounded-xl overflow-hidden border border-slate-700 shadow-xl">
-              <table className="w-full text-sm">
+            <div className="rounded-xl overflow-x-auto w-full border border-slate-700 shadow-xl">
+              <table className="w-full text-sm min-w-[600px]">
                 <thead>
                   <tr className={`text-xs uppercase tracking-wider bg-${accentColor}-900/30 text-${accentColor}-300`}>
                     <th className="p-3 text-left">#</th>
