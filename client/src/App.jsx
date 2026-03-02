@@ -59,6 +59,11 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Loading states for buttons
+
+  const [showAssignUserModal, setShowAssignUserModal] = useState(false);
+  const [assignUserAcc, setAssignUserAcc] = useState(null);
+  const [assignUserName, setAssignUserName] = useState("");
+
   const [loadingStates, setLoadingStates] = useState({
     addUser: false,
     editUser: false,
@@ -2466,17 +2471,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           setShowAssignUserModal(true);
         };
 
-        const executeAssignUser = async (e) => {
-          e.preventDefault();
-          if (!assignUserName?.trim() || !assignUserAcc) return;
-          try {
-            const newUsers = [{ name: assignUserName.trim(), joinedAt: new Date().toISOString() }];
-            await axios.put(`/api/${platform}/${assignUserAcc.id}`, { users: newUsers });
-            setShowAssignUserModal(false);
-            setAssignUserAcc(null);
-            fetchData();
-          } catch (e) { alert("Lỗi gán khách"); }
-        };
+
 
         const handleRemoveUser = async (acc) => {
           if (window.confirm(`Xóa khách khỏi ${acc.username}?`)) {
@@ -2675,6 +2670,19 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
       {/* ========================================================= */}
       {showAssignUserModal && assignUserAcc && (() => {
         const platformLabel = { netflix: "Netflix", capcut: "CapCut", canva: "Canva" }[activeTab] || activeTab;
+
+        const executeAssignUser = async (e) => {
+          e.preventDefault();
+          if (!assignUserName?.trim() || !assignUserAcc) return;
+          try {
+            const platform = activeTab;
+            const newUsers = [{ name: assignUserName.trim(), joinedAt: new Date().toISOString() }];
+            await axios.put(`/api/${platform}/${assignUserAcc.id}`, { users: newUsers });
+            setShowAssignUserModal(false);
+            setAssignUserAcc(null);
+            fetchData();
+          } catch (e) { alert("Lỗi gán khách"); }
+        };
 
         return (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
