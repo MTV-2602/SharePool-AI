@@ -42,6 +42,21 @@ const accountSchema = new mongoose.Schema({
     expiredAt: { type: String } // New Field
 });
 
+const singleUserSchema = new mongoose.Schema({
+    id: { type: String, unique: true },
+    username: { type: String, required: true },
+    password: { type: String, default: "" },
+    users: [{ name: String, joinedAt: String }], // max 1
+    note: String,
+    duration: { type: String, default: "1M" }, // 1M, 3M, 6M, 1Y
+    status: { type: String, default: "available" },
+    createdAt: { type: String },
+    expiredAt: { type: String },
+});
+const Netflix = mongoose.models.Netflix || mongoose.model("Netflix", singleUserSchema);
+const Canva = mongoose.models.Canva || mongoose.model("Canva", singleUserSchema);
+const Capcut = mongoose.models.Capcut || mongoose.model("Capcut", singleUserSchema);
+
 // Define Schema for Coursera Accounts
 const courseraSchema = new mongoose.Schema({
     id: { type: String, unique: true },
@@ -129,9 +144,14 @@ app.post('/api/login', async (req, res) => {
 // 1. GET ALL DATA
 app.get('/api/data', verifyToken, async (req, res) => {
     try {
-        const accounts = await Account.find({});
-        const coursera = await Coursera.find({});
-        res.json({ chatgpt: accounts, coursera: coursera });
+        const [accounts, coursera, netflixAccs, canvaAccs, capcutAccs] = await Promise.all([
+            Account.find({}),
+            Coursera.find({}),
+            Netflix.find({}),
+            Canva.find({}),
+            Capcut.find({}),
+        ]);
+        res.json({ chatgpt: accounts, coursera, netflix: netflixAccs, canva: canvaAccs, capcut: capcutAccs });
     } catch (error) {
         res.status(500).json({ error: 'Database Error' });
     }
@@ -295,11 +315,12 @@ app.post('/api/move-user', async (req, res) => {
     }
 });
 
-// EXTEND USER (+30 DAYS)
+// EXTEND USER (+30/90/180/... DAYS)
 app.post('/api/extend-user', async (req, res) => {
-    const { accId, userIndex } = req.body;
+    const { accId, userIndex, platform } = req.body;
     try {
-        const acc = await Account.findOne({ id: accId });
+        const Model = platform === "netflix" ? Netflix : platform === "capcut" ? Capcut : platform === "canva" ? Canva : Account;
+        const acc = await Model.findOne({ id: accId });
         if (!acc || !acc.users[userIndex]) return res.status(404).json({ error: 'User/Account not found' });
 
         const user = acc.users[userIndex];
@@ -309,16 +330,21 @@ app.post('/api/extend-user', async (req, res) => {
         const diffTime = now.getTime() - joinedAt.getTime();
         const daysUsed = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-        if (daysUsed >= 30) {
-            // Đã hết hạn: reset về hôm nay → thêm đúng 30 ngày mới
+        let extDays = 30;
+        if (platform && platform !== "chatgpt") {
+            const m = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
+            extDays = m[acc.duration] || 30;
+        }
+
+        if (daysUsed >= extDays) {
+            // Đã hết hạn: reset về hôm nay → thêm ngày mới
             user.joinedAt = now.toISOString();
             user.note = (user.note ? user.note + ' ' : '') + `[Renewed on ${now.toLocaleDateString()}]`;
         } else {
-            // Chưa hết hạn: thêm 30 ngày vào ngày hết hạn hiện tại
-            // Expiry hiện tại = joinedAt + 30, Expiry mới = joinedAt + 60 (còn lại + 30 ngày)
-            const newJoinedAt = new Date(joinedAt.getTime() + (30 * 24 * 60 * 60 * 1000));
+            // Chưa hết hạn
+            const newJoinedAt = new Date(joinedAt.getTime() + (extDays * 24 * 60 * 60 * 1000));
             user.joinedAt = newJoinedAt.toISOString();
-            user.note = (user.note ? user.note + ' ' : '') + `[Extended +30d on ${now.toLocaleDateString()}]`;
+            user.note = (user.note ? user.note + ' ' : '') + `[Extended +${extDays}d on ${now.toLocaleDateString()}]`;
         }
 
         // markModified để Mongoose detect thay đổi trong subdocument array
@@ -329,6 +355,39 @@ app.post('/api/extend-user', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+// SINGLE USER ROUTES (Netflix, Canva, Capcut)
+const makeSingleUserRoutes = (router, Model, platformRoute) => {
+    router.post(`/api/${platformRoute}`, async (req, res) => { // using public without token explicitly per server.js style (wait, server.js uses some without token, but app router uses verifyToken mostly, let's omit verifyToken here if server.js doesn't use it on extend-user)
+        try {
+            const now = new Date();
+            const newAcc = { id: Date.now().toString(), ...req.body, users: [], createdAt: now.toISOString() };
+            await Model.create(newAcc);
+            res.json({ message: "Added successfully", account: newAcc });
+        } catch (error) { res.status(500).json({ error: error.message }); }
+    });
+
+    router.put(`/api/${platformRoute}/:id`, async (req, res) => {
+        try {
+            if (req.body.users !== undefined && req.body.users.length > 1) {
+                return res.status(400).json({ error: `${platformRoute} chỉ được 1 khách hàng` });
+            }
+            const updated = await Model.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+            res.json({ message: "Updated successfully", account: updated });
+        } catch (error) { res.status(500).json({ error: error.message }); }
+    });
+
+    router.delete(`/api/${platformRoute}/:id`, async (req, res) => {
+        try {
+            await Model.findOneAndDelete({ id: req.params.id });
+            res.json({ message: "Deleted successfully" });
+        } catch (error) { res.status(500).json({ error: error.message }); }
+    });
+};
+
+makeSingleUserRoutes(app, Netflix, "netflix");
+makeSingleUserRoutes(app, Canva, "canva");
+makeSingleUserRoutes(app, Capcut, "capcut");
 
 // 5. PROXY GOOGLE SHEET (Giữ nguyên)
 app.post('/api/proxy-sheet', async (req, res) => {

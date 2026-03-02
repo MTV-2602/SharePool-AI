@@ -48,6 +48,12 @@ function App() {
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
 
   const [accounts, setAccounts] = useState([]);
+  const [netflixAccounts, setNetflixAccounts] = useState([]);
+  const [canvaAccounts, setCanvaAccounts] = useState([]);
+  const [capcutAccounts, setCapcutAccounts] = useState([]);
+  const [showSimpleAddModal, setShowSimpleAddModal] = useState(false);
+  const [simpleAddPlatform, setSimpleAddPlatform] = useState("netflix");
+  const [simpleAddForm, setSimpleAddForm] = useState({ username: "", password: "", duration: "1M", note: "" });
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("chatgpt");
   const [searchQuery, setSearchQuery] = useState("");
@@ -381,6 +387,11 @@ function App() {
       } else {
         setAccounts([]);
       }
+      const sortA = (arr) => [...(arr || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setNetflixAccounts(sortA(res.data?.netflix));
+      setCanvaAccounts(sortA(res.data?.canva));
+      setCapcutAccounts(sortA(res.data?.capcut));
+
     } catch (error) {
       showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
       setAccounts([]);
@@ -917,6 +928,24 @@ function App() {
               className={`px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "chatgpt" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               ChatGPT / Claude
+            </button>
+            <button
+              onClick={() => setActiveTab("netflix")}
+              className={`px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "netflix" ? "bg-red-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+            >
+              Netflix
+            </button>
+            <button
+              onClick={() => setActiveTab("capcut")}
+              className={`px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "capcut" ? "bg-green-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+            >
+              CapCut
+            </button>
+            <button
+              onClick={() => setActiveTab("canva")}
+              className={`px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "canva" ? "bg-purple-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+            >
+              Canva
             </button>
             <button
               onClick={() => setActiveTab("coursera")}
@@ -2400,6 +2429,239 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           </div>
         </div>
       )}
+
+      {/* ========================================================= */}
+      {/* SINGLE USER PLATFORMS (NETFLIX, CAPCUT, CANVA)            */}
+      {/* ========================================================= */}
+      {(activeTab === "netflix" || activeTab === "capcut" || activeTab === "canva") && (() => {
+        const platform = activeTab;
+        const mapAccs = { netflix: netflixAccounts, capcut: capcutAccounts, canva: canvaAccounts };
+        const accs = mapAccs[platform] || [];
+        const accents = { netflix: "red", capcut: "green", canva: "purple" };
+        const accentColor = accents[platform];
+        const labels = { netflix: "Netflix", capcut: "CapCut", canva: "Canva" };
+        const label = labels[platform];
+        const emojis = { netflix: "Màn hình", capcut: "Video", canva: "Design" };
+        const emoji = emojis[platform];
+
+        const handleAddSimpleAcc = () => {
+          setSimpleAddPlatform(platform);
+          setSimpleAddForm({ username: "", password: "", duration: "1M", note: "" });
+          setShowSimpleAddModal(true);
+        };
+
+        const handleDeleteSimpleAcc = async (acc) => {
+          if (window.confirm(`Xóa tài khoản ${acc.username}?`)) {
+            try {
+              await axios.delete(`/api/${platform}/${acc.id}`);
+              fetchData();
+            } catch (e) { alert("Xóa thất bại"); }
+          }
+        };
+
+        const handleAssignUser = async (acc) => {
+          if (acc.users?.length >= 1) return alert(`Giới hạn: ${label} chỉ được 1 khách!`);
+          const name = prompt("Tên khách hàng:");
+          if (!name?.trim()) return;
+          try {
+            const newUsers = [{ name: name.trim(), joinedAt: new Date().toISOString() }];
+            await axios.put(`/api/${platform}/${acc.id}`, { users: newUsers });
+            fetchData();
+          } catch (e) { alert("Lỗi gán khách"); }
+        };
+
+        const handleRemoveUser = async (acc) => {
+          if (window.confirm(`Xóa khách khỏi ${acc.username}?`)) {
+            try {
+              await axios.put(`/api/${platform}/${acc.id}`, { users: [] });
+              fetchData();
+            } catch (e) { alert("Xóa thất bại"); }
+          }
+        };
+
+        const handleExtendSimpleUser = async (acc) => {
+          try {
+            await axios.post("/api/extend-user", { accId: acc.id, userIndex: 0, platform });
+            fetchData();
+            alert("Gia hạn thành công!");
+          } catch (e) { alert("Lỗi gia hạn"); }
+        };
+
+        const filtered = accs.filter(a =>
+          a.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          a.users?.[0]?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+
+        return (
+          <div>
+            <div className="flex flex-wrap gap-3 mb-6 items-center justify-between">
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Tìm email/khách..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="form-input w-64"
+                />
+                <span className="text-slate-500 text-sm">
+                  {filtered.length} tài khoản · {accs.filter(a => a.users?.length > 0).length} đang dùng
+                </span>
+              </div>
+              <button onClick={handleAddSimpleAcc} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white transition-all bg-${accentColor}-600 hover:bg-${accentColor}-500`}>
+                <UserPlus size={16} /> Thêm Tài Khoản {label}
+              </button>
+            </div>
+
+            <div className="rounded-xl overflow-hidden border border-slate-700 shadow-xl">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className={`text-xs uppercase tracking-wider bg-${accentColor}-900/30 text-${accentColor}-300`}>
+                    <th className="p-3 text-left">#</th>
+                    <th className="p-3 text-left">Tài Khoản</th>
+                    <th className="p-3 text-left">Khách Hàng</th>
+                    <th className="p-3 text-center">Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-500 italic">Chưa có dữ liệu</td></tr>}
+                  {filtered.map((acc, idx) => {
+                    const u = acc.users?.[0];
+                    const daysRemaining = getDaysRemaining(u);
+                    const isExpired = daysRemaining !== null && daysRemaining <= 0;
+                    const isNearExpiry = daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 3;
+                    const accExpiry = getExpiryStatus(acc.expiredAt);
+                    return (
+                      <tr key={acc.id} className={`border-t border-slate-700/50 transition-colors ${accExpiry.isExpired ? "bg-red-950/20" : "hover:bg-slate-800/50"}`}>
+                        <td className="p-3 text-slate-500 font-mono text-xs">{idx + 1}</td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-2 font-bold text-white">
+                            <span className="text-sm">{acc.username}</span>
+                            <Copy size={13} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.username)} />
+                          </div>
+                          <div className="text-slate-400 flex items-center gap-2 font-mono text-xs mt-1 ml-6">
+                            <Shield size={12} className="text-slate-500" />
+                            {acc.password || <span className="opacity-50">Không mật khẩu</span>}
+                            {acc.password && <Copy size={12} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.password)} />}
+                          </div>
+                          {acc.expiredAt && (
+                            <div className={`text-xs mt-1 ml-6 flex items-center gap-1 ${accExpiry.color}`}>
+                              <Calendar size={10} />
+                              <span>{accExpiry.text}</span>
+                              <span className="text-slate-600 italic">({formatDate(acc.expiredAt)})</span>
+                            </div>
+                          )}
+                          {acc.note && <div className="text-xs text-yellow-500/80 italic mt-1 ml-6">{acc.note}</div>}
+                        </td>
+                        <td className="p-3">
+                          {u ? (
+                            <div className={`p-2 rounded border text-xs ${isExpired ? "bg-red-900/20 border-red-700" : isNearExpiry ? "bg-yellow-900/20 border-yellow-700" : "bg-slate-800 border-slate-700"}`}>
+                              <div className={`font-bold flex items-center gap-1 ${isExpired ? "text-red-400" : isNearExpiry ? "text-yellow-400" : "text-white"}`}>
+                                {isExpired && <AlertCircle size={12} />}
+                                {isNearExpiry && <AlertTriangle size={12} />}
+                                👤 {u.name}
+                              </div>
+                              <div className="text-slate-400 mt-1 flex items-center gap-1">
+                                <Calendar size={10} /> {getUserDate(u)}
+                              </div>
+                              {daysRemaining !== null && (
+                                <div className={`text-[10px] font-semibold mt-0.5 ${isExpired ? "text-red-400" : isNearExpiry ? "text-yellow-400" : daysRemaining > 30 ? "text-purple-400" : "text-blue-400"}`}>
+                                  {isExpired ? `(HH ${Math.abs(daysRemaining)} ngày)` : `(Còn ${daysRemaining} ngày)`}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <button onClick={() => handleAssignUser(acc)} className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold text-white bg-${accentColor}-700 hover:bg-${accentColor}-600`}>
+                              👤 Gán Khách
+                            </button>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex flex-col gap-1 items-center">
+                            {u && (isExpired || isNearExpiry) && <button onClick={() => handleExtendSimpleUser(acc)} className="bg-green-600 hover:bg-green-500 text-white px-2 py-1 rounded text-xs w-full text-center">Gia Hạn</button>}
+                            {u && <button onClick={() => handleRemoveUser(acc)} className="bg-orange-700 hover:bg-orange-600 text-white px-2 py-1 rounded text-xs flex items-center w-full justify-center">Xóa Khách</button>}
+                            <button onClick={() => handleDeleteSimpleAcc(acc)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex items-center gap-1 w-full justify-center"><Trash2 size={12} /> Xóa Acc</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showSimpleAddModal && (() => {
+        const opts = {
+          netflix: [{ v: "1M", l: "1 tháng" }, { v: "3M", l: "3 tháng" }, { v: "6M", l: "6 tháng" }, { v: "1Y", l: "1 năm" }],
+          capcut: [{ v: "1M", l: "1 tháng" }, { v: "3M", l: "3 tháng" }, { v: "6M", l: "6 tháng" }],
+          canva: [{ v: "1M", l: "1 tháng" }, { v: "3M", l: "3 tháng" }, { v: "6M", l: "6 tháng" }, { v: "1Y", l: "1 năm" }],
+        };
+        const platformLabel = { netflix: "Netflix", capcut: "CapCut", canva: "Canva" }[simpleAddPlatform] || simpleAddPlatform;
+        const durOpts = opts[simpleAddPlatform] || opts.netflix;
+        const isCanva = simpleAddPlatform === "canva";
+
+        const calcExp = (dur) => {
+          const d = new Date();
+          const m = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
+          d.setDate(d.getDate() + (m[dur] || 30));
+          return d.toISOString();
+        };
+
+        const handleSubmit = async (e) => {
+          e.preventDefault();
+          try {
+            await axios.post(`/api/${simpleAddPlatform}`, {
+              username: simpleAddForm.username.trim(),
+              password: simpleAddForm.password.trim(),
+              note: simpleAddForm.note.trim(),
+              duration: simpleAddForm.duration,
+              expiredAt: calcExp(simpleAddForm.duration),
+            });
+            setShowSimpleAddModal(false);
+            fetchData();
+          } catch (err) { alert("Lỗi thêm tài khoản"); }
+        };
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <form onSubmit={handleSubmit} className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full shadow-2xl" style={{ maxWidth: "480px" }}>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white">Thêm Tài Khoản {platformLabel}</h2>
+                <button type="button" onClick={() => setShowSimpleAddModal(false)} className="text-slate-400 hover:text-white"><X size={20} /></button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">Email / Username *</label>
+                  <input required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" value={simpleAddForm.username} onChange={e => setSimpleAddForm(p => ({ ...p, username: e.target.value }))} placeholder="email@example.com" />
+                </div>
+                {!isCanva && (
+                  <div>
+                    <label className="text-slate-400 text-sm block mb-1">Mật khẩu</label>
+                    <input className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white font-mono" value={simpleAddForm.password} onChange={e => setSimpleAddForm(p => ({ ...p, password: e.target.value }))} placeholder="Password..." />
+                  </div>
+                )}
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">Thời hạn gói linh hoạt</label>
+                  <select className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" value={simpleAddForm.duration} onChange={e => setSimpleAddForm(p => ({ ...p, duration: e.target.value }))}>
+                    {durOpts.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">Ghi chú (Tùy chọn)</label>
+                  <input className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white" value={simpleAddForm.note} onChange={e => setSimpleAddForm(p => ({ ...p, note: e.target.value }))} placeholder="VD: Profile 2..." />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-5">
+                <button type="button" onClick={() => setShowSimpleAddModal(false)} className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white">Hủy</button>
+                <button type="submit" className="flex-1 p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold">Thêm</button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
