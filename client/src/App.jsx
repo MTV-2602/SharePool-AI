@@ -306,6 +306,17 @@ function App() {
     return 30 - used; // Có thể > 30 sau khi gia hạn
   };
 
+  // Helper: tính ngày hết hạn của khách = joinedAt + 30 ngày
+  const getUserExpiryDate = (u) => {
+    if (typeof u === "object" && u !== null && u.joinedAt) {
+      try {
+        const d = new Date(new Date(u.joinedAt).getTime() + 30 * 24 * 60 * 60 * 1000);
+        return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+      } catch (e) { return ""; }
+    }
+    return "";
+  };
+
   // Helper to format Date
   const formatDate = (isoString) => {
     if (!isoString) return "";
@@ -328,19 +339,25 @@ function App() {
 
     if (diffDays < 0)
       return {
-        text: `(Đã hết hạn ${Math.abs(diffDays)} ngày)`,
+        text: `Đã hết hạn ${Math.abs(diffDays)} ngày`,
         color: "text-red-500 font-bold",
         isExpired: true,
       };
     if (diffDays <= 3)
       return {
-        text: `(Còn ${diffDays} ngày)`,
+        text: `Còn ${diffDays} ngày`,
         color: "text-red-400 font-bold",
         isExpired: false,
       };
+    if (diffDays <= 7)
+      return {
+        text: `Còn ${diffDays} ngày`,
+        color: "text-yellow-400 font-bold",
+        isExpired: false,
+      };
     return {
-      text: `(Hết hạn: ${formatDate(isoString)})`,
-      color: "text-slate-500 italic",
+      text: `Còn ${diffDays} ngày`,
+      color: "text-emerald-500",
       isExpired: false,
     };
   };
@@ -1274,11 +1291,11 @@ function App() {
                             </div>
                             {acc.expiredAt && (
                               <div
-                                className={`text-xs mt-1 ml-6 ${getExpiryStatus(acc.expiredAt).color}`}
+                                className={`text-xs mt-1 ml-6 flex items-center gap-1 ${getExpiryStatus(acc.expiredAt).color}`}
                               >
-                                <Calendar size={10} className="inline mr-1" />
-                                {formatDate(acc.expiredAt)}{" "}
-                                {getExpiryStatus(acc.expiredAt).text}
+                                <Calendar size={10} />
+                                <span>{getExpiryStatus(acc.expiredAt).text}</span>
+                                <span className="text-slate-600 italic">({formatDate(acc.expiredAt)})</span>
                               </div>
                             )}
                             {acc.note && (
@@ -1358,7 +1375,7 @@ function App() {
                                             👤 {name}
                                           </span>
                                           {dateStr ? (
-                                            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                            <span className="text-[10px] text-slate-400 flex items-center gap-1 flex-wrap">
                                               <Calendar size={10} /> {dateStr}
                                               {daysRemaining !== null && (
                                                 <span
@@ -1381,6 +1398,13 @@ function App() {
                                           ) : (
                                             <span className="text-[10px] text-slate-600 italic">
                                               Chưa có ngày
+                                            </span>
+                                          )}
+                                          {/* Ngày hết hạn khách */}
+                                          {getUserExpiryDate(u) && (
+                                            <span className={`text-[10px] flex items-center gap-1 font-semibold ${isExpired ? "text-red-500" : isNearExpiry ? "text-yellow-500" : "text-emerald-500"
+                                              }`}>
+                                              🕑 HH: {getUserExpiryDate(u)}
                                             </span>
                                           )}
                                         </div>
@@ -1517,6 +1541,13 @@ function App() {
                                               </span>
                                             )}
                                           </span>
+                                          {/* Ngày hết hạn khách */}
+                                          {getUserExpiryDate(u) && (
+                                            <span className={`text-[10px] block ml-6 font-semibold ${isExpired ? "text-red-500" : isNearExpiry ? "text-yellow-500" : "text-emerald-500"
+                                              }`}>
+                                              🕑 HH: {getUserExpiryDate(u)}
+                                            </span>
+                                          )}
                                         </div>
                                         <div className="flex gap-2">
                                           {/* EXTEND BUTTON (Only for Expired/Near Expiry) */}
