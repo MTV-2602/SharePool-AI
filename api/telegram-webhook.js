@@ -20,7 +20,7 @@ const connectDB = async () => {
 const TELEGRAM_BOT_TOKEN =
   process.env.TELEGRAM_BOT_TOKEN ||
   "8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA";
-const API_URL = "https://web-ban-acc.vercel.app";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://vinhaccplus.vercel.app";
 
 // Allowed user IDs (optional)
 const ALLOWED_USER_IDS = process.env.ALLOWED_USER_IDS
@@ -213,8 +213,8 @@ email,password,courseCode
               : "N/A";
             const daysLeft = acc.expiredAt
               ? Math.ceil(
-                  (new Date(acc.expiredAt) - today) / (1000 * 60 * 60 * 24),
-                )
+                (new Date(acc.expiredAt) - today) / (1000 * 60 * 60 * 24),
+              )
               : "N/A";
 
             statsMessage += `\n${idx + 1}. ${emoji} 👥 ${userCount}/3 | 📅 ${expiry} (${daysLeft}d)\n`;
@@ -248,8 +248,8 @@ email,password,courseCode
               : "N/A";
             const daysLeft = acc.expiredAt
               ? Math.ceil(
-                  (new Date(acc.expiredAt) - today) / (1000 * 60 * 60 * 24),
-                )
+                (new Date(acc.expiredAt) - today) / (1000 * 60 * 60 * 24),
+              )
               : "N/A";
 
             statsMessage += `\n${idx + 1}. ${emoji} 👥 ${userCount}/1 | 📅 ${expiry} (${daysLeft}d)\n`;
@@ -279,8 +279,8 @@ email,password,courseCode
               : "N/A";
             const daysLeft = acc.expiredAt
               ? Math.ceil(
-                  (new Date(acc.expiredAt) - today) / (1000 * 60 * 60 * 24),
-                )
+                (new Date(acc.expiredAt) - today) / (1000 * 60 * 60 * 24),
+              )
               : "N/A";
 
             statsMessage += `\n${idx + 1}. 📅 ${expiry} (${daysLeft}d)\n`;
@@ -412,8 +412,8 @@ email,password,courseCode
             const today = new Date();
             const daysLeft = found.expiredAt
               ? Math.ceil(
-                  (new Date(found.expiredAt) - today) / (1000 * 60 * 60 * 24),
-                )
+                (new Date(found.expiredAt) - today) / (1000 * 60 * 60 * 24),
+              )
               : "N/A";
 
             let message = `📋 *THÔNG TIN TÀI KHOẢN*\n\n`;
