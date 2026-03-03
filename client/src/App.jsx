@@ -888,8 +888,10 @@ function App() {
 
               {/* ChatGPT */}
               <div className="rounded-2xl overflow-hidden shadow-xl border border-slate-700 bg-slate-900">
-                <div className="px-6 py-4 flex items-center gap-3 bg-blue-700">
-                  <img src="/chatgptlogo.png" alt="ChatGPT" className="w-10 h-10 object-contain" />
+                <div className="px-6 py-4 flex items-center gap-4 bg-blue-700">
+                  <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center overflow-hidden shrink-0 shadow">
+                    <img src="/chatgptlogo.png" alt="ChatGPT" className="w-11 h-11 object-cover object-center" />
+                  </div>
                   <div>
                     <h2 className="text-xl font-black text-white">ChatGPT Plus</h2>
                     <p className="text-blue-100 text-sm">Trí tuệ nhân tạo mạnh nhất thế giới</p>
@@ -934,19 +936,19 @@ function App() {
                 </div>
                 <div className="p-5 grid sm:grid-cols-2 gap-3">
                   {[
-                    { logo: "/canvalogo.jpg", name: "Canva Edu", desc: "Dùng như Pro", price: "100k / 1 năm", bg: "bg-purple-900/40 border-purple-800", logoBg: "" },
-                    { logo: "/netfflixlogo.png", name: "Netflix Premium", desc: "Full HD, 4K", price: "50k/tháng · 140k/3T · 250k/6T", bg: "bg-red-900/40 border-red-800", logoBg: "" },
-                    { logo: "/quizletlogo.png", name: "Quizlet", desc: "Học tập thông minh", price: "20k / 1 tháng", bg: "bg-blue-900/40 border-blue-800", logoBg: "" },
-                    { logo: "/capcutlogo.png", name: "CapCut Pro", desc: "Chỉnh video chuyên nghiệp", price: "50k / 1 tháng", bg: "bg-slate-800/80 border-slate-600", logoBg: "" },
-                    { logo: "/ytblogo.png", name: "YouTube Premium", desc: "Không quảng cáo", price: "50k / 1 tháng", bg: "bg-rose-900/40 border-rose-800", logoBg: "" },
+                    { logo: "/canvalogo.jpg", name: "Canva Edu", desc: "Dùng như Pro", price: "100k / 1 năm", bg: "bg-purple-900/40 border-purple-800" },
+                    { logo: "/netfflixlogo.png", name: "Netflix Premium", desc: "Full HD, 4K", price: "50k/tháng · 140k/3T · 250k/6T", bg: "bg-red-900/40 border-red-800" },
+                    { logo: "/quizletlogo.png", name: "Quizlet", desc: "Học tập thông minh", price: "20k / 1 tháng", bg: "bg-blue-900/40 border-blue-800" },
+                    { logo: "/capcutlogo.png", name: "CapCut Pro", desc: "Chỉnh video chuyên nghiệp", price: "50k / 1 tháng", bg: "bg-slate-800 border-slate-600" },
+                    { logo: "/ytblogo.png", name: "YouTube Premium", desc: "Không quảng cáo", price: "50k / 1 tháng", bg: "bg-rose-900/40 border-rose-800" },
                   ].map((s, i) => (
-                    <div key={i} className={`${s.bg} border rounded-xl p-4 flex items-start gap-3`}>
-                      <div className={`shrink-0 w-10 h-10 flex items-center justify-center ${s.logoBg}`}>
-                        <img src={s.logo} alt={s.name} className="w-9 h-9 object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
+                    <div key={i} className={`${s.bg} border rounded-xl p-4 flex items-center gap-3`}>
+                      <div className="shrink-0 w-12 h-12 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow">
+                        <img src={s.logo} alt={s.name} className="w-11 h-11 object-cover object-center" onError={(e) => { e.target.style.display = 'none'; }} />
                       </div>
                       <div>
                         <div className="font-bold text-white">{s.name}</div>
-                        <div className="text-xs text-slate-400 mb-1">{s.desc}</div>
+                        <div className="text-xs text-slate-400 mb-0.5">{s.desc}</div>
                         <div className="text-yellow-400 font-black text-sm">{s.price}</div>
                       </div>
                     </div>
