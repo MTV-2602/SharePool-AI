@@ -889,7 +889,7 @@ function App() {
               {/* ChatGPT */}
               <div className="rounded-2xl overflow-hidden shadow-xl border border-slate-700 bg-slate-900">
                 <div className="px-6 py-4 flex items-center gap-3 bg-blue-700">
-                  <span className="text-3xl">🤖</span>
+                  <img src="https://upload.wikimedia.org/wikipedia/commons/0/04/ChatGPT_logo.svg" alt="ChatGPT" className="w-10 h-10 object-contain" />
                   <div>
                     <h2 className="text-xl font-black text-white">ChatGPT Plus</h2>
                     <p className="text-blue-100 text-sm">Trí tuệ nhân tạo mạnh nhất thế giới</p>
@@ -926,7 +926,7 @@ function App() {
               {/* Other Services */}
               <div className="rounded-2xl overflow-hidden shadow-xl border border-slate-700 bg-slate-900">
                 <div className="px-6 py-4 flex items-center gap-3 bg-teal-700">
-                  <span className="text-3xl">⭐</span>
+                  <span className="text-2xl">⭐</span>
                   <div>
                     <h2 className="text-xl font-black text-white">Tài Khoản Pro Khác</h2>
                     <p className="text-teal-100 text-sm">Giá rẻ nhất thị trường, chất lượng đảm bảo</p>
@@ -934,14 +934,16 @@ function App() {
                 </div>
                 <div className="p-5 grid sm:grid-cols-2 gap-3">
                   {[
-                    { emoji: "🎨", name: "Canva Edu", desc: "Dùng như Pro", price: "100k / 1 năm", bg: "bg-purple-900/40 border-purple-800" },
-                    { emoji: "🎬", name: "Netflix Premium", desc: "Full HD, 4K", price: "50k/tháng · 140k/3T · 250k/6T", bg: "bg-red-900/40 border-red-800" },
-                    { emoji: "📚", name: "Quizlet", desc: "Học tập thông minh", price: "20k / 1 tháng", bg: "bg-blue-900/40 border-blue-800" },
-                    { emoji: "🎥", name: "CapCut Pro", desc: "Chỉnh video chuyên nghiệp", price: "50k / 1 tháng", bg: "bg-green-900/40 border-green-800" },
-                    { emoji: "📺", name: "YouTube Premium", desc: "Không quảng cáo", price: "50k / 1 tháng", bg: "bg-rose-900/40 border-rose-800" },
+                    { logo: "https://upload.wikimedia.org/wikipedia/commons/b/bb/Canva_Logo.svg", name: "Canva Edu", desc: "Dùng như Pro", price: "100k / 1 năm", bg: "bg-purple-900/40 border-purple-800", logoBg: "bg-white rounded p-0.5" },
+                    { logo: "https://upload.wikimedia.org/wikipedia/commons/0/08/Netflix_2015_logo.svg", name: "Netflix Premium", desc: "Full HD, 4K", price: "50k/tháng · 140k/3T · 250k/6T", bg: "bg-red-900/40 border-red-800", logoBg: "" },
+                    { logo: "https://upload.wikimedia.org/wikipedia/commons/6/63/Quizlet_Logo.svg", name: "Quizlet", desc: "Học tập thông minh", price: "20k / 1 tháng", bg: "bg-blue-900/40 border-blue-800", logoBg: "bg-white rounded p-0.5" },
+                    { logo: "https://upload.wikimedia.org/wikipedia/commons/e/e9/Capcut-logo.svg", name: "CapCut Pro", desc: "Chỉnh video chuyên nghiệp", price: "50k / 1 tháng", bg: "bg-slate-800/80 border-slate-600", logoBg: "bg-white rounded p-0.5" },
+                    { logo: "https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg", name: "YouTube Premium", desc: "Không quảng cáo", price: "50k / 1 tháng", bg: "bg-rose-900/40 border-rose-800", logoBg: "" },
                   ].map((s, i) => (
                     <div key={i} className={`${s.bg} border rounded-xl p-4 flex items-start gap-3`}>
-                      <span className="text-3xl">{s.emoji}</span>
+                      <div className={`shrink-0 w-10 h-10 flex items-center justify-center ${s.logoBg}`}>
+                        <img src={s.logo} alt={s.name} className="w-9 h-9 object-contain" onError={(e) => { e.target.style.display = 'none'; }} />
+                      </div>
                       <div>
                         <div className="font-bold text-white">{s.name}</div>
                         <div className="text-xs text-slate-400 mb-1">{s.desc}</div>
