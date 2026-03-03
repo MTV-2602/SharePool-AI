@@ -936,10 +936,10 @@ function App() {
                 </div>
                 <div className="p-5 grid sm:grid-cols-2 gap-3">
                   {[
-                    { logo: "/canvalogo.jpg", name: "Canva Edu", desc: "Dùng như Pro", price: "15k/tháng · 100k / 1 năm", bg: "bg-purple-900/40 border-purple-800" },
+                    { logo: "/canvalogo.jpg", name: "Canva Edu", desc: "Dùng như Pro", price: "15k/tháng · 88k / 1 năm", bg: "bg-purple-900/40 border-purple-800" },
                     { logo: "/netfflixlogo.png", name: "Netflix Premium", desc: "Full HD, 4K", price: "50k/tháng · 140k/3T · 250k/6T", bg: "bg-red-900/40 border-red-800" },
                     { logo: "/quizletlogo.png", name: "Quizlet", desc: "Học tập thông minh", price: "20k / 1 tháng", bg: "bg-blue-900/40 border-blue-800" },
-                    { logo: "/capcutlogo.png", name: "CapCut Pro", desc: "Chỉnh video chuyên nghiệp", price: "50k / 1 tháng", bg: "bg-slate-800 border-slate-600" },
+                    { logo: "/capcutlogo.png", name: "CapCut Pro", desc: "Chỉnh video chuyên nghiệp", price: "45k / 1 tháng", bg: "bg-slate-800 border-slate-600" },
                     { logo: "/ytblogo.png", name: "YouTube Premium", desc: "Không quảng cáo", price: "45k / 1 tháng", bg: "bg-rose-900/40 border-rose-800" },
                   ].map((s, i) => (
                     <div key={i} className={`${s.bg} border rounded-xl p-4 flex items-center gap-3`}>
