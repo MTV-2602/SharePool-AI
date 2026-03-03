@@ -867,16 +867,16 @@ function App() {
   // --- RENDER ---
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-200 font-sans" style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)" }}>
+      <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
         {/* TOP BANNER */}
-        <div className="text-center py-3 px-4 text-sm font-semibold" style={{ background: "linear-gradient(90deg, #6366f1, #8b5cf6, #ec4899)", color: "white" }}>
+        <div className="text-center py-3 px-4 text-sm font-semibold bg-blue-600 text-white">
           ✨ Liên hệ mua tài khoản qua Zalo: <a href="https://zalo.me/0345440153" target="_blank" rel="noreferrer" className="underline font-bold hover:text-yellow-300 transition-colors">0345440153</a>
         </div>
 
         <div className="max-w-7xl mx-auto px-4 py-8 md:py-12">
           {/* HEADER */}
           <div className="text-center mb-10">
-            <h1 className="text-4xl md:text-5xl font-black mb-3" style={{ background: "linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            <h1 className="text-4xl md:text-5xl font-black mb-3 text-white">
               🛒 Dịch Vụ Tài Khoản Premium
             </h1>
             <p className="text-slate-400 text-lg">Giá tốt · Cấp nhanh · Hỗ trợ 24/7</p>
@@ -887,19 +887,19 @@ function App() {
             <div className="flex-1 space-y-6">
 
               {/* ChatGPT */}
-              <div className="rounded-2xl overflow-hidden shadow-2xl border border-blue-700/40" style={{ background: "rgba(30, 41, 59, 0.8)", backdropFilter: "blur(10px)" }}>
-                <div className="px-6 py-4 flex items-center gap-3" style={{ background: "linear-gradient(90deg, #1d4ed8, #4f46e5)" }}>
+              <div className="rounded-2xl overflow-hidden shadow-xl border border-slate-700 bg-slate-900">
+                <div className="px-6 py-4 flex items-center gap-3 bg-blue-700">
                   <span className="text-3xl">🤖</span>
                   <div>
                     <h2 className="text-xl font-black text-white">ChatGPT Plus</h2>
-                    <p className="text-blue-200 text-sm">Trí tuệ nhân tạo mạnh nhất thế giới</p>
+                    <p className="text-blue-100 text-sm">Trí tuệ nhân tạo mạnh nhất thế giới</p>
                   </div>
                 </div>
                 <div className="p-5 grid sm:grid-cols-2 gap-4">
-                  <div className="bg-blue-900/30 border border-blue-700/50 rounded-xl p-4">
+                  <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-blue-300 font-bold">🔥 Gói 1 – Chia sẻ</span>
-                      <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full font-bold">TIẾT KIỆM</span>
+                      <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded font-bold">TIẾT KIỆM</span>
                     </div>
                     <div className="text-2xl font-black text-yellow-400">50.000đ <span className="text-sm text-slate-400 font-normal">/tháng</span></div>
                     <ul className="mt-2 text-sm text-slate-300 space-y-1">
@@ -908,10 +908,10 @@ function App() {
                       <li>• 🔒 Không đổi mật khẩu</li>
                     </ul>
                   </div>
-                  <div className="bg-purple-900/30 border border-purple-700/50 rounded-xl p-4">
+                  <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-purple-300 font-bold">🔥 Gói 2 – Riêng tư</span>
-                      <span className="bg-purple-600 text-white text-xs px-2 py-0.5 rounded-full font-bold">PREMIUM</span>
+                      <span className="bg-purple-700 text-white text-xs px-2 py-0.5 rounded font-bold">PREMIUM</span>
                     </div>
                     <div className="text-2xl font-black text-yellow-400">100.000đ <span className="text-sm text-slate-400 font-normal">/tháng</span></div>
                     <ul className="mt-2 text-sm text-slate-300 space-y-1">
@@ -924,23 +924,23 @@ function App() {
               </div>
 
               {/* Other Services */}
-              <div className="rounded-2xl overflow-hidden shadow-2xl border border-slate-700/40" style={{ background: "rgba(30, 41, 59, 0.8)", backdropFilter: "blur(10px)" }}>
-                <div className="px-6 py-4 flex items-center gap-3" style={{ background: "linear-gradient(90deg, #0f766e, #0891b2)" }}>
+              <div className="rounded-2xl overflow-hidden shadow-xl border border-slate-700 bg-slate-900">
+                <div className="px-6 py-4 flex items-center gap-3 bg-teal-700">
                   <span className="text-3xl">⭐</span>
                   <div>
                     <h2 className="text-xl font-black text-white">Tài Khoản Pro Khác</h2>
-                    <p className="text-teal-200 text-sm">Giá rẻ nhất thị trường, chất lượng đảm bảo</p>
+                    <p className="text-teal-100 text-sm">Giá rẻ nhất thị trường, chất lượng đảm bảo</p>
                   </div>
                 </div>
                 <div className="p-5 grid sm:grid-cols-2 gap-3">
                   {[
-                    { emoji: "🎨", name: "Canva Edu", desc: "Dùng như Pro", price: "100k / 1 năm", color: "from-purple-800/40 to-purple-900/20 border-purple-700/40" },
-                    { emoji: "🎬", name: "Netflix Premium", desc: "Full HD, 4K", price: "50k/tháng · 140k/3T · 250k/6T", color: "from-red-800/40 to-red-900/20 border-red-700/40" },
-                    { emoji: "📚", name: "Quizlet", desc: "Học tập thông minh", price: "20k / 1 tháng", color: "from-blue-800/40 to-blue-900/20 border-blue-700/40" },
-                    { emoji: "🎥", name: "CapCut Pro", desc: "Chỉnh video chuyên nghiệp", price: "50k / 1 tháng", color: "from-green-800/40 to-green-900/20 border-green-700/40" },
-                    { emoji: "📺", name: "YouTube Premium", desc: "Không quảng cáo", price: "50k / 1 tháng", color: "from-red-800/40 to-rose-900/20 border-rose-700/40" },
+                    { emoji: "🎨", name: "Canva Edu", desc: "Dùng như Pro", price: "100k / 1 năm", bg: "bg-purple-900/40 border-purple-800" },
+                    { emoji: "🎬", name: "Netflix Premium", desc: "Full HD, 4K", price: "50k/tháng · 140k/3T · 250k/6T", bg: "bg-red-900/40 border-red-800" },
+                    { emoji: "📚", name: "Quizlet", desc: "Học tập thông minh", price: "20k / 1 tháng", bg: "bg-blue-900/40 border-blue-800" },
+                    { emoji: "🎥", name: "CapCut Pro", desc: "Chỉnh video chuyên nghiệp", price: "50k / 1 tháng", bg: "bg-green-900/40 border-green-800" },
+                    { emoji: "📺", name: "YouTube Premium", desc: "Không quảng cáo", price: "50k / 1 tháng", bg: "bg-rose-900/40 border-rose-800" },
                   ].map((s, i) => (
-                    <div key={i} className={`bg-gradient-to-br ${s.color} border rounded-xl p-4 flex items-start gap-3`}>
+                    <div key={i} className={`${s.bg} border rounded-xl p-4 flex items-start gap-3`}>
                       <span className="text-3xl">{s.emoji}</span>
                       <div>
                         <div className="font-bold text-white">{s.name}</div>
@@ -953,11 +953,10 @@ function App() {
               </div>
 
               {/* CTA */}
-              <div className="rounded-2xl p-5 text-center border border-indigo-700/40" style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.15))" }}>
-                <p className="text-lg font-bold text-white mb-2">📞 Liên Hệ Ngay Để Mua</p>
+              <div className="rounded-2xl p-5 text-center border border-slate-700 bg-slate-800">
+                <p className="text-lg font-bold text-white mb-3">📞 Liên Hệ Ngay Để Mua</p>
                 <a href="https://zalo.me/0345440153" target="_blank" rel="noreferrer"
-                  className="inline-flex items-center gap-2 px-8 py-3 rounded-full font-black text-white text-lg shadow-xl hover:scale-105 transition-transform"
-                  style={{ background: "linear-gradient(90deg, #0068ff, #006af5)" }}>
+                  className="inline-flex items-center gap-2 px-8 py-3 rounded-lg font-black text-white text-lg bg-blue-600 hover:bg-blue-500 transition-colors shadow-lg">
                   💬 Zalo: 0345440153
                 </a>
                 <p className="text-slate-500 text-xs mt-3">Hỗ trợ 24/7 · Cấp ngay sau thanh toán</p>
@@ -966,9 +965,9 @@ function App() {
 
             {/* RIGHT — Admin Login */}
             <div className="w-full lg:w-80 shrink-0">
-              <div className="rounded-2xl p-6 border border-slate-700 shadow-2xl sticky top-6" style={{ background: "rgba(15, 23, 42, 0.9)", backdropFilter: "blur(20px)" }}>
-                <div className="flex justify-center mb-4 text-blue-500">
-                  <div className="w-14 h-14 bg-blue-900/40 rounded-full flex items-center justify-center">
+              <div className="rounded-2xl p-6 border border-slate-700 shadow-xl bg-slate-900 sticky top-6">
+                <div className="flex justify-center mb-4 text-blue-400">
+                  <div className="w-14 h-14 bg-slate-800 rounded-full flex items-center justify-center border border-slate-700">
                     <Lock size={28} />
                   </div>
                 </div>
