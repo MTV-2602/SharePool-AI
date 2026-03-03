@@ -2511,13 +2511,73 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           });
         };
 
-        const filtered = accs.filter(a =>
+        const searchFiltered = accs.filter(a =>
           a.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           a.users?.[0]?.name?.toLowerCase().includes(searchQuery.toLowerCase())
         );
 
+        const filtered = searchFiltered.sort((a, b) => {
+          const remA = a.expiredAt ? Math.ceil((new Date(a.expiredAt) - new Date()) / 86400000) : 999;
+          const remB = b.expiredAt ? Math.ceil((new Date(b.expiredAt) - new Date()) / 86400000) : 999;
+
+          if (remA <= 0 && remB > 0) return -1;
+          if (remA > 0 && remB <= 0) return 1;
+          if (remA <= 3 && remB > 3) return -1;
+          if (remA > 3 && remB <= 3) return 1;
+
+          return remA - remB;
+        });
+
+        const urgentList = accs.filter(a => {
+          const u = a.users?.[0];
+          if (!u) return false;
+          const rem = a.expiredAt ? Math.ceil((new Date(a.expiredAt) - new Date()) / 86400000) : null;
+          return rem !== null && rem <= 3;
+        });
+
         return (
           <div>
+            {urgentList.length > 0 && (
+              <div className={`mb-6 bg-${accentColor}-900/20 border-2 border-${accentColor}-600 rounded-xl overflow-hidden shadow-2xl animate-fade-in`}>
+                <div className={`bg-${accentColor}-800/80 p-3 flex items-center justify-between`}>
+                  <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                    <AlertTriangle className="text-yellow-300 animate-pulse" />
+                    CẦN XỬ LÝ GẤP ({urgentList.length})
+                  </h3>
+                </div>
+                <div className="p-4 space-y-3">
+                  {urgentList.map((a, i) => {
+                    const rem = a.expiredAt ? Math.ceil((new Date(a.expiredAt) - new Date()) / 86400000) : null;
+                    return (
+                      <div key={i} className={`flex items-center justify-between bg-slate-900/50 p-3 rounded border border-${accentColor}-500/30`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-full bg-${accentColor}-500/20 text-${accentColor}-500`}>
+                            <User size={20} />
+                          </div>
+                          <div>
+                            <div className={`font-bold text-${accentColor}-400 text-lg`}>
+                              {a.users[0].name}
+                            </div>
+                            <div className="text-xs text-slate-400">
+                              Tài khoản: <span className="text-white">{a.username}</span> •
+                              <span className="text-red-500 font-bold ml-1">
+                                {rem <= 0 ? `Đã hết hạn ${Math.abs(rem)} ngày` : `Sắp hết hạn (Còn ${rem} ngày)`}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <button onClick={() => handleEditSimpleAcc(a)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2">
+                            <Pencil size={18} /> SỬA ACC
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-3 mb-6 items-center justify-between">
               <div className="flex items-center gap-3">
                 <input
