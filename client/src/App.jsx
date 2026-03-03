@@ -2511,14 +2511,6 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           });
         };
 
-        const handleExtendSimpleUser = async (acc) => {
-          try {
-            await axios.post("/api/extend-user", { accId: acc.id, userIndex: 0, platform });
-            fetchData();
-            alert("Gia hạn thành công!");
-          } catch (e) { alert("Lỗi gia hạn"); }
-        };
-
         const filtered = accs.filter(a =>
           a.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           a.users?.[0]?.name?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -2609,7 +2601,6 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         </td>
                         <td className="p-3">
                           <div className="flex flex-col gap-1 items-center">
-                            {u && (isExpired || isNearExpiry) && <button onClick={() => handleExtendSimpleUser(acc)} className="bg-green-600 hover:bg-green-500 text-white px-2 py-1 rounded text-xs w-full text-center">Gia Hạn</button>}
                             {u && <button onClick={() => handleRemoveUser(acc)} className="bg-orange-700 hover:bg-orange-600 text-white px-2 py-1 rounded text-xs flex items-center w-full justify-center">Xóa Khách</button>}
                             <button onClick={() => handleEditSimpleAcc(acc)} className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded text-xs flex items-center gap-1 w-full justify-center"><Pencil size={12} /> Sửa Acc</button>
                             <button onClick={() => handleDeleteSimpleAcc(acc)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex items-center gap-1 w-full justify-center"><Trash2 size={12} /> Xóa Acc</button>
