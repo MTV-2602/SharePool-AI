@@ -230,6 +230,63 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
   }
 });
 
+// 4.4 TEAM MOVE SLOT
+app.post("/api/team-move-slot", verifyToken, async (req, res) => {
+  try {
+    const { fromAccId, toAccId, slotIndex } = req.body;
+
+    const fromAcc = await TeamAccount.findOne({ id: fromAccId });
+    const toAcc = await TeamAccount.findOne({ id: toAccId });
+
+    if (!fromAcc || !toAcc) {
+      return res.status(404).json({ error: "One or both team accounts not found" });
+    }
+
+    if (!fromAcc.slots || !fromAcc.slots[slotIndex] || fromAcc.slots[slotIndex].status === "empty") {
+      return res.status(400).json({ error: "Slot not found or is empty in source team account" });
+    }
+
+    // STRICT RULE: Cannot transfer to Expired Account
+    if (toAcc.expiredAt && new Date(toAcc.expiredAt) < new Date()) {
+      return res.status(400).json({
+        error: "Team Account đích ĐÃ HẾT HẠN. Không thể chuyển slot vào!",
+      });
+    }
+
+    if (!toAcc.slots) {
+      toAcc.slots = Array(5).fill({ status: "empty" });
+    }
+
+    // Find first empty slot in destination
+    const emptySlotIdx = toAcc.slots.findIndex(s => s.status === "empty" || !s.gmail);
+
+    if (emptySlotIdx === -1) {
+      return res.status(400).json({ error: "Team Account đích đã đầy (hết 5 slot trống)" });
+    }
+
+    // Move slot data
+    const slotToMove = { ...fromAcc.slots[slotIndex] };
+
+    // Set destination slot
+    toAcc.slots[emptySlotIdx] = slotToMove;
+
+    // Empty origin slot
+    fromAcc.slots[slotIndex] = {
+      status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: ""
+    };
+
+    toAcc.markModified("slots");
+    fromAcc.markModified("slots");
+
+    await toAcc.save();
+    await fromAcc.save();
+
+    res.json({ message: "Moved slot successfully" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 4.5 MOVE USER (ATOMIC TRANSFER)
 app.post("/api/move-user", verifyToken, async (req, res) => {
   try {

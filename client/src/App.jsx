@@ -119,7 +119,9 @@ function App() {
 
   // Move User State
   const [showMoveUserModal, setShowMoveUserModal] = useState(false);
-  const [movingUser, setMovingUser] = useState(null); // { fromAccId, userIndex, name, joinedAt }
+  const [showMoveSlotModal, setShowMoveSlotModal] = useState(false);
+  const [movingUser, setMovingUser] = useState(null);
+  const [movingSlot, setMovingSlot] = useState(null); // { fromAccId, userIndex, name, joinedAt }
   const [destinationAccId, setDestinationAccId] = useState("");
 
   // Orphaned Users Modal (when deleting account with active users)
@@ -637,6 +639,36 @@ function App() {
         error.response?.data?.error || "Lỗi khi chuyển khách",
         "error",
       );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, moveUser: false }));
+    }
+  };
+
+  // TEAM MOVE SLOT LOGIC
+  const openMoveSlotModal = (accId, slIndex, sData) => {
+    setMovingSlot({ fromAccId: accId, slotIndex: slIndex, ...sData });
+    setDestinationAccId("");
+    setShowMoveSlotModal(true);
+  };
+
+  const handleSubmitMoveSlot = async (e) => {
+    e.preventDefault();
+    if (!destinationAccId) return showAlert("Lỗi", "Chưa chọn tài khoản đích!", "warning");
+
+    setLoadingStates((prev) => ({ ...prev, moveUser: true }));
+    try {
+      await axios.post("/api/team-move-slot", {
+        fromAccId: movingSlot.fromAccId,
+        toAccId: destinationAccId,
+        slotIndex: movingSlot.slotIndex,
+      });
+      setShowMoveSlotModal(false);
+      setMovingSlot(null);
+      fetchData();
+      broadcastDataChange();
+      showAlert("Thành Công", `Đã chuyển khách sang tài khoản Team khác!`, "success");
+    } catch (error) {
+      showAlert("Lỗi", error.response?.data?.error || "Lỗi khi chuyển slot", "error");
     } finally {
       setLoadingStates((prev) => ({ ...prev, moveUser: false }));
     }
@@ -2122,6 +2154,98 @@ function App() {
         </div>
       )}
 
+      {/* MOVE SLOT MODAL */}
+      {showMoveSlotModal && movingSlot && (
+        <div className="modal-overlay">
+          <form
+            onSubmit={handleSubmitMoveSlot}
+            className="modal-box"
+            style={{ maxWidth: "450px" }}
+          >
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <ArrowRightLeft className="text-orange-500" /> Chuyển Slot Khách
+            </h2>
+
+            <div className="bg-slate-800 p-3 rounded mb-4 border border-slate-700">
+              <div className="text-sm text-slate-400">Đang chuyển Slot:</div>
+              <div className="font-bold text-lg text-white">
+                👤 {movingSlot.customerName || movingSlot.gmail}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                Tham gia:{" "}
+                {movingSlot.addedAt
+                  ? new Date(movingSlot.addedAt).toLocaleDateString("vi-VN")
+                  : "N/A"}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="text-orange-400 font-bold mb-1 block">
+                Chọn Team Account Đích
+              </label>
+              <select
+                className="form-input w-full"
+                value={destinationAccId}
+                onChange={(e) => setDestinationAccId(e.target.value)}
+                size={5}
+                required
+              >
+                <option value="" disabled>
+                  -- Chọn tài khoản Team --
+                </option>
+                {(() => {
+                  return teamAccounts
+                    .filter((a) => {
+                      if (a.id === movingSlot.fromAccId) return false;
+                      const expDays = a.expiredAt ? Math.ceil((new Date(a.expiredAt) - new Date()) / 86400000) : null;
+                      if (expDays !== null && expDays <= 0) return false; // Không chuyển vào acc hết hạn
+
+                      const emptySlots = (a.slots || []).filter(s => s.status === "empty" || !s.gmail);
+                      return emptySlots.length > 0; // Chỉ chuyển vào những bên còn trống slot
+                    })
+                    .map((a) => {
+                      const filledSlots = (a.slots || []).filter(s => s.status !== "empty" && s.gmail).length;
+                      return (
+                        <option
+                          key={a.id}
+                          value={a.id}
+                          className="py-2"
+                        >
+                          [{filledSlots}/5 Slots] — {a.username}
+                        </option>
+                      );
+                    });
+                })()}
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setShowMoveSlotModal(false)}
+                className="btn-secondary"
+                disabled={loadingStates.moveUser}
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                className="btn-primary bg-orange-600 hover:bg-orange-500 flex items-center gap-2"
+                disabled={loadingStates.moveUser}
+              >
+                {loadingStates.moveUser ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" /> Đang chuyển...
+                  </>
+                ) : (
+                  "Xác Nhận Chuyển"
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {showUserModal && (
         <div className="modal-overlay">
           <form
@@ -2797,7 +2921,22 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => { setTeamImportText(""); setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }); setShowTeamAddModal(true); }}
+                onClick={() => {
+                  const raw = prompt("Dán format Team vào đây:");
+                  if (!raw || !raw.trim()) return;
+                  const m1 = raw.match(/\[.*?\]([\s\S]*?)\[/);
+                  const middle = m1 ? m1[1] : raw;
+                  const normalized = middle.replace(/----/g, "|||");
+                  const parts = normalized.split("|||").map(s => s.trim());
+                  const email = parts[0] || "";
+                  const gptPass = parts[1] || "";
+                  const emailPass = parts[2] || "";
+                  const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
+                  const recoveryUrl = recoveryMatch ? recoveryMatch[1].trim() : "";
+
+                  setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl: recoveryUrl, note: "", expiredAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] });
+                  setShowTeamAddModal(true);
+                }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-slate-700 hover:bg-slate-600 text-sm"
               >
                 📋 Nhập Format
@@ -2915,6 +3054,14 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                   )}
                                   <button
                                     type="button"
+                                    onClick={() => openMoveSlotModal(acc.id, si, slot)}
+                                    className="bg-orange-600 hover:bg-orange-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
+                                    title="Chuyển Slot"
+                                  >
+                                    <ArrowRightLeft size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.addedAt ? new Date(slot.addedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]); setShowSlotModal(true); }}
                                     className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
                                     title="Sửa Slot"
@@ -2953,58 +3100,31 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 
           {/* ADD TEAM MODAL */}
           {showTeamAddModal && (
-            <div className="modal-overlay" onClick={() => setShowTeamAddModal(false)}>
-              <div className="modal-content" style={{ maxWidth: "520px" }} onClick={e => e.stopPropagation()}>
-                <div className="modal-header"><h3>➕ Thêm Team Account</h3><span className="close" onClick={() => setShowTeamAddModal(false)}>&times;</span></div>
-
-                {/* PASTE FORMAT AREA */}
-                <div className="mb-4 p-3 rounded-xl bg-slate-800 border border-slate-600">
-                  <label className="block text-xs text-indigo-300 font-bold mb-1">📋 Dán format Team vào đây rồi bấm Parse</label>
-                  <textarea
-                    className="form-input w-full font-mono text-xs"
-                    rows={4}
-                    placeholder={"[Team邮箱----GPT密码----邮箱密码]email---pass---emailPass[接收验证码的地址]http://..."}
-                    value={teamImportText}
-                    onChange={e => setTeamImportText(e.target.value)}
-                  />
-                  <button
-                    onClick={() => {
-                      const raw = teamImportText;
-                      if (!raw.trim()) return;
-                      const m1 = raw.match(/\[.*?\]([\s\S]*?)\[/);
-                      const middle = m1 ? m1[1] : raw;
-                      // Normalize ---- (4 dashes) → split delimiter, then split by ---
-                      const normalized = middle.replace(/----/g, "|||");
-                      const parts = normalized.split("|||").map(s => s.trim());
-                      const email = parts[0] || "";
-                      const gptPass = parts[1] || "";
-                      const emailPass = parts[2] || "";
-                      const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
-                      const recoveryUrl = recoveryMatch ? recoveryMatch[1].trim() : "";
-                      setTeamAddForm(prev => ({ ...prev, username: email, password: gptPass, emailPassword: emailPass, recoveryUrl }));
-                    }}
-                    className="mt-2 w-full py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-bold"
-                  >⚡ Tự động điền từ format</button>
+            <div className="modal-overlay">
+              <div className="modal-box" style={{ maxWidth: "520px" }}>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold text-white">➕ Thêm Team Account</h3>
+                  <span className="close cursor-pointer text-slate-400 hover:text-white" onClick={() => setShowTeamAddModal(false)}>&times;</span>
                 </div>
 
                 <div className="space-y-3">
-                  <div><label className="block text-xs text-slate-400 mb-1">📧 Email chính (Team)</label><input className="form-input w-full" placeholder="teamacc@outlook.com" value={teamAddForm.username} onChange={e => setTeamAddForm({ ...teamAddForm, username: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📧 Email chính (Team)</label><input className="form-input w-full" placeholder="teamacc@outlook.com" value={teamAddForm.username} onChange={e => setTeamAddForm({ ...teamAddForm, username: e.target.value })} /></div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamAddForm.password} onChange={e => setTeamAddForm({ ...teamAddForm, password: e.target.value })} /></div>
-                    <div><label className="block text-xs text-slate-400 mb-1">📩 Email Password</label><input className="form-input w-full" value={teamAddForm.emailPassword} onChange={e => setTeamAddForm({ ...teamAddForm, emailPassword: e.target.value })} /></div>
+                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamAddForm.password} onChange={e => setTeamAddForm({ ...teamAddForm, password: e.target.value })} /></div>
+                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📩 Email Password</label><input className="form-input w-full" value={teamAddForm.emailPassword} onChange={e => setTeamAddForm({ ...teamAddForm, emailPassword: e.target.value })} /></div>
                   </div>
-                  <div><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" placeholder="http://..." value={teamAddForm.recoveryUrl} onChange={e => setTeamAddForm({ ...teamAddForm, recoveryUrl: e.target.value })} /></div>
-                  <div><label className="block text-xs text-slate-400 mb-1">📅 Hạn của Team Acc</label><input type="date" className="form-input w-full" value={teamAddForm.expiredAt} onChange={e => setTeamAddForm({ ...teamAddForm, expiredAt: e.target.value })} /></div>
-                  <div><label className="block text-xs text-slate-400 mb-1">📝 Ghi chú</label><input className="form-input w-full" value={teamAddForm.note} onChange={e => setTeamAddForm({ ...teamAddForm, note: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" placeholder="http://..." value={teamAddForm.recoveryUrl} onChange={e => setTeamAddForm({ ...teamAddForm, recoveryUrl: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Hạn của Team Acc</label><input type="date" className="form-input w-full" value={teamAddForm.expiredAt} onChange={e => setTeamAddForm({ ...teamAddForm, expiredAt: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📝 Ghi chú</label><input className="form-input w-full" value={teamAddForm.note} onChange={e => setTeamAddForm({ ...teamAddForm, note: e.target.value })} /></div>
                 </div>
-                <div className="flex justify-end gap-3 mt-4">
+                <div className="flex justify-end gap-3 mt-6">
                   <button onClick={() => setShowTeamAddModal(false)} className="btn-secondary">Hủy</button>
                   <button onClick={async () => {
                     try {
                       await axios.post("/api/team", { ...teamAddForm, expiredAt: teamAddForm.expiredAt ? new Date(teamAddForm.expiredAt).toISOString() : undefined });
-                      setShowTeamAddModal(false); setTeamImportText(""); fetchData(); showAlert("Thành công", "Đã thêm Team Account!", "success");
-                    } catch (e) { showAlert("Lỗi", e.response?.data?.error || e.message, "error"); }
-                  }} className="btn-primary" style={{ background: "#4f46e5" }}>Thêm</button>
+                      setShowTeamAddModal(false); fetchData(); showAlert("Thành công", "Đã thêm Team Account!", "success");
+                    } catch (e) { showAlert("Lỗi", e.message, "error"); }
+                  }} className="btn-primary" style={{ background: "#4f46e5" }}>+ Thêm Team Acc</button>
                 </div>
               </div>
             </div>
@@ -3012,20 +3132,24 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 
           {/* EDIT TEAM MODAL */}
           {showTeamEditModal && (
-            <div className="modal-overlay" onClick={() => setShowTeamEditModal(false)}>
-              <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <div className="modal-header"><h3>✏️ Sửa Team Account</h3><span className="close" onClick={() => setShowTeamEditModal(false)}>&times;</span></div>
-                <div className="space-y-3 mt-1">
-                  <div><label className="block text-xs text-slate-400 mb-1">📧 Email</label><input className="form-input w-full" value={teamEditForm.username} onChange={e => setTeamEditForm({ ...teamEditForm, username: e.target.value })} /></div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamEditForm.password} onChange={e => setTeamEditForm({ ...teamEditForm, password: e.target.value })} /></div>
-                    <div><label className="block text-xs text-slate-400 mb-1">📩 Email Password</label><input className="form-input w-full" value={teamEditForm.emailPassword} onChange={e => setTeamEditForm({ ...teamEditForm, emailPassword: e.target.value })} /></div>
-                  </div>
-                  <div><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" value={teamEditForm.recoveryUrl} onChange={e => setTeamEditForm({ ...teamEditForm, recoveryUrl: e.target.value })} /></div>
-                  <div><label className="block text-xs text-slate-400 mb-1">📅 Hạn Team Acc</label><input type="date" className="form-input w-full" value={teamEditForm.expiredAt} onChange={e => setTeamEditForm({ ...teamEditForm, expiredAt: e.target.value })} /></div>
-                  <div><label className="block text-xs text-slate-400 mb-1">📝 Ghi chú</label><input className="form-input w-full" value={teamEditForm.note} onChange={e => setTeamEditForm({ ...teamEditForm, note: e.target.value })} /></div>
+            <div className="modal-overlay">
+              <div className="modal-box" style={{ maxWidth: "520px" }}>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold text-white">✏️ Sửa Team Account</h3>
+                  <span className="close cursor-pointer text-slate-400 hover:text-white" onClick={() => setShowTeamEditModal(false)}>&times;</span>
                 </div>
-                <div className="flex justify-end gap-3 mt-4">
+
+                <div className="space-y-3">
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📧 Email</label><input className="form-input w-full" value={teamEditForm.username} onChange={e => setTeamEditForm({ ...teamEditForm, username: e.target.value })} /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamEditForm.password} onChange={e => setTeamEditForm({ ...teamEditForm, password: e.target.value })} /></div>
+                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📩 Email Password</label><input className="form-input w-full" value={teamEditForm.emailPassword} onChange={e => setTeamEditForm({ ...teamEditForm, emailPassword: e.target.value })} /></div>
+                  </div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" value={teamEditForm.recoveryUrl} onChange={e => setTeamEditForm({ ...teamEditForm, recoveryUrl: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Hạn Team Acc</label><input type="date" className="form-input w-full" value={teamEditForm.expiredAt} onChange={e => setTeamEditForm({ ...teamEditForm, expiredAt: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📝 Ghi chú</label><input className="form-input w-full" value={teamEditForm.note} onChange={e => setTeamEditForm({ ...teamEditForm, note: e.target.value })} /></div>
+                </div>
+                <div className="flex justify-end gap-3 mt-6">
                   <button onClick={() => setShowTeamEditModal(false)} className="btn-secondary">Hủy</button>
                   <button onClick={async () => {
                     try {
@@ -3054,11 +3178,11 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             }
 
             return (
-              <div className="modal-overlay" onClick={() => setShowSlotModal(false)}>
-                <div className="modal-content" onClick={e => e.stopPropagation()}>
-                  <div className="modal-header">
-                    <h3>{isEmpty ? "➕ Gán Khách vào" : "✏️ Sửa"} Slot {(slotTarget.slotIdx ?? 0) + 1}</h3>
-                    <span className="close" onClick={() => setShowSlotModal(false)}>&times;</span>
+              <div className="modal-overlay">
+                <div className="modal-box" style={{ maxWidth: "450px" }}>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-white mb-0">{isEmpty ? "➕ Gán Khách vào" : "✏️ Sửa"} Slot {(slotTarget.slotIdx ?? 0) + 1}</h3>
+                    <span className="close cursor-pointer text-slate-400 hover:text-white text-2xl" onClick={() => setShowSlotModal(false)}>&times;</span>
                   </div>
 
                   {showWarning && (
@@ -3071,22 +3195,23 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     </div>
                   )}
 
-                  <div className="space-y-3 mt-2">
-                    <div><label className="block text-xs text-slate-400 mb-1">📧 Gmail Khách</label><input className="form-input w-full" placeholder="customer@gmail.com" value={slotFormGmail} onChange={e => setSlotFormGmail(e.target.value)} /></div>
-                    <div><label className="block text-xs text-slate-400 mb-1">👤 Tên Khách</label><input className="form-input w-full" placeholder="Nguyễn Văn A" value={slotFormName} onChange={e => setSlotFormName(e.target.value)} /></div>
-                    <div><label className="block text-xs text-slate-400 mb-1">📅 Ngày Tham Gia</label><input type="date" className="form-input w-full" value={slotFormExp} onChange={e => setSlotFormExp(e.target.value)} /></div>
+                  <div className="space-y-3">
+                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📧 Gmail Khách</label><input className="form-input w-full" placeholder="customer@gmail.com" value={slotFormGmail} onChange={e => setSlotFormGmail(e.target.value)} /></div>
+                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">👤 Tên Khách</label><input className="form-input w-full" placeholder="Nguyễn Văn A" value={slotFormName} onChange={e => setSlotFormName(e.target.value)} /></div>
+                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Ngày Tham Gia</label><input type="date" className="form-input w-full" value={slotFormExp} onChange={e => setSlotFormExp(e.target.value)} /></div>
                   </div>
-                  <div className="flex justify-between mt-4">
-                    {!isEmpty && (
+
+                  <div className="flex justify-between mt-6">
+                    {!isEmpty ? (
                       <button onClick={async () => {
                         if (!parentAcc) return;
                         const updSlots = Array(5).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
                         updSlots[slotTarget.slotIdx] = { status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
                         await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
                         setShowSlotModal(false); fetchData();
-                      }} className="bg-red-800 hover:bg-red-700 text-white px-3 py-2 rounded text-sm font-bold">🗑️ Xóa Slot</button>
-                    )}
-                    <div className="flex gap-2 ml-auto">
+                      }} className="bg-red-800 hover:bg-red-700 text-white px-3 py-2 rounded text-sm font-bold flex items-center gap-2"><Trash2 size={16} /> Xóa Slot</button>
+                    ) : (<div></div>)}
+                    <div className="flex gap-2">
                       <button onClick={() => setShowSlotModal(false)} className="btn-secondary">Hủy</button>
                       <button onClick={async () => {
                         if (!parentAcc) return;
