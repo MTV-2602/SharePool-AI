@@ -2797,13 +2797,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => { setTeamImportText(""); setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "" }); setShowTeamAddModal(true); }}
+                onClick={() => { setTeamImportText(""); setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }); setShowTeamAddModal(true); }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-slate-700 hover:bg-slate-600 text-sm"
               >
                 📋 Nhập Format
               </button>
               <button
-                onClick={() => { setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "" }); setShowTeamAddModal(true); }}
+                onClick={() => { setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }); setShowTeamAddModal(true); }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-500"
               >
                 <UserPlus size={16} /> Thêm Team Acc
@@ -2915,7 +2915,9 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                       if (!raw.trim()) return;
                       const m1 = raw.match(/\[.*?\]([\s\S]*?)\[/);
                       const middle = m1 ? m1[1] : raw;
-                      const parts = middle.split("---").map(s => s.trim());
+                      // Normalize ---- (4 dashes) → split delimiter, then split by ---
+                      const normalized = middle.replace(/----/g, "|||");
+                      const parts = normalized.split("|||").map(s => s.trim());
                       const email = parts[0] || "";
                       const gptPass = parts[1] || "";
                       const emailPass = parts[2] || "";
