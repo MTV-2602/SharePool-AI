@@ -2861,28 +2861,86 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         const sNear = sExpDays !== null && sExpDays > 0 && sExpDays <= 3;
                         const isEmpty = slot.status === "empty" || !slot.gmail;
                         return (
-                          <div key={si} className={`rounded-xl border p-3 flex flex-col gap-2 ${isEmpty ? "border-slate-700 bg-slate-800/50" : sExpired ? "border-red-800 bg-red-950/30" : sNear ? "border-yellow-800 bg-yellow-950/20" : "border-indigo-700/50 bg-indigo-900/20"}`}>
-                            <div className="flex items-center justify-between">
+                          <div key={si} className={`rounded-xl border p-3 flex flex-col gap-1 ${isEmpty ? "border-slate-700 bg-slate-800/50" : sExpired ? "border-red-800 bg-red-950/30" : sNear ? "border-yellow-800 bg-yellow-950/20" : "border-indigo-700/50 bg-indigo-900/20"}`}>
+                            <div className="flex items-center justify-between pb-1 border-b border-slate-700/50 mb-1">
                               <span className={`text-xs font-bold ${isEmpty ? "text-slate-500" : "text-indigo-300"}`}>Slot {si + 1}</span>
-                              {!isEmpty && (
-                                <span className={`text-[10px] font-bold ${sExpired ? "text-red-400" : sNear ? "text-yellow-400" : "text-green-400"}`}>
-                                  {sExpired ? `HH ${Math.abs(sExpDays)}d` : `+${sExpDays}d`}
-                                </span>
+                              {isEmpty && (
+                                <button
+                                  onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(""); setSlotFormName(""); setSlotFormExp(new Date().toISOString().split("T")[0]); setShowSlotModal(true); }}
+                                  className="text-[10px] px-2 py-0.5 rounded font-bold bg-blue-600 hover:bg-blue-500 text-white"
+                                >+ Gán</button>
                               )}
                             </div>
                             {!isEmpty ? (
-                              <div className="flex-1 space-y-0.5">
-                                <div className="text-xs font-semibold text-white">{slot.customerName || "—"}</div>
-                                <div className="text-[10px] text-blue-300 break-all">{slot.gmail}</div>
-                                <div className="text-[10px] text-slate-500">{slot.addedAt ? new Date(slot.addedAt).toLocaleDateString("vi-VN") : ""}</div>
-                              </div>
+                              <>
+                                <div className="flex-1 space-y-0.5">
+                                  <span className={`font-bold text-xs truncate max-w-full flex items-center gap-1 ${sExpired ? "text-red-500" : sNear ? "text-yellow-400" : "text-white"}`} title={slot.customerName}>
+                                    {sExpired && <AlertCircle size={12} />}
+                                    {sNear && <AlertTriangle size={12} />}
+                                    👤 {slot.customerName || "—"}
+                                  </span>
+                                  <div className="text-[10px] text-blue-300 break-all">{slot.gmail}</div>
+                                  <span className="text-[10px] text-slate-400 flex items-center gap-1 flex-wrap">
+                                    <Calendar size={10} /> {slot.addedAt ? new Date(slot.addedAt).toLocaleDateString("vi-VN") : "Chưa có ngày"}
+                                    {sExpDays !== null && (
+                                      <span className={sExpired ? "text-red-400 font-bold" : sNear ? "text-yellow-500 font-bold" : sExpDays > 30 ? "text-purple-400 font-bold" : "text-blue-400"}>
+                                        {sExpired ? `(HH ${Math.abs(sExpDays)}ngày)` : `(Còn ${sExpDays}ngày)`}
+                                      </span>
+                                    )}
+                                  </span>
+                                  {slot.expiredAt && (
+                                    <span className={`text-[10px] flex items-center gap-1 font-semibold ${sExpired ? "text-red-500" : sNear ? "text-yellow-500" : "text-emerald-500"}`}>
+                                      🕑 HH: {new Date(slot.expiredAt).toLocaleDateString("vi-VN")}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex gap-1 mt-2">
+                                  {(sExpired || sNear) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        showConfirm("Xác nhận gia hạn", `Bạn có chắc muốn gia hạn cho ${slot.customerName} ở Slot ${si + 1} thêm 30 ngày?`, async () => {
+                                          const updSlots = [...acc.slots];
+                                          updSlots[si] = { ...slot, addedAt: new Date().toISOString(), expiredAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() };
+                                          await axios.put(`/api/team/${acc.id}`, { slots: updSlots });
+                                          fetchData();
+                                          showAlert("Thành công", "Đã gia hạn Slot (+30 ngày)!", "success");
+                                        });
+                                      }}
+                                      className="bg-green-600 hover:bg-green-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
+                                      title="Gia hạn (+30 ngày)"
+                                    >
+                                      <RotateCw size={14} />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.addedAt ? new Date(slot.addedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]); setShowSlotModal(true); }}
+                                    className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
+                                    title="Sửa Slot"
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      showConfirm("Xóa Slot", `Xóa khách ${slot.customerName} khỏi Slot ${si + 1}?`, async () => {
+                                        const updSlots = [...acc.slots];
+                                        updSlots[si] = { status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
+                                        await axios.put(`/api/team/${acc.id}`, { slots: updSlots });
+                                        fetchData();
+                                      });
+                                    }}
+                                    className="bg-red-600 hover:bg-red-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
+                                    title="Xóa khách"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              </>
                             ) : (
-                              <div className="flex-1 flex items-center justify-center text-slate-600 text-xs italic">trống</div>
+                              <div className="flex-1 flex items-center justify-center text-slate-600 text-[11px] italic">Slot trống</div>
                             )}
-                            <button
-                              onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.addedAt ? new Date(slot.addedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]); setShowSlotModal(true); }}
-                              className={`text-[10px] py-1 rounded font-bold w-full ${isEmpty ? "bg-indigo-700 hover:bg-indigo-600 text-white" : "bg-slate-700 hover:bg-slate-600 text-white"}`}
-                            >{isEmpty ? "➕ Gán" : "✏️ Sửa"}</button>
                           </div>
                         );
                       })}
