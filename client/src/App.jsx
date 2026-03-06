@@ -2880,7 +2880,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                               <div className="flex-1 flex items-center justify-center text-slate-600 text-xs italic">trống</div>
                             )}
                             <button
-                              onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.expiredAt ? new Date(slot.expiredAt).toISOString().split("T")[0] : ""); setShowSlotModal(true); }}
+                              onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.addedAt ? new Date(slot.addedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]); setShowSlotModal(true); }}
                               className={`text-[10px] py-1 rounded font-bold w-full ${isEmpty ? "bg-indigo-700 hover:bg-indigo-600 text-white" : "bg-slate-700 hover:bg-slate-600 text-white"}`}
                             >{isEmpty ? "➕ Gán" : "✏️ Sửa"}</button>
                           </div>
@@ -2984,6 +2984,17 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           {showSlotModal && (() => {
             const slot = slotTarget.slot || {};
             const isEmpty = slot.status === "empty" || !slot.gmail;
+            const parentAcc = teamAccounts.find(a => a.id === slotTarget.accId);
+
+            let showWarning = false;
+            let daysLeft = 0;
+            if (isEmpty && parentAcc && parentAcc.expiredAt) {
+              const exp = new Date(parentAcc.expiredAt);
+              const now = new Date();
+              daysLeft = Math.ceil((exp - now) / 86400000);
+              if (daysLeft < 30) showWarning = true;
+            }
+
             return (
               <div className="modal-overlay" onClick={() => setShowSlotModal(false)}>
                 <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -2991,17 +3002,27 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     <h3>{isEmpty ? "➕ Gán Khách vào" : "✏️ Sửa"} Slot {(slotTarget.slotIdx ?? 0) + 1}</h3>
                     <span className="close" onClick={() => setShowSlotModal(false)}>&times;</span>
                   </div>
+
+                  {showWarning && (
+                    <div className="mb-4 mt-2 p-3 bg-yellow-900/30 border border-yellow-600/50 rounded flex gap-2 items-start">
+                      <AlertTriangle className="text-yellow-500 shrink-0" size={20} />
+                      <div className="text-xs text-yellow-200">
+                        <span className="font-bold block text-sm text-yellow-500">CẢNH BÁO HẠN DÙNG</span>
+                        Tài khoản Team này chỉ còn <b>{daysLeft} ngày</b> (&lt; 30 ngày).<br />Khách mua tháng có thể bị gián đoạn!
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-3 mt-2">
                     <div><label className="block text-xs text-slate-400 mb-1">📧 Gmail Khách</label><input className="form-input w-full" placeholder="customer@gmail.com" value={slotFormGmail} onChange={e => setSlotFormGmail(e.target.value)} /></div>
                     <div><label className="block text-xs text-slate-400 mb-1">👤 Tên Khách</label><input className="form-input w-full" placeholder="Nguyễn Văn A" value={slotFormName} onChange={e => setSlotFormName(e.target.value)} /></div>
-                    <div><label className="block text-xs text-slate-400 mb-1">📅 Hạn Sử Dụng</label><input type="date" className="form-input w-full" value={slotFormExp} onChange={e => setSlotFormExp(e.target.value)} /></div>
+                    <div><label className="block text-xs text-slate-400 mb-1">📅 Ngày Tham Gia</label><input type="date" className="form-input w-full" value={slotFormExp} onChange={e => setSlotFormExp(e.target.value)} /></div>
                   </div>
                   <div className="flex justify-between mt-4">
                     {!isEmpty && (
                       <button onClick={async () => {
-                        const acc = teamAccounts.find(a => a.id === slotTarget.accId);
-                        if (!acc) return;
-                        const updSlots = Array(5).fill(null).map((_, i) => (acc.slots || [])[i] || { status: "empty" });
+                        if (!parentAcc) return;
+                        const updSlots = Array(5).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
                         updSlots[slotTarget.slotIdx] = { status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
                         await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
                         setShowSlotModal(false); fetchData();
@@ -3010,10 +3031,11 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     <div className="flex gap-2 ml-auto">
                       <button onClick={() => setShowSlotModal(false)} className="btn-secondary">Hủy</button>
                       <button onClick={async () => {
-                        const acc = teamAccounts.find(a => a.id === slotTarget.accId);
-                        if (!acc) return;
-                        const updSlots = Array(5).fill(null).map((_, i) => (acc.slots || [])[i] || { status: "empty" });
-                        updSlots[slotTarget.slotIdx] = { status: slotFormGmail ? "active" : "empty", gmail: slotFormGmail, customerName: slotFormName, addedAt: new Date().toISOString(), expiredAt: slotFormExp ? new Date(slotFormExp).toISOString() : "" };
+                        if (!parentAcc) return;
+                        const updSlots = Array(5).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
+                        const joinDate = slotFormExp ? new Date(slotFormExp) : new Date();
+                        const expireDate = new Date(joinDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+                        updSlots[slotTarget.slotIdx] = { status: slotFormGmail ? "active" : "empty", gmail: slotFormGmail, customerName: slotFormName, addedAt: joinDate.toISOString(), expiredAt: expireDate.toISOString() };
                         await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
                         setShowSlotModal(false); fetchData();
                       }} className="btn-primary" style={{ background: "#4f46e5" }}>💾 Lưu</button>
