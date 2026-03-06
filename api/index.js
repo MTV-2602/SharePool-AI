@@ -59,7 +59,7 @@ const Netflix = mongoose.models.Netflix || mongoose.model("Netflix", singleUserS
 const Canva = mongoose.models.Canva || mongoose.model("Canva", singleUserSchema);
 const Capcut = mongoose.models.Capcut || mongoose.model("Capcut", singleUserSchema);
 
-// Team Account Schema (ChatGPT Team - up to 5 Gmail slots)
+// Team Account Schema (ChatGPT Team - up to 4 Gmail slots)
 const teamSlotSchema = new mongoose.Schema({
   gmail: { type: String, default: "" },         // Gmail của khách
   customerName: { type: String, default: "" },  // Tên khách
@@ -75,7 +75,7 @@ const teamAccountSchema = new mongoose.Schema({
   emailPassword: { type: String, default: "" }, // Mật khẩu email
   recoveryUrl: { type: String, default: "" },   // Link recovery
   note: { type: String, default: "" },
-  slots: { type: [teamSlotSchema], default: () => Array(5).fill(null).map(() => ({ status: "empty" })) },
+  slots: { type: [teamSlotSchema], default: () => Array(4).fill(null).map(() => ({ status: "empty" })) },
   createdAt: { type: String },
   expiredAt: { type: String },
 });
@@ -254,14 +254,14 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
     }
 
     if (!toAcc.slots) {
-      toAcc.slots = Array(5).fill({ status: "empty" });
+      toAcc.slots = Array(4).fill({ status: "empty" });
     }
 
     // Find first empty slot in destination
     const emptySlotIdx = toAcc.slots.findIndex(s => s.status === "empty" || !s.gmail);
 
     if (emptySlotIdx === -1) {
-      return res.status(400).json({ error: "Team Account đích đã đầy (hết 5 slot trống)" });
+      return res.status(400).json({ error: "Team Account đích đã đầy (hết 4 slot trống)" });
     }
 
     // Move slot data
@@ -367,10 +367,6 @@ app.post("/api/extend-user", verifyToken, async (req, res) => {
 
     const user = acc.users[userIndex];
     const now = new Date();
-    const joinedAt = new Date(user.joinedAt || now);
-
-    const diffTime = now.getTime() - joinedAt.getTime();
-    const daysUsed = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
     // Determine extension days
     let extDays = 30;
@@ -379,14 +375,22 @@ app.post("/api/extend-user", verifyToken, async (req, res) => {
       extDays = m[acc.duration] || 30;
     }
 
-    if (daysUsed >= extDays) {
-      // Đã hết hạn: reset về hôm nay → thêm ngày mới
-      user.joinedAt = now.toISOString();
+    // Determine current expiration. If missing, fallback to joinedAt + extDays
+    let currentExpiredAtTime;
+    if (user.expiredAt) {
+      currentExpiredAtTime = new Date(user.expiredAt).getTime();
+    } else {
+      const joinedAt = user.joinedAt ? new Date(user.joinedAt) : now;
+      currentExpiredAtTime = joinedAt.getTime() + extDays * 24 * 60 * 60 * 1000;
+    }
+
+    if (currentExpiredAtTime <= now.getTime()) {
+      // Đã hết hạn: reset `expiredAt` tính từ hôm nay
+      user.expiredAt = new Date(now.getTime() + extDays * 24 * 60 * 60 * 1000).toISOString();
       user.note = (user.note ? user.note + " " : "") + `[Renewed on ${now.toLocaleDateString()}]`;
     } else {
-      // Chưa hết hạn
-      const newJoinedAt = new Date(joinedAt.getTime() + extDays * 24 * 60 * 60 * 1000);
-      user.joinedAt = newJoinedAt.toISOString();
+      // Chưa hết hạn: cộng dồn thêm extDays vào expiredAt hiện đại
+      user.expiredAt = new Date(currentExpiredAtTime + extDays * 24 * 60 * 60 * 1000).toISOString();
       user.note = (user.note ? user.note + " " : "") + `[Extended +${extDays}d on ${now.toLocaleDateString()}]`;
     }
 

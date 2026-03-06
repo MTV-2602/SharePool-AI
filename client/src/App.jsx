@@ -337,20 +337,30 @@ function App() {
 
   // Helper to calculate days remaining (positive = còn hạn, âm = đã quá hạn)
   const getDaysRemaining = (u, accDuration = "1M") => {
+    if (typeof u === "object" && u !== null && u.expiredAt) {
+      try {
+        return Math.ceil((new Date(u.expiredAt) - new Date()) / 86400000);
+      } catch (e) { }
+    }
     const used = getDaysUsed(u);
     if (used === null) return null;
     const totalDays = getDurationDays(accDuration);
     return totalDays - used;
   };
 
-  // Helper: tính ngày hết hạn của khách = joinedAt + duration days
+  // Helper: tính ngày hết hạn của khách = expiredAt OR joinedAt + duration days
   const getUserExpiryDate = (u, accDuration = "1M") => {
-    if (typeof u === "object" && u !== null && u.joinedAt) {
-      try {
-        const totalDays = getDurationDays(accDuration);
-        const d = new Date(new Date(u.joinedAt).getTime() + totalDays * 24 * 60 * 60 * 1000);
-        return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
-      } catch (e) { return ""; }
+    if (typeof u === "object" && u !== null) {
+      if (u.expiredAt) {
+        return formatDate(u.expiredAt);
+      }
+      if (u.joinedAt) {
+        try {
+          const totalDays = getDurationDays(accDuration);
+          const d = new Date(new Date(u.joinedAt).getTime() + totalDays * 24 * 60 * 60 * 1000);
+          return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+        } catch (e) { return ""; }
+      }
     }
     return "";
   };
@@ -462,7 +472,7 @@ function App() {
 
   const openAddUserModal = (accId) => {
     setUserModalMode("add");
-    setCurrentUserData({ accId, index: null, name: "", joinedAt: null });
+    setCurrentUserData({ accId, index: null, name: "", joinedAt: null, expiredAt: null });
     setShowUserModal(true);
   };
 
@@ -473,13 +483,17 @@ function App() {
       typeof userData === "object" && userData.joinedAt
         ? userData.joinedAt
         : null;
-    setCurrentUserData({ accId, index, name, joinedAt });
+    const expiredAt =
+      typeof userData === "object" && userData.expiredAt
+        ? userData.expiredAt
+        : null;
+    setCurrentUserData({ accId, index, name, joinedAt, expiredAt });
     setShowUserModal(true);
   };
 
   const handleSubmitUser = async (e) => {
     e.preventDefault();
-    const { accId, index, name, joinedAt } = currentUserData;
+    const { accId, index, name, joinedAt, expiredAt } = currentUserData;
     if (!name.trim())
       return showAlert("Thông báo", "Tên không được để trống!", "warning");
 
@@ -497,7 +511,8 @@ function App() {
 
       newUsers.push({
         name: name.trim(),
-        joinedAt: new Date().toISOString(),
+        joinedAt: joinedAt || new Date().toISOString(),
+        expiredAt: expiredAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       });
     } else {
       const oldJoinDate =
@@ -506,6 +521,7 @@ function App() {
       newUsers[index] = {
         name: name.trim(),
         joinedAt: oldJoinDate,
+        expiredAt: expiredAt || (typeof newUsers[index] === "object" ? newUsers[index].expiredAt : null),
       };
     }
 
@@ -2211,7 +2227,7 @@ function App() {
                           value={a.id}
                           className="py-2"
                         >
-                          [{filledSlots}/5 Slots] — {a.username}
+                          [{filledSlots}/4 Slots] — {a.username}
                         </option>
                       );
                     });
@@ -2325,6 +2341,28 @@ function App() {
                   setCurrentUserData({
                     ...currentUserData,
                     joinedAt: e.target.value
+                      ? new Date(e.target.value).toISOString()
+                      : null,
+                  });
+                }}
+              />
+            </div>
+            <div className="form-group mt-3">
+              <label className="block text-yellow-400 mb-2">Ngày Hết Hạn</label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-white"
+                value={
+                  currentUserData.expiredAt
+                    ? new Date(currentUserData.expiredAt)
+                      .toISOString()
+                      .split("T")[0]
+                    : ""
+                }
+                onChange={(e) => {
+                  setCurrentUserData({
+                    ...currentUserData,
+                    expiredAt: e.target.value
                       ? new Date(e.target.value).toISOString()
                       : null,
                   });
@@ -2917,7 +2955,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           <div className="flex flex-wrap gap-3 mb-6 items-center justify-between">
             <div>
               <h2 className="text-xl font-bold text-white">🏢 ChatGPT Team Accounts</h2>
-              <p className="text-slate-400 text-sm">Mỗi tài khoản có tối đa 5 slot Gmail khách</p>
+              <p className="text-slate-400 text-sm">Mỗi tài khoản có tối đa 4 slot Gmail khách</p>
             </div>
             <div className="flex gap-2">
               <button
@@ -2984,7 +3022,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         <div className={`text-xs font-bold ${isExpired ? "text-red-400" : isNear ? "text-yellow-400" : "text-green-400"}`}>
                           {isExpired ? `❌ Hết hạn ${Math.abs(expDays)}d trước` : expDays !== null ? `✅ Còn ${expDays} ngày` : ""}
                         </div>
-                        <div className="text-xs text-indigo-300 font-bold">{usedSlots}/5 slot đã cấp</div>
+                        <div className="text-xs text-indigo-300 font-bold">{usedSlots}/4 slot đã cấp</div>
                         <div className="flex gap-1 mt-1">
                           <button onClick={() => { setTeamEditForm({ id: acc.id, username: acc.username, password: acc.password, emailPassword: acc.emailPassword || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "" }); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs flex items-center gap-1"><Pencil size={11} /> Sửa</button>
                           <button onClick={() => showConfirm("Xóa Team Acc", `Xóa "${acc.username}"?`, async () => { await axios.delete(`/api/team/${acc.id}`); fetchData(); showAlert("Đã xóa", "Team account đã bị xóa.", "info"); })} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex items-center gap-1"><Trash2 size={11} /> Xóa</button>
@@ -2992,8 +3030,8 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                       </div>
                     </div>
                     {/* Slots */}
-                    <div className="p-4 grid grid-cols-2 sm:grid-cols-5 gap-3">
-                      {Array(5).fill(null).map((_, si) => {
+                    <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {Array(4).fill(null).map((_, si) => {
                         const slot = (acc.slots || [])[si] || { status: "empty" };
                         const sExpDays = slot.expiredAt ? Math.ceil((new Date(slot.expiredAt) - new Date()) / 86400000) : null;
                         const sExpired = sExpDays !== null && sExpDays <= 0;
@@ -3205,7 +3243,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     {!isEmpty ? (
                       <button onClick={async () => {
                         if (!parentAcc) return;
-                        const updSlots = Array(5).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
+                        const updSlots = Array(4).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
                         updSlots[slotTarget.slotIdx] = { status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
                         await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
                         setShowSlotModal(false); fetchData();
@@ -3215,7 +3253,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                       <button onClick={() => setShowSlotModal(false)} className="btn-secondary">Hủy</button>
                       <button onClick={async () => {
                         if (!parentAcc) return;
-                        const updSlots = Array(5).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
+                        const updSlots = Array(4).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
                         const joinDate = slotFormExp ? new Date(slotFormExp) : new Date();
                         const expireDate = new Date(joinDate.getTime() + 30 * 24 * 60 * 60 * 1000);
                         updSlots[slotTarget.slotIdx] = { status: slotFormGmail ? "active" : "empty", gmail: slotFormGmail, customerName: slotFormName, addedAt: joinDate.toISOString(), expiredAt: expireDate.toISOString() };
