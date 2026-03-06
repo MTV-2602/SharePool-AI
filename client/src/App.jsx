@@ -51,6 +51,16 @@ function App() {
   const [netflixAccounts, setNetflixAccounts] = useState([]);
   const [canvaAccounts, setCanvaAccounts] = useState([]);
   const [capcutAccounts, setCapcutAccounts] = useState([]);
+  const [teamAccounts, setTeamAccounts] = useState([]);
+  const [showTeamAddModal, setShowTeamAddModal] = useState(false);
+  const [showTeamEditModal, setShowTeamEditModal] = useState(false);
+  const [teamAddForm, setTeamAddForm] = useState({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "" });
+  const [teamEditForm, setTeamEditForm] = useState({ id: "", username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "" });
+  const [showSlotModal, setShowSlotModal] = useState(false);
+  const [slotTarget, setSlotTarget] = useState({ accId: null, slotIdx: null, slot: null });
+  const [slotFormGmail, setSlotFormGmail] = useState("");
+  const [slotFormName, setSlotFormName] = useState("");
+  const [slotFormExp, setSlotFormExp] = useState("");
   const [showSimpleAddModal, setShowSimpleAddModal] = useState(false);
   const [simpleAddPlatform, setSimpleAddPlatform] = useState("netflix");
   const [simpleAddForm, setSimpleAddForm] = useState({ username: "", password: "", duration: "1M", note: "", customerName: "" });
@@ -415,6 +425,7 @@ function App() {
       setNetflixAccounts(sortA(res.data?.netflix));
       setCanvaAccounts(sortA(res.data?.canva));
       setCapcutAccounts(sortA(res.data?.capcut));
+      setTeamAccounts(sortA(res.data?.team));
 
     } catch (error) {
       showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
@@ -1065,6 +1076,12 @@ function App() {
               className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "canva" ? "bg-purple-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Canva
+            </button>
+            <button
+              onClick={() => setActiveTab("team")}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "team" ? "bg-indigo-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+            >
+              🏢 Team
             </button>
             <button
               onClick={() => setActiveTab("coursera")}
@@ -2770,6 +2787,230 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           </div>
         );
       })()}
+
+      {/* ====================================================== */}
+      {/* TEAM CHATGPT ACCOUNTS                                  */}
+      {/* ====================================================== */}
+      {activeTab === "team" && (
+        <div>
+          {/* Header */}
+          <div className="flex flex-wrap gap-3 mb-6 items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-white">🏢 ChatGPT Team Accounts</h2>
+              <p className="text-slate-400 text-sm">Mỗi tài khoản có tối đa 5 slot Gmail khách</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const raw = prompt("Dán format Team:\n[Team邮箱----GPT密码----邮箱密码]email---pass---emailPass[接收验证码的地址]recoveryUrl");
+                  if (!raw) return;
+                  const m1 = raw.match(/\[.*?\]([\s\S]*?)\[/);
+                  const middle = m1 ? m1[1] : raw;
+                  const parts = middle.split("---").map(s => s.trim());
+                  const email = parts[0] || "";
+                  const gptPass = parts[1] || "";
+                  const emailPass = parts[2] || "";
+                  const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
+                  const recoveryUrl = recoveryMatch ? recoveryMatch[1].trim() : "";
+                  setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl, note: "", expiredAt: "" });
+                  setShowTeamAddModal(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-slate-700 hover:bg-slate-600 text-sm"
+              >
+                📋 Dán Format
+              </button>
+              <button
+                onClick={() => { setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "" }); setShowTeamAddModal(true); }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-500"
+              >
+                <UserPlus size={16} /> Thêm Team Acc
+              </button>
+            </div>
+          </div>
+
+          {teamAccounts.length === 0 ? (
+            <div className="text-center py-16 text-slate-500 italic">Chưa có tài khoản Team nào.</div>
+          ) : (
+            <div className="space-y-6">
+              {teamAccounts.map((acc) => {
+                const expDays = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000) : null;
+                const isExpired = expDays !== null && expDays <= 0;
+                const isNear = expDays !== null && expDays > 0 && expDays <= 7;
+                const usedSlots = (acc.slots || []).filter(s => s.status === "active").length;
+                return (
+                  <div key={acc.id} className={`rounded-2xl border shadow-xl overflow-hidden ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}>
+                    {/* Account header */}
+                    <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 bg-indigo-900/40 border-b border-slate-700">
+                      <div>
+                        <div className="flex items-center gap-2 font-bold text-white text-sm">
+                          <span className="text-indigo-300">🏢</span>
+                          <span className="font-mono">{acc.username}</span>
+                          <Copy size={13} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => navigator.clipboard.writeText(acc.username)} />
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1 flex flex-wrap gap-3">
+                          <span>🔑 <span className="font-mono text-slate-300">{acc.password}</span></span>
+                          {acc.emailPassword && <span>📩 <span className="font-mono text-slate-300">{acc.emailPassword}</span></span>}
+                        </div>
+                        {acc.recoveryUrl && (
+                          <div className="text-xs text-blue-400 mt-0.5">
+                            🔗 <a href={acc.recoveryUrl} target="_blank" rel="noreferrer" className="hover:underline truncate max-w-xs inline-block align-bottom">{acc.recoveryUrl}</a>
+                          </div>
+                        )}
+                        {acc.note && <div className="text-xs text-slate-500 mt-0.5">📝 {acc.note}</div>}
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <div className={`text-xs font-bold ${isExpired ? "text-red-400" : isNear ? "text-yellow-400" : "text-green-400"}`}>
+                          {isExpired ? `❌ Hết hạn ${Math.abs(expDays)}d trước` : expDays !== null ? `✅ Còn ${expDays} ngày` : ""}
+                        </div>
+                        <div className="text-xs text-indigo-300 font-bold">{usedSlots}/5 slot đã cấp</div>
+                        <div className="flex gap-1 mt-1">
+                          <button onClick={() => { setTeamEditForm({ id: acc.id, username: acc.username, password: acc.password, emailPassword: acc.emailPassword || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "" }); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs flex items-center gap-1"><Pencil size={11} /> Sửa</button>
+                          <button onClick={() => showConfirm("Xóa Team Acc", `Xóa "${acc.username}"?`, async () => { await axios.delete(`/api/team/${acc.id}`); fetchData(); showAlert("Đã xóa", "Team account đã bị xóa.", "info"); })} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex items-center gap-1"><Trash2 size={11} /> Xóa</button>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Slots */}
+                    <div className="p-4 grid grid-cols-2 sm:grid-cols-5 gap-3">
+                      {Array(5).fill(null).map((_, si) => {
+                        const slot = (acc.slots || [])[si] || { status: "empty" };
+                        const sExpDays = slot.expiredAt ? Math.ceil((new Date(slot.expiredAt) - new Date()) / 86400000) : null;
+                        const sExpired = sExpDays !== null && sExpDays <= 0;
+                        const sNear = sExpDays !== null && sExpDays > 0 && sExpDays <= 3;
+                        const isEmpty = slot.status === "empty" || !slot.gmail;
+                        return (
+                          <div key={si} className={`rounded-xl border p-3 flex flex-col gap-2 ${isEmpty ? "border-slate-700 bg-slate-800/50" : sExpired ? "border-red-800 bg-red-950/30" : sNear ? "border-yellow-800 bg-yellow-950/20" : "border-indigo-700/50 bg-indigo-900/20"}`}>
+                            <div className="flex items-center justify-between">
+                              <span className={`text-xs font-bold ${isEmpty ? "text-slate-500" : "text-indigo-300"}`}>Slot {si + 1}</span>
+                              {!isEmpty && (
+                                <span className={`text-[10px] font-bold ${sExpired ? "text-red-400" : sNear ? "text-yellow-400" : "text-green-400"}`}>
+                                  {sExpired ? `HH ${Math.abs(sExpDays)}d` : `+${sExpDays}d`}
+                                </span>
+                              )}
+                            </div>
+                            {!isEmpty ? (
+                              <div className="flex-1 space-y-0.5">
+                                <div className="text-xs font-semibold text-white">{slot.customerName || "—"}</div>
+                                <div className="text-[10px] text-blue-300 break-all">{slot.gmail}</div>
+                                <div className="text-[10px] text-slate-500">{slot.addedAt ? new Date(slot.addedAt).toLocaleDateString("vi-VN") : ""}</div>
+                              </div>
+                            ) : (
+                              <div className="flex-1 flex items-center justify-center text-slate-600 text-xs italic">trống</div>
+                            )}
+                            <button
+                              onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.expiredAt ? new Date(slot.expiredAt).toISOString().split("T")[0] : ""); setShowSlotModal(true); }}
+                              className={`text-[10px] py-1 rounded font-bold w-full ${isEmpty ? "bg-indigo-700 hover:bg-indigo-600 text-white" : "bg-slate-700 hover:bg-slate-600 text-white"}`}
+                            >{isEmpty ? "➕ Gán" : "✏️ Sửa"}</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ADD TEAM MODAL */}
+          {showTeamAddModal && (
+            <div className="modal-overlay" onClick={() => setShowTeamAddModal(false)}>
+              <div className="modal-content" onClick={e => e.stopPropagation()}>
+                <div className="modal-header"><h3>➕ Thêm Team Account</h3><span className="close" onClick={() => setShowTeamAddModal(false)}>&times;</span></div>
+                <div className="space-y-3 mt-1">
+                  <div><label className="block text-xs text-slate-400 mb-1">📧 Email chính (Team)</label><input className="form-input w-full" placeholder="teamacc@outlook.com" value={teamAddForm.username} onChange={e => setTeamAddForm({ ...teamAddForm, username: e.target.value })} /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamAddForm.password} onChange={e => setTeamAddForm({ ...teamAddForm, password: e.target.value })} /></div>
+                    <div><label className="block text-xs text-slate-400 mb-1">📩 Email Password</label><input className="form-input w-full" value={teamAddForm.emailPassword} onChange={e => setTeamAddForm({ ...teamAddForm, emailPassword: e.target.value })} /></div>
+                  </div>
+                  <div><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" placeholder="http://..." value={teamAddForm.recoveryUrl} onChange={e => setTeamAddForm({ ...teamAddForm, recoveryUrl: e.target.value })} /></div>
+                  <div><label className="block text-xs text-slate-400 mb-1">📅 Hạn của Team Acc</label><input type="date" className="form-input w-full" value={teamAddForm.expiredAt} onChange={e => setTeamAddForm({ ...teamAddForm, expiredAt: e.target.value })} /></div>
+                  <div><label className="block text-xs text-slate-400 mb-1">📝 Ghi chú</label><input className="form-input w-full" value={teamAddForm.note} onChange={e => setTeamAddForm({ ...teamAddForm, note: e.target.value })} /></div>
+                </div>
+                <div className="flex justify-end gap-3 mt-4">
+                  <button onClick={() => setShowTeamAddModal(false)} className="btn-secondary">Hủy</button>
+                  <button onClick={async () => {
+                    try {
+                      await axios.post("/api/team", { ...teamAddForm, expiredAt: teamAddForm.expiredAt ? new Date(teamAddForm.expiredAt).toISOString() : undefined });
+                      setShowTeamAddModal(false); fetchData(); showAlert("Thành công", "Đã thêm Team Account!", "success");
+                    } catch (e) { showAlert("Lỗi", e.response?.data?.error || e.message, "error"); }
+                  }} className="btn-primary" style={{ background: "#4f46e5" }}>Thêm</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* EDIT TEAM MODAL */}
+          {showTeamEditModal && (
+            <div className="modal-overlay" onClick={() => setShowTeamEditModal(false)}>
+              <div className="modal-content" onClick={e => e.stopPropagation()}>
+                <div className="modal-header"><h3>✏️ Sửa Team Account</h3><span className="close" onClick={() => setShowTeamEditModal(false)}>&times;</span></div>
+                <div className="space-y-3 mt-1">
+                  <div><label className="block text-xs text-slate-400 mb-1">📧 Email</label><input className="form-input w-full" value={teamEditForm.username} onChange={e => setTeamEditForm({ ...teamEditForm, username: e.target.value })} /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamEditForm.password} onChange={e => setTeamEditForm({ ...teamEditForm, password: e.target.value })} /></div>
+                    <div><label className="block text-xs text-slate-400 mb-1">📩 Email Password</label><input className="form-input w-full" value={teamEditForm.emailPassword} onChange={e => setTeamEditForm({ ...teamEditForm, emailPassword: e.target.value })} /></div>
+                  </div>
+                  <div><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" value={teamEditForm.recoveryUrl} onChange={e => setTeamEditForm({ ...teamEditForm, recoveryUrl: e.target.value })} /></div>
+                  <div><label className="block text-xs text-slate-400 mb-1">📅 Hạn Team Acc</label><input type="date" className="form-input w-full" value={teamEditForm.expiredAt} onChange={e => setTeamEditForm({ ...teamEditForm, expiredAt: e.target.value })} /></div>
+                  <div><label className="block text-xs text-slate-400 mb-1">📝 Ghi chú</label><input className="form-input w-full" value={teamEditForm.note} onChange={e => setTeamEditForm({ ...teamEditForm, note: e.target.value })} /></div>
+                </div>
+                <div className="flex justify-end gap-3 mt-4">
+                  <button onClick={() => setShowTeamEditModal(false)} className="btn-secondary">Hủy</button>
+                  <button onClick={async () => {
+                    try {
+                      await axios.put(`/api/team/${teamEditForm.id}`, { ...teamEditForm, expiredAt: teamEditForm.expiredAt ? new Date(teamEditForm.expiredAt).toISOString() : undefined });
+                      setShowTeamEditModal(false); fetchData(); showAlert("Thành công", "Đã cập nhật!", "success");
+                    } catch (e) { showAlert("Lỗi", e.message, "error"); }
+                  }} className="btn-primary" style={{ background: "#2563eb" }}>Lưu</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SLOT MODAL */}
+          {showSlotModal && (() => {
+            const slot = slotTarget.slot || {};
+            const isEmpty = slot.status === "empty" || !slot.gmail;
+            return (
+              <div className="modal-overlay" onClick={() => setShowSlotModal(false)}>
+                <div className="modal-content" onClick={e => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <h3>{isEmpty ? "➕ Gán Khách vào" : "✏️ Sửa"} Slot {(slotTarget.slotIdx ?? 0) + 1}</h3>
+                    <span className="close" onClick={() => setShowSlotModal(false)}>&times;</span>
+                  </div>
+                  <div className="space-y-3 mt-2">
+                    <div><label className="block text-xs text-slate-400 mb-1">📧 Gmail Khách</label><input className="form-input w-full" placeholder="customer@gmail.com" value={slotFormGmail} onChange={e => setSlotFormGmail(e.target.value)} /></div>
+                    <div><label className="block text-xs text-slate-400 mb-1">👤 Tên Khách</label><input className="form-input w-full" placeholder="Nguyễn Văn A" value={slotFormName} onChange={e => setSlotFormName(e.target.value)} /></div>
+                    <div><label className="block text-xs text-slate-400 mb-1">📅 Hạn Sử Dụng</label><input type="date" className="form-input w-full" value={slotFormExp} onChange={e => setSlotFormExp(e.target.value)} /></div>
+                  </div>
+                  <div className="flex justify-between mt-4">
+                    {!isEmpty && (
+                      <button onClick={async () => {
+                        const acc = teamAccounts.find(a => a.id === slotTarget.accId);
+                        if (!acc) return;
+                        const updSlots = Array(5).fill(null).map((_, i) => (acc.slots || [])[i] || { status: "empty" });
+                        updSlots[slotTarget.slotIdx] = { status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
+                        await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
+                        setShowSlotModal(false); fetchData();
+                      }} className="bg-red-800 hover:bg-red-700 text-white px-3 py-2 rounded text-sm font-bold">🗑️ Xóa Slot</button>
+                    )}
+                    <div className="flex gap-2 ml-auto">
+                      <button onClick={() => setShowSlotModal(false)} className="btn-secondary">Hủy</button>
+                      <button onClick={async () => {
+                        const acc = teamAccounts.find(a => a.id === slotTarget.accId);
+                        if (!acc) return;
+                        const updSlots = Array(5).fill(null).map((_, i) => (acc.slots || [])[i] || { status: "empty" });
+                        updSlots[slotTarget.slotIdx] = { status: slotFormGmail ? "active" : "empty", gmail: slotFormGmail, customerName: slotFormName, addedAt: new Date().toISOString(), expiredAt: slotFormExp ? new Date(slotFormExp).toISOString() : "" };
+                        await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
+                        setShowSlotModal(false); fetchData();
+                      }} className="btn-primary" style={{ background: "#4f46e5" }}>💾 Lưu</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {showSimpleAddModal && (() => {
         const opts = {

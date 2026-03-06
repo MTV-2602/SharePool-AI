@@ -59,6 +59,28 @@ const Netflix = mongoose.models.Netflix || mongoose.model("Netflix", singleUserS
 const Canva = mongoose.models.Canva || mongoose.model("Canva", singleUserSchema);
 const Capcut = mongoose.models.Capcut || mongoose.model("Capcut", singleUserSchema);
 
+// Team Account Schema (ChatGPT Team - up to 5 Gmail slots)
+const teamSlotSchema = new mongoose.Schema({
+  gmail: { type: String, default: "" },         // Gmail của khách
+  customerName: { type: String, default: "" },  // Tên khách
+  addedAt: { type: String, default: "" },       // Ngày thêm
+  expiredAt: { type: String, default: "" },     // Ngày hết hạn
+  status: { type: String, default: "empty" },   // "empty" | "active"
+});
+
+const teamAccountSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  username: { type: String, required: true },   // Email chính của team
+  password: { type: String, default: "" },      // Mật khẩu GPT
+  emailPassword: { type: String, default: "" }, // Mật khẩu email
+  recoveryUrl: { type: String, default: "" },   // Link recovery
+  note: { type: String, default: "" },
+  slots: { type: [teamSlotSchema], default: () => Array(5).fill(null).map(() => ({ status: "empty" })) },
+  createdAt: { type: String },
+  expiredAt: { type: String },
+});
+const TeamAccount = mongoose.models.TeamAccount || mongoose.model("TeamAccount", teamAccountSchema);
+
 // Middleware to ensure DB is connected before processing
 app.use(async (req, res, next) => {
   await connectDB();
@@ -111,13 +133,14 @@ app.get("/api/test", (req, res) => {
 // 1. GET ALL DATA (Protected - requires token)
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
-    const [accounts, netflixAccs, canvaAccs, capcutAccs] = await Promise.all([
+    const [accounts, netflixAccs, canvaAccs, capcutAccs, teamAccs] = await Promise.all([
       Account.find({}),
       Netflix.find({}),
       Canva.find({}),
       Capcut.find({}),
+      TeamAccount.find({}),
     ]);
-    res.json({ chatgpt: accounts, netflix: netflixAccs, canva: canvaAccs, capcut: capcutAccs });
+    res.json({ chatgpt: accounts, netflix: netflixAccs, canva: canvaAccs, capcut: capcutAccs, team: teamAccs });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -317,6 +340,51 @@ app.post("/api/extend-user", verifyToken, async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// ========================
+// TEAM CHATGPT ROUTES
+// ========================
+// GET all team accounts
+app.get("/api/team", verifyToken, async (req, res) => {
+  try {
+    const teams = await TeamAccount.find({});
+    res.json(teams);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST add team account
+app.post("/api/team", verifyToken, async (req, res) => {
+  try {
+    const now = new Date();
+    const expiredDate = new Date(now);
+    expiredDate.setMonth(expiredDate.getMonth() + 1);
+    const newAcc = {
+      id: Date.now().toString(),
+      ...req.body,
+      slots: req.body.slots || Array(5).fill(null).map(() => ({ status: "empty" })),
+      createdAt: now.toISOString(),
+      expiredAt: req.body.expiredAt || expiredDate.toISOString(),
+    };
+    await TeamAccount.create(newAcc);
+    res.json({ message: "Added", account: newAcc });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT update team account (including slot management)
+app.put("/api/team/:id", verifyToken, async (req, res) => {
+  try {
+    const updated = await TeamAccount.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+    res.json({ message: "Updated", account: updated });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE team account
+app.delete("/api/team/:id", verifyToken, async (req, res) => {
+  try {
+    await TeamAccount.findOneAndDelete({ id: req.params.id });
+    res.json({ message: "Deleted" });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // SINGLE USER ROUTES (Netflix, Canva, Capcut)
