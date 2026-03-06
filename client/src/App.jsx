@@ -61,6 +61,7 @@ function App() {
   const [slotFormGmail, setSlotFormGmail] = useState("");
   const [slotFormName, setSlotFormName] = useState("");
   const [slotFormExp, setSlotFormExp] = useState("");
+  const [teamImportText, setTeamImportText] = useState("");
   const [showSimpleAddModal, setShowSimpleAddModal] = useState(false);
   const [simpleAddPlatform, setSimpleAddPlatform] = useState("netflix");
   const [simpleAddForm, setSimpleAddForm] = useState({ username: "", password: "", duration: "1M", note: "", customerName: "" });
@@ -1077,12 +1078,7 @@ function App() {
             >
               Canva
             </button>
-            <button
-              onClick={() => setActiveTab("team")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "team" ? "bg-indigo-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
-            >
-              🏢 Team
-            </button>
+
             <button
               onClick={() => setActiveTab("coursera")}
               className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "coursera" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
@@ -2791,7 +2787,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
       {/* ====================================================== */}
       {/* TEAM CHATGPT ACCOUNTS                                  */}
       {/* ====================================================== */}
-      {activeTab === "team" && (
+      {activeTab === "chatgpt" && (
         <div>
           {/* Header */}
           <div className="flex flex-wrap gap-3 mb-6 items-center justify-between">
@@ -2801,23 +2797,10 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => {
-                  const raw = prompt("Dán format Team:\n[Team邮箱----GPT密码----邮箱密码]email---pass---emailPass[接收验证码的地址]recoveryUrl");
-                  if (!raw) return;
-                  const m1 = raw.match(/\[.*?\]([\s\S]*?)\[/);
-                  const middle = m1 ? m1[1] : raw;
-                  const parts = middle.split("---").map(s => s.trim());
-                  const email = parts[0] || "";
-                  const gptPass = parts[1] || "";
-                  const emailPass = parts[2] || "";
-                  const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
-                  const recoveryUrl = recoveryMatch ? recoveryMatch[1].trim() : "";
-                  setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl, note: "", expiredAt: "" });
-                  setShowTeamAddModal(true);
-                }}
+                onClick={() => { setTeamImportText(""); setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "" }); setShowTeamAddModal(true); }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-slate-700 hover:bg-slate-600 text-sm"
               >
-                📋 Dán Format
+                📋 Nhập Format
               </button>
               <button
                 onClick={() => { setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "" }); setShowTeamAddModal(true); }}
@@ -2913,9 +2896,38 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           {/* ADD TEAM MODAL */}
           {showTeamAddModal && (
             <div className="modal-overlay" onClick={() => setShowTeamAddModal(false)}>
-              <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-content" style={{ maxWidth: "520px" }} onClick={e => e.stopPropagation()}>
                 <div className="modal-header"><h3>➕ Thêm Team Account</h3><span className="close" onClick={() => setShowTeamAddModal(false)}>&times;</span></div>
-                <div className="space-y-3 mt-1">
+
+                {/* PASTE FORMAT AREA */}
+                <div className="mb-4 p-3 rounded-xl bg-slate-800 border border-slate-600">
+                  <label className="block text-xs text-indigo-300 font-bold mb-1">📋 Dán format Team vào đây rồi bấm Parse</label>
+                  <textarea
+                    className="form-input w-full font-mono text-xs"
+                    rows={4}
+                    placeholder={"[Team邮箱----GPT密码----邮箱密码]email---pass---emailPass[接收验证码的地址]http://..."}
+                    value={teamImportText}
+                    onChange={e => setTeamImportText(e.target.value)}
+                  />
+                  <button
+                    onClick={() => {
+                      const raw = teamImportText;
+                      if (!raw.trim()) return;
+                      const m1 = raw.match(/\[.*?\]([\s\S]*?)\[/);
+                      const middle = m1 ? m1[1] : raw;
+                      const parts = middle.split("---").map(s => s.trim());
+                      const email = parts[0] || "";
+                      const gptPass = parts[1] || "";
+                      const emailPass = parts[2] || "";
+                      const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
+                      const recoveryUrl = recoveryMatch ? recoveryMatch[1].trim() : "";
+                      setTeamAddForm(prev => ({ ...prev, username: email, password: gptPass, emailPassword: emailPass, recoveryUrl }));
+                    }}
+                    className="mt-2 w-full py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-bold"
+                  >⚡ Tự động điền từ format</button>
+                </div>
+
+                <div className="space-y-3">
                   <div><label className="block text-xs text-slate-400 mb-1">📧 Email chính (Team)</label><input className="form-input w-full" placeholder="teamacc@outlook.com" value={teamAddForm.username} onChange={e => setTeamAddForm({ ...teamAddForm, username: e.target.value })} /></div>
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamAddForm.password} onChange={e => setTeamAddForm({ ...teamAddForm, password: e.target.value })} /></div>
@@ -2930,7 +2942,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   <button onClick={async () => {
                     try {
                       await axios.post("/api/team", { ...teamAddForm, expiredAt: teamAddForm.expiredAt ? new Date(teamAddForm.expiredAt).toISOString() : undefined });
-                      setShowTeamAddModal(false); fetchData(); showAlert("Thành công", "Đã thêm Team Account!", "success");
+                      setShowTeamAddModal(false); setTeamImportText(""); fetchData(); showAlert("Thành công", "Đã thêm Team Account!", "success");
                     } catch (e) { showAlert("Lỗi", e.response?.data?.error || e.message, "error"); }
                   }} className="btn-primary" style={{ background: "#4f46e5" }}>Thêm</button>
                 </div>
