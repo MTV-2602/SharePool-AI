@@ -268,27 +268,26 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
     let slotToMove = fromAcc.slots[slotIndex].toObject ? fromAcc.slots[slotIndex].toObject() : JSON.parse(JSON.stringify(fromAcc.slots[slotIndex]));
     delete slotToMove._id; // prevent duplicate id errors in subdocuments
 
-    // Mongoose array assignment fix - clone arrays
-    const newToSlots = toAcc.slots.map(s => s.toObject ? s.toObject() : s);
-    const newFromSlots = fromAcc.slots.map(s => s.toObject ? s.toObject() : s);
+    // Use atomic $set updates to guarantee Database correctly writes the arrays
+    await TeamAccount.updateOne(
+      { id: toAccId },
+      { $set: { [`slots.${emptySlotIdx}`]: slotToMove } }
+    );
 
-    // Set destination slot
-    newToSlots[emptySlotIdx] = slotToMove;
-
-    // Empty origin slot
-    newFromSlots[slotIndex] = {
-      status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: ""
-    };
-
-    // Assign back to trigger Mongoose reactivity
-    toAcc.slots = newToSlots;
-    fromAcc.slots = newFromSlots;
-
-    toAcc.markModified("slots");
-    fromAcc.markModified("slots");
-
-    await toAcc.save();
-    await fromAcc.save();
+    await TeamAccount.updateOne(
+      { id: fromAccId },
+      {
+        $set: {
+          [`slots.${slotIndex}`]: {
+            status: "empty",
+            gmail: "",
+            customerName: "",
+            addedAt: "",
+            expiredAt: ""
+          }
+        }
+      }
+    );
 
     res.json({ message: "Moved slot successfully" });
   } catch (error) {
