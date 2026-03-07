@@ -34,7 +34,7 @@ const accountSchema = new mongoose.Schema({
   username: { type: String, required: true },
   password: { type: String, required: true },
   type: { type: String, default: "unassigned" },
-  users: [{ name: String, joinedAt: String }],
+  users: [{ name: String, joinedAt: String, expiredAt: String }],
   note: String,
   link: String,
   status: { type: String, default: "available" },
@@ -48,7 +48,7 @@ const singleUserSchema = new mongoose.Schema({
   id: { type: String, unique: true },
   username: { type: String, required: true },
   password: { type: String, default: "" },
-  users: [{ name: String, joinedAt: String }], // max 1
+  users: [{ name: String, joinedAt: String, expiredAt: String }], // max 1
   note: String,
   duration: { type: String, default: "1M" }, // 1M, 3M, 6M, 1Y
   status: { type: String, default: "available" },
@@ -356,9 +356,9 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
   }
 });
 
-// 4.6 EXTEND USER (+30/90/180/... DAYS)
+// 4.6 EXTEND USER (+ custom DAYS)
 app.post("/api/extend-user", verifyToken, async (req, res) => {
-  const { accId, userIndex, platform } = req.body;
+  const { accId, userIndex, platform, extDays: bodyExtDays } = req.body;
   try {
     const Model = platform === "netflix" ? Netflix : platform === "capcut" ? Capcut : platform === "canva" ? Canva : Account;
     const acc = await Model.findOne({ id: accId });
@@ -369,10 +369,13 @@ app.post("/api/extend-user", verifyToken, async (req, res) => {
     const now = new Date();
 
     // Determine extension days
-    let extDays = 30;
-    if (platform && platform !== "chatgpt") {
-      const m = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
-      extDays = m[acc.duration] || 30;
+    let extDays = parseInt(bodyExtDays, 10);
+    if (!extDays || isNaN(extDays) || extDays <= 0) {
+      extDays = 30;
+      if (platform && platform !== "chatgpt") {
+        const m = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
+        extDays = m[acc.duration] || 30;
+      }
     }
 
     // Determine current expiration. If missing, fallback to joinedAt + extDays

@@ -61,7 +61,14 @@ function App() {
   const [slotFormGmail, setSlotFormGmail] = useState("");
   const [slotFormName, setSlotFormName] = useState("");
   const [slotFormExp, setSlotFormExp] = useState("");
+  const [slotFormExpiredAt, setSlotFormExpiredAt] = useState("");
   const [teamImportText, setTeamImportText] = useState("");
+
+  const [showExtendModal, setShowExtendModal] = useState(false);
+  const [extendData, setExtendData] = useState(null);
+  const [extendDaysOption, setExtendDaysOption] = useState("30");
+
+  const [showImportTeamModal, setShowImportTeamModal] = useState(false);
   const [showSimpleAddModal, setShowSimpleAddModal] = useState(false);
   const [simpleAddPlatform, setSimpleAddPlatform] = useState("netflix");
   const [simpleAddForm, setSimpleAddForm] = useState({ username: "", password: "", duration: "1M", note: "", customerName: "" });
@@ -561,35 +568,58 @@ function App() {
     );
   };
 
-  // EXTEND USER logic
-  const handleExtendUser = async (accId, userIndex, userObj) => {
-    const userName = userObj?.name || userObj || "khách này";
+  // EXTEND USER / SLOT logic
+  const handleExtendUser = (accId, userIndex, userObj, platform = "chatgpt") => {
+    const userName = userObj?.name || userObj?.customerName || userObj || "khách này";
+    let currentExpire = null;
+    if (userObj?.expiredAt) {
+      currentExpire = new Date(userObj.expiredAt).toLocaleDateString("vi-VN");
+    }
 
-    showConfirm(
-      "Xác nhận gia hạn",
-      `Bạn có chắc muốn gia hạn cho ${userName} thêm 30 ngày không?`,
-      async () => {
-        setLoadingStates((prev) => ({ ...prev, extendUser: true }));
-        try {
-          await axios.post("/api/extend-user", { accId, userIndex });
-          fetchData();
-          broadcastDataChange();
-          showAlert(
-            "Thành Công",
-            "Đã gia hạn khách hàng (+30 ngày)!",
-            "success",
-          );
-        } catch (error) {
-          showAlert(
-            "Lỗi",
-            error.response?.data?.error || "Không thể gia hạn",
-            "error",
-          );
-        } finally {
-          setLoadingStates((prev) => ({ ...prev, extendUser: false }));
-        }
-      },
-    );
+    setExtendData({ accId, userIndex, platform, currentName: userName, currentExpire, userObj });
+    setExtendDaysOption("30");
+    setShowExtendModal(true);
+  };
+
+  const handleSubmitExtend = async (e) => {
+    e.preventDefault();
+    if (!extendData) return;
+
+    setLoadingStates((prev) => ({ ...prev, extendUser: true }));
+    try {
+      const extDays = parseInt(extendDaysOption, 10);
+      if (extendData.platform === "team") {
+        // Team Account Slot Extension
+        const teamAcc = teamAccounts.find(a => a.id === extendData.accId);
+        if (!teamAcc) throw new Error("Team Account not found");
+        const updSlots = [...teamAcc.slots];
+        const slot = updSlots[extendData.userIndex];
+
+        const now = new Date();
+        const baseDate = slot.expiredAt && new Date(slot.expiredAt) > now ? new Date(slot.expiredAt) : now;
+        const newExpiredAt = new Date(baseDate.getTime() + extDays * 24 * 60 * 60 * 1000).toISOString();
+
+        updSlots[extendData.userIndex] = { ...slot, expiredAt: newExpiredAt };
+        await axios.put(`/api/team/${teamAcc.id}`, { slots: updSlots });
+      } else {
+        // General Account Extension
+        await axios.post("/api/extend-user", {
+          accId: extendData.accId,
+          userIndex: extendData.userIndex,
+          platform: extendData.platform,
+          extDays
+        });
+      }
+
+      setShowExtendModal(false);
+      fetchData();
+      broadcastDataChange();
+      showAlert("Thành Công", `Đã gia hạn (+${extDays} ngày)!`, "success");
+    } catch (error) {
+      showAlert("Lỗi", error.response?.data?.error || "Không thể gia hạn", "error");
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, extendUser: false }));
+    }
   };
 
   const handleUpdateAccount = async (e) => {
@@ -1630,7 +1660,7 @@ function App() {
                                                 )
                                               }
                                               className="bg-green-600 hover:bg-green-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105"
-                                              title="Gia hạn (+30 ngày)"
+                                              title="Gia hạn"
                                             >
                                               <RotateCw size={14} />
                                             </button>
@@ -2256,6 +2286,97 @@ function App() {
                 ) : (
                   "Xác Nhận Chuyển"
                 )}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* CUSTOM EXTEND MODAL */}
+      {showExtendModal && extendData && (
+        <div className="modal-overlay">
+          <form className="modal-box" style={{ maxWidth: "400px" }} onSubmit={handleSubmitExtend}>
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <RotateCw className="text-green-500" /> Gia Hạn Khách Hàng
+            </h2>
+            <div className="bg-slate-800 p-3 rounded mb-4 border border-slate-700">
+              <div className="font-bold text-lg text-indigo-300">
+                👤 {extendData.currentName}
+              </div>
+              <div className="text-xs text-slate-400 mt-1">
+                Thuộc gói: <span className="uppercase text-slate-300">{extendData.platform}</span>
+              </div>
+              {extendData.currentExpire && (
+                <div className="text-xs text-slate-400 mt-1">
+                  Ngày Hết Hạn Gốc: <span className="font-mono text-yellow-400">{extendData.currentExpire}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="form-group mb-4">
+              <label className="text-green-400 font-bold mb-1 block">Chọn Thời Gian Gia Hạn</label>
+              <select
+                className="form-input w-full bg-slate-700"
+                value={extendDaysOption}
+                onChange={e => setExtendDaysOption(e.target.value)}
+              >
+                <option value="30">1 Tháng (+30 ngày)</option>
+                <option value="60">2 Tháng (+60 ngày)</option>
+                <option value="90">3 Tháng (+90 ngày)</option>
+                <option value="180">6 Tháng (+180 ngày)</option>
+                <option value="365">1 Năm (+365 ngày)</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button type="button" onClick={() => setShowExtendModal(false)} className="btn-secondary" disabled={loadingStates.extendUser}>Hủy</button>
+              <button type="submit" className="btn-primary bg-green-600 hover:bg-green-500 flex items-center gap-2" disabled={loadingStates.extendUser}>
+                {loadingStates.extendUser ? <Loader2 size={18} className="animate-spin" /> : "Gia Hạn Ngay"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* IMPORT TEAM MODAL */}
+      {showImportTeamModal && (
+        <div className="modal-overlay">
+          <form className="modal-box" style={{ maxWidth: "500px" }} onSubmit={(e) => {
+            e.preventDefault();
+            const raw = teamImportText;
+            if (!raw || !raw.trim()) return;
+            const m1 = raw.match(/\[.*?\]([\s\S]*?)\[/);
+            const middle = m1 ? m1[1] : raw;
+            const normalized = middle.replace(/----/g, "|||");
+            const parts = normalized.split("|||").map(s => s.trim());
+            const email = parts[0] || "";
+            const gptPass = parts[1] || "";
+            const emailPass = parts[2] || "";
+            const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
+            const recoveryUrl = recoveryMatch ? recoveryMatch[1].trim() : "";
+
+            setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl: recoveryUrl, note: "", expiredAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] });
+            setShowImportTeamModal(false);
+            setTeamImportText("");
+            setShowTeamAddModal(true);
+          }}>
+            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              📋 Nhập Format Team
+            </h2>
+            <div className="form-group mb-4">
+              <label className="text-slate-300 font-bold mb-1 block">Dán Raw Format tại đây:</label>
+              <textarea
+                className="form-input w-full h-32 text-sm font-mono leading-tight bg-slate-800"
+                placeholder="email----pass----pass...&#10;[接收验证码的地址]..."
+                value={teamImportText}
+                onChange={e => setTeamImportText(e.target.value)}
+                autoFocus
+              ></textarea>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button type="button" onClick={() => setShowImportTeamModal(false)} className="btn-secondary">Hủy</button>
+              <button type="submit" className="btn-primary bg-indigo-600 hover:bg-indigo-500 flex items-center gap-2">
+                Phân Tích Dữ Liệu
               </button>
             </div>
           </form>
@@ -2960,20 +3081,8 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             <div className="flex gap-2">
               <button
                 onClick={() => {
-                  const raw = prompt("Dán format Team vào đây:");
-                  if (!raw || !raw.trim()) return;
-                  const m1 = raw.match(/\[.*?\]([\s\S]*?)\[/);
-                  const middle = m1 ? m1[1] : raw;
-                  const normalized = middle.replace(/----/g, "|||");
-                  const parts = normalized.split("|||").map(s => s.trim());
-                  const email = parts[0] || "";
-                  const gptPass = parts[1] || "";
-                  const emailPass = parts[2] || "";
-                  const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
-                  const recoveryUrl = recoveryMatch ? recoveryMatch[1].trim() : "";
-
-                  setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl: recoveryUrl, note: "", expiredAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] });
-                  setShowTeamAddModal(true);
+                  setTeamImportText("");
+                  setShowImportTeamModal(true);
                 }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-slate-700 hover:bg-slate-600 text-sm"
               >
@@ -3075,17 +3184,9 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                   {(sExpired || sNear) && (
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        showConfirm("Xác nhận gia hạn", `Bạn có chắc muốn gia hạn cho ${slot.customerName} ở Slot ${si + 1} thêm 30 ngày?`, async () => {
-                                          const updSlots = [...acc.slots];
-                                          updSlots[si] = { ...slot, addedAt: new Date().toISOString(), expiredAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() };
-                                          await axios.put(`/api/team/${acc.id}`, { slots: updSlots });
-                                          fetchData();
-                                          showAlert("Thành công", "Đã gia hạn Slot (+30 ngày)!", "success");
-                                        });
-                                      }}
+                                      onClick={() => handleExtendUser(acc.id, si, slot, "team")}
                                       className="bg-green-600 hover:bg-green-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
-                                      title="Gia hạn (+30 ngày)"
+                                      title="Gia hạn"
                                     >
                                       <RotateCw size={14} />
                                     </button>
@@ -3100,7 +3201,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.addedAt ? new Date(slot.addedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]); setShowSlotModal(true); }}
+                                    onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.addedAt ? new Date(slot.addedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]); setSlotFormExpiredAt(slot.expiredAt ? new Date(slot.expiredAt).toISOString().split("T")[0] : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]); setShowSlotModal(true); }}
                                     className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
                                     title="Sửa Slot"
                                   >
@@ -3237,6 +3338,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📧 Gmail Khách</label><input className="form-input w-full" placeholder="customer@gmail.com" value={slotFormGmail} onChange={e => setSlotFormGmail(e.target.value)} /></div>
                     <div className="form-group"><label className="block text-xs text-slate-400 mb-1">👤 Tên Khách</label><input className="form-input w-full" placeholder="Nguyễn Văn A" value={slotFormName} onChange={e => setSlotFormName(e.target.value)} /></div>
                     <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Ngày Tham Gia</label><input type="date" className="form-input w-full" value={slotFormExp} onChange={e => setSlotFormExp(e.target.value)} /></div>
+                    <div className="form-group"><label className="block text-xs text-yellow-400 mb-1">📅 Ngày Hết Hạn</label><input type="date" className="form-input w-full" value={slotFormExpiredAt} onChange={e => setSlotFormExpiredAt(e.target.value)} /></div>
                   </div>
 
                   <div className="flex justify-between mt-6">
@@ -3255,7 +3357,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         if (!parentAcc) return;
                         const updSlots = Array(4).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
                         const joinDate = slotFormExp ? new Date(slotFormExp) : new Date();
-                        const expireDate = new Date(joinDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+                        const expireDate = slotFormExpiredAt ? new Date(slotFormExpiredAt) : new Date(joinDate.getTime() + 30 * 24 * 60 * 60 * 1000);
                         updSlots[slotTarget.slotIdx] = { status: slotFormGmail ? "active" : "empty", gmail: slotFormGmail, customerName: slotFormName, addedAt: joinDate.toISOString(), expiredAt: expireDate.toISOString() };
                         await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
                         setShowSlotModal(false); fetchData();
