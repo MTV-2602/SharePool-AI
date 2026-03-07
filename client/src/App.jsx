@@ -3416,10 +3416,24 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         </div>
 
                         <div className="w-full flex flex-col gap-2 mt-auto pt-2">
+                          {usedSlots < 4 && (
+                            <button onClick={() => {
+                              const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
+                              if (emptyIdx !== -1) {
+                                setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
+                                setSlotFormGmail(""); setSlotFormName("");
+                                setSlotFormExp(new Date().toISOString().split("T")[0]);
+                                setSlotFormExpiredAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+                                setShowSlotModal(true);
+                              }
+                            }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 w-full justify-center shadow-lg transition-transform hover:scale-105 my-1">
+                              <UserPlus size={16} /> GÁN KHÁCH MỚI
+                            </button>
+                          )}
                           <button onClick={() => {
                             const info = `✅ Tài khoản GPT Team\nEmail: ${acc.username}\nPass: ${acc.password}${acc.emailPassword ? `\nPass Mail: ${acc.emailPassword}` : ""}${acc.recoveryUrl ? `\nLink lấy mã: ${acc.recoveryUrl}` : ""}`;
                             handleCopy(info, "Đã copy toàn bộ form Team");
-                          }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 w-full justify-center shadow-lg transition-transform hover:scale-105 my-1">
+                          }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 w-full justify-center shadow-lg transition-transform hover:scale-105 mb-1">
                             <Copy size={16} /> COPY CẢ CỤM
                           </button>
 
@@ -3431,25 +3445,18 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                       </div>
                     </div>
                     {/* Slots */}
-                    <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {Array(4).fill(null).map((_, si) => {
-                        const slot = (acc.slots || [])[si] || { status: "empty" };
-                        const sExpDays = slot.expiredAt ? Math.ceil((new Date(slot.expiredAt) - new Date()) / 86400000) : null;
-                        const sExpired = sExpDays !== null && sExpDays <= 0;
-                        const sNear = sExpDays !== null && sExpDays > 0 && sExpDays <= 3;
-                        const isEmpty = slot.status === "empty" || !slot.gmail;
-                        return (
-                          <div key={si} className={`rounded-xl border p-3 flex flex-col gap-1 ${isEmpty ? "border-slate-700 bg-slate-800/50" : sExpired ? "border-red-800 bg-red-950/30" : sNear ? "border-yellow-800 bg-yellow-950/20" : "border-indigo-700/50 bg-indigo-900/20"}`}>
-                            <div className="flex items-center justify-between pb-1 border-b border-slate-700/50 mb-1">
-                              <span className={`text-xs font-bold ${isEmpty ? "text-slate-500" : "text-indigo-300"}`}>Slot {si + 1}</span>
-                              {isEmpty && (
-                                <button
-                                  onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(""); setSlotFormName(""); setSlotFormExp(new Date().toISOString().split("T")[0]); setShowSlotModal(true); }}
-                                  className="text-[10px] px-2 py-0.5 rounded font-bold bg-blue-600 hover:bg-blue-500 text-white"
-                                >+ Gán</button>
-                              )}
-                            </div>
-                            {!isEmpty ? (
+                    {usedSlots > 0 ? (
+                      <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {acc.slots?.map((slot, si) => {
+                          const isEmpty = slot.status === "empty" || !slot.gmail;
+                          if (isEmpty) return null; // Do not render empty slots
+
+                          const sExpDays = slot.expiredAt ? Math.ceil((new Date(slot.expiredAt) - new Date()) / 86400000) : null;
+                          const sExpired = sExpDays !== null && sExpDays <= 0;
+                          const sNear = sExpDays !== null && sExpDays > 0 && sExpDays <= 3;
+
+                          return (
+                            <div key={si} className={`rounded-xl border p-3 flex flex-col gap-1 w-full ${sExpired ? "border-red-800 bg-red-950/30" : sNear ? "border-yellow-800 bg-yellow-950/20" : "border-indigo-700/50 bg-indigo-900/20"}`}>
                               <>
                                 <div className="flex-1 space-y-0.5">
                                   <span className={`font-bold text-xs truncate max-w-full flex items-center gap-1 ${sExpired ? "text-red-500" : sNear ? "text-yellow-400" : "text-white"}`} title={slot.customerName}>
@@ -3502,7 +3509,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      showConfirm("Xóa Slot", `Xóa khách ${slot.customerName} khỏi Slot ${si + 1}?`, async () => {
+                                      showConfirm("Xóa Slot", `Xóa khách ${slot.customerName}?`, async () => {
                                         const updSlots = [...acc.slots];
                                         updSlots[si] = { status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
                                         await axios.put(`/api/team/${acc.id}`, { slots: updSlots });
@@ -3516,13 +3523,15 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                   </button>
                                 </div>
                               </>
-                            ) : (
-                              <div className="flex-1 flex items-center justify-center text-slate-600 text-[11px] italic">Slot trống</div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-4 flex items-center justify-center text-slate-500 text-sm italic">
+                        Chưa có khách nào trong tài khoản này.
+                      </div>
+                    )}
                   </div>
                 );
               })}
