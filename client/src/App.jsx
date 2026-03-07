@@ -1271,6 +1271,47 @@ function App() {
                 }
               });
 
+              teamAccounts.forEach((acc) => {
+                const isAccExpired = acc.expiredAt && new Date(acc.expiredAt) < new Date();
+                const activeSlots = (acc.slots || []).map((slot, idx) => ({ slot, idx })).filter(item => item.slot.status === "active");
+
+                if (activeSlots.length > 0) {
+                  activeSlots.forEach(({ slot, idx }) => {
+                    const sExpDays = slot.expiredAt ? Math.ceil((new Date(slot.expiredAt) - new Date()) / 86400000) : null;
+                    const isSlotExpired = sExpDays !== null && sExpDays <= 0;
+
+                    if (isSlotExpired) {
+                      urgentList.push({
+                        type: "team_slot_expired",
+                        acc,
+                        u: slot,
+                        idx,
+                        days: sExpDays,
+                        msg: `Khách Team hết hạn (${Math.abs(sExpDays)} ngày quá hạn)`,
+                      });
+                    } else if (isAccExpired) {
+                      urgentList.push({
+                        type: "team_acc_expired",
+                        acc,
+                        u: slot,
+                        idx,
+                        days: sExpDays,
+                        msg: "TEAM ĐÃ HẾT HẠN - CẦN CHUYỂN GẤP!",
+                      });
+                    }
+                  });
+                } else if (isAccExpired) {
+                  urgentList.push({
+                    type: "team_empty_expired",
+                    acc,
+                    u: { name: "TEAM TRỐNG" },
+                    idx: -1,
+                    days: 0,
+                    msg: "Team Acc hết hạn & Trống -> Cần Xóa!",
+                  });
+                }
+              });
+
               if (urgentList.length > 0) {
                 return (
                   <div className="mb-8 bg-red-900/20 border-2 border-red-600 rounded-xl overflow-hidden shadow-2xl animate-fade-in">
@@ -1288,9 +1329,9 @@ function App() {
                         >
                           <div className="flex items-center gap-3">
                             <div
-                              className={`p-2 rounded-full ${type === "acc_expired" ? "bg-orange-500/20 text-orange-500" : "bg-red-500/20 text-red-500"}`}
+                              className={`p-2 rounded-full ${type.includes("acc_expired") ? "bg-orange-500/20 text-orange-500" : "bg-red-500/20 text-red-500"}`}
                             >
-                              {type === "acc_expired" ? (
+                              {type.includes("acc_expired") ? (
                                 <Shield size={20} />
                               ) : (
                                 <User size={20} />
@@ -1298,10 +1339,10 @@ function App() {
                             </div>
                             <div>
                               <div className="font-bold text-red-400 text-lg">
-                                {u.name || u.email}
+                                {type.includes("team") ? (u.customerName || u.gmail || u.name || "Khách Team") : (u.name || u.email)}
                               </div>
                               <div className="text-xs text-slate-400">
-                                Tài khoản:{" "}
+                                {type.includes("team") ? "Team: " : "Thường: "}
                                 <span className="text-white">
                                   {acc.username}
                                 </span>{" "}
@@ -1314,47 +1355,59 @@ function App() {
                           </div>
 
                           <div className="flex gap-3">
-                            {type === "user_expired" ? (
+                            {type === "user_expired" || type === "team_slot_expired" ? (
                               // Action for Expired User: EXTEND
                               <>
                                 <button
                                   onClick={() =>
-                                    handleExtendUser(acc.id, idx, u)
+                                    handleExtendUser(acc.id, idx, u, type.includes("team") ? "team" : "chatgpt")
                                   }
                                   className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform"
                                 >
                                   <RotateCw size={18} /> GIA HẠN
                                 </button>
                                 <button
-                                  onClick={() =>
-                                    handleDeleteUser(acc.id, idx, u.name)
-                                  }
+                                  onClick={async () => {
+                                    if (type === "team_slot_expired") {
+                                      const updSlots = [...acc.slots];
+                                      updSlots[idx] = { ...u, status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
+                                      await axios.put(`/api/team/${acc.id}`, { slots: updSlots });
+                                      fetchData();
+                                      showAlert("Thành công", "Đã xóa khách Team!", "success");
+                                    } else {
+                                      handleDeleteUser(acc.id, idx, u.name)
+                                    }
+                                  }}
                                   className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform"
                                 >
                                   <Trash2 size={18} /> XÓA
                                 </button>
                               </>
-                            ) : type === "acc_expired" ? (
+                            ) : type === "acc_expired" || type === "team_acc_expired" ? (
                               // Action for Expired Account (With Users): MOVE USER (Rescue)
                               <button
                                 onClick={() =>
-                                  openMoveUserModal(acc.id, idx, u)
+                                  type === "team_acc_expired" ? openMoveSlotModal(acc.id, idx, u) : openMoveUserModal(acc.id, idx, u)
                                 }
                                 className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform animate-pulse"
                               >
                                 <ArrowRightLeft size={18} /> CỨU USER (CHUYỂN
                                 GẤP)
                               </button>
-                            ) : type === "acc_empty_expired" ? (
+                            ) : type === "acc_empty_expired" || type === "team_empty_expired" ? (
                               // Action for Expired Account (Empty): DELETE ACCOUNT
                               <button
                                 onClick={() => {
-                                  setDeletingId(acc.id);
-                                  setShowDeleteModal(true);
+                                  if (type === "team_empty_expired") {
+                                    handleDeleteTeamAccount(acc.id);
+                                  } else {
+                                    setDeletingId(acc.id);
+                                    setShowDeleteModal(true);
+                                  }
                                 }}
                                 className="flex items-center gap-2 bg-red-800 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform animate-pulse border border-red-500"
                               >
-                                <Trash2 size={18} /> XÓA CHATGPT RÁC NÀY
+                                <Trash2 size={18} /> XÓA {type.includes("team") ? "TEAM" : "CHATGPT"} RÁC
                               </button>
                             ) : null}
                           </div>
