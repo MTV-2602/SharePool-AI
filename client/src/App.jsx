@@ -3230,6 +3230,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     const daysRemaining = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - new Date()) / (1000 * 60 * 60 * 24)) : null;
                     const isExpired = daysRemaining !== null && daysRemaining <= 0;
                     const isNearExpiry = daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 3;
+                    const noteTitle = platform === "netflix" ? "Profile" : "Ghi chú";
                     return (
                       <tr key={acc.id} className={`border-t border-slate-700/50 transition-colors ${accExpiry.isExpired ? "bg-red-950/20" : "hover:bg-slate-800/50"}`}>
                         <td className="p-3 text-slate-500 font-mono text-xs">{idx + 1}</td>
@@ -3264,7 +3265,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           <div className="mt-3 ml-1">
                             <button
                               className="bg-indigo-600/80 hover:bg-indigo-400 px-3 py-1.5 rounded text-white text-xs font-bold flex items-center gap-2 transition-transform shadow-md hover:-translate-y-0.5"
-                              onClick={() => handleCopy(`Tài khoản: ${acc.username}${acc.password ? `\nMật khẩu: ${acc.password}` : ""}${acc.note ? `\nGhi chú: ${acc.note}` : ""}`, "Đã copy cả TK & MK & Ghi chú")}
+                              onClick={() => handleCopy(`Tài khoản: ${acc.username}${acc.password ? `\nMật khẩu: ${acc.password}` : ""}${acc.note ? `\n${noteTitle}: ${acc.note}` : ""}`, "Đã copy cả TK & MK & Ghi chú")}
                             >
                               <Copy size={14} /> Copy cả TK, MK & Note
                             </button>
@@ -3276,7 +3277,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                               <span className="text-slate-600 italic">({accExpiry.dateStr})</span>
                             </div>
                           )}
-                          {acc.note && <div className="text-xs text-yellow-500/80 italic mt-2 bg-yellow-900/10 p-1.5 rounded inline-block">📝 {acc.note}</div>}
+                          {acc.note && <div className="text-xs text-yellow-500/80 italic mt-2 bg-yellow-900/10 p-1.5 rounded inline-block">{noteTitle}: {acc.note}</div>}
                         </td>
                         <td className="p-3">
                           {u ? (
