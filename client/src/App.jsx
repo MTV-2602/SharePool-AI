@@ -135,6 +135,10 @@ function App() {
   const [showOrphanedUsersModal, setShowOrphanedUsersModal] = useState(false);
   const [orphanedUsers, setOrphanedUsers] = useState([]);
 
+  // Orphaned Slots Modal (when deleting team account with active slots)
+  const [showOrphanedSlotsModal, setShowOrphanedSlotsModal] = useState(false);
+  const [orphanedSlots, setOrphanedSlots] = useState([]);
+
   // Import State
   const [importingSheet, setImportingSheet] = useState(false);
   const [importStatus, setImportStatus] = useState(null);
@@ -779,6 +783,46 @@ function App() {
     } finally {
       setLoadingStates((prev) => ({ ...prev, deleteAccount: false }));
     }
+  };
+
+  const handleDeleteTeamAccount = (accId) => {
+    const accToDelete = teamAccounts.find(a => a.id === accId);
+    if (!accToDelete) return;
+
+    const activeSlots = [];
+    (accToDelete.slots || []).forEach((slot, idx) => {
+      if (slot.status === "active") {
+        const days = slot.expiredAt ? Math.ceil((new Date(slot.expiredAt) - new Date()) / 86400000) : null;
+        if (days === null || days > 0) {
+          activeSlots.push({
+            ...slot,
+            fromAccId: accId,
+            originalIndex: idx,
+            teamUsername: accToDelete.username
+          });
+        }
+      }
+    });
+
+    if (activeSlots.length > 0) {
+      setOrphanedSlots(activeSlots);
+      setShowOrphanedSlotsModal(true);
+      return;
+    }
+
+    showConfirm("Xóa Team Acc", `Bạn có chắc chắn muốn xóa tài khoản "${accToDelete.username}"?`, async () => {
+      setLoadingStates((prev) => ({ ...prev, deleteAccount: true }));
+      try {
+        await axios.delete(`/api/team/${accId}`);
+        fetchData();
+        broadcastDataChange();
+        showAlert("Đã xóa", "Team account đã bị xóa.", "info");
+      } catch (err) {
+        showAlert("Lỗi", "Lỗi xóa team account: " + err.message, "error");
+      } finally {
+        setLoadingStates((prev) => ({ ...prev, deleteAccount: false }));
+      }
+    });
   };
 
   const handleTypeChange = async (acc, newType) => {
@@ -2800,6 +2844,102 @@ function App() {
         </div>
       )}
 
+      {showOrphanedSlotsModal && (
+        <div className="modal-overlay" style={{ zIndex: 10000 }}>
+          <div className="modal-box" style={{ maxWidth: "600px" }}>
+            <div className="bg-orange-900/30 p-4 rounded-t-xl border-b-2 border-orange-600 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-orange-600/30 rounded-full flex items-center justify-center">
+                  <AlertTriangle size={28} className="text-orange-400" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">
+                    ⚠️ KHÔNG THỂ XÓA TÀI KHOẢN TEAM
+                  </h3>
+                  <p className="text-sm text-orange-300">
+                    Tài khoản đang có {orphanedSlots.length} slot khách còn hiệu lực
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 mb-4">
+              <p className="text-slate-300 mb-3">
+                <strong className="text-yellow-400">Yêu cầu bắt buộc:</strong> Chuyển hoặc xóa tất cả khách đang dùng (đang active) qua bên nhóm rác trước khi xóa tài khoản.
+              </p>
+              <div className="space-y-3">
+                {orphanedSlots.map((slot, idx) => {
+                  const sExpDays = slot.expiredAt ? Math.ceil((new Date(slot.expiredAt) - new Date()) / 86400000) : null;
+                  return (
+                    <div
+                      key={idx}
+                      className="bg-slate-900 p-3 rounded border border-slate-700 flex justify-between items-center"
+                    >
+                      <div>
+                        <div className="font-bold text-white flex items-center gap-2">
+                          <User size={16} className="text-blue-400" />
+                          {slot.customerName || "—"} ({slot.gmail || "No Gmail"})
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1">
+                          Tham gia: {slot.addedAt ? new Date(slot.addedAt).toLocaleDateString("vi-VN") : "—"}{" "}
+                          {sExpDays !== null && (
+                            <span>
+                              • Tình trạng:{" "}
+                              <span className={`${sExpDays > 0 ? "text-green-400" : "text-red-400"} font-bold`}>
+                                {sExpDays > 0 ? `Còn ${sExpDays} ngày` : `Hết Hạn`}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setShowOrphanedSlotsModal(false);
+                            openMoveSlotModal(
+                              slot.fromAccId,
+                              slot.originalIndex,
+                              slot
+                            );
+                          }}
+                          className="bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold text-sm"
+                        >
+                          <ArrowRightLeft size={14} /> Chuyển
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const fromAcc = teamAccounts.find(a => a.id === slot.fromAccId);
+                            if (!fromAcc) return;
+                            const updSlots = [...fromAcc.slots];
+                            updSlots[slot.originalIndex] = { ...slot, status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
+                            await axios.put(`/api/team/${fromAcc.id}`, { slots: updSlots });
+                            fetchData();
+                            setShowOrphanedSlotsModal(false);
+                            showAlert("Đã xóa Slot", "Slot khách đã được giải phóng.", "info");
+                          }}
+                          className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold text-sm"
+                        >
+                          <Trash2 size={14} /> Xóa
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setShowOrphanedSlotsModal(false)}
+                className="btn-primary bg-blue-600 hover:bg-blue-500 font-bold text-sm px-4 rounded"
+              >
+                Đã Hiểu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showImportGPTModal && (
         <div className="modal-overlay">
           <div className="modal-box" style={{ maxWidth: "600px" }}>
@@ -3134,7 +3274,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         <div className="text-xs text-indigo-300 font-bold">{usedSlots}/4 slot đã cấp</div>
                         <div className="flex gap-1 mt-1">
                           <button onClick={() => { setTeamEditForm({ id: acc.id, username: acc.username, password: acc.password, emailPassword: acc.emailPassword || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "" }); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs flex items-center gap-1"><Pencil size={11} /> Sửa</button>
-                          <button onClick={() => showConfirm("Xóa Team Acc", `Xóa "${acc.username}"?`, async () => { await axios.delete(`/api/team/${acc.id}`); fetchData(); showAlert("Đã xóa", "Team account đã bị xóa.", "info"); })} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex items-center gap-1"><Trash2 size={11} /> Xóa</button>
+                          <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex items-center gap-1"><Trash2 size={11} /> Xóa</button>
                         </div>
                       </div>
                     </div>
