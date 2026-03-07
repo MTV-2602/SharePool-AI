@@ -3306,51 +3306,61 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                       <div>
                         <div className="flex items-center gap-2 font-bold text-white text-sm">
                           <span className="text-indigo-300">🏢</span>
-                          <span className="font-mono text-lg">{acc.username}</span>
-                          <Copy size={14} className="cursor-pointer text-slate-400 hover:text-white" onClick={() => { navigator.clipboard.writeText(acc.username); showAlert("Đã Copy", "Đã copy Tên Team", "info"); }} title="Copy Username" />
+                          <span className="font-mono text-xl">{acc.username}</span>
+                          <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors ml-2" onClick={() => { navigator.clipboard.writeText(acc.username); showAlert("Đã Copy", "Đã copy Tên Team", "info"); }} title="Copy Username"><Copy size={14} /> Copy</button>
                         </div>
-                        <div className="text-xs text-slate-300 mt-2 flex flex-col gap-1.5">
+                        <div className="text-xs text-slate-300 mt-3 flex flex-col gap-2">
                           <div className="flex items-center gap-2">
                             <span className="w-20 text-slate-400">Pass GPT:</span>
-                            <span className="font-mono font-bold bg-slate-800 px-2 py-0.5 rounded text-white">{acc.password}</span>
-                            <Copy size={13} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => { navigator.clipboard.writeText(acc.password); showAlert("Đã Copy", "Đã copy Pass GPT", "info"); }} title="Copy Pass GPT" />
+                            <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[120px]">{acc.password}</span>
+                            <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors" onClick={() => { navigator.clipboard.writeText(acc.password); showAlert("Đã Copy", "Đã copy Pass GPT", "info"); }} title="Copy Pass GPT">
+                              <Copy size={14} /> Copy
+                            </button>
                           </div>
                           {acc.emailPassword && (
                             <div className="flex items-center gap-2">
                               <span className="w-20 text-slate-400">Pass Mail:</span>
-                              <span className="font-mono font-bold bg-slate-800 px-2 py-0.5 rounded text-white">{acc.emailPassword}</span>
-                              <Copy size={13} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => { navigator.clipboard.writeText(acc.emailPassword); showAlert("Đã Copy", "Đã copy Pass Email", "info"); }} title="Copy Pass Email" />
+                              <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[120px]">{acc.emailPassword}</span>
+                              <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors" onClick={() => { navigator.clipboard.writeText(acc.emailPassword); showAlert("Đã Copy", "Đã copy Pass Email", "info"); }} title="Copy Pass Email">
+                                <Copy size={14} /> Copy
+                              </button>
                             </div>
                           )}
                           {acc.recoveryUrl && (
                             <div className="flex items-center gap-2 mt-1">
                               <span className="w-20 text-slate-400">Recovery:</span>
-                              <div className="flex items-center gap-1 bg-slate-800 px-2 py-0.5 rounded max-w-[200px] sm:max-w-xs">
-                                <a href={acc.recoveryUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline truncate inline-block align-bottom">{acc.recoveryUrl}</a>
-                                <Copy size={13} className="cursor-pointer text-slate-500 hover:text-white shrink-0 ml-1" onClick={() => { navigator.clipboard.writeText(acc.recoveryUrl); showAlert("Đã Copy", "Đã copy Recovery Link", "info"); }} title="Copy Recovery Link" />
-                              </div>
+                              <a href={acc.recoveryUrl} target="_blank" rel="noreferrer" className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3 py-1.5 rounded font-bold no-underline inline-flex items-center gap-2 shadow-md transition-transform hover:scale-105">
+                                <Mail size={14} /> Mở Mail
+                              </a>
+                              <button onClick={() => { navigator.clipboard.writeText(acc.recoveryUrl); showAlert("Đã Copy", "Đã copy Recovery Link", "info"); }} className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1.5 rounded flex items-center gap-1 text-xs text-white transition-colors font-bold" title="Copy Link Mail">
+                                <Copy size={14} /> Link
+                              </button>
                             </div>
                           )}
                         </div>
-                        {acc.note && <div className="text-xs text-yellow-500/80 mt-2 italic bg-yellow-900/10 p-1.5 rounded inline-block">📝 {acc.note}</div>}
+                        {acc.note && <div className="text-xs text-yellow-500/80 mt-3 italic bg-yellow-900/10 p-2 rounded inline-block">📝 {acc.note}</div>}
                       </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <div className={`text-xs font-bold ${isExpired ? "text-red-400" : isNear ? "text-yellow-400" : "text-green-400"}`}>
-                          {isExpired ? `❌ Hết hạn ${Math.abs(expDays)}d trước` : expDays !== null ? `✅ Còn ${expDays} ngày` : ""}
+                      <div className="flex flex-col items-end justify-between gap-1 shrink-0 h-full min-h-[140px] w-full sm:w-auto">
+                        <div className="flex flex-col items-end gap-1 w-full">
+                          <div className={`text-xs font-bold ${isExpired ? "text-red-400" : isNear ? "text-yellow-400" : "text-green-400"}`}>
+                            {isExpired ? `❌ Hết hạn ${Math.abs(expDays)}d trước` : expDays !== null ? `✅ Còn ${expDays} ngày` : ""}
+                          </div>
+                          <div className="text-xs text-indigo-300 font-bold mb-1">{usedSlots}/4 slot đã cấp</div>
                         </div>
-                        <div className="text-xs text-indigo-300 font-bold mb-1">{usedSlots}/4 slot đã cấp</div>
 
-                        <button onClick={() => {
-                          const info = `✅ Tài khoản GPT Team\nEmail: ${acc.username}\nPass: ${acc.password}${acc.emailPassword ? `\nPass Mail: ${acc.emailPassword}` : ""}${acc.recoveryUrl ? `\nLink lấy mã: ${acc.recoveryUrl}` : ""}`;
-                          navigator.clipboard.writeText(info);
-                          showAlert("Đã Copy Form", "Đã copy toàn bộ thông tin tài khoản!", "success");
-                        }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1 w-full justify-center shadow">
-                          <Copy size={12} /> Copy Full TT
-                        </button>
+                        <div className="w-full flex flex-col gap-2 mt-auto pt-2">
+                          <button onClick={() => {
+                            const info = `✅ Tài khoản GPT Team\nEmail: ${acc.username}\nPass: ${acc.password}${acc.emailPassword ? `\nPass Mail: ${acc.emailPassword}` : ""}${acc.recoveryUrl ? `\nLink lấy mã: ${acc.recoveryUrl}` : ""}`;
+                            navigator.clipboard.writeText(info);
+                            showAlert("Đã Copy Form", "Đã copy toàn bộ thông tin tài khoản!", "success");
+                          }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 w-full justify-center shadow-lg transition-transform hover:scale-105 my-1">
+                            <Copy size={16} /> COPY CẢ CỤM
+                          </button>
 
-                        <div className="flex gap-1 mt-1 w-full relative group">
-                          <button onClick={() => { setTeamEditForm({ id: acc.id, username: acc.username, password: acc.password, emailPassword: acc.emailPassword || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "" }); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
-                          <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
+                          <div className="flex gap-2 w-full relative group">
+                            <button onClick={() => { setTeamEditForm({ id: acc.id, username: acc.username, password: acc.password, emailPassword: acc.emailPassword || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "" }); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
+                            <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -3451,7 +3461,8 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 );
               })}
             </div>
-          )}
+          )
+          }
 
           {/* ADD TEAM MODAL */}
           {showTeamAddModal && (
