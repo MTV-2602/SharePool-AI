@@ -114,6 +114,9 @@ function App() {
     onConfirm: null,
   });
 
+  // TOAST MSG
+  const [toastMessage, setToastMessage] = useState("");
+
   // User Input Modal
   const [showUserModal, setShowUserModal] = useState(false);
   const [userModalMode, setUserModalMode] = useState("add");
@@ -857,7 +860,11 @@ function App() {
     }
   };
 
-  const handleCopy = (text) => navigator.clipboard.writeText(text);
+  const handleCopy = (text, message = "Đã copy nội dung!") => {
+    navigator.clipboard.writeText(text);
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(""), 2000);
+  };
 
   const handleBulkImportGPT = async () => {
     let raw = document.getElementById("bulkGPTData").value;
@@ -1160,7 +1167,13 @@ function App() {
       className="min-h-screen text-slate-200 p-2 sm:p-4 md:p-8 font-sans overflow-x-hidden"
       style={{ backgroundColor: "#0f172a" }}
     >
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto relative">
+        {/* TOAST MSG */}
+        {toastMessage && (
+          <div className="fixed bottom-10 right-10 bg-emerald-600/95 backdrop-blur-sm text-white px-5 py-3 rounded-xl shadow-2xl z-[9999] flex items-center gap-2 animate-bounce min-w-[200px] border border-emerald-400 font-bold">
+            <div className="bg-emerald-500 rounded-full p-1"><CheckCircle size={16} /></div> {toastMessage}
+          </div>
+        )}
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-700 max-w-full overflow-hidden">
           <div className="mb-4 md:mb-0">
             <h1
@@ -1605,29 +1618,31 @@ function App() {
                             )}
                           </td>
                           <td>
-                            <div className="font-bold text-white mb-1 flex items-center gap-2 text-base">
+                            <div className="font-bold text-white mb-2 flex items-center gap-2 text-base">
                               <User size={16} className="text-slate-400" />
-                              {acc.username}
-                              <Copy
-                                size={16}
-                                className="cursor-pointer text-slate-500 hover:text-white"
-                                onClick={() => handleCopy(acc.username)}
+                              <span className="font-mono text-lg">{acc.username}</span>
+                              <button
+                                className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors ml-2"
+                                onClick={() => handleCopy(acc.username, "Đã copy Tên Tài Khoản")}
                                 title="Copy Username"
-                              />
+                              >
+                                <Copy size={14} /> Copy
+                              </button>
                             </div>
-                            <div className="text-slate-400 flex items-center gap-2 font-mono text-sm">
-                              <Shield size={14} className="text-slate-500" />
-                              {acc.password}
-                              <Copy
-                                size={14}
-                                className="cursor-pointer text-slate-500 hover:text-white"
-                                onClick={() => handleCopy(acc.password)}
+                            <div className="text-slate-400 flex items-center gap-2 font-mono text-sm mt-1">
+                              <span className="w-20 text-slate-400 text-xs">Mật khẩu:</span>
+                              <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[120px]">{acc.password}</span>
+                              <button
+                                className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors"
+                                onClick={() => handleCopy(acc.password, "Đã copy Mật khẩu")}
                                 title="Copy Password"
-                              />
+                              >
+                                <Copy size={14} /> Copy
+                              </button>
                             </div>
                             {acc.expiredAt && (
                               <div
-                                className={`text-xs mt-1 ml-6 flex items-center gap-1 ${getExpiryStatus(acc.expiredAt).color}`}
+                                className={`text-xs mt-3 ml-6 flex items-center gap-1 ${getExpiryStatus(acc.expiredAt).color}`}
                               >
                                 <Calendar size={10} />
                                 <span>{getExpiryStatus(acc.expiredAt).text}</span>
@@ -1635,20 +1650,29 @@ function App() {
                               </div>
                             )}
                             {acc.note && (
-                              <div className="text-xs text-yellow-500/80 italic mt-1 ml-6">
-                                {acc.note}
+                              <div className="text-xs text-yellow-500/80 italic mt-2 ml-6 bg-yellow-900/10 p-1.5 rounded inline-block">
+                                📝 {acc.note}
                               </div>
                             )}
                           </td>
-                          <td>
+                          <td className="align-top pt-4">
                             {acc.link ? (
-                              <a
-                                href={acc.link}
-                                target="_blank"
-                                className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3 py-2 rounded-md font-bold no-underline inline-flex items-center gap-2 shadow-md transition-all hover:translate-y-[-1px]"
-                              >
-                                <Mail size={14} /> Mở Mail
-                              </a>
+                              <div className="flex flex-col gap-2">
+                                <a
+                                  href={acc.link}
+                                  target="_blank"
+                                  className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3 py-1.5 rounded-md font-bold no-underline inline-flex items-center gap-2 shadow-md transition-transform hover:scale-105 justify-center w-[100px]"
+                                >
+                                  <Mail size={14} /> Mở Mail
+                                </a>
+                                <button
+                                  onClick={() => handleCopy(acc.link, "Đã copy Link Mail")}
+                                  className="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded flex items-center gap-1 text-xs text-white transition-colors font-bold justify-center w-[100px]"
+                                  title="Copy Link Mail"
+                                >
+                                  <Copy size={14} /> Copy Link
+                                </button>
+                              </div>
                             ) : (
                               <span className="text-slate-600 text-xs">--</span>
                             )}
@@ -3201,24 +3225,42 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     return (
                       <tr key={acc.id} className={`border-t border-slate-700/50 transition-colors ${accExpiry.isExpired ? "bg-red-950/20" : "hover:bg-slate-800/50"}`}>
                         <td className="p-3 text-slate-500 font-mono text-xs">{idx + 1}</td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-2 font-bold text-white">
-                            <span className="text-sm">{acc.username}</span>
-                            <Copy size={13} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.username)} />
+                        <td className="p-4 align-top">
+                          <div className="flex items-center gap-2 font-bold text-white text-base mb-2">
+                            <span className="font-mono text-lg">{acc.username}</span>
+                            <button
+                              className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors ml-2"
+                              onClick={() => handleCopy(acc.username, "Đã copy Tên Tài Khoản")}
+                              title="Copy Username"
+                            >
+                              <Copy size={14} /> Copy
+                            </button>
                           </div>
-                          <div className="text-slate-400 flex items-center gap-2 font-mono text-xs mt-1 ml-6">
-                            <Shield size={12} className="text-slate-500" />
-                            {acc.password || <span className="opacity-50">Không mật khẩu</span>}
-                            {acc.password && <Copy size={12} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => handleCopy(acc.password)} />}
+                          <div className="text-slate-400 flex items-center gap-2 font-mono text-sm mt-2 ml-1">
+                            <span className="w-16 text-slate-400 text-xs text-right">Pass:</span>
+                            {acc.password ? (
+                              <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[120px]">{acc.password}</span>
+                            ) : (
+                              <span className="opacity-50 min-w-[120px] px-2 py-1 bg-slate-800 rounded">Không mật khẩu</span>
+                            )}
+                            {acc.password && (
+                              <button
+                                className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors"
+                                onClick={() => handleCopy(acc.password, "Đã copy Mật khẩu")}
+                                title="Copy Password"
+                              >
+                                <Copy size={14} /> Copy
+                              </button>
+                            )}
                           </div>
                           {accExpiry.text && (
-                            <div className={`text-xs mt-1 ml-6 flex items-center gap-1 ${accExpiry.color}`}>
+                            <div className={`text-xs mt-3 flex items-center gap-1 ${accExpiry.color}`}>
                               <Calendar size={10} />
                               <span>{accExpiry.text}</span>
                               <span className="text-slate-600 italic">({accExpiry.dateStr})</span>
                             </div>
                           )}
-                          {acc.note && <div className="text-xs text-yellow-500/80 italic mt-1 ml-6">{acc.note}</div>}
+                          {acc.note && <div className="text-xs text-yellow-500/80 italic mt-2 bg-yellow-900/10 p-1.5 rounded inline-block">📝 {acc.note}</div>}
                         </td>
                         <td className="p-3">
                           {u ? (
@@ -3307,13 +3349,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         <div className="flex items-center gap-2 font-bold text-white text-sm">
                           <span className="text-indigo-300">🏢</span>
                           <span className="font-mono text-xl">{acc.username}</span>
-                          <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors ml-2" onClick={() => { navigator.clipboard.writeText(acc.username); showAlert("Đã Copy", "Đã copy Tên Team", "info"); }} title="Copy Username"><Copy size={14} /> Copy</button>
+                          <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors ml-2" onClick={() => handleCopy(acc.username, "Đã copy Tên Team")} title="Copy Username"><Copy size={14} /> Copy</button>
                         </div>
                         <div className="text-xs text-slate-300 mt-3 flex flex-col gap-2">
                           <div className="flex items-center gap-2">
                             <span className="w-20 text-slate-400">Pass GPT:</span>
                             <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[120px]">{acc.password}</span>
-                            <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors" onClick={() => { navigator.clipboard.writeText(acc.password); showAlert("Đã Copy", "Đã copy Pass GPT", "info"); }} title="Copy Pass GPT">
+                            <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors" onClick={() => handleCopy(acc.password, "Đã copy Pass GPT")} title="Copy Pass GPT">
                               <Copy size={14} /> Copy
                             </button>
                           </div>
@@ -3321,7 +3363,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                             <div className="flex items-center gap-2">
                               <span className="w-20 text-slate-400">Pass Mail:</span>
                               <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[120px]">{acc.emailPassword}</span>
-                              <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors" onClick={() => { navigator.clipboard.writeText(acc.emailPassword); showAlert("Đã Copy", "Đã copy Pass Email", "info"); }} title="Copy Pass Email">
+                              <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors" onClick={() => handleCopy(acc.emailPassword, "Đã copy Pass Email")} title="Copy Pass Email">
                                 <Copy size={14} /> Copy
                               </button>
                             </div>
@@ -3332,7 +3374,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                               <a href={acc.recoveryUrl} target="_blank" rel="noreferrer" className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3 py-1.5 rounded font-bold no-underline inline-flex items-center gap-2 shadow-md transition-transform hover:scale-105">
                                 <Mail size={14} /> Mở Mail
                               </a>
-                              <button onClick={() => { navigator.clipboard.writeText(acc.recoveryUrl); showAlert("Đã Copy", "Đã copy Recovery Link", "info"); }} className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1.5 rounded flex items-center gap-1 text-xs text-white transition-colors font-bold" title="Copy Link Mail">
+                              <button onClick={() => handleCopy(acc.recoveryUrl, "Đã copy Recovery Link")} className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1.5 rounded flex items-center gap-1 text-xs text-white transition-colors font-bold" title="Copy Link Mail">
                                 <Copy size={14} /> Link
                               </button>
                             </div>
@@ -3351,8 +3393,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         <div className="w-full flex flex-col gap-2 mt-auto pt-2">
                           <button onClick={() => {
                             const info = `✅ Tài khoản GPT Team\nEmail: ${acc.username}\nPass: ${acc.password}${acc.emailPassword ? `\nPass Mail: ${acc.emailPassword}` : ""}${acc.recoveryUrl ? `\nLink lấy mã: ${acc.recoveryUrl}` : ""}`;
-                            navigator.clipboard.writeText(info);
-                            showAlert("Đã Copy Form", "Đã copy toàn bộ thông tin tài khoản!", "success");
+                            handleCopy(info, "Đã copy toàn bộ form Team");
                           }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 w-full justify-center shadow-lg transition-transform hover:scale-105 my-1">
                             <Copy size={16} /> COPY CẢ CỤM
                           </button>
