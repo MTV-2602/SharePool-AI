@@ -185,43 +185,51 @@ function App() {
     }
   }, []);
 
-  // BROADCAST CHANNEL for real-time sync between tabs/windows
+  // SERVER-SENT EVENTS for real-time sync across all admins/devices
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    // Create broadcast channel
-    const channel = new BroadcastChannel("data-sync-channel");
-    channelRef.current = channel;
+    let eventSource;
+    let reconnectTimeout;
 
-    // Listen for updates from other tabs
-    channel.onmessage = (event) => {
-      if (event.data.type === "DATA_UPDATED") {
-        fetchData();
-      }
+    const connectSSE = () => {
+      eventSource = new EventSource('/api/events');
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'DATA_UPDATED') {
+            fetchData(false); // Background fetch to avoid disrupting the UI
+          }
+        } catch (e) { }
+      };
+
+      eventSource.onerror = () => {
+        eventSource.close();
+        // Reconnect aggressively if SSE drops
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = setTimeout(connectSSE, 3000);
+      };
     };
 
+    connectSSE();
+
     return () => {
-      channel.close();
+      if (eventSource) eventSource.close();
+      clearTimeout(reconnectTimeout);
     };
   }, [isAuthenticated]);
 
-  // Helper function to broadcast data changes
-  const broadcastDataChange = () => {
-    if (channelRef.current) {
-      channelRef.current.postMessage({
-        type: "DATA_UPDATED",
-        timestamp: Date.now(),
-      });
-    }
-  };
+  // Backward-compatible helper for cases calling it manually (handled by backend interceptor now)
+  const broadcastDataChange = () => { };
 
-  // AUTO REFRESH DATA every 10 seconds (fallback)
+  // AUTO REFRESH DATA (fallback loop) - set to 60s background fetch instead of aggressive 10s blocking fetch
   useEffect(() => {
     if (!isAuthenticated) return;
 
     const interval = setInterval(() => {
-      fetchData();
-    }, 10000); // 10 seconds
+      fetchData(false);
+    }, 60000); // 1 minute
 
     return () => clearInterval(interval);
   }, [isAuthenticated]);
@@ -429,8 +437,8 @@ function App() {
     };
   };
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (showLoader = true) => {
+    if (showLoader) setLoading(true);
     try {
       const res = await axios.get("/api/data", {
         timeout: 10000,
@@ -458,7 +466,7 @@ function App() {
       showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
       setAccounts([]);
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 

@@ -114,6 +114,46 @@ const verifyToken = (req, res, next) => {
   }
 };
 
+// --- SSE CONNECTIONS FOR REAL-TIME SYNC ---
+let sseClients = [];
+const notifyClients = () => {
+  sseClients.forEach(client => {
+    try {
+      client.res.write(`data: ${JSON.stringify({ type: 'DATA_UPDATED' })}\n\n`);
+    } catch (err) {
+      console.error("SSE Error:", err);
+    }
+  });
+};
+
+app.get('/api/events', (req, res) => {
+  // We do not enforce verifyToken here strictly to allow easy connection, 
+  // but it's safe since it only sends the string "DATA_UPDATED" and no actual data.
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const client = { id: Date.now(), res };
+  sseClients.push(client);
+
+  req.on('close', () => {
+    sseClients = sseClients.filter(c => c.id !== client.id);
+  });
+});
+
+// Interceptor to automatically notify clients on any data change
+app.use((req, res, next) => {
+  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+    res.on('finish', () => {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        notifyClients();
+      }
+    });
+  }
+  next();
+});
+
 // --- API ROUTES ---
 
 // TEST ENDPOINT
