@@ -1640,6 +1640,14 @@ function App() {
                                 <Copy size={14} /> Copy
                               </button>
                             </div>
+                            <div className="mt-3">
+                              <button
+                                className="bg-indigo-600/80 hover:bg-indigo-400 px-3 py-1.5 rounded text-white text-xs font-bold flex items-center gap-2 transition-transform shadow-md hover:-translate-y-0.5"
+                                onClick={() => handleCopy(`Tài khoản: ${acc.username}\nMật khẩu: ${acc.password}`, "Đã copy cả TK & MK")}
+                              >
+                                <Copy size={14} /> Copy cả TK & MK
+                              </button>
+                            </div>
                             {acc.expiredAt && (
                               <div
                                 className={`text-xs mt-3 ml-6 flex items-center gap-1 ${getExpiryStatus(acc.expiredAt).color}`}
@@ -3252,6 +3260,14 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                 <Copy size={14} /> Copy
                               </button>
                             )}
+                          </div>
+                          <div className="mt-3 ml-1">
+                            <button
+                              className="bg-indigo-600/80 hover:bg-indigo-400 px-3 py-1.5 rounded text-white text-xs font-bold flex items-center gap-2 transition-transform shadow-md hover:-translate-y-0.5"
+                              onClick={() => handleCopy(`Tài khoản: ${acc.username}${acc.password ? `\nMật khẩu: ${acc.password}` : ""}`, "Đã copy cả TK & MK")}
+                            >
+                              <Copy size={14} /> Copy cả TK & MK
+                            </button>
                           </div>
                           {accExpiry.text && (
                             <div className={`text-xs mt-3 flex items-center gap-1 ${accExpiry.color}`}>
