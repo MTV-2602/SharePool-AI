@@ -3328,23 +3328,28 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           {acc.note && <div className="text-xs text-yellow-500/80 italic mt-2 bg-yellow-900/10 p-1.5 rounded inline-block">{noteTitle}: {acc.note}</div>}
                         </td>
                         <td className="p-3">
-                          {u ? (
-                            <div className={`p-2 rounded border text-xs ${isExpired ? "bg-red-900/20 border-red-700" : isNearExpiry ? "bg-yellow-900/20 border-yellow-700" : "bg-slate-800 border-slate-700"}`}>
-                              <div className={`font-bold flex items-center gap-1 ${isExpired ? "text-red-400" : isNearExpiry ? "text-yellow-400" : "text-white"}`}>
-                                {isExpired && <AlertCircle size={12} />}
-                                {isNearExpiry && <AlertTriangle size={12} />}
-                                👤 {u.name}
-                              </div>
-                              <div className="text-slate-400 mt-1 flex items-center gap-1">
-                                <Calendar size={10} /> {getUserDate(u)}
-                              </div>
-                              {daysRemaining !== null && (
-                                <div className={`text-[10px] font-semibold mt-0.5 ${isExpired ? "text-red-400" : isNearExpiry ? "text-yellow-400" : daysRemaining > 30 ? "text-purple-400" : "text-blue-400"}`}>
-                                  {isExpired ? `(HH ${Math.abs(daysRemaining)} ngày)` : `(Còn ${daysRemaining} ngày)`}
+                          {u ? (() => {
+                            const userDaysRemaining = u?.expiredAt ? Math.ceil((new Date(u.expiredAt) - new Date()) / 86400000) : daysRemaining;
+                            const userIsExpired = userDaysRemaining !== null && userDaysRemaining <= 0;
+                            const userIsNearExpiry = userDaysRemaining !== null && userDaysRemaining > 0 && userDaysRemaining <= 3;
+                            return (
+                              <div className={`p-2 rounded border text-xs ${userIsExpired ? "bg-red-900/20 border-red-700" : userIsNearExpiry ? "bg-yellow-900/20 border-yellow-700" : "bg-slate-800 border-slate-700"}`}>
+                                <div className={`font-bold flex items-center gap-1 ${userIsExpired ? "text-red-400" : userIsNearExpiry ? "text-yellow-400" : "text-white"}`}>
+                                  {userIsExpired && <AlertCircle size={12} />}
+                                  {userIsNearExpiry && <AlertTriangle size={12} />}
+                                  👤 {u.name}
                                 </div>
-                              )}
-                            </div>
-                          ) : (
+                                <div className="text-slate-400 mt-1 flex items-center gap-1">
+                                  <Calendar size={10} /> {u?.expiredAt ? formatDate(u.expiredAt) : getUserDate(u)}
+                                </div>
+                                {userDaysRemaining !== null && (
+                                  <div className={`text-[10px] font-semibold mt-0.5 ${userIsExpired ? "text-red-400" : userIsNearExpiry ? "text-yellow-400" : userDaysRemaining > 30 ? "text-purple-400" : "text-blue-400"}`}>
+                                    {userIsExpired ? `(HH ${Math.abs(userDaysRemaining)} ngày)` : `(Còn ${userDaysRemaining} ngày)`}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })() : (
                             <button onClick={() => handleAssignUser(acc)} className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold text-white bg-${accentColor}-700 hover:bg-${accentColor}-600`}>
                               👤 Gán Khách
                             </button>

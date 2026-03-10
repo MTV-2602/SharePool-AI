@@ -437,6 +437,13 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
 
     const userToMove = fromAcc.users[0];
 
+    // BẢO LƯU NGÀY HẾT HẠN CỦA KHÁCH NETFLIX/CAPCUT KHI CHUYỂN
+    // Nếu khách chưa có expiredAt cá nhân, họ đang dùng hạn của account cũ (fromAcc)
+    // -> Bứng hạn đó dán cố định vào cá nhân họ để qua account mới không bị tăng ngày =))
+    if (!userToMove.expiredAt && fromAcc.expiredAt) {
+      userToMove.expiredAt = fromAcc.expiredAt;
+    }
+
     if (!toAcc.users) toAcc.users = [];
     toAcc.users.push(userToMove);
     fromAcc.users.splice(0, 1);
