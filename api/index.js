@@ -404,6 +404,53 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
   }
 });
 
+// 4.5.1 MOVE USER FOR SINGLE PLATFORMS (Netflix, Capcut, Canva)
+app.post("/api/simple-move-user", verifyToken, async (req, res) => {
+  try {
+    const { fromAccId, toAccId, platform } = req.body;
+
+    const Model = platform === "netflix" ? Netflix : platform === "capcut" ? Capcut : platform === "canva" ? Canva : null;
+    if (!Model) return res.status(400).json({ error: "Invalid platform" });
+
+    const fromAcc = await Model.findOne({ id: fromAccId });
+    const toAcc = await Model.findOne({ id: toAccId });
+
+    if (!fromAcc || !toAcc) {
+      return res.status(404).json({ error: "Một trong hai tài khoản không tồn tại" });
+    }
+
+    if (!fromAcc.users || fromAcc.users.length === 0) {
+      return res.status(400).json({ error: "Không tìm thấy khách trong tài khoản nguồn" });
+    }
+
+    // STRICT RULE: Cannot transfer to Expired Account
+    if (toAcc.expiredAt && new Date(toAcc.expiredAt) < new Date()) {
+      return res.status(400).json({
+        error: "Tài khoản đích ĐÃ HẾT HẠN. Không thể chuyển khách vào!",
+      });
+    }
+
+    if (toAcc.users && toAcc.users.length > 0) {
+      return res.status(400).json({ error: "Tài khoản đích ĐÃ CÓ KHÁCH. Không thể chuyển vào!" });
+    }
+
+    const userToMove = fromAcc.users[0];
+    if (!toAcc.users) toAcc.users = [];
+    toAcc.users.push(userToMove);
+    fromAcc.users.splice(0, 1);
+
+    toAcc.markModified("users");
+    fromAcc.markModified("users");
+
+    await toAcc.save();
+    await fromAcc.save();
+
+    res.json({ message: "Đã chuyển khách thành công", from: fromAcc, to: toAcc });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 4.6 EXTEND USER (+ custom DAYS)
 app.post("/api/extend-user", verifyToken, async (req, res) => {
   const { accId, userIndex, platform, extDays: bodyExtDays } = req.body;

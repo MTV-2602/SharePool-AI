@@ -671,8 +671,8 @@ function App() {
   };
 
   // MOVE USER LOGIC
-  const openMoveUserModal = (accId, index, userData) => {
-    setMovingUser({ fromAccId: accId, userIndex: index, ...userData });
+  const openMoveUserModal = (accId, index, userData, platform = "chatgpt") => {
+    setMovingUser({ fromAccId: accId, userIndex: index, platform, ...userData });
     setDestinationAccId("");
     setShowMoveUserModal(true);
   };
@@ -684,11 +684,19 @@ function App() {
 
     setLoadingStates((prev) => ({ ...prev, moveUser: true }));
     try {
-      await axios.post("/api/move-user", {
-        fromAccId: movingUser.fromAccId,
-        toAccId: destinationAccId,
-        userIndex: movingUser.userIndex,
-      });
+      if (movingUser.platform === "chatgpt") {
+        await axios.post("/api/move-user", {
+          fromAccId: movingUser.fromAccId,
+          toAccId: destinationAccId,
+          userIndex: movingUser.userIndex,
+        });
+      } else {
+        await axios.post("/api/simple-move-user", {
+          fromAccId: movingUser.fromAccId,
+          toAccId: destinationAccId,
+          platform: movingUser.platform,
+        });
+      }
       setShowMoveUserModal(false);
       setMovingUser(null);
       fetchData();
@@ -2235,8 +2243,22 @@ function App() {
 
             <div className="form-group">
               {(() => {
-                const sourceAcc = accounts.find((a) => a.id === movingUser.fromAccId);
+                let sourceList = accounts;
+                if (movingUser.platform === "netflix") sourceList = netflixAccounts;
+                else if (movingUser.platform === "capcut") sourceList = capcutAccounts;
+                else if (movingUser.platform === "canva") sourceList = canvaAccounts;
+
+                const sourceAcc = sourceList.find((a) => a.id === movingUser.fromAccId);
                 const sourceType = sourceAcc?.type || "unassigned";
+
+                if (movingUser.platform !== "chatgpt") {
+                  return (
+                    <label className="text-orange-400 font-bold mb-1 block">
+                      Chọn Tài Khoản Đích (Cùng loại: {movingUser.platform.toUpperCase()})
+                    </label>
+                  );
+                }
+
                 const sourceLabel = sourceType === "package1" ? "👥 Gói Chia Sẻ" : sourceType === "package2" ? "🔒 Gói Private" : "?⃝ Chưa phân loại";
                 return (
                   <label className="text-orange-400 font-bold mb-1 block">
@@ -2255,14 +2277,24 @@ function App() {
                   -- Chọn tài khoản --
                 </option>
                 {(() => {
-                  const sourceAcc = accounts.find((a) => a.id === movingUser.fromAccId);
+                  let sourceList = accounts;
+                  if (movingUser.platform === "netflix") sourceList = netflixAccounts;
+                  else if (movingUser.platform === "capcut") sourceList = capcutAccounts;
+                  else if (movingUser.platform === "canva") sourceList = canvaAccounts;
+
+                  const sourceAcc = sourceList.find((a) => a.id === movingUser.fromAccId);
                   const sourceType = sourceAcc?.type || "unassigned";
 
-                  return accounts
+                  return sourceList
                     .filter((a) => {
                       if (a.id === movingUser.fromAccId) return false; // bỏ nguồn
-                      if (getExpiryStatus(a.expiredAt).isExpired) return false; // bỏ hết hạn
+                      if (a.expiredAt && new Date(a.expiredAt) < new Date()) return false; // bỏ hết hạn (đếm sơ bộ)
                       const users = a.users?.length || 0;
+
+                      if (movingUser.platform !== "chatgpt") {
+                        // Cho single accounts (Netflix, Capcut, Canva), chỉ hiện acc chưa có khách
+                        return users < 1;
+                      }
 
                       if (a.type === sourceType) {
                         // Cùng loại: kiểm tra slot
@@ -2279,13 +2311,19 @@ function App() {
                     })
                     .map((a) => {
                       const slots = a.users?.length || 0;
-                      const maxSlots = a.type === "package2" ? 1 : a.type === "package1" ? 3 : (sourceType === "package2" ? 1 : 3);
-                      const typeLabel =
-                        a.type === "unassigned"
-                          ? "⭐ Unassigned → sẽ thành " + (sourceType === "package1" ? "Shared" : "Private")
-                          : a.type === "package2"
-                            ? "🔒 Private"
-                            : "👥 Shared";
+                      let maxSlots = 1;
+                      let typeLabel = movingUser.platform.toUpperCase();
+
+                      if (movingUser.platform === "chatgpt") {
+                        maxSlots = a.type === "package2" ? 1 : a.type === "package1" ? 3 : (sourceType === "package2" ? 1 : 3);
+                        typeLabel =
+                          a.type === "unassigned"
+                            ? "⭐ Unassigned → sẽ thành " + (sourceType === "package1" ? "Shared" : "Private")
+                            : a.type === "package2"
+                              ? "🔒 Private"
+                              : "👥 Shared";
+                      }
+
                       const displayUser =
                         a.username.length > 25 ? a.username.substring(0, 22) + "..." : a.username;
                       const dateStr = a.expiredAt
@@ -2304,9 +2342,11 @@ function App() {
                     });
                 })()}
               </select>
-              <p className="text-xs text-slate-500 mt-2 italic">
-                * Cùng loại gói hoặc tài khoản chưa phân loại (tự đổi loại sau khi nhận khách).
-              </p>
+              {movingUser.platform === "chatgpt" && (
+                <p className="text-xs text-slate-500 mt-2 italic">
+                  * Cùng loại gói hoặc tài khoản chưa phân loại (tự đổi loại sau khi nhận khách).
+                </p>
+              )}
             </div>
 
             <div class="flex justify-end gap-3 mt-6">
@@ -3312,9 +3352,14 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         </td>
                         <td className="p-3">
                           <div className="flex flex-col gap-1 items-center">
-                            {u && <button onClick={() => handleRemoveUser(acc)} className="bg-orange-700 hover:bg-orange-600 text-white px-2 py-1 rounded text-xs flex items-center w-full justify-center">Xóa Khách</button>}
+                            {u && (
+                              <div className="flex w-full gap-1">
+                                <button onClick={() => openMoveUserModal(acc.id, 0, u, activeTab)} className="bg-amber-600 hover:bg-amber-500 text-white p-1 rounded text-xs flex-1 flex justify-center items-center" title="Chuyển Khách"><ArrowRightLeft size={16} /></button>
+                                <button onClick={() => handleRemoveUser(acc)} className="bg-orange-700 hover:bg-orange-600 text-white p-1 rounded text-xs flex-1 flex justify-center items-center" title="Xóa Khách"><Trash2 size={16} /></button>
+                              </div>
+                            )}
                             <button onClick={() => handleEditSimpleAcc(acc)} className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded text-xs flex items-center gap-1 w-full justify-center"><Pencil size={12} /> Sửa Acc</button>
-                            <button onClick={() => handleDeleteSimpleAcc(acc)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex items-center gap-1 w-full justify-center"><Trash2 size={12} /> Xóa Acc</button>
+                            <button onClick={() => handleDeleteSimpleAcc(acc)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded text-xs flex items-center gap-1 w-full justify-center"><X size={12} /> Xóa Acc</button>
                           </div>
                         </td>
                       </tr>
