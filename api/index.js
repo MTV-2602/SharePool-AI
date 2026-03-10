@@ -389,19 +389,6 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
 
     const userToMove = fromAcc.users[userIndex];
 
-    // BẢO LƯU TUYỆT ĐỐI NGÀY HẾT HẠN CỦA KHÁCH:
-    // Nếu khách tính ngày hết hạn dựa trên tài khoản cũ, ta "chốt cứng" ngày đó vào userToMove
-    // để chuyển sang tài khoản mới khách không bị lấy theo HSD của account đích.
-    if (!userToMove.expiredAt) {
-      let extDays = 30;
-      if (fromAcc.duration) {
-        const m = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
-        extDays = m[fromAcc.duration] || 30;
-      }
-      const joinedDate = userToMove.joinedAt ? new Date(userToMove.joinedAt) : new Date();
-      userToMove.expiredAt = new Date(joinedDate.getTime() + extDays * 24 * 60 * 60 * 1000).toISOString();
-    }
-
     if (!toAcc.users) toAcc.users = [];
     toAcc.users.push(userToMove);
     fromAcc.users.splice(userIndex, 1);
@@ -449,12 +436,6 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
     }
 
     const userToMove = fromAcc.users[0];
-
-    // BẢO LƯU TUYỆT ĐỐI NGÀY HẾT HẠN:
-    if (!userToMove.expiredAt) {
-      const joinedDate = userToMove.joinedAt ? new Date(userToMove.joinedAt) : new Date();
-      userToMove.expiredAt = new Date(joinedDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    }
 
     if (!toAcc.users) toAcc.users = [];
     toAcc.users.push(userToMove);
