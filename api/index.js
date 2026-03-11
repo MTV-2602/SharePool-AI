@@ -177,10 +177,31 @@ const DATAMMO_URL = "https://datammo.com/api/v1/products/748e605c-d400-4c44-a958
 const DATAMMO_TOKEN = "sk_1773222055913_er0acsx8dyj";
 const DATAMMO_VARIANT_PKG1 = "3dbd0d98-5ed5-4044-9557-8d8a902da45f";
 const DATAMMO_VARIANT_PKG2 = "98ed02c7-d28b-4287-945e-bdfb24a09397";
+const DATAMMO_VARIANT_PKG3 = "619cecaf-6ad1-4315-a292-858d69b52282";
 
 const getDatammoLines = (acc) => {
   if (!acc) return [];
   const lines = [];
+
+  // 1) Logic cho GÓI 3 (Team Account - Business Slots)
+  if (acc.slots !== undefined) {
+    const formatTeamContent = (slotNum) => {
+      let base = `${acc.username}|${acc.password}`;
+      if (acc.emailPassword) base += `|${acc.emailPassword}`;
+      if (acc.recoveryUrl) base += `|${acc.recoveryUrl}`;
+      return `${base}|Slot ${slotNum}`;
+    };
+
+    acc.slots.forEach((slot, index) => {
+      // Slot trống được đẩy lên sàn MMO
+      if (slot.status === "empty" || !slot.gmail) {
+        lines.push({ variantId: DATAMMO_VARIANT_PKG3, content: formatTeamContent(index + 1) });
+      }
+    });
+    return lines;
+  }
+
+  // 2) Logic cho Account thông thường (Gói 1: Shared, Gói 2: Private)
   const formatContent = (slotInfo) => {
     // Không gửi kèm link Gmail đối với Gói Shared (package1) để tránh bị đổi mật khẩu gốc
     const includeLink = acc.type === "package2" && acc.link;
@@ -194,7 +215,7 @@ const getDatammoLines = (acc) => {
     }
   } else if (acc.type === "package1") {
     const userCount = acc.users ? acc.users.length : 0;
-    // Mỗi package 1 có 3 slot. Nếu chưa đủ người, số lượng slot còn lại sẽ được up lên sàn.
+    // Mỗi package 1 có 3 slot.
     for (let i = userCount + 1; i <= 3; i++) {
       lines.push({ variantId: DATAMMO_VARIANT_PKG1, content: formatContent(`Slot ${i}`) });
     }
@@ -401,7 +422,12 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
       }
     );
 
-    res.json({ message: "Moved slot successfully" });
+    const updatedFrom = await TeamAccount.findOne({ id: fromAccId });
+    const updatedTo = await TeamAccount.findOne({ id: toAccId });
+    syncDatammoUpdate(fromAcc, updatedFrom);
+    syncDatammoUpdate(toAcc, updatedTo);
+
+    res.json({ message: "Team Slot moved successfully", from: updatedFrom, to: updatedTo });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -615,6 +641,7 @@ app.post("/api/team", verifyToken, async (req, res) => {
       expiredAt: req.body.expiredAt || expiredDate.toISOString(),
     };
     await TeamAccount.create(newAcc);
+    syncDatammoUpdate(null, newAcc);
     res.json({ message: "Added", account: newAcc });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -622,7 +649,9 @@ app.post("/api/team", verifyToken, async (req, res) => {
 // PUT update team account (including slot management)
 app.put("/api/team/:id", verifyToken, async (req, res) => {
   try {
+    const existing = await TeamAccount.findOne({ id: req.params.id });
     const updated = await TeamAccount.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+    syncDatammoUpdate(existing, updated);
     res.json({ message: "Updated", account: updated });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -630,7 +659,8 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
 // DELETE team account
 app.delete("/api/team/:id", verifyToken, async (req, res) => {
   try {
-    await TeamAccount.findOneAndDelete({ id: req.params.id });
+    const existing = await TeamAccount.findOneAndDelete({ id: req.params.id });
+    if (existing) syncDatammoUpdate(existing, null);
     res.json({ message: "Deleted" });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

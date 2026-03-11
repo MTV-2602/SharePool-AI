@@ -3515,19 +3515,40 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         </div>
 
                         <div className="w-full flex flex-col gap-2 mt-auto pt-2">
-                          {usedSlots < 4 && (
-                            <button onClick={() => {
-                              const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
-                              if (emptyIdx !== -1) {
-                                setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
-                                setSlotFormGmail(""); setSlotFormName("");
-                                setSlotFormExp(new Date().toISOString().split("T")[0]);
-                                setSlotFormExpiredAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
-                                setShowSlotModal(true);
-                              }
-                            }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 w-full justify-center shadow-lg transition-transform hover:scale-105 my-1">
-                              <UserPlus size={16} /> GÁN KHÁCH MỚI
-                            </button>
+                          {usedSlots < 4 ? (
+                            <div className="flex flex-col gap-1 my-1 w-full">
+                              <div className="w-full px-2 py-1 bg-teal-900/40 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex flex-col gap-0.5 shadow-sm items-center justify-center">
+                                <span className="flex items-center gap-1"><Globe size={10} /> Đang lên kệ Datammo: Còn {4 - usedSlots} Slot</span>
+                              </div>
+                              <div className="flex gap-2">
+                                <button onClick={() => {
+                                  const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
+                                  if (emptyIdx !== -1) {
+                                    setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
+                                    setSlotFormGmail("datammo@guest.com"); setSlotFormName("[Datammo] Khách mới");
+                                    setSlotFormExp(new Date().toISOString().split("T")[0]);
+                                    setSlotFormExpiredAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+                                    setShowSlotModal(true);
+                                  }
+                                }} className="bg-teal-700 hover:bg-teal-600 font-bold text-white px-2 py-1.5 rounded text-xs flex-1 transition-colors shadow flex items-center justify-center gap-1" title="Tự động điền Form với chữ Datammo">
+                                  + Datammo
+                                </button>
+                                <button onClick={() => {
+                                  const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
+                                  if (emptyIdx !== -1) {
+                                    setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
+                                    setSlotFormGmail(""); setSlotFormName("");
+                                    setSlotFormExp(new Date().toISOString().split("T")[0]);
+                                    setSlotFormExpiredAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+                                    setShowSlotModal(true);
+                                  }
+                                }} className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-2 py-1.5 rounded text-xs flex-1 transition-colors shadow flex items-center justify-center gap-1" title="Gán Khách ngoài">
+                                  <UserPlus size={14} /> Khách
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="w-full text-center text-xs text-red-400 font-bold italic my-1 shadow-sm p-1 border border-red-900/30 rounded bg-red-900/10">Đã Kín 4/4 Slot</div>
                           )}
                           <button onClick={() => {
                             const info = `✅ Tài khoản GPT Team\nEmail: ${acc.username}\nPass: ${acc.password}${acc.emailPassword ? `\nPass Mail: ${acc.emailPassword}` : ""}${acc.recoveryUrl ? `\nLink lấy mã: ${acc.recoveryUrl}` : ""}`;
