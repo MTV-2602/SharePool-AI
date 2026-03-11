@@ -284,19 +284,20 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
 
+    const existingAcc = await Account.findOne({ id: id });
+    if (!existingAcc) {
+      return res.status(404).json({ error: "Không tìm thấy account" });
+    }
+
     // Validate package2: chỉ được tối đa 1 khách hàng
     if (req.body.users !== undefined) {
-      const existingAcc = await Account.findOne({ id: id });
-      const targetType = req.body.type || existingAcc?.type;
+      const targetType = req.body.type || existingAcc.type;
       if (targetType === "package2" && req.body.users.length > 1) {
         return res.status(400).json({ error: "Gói Private (Gói 2) chỉ được tối đa 1 khách hàng" });
       }
     }
 
-    // Lấy object hiện tại để Check Datammo (Xóa bản cũ trên Kho trước khi Update)
-    if (!existingAcc) {
-      return res.status(404).json({ error: "Không tìm thấy account" });
-    }
+    // Datammo: Xóa bản cũ trên Kho trước khi Update
     if (existingAcc.type === "package2") {
       syncDatammoDelete(existingAcc);
     }
