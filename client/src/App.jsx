@@ -882,7 +882,11 @@ function App() {
       fetchData();
       broadcastDataChange();
     } catch (error) {
-      showAlert("Lỗi", "Lỗi đổi gói", "error");
+      const msg = error?.response?.data?.error || "Lỗi đổi gói";
+      showAlert("Chặn Thao Tác", msg, "error");
+      // Reset dropdown về giá trị gói cũ
+      const selectElement = document.getElementById(`select-type-${acc.id}`);
+      if (selectElement) selectElement.value = acc.type;
     } finally {
       setLoadingStates((prev) => ({
         ...prev,

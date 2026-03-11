@@ -336,6 +336,17 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       }
     }
 
+    // ===== BACKEND GUARD: Chặn đổi gói khi đang có khách =====
+    if (req.body.type && req.body.type !== existingAcc.type) {
+      const currentUsers = existingAcc.users || [];
+      if (currentUsers.length > 0) {
+        return res.status(400).json({
+          error: `Không thể đổi gói khi đang có ${currentUsers.length} khách hàng. Vui lòng xóa hết khách trước!`,
+        });
+      }
+    }
+    // ==========================================================
+
     const updated = await Account.findOneAndUpdate({ id: id }, req.body, {
       new: true,
     });
