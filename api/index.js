@@ -171,6 +171,46 @@ app.get("/api/test", (req, res) => {
 });
 
 // 1. GET ALL DATA (Protected - requires token)
+
+// --- DATAMMO INTEGRATION ---
+const DATAMMO_URL = "https://datammo.com/api/v1/products/748e605c-d400-4c44-a958-0525494c700b/inventory";
+const DATAMMO_TOKEN = "sk_1773222055913_er0acsx8dyj";
+const DATAMMO_VARIANT = "98ed02c7-d28b-4287-945e-bdfb24a09397";
+
+const formatDatammoContent = (acc) => {
+  return `${acc.username}|${acc.password}${acc.link ? `|${acc.link}` : ""}`;
+};
+
+const syncDatammoAdd = async (acc) => {
+  // Chỉ up nếu là package2 (Private) và CHƯA có user nào dùng
+  if (acc.type !== "package2" || (acc.users && acc.users.length > 0)) return;
+  try {
+    const content = formatDatammoContent(acc);
+    await axios.post(DATAMMO_URL, {
+      variantId: DATAMMO_VARIANT,
+      content: content
+    }, { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } });
+    console.log("Datammo ADD synced", content);
+  } catch (err) {
+    console.error("Datammo ADD err:", err?.response?.data || err.message);
+  }
+};
+
+const syncDatammoDelete = async (acc) => {
+  if (acc.type !== "package2") return;
+  try {
+    const content = formatDatammoContent(acc);
+    await axios.post(`${DATAMMO_URL}/delete`, {
+      variantId: DATAMMO_VARIANT,
+      content: content
+    }, { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } });
+    console.log("Datammo DELETE synced", content);
+  } catch (err) {
+    console.error("Datammo DELETE err:", err?.response?.data || err.message);
+  }
+};
+// ---------------------------
+
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
     const [accounts, netflixAccs, canvaAccs, capcutAccs, teamAccs] = await Promise.all([
@@ -210,6 +250,8 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
       expiredAt: expiredDate.toISOString(),
     };
     await Account.create(newAcc);
+    // Tự động đẩy lên Datammo nếu là Private
+    syncDatammoAdd(newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -230,6 +272,7 @@ app.post("/api/chatgpt-public", async (req, res) => {
       expiredAt: expiredDate.toISOString(),
     };
     await Account.create(newAcc);
+    syncDatammoAdd(newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -250,9 +293,23 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       }
     }
 
+    // Lấy object hiện tại để Check Datammo (Xóa bản cũ trên Kho trước khi Update)
+    if (!existingAcc) {
+      return res.status(404).json({ error: "Không tìm thấy account" });
+    }
+    if (existingAcc.type === "package2") {
+      syncDatammoDelete(existingAcc);
+    }
+
     const updated = await Account.findOneAndUpdate({ id: id }, req.body, {
       new: true,
     });
+
+    // Sau khi Update, Add lại lên Kho Datammo bản mới (nếu nó vẫn là package2 và chưa có khách)
+    if (updated?.type === "package2") {
+      syncDatammoAdd(updated);
+    }
+
     res.json({ message: "Updated", account: updated });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -263,7 +320,10 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
 app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    await Account.findOneAndDelete({ id: id });
+    const existing = await Account.findOneAndDelete({ id: id });
+    if (existing && existing.type === "package2") {
+      syncDatammoDelete(existing);
+    }
     res.json({ message: "Deleted" });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -389,6 +449,10 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
 
     const userToMove = fromAcc.users[userIndex];
 
+    // Trước khi move, xoá inventory gói 2 cũ khỏi Datammo
+    if (fromAcc.type === "package2") syncDatammoDelete(fromAcc);
+    if (toAcc.type === "package2") syncDatammoDelete(toAcc);
+
     if (!toAcc.users) toAcc.users = [];
     toAcc.users.push(userToMove);
     fromAcc.users.splice(userIndex, 1);
@@ -398,6 +462,10 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
 
     await toAcc.save();
     await fromAcc.save();
+
+    // Add lại inventory gói 2 vào Datammo (syncDatammoAdd sẽ tự check đk user array rỗng mới đẩy)
+    if (fromAcc.type === "package2") syncDatammoAdd(fromAcc);
+    if (toAcc.type === "package2") syncDatammoAdd(toAcc);
 
     res.json({ message: "Moved user successfully", from: fromAcc, to: toAcc });
   } catch (error) {
