@@ -1659,9 +1659,9 @@ function App() {
                             <div className="mt-3">
                               <button
                                 className="bg-indigo-600/80 hover:bg-indigo-400 px-3 py-1.5 rounded text-white text-xs font-bold flex items-center gap-2 transition-transform shadow-md hover:-translate-y-0.5"
-                                onClick={() => handleCopy(`Tài khoản: ${acc.username}\nMật khẩu: ${acc.password}${acc.note ? `\nGhi chú: ${acc.note}` : ""}`, "Đã copy cả TK & MK & Ghi chú")}
+                                onClick={() => handleCopy(`${acc.username}|${acc.password}${acc.link ? `|${acc.link}` : ""}`, "Đã copy TK|MK|Link")}
                               >
-                                <Copy size={14} /> Copy cả TK, MK & Note
+                                <Copy size={14} /> Copy TK|MK|Link
                               </button>
                             </div>
                             {acc.expiredAt && (
