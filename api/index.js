@@ -182,7 +182,9 @@ const getDatammoLines = (acc) => {
   if (!acc) return [];
   const lines = [];
   const formatContent = (slotInfo) => {
-    const base = `${acc.username}|${acc.password}${acc.link ? `|${acc.link}` : ""}`;
+    // Không gửi kèm link Gmail đối với Gói Shared (package1) để tránh bị đổi mật khẩu gốc
+    const includeLink = acc.type === "package2" && acc.link;
+    const base = `${acc.username}|${acc.password}${includeLink ? `|${acc.link}` : ""}`;
     return slotInfo ? `${base}|${slotInfo}` : base;
   };
 

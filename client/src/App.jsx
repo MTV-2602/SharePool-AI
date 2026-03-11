@@ -1660,9 +1660,9 @@ function App() {
                             <div className="mt-3">
                               <button
                                 className="bg-indigo-600/80 hover:bg-indigo-400 px-3 py-1.5 rounded text-white text-xs font-bold flex items-center gap-2 transition-transform shadow-md hover:-translate-y-0.5"
-                                onClick={() => handleCopy(`${acc.username}|${acc.password}${acc.link ? `|${acc.link}` : ""}`, "Đã copy TK|MK|Link")}
+                                onClick={() => handleCopy(`${acc.username}|${acc.password}${acc.type === "package2" && acc.link ? `|${acc.link}` : ""}`, acc.type === "package2" && acc.link ? "Đã copy TK|MK|Link" : "Đã copy TK|MK")}
                               >
-                                <Copy size={14} /> Copy TK|MK|Link
+                                <Copy size={14} /> Copy TK|MK{acc.type === "package2" && acc.link ? "|Link" : ""}
                               </button>
                             </div>
                             {acc.expiredAt && (
