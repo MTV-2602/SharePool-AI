@@ -1717,15 +1717,32 @@ function App() {
                                   >
                                     {acc.users?.length || 0}/3 Slot
                                   </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => openAddUserModal(acc.id)}
-                                    disabled={acc.users?.length >= 3}
-                                    className="text-xs px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    + Khách
-                                  </button>
+                                  {acc.users?.length < 3 ? (
+                                    <div className="flex gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => openAddUserModal(acc.id, "[Datammo] Khách mới")}
+                                        className="text-[10px] sm:text-xs px-2 py-0.5 rounded bg-teal-600 hover:bg-teal-500 font-bold text-white whitespace-nowrap"
+                                      >
+                                        + Datammo
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openAddUserModal(acc.id)}
+                                        className="text-[10px] sm:text-xs px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white whitespace-nowrap"
+                                      >
+                                        + Khách
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-red-400 font-bold italic">Đã Đầy</span>
+                                  )}
                                 </div>
+                                {acc.users?.length < 3 && (
+                                  <div className="mb-2 w-full px-2 py-0.5 bg-teal-900/40 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex items-center justify-center gap-1 shadow-sm">
+                                    <Globe size={10} /> Đang lên kệ Datammo: Còn {3 - (acc.users?.length || 0)} Slot
+                                  </div>
+                                )}
                                 <div className="space-y-1">
                                   {acc.users?.map((u, index) => {
                                     const name = getUserName(u);

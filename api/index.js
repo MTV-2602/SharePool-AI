@@ -175,38 +175,54 @@ app.get("/api/test", (req, res) => {
 // --- DATAMMO INTEGRATION ---
 const DATAMMO_URL = "https://datammo.com/api/v1/products/748e605c-d400-4c44-a958-0525494c700b/inventory";
 const DATAMMO_TOKEN = "sk_1773222055913_er0acsx8dyj";
-const DATAMMO_VARIANT = "98ed02c7-d28b-4287-945e-bdfb24a09397";
+const DATAMMO_VARIANT_PKG1 = "3dbd0d98-5ed5-4044-9557-8d8a902da45f";
+const DATAMMO_VARIANT_PKG2 = "98ed02c7-d28b-4287-945e-bdfb24a09397";
 
-const formatDatammoContent = (acc) => {
-  return `${acc.username}|${acc.password}${acc.link ? `|${acc.link}` : ""}`;
-};
+const getDatammoLines = (acc) => {
+  if (!acc) return [];
+  const lines = [];
+  const formatContent = (slotInfo) => {
+    const base = `${acc.username}|${acc.password}${acc.link ? `|${acc.link}` : ""}`;
+    return slotInfo ? `${base}|${slotInfo}` : base;
+  };
 
-const syncDatammoAdd = async (acc) => {
-  // Chỉ up nếu là package2 (Private) và CHƯA có user nào dùng
-  if (acc.type !== "package2" || (acc.users && acc.users.length > 0)) return;
-  try {
-    const content = formatDatammoContent(acc);
-    await axios.post(DATAMMO_URL, {
-      variantId: DATAMMO_VARIANT,
-      content: content
-    }, { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } });
-    console.log("Datammo ADD synced", content);
-  } catch (err) {
-    console.error("Datammo ADD err:", err?.response?.data || err.message);
+  if (acc.type === "package2") {
+    if (!acc.users || acc.users.length === 0) {
+      lines.push({ variantId: DATAMMO_VARIANT_PKG2, content: formatContent("") });
+    }
+  } else if (acc.type === "package1") {
+    const userCount = acc.users ? acc.users.length : 0;
+    // Mỗi package 1 có 3 slot. Nếu chưa đủ người, số lượng slot còn lại sẽ được up lên sàn.
+    for (let i = userCount + 1; i <= 3; i++) {
+      lines.push({ variantId: DATAMMO_VARIANT_PKG1, content: formatContent(`Slot ${i}`) });
+    }
   }
+  return lines;
 };
 
-const syncDatammoDelete = async (acc) => {
-  if (acc.type !== "package2") return;
-  try {
-    const content = formatDatammoContent(acc);
-    await axios.post(`${DATAMMO_URL}/delete`, {
-      variantId: DATAMMO_VARIANT,
-      content: content
-    }, { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } });
-    console.log("Datammo DELETE synced", content);
-  } catch (err) {
-    console.error("Datammo DELETE err:", err?.response?.data || err.message);
+const syncDatammoUpdate = async (oldAcc, newAcc) => {
+  const oldLines = getDatammoLines(oldAcc);
+  const newLines = getDatammoLines(newAcc);
+
+  const toDelete = oldLines.filter(oldL => !newLines.find(nL => nL.variantId === oldL.variantId && nL.content === oldL.content));
+  const toAdd = newLines.filter(nL => !oldLines.find(oldL => oldL.variantId === nL.variantId && oldL.content === nL.content));
+
+  for (const item of toDelete) {
+    try {
+      await axios.post(`${DATAMMO_URL}/delete`, item, { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } });
+      console.log("Datammo DELETE synced:", item.content);
+    } catch (err) {
+      console.error("Datammo DELETE err:", err?.response?.data || err.message);
+    }
+  }
+
+  for (const item of toAdd) {
+    try {
+      await axios.post(DATAMMO_URL, item, { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } });
+      console.log("Datammo ADD synced:", item.content);
+    } catch (err) {
+      console.error("Datammo ADD err:", err?.response?.data || err.message);
+    }
   }
 };
 // ---------------------------
@@ -250,8 +266,8 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
       expiredAt: expiredDate.toISOString(),
     };
     await Account.create(newAcc);
-    // Tự động đẩy lên Datammo nếu là Private
-    syncDatammoAdd(newAcc);
+    // Tự động đẩy lên Datammo
+    syncDatammoUpdate(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -272,7 +288,7 @@ app.post("/api/chatgpt-public", async (req, res) => {
       expiredAt: expiredDate.toISOString(),
     };
     await Account.create(newAcc);
-    syncDatammoAdd(newAcc);
+    syncDatammoUpdate(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -297,19 +313,8 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       }
     }
 
-    // Datammo: Xóa bản cũ trên Kho trước khi Update
-    if (existingAcc.type === "package2") {
-      syncDatammoDelete(existingAcc);
-    }
-
-    const updated = await Account.findOneAndUpdate({ id: id }, req.body, {
-      new: true,
-    });
-
-    // Sau khi Update, Add lại lên Kho Datammo bản mới (nếu nó vẫn là package2 và chưa có khách)
-    if (updated?.type === "package2") {
-      syncDatammoAdd(updated);
-    }
+    // Logic đồng bộ thông minh: so sánh 2 object để add/delete kho cho chuẩn
+    syncDatammoUpdate(existingAcc, updated);
 
     res.json({ message: "Updated", account: updated });
   } catch (error) {
@@ -322,8 +327,8 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const existing = await Account.findOneAndDelete({ id: id });
-    if (existing && existing.type === "package2") {
-      syncDatammoDelete(existing);
+    if (existing) {
+      syncDatammoUpdate(existing, null);
     }
     res.json({ message: "Deleted" });
   } catch (error) {
@@ -450,9 +455,9 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
 
     const userToMove = fromAcc.users[userIndex];
 
-    // Trước khi move, xoá inventory gói 2 cũ khỏi Datammo
-    if (fromAcc.type === "package2") syncDatammoDelete(fromAcc);
-    if (toAcc.type === "package2") syncDatammoDelete(toAcc);
+    // Tạo bản sao trước khi Move để Datammo Check
+    const originalFromAcc = JSON.parse(JSON.stringify(fromAcc));
+    const originalToAcc = JSON.parse(JSON.stringify(toAcc));
 
     if (!toAcc.users) toAcc.users = [];
     toAcc.users.push(userToMove);
@@ -464,9 +469,9 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     await toAcc.save();
     await fromAcc.save();
 
-    // Add lại inventory gói 2 vào Datammo (syncDatammoAdd sẽ tự check đk user array rỗng mới đẩy)
-    if (fromAcc.type === "package2") syncDatammoAdd(fromAcc);
-    if (toAcc.type === "package2") syncDatammoAdd(toAcc);
+    // Tự động tính toán DataMMO Add/Delete dựa trên biến động User Array
+    syncDatammoUpdate(originalFromAcc, fromAcc);
+    syncDatammoUpdate(originalToAcc, toAcc);
 
     res.json({ message: "Moved user successfully", from: fromAcc, to: toAcc });
   } catch (error) {
