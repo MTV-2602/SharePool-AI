@@ -186,8 +186,9 @@ const getDatammoLines = (acc) => {
   // 1) Logic cho GÓI 3 (Team Account - Business Slots)
   if (acc.slots !== undefined) {
     const formatTeamContent = (slotNum) => {
-      // Chỉ gửi TK + số slot + hướng dẫn, KHÔNG gửi pass/recovery để bảo mật
-      return `${acc.username}|Slot ${slotNum}|Bạn gửi kèm gmail chính chủ để  up`;
+      // Key = "Slot N" đặt đầu để Datammo không dedup 4 dòng thành 1
+      // Format: Slot 1|email|Bạn gửi gmail chính chủ để admin up
+      return `Slot ${slotNum}|${acc.username}|Bạn gửi kèm gmail chính chủ để admin up`;
     };
 
     acc.slots.forEach((slot, index) => {
@@ -201,10 +202,12 @@ const getDatammoLines = (acc) => {
 
   // 2) Logic cho Account thông thường (Gói 1: Shared, Gói 2: Private)
   const formatContent = (slotInfo) => {
-    // Không gửi kèm link Gmail đối với Gói Shared (package1) để tránh bị đổi mật khẩu gốc
+    // Package2 (Private): content đơn giản là TK|MK|Link(nếu có)
+    // Package1 (Shared): đặt Slot N lên đầu làm key để Datammo không dedup 3 dòng thành 1
     const includeLink = acc.type === "package2" && acc.link;
-    const base = `${acc.username}|${acc.password}${includeLink ? `|${acc.link}` : ""}`;
-    return slotInfo ? `${base}|${slotInfo}` : base;
+    const creds = `${acc.username}|${acc.password}${includeLink ? `|${acc.link}` : ""}`;
+    // Với package1: format = "Slot N|TK|MK" (key khác nhau từng slot)
+    return slotInfo ? `${slotInfo}|${creds}` : creds;
   };
 
   if (acc.type === "package2") {
