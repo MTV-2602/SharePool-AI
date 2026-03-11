@@ -23,6 +23,7 @@ import {
   FileSpreadsheet,
   ArrowRightLeft,
   RotateCw,
+  Globe,
 } from "lucide-react";
 
 // Helper: Xóa dấu Tiếng Việt
@@ -492,9 +493,9 @@ function App() {
     }
   };
 
-  const openAddUserModal = (accId) => {
+  const openAddUserModal = (accId, prefillName = "") => {
     setUserModalMode("add");
-    setCurrentUserData({ accId, index: null, name: "", joinedAt: null, expiredAt: null });
+    setCurrentUserData({ accId, index: null, name: prefillName, joinedAt: null, expiredAt: null });
     setShowUserModal(true);
   };
 
@@ -1981,13 +1982,29 @@ function App() {
                                         </div>
                                       </div>
                                     ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => openAddUserModal(acc.id)}
-                                        className="w-full text-center text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-300"
-                                      >
-                                        Gán Khách
-                                      </button>
+                                      <div className="flex flex-col gap-2">
+                                        <div className="text-center w-full px-2 py-1 bg-teal-900/30 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex flex-col gap-0.5 shadow-sm">
+                                          <span className="flex items-center justify-center gap-1"><Globe size={10} /> Đang lên kệ Datammo 🛒</span>
+                                        </div>
+                                        <div className="flex gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => openAddUserModal(acc.id, "[Datammo] Khách mới")}
+                                            className="w-1/2 text-center text-xs px-2 py-1.5 bg-teal-700 hover:bg-teal-600 font-bold rounded text-white transition-colors"
+                                            title="Gán Khách và tự điền tên Datammo"
+                                          >
+                                            + Datammo
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => openAddUserModal(acc.id)}
+                                            className="w-1/2 text-center text-xs px-2 py-1.5 bg-slate-700 hover:bg-slate-600 rounded font-bold text-slate-300 transition-colors"
+                                            title="Gán Khách ngoài bình thường"
+                                          >
+                                            + Khách Thường
+                                          </button>
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
                                 );
