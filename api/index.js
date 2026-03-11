@@ -187,7 +187,7 @@ const getDatammoLines = (acc) => {
   if (acc.slots !== undefined) {
     const formatTeamContent = (slotNum) => {
       // Chỉ gửi TK + số slot + hướng dẫn, KHÔNG gửi pass/recovery để bảo mật
-      return `${acc.username}|Slot ${slotNum}|Bạn gửi kèm gmail chính chủ để admin up`;
+      return `${acc.username}|Slot ${slotNum}|Bạn gửi kèm gmail chính chủ để  up`;
     };
 
     acc.slots.forEach((slot, index) => {
@@ -645,7 +645,7 @@ app.post("/api/team", verifyToken, async (req, res) => {
     const newAcc = {
       id: Date.now().toString(),
       ...req.body,
-      slots: req.body.slots || Array(5).fill(null).map(() => ({ status: "empty" })),
+      slots: req.body.slots || Array(4).fill(null).map(() => ({ status: "empty" })),
       createdAt: now.toISOString(),
       expiredAt: req.body.expiredAt || expiredDate.toISOString(),
     };
