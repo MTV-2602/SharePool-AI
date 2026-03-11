@@ -1975,9 +1975,24 @@ function App() {
                                             onClick={() =>
                                               openEditUserModal(acc.id, 0, u)
                                             }
-                                            className="text-blue-400 hover:text-white"
+                                            className="text-blue-400 hover:text-white ml-1"
+                                            title="Sửa tên"
                                           >
                                             <Pencil size={14} />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleDeleteUser(
+                                                acc.id,
+                                                0,
+                                                getUserName(u),
+                                              )
+                                            }
+                                            className="text-red-400 hover:text-white ml-1"
+                                            title="Xóa khách"
+                                          >
+                                            <Trash2 size={14} />
                                           </button>
                                         </div>
                                       </div>
