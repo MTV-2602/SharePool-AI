@@ -177,7 +177,7 @@ const DATAMMO_URL = "https://datammo.com/api/v1/products/748e605c-d400-4c44-a958
 const DATAMMO_TOKEN = "sk_1773222055913_er0acsx8dyj";
 const DATAMMO_VARIANT_PKG1 = "3dbd0d98-5ed5-4044-9557-8d8a902da45f";
 const DATAMMO_VARIANT_PKG2 = "98ed02c7-d28b-4287-945e-bdfb24a09397";
-const DATAMMO_VARIANT_PKG3 = "619cecaf-6ad1-4315-a292-858d69b52282";
+const DATAMMO_VARIANT_PKG3 = "5e3567bc-ada4-471d-b93b-725a0735b677";
 
 const getDatammoLines = (acc) => {
   if (!acc) return [];
