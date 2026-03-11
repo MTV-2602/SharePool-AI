@@ -315,6 +315,10 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       }
     }
 
+    const updated = await Account.findOneAndUpdate({ id: id }, req.body, {
+      new: true,
+    });
+
     // Logic đồng bộ thông minh: so sánh 2 object để add/delete kho cho chuẩn
     syncDatammoUpdate(existingAcc, updated);
 
