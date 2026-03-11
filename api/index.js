@@ -186,10 +186,8 @@ const getDatammoLines = (acc) => {
   // 1) Logic cho GÓI 3 (Team Account - Business Slots)
   if (acc.slots !== undefined) {
     const formatTeamContent = (slotNum) => {
-      let base = `${acc.username}|${acc.password}`;
-      if (acc.emailPassword) base += `|${acc.emailPassword}`;
-      if (acc.recoveryUrl) base += `|${acc.recoveryUrl}`;
-      return `${base}|Slot ${slotNum}`;
+      // Chỉ gửi TK + số slot + hướng dẫn, KHÔNG gửi pass/recovery để bảo mật
+      return `${acc.username}|Slot ${slotNum}|Bạn gửi kèm gmail chính chủ để admin up`;
     };
 
     acc.slots.forEach((slot, index) => {
