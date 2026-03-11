@@ -75,6 +75,7 @@ function App() {
   const [simpleAddForm, setSimpleAddForm] = useState({ username: "", password: "", duration: "1M", note: "", customerName: "" });
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("chatgpt");
+  const [gptSubTab, setGptSubTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Loading states for buttons
@@ -1557,6 +1558,37 @@ function App() {
               </button>
             </div>
 
+            {/* SUB-TABS: Gói 1 / Gói 2 / Chưa chọn */}
+            {(() => {
+              const pkg1Count = accounts.filter(a => a.type === "package1").length;
+              const pkg2Count = accounts.filter(a => a.type === "package2").length;
+              const unassignedCount = accounts.filter(a => !a.type || a.type === "unassigned").length;
+              const tabs = [
+                { key: "all", label: "📋 Tất cả", count: accounts.length, color: "bg-slate-600" },
+                { key: "package1", label: "👥 Gói 1 – Chia sẻ", count: pkg1Count, color: "bg-blue-600" },
+                { key: "package2", label: "🔒 Gói 2 – Riêng tư", count: pkg2Count, color: "bg-purple-600" },
+                { key: "unassigned", label: "❓ Chưa chọn", count: unassignedCount, color: "bg-slate-700" },
+              ];
+              return (
+                <div className="flex gap-2 flex-wrap mb-4">
+                  {tabs.map(t => (
+                    <button
+                      key={t.key}
+                      onClick={() => setGptSubTab(t.key)}
+                      className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full font-bold text-sm transition-all shadow-sm border ${gptSubTab === t.key
+                          ? `${t.color} text-white border-transparent`
+                          : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
+                        }`}
+                    >
+                      {t.label}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${gptSubTab === t.key ? "bg-white/20" : "bg-slate-700 text-slate-300"
+                        }`}>{t.count}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+
             <div
               style={{
                 background: "#1e293b",
@@ -1580,6 +1612,13 @@ function App() {
                   </thead>
                   <tbody>
                     {accounts
+                      .filter((acc) => {
+                        // Filter by sub-tab
+                        if (gptSubTab === "package1") return acc.type === "package1";
+                        if (gptSubTab === "package2") return acc.type === "package2";
+                        if (gptSubTab === "unassigned") return !acc.type || acc.type === "unassigned";
+                        return true; // "all"
+                      })
                       .filter((acc) => {
                         if (!searchQuery.trim()) return true;
                         const queryNormalized =
