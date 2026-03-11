@@ -859,6 +859,20 @@ function App() {
         return;
       }
     }
+
+    if (acc.type === "package2" && (acc.users?.length || 0) > 0) {
+      if (newType !== "package2") {
+        showAlert(
+          "CHẶN THAO TÁC",
+          "⚠️ Gói Private đang có khách. Vui lòng xóa khách trước khi đổi gói!",
+          "error",
+        );
+        setAccounts((prev) => [...prev]);
+        const selectElement = document.getElementById(`select-type-${acc.id}`);
+        if (selectElement) selectElement.value = "package2";
+        return;
+      }
+    }
     setLoadingStates((prev) => ({
       ...prev,
       changeType: { ...prev.changeType, [acc.id]: true },
