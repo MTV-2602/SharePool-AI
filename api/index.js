@@ -84,6 +84,17 @@ const teamAccountSchema = new mongoose.Schema({
 });
 const TeamAccount = mongoose.models.TeamAccount || mongoose.model("TeamAccount", teamAccountSchema);
 
+const datammoKeyRegistrySchema = new mongoose.Schema({
+  key: { type: String, unique: true, required: true, index: true },
+  accountId: { type: String, default: "" },
+  reason: { type: String, default: "" },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+const DatammoKeyRegistry =
+  mongoose.models.DatammoKeyRegistry ||
+  mongoose.model("DatammoKeyRegistry", datammoKeyRegistrySchema);
+
 // Middleware to ensure DB is connected before processing
 app.use(async (req, res, next) => {
   await connectDB();
@@ -245,6 +256,65 @@ const createPackage2DatammoKey = (accountId = "") => {
   const randomPart = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
   return `${base}_${timePart}_${randomPart}`;
 };
+const claimPackage2DatammoKey = async (rawKey, accountId, reason = "") => {
+  const key = sanitizeDatammoKey(rawKey);
+  if (!key) return { ok: false, conflict: false, key: "" };
+
+  const ownerId = String(accountId || "");
+  const existing = await DatammoKeyRegistry.findOne({ key });
+  if (existing) {
+    const existingOwnerId = String(existing.accountId || "");
+    if (existingOwnerId && existingOwnerId !== ownerId) {
+      return { ok: false, conflict: true, key: "" };
+    }
+    existing.accountId = ownerId;
+    if (reason) existing.reason = reason;
+    existing.updatedAt = new Date().toISOString();
+    await existing.save();
+    return { ok: true, conflict: false, key };
+  }
+
+  try {
+    await DatammoKeyRegistry.create({
+      key,
+      accountId: ownerId,
+      reason,
+    });
+    return { ok: true, conflict: false, key };
+  } catch (err) {
+    if (err?.code === 11000) {
+      return { ok: false, conflict: true, key: "" };
+    }
+    throw err;
+  }
+};
+const reserveUniquePackage2DatammoKey = async (
+  accountId,
+  reason = "auto-reserve",
+) => {
+  for (let i = 0; i < 30; i += 1) {
+    const candidate = createPackage2DatammoKey(accountId);
+    const claimed = await claimPackage2DatammoKey(candidate, accountId, reason);
+    if (claimed.ok && claimed.key) return claimed.key;
+  }
+  throw new Error("Unable to reserve unique Datammo key after multiple retries.");
+};
+const resolveOwnedPackage2DatammoKey = async (
+  accountId,
+  preferredKey,
+  reason = "resolve-key",
+) => {
+  const preferred = sanitizeDatammoKey(preferredKey);
+  if (preferred) {
+    const claimedPreferred = await claimPackage2DatammoKey(
+      preferred,
+      accountId,
+      reason,
+    );
+    if (claimedPreferred.ok && claimedPreferred.key) return claimedPreferred.key;
+  }
+  return reserveUniquePackage2DatammoKey(accountId, reason);
+};
 const getPackage2DatammoKey = (acc) => {
   const savedKey = sanitizeDatammoKey(acc?.package2DatammoKey);
   if (savedKey) return savedKey;
@@ -264,7 +334,10 @@ const rotatePackage2KeyForPendingAdds = async (newAcc, toAdd = []) => {
   );
   if (!hasPackage2Add) return;
 
-  const rotatedKey = createPackage2DatammoKey(newAcc.id);
+  const rotatedKey = await reserveUniquePackage2DatammoKey(
+    newAcc.id,
+    "pre-add-rotate",
+  );
   await Account.updateOne(
     { id: newAcc.id },
     { $set: { package2DatammoKey: rotatedKey } },
@@ -657,7 +730,10 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
             isPackage2DatammoVariant(item.variantId)
           ) {
             try {
-              const rotatedKey = createPackage2DatammoKey(newAcc.id);
+              const rotatedKey = await reserveUniquePackage2DatammoKey(
+                newAcc.id,
+                "duplicate-retry-rotate",
+              );
               const rotatedContent = replaceDatammoPrimaryKey(
                 item.content,
                 rotatedKey,
@@ -844,8 +920,12 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
       createdAt: now.toISOString(),
       expiredAt: expiredDate.toISOString(),
     };
-    if (newAcc.type === "package2" && !sanitizeDatammoKey(newAcc.package2DatammoKey)) {
-      newAcc.package2DatammoKey = createPackage2DatammoKey(newAcc.id);
+    if (newAcc.type === "package2") {
+      newAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
+        newAcc.id,
+        newAcc.package2DatammoKey,
+        "create-account",
+      );
     }
     await Account.create(newAcc);
     // Tự động đẩy lên Datammo
@@ -870,8 +950,12 @@ app.post("/api/chatgpt-public", async (req, res) => {
       createdAt: now.toISOString(),
       expiredAt: expiredDate.toISOString(),
     };
-    if (newAcc.type === "package2" && !sanitizeDatammoKey(newAcc.package2DatammoKey)) {
-      newAcc.package2DatammoKey = createPackage2DatammoKey(newAcc.id);
+    if (newAcc.type === "package2") {
+      newAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
+        newAcc.id,
+        newAcc.package2DatammoKey,
+        "create-public-account",
+      );
     }
     await Account.create(newAcc);
     await syncDatammoUpdate(null, newAcc);
@@ -925,13 +1009,15 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       nextUsers.length === 0;
 
     if (targetType === "package2") {
-      let key = sanitizeDatammoKey(
-        normalizedPayload.package2DatammoKey || existingAcc.package2DatammoKey,
-      );
-      if (!key || becamePackage2Available) {
-        key = createPackage2DatammoKey(id);
-      }
-      normalizedPayload.package2DatammoKey = key;
+      const preferredKey = becamePackage2Available
+        ? ""
+        : normalizedPayload.package2DatammoKey || existingAcc.package2DatammoKey;
+      normalizedPayload.package2DatammoKey =
+        await resolveOwnedPackage2DatammoKey(
+          id,
+          preferredKey,
+          becamePackage2Available ? "recycle-after-sold" : "update-account",
+        );
     } else {
       normalizedPayload.package2DatammoKey = "";
     }
@@ -1130,11 +1216,19 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     fromAcc.users.splice(userIndex, 1);
 
     // Package2: keep a persisted Datammo key and rotate after sold cycle closes.
-    if (toAcc.type === "package2" && !sanitizeDatammoKey(toAcc.package2DatammoKey)) {
-      toAcc.package2DatammoKey = createPackage2DatammoKey(toAcc.id);
+    if (toAcc.type === "package2") {
+      toAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
+        toAcc.id,
+        toAcc.package2DatammoKey,
+        "move-user-destination",
+      );
     }
     if (fromAcc.type === "package2" && (!fromAcc.users || fromAcc.users.length === 0)) {
-      fromAcc.package2DatammoKey = createPackage2DatammoKey(fromAcc.id);
+      fromAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
+        fromAcc.id,
+        "",
+        "move-user-source-empty",
+      );
     }
 
     toAcc.markModified("users");
