@@ -326,8 +326,9 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   });
 
   const newLineKeys = new Set(newLines.map(getDatammoLineKey));
-  // On forced shelf switch, treat selected new shelf as "must add" to heal missing stock.
-  const oldLines = forceOldPackage2Sync
+  // On manual shelf sync/switch, treat selected new shelf as "must add" to heal missing stock.
+  const shouldForceMustAdd = forceOldPackage2Sync || forceNewPackage2Sync;
+  const oldLines = shouldForceMustAdd
     ? rawOldLines.filter((line) => !newLineKeys.has(getDatammoLineKey(line)))
     : rawOldLines;
   const oldLineKeys = new Set(oldLines.map(getDatammoLineKey));
@@ -351,6 +352,11 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
     } catch (err) {
       console.error("Datammo DELETE err:", err?.response?.data || err.message);
     }
+  }
+
+  // Ensure Datammo has processed DELETE before ADD when switching shelf.
+  if (forceNewPackage2Sync && toDelete.length > 0 && toAdd.length > 0) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
   for (const item of toAdd) {
@@ -486,7 +492,8 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
 
     // Logic đồng bộ thông minh: so sánh 2 object để add/delete kho cho chuẩn
     await syncDatammoUpdate(existingAcc, updated, {
-      forceOldPackage2Sync: isPackage2ShelfChanged,
+      // Shelf update always runs as delete-other-shelf then add-target-shelf.
+      forceOldPackage2Sync: isPackage2ShelfChanged || isManualShelfUpdate,
       forceNewPackage2Sync: isManualShelfUpdate,
     });
 
