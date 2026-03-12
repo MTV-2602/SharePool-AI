@@ -930,17 +930,44 @@ function App() {
 
   const handlePackage2ShelfChange = async (acc, shelfValue) => {
     if (acc.type !== "package2") return;
+    const prevShelf = normalizePackage2Shelf(acc.package2Shelf);
+    const nextShelf = normalizePackage2Shelf(shelfValue);
+    if (prevShelf === nextShelf) return;
+
+    setAccounts((prev) =>
+      prev.map((item) =>
+        item.id === acc.id ? { ...item, package2Shelf: nextShelf } : item,
+      ),
+    );
     setLoadingStates((prev) => ({
       ...prev,
       changeShelf: { ...prev.changeShelf, [acc.id]: true },
     }));
     try {
-      await axios.put(`/api/chatgpt/${acc.id}`, {
-        package2Shelf: normalizePackage2Shelf(shelfValue),
+      const response = await axios.put(`/api/chatgpt/${acc.id}`, {
+        package2Shelf: nextShelf,
       });
-      fetchData();
+      const updatedAcc = response?.data?.account;
+      if (updatedAcc?.id) {
+        setAccounts((prev) =>
+          prev.map((item) =>
+            item.id === updatedAcc.id
+              ? {
+                ...item,
+                ...updatedAcc,
+                package2Shelf: normalizePackage2Shelf(updatedAcc.package2Shelf),
+              }
+              : item,
+          ),
+        );
+      }
       broadcastDataChange();
     } catch (error) {
+      setAccounts((prev) =>
+        prev.map((item) =>
+          item.id === acc.id ? { ...item, package2Shelf: prevShelf } : item,
+        ),
+      );
       const msg = error?.response?.data?.error || "Lỗi đổi kệ gói 2";
       showAlert("Lỗi", msg, "error");
     } finally {

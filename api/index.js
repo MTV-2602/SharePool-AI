@@ -549,32 +549,6 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
         { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
       );
       console.log("Datammo DELETE synced:", item.content, "=>", inventoryUrl);
-
-      // Package2 fallback cleanup by key only to clear stale lines with old value/link.
-      if (isManualPackage2ShelfSync && isPackage2DatammoVariant(item.variantId)) {
-        const primaryKey = getDatammoPrimaryKey(item);
-        const keyOnlyContent = primaryKey ? `${primaryKey}|` : "";
-        if (keyOnlyContent && keyOnlyContent !== item.content) {
-          try {
-            await axios.post(
-              `${inventoryUrl}/delete`,
-              { variantId: item.variantId, content: keyOnlyContent },
-              { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
-            );
-            console.log(
-              "Datammo DELETE by key synced:",
-              keyOnlyContent,
-              "=>",
-              inventoryUrl,
-            );
-          } catch (keyDeleteErr) {
-            console.error(
-              "Datammo DELETE by key err:",
-              keyDeleteErr?.response?.data || keyDeleteErr.message,
-            );
-          }
-        }
-      }
     } catch (err) {
       console.error("Datammo DELETE err:", err?.response?.data || err.message);
     }
@@ -582,7 +556,7 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
 
   // Ensure Datammo has processed DELETE before ADD when switching shelf.
   if (isManualPackage2ShelfSync && toDelete.length > 0 && toAdd.length > 0) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 120));
   }
 
   for (const item of toAdd) {
