@@ -212,7 +212,13 @@ const getDatammoLines = (acc) => {
 
   if (acc.type === "package2") {
     if (!acc.users || acc.users.length === 0) {
-      lines.push({ variantId: DATAMMO_VARIANT_PKG2, content: formatContent("") });
+      // Chỉ đẩy lên Datammo nếu còn HƠN 25 ngày (tránh bán acc sắp hết hạn)
+      const daysLeft = acc.expiredAt
+        ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
+        : 999;
+      if (daysLeft > 25) {
+        lines.push({ variantId: DATAMMO_VARIANT_PKG2, content: formatContent("") });
+      }
     }
   } else if (acc.type === "package1") {
     const userCount = acc.users ? acc.users.length : 0;

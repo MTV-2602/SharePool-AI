@@ -1320,6 +1320,25 @@ function App() {
                 }
               });
 
+              // Case D: Gói 2 còn <=25 ngày và không có khách → cảnh báo gỡ khỏi Datammo
+              accounts.forEach((acc) => {
+                if (acc.type !== "package2") return;
+                if (acc.users && acc.users.length > 0) return; // đang có khách, bỏ qua
+                const daysLeft = acc.expiredAt
+                  ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
+                  : null;
+                if (daysLeft !== null && daysLeft <= 25 && daysLeft > 0) {
+                  urgentList.push({
+                    type: "pkg2_expiring_soon",
+                    acc,
+                    u: { name: `Gói 2 còn ${daysLeft} ngày` },
+                    idx: -1,
+                    days: daysLeft,
+                    msg: `⚠️ Gói 2 sắp hết hạn (còn ${daysLeft} ngày). Hãy gỡ khỏi shop Datammo!`,
+                  });
+                }
+              });
+
               teamAccounts.forEach((acc) => {
                 const isAccExpired = acc.expiredAt && new Date(acc.expiredAt) < new Date();
                 const activeSlots = (acc.slots || []).map((slot, idx) => ({ slot, idx })).filter(item => item.slot.status === "active");
@@ -1374,31 +1393,42 @@ function App() {
                       {urgentList.map(({ type, acc, u, idx, days, msg }, i) => (
                         <div
                           key={i}
-                          className="flex items-center justify-between bg-slate-900/50 p-3 rounded border border-red-500/30"
+                          className={`flex items-center justify-between p-3 rounded border ${
+                            type === "pkg2_expiring_soon"
+                              ? "bg-yellow-950/30 border-yellow-600/40"
+                              : "bg-slate-900/50 border-red-500/30"
+                          }`}
                         >
                           <div className="flex items-center gap-3">
                             <div
-                              className={`p-2 rounded-full ${type.includes("acc_expired") ? "bg-orange-500/20 text-orange-500" : "bg-red-500/20 text-red-500"}`}
+                              className={`p-2 rounded-full ${
+                                type === "pkg2_expiring_soon"
+                                  ? "bg-yellow-500/20 text-yellow-400"
+                                  : type.includes("acc_expired")
+                                  ? "bg-orange-500/20 text-orange-500"
+                                  : "bg-red-500/20 text-red-500"
+                              }`}
                             >
-                              {type.includes("acc_expired") ? (
+                              {type === "pkg2_expiring_soon" ? (
+                                <Globe size={20} />
+                              ) : type.includes("acc_expired") ? (
                                 <Shield size={20} />
                               ) : (
                                 <User size={20} />
                               )}
                             </div>
                             <div>
-                              <div className="font-bold text-red-400 text-lg">
-                                {type.includes("team") ? (u.customerName || u.gmail || u.name || "Khách Team") : (u.name || u.email)}
+                              <div className={`font-bold text-lg ${
+                                type === "pkg2_expiring_soon" ? "text-yellow-400" : "text-red-400"
+                              }`}>
+                                {type === "pkg2_expiring_soon" ? acc.username : type.includes("team") ? (u.customerName || u.gmail || u.name || "Khách Team") : (u.name || u.email)}
                               </div>
                               <div className="text-xs text-slate-400">
-                                {type.includes("team") ? "Team: " : "Thường: "}
-                                <span className="text-white">
-                                  {acc.username}
-                                </span>{" "}
-                                •
-                                <span className="text-red-500 font-bold ml-1">
-                                  {msg}
-                                </span>
+                                {type === "pkg2_expiring_soon" ? (
+                                  <span className="text-yellow-500 font-bold">{msg}</span>
+                                ) : (
+                                  <>{type.includes("team") ? "Team: " : "Thường: "}<span className="text-white">{acc.username}</span>{" "}•<span className="text-red-500 font-bold ml-1">{msg}</span></>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1458,6 +1488,13 @@ function App() {
                               >
                                 <Trash2 size={18} /> XÓA {type.includes("team") ? "TEAM" : "CHATGPT"} RÁC
                               </button>
+                            ) : type === "pkg2_expiring_soon" ? (
+                              // Gói 2 sắp hết hạn: nhắc nhở admin gỡ khỏi Datammo
+                              <div className="flex items-center gap-2">
+                                <span className="text-yellow-400 text-xs font-bold px-3 py-1.5 bg-yellow-900/30 border border-yellow-700/40 rounded">
+                                  🛒 Đã tự gỡ khỏi Datammo (hệ thống tự động)
+                                </span>
+                              </div>
                             ) : null}
                           </div>
                         </div>
