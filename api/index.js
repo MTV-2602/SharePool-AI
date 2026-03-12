@@ -506,7 +506,7 @@ const claimPackage2AccountsForOrder = async ({ shelf, quantity, orderId }) => {
     const updatedAcc = await Account.findOne({ id: oldAcc.id });
     if (!updatedAcc) break;
 
-    await syncDatammoUpdate(oldAcc, updatedAcc);
+    await syncDatammoUpdateLocked(oldAcc, updatedAcc);
     claimed.push({
       oldAcc,
       updatedAcc,
@@ -531,7 +531,7 @@ const rollbackClaimedPackage2Accounts = async (claimed = []) => {
       { new: true },
     );
     if (restored) {
-      await syncDatammoUpdate(item.updatedAcc, restored);
+      await syncDatammoUpdateLocked(item.updatedAcc, restored);
     }
   }
 };
@@ -859,17 +859,28 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
     }
   }
 };
-let datammoSyncQueue = Promise.resolve();
-const enqueueDatammoSync = (oldAcc, newAcc, options = {}) => {
-  datammoSyncQueue = datammoSyncQueue
-    .then(() => syncDatammoUpdate(oldAcc, newAcc, options))
-    .catch((err) => {
-      console.error(
-        "Datammo queued sync err:",
-        err?.response?.data || err?.message || err,
-      );
-    });
-  return datammoSyncQueue;
+const datammoSyncLocks = new Map();
+const getDatammoSyncLockKey = (oldAcc, newAcc) =>
+  String(newAcc?.id || oldAcc?.id || "global");
+const syncDatammoUpdateLocked = async (oldAcc, newAcc, options = {}) => {
+  const lockKey = getDatammoSyncLockKey(oldAcc, newAcc);
+  const previous = datammoSyncLocks.get(lockKey) || Promise.resolve();
+  let releaseCurrent = null;
+  const current = new Promise((resolve) => {
+    releaseCurrent = resolve;
+  });
+  const chain = previous.then(() => current);
+  datammoSyncLocks.set(lockKey, chain);
+
+  await previous;
+  try {
+    return await syncDatammoUpdate(oldAcc, newAcc, options);
+  } finally {
+    if (releaseCurrent) releaseCurrent();
+    if (datammoSyncLocks.get(lockKey) === chain) {
+      datammoSyncLocks.delete(lockKey);
+    }
+  }
 };
 // ---------------------------
 
@@ -1016,7 +1027,7 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
     }
     await Account.create(newAcc);
     // Tự động đẩy lên Datammo
-    await syncDatammoUpdate(null, newAcc);
+    await syncDatammoUpdateLocked(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1051,7 +1062,7 @@ app.post("/api/chatgpt-public", async (req, res) => {
       newAcc.package2DatammoKeysUsed = [];
     }
     await Account.create(newAcc);
-    await syncDatammoUpdate(null, newAcc);
+    await syncDatammoUpdateLocked(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1149,16 +1160,11 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       forceNewPackage2Sync: isManualShelfUpdate,
     };
 
-    if (isShelfOnlyUpdate) {
-      enqueueDatammoSync(
-        JSON.parse(JSON.stringify(existingAcc)),
-        JSON.parse(JSON.stringify(updated)),
-        syncOptions,
-      );
-      return res.json({ message: "Updated", account: updated, syncQueued: true });
+    if (isShelfOnlyUpdate && !isPackage2ShelfChanged) {
+      return res.json({ message: "Updated", account: updated, syncSkipped: true });
     }
 
-    await syncDatammoUpdate(existingAcc, updated, syncOptions);
+    await syncDatammoUpdateLocked(existingAcc, updated, syncOptions);
 
     res.json({ message: "Updated", account: updated });
   } catch (error) {
@@ -1172,7 +1178,7 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
     const { id } = req.params;
     const existing = await Account.findOneAndDelete({ id: id });
     if (existing) {
-      await syncDatammoUpdate(existing, null);
+      await syncDatammoUpdateLocked(existing, null);
     }
     res.json({ message: "Deleted" });
   } catch (error) {
@@ -1242,8 +1248,8 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
     const updatedFrom = await TeamAccount.findOne({ id: fromAccId });
     const updatedTo = await TeamAccount.findOne({ id: toAccId });
     await Promise.all([
-      syncDatammoUpdate(fromAcc, updatedFrom),
-      syncDatammoUpdate(toAcc, updatedTo),
+      syncDatammoUpdateLocked(fromAcc, updatedFrom),
+      syncDatammoUpdateLocked(toAcc, updatedTo),
     ]);
 
     res.json({ message: "Team Slot moved successfully", from: updatedFrom, to: updatedTo });
@@ -1346,8 +1352,8 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
 
     // Tự động tính toán DataMMO Add/Delete dựa trên biến động User Array
     await Promise.all([
-      syncDatammoUpdate(originalFromAcc, fromAcc),
-      syncDatammoUpdate(originalToAcc, toAcc),
+      syncDatammoUpdateLocked(originalFromAcc, fromAcc),
+      syncDatammoUpdateLocked(originalToAcc, toAcc),
     ]);
 
     res.json({ message: "Moved user successfully", from: fromAcc, to: toAcc });
@@ -1486,7 +1492,7 @@ app.post("/api/team", verifyToken, async (req, res) => {
       expiredAt: req.body.expiredAt || expiredDate.toISOString(),
     };
     await TeamAccount.create(newAcc);
-    await syncDatammoUpdate(null, newAcc);
+    await syncDatammoUpdateLocked(null, newAcc);
     res.json({ message: "Added", account: newAcc });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1496,7 +1502,7 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
   try {
     const existing = await TeamAccount.findOne({ id: req.params.id });
     const updated = await TeamAccount.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
-    await syncDatammoUpdate(existing, updated);
+    await syncDatammoUpdateLocked(existing, updated);
     res.json({ message: "Updated", account: updated });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1505,7 +1511,7 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
 app.delete("/api/team/:id", verifyToken, async (req, res) => {
   try {
     const existing = await TeamAccount.findOneAndDelete({ id: req.params.id });
-    if (existing) await syncDatammoUpdate(existing, null);
+    if (existing) await syncDatammoUpdateLocked(existing, null);
     res.json({ message: "Deleted" });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

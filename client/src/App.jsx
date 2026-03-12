@@ -931,15 +931,13 @@ function App() {
 
   const handlePackage2ShelfChange = async (acc, shelfValue) => {
     if (acc.type !== "package2") return;
-    const prevShelf = normalizePackage2Shelf(acc.package2Shelf);
+    if (loadingStates.changeShelf[acc.id] || loadingStates.changeType[acc.id]) {
+      return;
+    }
     const nextShelf = normalizePackage2Shelf(shelfValue);
-    if (prevShelf === nextShelf) return;
+    const currentShelf = normalizePackage2Shelf(acc.package2Shelf);
+    if (currentShelf === nextShelf) return;
 
-    setAccounts((prev) =>
-      prev.map((item) =>
-        item.id === acc.id ? { ...item, package2Shelf: nextShelf } : item,
-      ),
-    );
     setLoadingStates((prev) => ({
       ...prev,
       changeShelf: { ...prev.changeShelf, [acc.id]: true },
@@ -961,14 +959,11 @@ function App() {
               : item,
           ),
         );
+      } else {
+        await fetchData();
       }
       broadcastDataChange();
     } catch (error) {
-      setAccounts((prev) =>
-        prev.map((item) =>
-          item.id === acc.id ? { ...item, package2Shelf: prevShelf } : item,
-        ),
-      );
       const msg = error?.response?.data?.error || "Lỗi đổi kệ gói 2";
       showAlert("Lỗi", msg, "error");
     } finally {
@@ -1856,7 +1851,10 @@ function App() {
                                   onChange={(e) =>
                                     handlePackage2ShelfChange(acc, e.target.value)
                                   }
-                                  disabled={loadingStates.changeType[acc.id]}
+                                  disabled={
+                                    loadingStates.changeType[acc.id] ||
+                                    loadingStates.changeShelf[acc.id]
+                                  }
                                   className={`
                                     w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center
                                     ${normalizePackage2Shelf(acc.package2Shelf) === "none"
@@ -4326,3 +4324,4 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 }
 
 export default App;
+
