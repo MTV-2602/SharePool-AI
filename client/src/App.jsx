@@ -1695,7 +1695,10 @@ function App() {
                   {tabs.map(t => (
                     <button
                       key={t.key}
-                      onClick={() => setGptSubTab(t.key)}
+                      onClick={() => {
+                        setGptSubTab(t.key);
+                        if (t.key !== "package2") setPackage2ShelfTab("all");
+                      }}
                       className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full font-bold text-sm transition-all shadow-sm border ${gptSubTab === t.key
                           ? `${t.color} text-white border-transparent`
                           : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
@@ -1710,7 +1713,7 @@ function App() {
               );
             })()}
 
-            {(() => {
+            {gptSubTab === "package2" && (() => {
               const package2Accs = accounts.filter((a) => a.type === "package2");
               const mainCount = package2Accs.filter(
                 (a) => normalizePackage2Shelf(a.package2Shelf) === "main",
@@ -1778,6 +1781,7 @@ function App() {
                         return true; // "all"
                       })
                       .filter((acc) => {
+                        if (gptSubTab !== "package2") return true;
                         if (package2ShelfTab === "all") return true;
                         if (acc.type !== "package2") return false;
                         return normalizePackage2Shelf(acc.package2Shelf) === package2ShelfTab;
