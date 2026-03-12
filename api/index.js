@@ -317,6 +317,9 @@ const getDatammoLines = (acc, options = {}) => {
 const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   const forceOldPackage2Sync = options.forceOldPackage2Sync === true;
   const forceNewPackage2Sync = options.forceNewPackage2Sync === true;
+  const isPackage2Context =
+    oldAcc?.type === "package2" || newAcc?.type === "package2";
+  const isManualPackage2ShelfSync = forceNewPackage2Sync && isPackage2Context;
   const rawOldLines = getDatammoLines(oldAcc, {
     includeAllPackage2Shelves: true,
     forcePackage2Sync: forceOldPackage2Sync,
@@ -325,20 +328,33 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
     forcePackage2Sync: forceNewPackage2Sync,
   });
 
-  const newLineKeys = new Set(newLines.map(getDatammoLineKey));
-  // On manual shelf sync/switch, treat selected new shelf as "must add" to heal missing stock.
-  const shouldForceMustAdd = forceOldPackage2Sync || forceNewPackage2Sync;
-  const oldLines = shouldForceMustAdd
-    ? rawOldLines.filter((line) => !newLineKeys.has(getDatammoLineKey(line)))
-    : rawOldLines;
-  const oldLineKeys = new Set(oldLines.map(getDatammoLineKey));
+  let toDelete = [];
+  let toAdd = [];
 
-  const toDelete = oldLines.filter(
-    (oldLine) => !newLineKeys.has(getDatammoLineKey(oldLine)),
-  );
-  const toAdd = newLines.filter(
-    (newLine) => !oldLineKeys.has(getDatammoLineKey(newLine)),
-  );
+  if (isManualPackage2ShelfSync) {
+    // Shelf switch must be delete-first-add-later to avoid duplicate key on Datammo.
+    const deleteMap = new Map();
+    [...rawOldLines, ...newLines].forEach((line) => {
+      deleteMap.set(getDatammoLineKey(line), line);
+    });
+    toDelete = Array.from(deleteMap.values());
+    toAdd = newLines;
+  } else {
+    const newLineKeys = new Set(newLines.map(getDatammoLineKey));
+    // On forced shelf switch, treat selected new shelf as "must add" to heal missing stock.
+    const shouldForceMustAdd = forceOldPackage2Sync || forceNewPackage2Sync;
+    const oldLines = shouldForceMustAdd
+      ? rawOldLines.filter((line) => !newLineKeys.has(getDatammoLineKey(line)))
+      : rawOldLines;
+    const oldLineKeys = new Set(oldLines.map(getDatammoLineKey));
+
+    toDelete = oldLines.filter(
+      (oldLine) => !newLineKeys.has(getDatammoLineKey(oldLine)),
+    );
+    toAdd = newLines.filter(
+      (newLine) => !oldLineKeys.has(getDatammoLineKey(newLine)),
+    );
+  }
 
   for (const item of toDelete) {
     try {
@@ -355,13 +371,13 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   }
 
   // Ensure Datammo has processed DELETE before ADD when switching shelf.
-  if (forceNewPackage2Sync && toDelete.length > 0 && toAdd.length > 0) {
-    await new Promise((resolve) => setTimeout(resolve, 250));
+  if (isManualPackage2ShelfSync && toDelete.length > 0 && toAdd.length > 0) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   for (const item of toAdd) {
+    const inventoryUrl = getDatammoInventoryUrl(item);
     try {
-      const inventoryUrl = getDatammoInventoryUrl(item);
       await axios.post(
         inventoryUrl,
         { variantId: item.variantId, content: item.content },
@@ -369,7 +385,43 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
       );
       console.log("Datammo ADD synced:", item.content, "=>", inventoryUrl);
     } catch (err) {
-      console.error("Datammo ADD err:", err?.response?.data || err.message);
+      const errData = err?.response?.data;
+      const errText =
+        typeof errData === "string"
+          ? errData
+          : JSON.stringify(errData || err.message || "");
+      const isDuplicateErr = /duplicate/i.test(errText);
+
+      // Retry once for duplicate race condition (delete not yet committed).
+      if (isDuplicateErr && isManualPackage2ShelfSync) {
+        try {
+          await axios.post(
+            `${inventoryUrl}/delete`,
+            { variantId: item.variantId, content: item.content },
+            { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
+          );
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          await axios.post(
+            inventoryUrl,
+            { variantId: item.variantId, content: item.content },
+            { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
+          );
+          console.log(
+            "Datammo ADD retry synced:",
+            item.content,
+            "=>",
+            inventoryUrl,
+          );
+          continue;
+        } catch (retryErr) {
+          console.error(
+            "Datammo ADD retry err:",
+            retryErr?.response?.data || retryErr.message,
+          );
+        }
+      }
+
+      console.error("Datammo ADD err:", errData || err.message);
     }
   }
 };
@@ -488,7 +540,11 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       PACKAGE2_SHELF_NONE,
     );
     const isPackage2ShelfChanged = existingShelf !== updatedShelf;
-    const isManualShelfUpdate = req.body.package2Shelf !== undefined;
+    const targetType = normalizedPayload.type || existingAcc.type;
+    const isPackage2Context =
+      existingAcc.type === "package2" || targetType === "package2";
+    const isManualShelfUpdate =
+      isPackage2Context && req.body.package2Shelf !== undefined;
 
     // Logic đồng bộ thông minh: so sánh 2 object để add/delete kho cho chuẩn
     await syncDatammoUpdate(existingAcc, updated, {
