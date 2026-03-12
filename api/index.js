@@ -213,6 +213,16 @@ const getDatammoPrimaryKey = (line) => {
 const isPackage2DatammoVariant = (variantId) =>
   variantId === DATAMMO_VARIANT_PKG2 ||
   variantId === DATAMMO_VARIANT_PKG2_CHEAP;
+const getDatammoUploadErrors = (responseData) => {
+  const data = responseData?.data || {};
+  const errors = Array.isArray(data.errors) ? data.errors : [];
+  const failedCount = Number(data.failed_count || 0);
+  return failedCount > 0 || errors.length > 0 ? errors : [];
+};
+const isDatammoDuplicateError = (responseData) =>
+  getDatammoUploadErrors(responseData).some((msg) =>
+    /duplicate/i.test(String(msg || "")),
+  );
 
 const normalizePackage2Shelf = (shelf, fallback = PACKAGE2_SHELF_MAIN) => {
   if (VALID_PACKAGE2_SHELVES.includes(shelf)) return shelf;
@@ -412,11 +422,15 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   for (const item of toAdd) {
     const inventoryUrl = getDatammoInventoryUrl(item);
     try {
-      await axios.post(
+      const addResp = await axios.post(
         inventoryUrl,
         { variantId: item.variantId, content: item.content },
         { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
       );
+      const hasDuplicateInBody = isDatammoDuplicateError(addResp?.data);
+      if (hasDuplicateInBody) {
+        throw new Error(`Datammo duplicate: ${JSON.stringify(addResp?.data)}`);
+      }
       console.log("Datammo ADD synced:", item.content, "=>", inventoryUrl);
     } catch (err) {
       const errData = err?.response?.data;
@@ -424,10 +438,11 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
         typeof errData === "string"
           ? errData
           : JSON.stringify(errData || err.message || "");
-      const isDuplicateErr = /duplicate/i.test(errText);
+      const duplicateInResponse = isDatammoDuplicateError(errData);
+      const isDuplicateErr = duplicateInResponse || /duplicate/i.test(errText);
 
       // Retry once for duplicate race condition (delete not yet committed).
-      if (isDuplicateErr && isManualPackage2ShelfSync) {
+      if (isDuplicateErr && isPackage2DatammoVariant(item.variantId)) {
         try {
           const primaryKey = getDatammoPrimaryKey(item);
           const keyOnlyContent = primaryKey ? `${primaryKey}|` : "";
@@ -444,11 +459,17 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
             );
           }
           await new Promise((resolve) => setTimeout(resolve, 500));
-          await axios.post(
+          const retryResp = await axios.post(
             inventoryUrl,
             { variantId: item.variantId, content: item.content },
             { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
           );
+          const retryHasDuplicate = isDatammoDuplicateError(retryResp?.data);
+          if (retryHasDuplicate) {
+            throw new Error(
+              `Datammo duplicate after retry: ${JSON.stringify(retryResp?.data)}`,
+            );
+          }
           console.log(
             "Datammo ADD retry synced:",
             item.content,
