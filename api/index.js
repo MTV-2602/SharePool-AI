@@ -316,11 +316,14 @@ const getDatammoLines = (acc, options = {}) => {
 
 const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   const forceOldPackage2Sync = options.forceOldPackage2Sync === true;
+  const forceNewPackage2Sync = options.forceNewPackage2Sync === true;
   const rawOldLines = getDatammoLines(oldAcc, {
     includeAllPackage2Shelves: true,
     forcePackage2Sync: forceOldPackage2Sync,
   });
-  const newLines = getDatammoLines(newAcc);
+  const newLines = getDatammoLines(newAcc, {
+    forcePackage2Sync: forceNewPackage2Sync,
+  });
 
   const newLineKeys = new Set(newLines.map(getDatammoLineKey));
   // On forced shelf switch, treat selected new shelf as "must add" to heal missing stock.
@@ -479,10 +482,12 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       PACKAGE2_SHELF_NONE,
     );
     const isPackage2ShelfChanged = existingShelf !== updatedShelf;
+    const isManualShelfUpdate = req.body.package2Shelf !== undefined;
 
     // Logic đồng bộ thông minh: so sánh 2 object để add/delete kho cho chuẩn
     await syncDatammoUpdate(existingAcc, updated, {
       forceOldPackage2Sync: isPackage2ShelfChanged,
+      forceNewPackage2Sync: isManualShelfUpdate,
     });
 
     res.json({ message: "Updated", account: updated });
