@@ -679,6 +679,18 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
     }
   }
 };
+let datammoSyncQueue = Promise.resolve();
+const enqueueDatammoSync = (oldAcc, newAcc, options = {}) => {
+  datammoSyncQueue = datammoSyncQueue
+    .then(() => syncDatammoUpdate(oldAcc, newAcc, options))
+    .catch((err) => {
+      console.error(
+        "Datammo queued sync err:",
+        err?.response?.data || err?.message || err,
+      );
+    });
+  return datammoSyncQueue;
+};
 // ---------------------------
 
 app.get("/api/data", verifyToken, async (req, res) => {
@@ -916,13 +928,26 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       existingAcc.type === "package2" || targetType === "package2";
     const isManualShelfUpdate =
       isPackage2Context && req.body.package2Shelf !== undefined;
-
-    // Logic đồng bộ thông minh: so sánh 2 object để add/delete kho cho chuẩn
-    await syncDatammoUpdate(existingAcc, updated, {
-      // Shelf update always runs as delete-other-shelf then add-target-shelf.
+    const requestKeys = Object.keys(req.body || {});
+    const isShelfOnlyUpdate =
+      isManualShelfUpdate &&
+      requestKeys.length > 0 &&
+      requestKeys.every((key) => key === "package2Shelf");
+    const syncOptions = {
       forceOldPackage2Sync: isPackage2ShelfChanged || isManualShelfUpdate,
       forceNewPackage2Sync: isManualShelfUpdate,
-    });
+    };
+
+    if (isShelfOnlyUpdate) {
+      enqueueDatammoSync(
+        JSON.parse(JSON.stringify(existingAcc)),
+        JSON.parse(JSON.stringify(updated)),
+        syncOptions,
+      );
+      return res.json({ message: "Updated", account: updated, syncQueued: true });
+    }
+
+    await syncDatammoUpdate(existingAcc, updated, syncOptions);
 
     res.json({ message: "Updated", account: updated });
   } catch (error) {
@@ -1358,3 +1383,4 @@ app.post("/api/telegram-webhook", telegramWebhook);
 
 // Helper for Vercel
 module.exports = app;
+

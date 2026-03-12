@@ -1809,13 +1809,9 @@ function App() {
                                   onChange={(e) =>
                                     handlePackage2ShelfChange(acc, e.target.value)
                                   }
-                                  disabled={
-                                    loadingStates.changeShelf[acc.id] ||
-                                    loadingStates.changeType[acc.id]
-                                  }
+                                  disabled={loadingStates.changeType[acc.id]}
                                   className={`
                                     w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center
-                                    ${loadingStates.changeShelf[acc.id] ? "opacity-60 cursor-wait" : ""}
                                     ${normalizePackage2Shelf(acc.package2Shelf) === "none"
                                       ? "bg-slate-800 text-slate-300 border-slate-600"
                                       : "bg-teal-900/40 text-teal-300 border-teal-700/60"}
@@ -1826,11 +1822,8 @@ function App() {
                                   <option value="none">3 - Không lên kệ</option>
                                 </select>
                                 {loadingStates.changeShelf[acc.id] && (
-                                  <div className="text-center mt-1">
-                                    <Loader2
-                                      size={13}
-                                      className="animate-spin inline text-teal-300"
-                                    />
+                                  <div className="text-center mt-1 text-[10px] text-teal-300">
+                                    đang đồng bộ kệ...
                                   </div>
                                 )}
                               </div>
