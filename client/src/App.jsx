@@ -43,6 +43,18 @@ const toNonAccentVietnamese = (str) => {
   return str;
 };
 
+const normalizePackage2Shelf = (value) => {
+  if (value === "cheap" || value === "none" || value === "main") return value;
+  return "main";
+};
+
+const getPackage2ShelfLabel = (value) => {
+  const shelf = normalizePackage2Shelf(value);
+  if (shelf === "cheap") return "Kệ rẻ";
+  if (shelf === "none") return "Không lên kệ";
+  return "Kệ tổng";
+};
+
 function App() {
   // LOGIN STATE
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -96,6 +108,7 @@ function App() {
     editAccount: false,
     deleteAccount: false,
     changeType: {},
+    changeShelf: {},
   });
 
   // BroadcastChannel for real-time sync between tabs
@@ -157,6 +170,7 @@ function App() {
     password: "",
     link: "",
     type: "unassigned",
+    package2Shelf: "none",
     note: "",
   });
 
@@ -448,7 +462,15 @@ function App() {
       });
       if (res.data && res.data.chatgpt) {
         const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
-        const sortedGPT = res.data.chatgpt.sort((a, b) => {
+        const sortedGPT = [...res.data.chatgpt]
+          .map((acc) => ({
+            ...acc,
+            package2Shelf:
+              acc.type === "package2"
+                ? normalizePackage2Shelf(acc.package2Shelf)
+                : "none",
+          }))
+          .sort((a, b) => {
           const orderA = typeOrder[a.type] ?? 99;
           const orderB = typeOrder[b.type] ?? 99;
           if (orderA !== orderB) return orderA - orderB;
@@ -483,6 +505,7 @@ function App() {
         password: "",
         link: "",
         type: "unassigned",
+        package2Shelf: "none",
         note: "",
       });
       fetchData();
@@ -879,7 +902,16 @@ function App() {
       changeType: { ...prev.changeType, [acc.id]: true },
     }));
     try {
-      await axios.put(`/api/chatgpt/${acc.id}`, { type: newType });
+      const nextShelf =
+        newType === "package2"
+          ? normalizePackage2Shelf(
+            acc.package2Shelf === "none" ? "main" : acc.package2Shelf,
+          )
+          : "none";
+      await axios.put(`/api/chatgpt/${acc.id}`, {
+        type: newType,
+        package2Shelf: nextShelf,
+      });
       fetchData();
       broadcastDataChange();
     } catch (error) {
@@ -892,6 +924,29 @@ function App() {
       setLoadingStates((prev) => ({
         ...prev,
         changeType: { ...prev.changeType, [acc.id]: false },
+      }));
+    }
+  };
+
+  const handlePackage2ShelfChange = async (acc, shelfValue) => {
+    if (acc.type !== "package2") return;
+    setLoadingStates((prev) => ({
+      ...prev,
+      changeShelf: { ...prev.changeShelf, [acc.id]: true },
+    }));
+    try {
+      await axios.put(`/api/chatgpt/${acc.id}`, {
+        package2Shelf: normalizePackage2Shelf(shelfValue),
+      });
+      fetchData();
+      broadcastDataChange();
+    } catch (error) {
+      const msg = error?.response?.data?.error || "Lỗi đổi kệ gói 2";
+      showAlert("Lỗi", msg, "error");
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        changeShelf: { ...prev.changeShelf, [acc.id]: false },
       }));
     }
   };
@@ -1323,6 +1378,7 @@ function App() {
               // Case D: Gói 2 còn <=25 ngày và không có khách → cảnh báo gỡ khỏi Datammo
               accounts.forEach((acc) => {
                 if (acc.type !== "package2") return;
+                if (normalizePackage2Shelf(acc.package2Shelf) === "none") return;
                 if (acc.users && acc.users.length > 0) return; // đang có khách, bỏ qua
                 const daysLeft = acc.expiredAt
                   ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
@@ -1719,6 +1775,39 @@ function App() {
                                 🔒 Gói 2: Linh hoạt
                               </option>
                             </select>
+                            {acc.type === "package2" && (
+                              <div className="mt-2">
+                                <select
+                                  value={normalizePackage2Shelf(acc.package2Shelf)}
+                                  onChange={(e) =>
+                                    handlePackage2ShelfChange(acc, e.target.value)
+                                  }
+                                  disabled={
+                                    loadingStates.changeShelf[acc.id] ||
+                                    loadingStates.changeType[acc.id]
+                                  }
+                                  className={`
+                                    w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center
+                                    ${loadingStates.changeShelf[acc.id] ? "opacity-60 cursor-wait" : ""}
+                                    ${normalizePackage2Shelf(acc.package2Shelf) === "none"
+                                      ? "bg-slate-800 text-slate-300 border-slate-600"
+                                      : "bg-teal-900/40 text-teal-300 border-teal-700/60"}
+                                  `}
+                                >
+                                  <option value="main">1 - Kệ tổng</option>
+                                  <option value="cheap">2 - Kệ rẻ</option>
+                                  <option value="none">3 - Không lên kệ</option>
+                                </select>
+                                {loadingStates.changeShelf[acc.id] && (
+                                  <div className="text-center mt-1">
+                                    <Loader2
+                                      size={13}
+                                      className="animate-spin inline text-teal-300"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             {loadingStates.changeType[acc.id] && (
                               <div className="text-center mt-1">
                                 <Loader2
@@ -1985,6 +2074,9 @@ function App() {
                             ) : acc.type === "package2" ? (
                               (() => {
                                 const u = acc.users?.[0];
+                                const package2Shelf = normalizePackage2Shelf(acc.package2Shelf);
+                                const package2ShelfLabel = getPackage2ShelfLabel(package2Shelf);
+                                const isOnDatammoShelf = package2Shelf !== "none";
                                 const daysRemaining = u ? getDaysRemaining(u) : null;
                                 const isExpired = daysRemaining !== null && daysRemaining <= 0;
                                 const isNearExpiry =
@@ -2109,10 +2201,21 @@ function App() {
                                       </div>
                                     ) : (
                                       <div className="flex flex-col gap-2">
-                                        <div className="text-center w-full px-2 py-1 bg-teal-900/30 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex flex-col gap-0.5 shadow-sm">
-                                          <span className="flex items-center justify-center gap-1"><Globe size={10} /> Đang lên kệ Datammo 🛒</span>
+                                        <div
+                                          className={`text-center w-full px-2 py-1 font-bold rounded text-[10px] uppercase border flex flex-col gap-0.5 shadow-sm ${isOnDatammoShelf
+                                            ? "bg-teal-900/30 text-teal-400 border-teal-800/50"
+                                            : "bg-slate-800 text-slate-300 border-slate-700"
+                                            }`}
+                                        >
+                                          <span className="flex items-center justify-center gap-1">
+                                            <Globe size={10} />
+                                            {isOnDatammoShelf
+                                              ? `Đang lên kệ Datammo (${package2ShelfLabel})`
+                                              : "Không lên kệ Datammo"}
+                                          </span>
                                         </div>
                                         <div className="flex gap-1">
+                                          {isOnDatammoShelf && (
                                           <button
                                             type="button"
                                             onClick={() => openAddUserModal(acc.id, "[Datammo] Khách mới")}
@@ -2121,10 +2224,11 @@ function App() {
                                           >
                                             + Datammo
                                           </button>
+                                          )}
                                           <button
                                             type="button"
                                             onClick={() => openAddUserModal(acc.id)}
-                                            className="w-1/2 text-center text-xs px-2 py-1.5 bg-slate-700 hover:bg-slate-600 rounded font-bold text-slate-300 transition-colors"
+                                            className={`${isOnDatammoShelf ? "w-1/2" : "w-full"} text-center text-xs px-2 py-1.5 bg-slate-700 hover:bg-slate-600 rounded font-bold text-slate-300 transition-colors`}
                                             title="Gán Khách ngoài bình thường"
                                           >
                                             + Khách Thường
@@ -2146,7 +2250,13 @@ function App() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setEditingAcc(acc);
+                                  setEditingAcc({
+                                    ...acc,
+                                    package2Shelf:
+                                      acc.type === "package2"
+                                        ? normalizePackage2Shelf(acc.package2Shelf)
+                                        : "none",
+                                  });
                                   setShowEditModal(true);
                                 }}
                                 className="bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white p-2 rounded transition-colors"
@@ -2890,17 +3000,66 @@ function App() {
               <select
                 className="form-input"
                 value={showAddModal ? newAcc.type : editingAcc.type}
-                onChange={(e) =>
-                  showAddModal
-                    ? setNewAcc({ ...newAcc, type: e.target.value })
-                    : setEditingAcc({ ...editingAcc, type: e.target.value })
-                }
+                onChange={(e) => {
+                  const nextType = e.target.value;
+                  if (showAddModal) {
+                    setNewAcc({
+                      ...newAcc,
+                      type: nextType,
+                      package2Shelf:
+                        nextType === "package2"
+                          ? normalizePackage2Shelf(
+                            newAcc.package2Shelf === "none"
+                              ? "main"
+                              : newAcc.package2Shelf,
+                          )
+                          : "none",
+                    });
+                  } else {
+                    setEditingAcc({
+                      ...editingAcc,
+                      type: nextType,
+                      package2Shelf:
+                        nextType === "package2"
+                          ? normalizePackage2Shelf(
+                            editingAcc.package2Shelf === "none"
+                              ? "main"
+                              : editingAcc.package2Shelf,
+                          )
+                          : "none",
+                    });
+                  }
+                }}
               >
                 <option value="unassigned">❓ Chưa xác định</option>
                 <option value="package1">👥 Gói 1: Chia sẻ</option>
                 <option value="package2">🔒 Gói 2: Linh hoạt</option>
               </select>
             </div>
+            {(showAddModal ? newAcc.type : editingAcc.type) === "package2" && (
+              <div className="form-group">
+                <label>Kệ Datammo cho Gói 2</label>
+                <select
+                  className="form-input"
+                  value={normalizePackage2Shelf(showAddModal ? newAcc.package2Shelf : editingAcc.package2Shelf)}
+                  onChange={(e) =>
+                    showAddModal
+                      ? setNewAcc({
+                        ...newAcc,
+                        package2Shelf: normalizePackage2Shelf(e.target.value),
+                      })
+                      : setEditingAcc({
+                        ...editingAcc,
+                        package2Shelf: normalizePackage2Shelf(e.target.value),
+                      })
+                  }
+                >
+                  <option value="main">1 - Kệ tổng</option>
+                  <option value="cheap">2 - Kệ rẻ</option>
+                  <option value="none">3 - Không lên kệ</option>
+                </select>
+              </div>
+            )}
             <div className="form-group">
               <label>Link Mail</label>
               <input

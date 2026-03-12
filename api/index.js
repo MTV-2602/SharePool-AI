@@ -34,6 +34,7 @@ const accountSchema = new mongoose.Schema({
   username: { type: String, required: true },
   password: { type: String, required: true },
   type: { type: String, default: "unassigned" },
+  package2Shelf: { type: String, default: "none" },
   users: [{ name: String, joinedAt: String, expiredAt: String }],
   note: String,
   link: String,
@@ -174,14 +175,87 @@ app.get("/api/test", (req, res) => {
 
 // --- DATAMMO INTEGRATION ---
 const DATAMMO_URL = "https://datammo.com/api/v1/products/748e605c-d400-4c44-a958-0525494c700b/inventory";
+const DATAMMO_CHEAP_URL = "https://datammo.com/api/v1/products/746e1bbd-b625-41c5-8e62-2ef160bc0cf8/inventory";
 const DATAMMO_TOKEN = "sk_1773222055913_er0acsx8dyj";
 const DATAMMO_VARIANT_PKG1 = "3dbd0d98-5ed5-4044-9557-8d8a902da45f";
 const DATAMMO_VARIANT_PKG2 = "98ed02c7-d28b-4287-945e-bdfb24a09397";
+const DATAMMO_VARIANT_PKG2_CHEAP = "b5449604-4fce-4edf-89d3-d4400d0f34a6";
 const DATAMMO_VARIANT_PKG3 = "5e3567bc-ada4-471d-b93b-725a0735b677";
 
-const getDatammoLines = (acc) => {
+const PACKAGE2_SHELF_MAIN = "main";
+const PACKAGE2_SHELF_CHEAP = "cheap";
+const PACKAGE2_SHELF_NONE = "none";
+const VALID_PACKAGE2_SHELVES = [
+  PACKAGE2_SHELF_MAIN,
+  PACKAGE2_SHELF_CHEAP,
+  PACKAGE2_SHELF_NONE,
+];
+
+const DATAMMO_PKG2_SHELVES = {
+  [PACKAGE2_SHELF_MAIN]: {
+    inventoryUrl: DATAMMO_URL,
+    variantId: DATAMMO_VARIANT_PKG2,
+  },
+  [PACKAGE2_SHELF_CHEAP]: {
+    inventoryUrl: DATAMMO_CHEAP_URL,
+    variantId: DATAMMO_VARIANT_PKG2_CHEAP,
+  },
+};
+
+const getDatammoInventoryUrl = (line) => line?.inventoryUrl || DATAMMO_URL;
+const getDatammoLineKey = (line) =>
+  `${getDatammoInventoryUrl(line)}||${line.variantId}||${line.content}`;
+
+const normalizePackage2Shelf = (shelf, fallback = PACKAGE2_SHELF_MAIN) => {
+  if (VALID_PACKAGE2_SHELVES.includes(shelf)) return shelf;
+  return fallback;
+};
+
+const getPackage2ShelfTargets = (acc, includeAllPackage2Shelves = false) => {
+  const allShelves = Object.values(DATAMMO_PKG2_SHELVES).filter(
+    (item) => item?.inventoryUrl && item?.variantId,
+  );
+  if (includeAllPackage2Shelves) return allShelves;
+
+  const selectedShelf = normalizePackage2Shelf(
+    acc?.package2Shelf,
+    PACKAGE2_SHELF_MAIN,
+  );
+  if (selectedShelf === PACKAGE2_SHELF_NONE) return [];
+
+  const target = DATAMMO_PKG2_SHELVES[selectedShelf];
+  if (!target?.inventoryUrl || !target?.variantId) return [];
+  return [target];
+};
+
+const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
+  const normalized = { ...payload };
+  const targetType = normalized.type || existingAcc?.type || "unassigned";
+
+  if (targetType === "package2") {
+    const fallbackShelf =
+      existingAcc?.type === "package2"
+        ? normalizePackage2Shelf(
+            existingAcc.package2Shelf,
+            PACKAGE2_SHELF_MAIN,
+          )
+        : PACKAGE2_SHELF_MAIN;
+    normalized.package2Shelf = normalizePackage2Shelf(
+      normalized.package2Shelf,
+      fallbackShelf,
+    );
+  } else {
+    normalized.package2Shelf = PACKAGE2_SHELF_NONE;
+  }
+
+  return normalized;
+};
+
+const getDatammoLines = (acc, options = {}) => {
   if (!acc) return [];
   const lines = [];
+  const includeAllPackage2Shelves = options.includeAllPackage2Shelves === true;
+  const forcePackage2Sync = options.forcePackage2Sync === true;
 
   // 1) Logic cho GÓI 3 (Team Account - Business Slots)
   if (acc.slots !== undefined) {
@@ -211,14 +285,24 @@ const getDatammoLines = (acc) => {
   };
 
   if (acc.type === "package2") {
-    if (!acc.users || acc.users.length === 0) {
+    const daysLeft = acc.expiredAt
+      ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
+      : 999;
+    const canSellPackage2 =
+      (!acc.users || acc.users.length === 0) && daysLeft > 25;
+    if (forcePackage2Sync || canSellPackage2) {
       // Chỉ đẩy lên Datammo nếu còn HƠN 25 ngày (tránh bán acc sắp hết hạn)
-      const daysLeft = acc.expiredAt
-        ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
-        : 999;
-      if (daysLeft > 25) {
-        lines.push({ variantId: DATAMMO_VARIANT_PKG2, content: formatContent("") });
-      }
+      const targetShelves = getPackage2ShelfTargets(
+        acc,
+        includeAllPackage2Shelves,
+      );
+      targetShelves.forEach((targetShelf) => {
+        lines.push({
+          inventoryUrl: targetShelf.inventoryUrl,
+          variantId: targetShelf.variantId,
+          content: formatContent(""),
+        });
+      });
     }
   } else if (acc.type === "package1") {
     const userCount = acc.users ? acc.users.length : 0;
@@ -230,17 +314,33 @@ const getDatammoLines = (acc) => {
   return lines;
 };
 
-const syncDatammoUpdate = async (oldAcc, newAcc) => {
-  const oldLines = getDatammoLines(oldAcc);
+const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
+  const forceOldPackage2Sync = options.forceOldPackage2Sync === true;
+  const oldLines = getDatammoLines(oldAcc, {
+    includeAllPackage2Shelves: true,
+    forcePackage2Sync: forceOldPackage2Sync,
+  });
   const newLines = getDatammoLines(newAcc);
 
-  const toDelete = oldLines.filter(oldL => !newLines.find(nL => nL.variantId === oldL.variantId && nL.content === oldL.content));
-  const toAdd = newLines.filter(nL => !oldLines.find(oldL => oldL.variantId === nL.variantId && oldL.content === nL.content));
+  const newLineKeys = new Set(newLines.map(getDatammoLineKey));
+  const oldLineKeys = new Set(oldLines.map(getDatammoLineKey));
+
+  const toDelete = oldLines.filter(
+    (oldLine) => !newLineKeys.has(getDatammoLineKey(oldLine)),
+  );
+  const toAdd = newLines.filter(
+    (newLine) => !oldLineKeys.has(getDatammoLineKey(newLine)),
+  );
 
   for (const item of toDelete) {
     try {
-      await axios.post(`${DATAMMO_URL}/delete`, item, { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } });
-      console.log("Datammo DELETE synced:", item.content);
+      const inventoryUrl = getDatammoInventoryUrl(item);
+      await axios.post(
+        `${inventoryUrl}/delete`,
+        { variantId: item.variantId, content: item.content },
+        { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
+      );
+      console.log("Datammo DELETE synced:", item.content, "=>", inventoryUrl);
     } catch (err) {
       console.error("Datammo DELETE err:", err?.response?.data || err.message);
     }
@@ -248,8 +348,13 @@ const syncDatammoUpdate = async (oldAcc, newAcc) => {
 
   for (const item of toAdd) {
     try {
-      await axios.post(DATAMMO_URL, item, { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } });
-      console.log("Datammo ADD synced:", item.content);
+      const inventoryUrl = getDatammoInventoryUrl(item);
+      await axios.post(
+        inventoryUrl,
+        { variantId: item.variantId, content: item.content },
+        { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
+      );
+      console.log("Datammo ADD synced:", item.content, "=>", inventoryUrl);
     } catch (err) {
       console.error("Datammo ADD err:", err?.response?.data || err.message);
     }
@@ -288,10 +393,11 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
     const now = new Date();
     const expiredDate = new Date(now);
     expiredDate.setDate(expiredDate.getDate() + 30); // Add 30 days
+    const normalizedBody = normalizeChatgptPayload(req.body);
 
     const newAcc = {
       id: Date.now().toString(),
-      ...req.body,
+      ...normalizedBody,
       createdAt: now.toISOString(),
       expiredAt: expiredDate.toISOString(),
     };
@@ -310,10 +416,11 @@ app.post("/api/chatgpt-public", async (req, res) => {
     const now = new Date();
     const expiredDate = new Date(now);
     expiredDate.setDate(expiredDate.getDate() + 30); // Add 30 days
+    const normalizedBody = normalizeChatgptPayload(req.body);
 
     const newAcc = {
       id: Date.now().toString(),
-      ...req.body,
+      ...normalizedBody,
       createdAt: now.toISOString(),
       expiredAt: expiredDate.toISOString(),
     };
@@ -336,15 +443,17 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     }
 
     // Validate package2: chỉ được tối đa 1 khách hàng
-    if (req.body.users !== undefined) {
-      const targetType = req.body.type || existingAcc.type;
-      if (targetType === "package2" && req.body.users.length > 1) {
+    const normalizedPayload = normalizeChatgptPayload(req.body, existingAcc);
+
+    if (normalizedPayload.users !== undefined) {
+      const targetType = normalizedPayload.type || existingAcc.type;
+      if (targetType === "package2" && normalizedPayload.users.length > 1) {
         return res.status(400).json({ error: "Gói Private (Gói 2) chỉ được tối đa 1 khách hàng" });
       }
     }
 
     // ===== BACKEND GUARD: Chặn đổi gói khi đang có khách =====
-    if (req.body.type && req.body.type !== existingAcc.type) {
+    if (normalizedPayload.type && normalizedPayload.type !== existingAcc.type) {
       const currentUsers = existingAcc.users || [];
       if (currentUsers.length > 0) {
         return res.status(400).json({
@@ -354,12 +463,23 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     }
     // ==========================================================
 
-    const updated = await Account.findOneAndUpdate({ id: id }, req.body, {
+    const updated = await Account.findOneAndUpdate({ id: id }, normalizedPayload, {
       new: true,
     });
+    const existingShelf = normalizePackage2Shelf(
+      existingAcc.package2Shelf,
+      PACKAGE2_SHELF_NONE,
+    );
+    const updatedShelf = normalizePackage2Shelf(
+      normalizedPayload.package2Shelf,
+      PACKAGE2_SHELF_NONE,
+    );
+    const isPackage2ShelfChanged = existingShelf !== updatedShelf;
 
     // Logic đồng bộ thông minh: so sánh 2 object để add/delete kho cho chuẩn
-    syncDatammoUpdate(existingAcc, updated);
+    syncDatammoUpdate(existingAcc, updated, {
+      forceOldPackage2Sync: isPackage2ShelfChanged,
+    });
 
     res.json({ message: "Updated", account: updated });
   } catch (error) {
