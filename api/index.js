@@ -37,6 +37,7 @@ const accountSchema = new mongoose.Schema({
   type: { type: String, default: "unassigned" },
   package2Shelf: { type: String, default: "none" },
   package2DatammoKey: { type: String, default: "" },
+  package2DatammoKeysUsed: [{ type: String }],
   users: [{ name: String, joinedAt: String, expiredAt: String }],
   note: String,
   link: String,
@@ -244,6 +245,21 @@ const sanitizeDatammoKey = (value) =>
     .trim()
     .replace(/[^a-zA-Z0-9_-]/g, "")
     .slice(0, 64);
+const normalizeDatammoKeyList = (keys) => {
+  const input = Array.isArray(keys) ? keys : [];
+  const result = [];
+  const seen = new Set();
+  input.forEach((item) => {
+    const key = sanitizeDatammoKey(item);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    result.push(key);
+  });
+  // Keep history bounded.
+  return result.slice(-200);
+};
+const mergeDatammoKeyHistory = (keys, nextKey) =>
+  normalizeDatammoKeyList([...(Array.isArray(keys) ? keys : []), nextKey]);
 const buildBasePackage2DatammoKey = (accountId = "") => {
   const safeAccountId = String(accountId || "")
     .replace(/[^a-zA-Z0-9]/g, "")
@@ -327,6 +343,41 @@ const replaceDatammoPrimaryKey = (content, newKey) => {
   parts[0] = newKey;
   return parts.join("|");
 };
+const getPackage2KnownKeys = (acc) =>
+  normalizeDatammoKeyList([
+    ...(Array.isArray(acc?.package2DatammoKeysUsed)
+      ? acc.package2DatammoKeysUsed
+      : []),
+    acc?.package2DatammoKey,
+  ]);
+const cleanupPackage2KeysOnDatammo = async (accountId) => {
+  if (!accountId) return;
+  const latestAcc = await Account.findOne({ id: accountId });
+  if (!latestAcc || latestAcc.type !== "package2") return;
+
+  const knownKeys = getPackage2KnownKeys(latestAcc);
+  if (knownKeys.length === 0) return;
+
+  const targets = Object.values(DATAMMO_PKG2_SHELVES).filter(
+    (item) => item?.inventoryUrl && item?.variantId,
+  );
+  for (const target of targets) {
+    for (const key of knownKeys) {
+      try {
+        await axios.post(
+          `${target.inventoryUrl}/delete`,
+          { variantId: target.variantId, content: `${key}|` },
+          { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
+        );
+      } catch (err) {
+        console.error(
+          "Datammo cleanup by key err:",
+          err?.response?.data || err?.message || err,
+        );
+      }
+    }
+  }
+};
 const rotatePackage2KeyForPendingAdds = async (newAcc, toAdd = []) => {
   if (!newAcc || newAcc.type !== "package2" || !newAcc.id) return;
   const hasPackage2Add = toAdd.some((item) =>
@@ -340,9 +391,16 @@ const rotatePackage2KeyForPendingAdds = async (newAcc, toAdd = []) => {
   );
   await Account.updateOne(
     { id: newAcc.id },
-    { $set: { package2DatammoKey: rotatedKey } },
+    {
+      $set: { package2DatammoKey: rotatedKey },
+      $addToSet: { package2DatammoKeysUsed: rotatedKey },
+    },
   );
   newAcc.package2DatammoKey = rotatedKey;
+  newAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
+    newAcc.package2DatammoKeysUsed,
+    rotatedKey,
+  );
 
   toAdd.forEach((item) => {
     if (!isPackage2DatammoVariant(item?.variantId)) return;
@@ -517,9 +575,18 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
         : "";
     const requestedKey = sanitizeDatammoKey(normalized.package2DatammoKey);
     normalized.package2DatammoKey = requestedKey || fallbackKey || "";
+    const fallbackKeyHistory =
+      existingAcc?.type === "package2"
+        ? normalizeDatammoKeyList(existingAcc.package2DatammoKeysUsed)
+        : [];
+    normalized.package2DatammoKeysUsed = mergeDatammoKeyHistory(
+      fallbackKeyHistory,
+      normalized.package2DatammoKey,
+    );
   } else {
     normalized.package2Shelf = PACKAGE2_SHELF_NONE;
     normalized.package2DatammoKey = "";
+    normalized.package2DatammoKeysUsed = [];
   }
 
   return normalized;
@@ -654,6 +721,13 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
 
   // Hard guarantee against duplicate key reuse: rotate package2 key before every ADD batch.
   await rotatePackage2KeyForPendingAdds(newAcc, toAdd);
+  if (
+    newAcc?.type === "package2" &&
+    newAcc?.id &&
+    toAdd.some((item) => isPackage2DatammoVariant(item?.variantId))
+  ) {
+    await cleanupPackage2KeysOnDatammo(newAcc.id);
+  }
 
   for (const item of toAdd) {
     const inventoryUrl = getDatammoInventoryUrl(item);
@@ -740,9 +814,16 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
               );
               await Account.updateOne(
                 { id: newAcc.id },
-                { $set: { package2DatammoKey: rotatedKey } },
+                {
+                  $set: { package2DatammoKey: rotatedKey },
+                  $addToSet: { package2DatammoKeysUsed: rotatedKey },
+                },
               );
               newAcc.package2DatammoKey = rotatedKey;
+              newAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
+                newAcc.package2DatammoKeysUsed,
+                rotatedKey,
+              );
               const rotatedResp = await axios.post(
                 inventoryUrl,
                 { variantId: item.variantId, content: rotatedContent },
@@ -926,6 +1007,12 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
         newAcc.package2DatammoKey,
         "create-account",
       );
+      newAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
+        newAcc.package2DatammoKeysUsed,
+        newAcc.package2DatammoKey,
+      );
+    } else {
+      newAcc.package2DatammoKeysUsed = [];
     }
     await Account.create(newAcc);
     // Tự động đẩy lên Datammo
@@ -956,6 +1043,12 @@ app.post("/api/chatgpt-public", async (req, res) => {
         newAcc.package2DatammoKey,
         "create-public-account",
       );
+      newAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
+        newAcc.package2DatammoKeysUsed,
+        newAcc.package2DatammoKey,
+      );
+    } else {
+      newAcc.package2DatammoKeysUsed = [];
     }
     await Account.create(newAcc);
     await syncDatammoUpdate(null, newAcc);
@@ -1018,8 +1111,14 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
           preferredKey,
           becamePackage2Available ? "recycle-after-sold" : "update-account",
         );
+      normalizedPayload.package2DatammoKeysUsed = mergeDatammoKeyHistory(
+        normalizedPayload.package2DatammoKeysUsed ||
+          existingAcc.package2DatammoKeysUsed,
+        normalizedPayload.package2DatammoKey,
+      );
     } else {
       normalizedPayload.package2DatammoKey = "";
+      normalizedPayload.package2DatammoKeysUsed = [];
     }
     const updated = await Account.findOneAndUpdate({ id: id }, normalizedPayload, {
       new: true,
@@ -1222,12 +1321,20 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
         toAcc.package2DatammoKey,
         "move-user-destination",
       );
+      toAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
+        toAcc.package2DatammoKeysUsed,
+        toAcc.package2DatammoKey,
+      );
     }
     if (fromAcc.type === "package2" && (!fromAcc.users || fromAcc.users.length === 0)) {
       fromAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
         fromAcc.id,
         "",
         "move-user-source-empty",
+      );
+      fromAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
+        fromAcc.package2DatammoKeysUsed,
+        fromAcc.package2DatammoKey,
       );
     }
 
