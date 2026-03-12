@@ -205,6 +205,14 @@ const DATAMMO_PKG2_SHELVES = {
 const getDatammoInventoryUrl = (line) => line?.inventoryUrl || DATAMMO_URL;
 const getDatammoLineKey = (line) =>
   `${getDatammoInventoryUrl(line)}||${line.variantId}||${line.content}`;
+const getDatammoPrimaryKey = (line) => {
+  const content = String(line?.content || "");
+  const key = content.split("|")[0]?.trim();
+  return key || "";
+};
+const isPackage2DatammoVariant = (variantId) =>
+  variantId === DATAMMO_VARIANT_PKG2 ||
+  variantId === DATAMMO_VARIANT_PKG2_CHEAP;
 
 const normalizePackage2Shelf = (shelf, fallback = PACKAGE2_SHELF_MAIN) => {
   if (VALID_PACKAGE2_SHELVES.includes(shelf)) return shelf;
@@ -357,14 +365,40 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   }
 
   for (const item of toDelete) {
+    const inventoryUrl = getDatammoInventoryUrl(item);
     try {
-      const inventoryUrl = getDatammoInventoryUrl(item);
       await axios.post(
         `${inventoryUrl}/delete`,
         { variantId: item.variantId, content: item.content },
         { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
       );
       console.log("Datammo DELETE synced:", item.content, "=>", inventoryUrl);
+
+      // Package2 fallback cleanup by key only to clear stale lines with old value/link.
+      if (isManualPackage2ShelfSync && isPackage2DatammoVariant(item.variantId)) {
+        const primaryKey = getDatammoPrimaryKey(item);
+        const keyOnlyContent = primaryKey ? `${primaryKey}|` : "";
+        if (keyOnlyContent && keyOnlyContent !== item.content) {
+          try {
+            await axios.post(
+              `${inventoryUrl}/delete`,
+              { variantId: item.variantId, content: keyOnlyContent },
+              { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
+            );
+            console.log(
+              "Datammo DELETE by key synced:",
+              keyOnlyContent,
+              "=>",
+              inventoryUrl,
+            );
+          } catch (keyDeleteErr) {
+            console.error(
+              "Datammo DELETE by key err:",
+              keyDeleteErr?.response?.data || keyDeleteErr.message,
+            );
+          }
+        }
+      }
     } catch (err) {
       console.error("Datammo DELETE err:", err?.response?.data || err.message);
     }
@@ -395,11 +429,20 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
       // Retry once for duplicate race condition (delete not yet committed).
       if (isDuplicateErr && isManualPackage2ShelfSync) {
         try {
+          const primaryKey = getDatammoPrimaryKey(item);
+          const keyOnlyContent = primaryKey ? `${primaryKey}|` : "";
           await axios.post(
             `${inventoryUrl}/delete`,
             { variantId: item.variantId, content: item.content },
             { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
           );
+          if (keyOnlyContent && keyOnlyContent !== item.content) {
+            await axios.post(
+              `${inventoryUrl}/delete`,
+              { variantId: item.variantId, content: keyOnlyContent },
+              { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
+            );
+          }
           await new Promise((resolve) => setTimeout(resolve, 500));
           await axios.post(
             inventoryUrl,
