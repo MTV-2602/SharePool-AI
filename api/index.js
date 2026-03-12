@@ -316,13 +316,17 @@ const getDatammoLines = (acc, options = {}) => {
 
 const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   const forceOldPackage2Sync = options.forceOldPackage2Sync === true;
-  const oldLines = getDatammoLines(oldAcc, {
+  const rawOldLines = getDatammoLines(oldAcc, {
     includeAllPackage2Shelves: true,
     forcePackage2Sync: forceOldPackage2Sync,
   });
   const newLines = getDatammoLines(newAcc);
 
   const newLineKeys = new Set(newLines.map(getDatammoLineKey));
+  // On forced shelf switch, treat selected new shelf as "must add" to heal missing stock.
+  const oldLines = forceOldPackage2Sync
+    ? rawOldLines.filter((line) => !newLineKeys.has(getDatammoLineKey(line)))
+    : rawOldLines;
   const oldLineKeys = new Set(oldLines.map(getDatammoLineKey));
 
   const toDelete = oldLines.filter(
@@ -403,7 +407,7 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
     };
     await Account.create(newAcc);
     // Tự động đẩy lên Datammo
-    syncDatammoUpdate(null, newAcc);
+    await syncDatammoUpdate(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -425,7 +429,7 @@ app.post("/api/chatgpt-public", async (req, res) => {
       expiredAt: expiredDate.toISOString(),
     };
     await Account.create(newAcc);
-    syncDatammoUpdate(null, newAcc);
+    await syncDatammoUpdate(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -477,7 +481,7 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     const isPackage2ShelfChanged = existingShelf !== updatedShelf;
 
     // Logic đồng bộ thông minh: so sánh 2 object để add/delete kho cho chuẩn
-    syncDatammoUpdate(existingAcc, updated, {
+    await syncDatammoUpdate(existingAcc, updated, {
       forceOldPackage2Sync: isPackage2ShelfChanged,
     });
 
@@ -493,7 +497,7 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
     const { id } = req.params;
     const existing = await Account.findOneAndDelete({ id: id });
     if (existing) {
-      syncDatammoUpdate(existing, null);
+      await syncDatammoUpdate(existing, null);
     }
     res.json({ message: "Deleted" });
   } catch (error) {
@@ -562,8 +566,10 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
 
     const updatedFrom = await TeamAccount.findOne({ id: fromAccId });
     const updatedTo = await TeamAccount.findOne({ id: toAccId });
-    syncDatammoUpdate(fromAcc, updatedFrom);
-    syncDatammoUpdate(toAcc, updatedTo);
+    await Promise.all([
+      syncDatammoUpdate(fromAcc, updatedFrom),
+      syncDatammoUpdate(toAcc, updatedTo),
+    ]);
 
     res.json({ message: "Team Slot moved successfully", from: updatedFrom, to: updatedTo });
   } catch (error) {
@@ -640,8 +646,10 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     await fromAcc.save();
 
     // Tự động tính toán DataMMO Add/Delete dựa trên biến động User Array
-    syncDatammoUpdate(originalFromAcc, fromAcc);
-    syncDatammoUpdate(originalToAcc, toAcc);
+    await Promise.all([
+      syncDatammoUpdate(originalFromAcc, fromAcc),
+      syncDatammoUpdate(originalToAcc, toAcc),
+    ]);
 
     res.json({ message: "Moved user successfully", from: fromAcc, to: toAcc });
   } catch (error) {
@@ -779,7 +787,7 @@ app.post("/api/team", verifyToken, async (req, res) => {
       expiredAt: req.body.expiredAt || expiredDate.toISOString(),
     };
     await TeamAccount.create(newAcc);
-    syncDatammoUpdate(null, newAcc);
+    await syncDatammoUpdate(null, newAcc);
     res.json({ message: "Added", account: newAcc });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -789,7 +797,7 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
   try {
     const existing = await TeamAccount.findOne({ id: req.params.id });
     const updated = await TeamAccount.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
-    syncDatammoUpdate(existing, updated);
+    await syncDatammoUpdate(existing, updated);
     res.json({ message: "Updated", account: updated });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -798,7 +806,7 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
 app.delete("/api/team/:id", verifyToken, async (req, res) => {
   try {
     const existing = await TeamAccount.findOneAndDelete({ id: req.params.id });
-    if (existing) syncDatammoUpdate(existing, null);
+    if (existing) await syncDatammoUpdate(existing, null);
     res.json({ message: "Deleted" });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
