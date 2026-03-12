@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const axios = require("axios");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 require("dotenv").config();
 const mongoose = require("mongoose");
 
@@ -35,6 +36,7 @@ const accountSchema = new mongoose.Schema({
   password: { type: String, required: true },
   type: { type: String, default: "unassigned" },
   package2Shelf: { type: String, default: "none" },
+  package2DatammoKey: { type: String, default: "" },
   users: [{ name: String, joinedAt: String, expiredAt: String }],
   note: String,
   link: String,
@@ -223,6 +225,34 @@ const isDatammoDuplicateError = (responseData) =>
   getDatammoUploadErrors(responseData).some((msg) =>
     /duplicate/i.test(String(msg || "")),
   );
+const sanitizeDatammoKey = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .slice(0, 64);
+const buildBasePackage2DatammoKey = (accountId = "") => {
+  const safeAccountId = String(accountId || "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(-12);
+  return `p2_${safeAccountId || "acc"}`;
+};
+const createPackage2DatammoKey = (accountId = "") => {
+  const base = buildBasePackage2DatammoKey(accountId);
+  const suffix = `${Date.now().toString(36)}${crypto.randomBytes(2).toString("hex")}`;
+  return `${base}_${suffix}`;
+};
+const getPackage2DatammoKey = (acc) => {
+  const savedKey = sanitizeDatammoKey(acc?.package2DatammoKey);
+  if (savedKey) return savedKey;
+  return buildBasePackage2DatammoKey(acc?.id);
+};
+const replaceDatammoPrimaryKey = (content, newKey) => {
+  const raw = String(content || "");
+  const parts = raw.split("|");
+  if (parts.length === 0) return newKey;
+  parts[0] = newKey;
+  return parts.join("|");
+};
 
 const normalizePackage2Shelf = (shelf, fallback = PACKAGE2_SHELF_MAIN) => {
   if (VALID_PACKAGE2_SHELVES.includes(shelf)) return shelf;
@@ -262,8 +292,15 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
       normalized.package2Shelf,
       fallbackShelf,
     );
+    const fallbackKey =
+      existingAcc?.type === "package2"
+        ? sanitizeDatammoKey(existingAcc.package2DatammoKey)
+        : "";
+    const requestedKey = sanitizeDatammoKey(normalized.package2DatammoKey);
+    normalized.package2DatammoKey = requestedKey || fallbackKey || "";
   } else {
     normalized.package2Shelf = PACKAGE2_SHELF_NONE;
+    normalized.package2DatammoKey = "";
   }
 
   return normalized;
@@ -294,11 +331,14 @@ const getDatammoLines = (acc, options = {}) => {
 
   // 2) Logic cho Account thông thường (Gói 1: Shared, Gói 2: Private)
   const formatContent = (slotInfo) => {
-    // Package2 (Private): content đơn giản là TK|MK|Link(nếu có)
-    // Package1 (Shared): đặt Slot N lên đầu làm key để Datammo không dedup 3 dòng thành 1
+    // Package2 (Private): DatammoKey|TK|MK|Link
+    // Package1 (Shared): Slot N|TK|MK
     const includeLink = acc.type === "package2" && acc.link;
     const creds = `${acc.username}|${acc.password}${includeLink ? `|${acc.link}` : ""}`;
-    // Với package1: format = "Slot N|TK|MK" (key khác nhau từng slot)
+    if (acc.type === "package2") {
+      const datammoKey = getPackage2DatammoKey(acc);
+      return `${datammoKey}|${creds}`;
+    }
     return slotInfo ? `${slotInfo}|${creds}` : creds;
   };
 
@@ -478,6 +518,56 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
           );
           continue;
         } catch (retryErr) {
+          const retryErrData = retryErr?.response?.data;
+          const retryErrText =
+            typeof retryErrData === "string"
+              ? retryErrData
+              : JSON.stringify(retryErrData || retryErr.message || "");
+          const retryIsDuplicate =
+            isDatammoDuplicateError(retryErrData) ||
+            /duplicate/i.test(retryErrText);
+
+          if (
+            retryIsDuplicate &&
+            newAcc?.type === "package2" &&
+            newAcc?.id &&
+            isPackage2DatammoVariant(item.variantId)
+          ) {
+            try {
+              const rotatedKey = createPackage2DatammoKey(newAcc.id);
+              const rotatedContent = replaceDatammoPrimaryKey(
+                item.content,
+                rotatedKey,
+              );
+              await Account.updateOne(
+                { id: newAcc.id },
+                { $set: { package2DatammoKey: rotatedKey } },
+              );
+              newAcc.package2DatammoKey = rotatedKey;
+              const rotatedResp = await axios.post(
+                inventoryUrl,
+                { variantId: item.variantId, content: rotatedContent },
+                { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
+              );
+              if (isDatammoDuplicateError(rotatedResp?.data)) {
+                throw new Error(
+                  `Datammo duplicate after key rotate: ${JSON.stringify(rotatedResp?.data)}`,
+                );
+              }
+              console.log(
+                "Datammo ADD rotated-key synced:",
+                rotatedContent,
+                "=>",
+                inventoryUrl,
+              );
+              continue;
+            } catch (rotateErr) {
+              console.error(
+                "Datammo ADD rotate-key err:",
+                rotateErr?.response?.data || rotateErr.message,
+              );
+            }
+          }
           console.error(
             "Datammo ADD retry err:",
             retryErr?.response?.data || retryErr.message,
@@ -530,6 +620,9 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
       createdAt: now.toISOString(),
       expiredAt: expiredDate.toISOString(),
     };
+    if (newAcc.type === "package2" && !sanitizeDatammoKey(newAcc.package2DatammoKey)) {
+      newAcc.package2DatammoKey = createPackage2DatammoKey(newAcc.id);
+    }
     await Account.create(newAcc);
     // Tự động đẩy lên Datammo
     await syncDatammoUpdate(null, newAcc);
@@ -553,6 +646,9 @@ app.post("/api/chatgpt-public", async (req, res) => {
       createdAt: now.toISOString(),
       expiredAt: expiredDate.toISOString(),
     };
+    if (newAcc.type === "package2" && !sanitizeDatammoKey(newAcc.package2DatammoKey)) {
+      newAcc.package2DatammoKey = createPackage2DatammoKey(newAcc.id);
+    }
     await Account.create(newAcc);
     await syncDatammoUpdate(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
@@ -573,9 +669,9 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
 
     // Validate package2: chỉ được tối đa 1 khách hàng
     const normalizedPayload = normalizeChatgptPayload(req.body, existingAcc);
+    const targetType = normalizedPayload.type || existingAcc.type;
 
     if (normalizedPayload.users !== undefined) {
-      const targetType = normalizedPayload.type || existingAcc.type;
       if (targetType === "package2" && normalizedPayload.users.length > 1) {
         return res.status(400).json({ error: "Gói Private (Gói 2) chỉ được tối đa 1 khách hàng" });
       }
@@ -592,6 +688,29 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     }
     // ==========================================================
 
+    const existingUsers = Array.isArray(existingAcc.users) ? existingAcc.users : [];
+    const nextUsers =
+      normalizedPayload.users !== undefined
+        ? normalizedPayload.users
+        : existingUsers;
+    const becamePackage2Available =
+      existingAcc.type === "package2" &&
+      targetType === "package2" &&
+      existingUsers.length > 0 &&
+      Array.isArray(nextUsers) &&
+      nextUsers.length === 0;
+
+    if (targetType === "package2") {
+      let key = sanitizeDatammoKey(
+        normalizedPayload.package2DatammoKey || existingAcc.package2DatammoKey,
+      );
+      if (!key || becamePackage2Available) {
+        key = createPackage2DatammoKey(id);
+      }
+      normalizedPayload.package2DatammoKey = key;
+    } else {
+      normalizedPayload.package2DatammoKey = "";
+    }
     const updated = await Account.findOneAndUpdate({ id: id }, normalizedPayload, {
       new: true,
     });
@@ -604,7 +723,6 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       PACKAGE2_SHELF_NONE,
     );
     const isPackage2ShelfChanged = existingShelf !== updatedShelf;
-    const targetType = normalizedPayload.type || existingAcc.type;
     const isPackage2Context =
       existingAcc.type === "package2" || targetType === "package2";
     const isManualShelfUpdate =
@@ -770,6 +888,14 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     if (!toAcc.users) toAcc.users = [];
     toAcc.users.push(userToMove);
     fromAcc.users.splice(userIndex, 1);
+
+    // Package2: keep a persisted Datammo key and rotate after sold cycle closes.
+    if (toAcc.type === "package2" && !sanitizeDatammoKey(toAcc.package2DatammoKey)) {
+      toAcc.package2DatammoKey = createPackage2DatammoKey(toAcc.id);
+    }
+    if (fromAcc.type === "package2" && (!fromAcc.users || fromAcc.users.length === 0)) {
+      fromAcc.package2DatammoKey = createPackage2DatammoKey(fromAcc.id);
+    }
 
     toAcc.markModified("users");
     fromAcc.markModified("users");
