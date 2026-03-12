@@ -187,11 +187,14 @@ const DATAMMO_VARIANT_PKG3 = "5e3567bc-ada4-471d-b93b-725a0735b677";
 const PACKAGE2_SHELF_MAIN = "main";
 const PACKAGE2_SHELF_CHEAP = "cheap";
 const PACKAGE2_SHELF_NONE = "none";
+const PACKAGE2_MIN_DAYS_FOR_SALE = 25;
 const VALID_PACKAGE2_SHELVES = [
   PACKAGE2_SHELF_MAIN,
   PACKAGE2_SHELF_CHEAP,
   PACKAGE2_SHELF_NONE,
 ];
+const DATAMMO_PARTNER_API_TOKEN =
+  process.env.DATAMMO_PARTNER_API_TOKEN || DATAMMO_TOKEN;
 
 const DATAMMO_PKG2_SHELVES = {
   [PACKAGE2_SHELF_MAIN]: {
@@ -257,6 +260,129 @@ const replaceDatammoPrimaryKey = (content, newKey) => {
 const normalizePackage2Shelf = (shelf, fallback = PACKAGE2_SHELF_MAIN) => {
   if (VALID_PACKAGE2_SHELVES.includes(shelf)) return shelf;
   return fallback;
+};
+const normalizeDatammoRouteShelf = (rawShelf) => {
+  const raw = String(rawShelf || "")
+    .trim()
+    .toLowerCase();
+  if (
+    raw === PACKAGE2_SHELF_MAIN ||
+    raw === "tong" ||
+    raw === "total" ||
+    raw === "1"
+  ) {
+    return PACKAGE2_SHELF_MAIN;
+  }
+  if (
+    raw === PACKAGE2_SHELF_CHEAP ||
+    raw === "re" ||
+    raw === "cheap" ||
+    raw === "2"
+  ) {
+    return PACKAGE2_SHELF_CHEAP;
+  }
+  return null;
+};
+const getDatammoPartnerTokenFromReq = (req) => {
+  const headerToken =
+    req.headers["x-api-token"] ||
+    req.headers["X-API-Token"] ||
+    req.headers["x_api_token"];
+  const authToken = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  const queryToken = req.query?.api_token || req.query?.token || req.query?.key;
+  return String(headerToken || authToken || queryToken || "").trim();
+};
+const verifyDatammoPartnerToken = (req, res, next) => {
+  const token = getDatammoPartnerTokenFromReq(req);
+  if (!token || token !== DATAMMO_PARTNER_API_TOKEN) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+  next();
+};
+const buildPackage2SaleFilter = (shelf) => {
+  const minExpiredAt = new Date(
+    Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  return {
+    type: "package2",
+    package2Shelf: shelf,
+    expiredAt: { $gt: minExpiredAt },
+    $expr: {
+      $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
+    },
+  };
+};
+const formatPackage2DeliveryLine = (acc) =>
+  `${acc.username}|${acc.password}${acc.link ? `|${acc.link}` : ""}`;
+const getSafeBuyQuantity = (value) => {
+  const q = Number.parseInt(value, 10);
+  if (!Number.isFinite(q) || q <= 0) return 1;
+  return Math.min(q, 50);
+};
+const resolveDatammoShelfFromReq = (req) => {
+  const variantId = String(
+    req.query?.variant_id || req.query?.variantId || "",
+  ).trim();
+  if (variantId === DATAMMO_VARIANT_PKG2) return PACKAGE2_SHELF_MAIN;
+  if (variantId === DATAMMO_VARIANT_PKG2_CHEAP) return PACKAGE2_SHELF_CHEAP;
+  return normalizeDatammoRouteShelf(req.params?.shelf || req.query?.shelf);
+};
+const claimPackage2AccountsForOrder = async ({ shelf, quantity, orderId }) => {
+  const claimed = [];
+  for (let i = 0; i < quantity; i += 1) {
+    const nowIso = new Date().toISOString();
+    const oldAcc = await Account.findOneAndUpdate(
+      buildPackage2SaleFilter(shelf),
+      {
+        $set: {
+          users: [
+            {
+              name: `Datammo#${orderId || Date.now()}`,
+              joinedAt: nowIso,
+              expiredAt: "",
+            },
+          ],
+        },
+      },
+      {
+        sort: { createdAt: 1, id: 1 },
+        new: false,
+      },
+    );
+
+    if (!oldAcc) break;
+
+    const updatedAcc = await Account.findOne({ id: oldAcc.id });
+    if (!updatedAcc) break;
+
+    await syncDatammoUpdate(oldAcc, updatedAcc);
+    claimed.push({
+      oldAcc,
+      updatedAcc,
+      delivery: formatPackage2DeliveryLine(updatedAcc),
+    });
+  }
+  return claimed;
+};
+const rollbackClaimedPackage2Accounts = async (claimed = []) => {
+  for (const item of claimed) {
+    if (!item?.oldAcc?.id || !item?.updatedAcc) continue;
+    const restored = await Account.findOneAndUpdate(
+      { id: item.oldAcc.id },
+      {
+        $set: {
+          users: item.oldAcc.users || [],
+          note: item.oldAcc.note || "",
+          status: item.oldAcc.status || "available",
+          package2DatammoKey: item.oldAcc.package2DatammoKey || "",
+        },
+      },
+      { new: true },
+    );
+    if (restored) {
+      await syncDatammoUpdate(item.updatedAcc, restored);
+    }
+  }
 };
 
 const getPackage2ShelfTargets = (acc, includeAllPackage2Shelves = false) => {
@@ -347,7 +473,7 @@ const getDatammoLines = (acc, options = {}) => {
       ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
       : 999;
     const canSellPackage2 =
-      (!acc.users || acc.users.length === 0) && daysLeft > 25;
+      (!acc.users || acc.users.length === 0) && daysLeft > PACKAGE2_MIN_DAYS_FOR_SALE;
     if (forcePackage2Sync || canSellPackage2) {
       // Chỉ đẩy lên Datammo nếu còn HƠN 25 ngày (tránh bán acc sắp hết hạn)
       const targetShelves = getPackage2ShelfTargets(
@@ -605,6 +731,95 @@ app.get("/api/data-public", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Datammo Partner Standard: GET stock
+app.get(
+  ["/api/datammo/stock", "/api/datammo/stock/:shelf"],
+  verifyDatammoPartnerToken,
+  async (req, res) => {
+    try {
+      const shelf = resolveDatammoShelfFromReq(req);
+      if (!shelf) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing or invalid shelf. Use main or cheap.",
+        });
+      }
+
+      const stock = await Account.countDocuments(buildPackage2SaleFilter(shelf));
+      const mainPrice = Number(process.env.DATAMMO_PACKAGE2_MAIN_PRICE || 0);
+      const cheapPrice = Number(process.env.DATAMMO_PACKAGE2_CHEAP_PRICE || 0);
+      const selectedPrice =
+        shelf === PACKAGE2_SHELF_MAIN ? mainPrice : cheapPrice;
+
+      const payload = { stock };
+      if (Number.isFinite(selectedPrice) && selectedPrice > 0) {
+        payload.price = selectedPrice;
+      }
+
+      res.json(payload);
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+);
+
+// Datammo Partner Standard: GET buy
+app.get(
+  ["/api/datammo/buy", "/api/datammo/buy/:shelf"],
+  verifyDatammoPartnerToken,
+  async (req, res) => {
+    const shelf = resolveDatammoShelfFromReq(req);
+    if (!shelf) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing or invalid shelf. Use main or cheap.",
+      });
+    }
+
+    const quantity = getSafeBuyQuantity(req.query?.quantity);
+    const orderId = String(
+      req.query?.order_id || req.query?.orderId || `dm_${Date.now()}`,
+    );
+
+    let claimed = [];
+    try {
+      const available = await Account.countDocuments(buildPackage2SaleFilter(shelf));
+      if (available < quantity) {
+        return res.status(409).json({
+          success: false,
+          message: `Insufficient stock (${available}/${quantity})`,
+          available,
+        });
+      }
+
+      claimed = await claimPackage2AccountsForOrder({
+        shelf,
+        quantity,
+        orderId,
+      });
+
+      if (claimed.length < quantity) {
+        await rollbackClaimedPackage2Accounts(claimed);
+        return res.status(409).json({
+          success: false,
+          message: "Stock changed during processing. Please retry.",
+          available: claimed.length,
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: claimed.map((item) => item.delivery),
+      });
+    } catch (error) {
+      if (claimed.length > 0) {
+        await rollbackClaimedPackage2Accounts(claimed);
+      }
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  },
+);
 
 // 2. ADD ACCOUNT (Protected - requires token)
 app.post("/api/chatgpt", verifyToken, async (req, res) => {
