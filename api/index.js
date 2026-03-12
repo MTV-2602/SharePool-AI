@@ -241,8 +241,9 @@ const buildBasePackage2DatammoKey = (accountId = "") => {
 };
 const createPackage2DatammoKey = (accountId = "") => {
   const base = buildBasePackage2DatammoKey(accountId);
-  const suffix = `${Date.now().toString(36)}${crypto.randomBytes(2).toString("hex")}`;
-  return `${base}_${suffix}`;
+  const timePart = Date.now().toString(36);
+  const randomPart = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  return `${base}_${timePart}_${randomPart}`;
 };
 const getPackage2DatammoKey = (acc) => {
   const savedKey = sanitizeDatammoKey(acc?.package2DatammoKey);
@@ -255,6 +256,25 @@ const replaceDatammoPrimaryKey = (content, newKey) => {
   if (parts.length === 0) return newKey;
   parts[0] = newKey;
   return parts.join("|");
+};
+const rotatePackage2KeyForPendingAdds = async (newAcc, toAdd = []) => {
+  if (!newAcc || newAcc.type !== "package2" || !newAcc.id) return;
+  const hasPackage2Add = toAdd.some((item) =>
+    isPackage2DatammoVariant(item?.variantId),
+  );
+  if (!hasPackage2Add) return;
+
+  const rotatedKey = createPackage2DatammoKey(newAcc.id);
+  await Account.updateOne(
+    { id: newAcc.id },
+    { $set: { package2DatammoKey: rotatedKey } },
+  );
+  newAcc.package2DatammoKey = rotatedKey;
+
+  toAdd.forEach((item) => {
+    if (!isPackage2DatammoVariant(item?.variantId)) return;
+    item.content = replaceDatammoPrimaryKey(item.content, rotatedKey);
+  });
 };
 
 const normalizePackage2Shelf = (shelf, fallback = PACKAGE2_SHELF_MAIN) => {
@@ -558,6 +578,9 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   if (isManualPackage2ShelfSync && toDelete.length > 0 && toAdd.length > 0) {
     await new Promise((resolve) => setTimeout(resolve, 120));
   }
+
+  // Hard guarantee against duplicate key reuse: rotate package2 key before every ADD batch.
+  await rotatePackage2KeyForPendingAdds(newAcc, toAdd);
 
   for (const item of toAdd) {
     const inventoryUrl = getDatammoInventoryUrl(item);
@@ -933,8 +956,11 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       isManualShelfUpdate &&
       requestKeys.length > 0 &&
       requestKeys.every((key) => key === "package2Shelf");
+    const isPackage2UsersUpdate =
+      targetType === "package2" && normalizedPayload.users !== undefined;
     const syncOptions = {
-      forceOldPackage2Sync: isPackage2ShelfChanged || isManualShelfUpdate,
+      forceOldPackage2Sync:
+        isPackage2ShelfChanged || isManualShelfUpdate || isPackage2UsersUpdate,
       forceNewPackage2Sync: isManualShelfUpdate,
     };
 

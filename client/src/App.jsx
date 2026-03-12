@@ -88,6 +88,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("chatgpt");
   const [gptSubTab, setGptSubTab] = useState("all");
+  const [package2ShelfTab, setPackage2ShelfTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Loading states for buttons
@@ -1709,6 +1710,43 @@ function App() {
               );
             })()}
 
+            {(() => {
+              const package2Accs = accounts.filter((a) => a.type === "package2");
+              const mainCount = package2Accs.filter(
+                (a) => normalizePackage2Shelf(a.package2Shelf) === "main",
+              ).length;
+              const cheapCount = package2Accs.filter(
+                (a) => normalizePackage2Shelf(a.package2Shelf) === "cheap",
+              ).length;
+              const noneCount = package2Accs.filter(
+                (a) => normalizePackage2Shelf(a.package2Shelf) === "none",
+              ).length;
+              const shelfTabs = [
+                { key: "all", label: "Kệ: Tất cả", count: package2Accs.length, color: "bg-slate-600" },
+                { key: "main", label: "Kệ tổng", count: mainCount, color: "bg-teal-600" },
+                { key: "cheap", label: "Kệ rẻ", count: cheapCount, color: "bg-emerald-600" },
+                { key: "none", label: "Không kệ", count: noneCount, color: "bg-slate-700" },
+              ];
+              return (
+                <div className="flex gap-2 flex-wrap mb-4">
+                  {shelfTabs.map((t) => (
+                    <button
+                      key={t.key}
+                      onClick={() => setPackage2ShelfTab(t.key)}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full font-bold text-xs transition-all border ${package2ShelfTab === t.key
+                          ? `${t.color} text-white border-transparent`
+                          : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
+                        }`}
+                    >
+                      {t.label}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${package2ShelfTab === t.key ? "bg-white/20" : "bg-slate-700 text-slate-300"
+                        }`}>{t.count}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+
             <div
               style={{
                 background: "#1e293b",
@@ -1738,6 +1776,11 @@ function App() {
                         if (gptSubTab === "package2") return acc.type === "package2";
                         if (gptSubTab === "unassigned") return !acc.type || acc.type === "unassigned";
                         return true; // "all"
+                      })
+                      .filter((acc) => {
+                        if (package2ShelfTab === "all") return true;
+                        if (acc.type !== "package2") return false;
+                        return normalizePackage2Shelf(acc.package2Shelf) === package2ShelfTab;
                       })
                       .filter((acc) => {
                         if (!searchQuery.trim()) return true;
