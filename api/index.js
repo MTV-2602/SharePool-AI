@@ -2,8 +2,6 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const axios = require("axios");
-const path = require("path");
-const fs = require("fs");
 const crypto = require("crypto");
 require("dotenv").config();
 const mongoose = require("mongoose");
@@ -17,11 +15,26 @@ app.use(bodyParser.json());
 // --- MONGODB CONNECTION ---
 // Cache connection to avoid reconnecting on every request (Vercel specific)
 let isConnected = false;
+const toPositiveInt = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.floor(parsed);
+};
+const MONGO_CONNECT_OPTIONS = {
+  maxPoolSize: toPositiveInt(process.env.MONGO_MAX_POOL_SIZE, 5),
+  minPoolSize: toPositiveInt(process.env.MONGO_MIN_POOL_SIZE, 0),
+  maxIdleTimeMS: toPositiveInt(process.env.MONGO_MAX_IDLE_TIME_MS, 10000),
+  serverSelectionTimeoutMS: toPositiveInt(
+    process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS,
+    8000,
+  ),
+  socketTimeoutMS: toPositiveInt(process.env.MONGO_SOCKET_TIMEOUT_MS, 20000),
+};
 
 const connectDB = async () => {
   if (isConnected) return;
   try {
-    await mongoose.connect(process.env.MONGO_URI);
+    await mongoose.connect(process.env.MONGO_URI, MONGO_CONNECT_OPTIONS);
     isConnected = true;
     console.log("✅ MongoDB Connected via Vercel");
   } catch (error) {
