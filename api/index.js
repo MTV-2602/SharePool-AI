@@ -129,39 +129,58 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// --- SSE CONNECTIONS FOR REAL-TIME SYNC ---
+// --- DATA VERSION + OPTIONAL SSE (serverless-friendly) ---
+const ENABLE_SSE = process.env.ENABLE_SSE === "true";
 let sseClients = [];
+let latestDataVersion = Date.now();
+
+const bumpDataVersion = () => {
+  latestDataVersion = Date.now();
+};
+
 const notifyClients = () => {
-  sseClients.forEach(client => {
+  if (!ENABLE_SSE || sseClients.length === 0) return;
+  sseClients.forEach((client) => {
     try {
-      client.res.write(`data: ${JSON.stringify({ type: 'DATA_UPDATED' })}\n\n`);
+      client.res.write(
+        `data: ${JSON.stringify({
+          type: "DATA_UPDATED",
+          version: latestDataVersion,
+        })}\n\n`,
+      );
     } catch (err) {
       console.error("SSE Error:", err);
     }
   });
 };
 
-app.get('/api/events', (req, res) => {
-  // We do not enforce verifyToken here strictly to allow easy connection, 
-  // but it's safe since it only sends the string "DATA_UPDATED" and no actual data.
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
+app.get("/api/data-version", verifyToken, (req, res) => {
+  res.json({ version: latestDataVersion, sseEnabled: ENABLE_SSE });
+});
+
+app.get("/api/events", (req, res) => {
+  if (!ENABLE_SSE) {
+    return res.status(204).end();
+  }
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
   const client = { id: Date.now(), res };
   sseClients.push(client);
 
-  req.on('close', () => {
-    sseClients = sseClients.filter(c => c.id !== client.id);
+  req.on("close", () => {
+    sseClients = sseClients.filter((c) => c.id !== client.id);
   });
 });
 
-// Interceptor to automatically notify clients on any data change
+// Interceptor to update version + optional notify on any data change
 app.use((req, res, next) => {
-  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
-    res.on('finish', () => {
+  if (["POST", "PUT", "DELETE"].includes(req.method)) {
+    res.on("finish", () => {
       if (res.statusCode >= 200 && res.statusCode < 300) {
+        bumpDataVersion();
         notifyClients();
       }
     });
@@ -887,13 +906,20 @@ const syncDatammoUpdateLocked = async (oldAcc, newAcc, options = {}) => {
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
     const [accounts, netflixAccs, canvaAccs, capcutAccs, teamAccs] = await Promise.all([
-      Account.find({}),
-      Netflix.find({}),
-      Canva.find({}),
-      Capcut.find({}),
-      TeamAccount.find({}),
+      Account.find({}).lean(),
+      Netflix.find({}).lean(),
+      Canva.find({}).lean(),
+      Capcut.find({}).lean(),
+      TeamAccount.find({}).lean(),
     ]);
-    res.json({ chatgpt: accounts, netflix: netflixAccs, canva: canvaAccs, capcut: capcutAccs, team: teamAccs });
+    res.json({
+      chatgpt: accounts,
+      netflix: netflixAccs,
+      canva: canvaAccs,
+      capcut: capcutAccs,
+      team: teamAccs,
+      version: latestDataVersion,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -902,7 +928,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
 // 1.5 GET ALL DATA (Public - for Telegram bot)
 app.get("/api/data-public", async (req, res) => {
   try {
-    const accounts = await Account.find({});
+    const accounts = await Account.find({}).lean();
     res.json({ chatgpt: accounts });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1473,7 +1499,7 @@ app.post("/api/extend-user", verifyToken, async (req, res) => {
 // GET all team accounts
 app.get("/api/team", verifyToken, async (req, res) => {
   try {
-    const teams = await TeamAccount.find({});
+    const teams = await TeamAccount.find({}).lean();
     res.json(teams);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

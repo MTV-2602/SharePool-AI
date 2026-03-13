@@ -114,6 +114,8 @@ function App() {
 
   // BroadcastChannel for real-time sync between tabs
   const channelRef = useRef(null);
+  const dataVersionRef = useRef(0);
+  const isFetchingDataRef = useRef(false);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -202,54 +204,45 @@ function App() {
     }
   }, []);
 
-  // SERVER-SENT EVENTS for real-time sync across all admins/devices
+  // Serverless-friendly auto-sync:
+  // poll lightweight data version endpoint instead of long-lived SSE connections.
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    let eventSource;
-    let reconnectTimeout;
+    let isMounted = true;
 
-    const connectSSE = () => {
-      eventSource = new EventSource('/api/events');
+    const checkDataVersion = async () => {
+      if (document.hidden) return;
+      try {
+        const response = await axios.get("/api/data-version", { timeout: 8000 });
+        const nextVersion = Number(response?.data?.version || 0);
+        if (!Number.isFinite(nextVersion) || nextVersion <= 0) return;
 
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'DATA_UPDATED') {
-            fetchData(false); // Background fetch to avoid disrupting the UI
-          }
-        } catch (e) { }
-      };
+        if (!dataVersionRef.current) {
+          dataVersionRef.current = nextVersion;
+          return;
+        }
 
-      eventSource.onerror = () => {
-        eventSource.close();
-        // Reconnect aggressively if SSE drops
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = setTimeout(connectSSE, 3000);
-      };
+        if (nextVersion > dataVersionRef.current && isMounted) {
+          dataVersionRef.current = nextVersion;
+          fetchData(false);
+        }
+      } catch (e) {
+        // Ignore transient poll errors. Next cycle will retry.
+      }
     };
 
-    connectSSE();
+    checkDataVersion();
+    const interval = setInterval(checkDataVersion, 15000);
 
     return () => {
-      if (eventSource) eventSource.close();
-      clearTimeout(reconnectTimeout);
+      isMounted = false;
+      clearInterval(interval);
     };
   }, [isAuthenticated]);
 
-  // Backward-compatible helper for cases calling it manually (handled by backend interceptor now)
+  // Backward-compatible helper for cases calling it manually.
   const broadcastDataChange = () => { };
-
-  // AUTO REFRESH DATA (fallback loop) - set to 60s background fetch instead of aggressive 10s blocking fetch
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const interval = setInterval(() => {
-      fetchData(false);
-    }, 60000); // 1 minute
-
-    return () => clearInterval(interval);
-  }, [isAuthenticated]);
 
   // REFRESH when tab becomes visible
   useEffect(() => {
@@ -455,12 +448,18 @@ function App() {
   };
 
   const fetchData = async (showLoader = true) => {
+    if (isFetchingDataRef.current) return;
+    isFetchingDataRef.current = true;
     if (showLoader) setLoading(true);
     try {
       const res = await axios.get("/api/data", {
         timeout: 10000,
         headers: { "Cache-Control": "no-cache" },
       });
+      const nextVersion = Number(res.data?.version || 0);
+      if (Number.isFinite(nextVersion) && nextVersion > 0) {
+        dataVersionRef.current = nextVersion;
+      }
       if (res.data && res.data.chatgpt) {
         const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
         const sortedGPT = [...res.data.chatgpt]
@@ -488,10 +487,13 @@ function App() {
       setTeamAccounts(sortA(res.data?.team));
 
     } catch (error) {
-      showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
-      setAccounts([]);
+      if (showLoader) {
+        showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
+        setAccounts([]);
+      }
     } finally {
       if (showLoader) setLoading(false);
+      isFetchingDataRef.current = false;
     }
   };
 
