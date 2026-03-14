@@ -137,8 +137,11 @@ function App() {
     targetType: "package1",
     package2Shelf: "main",
   });
-  const [bulkPushProgress, setBulkPushProgress] = useState(0);
-  const bulkPushProgressRef = useRef(null);
+  const [bulkPushProgress, setBulkPushProgress] = useState({
+    total: 0,
+    completed: 0,
+    percent: 0,
+  });
 
   // CUSTOM ALERT & CONFIRM MODAL
   const [alertInfo, setAlertInfo] = useState({
@@ -280,16 +283,6 @@ function App() {
     const validIds = new Set(accounts.map((acc) => acc.id));
     setSelectedChatgptIds((prev) => prev.filter((id) => validIds.has(id)));
   }, [accounts]);
-
-  useEffect(
-    () => () => {
-      if (bulkPushProgressRef.current) {
-        clearInterval(bulkPushProgressRef.current);
-        bulkPushProgressRef.current = null;
-      }
-    },
-    [],
-  );
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -1050,33 +1043,50 @@ function App() {
     });
   };
 
-  const startBulkPushProgress = () => {
-    if (bulkPushProgressRef.current) {
-      clearInterval(bulkPushProgressRef.current);
-      bulkPushProgressRef.current = null;
-    }
-    setBulkPushProgress(8);
-    bulkPushProgressRef.current = setInterval(() => {
-      setBulkPushProgress((prev) => {
-        if (prev >= 92) return 92;
-        if (prev < 40) return prev + 8;
-        if (prev < 70) return prev + 4;
-        return prev + 2;
-      });
-    }, 280);
+  const setBulkPushRealtimeProgress = (completed, total) => {
+    const safeTotal = Math.max(0, Number(total) || 0);
+    const safeCompleted = Math.max(
+      0,
+      Math.min(safeTotal, Number(completed) || 0),
+    );
+    const percent =
+      safeTotal > 0 ? Math.round((safeCompleted / safeTotal) * 100) : 0;
+    setBulkPushProgress({
+      total: safeTotal,
+      completed: safeCompleted,
+      percent,
+    });
   };
 
-  const finishBulkPushProgress = (isSuccess = true) => {
-    if (bulkPushProgressRef.current) {
-      clearInterval(bulkPushProgressRef.current);
-      bulkPushProgressRef.current = null;
+  const resetBulkPushProgress = () => {
+    setBulkPushRealtimeProgress(0, 0);
+  };
+
+  const mergeBulkPushResult = (aggregate, partial = {}) => {
+    aggregate.updated += Number(partial.updated || 0);
+    aggregate.unchanged += Number(partial.unchanged || 0);
+    aggregate.skippedHasUsers += Number(partial.skippedHasUsers || 0);
+    aggregate.missing += Number(partial.missing || 0);
+    aggregate.failed += Number(partial.failed || 0);
+
+    if (Array.isArray(partial.failedIds) && partial.failedIds.length > 0) {
+      aggregate.failedIds.push(...partial.failedIds);
     }
-    if (isSuccess) {
-      setBulkPushProgress(100);
-      setTimeout(() => setBulkPushProgress(0), 600);
-      return;
+    if (Array.isArray(partial.missingIds) && partial.missingIds.length > 0) {
+      aggregate.missingIds.push(...partial.missingIds);
     }
-    setBulkPushProgress(0);
+    if (
+      Array.isArray(partial.failedDetails) &&
+      partial.failedDetails.length > 0
+    ) {
+      aggregate.failedDetails.push(...partial.failedDetails);
+    }
+    if (
+      Array.isArray(partial.skippedAccounts) &&
+      partial.skippedAccounts.length > 0
+    ) {
+      aggregate.skippedAccounts.push(...partial.skippedAccounts);
+    }
   };
 
   const openBulkPushModal = (filteredAccounts = []) => {
@@ -1091,6 +1101,7 @@ function App() {
       ...prev,
       scope: hasSelected ? "selected" : "filtered",
     }));
+    resetBulkPushProgress();
     setShowBulkPushModal(true);
   };
 
@@ -1111,39 +1122,91 @@ function App() {
       return;
     }
 
-    const payload = {
-      accountIds,
-      targetType: bulkPushForm.targetType,
-      package2Shelf:
-        bulkPushForm.targetType === "package2"
-          ? normalizePackage2Shelf(bulkPushForm.package2Shelf)
-          : undefined,
+    const targetShelf =
+      bulkPushForm.targetType === "package2"
+        ? normalizePackage2Shelf(bulkPushForm.package2Shelf)
+        : undefined;
+    const usernameById = new Map(
+      accounts.map((acc) => [String(acc.id || ""), acc.username || ""]),
+    );
+    const aggregateResult = {
+      requested: accountIds.length,
+      updated: 0,
+      unchanged: 0,
+      skippedHasUsers: 0,
+      missing: 0,
+      failed: 0,
+      failedIds: [],
+      missingIds: [],
+      failedDetails: [],
+      skippedAccounts: [],
+    };
+    const clientWorkerCount = Math.max(1, Math.min(4, accountIds.length));
+    let queueIndex = 0;
+    let processedCount = 0;
+    const markProcessed = () => {
+      processedCount += 1;
+      setBulkPushRealtimeProgress(processedCount, accountIds.length);
     };
 
-    startBulkPushProgress();
+    setBulkPushRealtimeProgress(0, accountIds.length);
     setLoadingStates((prev) => ({ ...prev, bulkPush: true }));
     try {
-      const response = await axios.post("/api/chatgpt/bulk-push-shelf", payload);
-      const result = response?.data?.result || {};
-      const workerCount = Number(response?.data?.workerCount || 1);
-      const requested = Number(result.requested || accountIds.length || 0);
-      const updated = Number(result.updated || 0);
-      const unchanged = Number(result.unchanged || 0);
-      const skippedHasUsers = Number(result.skippedHasUsers || 0);
-      const missing = Number(result.missing || 0);
-      const failed = Number(result.failed || 0);
+      const workers = Array.from({ length: clientWorkerCount }, () =>
+        (async () => {
+          while (true) {
+            const currentIndex = queueIndex;
+            queueIndex += 1;
+            if (currentIndex >= accountIds.length) break;
+
+            const accountId = accountIds[currentIndex];
+            try {
+              const response = await axios.post("/api/chatgpt/bulk-push-shelf", {
+                accountIds: [accountId],
+                targetType: bulkPushForm.targetType,
+                package2Shelf: targetShelf,
+              });
+              mergeBulkPushResult(aggregateResult, response?.data?.result || {});
+            } catch (error) {
+              aggregateResult.failed += 1;
+              aggregateResult.failedIds.push(accountId);
+              aggregateResult.failedDetails.push({
+                id: accountId,
+                username: usernameById.get(accountId) || "",
+                reason:
+                  error?.response?.data?.error ||
+                  error?.message ||
+                  "Loi khong xac dinh",
+              });
+            } finally {
+              markProcessed();
+            }
+          }
+        })(),
+      );
+      await Promise.all(workers);
+      setBulkPushRealtimeProgress(accountIds.length, accountIds.length);
+
+      const requested = Number(
+        aggregateResult.requested || accountIds.length || 0,
+      );
+      const updated = Number(aggregateResult.updated || 0);
+      const unchanged = Number(aggregateResult.unchanged || 0);
+      const skippedHasUsers = Number(aggregateResult.skippedHasUsers || 0);
+      const missing = Number(aggregateResult.missing || 0);
+      const failed = Number(aggregateResult.failed || 0);
       const unfinished = skippedHasUsers + missing + failed;
-      const failedDetails = Array.isArray(result.failedDetails)
-        ? result.failedDetails
+      const failedDetails = Array.isArray(aggregateResult.failedDetails)
+        ? aggregateResult.failedDetails
         : [];
-      const skippedAccounts = Array.isArray(result.skippedAccounts)
-        ? result.skippedAccounts
+      const skippedAccounts = Array.isArray(aggregateResult.skippedAccounts)
+        ? aggregateResult.skippedAccounts
         : [];
       const msg = [
         `Đã chọn: ${requested}`,
         `Đẩy Datammo thành công: ${updated}`,
         `Chưa hoàn tất: ${unfinished}`,
-        `Luồng xử lý song song: ${workerCount}`,
+        `Luồng xử lý song song: ${clientWorkerCount}`,
         `Không đổi: ${unchanged}`,
         `Bỏ qua (đang có khách): ${skippedHasUsers}`,
         `Không tìm thấy: ${missing}`,
@@ -1168,18 +1231,17 @@ function App() {
       setSelectedChatgptIds([]);
       await fetchData();
       broadcastDataChange();
-      finishBulkPushProgress(true);
       showAlert(
         unfinished > 0 ? "Đẩy kệ chưa hoàn tất" : "Đẩy kệ hoàn tất",
         `${msg}${detailLines.length ? `\n${detailLines.join("\n")}` : ""}`,
         unfinished > 0 ? "warning" : "success",
       );
     } catch (error) {
-      finishBulkPushProgress(false);
       const msg = error?.response?.data?.error || "Không thể đẩy kệ hàng loạt";
       showAlert("Lỗi", msg, "error");
     } finally {
       setLoadingStates((prev) => ({ ...prev, bulkPush: false }));
+      resetBulkPushProgress();
     }
   };
 
@@ -3418,11 +3480,11 @@ function App() {
                   <div className="h-2 w-full bg-slate-800 border border-slate-700 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300"
-                      style={{ width: `${Math.max(6, Math.min(100, bulkPushProgress))}%` }}
+                      style={{ width: `${Math.max(0, Math.min(100, bulkPushProgress.percent || 0))}%` }}
                     />
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1">
-                    Đang đẩy đồng bộ Datammo... {Math.floor(bulkPushProgress)}%
+                    Đang đẩy đồng bộ Datammo... {bulkPushProgress.completed}/{bulkPushProgress.total} ({bulkPushProgress.percent}%)
                   </div>
                 </div>
               )}
