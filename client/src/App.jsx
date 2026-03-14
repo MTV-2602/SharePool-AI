@@ -60,6 +60,40 @@ const getTeamSaleModeLabel = (value) =>
   normalizeTeamSaleMode(value) === "business"
     ? "Business account (1 acc)"
     : "Slot team";
+const DATAMMO_ORDER_PREFIX = "Datammo#";
+const getDatammoOrderId = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw.startsWith(DATAMMO_ORDER_PREFIX)) return "";
+  return raw.slice(DATAMMO_ORDER_PREFIX.length).trim();
+};
+const buildDatammoSaleEntries = (chatgptAccounts = []) =>
+  (chatgptAccounts || [])
+    .flatMap((acc) => {
+      if (acc?.type !== "package2") return [];
+      const users = Array.isArray(acc?.users) ? acc.users : [];
+      return users
+        .map((user) => {
+          const userName =
+            typeof user === "object" && user !== null ? user.name : user;
+          const orderId = getDatammoOrderId(userName);
+          if (!orderId) return null;
+          const soldAt =
+            typeof user === "object" && user !== null ? user.joinedAt || "" : "";
+          const fingerprint = [acc.id, orderId, soldAt].filter(Boolean).join("|");
+          return {
+            fingerprint,
+            accId: String(acc.id || ""),
+            username: String(acc.username || ""),
+            orderId,
+            soldAt,
+          };
+        })
+        .filter(Boolean);
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.soldAt || 0).getTime() - new Date(a.soldAt || 0).getTime(),
+    );
 
 function App() {
   // LOGIN STATE
@@ -124,6 +158,8 @@ function App() {
   const channelRef = useRef(null);
   const dataVersionRef = useRef(0);
   const isFetchingDataRef = useRef(false);
+  const knownDatammoSalesRef = useRef(new Set());
+  const hasInitializedDatammoSalesRef = useRef(false);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -154,6 +190,7 @@ function App() {
 
   // TOAST MSG
   const [toastMessage, setToastMessage] = useState("");
+  const [recentDatammoSales, setRecentDatammoSales] = useState([]);
 
   // User Input Modal
   const [showUserModal, setShowUserModal] = useState(false);
@@ -322,8 +359,12 @@ function App() {
 
   const handleLogout = () => {
     localStorage.removeItem("admin_token");
+    localStorage.removeItem("token_expires_at");
     setIsAuthenticated(false);
     setLoginForm({ email: "", password: "" });
+    setRecentDatammoSales([]);
+    knownDatammoSalesRef.current = new Set();
+    hasInitializedDatammoSalesRef.current = false;
   };
 
   // HELPER SHOW ALERT / CONFIRM
@@ -477,6 +518,40 @@ function App() {
     };
   };
 
+  const syncDatammoSaleBanner = (nextAccounts = []) => {
+    const saleEntries = buildDatammoSaleEntries(nextAccounts);
+    const nextKnownFingerprints = new Set(
+      saleEntries.map((entry) => entry.fingerprint),
+    );
+
+    if (!hasInitializedDatammoSalesRef.current) {
+      knownDatammoSalesRef.current = nextKnownFingerprints;
+      hasInitializedDatammoSalesRef.current = true;
+      return;
+    }
+
+    const freshSales = saleEntries.filter(
+      (entry) => !knownDatammoSalesRef.current.has(entry.fingerprint),
+    );
+    knownDatammoSalesRef.current = nextKnownFingerprints;
+
+    if (freshSales.length > 0) {
+      setRecentDatammoSales((prev) => {
+        const seen = new Set(prev.map((entry) => entry.fingerprint));
+        const merged = [
+          ...freshSales.filter((entry) => !seen.has(entry.fingerprint)),
+          ...prev.filter((entry) => nextKnownFingerprints.has(entry.fingerprint)),
+        ];
+        return merged.slice(0, 5);
+      });
+      return;
+    }
+
+    setRecentDatammoSales((prev) =>
+      prev.filter((entry) => nextKnownFingerprints.has(entry.fingerprint)),
+    );
+  };
+
   const fetchData = async (showLoader = true) => {
     if (isFetchingDataRef.current) return;
     isFetchingDataRef.current = true;
@@ -506,8 +581,10 @@ function App() {
           if (orderA !== orderB) return orderA - orderB;
           return new Date(b.createdAt) - new Date(a.createdAt);
         });
+        syncDatammoSaleBanner(sortedGPT);
         setAccounts(sortedGPT);
       } else {
+        syncDatammoSaleBanner([]);
         setAccounts([]);
       }
       const sortA = (arr) => [...(arr || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -1727,6 +1804,56 @@ function App() {
             </button>
           </div>
         </div>
+
+        {recentDatammoSales.length > 0 && (
+          <div className="mb-6 rounded-2xl border border-emerald-500/40 bg-emerald-950/30 shadow-2xl overflow-hidden">
+            <div className="flex items-start justify-between gap-3 p-4 md:p-5">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="shrink-0 p-2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/20">
+                  <CheckCircle size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase tracking-[0.18em] font-black text-emerald-300">
+                    Datammo
+                  </div>
+                  <div className="text-lg md:text-xl font-black text-white">
+                    Vừa có đơn mới từ Datammo
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {recentDatammoSales.slice(0, 3).map((sale) => (
+                      <div
+                        key={sale.fingerprint}
+                        className="rounded-xl border border-emerald-400/15 bg-black/15 px-3 py-2"
+                      >
+                        <div className="font-semibold text-white break-all">
+                          Vừa bán acc {sale.username} cho order {sale.orderId}
+                        </div>
+                        {sale.soldAt && (
+                          <div className="text-xs text-emerald-100/75 mt-1">
+                            {new Date(sale.soldAt).toLocaleString("vi-VN")}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {recentDatammoSales.length > 3 && (
+                      <div className="text-xs text-emerald-100/80">
+                        +{recentDatammoSales.length - 3} đơn nữa đang chờ bạn xử lý.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRecentDatammoSales([])}
+                className="shrink-0 rounded-full p-2 text-emerald-200 hover:bg-white/10 hover:text-white transition-colors"
+                title="Ẩn banner đơn mới"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        )}
 
         {activeTab === "chatgpt" && (
           <div>
