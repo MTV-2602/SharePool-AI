@@ -596,7 +596,7 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
             existingAcc.package2Shelf,
             PACKAGE2_SHELF_MAIN,
           )
-        : PACKAGE2_SHELF_MAIN;
+        : PACKAGE2_SHELF_NONE;
     normalized.package2Shelf = normalizePackage2Shelf(
       normalized.package2Shelf,
       fallbackShelf,
@@ -1042,7 +1042,7 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
   try {
     const now = new Date();
     const expiredDate = new Date(now);
-    expiredDate.setDate(expiredDate.getDate() + 30); // Add 30 days
+    expiredDate.setMonth(expiredDate.getMonth() + 1); // Add 1 month
     const normalizedBody = normalizeChatgptPayload(req.body);
 
     const newAcc = {
@@ -1078,7 +1078,7 @@ app.post("/api/chatgpt-public", async (req, res) => {
   try {
     const now = new Date();
     const expiredDate = new Date(now);
-    expiredDate.setDate(expiredDate.getDate() + 30); // Add 30 days
+    expiredDate.setMonth(expiredDate.getMonth() + 1); // Add 1 month
     const normalizedBody = normalizeChatgptPayload(req.body);
 
     const newAcc = {

@@ -327,6 +327,11 @@ function App() {
 
   // Helper to safely get user name
   const getUserName = (u) => (typeof u === "object" && u !== null ? u.name : u);
+  const getDefaultOneMonthDateInput = () => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    return d.toISOString().split("T")[0];
+  };
 
   // Helper to get joined date display
   const getUserDate = (u) => {
@@ -908,7 +913,7 @@ function App() {
       const nextShelf =
         newType === "package2"
           ? normalizePackage2Shelf(
-            acc.package2Shelf === "none" ? "main" : acc.package2Shelf,
+            acc.type === "package2" ? acc.package2Shelf : "none",
           )
           : "none";
       await axios.put(`/api/chatgpt/${acc.id}`, {
@@ -2852,7 +2857,7 @@ function App() {
             const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
             const recoveryUrl = recoveryMatch ? recoveryMatch[1].trim() : "";
 
-            setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl: recoveryUrl, note: "", expiredAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] });
+            setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl: recoveryUrl, note: "", expiredAt: getDefaultOneMonthDateInput() });
             setShowImportTeamModal(false);
             setTeamImportText("");
             setShowTeamAddModal(true);
@@ -3768,7 +3773,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 📋 Nhập Format
               </button>
               <button
-                onClick={() => { setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }); setShowTeamAddModal(true); }}
+                onClick={() => { setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: getDefaultOneMonthDateInput() }); setShowTeamAddModal(true); }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-500"
               >
                 <UserPlus size={16} /> Thêm Team Acc
