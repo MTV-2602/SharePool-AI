@@ -632,6 +632,15 @@ const getDatammoLines = (acc, options = {}) => {
 
   // 1) Logic cho GÓI 3 (Team Account - Business Slots)
   if (acc.slots !== undefined) {
+    const daysLeft = acc.expiredAt
+      ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
+      : 999;
+    const canSellTeam = daysLeft > PACKAGE2_MIN_DAYS_FOR_SALE;
+    if (!canSellTeam) {
+      // Same safety rule as package2: do not keep near-expiry stock on Datammo.
+      return lines;
+    }
+
     const formatTeamContent = (slotNum) => {
       // Key = "Slot N" đặt đầu để Datammo không dedup 4 dòng thành 1
       // Format: Slot 1|email|Bạn gửi gmail chính chủ để admin up
