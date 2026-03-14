@@ -60,6 +60,40 @@ const getTeamSaleModeLabel = (value) =>
   normalizeTeamSaleMode(value) === "business"
     ? "Business account (1 acc)"
     : "Slot team";
+const DATAMMO_SEEN_ORDER_KEYS_STORAGE_KEY = "datammo_seen_order_keys";
+const buildDatammoOrderKey = (order = {}) =>
+  String(order._id || order.id || `${order.orderId || "order"}|${order.createdAt || ""}`);
+const normalizeDatammoOrders = (orders = []) =>
+  [...(Array.isArray(orders) ? orders : [])].sort(
+    (a, b) =>
+      new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime(),
+  );
+const loadSeenDatammoOrderKeys = () => {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(DATAMMO_SEEN_ORDER_KEYS_STORAGE_KEY) || "[]",
+    );
+    if (!Array.isArray(raw)) return new Set();
+    return new Set(raw.map((item) => String(item || "")).filter(Boolean));
+  } catch (error) {
+    return new Set();
+  }
+};
+const persistSeenDatammoOrderKeys = (keys = []) => {
+  if (typeof window === "undefined") return;
+  try {
+    const normalized = Array.from(
+      new Set((Array.isArray(keys) ? keys : Array.from(keys || [])).map((item) => String(item || "")).filter(Boolean)),
+    ).slice(-100);
+    localStorage.setItem(
+      DATAMMO_SEEN_ORDER_KEYS_STORAGE_KEY,
+      JSON.stringify(normalized),
+    );
+  } catch (error) {
+    // Ignore localStorage write issues.
+  }
+};
 
 function App() {
   // LOGIN STATE
@@ -124,6 +158,8 @@ function App() {
   const channelRef = useRef(null);
   const dataVersionRef = useRef(0);
   const isFetchingDataRef = useRef(false);
+  const seenDatammoOrderKeysRef = useRef(null);
+  const hasInitializedDatammoOrdersRef = useRef(false);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -154,6 +190,7 @@ function App() {
 
   // TOAST MSG
   const [toastMessage, setToastMessage] = useState("");
+  const [recentDatammoOrders, setRecentDatammoOrders] = useState([]);
 
   // User Input Modal
   const [showUserModal, setShowUserModal] = useState(false);
@@ -324,6 +361,9 @@ function App() {
     localStorage.removeItem("admin_token");
     setIsAuthenticated(false);
     setLoginForm({ email: "", password: "" });
+    setRecentDatammoOrders([]);
+    seenDatammoOrderKeysRef.current = null;
+    hasInitializedDatammoOrdersRef.current = false;
   };
 
   // HELPER SHOW ALERT / CONFIRM
@@ -477,6 +517,41 @@ function App() {
     };
   };
 
+  const syncDatammoOrderBanner = (orders = []) => {
+    const normalizedOrders = normalizeDatammoOrders(orders);
+    if (!seenDatammoOrderKeysRef.current) {
+      seenDatammoOrderKeysRef.current = loadSeenDatammoOrderKeys();
+    }
+
+    const seenKeys = seenDatammoOrderKeysRef.current;
+    const allKeys = normalizedOrders.map((order) => buildDatammoOrderKey(order));
+
+    if (!hasInitializedDatammoOrdersRef.current) {
+      if (seenKeys.size === 0 && allKeys.length > 0) {
+        allKeys.forEach((key) => seenKeys.add(key));
+        persistSeenDatammoOrderKeys(seenKeys);
+      }
+      hasInitializedDatammoOrdersRef.current = true;
+      return;
+    }
+
+    const freshOrders = normalizedOrders.filter(
+      (order) => !seenKeys.has(buildDatammoOrderKey(order)),
+    );
+
+    if (freshOrders.length === 0) return;
+
+    freshOrders.forEach((order) => seenKeys.add(buildDatammoOrderKey(order)));
+    persistSeenDatammoOrderKeys(seenKeys);
+    setRecentDatammoOrders((prev) => {
+      const merged = new Map();
+      [...freshOrders, ...prev].forEach((order) => {
+        merged.set(buildDatammoOrderKey(order), order);
+      });
+      return normalizeDatammoOrders(Array.from(merged.values())).slice(0, 5);
+    });
+  };
+
   const fetchData = async (showLoader = true) => {
     if (isFetchingDataRef.current) return;
     isFetchingDataRef.current = true;
@@ -490,6 +565,7 @@ function App() {
       if (Number.isFinite(nextVersion) && nextVersion > 0) {
         dataVersionRef.current = nextVersion;
       }
+      syncDatammoOrderBanner(res.data?.datammoOrders);
       if (res.data && res.data.chatgpt) {
         const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
         const sortedGPT = [...res.data.chatgpt]
@@ -1727,6 +1803,69 @@ function App() {
             </button>
           </div>
         </div>
+
+        {recentDatammoOrders.length > 0 && (
+          <div className="mb-6 rounded-2xl border border-emerald-500/40 bg-emerald-950/25 shadow-2xl overflow-hidden">
+            <div className="flex items-start justify-between gap-4 p-4 md:p-5">
+              <div className="min-w-0 flex items-start gap-3">
+                <div className="shrink-0 rounded-full p-2 bg-emerald-500/20 text-emerald-300 border border-emerald-400/20">
+                  <CheckCircle size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase tracking-[0.18em] font-black text-emerald-300">
+                    Datammo Seller Alert
+                  </div>
+                  <div className="text-lg md:text-xl font-black text-white">
+                    Vừa có đơn mới từ Datammo
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {recentDatammoOrders.slice(0, 3).map((order) => {
+                      const accountsInOrder =
+                        Array.isArray(order.accounts) && order.accounts.length > 0
+                          ? order.accounts
+                          : [{ username: "Không rõ acc" }];
+                      return (
+                        <div
+                          key={buildDatammoOrderKey(order)}
+                          className="rounded-xl border border-emerald-400/15 bg-black/15 px-3 py-2"
+                        >
+                          <div className="space-y-1">
+                            {accountsInOrder.map((account, index) => (
+                              <div
+                                key={`${buildDatammoOrderKey(order)}-${index}`}
+                                className="font-semibold text-white break-all"
+                              >
+                                Vừa bán acc {account.username || account.accountId || "Không rõ"} cho order {order.orderId || "N/A"}
+                              </div>
+                            ))}
+                          </div>
+                          {order.createdAt && (
+                            <div className="mt-1 text-xs text-emerald-100/75">
+                              {new Date(order.createdAt).toLocaleString("vi-VN")}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {recentDatammoOrders.length > 3 && (
+                      <div className="text-xs text-emerald-100/80">
+                        +{recentDatammoOrders.length - 3} đơn nữa đang chờ bạn xem.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRecentDatammoOrders([])}
+                className="shrink-0 rounded-full p-2 text-emerald-200 hover:bg-white/10 hover:text-white transition-colors"
+                title="Ẩn banner đơn mới"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        )}
 
         {activeTab === "chatgpt" && (
           <div>

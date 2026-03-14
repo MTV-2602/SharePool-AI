@@ -99,6 +99,25 @@ const teamAccountSchema = new mongoose.Schema({
 });
 const TeamAccount = mongoose.models.TeamAccount || mongoose.model("TeamAccount", teamAccountSchema);
 
+const datammoOrderAccountSchema = new mongoose.Schema(
+  {
+    accountId: { type: String, default: "" },
+    username: { type: String, default: "" },
+    delivery: { type: String, default: "" },
+  },
+  { _id: false },
+);
+const datammoOrderSchema = new mongoose.Schema({
+  orderId: { type: String, default: "" },
+  shelf: { type: String, default: "" },
+  quantity: { type: Number, default: 0 },
+  accounts: { type: [datammoOrderAccountSchema], default: [] },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+});
+const DatammoOrder =
+  mongoose.models.DatammoOrder ||
+  mongoose.model("DatammoOrder", datammoOrderSchema);
+
 const datammoKeyRegistrySchema = new mongoose.Schema({
   key: { type: String, unique: true, required: true, index: true },
   accountId: { type: String, default: "" },
@@ -1058,12 +1077,13 @@ const syncDatammoUpdateLocked = async (oldAcc, newAcc, options = {}) => {
 
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
-    const [accounts, netflixAccs, canvaAccs, capcutAccs, teamAccs] = await Promise.all([
+    const [accounts, netflixAccs, canvaAccs, capcutAccs, teamAccs, datammoOrders] = await Promise.all([
       Account.find({}).lean(),
       Netflix.find({}).lean(),
       Canva.find({}).lean(),
       Capcut.find({}).lean(),
       TeamAccount.find({}).lean(),
+      DatammoOrder.find({}).sort({ createdAt: -1 }).limit(10).lean(),
     ]);
     res.json({
       chatgpt: accounts,
@@ -1071,6 +1091,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
       canva: canvaAccs,
       capcut: capcutAccs,
       team: teamAccs,
+      datammoOrders,
       version: latestDataVersion,
     });
   } catch (error) {
@@ -1163,6 +1184,29 @@ app.get(
           available: claimed.length,
         });
       }
+
+      try {
+        await DatammoOrder.create({
+          orderId,
+          shelf,
+          quantity,
+          accounts: claimed.map((item) => ({
+            accountId: String(item?.updatedAcc?.id || item?.oldAcc?.id || ""),
+            username: String(
+              item?.updatedAcc?.username || item?.oldAcc?.username || "",
+            ),
+            delivery: String(item?.delivery || ""),
+          })),
+        });
+      } catch (orderLogError) {
+        console.error(
+          "Datammo order log error:",
+          orderLogError?.message || orderLogError,
+        );
+      }
+
+      bumpDataVersion();
+      notifyClients();
 
       return res.json({
         success: true,
