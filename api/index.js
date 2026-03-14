@@ -1164,9 +1164,6 @@ app.get(
         });
       }
 
-      bumpDataVersion();
-      notifyClients();
-
       return res.json({
         success: true,
         data: claimed.map((item) => item.delivery),
