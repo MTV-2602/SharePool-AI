@@ -115,6 +115,7 @@ function App() {
     editAccount: false,
     deleteAccount: false,
     bulkPush: false,
+    teamMode: {},
     changeType: {},
     changeShelf: {},
   });
@@ -1102,6 +1103,51 @@ function App() {
     }
   };
 
+  const handleQuickTeamSaleModeChange = async (acc, nextMode) => {
+    const targetMode = normalizeTeamSaleMode(nextMode);
+    const currentMode = normalizeTeamSaleMode(acc?.saleMode);
+    if (!acc?.id || targetMode === currentMode) return;
+
+    setLoadingStates((prev) => ({
+      ...prev,
+      teamMode: { ...(prev.teamMode || {}), [acc.id]: true },
+    }));
+    try {
+      const response = await axios.put(`/api/team/${acc.id}`, {
+        saleMode: targetMode,
+      });
+      const updatedAcc = response?.data?.account;
+      if (updatedAcc?.id) {
+        setTeamAccounts((prev) =>
+          prev.map((item) =>
+            item.id === updatedAcc.id
+              ? { ...item, ...updatedAcc, saleMode: normalizeTeamSaleMode(updatedAcc.saleMode) }
+              : item,
+          ),
+        );
+      } else {
+        await fetchData();
+      }
+      broadcastDataChange();
+      showAlert(
+        "Đã đổi loại Team",
+        targetMode === "business"
+          ? "Đã chuyển sang Business account."
+          : "Đã chuyển sang Slot team.",
+        "success",
+      );
+    } catch (error) {
+      const msg = error?.response?.data?.error || "Không thể đổi loại Team";
+      showAlert("Lỗi", msg, "error");
+    } finally {
+      setLoadingStates((prev) => {
+        const next = { ...(prev.teamMode || {}) };
+        delete next[acc.id];
+        return { ...prev, teamMode: next };
+      });
+    }
+  };
+
   const handleCopy = (text, message = "Đã copy nội dung!") => {
     navigator.clipboard.writeText(text);
     setToastMessage(message);
@@ -1446,6 +1492,28 @@ function App() {
   const allFilteredSelected =
     filteredChatgptIds.length > 0 &&
     selectedInFilteredCount === filteredChatgptIds.length;
+  const teamSlotAccounts = teamAccounts.filter(
+    (acc) => normalizeTeamSaleMode(acc.saleMode) === "slot",
+  );
+  const teamBusinessAccounts = teamAccounts.filter(
+    (acc) => normalizeTeamSaleMode(acc.saleMode) === "business",
+  );
+  const teamSections = [
+    {
+      key: "slot",
+      title: "Team Slot",
+      subtitle: "Bán theo từng slot (tối đa 4 slot/account)",
+      accounts: teamSlotAccounts,
+      badgeClass: "bg-teal-900/40 text-teal-300 border-teal-700/60",
+    },
+    {
+      key: "business",
+      title: "Team Business",
+      subtitle: "Bán theo account gốc (1 account/item)",
+      accounts: teamBusinessAccounts,
+      badgeClass: "bg-cyan-900/40 text-cyan-300 border-cyan-700/60",
+    },
+  ];
 
   // MAIN DASHBOARD
   return (
@@ -4057,7 +4125,37 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             <div className="text-center py-16 text-slate-500 italic">Chưa có tài khoản Team nào.</div>
           ) : (
             <div className="space-y-6">
-              {teamAccounts.map((acc) => {
+              <div className="flex flex-wrap gap-2">
+                <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-slate-800 text-slate-200 border-slate-700">
+                  Tổng Team: {teamAccounts.length}
+                </div>
+                <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-teal-900/40 text-teal-300 border-teal-700/60">
+                  Team Slot: {teamSlotAccounts.length}
+                </div>
+                <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-cyan-900/40 text-cyan-300 border-cyan-700/60">
+                  Team Business: {teamBusinessAccounts.length}
+                </div>
+              </div>
+
+              {teamSections.map((section) => (
+                <div key={section.key} className="rounded-2xl border border-slate-700/70 bg-slate-900/40 p-4 sm:p-5 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-base sm:text-lg font-bold text-white">{section.title}</h3>
+                      <p className="text-xs text-slate-400">{section.subtitle}</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full border text-xs font-bold ${section.badgeClass}`}>
+                      {section.accounts.length} acc
+                    </span>
+                  </div>
+
+                  {section.accounts.length === 0 ? (
+                    <div className="text-center py-10 text-slate-500 italic border border-slate-700/50 rounded-xl">
+                      Chưa có tài khoản trong bảng này.
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {section.accounts.map((acc) => {
                 const expDays = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000) : null;
                 const isExpired = expDays !== null && expDays <= 0;
                 const isNear = expDays !== null && expDays > 0 && expDays <= 7;
@@ -4074,6 +4172,9 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           <span className="text-indigo-300">🏢</span>
                           <span className="font-mono text-xl">{acc.username}</span>
                           <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors ml-2" onClick={() => handleCopy(acc.username, "Đã copy Tên Team")} title="Copy Username"><Copy size={14} /> Copy</button>
+                          <span className={`px-2 py-1 rounded-full text-[10px] font-bold border ${isBusinessMode ? "bg-cyan-900/35 text-cyan-300 border-cyan-700/60" : "bg-teal-900/35 text-teal-300 border-teal-700/60"}`}>
+                            {isBusinessMode ? "Bảng Business" : "Bảng Slot"}
+                          </span>
                         </div>
                         <div className="text-xs text-slate-300 mt-3 flex flex-col gap-2">
                           <div className="flex items-center gap-2">
@@ -4112,6 +4213,26 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                             {isExpired ? `❌ Hết hạn ${Math.abs(expDays)}d trước` : expDays !== null ? `✅ Còn ${expDays} ngày` : ""}
                           </div>
                           <div className="text-xs text-cyan-300 font-bold mb-1">{getTeamSaleModeLabel(saleMode)}</div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleQuickTeamSaleModeChange(
+                                acc,
+                                isBusinessMode ? "slot" : "business",
+                              )
+                            }
+                            disabled={!!loadingStates.teamMode?.[acc.id]}
+                            className={`text-[11px] px-2 py-1 rounded border font-bold inline-flex items-center gap-1 transition-colors ${isBusinessMode ? "bg-teal-900/30 text-teal-300 border-teal-700/60 hover:bg-teal-800/40" : "bg-cyan-900/30 text-cyan-300 border-cyan-700/60 hover:bg-cyan-800/40"} ${loadingStates.teamMode?.[acc.id] ? "opacity-60 cursor-wait" : ""}`}
+                            title="Đổi nhanh loại Team"
+                          >
+                            {loadingStates.teamMode?.[acc.id] ? (
+                              <>
+                                <Loader2 size={11} className="animate-spin" /> Đang đổi...
+                              </>
+                            ) : (
+                              <>↔ {isBusinessMode ? "Qua Slot team" : "Qua Business"}</>
+                            )}
+                          </button>
                           <div className="text-xs text-indigo-300 font-bold mb-1">{usedSlots}/4 slot đã cấp</div>
                         </div>
 
@@ -4270,9 +4391,12 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   </div>
                 );
               })}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
-          )
-          }
+          )}
 
           {/* ADD TEAM MODAL */}
           {showTeamAddModal && (
