@@ -137,6 +137,8 @@ function App() {
     targetType: "package1",
     package2Shelf: "main",
   });
+  const [bulkPushProgress, setBulkPushProgress] = useState(0);
+  const bulkPushProgressRef = useRef(null);
 
   // CUSTOM ALERT & CONFIRM MODAL
   const [alertInfo, setAlertInfo] = useState({
@@ -278,6 +280,16 @@ function App() {
     const validIds = new Set(accounts.map((acc) => acc.id));
     setSelectedChatgptIds((prev) => prev.filter((id) => validIds.has(id)));
   }, [accounts]);
+
+  useEffect(
+    () => () => {
+      if (bulkPushProgressRef.current) {
+        clearInterval(bulkPushProgressRef.current);
+        bulkPushProgressRef.current = null;
+      }
+    },
+    [],
+  );
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -1038,6 +1050,35 @@ function App() {
     });
   };
 
+  const startBulkPushProgress = () => {
+    if (bulkPushProgressRef.current) {
+      clearInterval(bulkPushProgressRef.current);
+      bulkPushProgressRef.current = null;
+    }
+    setBulkPushProgress(8);
+    bulkPushProgressRef.current = setInterval(() => {
+      setBulkPushProgress((prev) => {
+        if (prev >= 92) return 92;
+        if (prev < 40) return prev + 8;
+        if (prev < 70) return prev + 4;
+        return prev + 2;
+      });
+    }, 280);
+  };
+
+  const finishBulkPushProgress = (isSuccess = true) => {
+    if (bulkPushProgressRef.current) {
+      clearInterval(bulkPushProgressRef.current);
+      bulkPushProgressRef.current = null;
+    }
+    if (isSuccess) {
+      setBulkPushProgress(100);
+      setTimeout(() => setBulkPushProgress(0), 600);
+      return;
+    }
+    setBulkPushProgress(0);
+  };
+
   const openBulkPushModal = (filteredAccounts = []) => {
     const filteredIds = filteredAccounts.map((acc) => String(acc.id || ""));
     const hasSelected = selectedChatgptIds.length > 0;
@@ -1079,10 +1120,12 @@ function App() {
           : undefined,
     };
 
+    startBulkPushProgress();
     setLoadingStates((prev) => ({ ...prev, bulkPush: true }));
     try {
       const response = await axios.post("/api/chatgpt/bulk-push-shelf", payload);
       const result = response?.data?.result || {};
+      const workerCount = Number(response?.data?.workerCount || 1);
       const requested = Number(result.requested || accountIds.length || 0);
       const updated = Number(result.updated || 0);
       const unchanged = Number(result.unchanged || 0);
@@ -1100,6 +1143,7 @@ function App() {
         `Đã chọn: ${requested}`,
         `Đẩy Datammo thành công: ${updated}`,
         `Chưa hoàn tất: ${unfinished}`,
+        `Luồng xử lý song song: ${workerCount}`,
         `Không đổi: ${unchanged}`,
         `Bỏ qua (đang có khách): ${skippedHasUsers}`,
         `Không tìm thấy: ${missing}`,
@@ -1124,12 +1168,14 @@ function App() {
       setSelectedChatgptIds([]);
       await fetchData();
       broadcastDataChange();
+      finishBulkPushProgress(true);
       showAlert(
         unfinished > 0 ? "Đẩy kệ chưa hoàn tất" : "Đẩy kệ hoàn tất",
         `${msg}${detailLines.length ? `\n${detailLines.join("\n")}` : ""}`,
         unfinished > 0 ? "warning" : "success",
       );
     } catch (error) {
+      finishBulkPushProgress(false);
       const msg = error?.response?.data?.error || "Không thể đẩy kệ hàng loạt";
       showAlert("Lỗi", msg, "error");
     } finally {
@@ -3364,6 +3410,20 @@ function App() {
                     <option value="cheap">2 - Kệ rẻ</option>
                     <option value="none">3 - Không lên kệ</option>
                   </select>
+                </div>
+              )}
+
+              {loadingStates.bulkPush && (
+                <div className="pt-1">
+                  <div className="h-2 w-full bg-slate-800 border border-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300"
+                      style={{ width: `${Math.max(6, Math.min(100, bulkPushProgress))}%` }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1">
+                    Đang đẩy đồng bộ Datammo... {Math.floor(bulkPushProgress)}%
+                  </div>
                 </div>
               )}
             </div>

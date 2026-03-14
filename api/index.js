@@ -1318,12 +1318,25 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
       missingIds: [],
     };
 
-    for (const id of accountIds) {
+    const configuredConcurrency = toPositiveInt(
+      process.env.BULK_PUSH_CONCURRENCY,
+      6,
+    );
+    const workerCount = Math.max(
+      1,
+      Math.min(
+        20,
+        Number.isFinite(configuredConcurrency) ? configuredConcurrency : 6,
+      ),
+    );
+    let queueIndex = 0;
+
+    const processAccountId = async (id) => {
       const existingAcc = accountMap.get(id);
       if (!existingAcc) {
         result.missing += 1;
         result.missingIds.push(id);
-        continue;
+        return;
       }
 
       const hasUsers =
@@ -1335,7 +1348,7 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
           username: existingAcc.username || "",
           reason: "Đang có khách",
         });
-        continue;
+        return;
       }
 
       const currentShelf = normalizePackage2Shelf(
@@ -1349,7 +1362,7 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
           : currentShelf === PACKAGE2_SHELF_NONE;
       if (isSameType && isSameShelf) {
         result.unchanged += 1;
-        continue;
+        return;
       }
 
       try {
@@ -1387,7 +1400,7 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
         if (!updatedAcc) {
           result.failed += 1;
           result.failedIds.push(id);
-          continue;
+          return;
         }
 
         const syncOptions = {
@@ -1455,12 +1468,28 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
         });
         console.error("Bulk push account failed:", id, reason);
       }
-    }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(workerCount, accountIds.length) },
+      () =>
+        (async () => {
+          while (true) {
+            const currentIndex = queueIndex;
+            queueIndex += 1;
+            if (currentIndex >= accountIds.length) break;
+            const id = accountIds[currentIndex];
+            await processAccountId(id);
+          }
+        })(),
+    );
+    await Promise.all(workers);
 
     return res.json({
       message: "Bulk push completed",
       targetType,
       package2Shelf: targetShelf,
+      workerCount: Math.min(workerCount, accountIds.length),
       result,
     });
   } catch (error) {
