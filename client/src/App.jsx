@@ -61,6 +61,7 @@ const getTeamSaleModeLabel = (value) =>
     ? "Business account (1 acc)"
     : "Slot team";
 const DATAMMO_SEEN_ORDER_KEYS_STORAGE_KEY = "datammo_seen_order_keys";
+const DATAMMO_RECENT_ORDER_WINDOW_MS = 15 * 60 * 1000;
 const buildDatammoOrderKey = (order = {}) =>
   String(order._id || order.id || `${order.orderId || "order"}|${order.createdAt || ""}`);
 const normalizeDatammoOrders = (orders = []) =>
@@ -525,10 +526,25 @@ function App() {
 
     const seenKeys = seenDatammoOrderKeysRef.current;
     const allKeys = normalizedOrders.map((order) => buildDatammoOrderKey(order));
+    const recentUnseenOrders = normalizedOrders.filter((order) => {
+      const orderKey = buildDatammoOrderKey(order);
+      const createdAtMs = new Date(order?.createdAt || 0).getTime();
+      if (seenKeys.has(orderKey)) return false;
+      if (!Number.isFinite(createdAtMs) || createdAtMs <= 0) return false;
+      return Date.now() - createdAtMs <= DATAMMO_RECENT_ORDER_WINDOW_MS;
+    });
 
     if (!hasInitializedDatammoOrdersRef.current) {
+      if (recentUnseenOrders.length > 0) {
+        setRecentDatammoOrders(recentUnseenOrders.slice(0, 5));
+      }
       if (seenKeys.size === 0 && allKeys.length > 0) {
         allKeys.forEach((key) => seenKeys.add(key));
+        persistSeenDatammoOrderKeys(seenKeys);
+      } else if (recentUnseenOrders.length > 0) {
+        recentUnseenOrders.forEach((order) =>
+          seenKeys.add(buildDatammoOrderKey(order)),
+        );
         persistSeenDatammoOrderKeys(seenKeys);
       }
       hasInitializedDatammoOrdersRef.current = true;
