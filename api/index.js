@@ -647,8 +647,13 @@ const getDatammoLines = (acc, options = {}) => {
   if (acc.slots !== undefined) {
     const teamSaleMode = normalizeTeamSaleMode(acc.saleMode);
     const teamSlots = Array.isArray(acc.slots) ? acc.slots : [];
-    const formatBusinessContent = () =>
-      `Business_${acc.id || acc.username}|${acc.username}|Bạn gửi kèm gmail chính chủ để admin up`;
+    const formatBusinessContent = () => {
+      const teamUsername = String(acc.username || "").trim();
+      const teamPassword = String(acc.password || "").trim();
+      const emailLink = String(acc.recoveryUrl || "").trim();
+      // Team Business must publish direct credentials format: TK|MK|Link email
+      return `${teamUsername}|${teamPassword}|${emailLink}`;
+    };
     const formatTeamContent = (slotNum) => {
       // Key = "Slot N" đặt đầu để Datammo không dedup 4 dòng thành 1
       // Format: Slot 1|email|Bạn gửi gmail chính chủ để admin up
