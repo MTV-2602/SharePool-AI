@@ -1083,18 +1083,52 @@ function App() {
     try {
       const response = await axios.post("/api/chatgpt/bulk-push-shelf", payload);
       const result = response?.data?.result || {};
+      const requested = Number(result.requested || accountIds.length || 0);
+      const updated = Number(result.updated || 0);
+      const unchanged = Number(result.unchanged || 0);
+      const skippedHasUsers = Number(result.skippedHasUsers || 0);
+      const missing = Number(result.missing || 0);
+      const failed = Number(result.failed || 0);
+      const unfinished = skippedHasUsers + missing + failed;
+      const failedDetails = Array.isArray(result.failedDetails)
+        ? result.failedDetails
+        : [];
+      const skippedAccounts = Array.isArray(result.skippedAccounts)
+        ? result.skippedAccounts
+        : [];
       const msg = [
-        `Đã cập nhật: ${result.updated || 0}`,
-        `Không đổi: ${result.unchanged || 0}`,
-        `Bỏ qua (đang có khách): ${result.skippedHasUsers || 0}`,
-        `Không tìm thấy: ${result.missing || 0}`,
-        `Lỗi: ${result.failed || 0}`,
+        `Đã chọn: ${requested}`,
+        `Đẩy Datammo thành công: ${updated}`,
+        `Chưa hoàn tất: ${unfinished}`,
+        `Không đổi: ${unchanged}`,
+        `Bỏ qua (đang có khách): ${skippedHasUsers}`,
+        `Không tìm thấy: ${missing}`,
+        `Lỗi đồng bộ Datammo: ${failed}`,
       ].join("\n");
+      const detailLines = [];
+      if (failedDetails.length > 0) {
+        detailLines.push("\nChi tiết lỗi:");
+        failedDetails.slice(0, 10).forEach((item) => {
+          const label = item?.username ? `${item.username} (${item.id})` : item?.id;
+          detailLines.push(`- ${label}: ${item?.reason || "Lỗi không xác định"}`);
+        });
+      }
+      if (skippedAccounts.length > 0) {
+        detailLines.push("\nBỏ qua do đang có khách:");
+        skippedAccounts.slice(0, 10).forEach((item) => {
+          const label = item?.username ? `${item.username} (${item.id})` : item?.id;
+          detailLines.push(`- ${label}`);
+        });
+      }
       setShowBulkPushModal(false);
       setSelectedChatgptIds([]);
       await fetchData();
       broadcastDataChange();
-      showAlert("Đẩy kệ hàng loạt xong", msg, "success");
+      showAlert(
+        unfinished > 0 ? "Đẩy kệ chưa hoàn tất" : "Đẩy kệ hoàn tất",
+        `${msg}${detailLines.length ? `\n${detailLines.join("\n")}` : ""}`,
+        unfinished > 0 ? "warning" : "success",
+      );
     } catch (error) {
       const msg = error?.response?.data?.error || "Không thể đẩy kệ hàng loạt";
       showAlert("Lỗi", msg, "error");

@@ -724,9 +724,25 @@ const getDatammoLines = (acc, options = {}) => {
 const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   const forceOldPackage2Sync = options.forceOldPackage2Sync === true;
   const forceNewPackage2Sync = options.forceNewPackage2Sync === true;
+  const strictDatammoSync =
+    options.strictDatammoSync === true || options.throwOnSyncError === true;
   const isPackage2Context =
     oldAcc?.type === "package2" || newAcc?.type === "package2";
   const isManualPackage2ShelfSync = forceNewPackage2Sync && isPackage2Context;
+  const syncErrors = [];
+  const recordSyncError = (stage, item, inventoryUrl, errorValue) => {
+    const errorText =
+      typeof errorValue === "string"
+        ? errorValue
+        : JSON.stringify(errorValue || "unknown error");
+    syncErrors.push({
+      stage,
+      inventoryUrl: inventoryUrl || getDatammoInventoryUrl(item),
+      variantId: item?.variantId || "",
+      content: item?.content || "",
+      error: errorText,
+    });
+  };
   const rawOldLines = getDatammoLines(oldAcc, {
     includeAllPackage2Shelves: true,
     forcePackage2Sync: forceOldPackage2Sync,
@@ -773,7 +789,9 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
       );
       console.log("Datammo DELETE synced:", item.content, "=>", inventoryUrl);
     } catch (err) {
-      console.error("Datammo DELETE err:", err?.response?.data || err.message);
+      const deleteErr = err?.response?.data || err.message;
+      recordSyncError("delete", item, inventoryUrl, deleteErr);
+      console.error("Datammo DELETE err:", deleteErr);
     }
   }
 
@@ -918,9 +936,25 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
         }
       }
 
-      console.error("Datammo ADD err:", errData || err.message);
+      const addErr = errData || err.message;
+      recordSyncError("add", item, inventoryUrl, addErr);
+      console.error("Datammo ADD err:", addErr);
     }
   }
+  if (strictDatammoSync && syncErrors.length > 0) {
+    const syncError = new Error(
+      `Datammo sync failed for ${syncErrors.length} item(s)`,
+    );
+    syncError.code = "DATAMMO_SYNC_FAILED";
+    syncError.syncErrors = syncErrors;
+    throw syncError;
+  }
+  return {
+    toDelete: toDelete.length,
+    toAdd: toAdd.length,
+    failed: syncErrors.length,
+    syncErrors,
+  };
 };
 const datammoSyncLocks = new Map();
 const getDatammoSyncLockKey = (oldAcc, newAcc) =>
@@ -1279,12 +1313,16 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
       missing: 0,
       failed: 0,
       failedIds: [],
+      failedDetails: [],
+      skippedAccounts: [],
+      missingIds: [],
     };
 
     for (const id of accountIds) {
       const existingAcc = accountMap.get(id);
       if (!existingAcc) {
         result.missing += 1;
+        result.missingIds.push(id);
         continue;
       }
 
@@ -1292,6 +1330,11 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
         Array.isArray(existingAcc.users) && existingAcc.users.length > 0;
       if (hasUsers) {
         result.skippedHasUsers += 1;
+        result.skippedAccounts.push({
+          id,
+          username: existingAcc.username || "",
+          reason: "Đang có khách",
+        });
         continue;
       }
 
@@ -1351,13 +1394,66 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
           forceOldPackage2Sync:
             existingAcc.type === "package2" || targetType === "package2",
           forceNewPackage2Sync: targetType === "package2",
+          strictDatammoSync: true,
         };
-        await syncDatammoUpdateLocked(existingAcc, updatedAcc, syncOptions);
+        try {
+          await syncDatammoUpdateLocked(existingAcc, updatedAcc, syncOptions);
+        } catch (syncErr) {
+          // Rollback DB state if Datammo sync fails to avoid false-success state.
+          try {
+            const rollbackPayload = normalizeChatgptPayload(
+              {
+                type: existingAcc.type,
+                package2Shelf: existingAcc.package2Shelf,
+                package2DatammoKey: existingAcc.package2DatammoKey || "",
+                package2DatammoKeysUsed: existingAcc.package2DatammoKeysUsed || [],
+              },
+              existingAcc,
+            );
+            const rolledBack = await Account.findOneAndUpdate(
+              { id },
+              rollbackPayload,
+              { new: true },
+            );
+            if (rolledBack) {
+              await syncDatammoUpdateLocked(updatedAcc, rolledBack, {
+                forceOldPackage2Sync: true,
+                forceNewPackage2Sync: rolledBack.type === "package2",
+              });
+            }
+          } catch (rollbackErr) {
+            console.error(
+              "Bulk push rollback failed:",
+              id,
+              rollbackErr?.response?.data || rollbackErr.message,
+            );
+          }
+          throw syncErr;
+        }
         result.updated += 1;
       } catch (err) {
         result.failed += 1;
         result.failedIds.push(id);
-        console.error("Bulk push account failed:", id, err.message);
+        const syncDetails = Array.isArray(err?.syncErrors)
+          ? err.syncErrors
+              .slice(0, 3)
+              .map(
+                (item) =>
+                  `${item.stage} ${item.variantId || ""} ${item.error || ""}`.trim(),
+              )
+              .join(" | ")
+          : "";
+        const reason =
+          syncDetails ||
+          err?.response?.data?.error ||
+          err?.message ||
+          "Unknown error";
+        result.failedDetails.push({
+          id,
+          username: existingAcc?.username || "",
+          reason,
+        });
+        console.error("Bulk push account failed:", id, reason);
       }
     }
 
