@@ -54,6 +54,12 @@ const getPackage2ShelfLabel = (value) => {
   if (shelf === "none") return "Không lên kệ";
   return "Kệ tổng";
 };
+const normalizeTeamSaleMode = (value) =>
+  value === "business" ? "business" : "slot";
+const getTeamSaleModeLabel = (value) =>
+  normalizeTeamSaleMode(value) === "business"
+    ? "Business account (1 acc)"
+    : "Slot team";
 
 function App() {
   // LOGIN STATE
@@ -67,8 +73,8 @@ function App() {
   const [teamAccounts, setTeamAccounts] = useState([]);
   const [showTeamAddModal, setShowTeamAddModal] = useState(false);
   const [showTeamEditModal, setShowTeamEditModal] = useState(false);
-  const [teamAddForm, setTeamAddForm] = useState({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "" });
-  const [teamEditForm, setTeamEditForm] = useState({ id: "", username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "" });
+  const [teamAddForm, setTeamAddForm] = useState({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "", saleMode: "slot" });
+  const [teamEditForm, setTeamEditForm] = useState({ id: "", username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "", saleMode: "slot" });
   const [showSlotModal, setShowSlotModal] = useState(false);
   const [slotTarget, setSlotTarget] = useState({ accId: null, slotIdx: null, slot: null });
   const [slotFormGmail, setSlotFormGmail] = useState("");
@@ -489,7 +495,12 @@ function App() {
       setNetflixAccounts(sortA(res.data?.netflix));
       setCanvaAccounts(sortA(res.data?.canva));
       setCapcutAccounts(sortA(res.data?.capcut));
-      setTeamAccounts(sortA(res.data?.team));
+      setTeamAccounts(
+        sortA(res.data?.team).map((acc) => ({
+          ...acc,
+          saleMode: normalizeTeamSaleMode(acc.saleMode),
+        })),
+      );
 
     } catch (error) {
       if (showLoader) {
@@ -2857,7 +2868,7 @@ function App() {
             const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
             const recoveryUrl = recoveryMatch ? recoveryMatch[1].trim() : "";
 
-            setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl: recoveryUrl, note: "", expiredAt: getDefaultOneMonthDateInput() });
+            setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl: recoveryUrl, note: "", expiredAt: getDefaultOneMonthDateInput(), saleMode: "slot" });
             setShowImportTeamModal(false);
             setTeamImportText("");
             setShowTeamAddModal(true);
@@ -3773,7 +3784,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 📋 Nhập Format
               </button>
               <button
-                onClick={() => { setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: getDefaultOneMonthDateInput() }); setShowTeamAddModal(true); }}
+                onClick={() => { setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: getDefaultOneMonthDateInput(), saleMode: "slot" }); setShowTeamAddModal(true); }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-500"
               >
                 <UserPlus size={16} /> Thêm Team Acc
@@ -3789,7 +3800,10 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 const expDays = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000) : null;
                 const isExpired = expDays !== null && expDays <= 0;
                 const isNear = expDays !== null && expDays > 0 && expDays <= 7;
-                const usedSlots = (acc.slots || []).filter(s => s.status === "active").length;
+                const saleMode = normalizeTeamSaleMode(acc.saleMode);
+                const isBusinessMode = saleMode === "business";
+                const usedSlots = (acc.slots || []).filter((s) => s.status === "active" && !!s.gmail).length;
+                const hasEmptySlot = (acc.slots || []).some((s) => s.status === "empty" || !s.gmail);
                 return (
                   <div key={acc.id} className={`rounded-2xl border shadow-xl overflow-hidden ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}>
                     {/* Account header */}
@@ -3836,28 +3850,43 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           <div className={`text-xs font-bold ${isExpired ? "text-red-400" : isNear ? "text-yellow-400" : "text-green-400"}`}>
                             {isExpired ? `❌ Hết hạn ${Math.abs(expDays)}d trước` : expDays !== null ? `✅ Còn ${expDays} ngày` : ""}
                           </div>
+                          <div className="text-xs text-cyan-300 font-bold mb-1">{getTeamSaleModeLabel(saleMode)}</div>
                           <div className="text-xs text-indigo-300 font-bold mb-1">{usedSlots}/4 slot đã cấp</div>
                         </div>
 
                         <div className="w-full flex flex-col gap-2 mt-auto pt-2">
-                          {usedSlots < 4 ? (
+                          {hasEmptySlot ? (
                             <div className="flex flex-col gap-1 my-1 w-full">
-                              <div className="w-full px-2 py-1 bg-teal-900/40 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex flex-col gap-0.5 shadow-sm items-center justify-center">
-                                <span className="flex items-center gap-1"><Globe size={10} /> Đang lên kệ Datammo: Còn {4 - usedSlots} Slot</span>
-                              </div>
+                              {isBusinessMode ? (
+                                usedSlots === 0 ? (
+                                  <div className="w-full px-2 py-1 bg-teal-900/40 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex flex-col gap-0.5 shadow-sm items-center justify-center">
+                                    <span className="flex items-center gap-1"><Globe size={10} /> Đang lên kệ Datammo: Business (1 acc)</span>
+                                  </div>
+                                ) : (
+                                  <div className="w-full px-2 py-1 bg-amber-900/30 text-amber-300 font-bold rounded text-[10px] uppercase border border-amber-700/50 flex flex-col gap-0.5 shadow-sm items-center justify-center">
+                                    <span className="flex items-center gap-1"><AlertTriangle size={10} /> Business tạm dừng lên kệ (đang có khách)</span>
+                                  </div>
+                                )
+                              ) : (
+                                <div className="w-full px-2 py-1 bg-teal-900/40 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex flex-col gap-0.5 shadow-sm items-center justify-center">
+                                  <span className="flex items-center gap-1"><Globe size={10} /> Đang lên kệ Datammo: Còn {4 - usedSlots} Slot</span>
+                                </div>
+                              )}
                               <div className="flex gap-2">
-                                <button onClick={() => {
-                                  const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
-                                  if (emptyIdx !== -1) {
-                                    setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
-                                    setSlotFormGmail("datammo@guest.com"); setSlotFormName("[Datammo] Khách mới");
-                                    setSlotFormExp(new Date().toISOString().split("T")[0]);
-                                    setSlotFormExpiredAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
-                                    setShowSlotModal(true);
-                                  }
-                                }} className="bg-teal-700 hover:bg-teal-600 font-bold text-white px-2 py-1.5 rounded text-xs flex-1 transition-colors shadow flex items-center justify-center gap-1" title="Tự động điền Form với chữ Datammo">
-                                  + Datammo
-                                </button>
+                                {!isBusinessMode && (
+                                  <button onClick={() => {
+                                    const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
+                                    if (emptyIdx !== -1) {
+                                      setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
+                                      setSlotFormGmail("datammo@guest.com"); setSlotFormName("[Datammo] Khách mới");
+                                      setSlotFormExp(new Date().toISOString().split("T")[0]);
+                                      setSlotFormExpiredAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+                                      setShowSlotModal(true);
+                                    }
+                                  }} className="bg-teal-700 hover:bg-teal-600 font-bold text-white px-2 py-1.5 rounded text-xs flex-1 transition-colors shadow flex items-center justify-center gap-1" title="Tự động điền Form với chữ Datammo">
+                                    + Datammo
+                                  </button>
+                                )}
                                 <button onClick={() => {
                                   const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
                                   if (emptyIdx !== -1) {
@@ -3867,7 +3896,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                     setSlotFormExpiredAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
                                     setShowSlotModal(true);
                                   }
-                                }} className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-2 py-1.5 rounded text-xs flex-1 transition-colors shadow flex items-center justify-center gap-1" title="Gán Khách ngoài">
+                                }} className={`bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-2 py-1.5 rounded text-xs transition-colors shadow flex items-center justify-center gap-1 ${isBusinessMode ? "w-full" : "flex-1"}`} title="Gán Khách ngoài">
                                   <UserPlus size={14} /> Khách
                                 </button>
                               </div>
@@ -3883,7 +3912,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           </button>
 
                           <div className="flex gap-2 w-full relative group">
-                            <button onClick={() => { setTeamEditForm({ id: acc.id, username: acc.username, password: acc.password, emailPassword: acc.emailPassword || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "" }); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
+                            <button onClick={() => { setTeamEditForm({ id: acc.id, username: acc.username, password: acc.password, emailPassword: acc.emailPassword || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode) }); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
                             <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
                           </div>
                         </div>
@@ -4001,6 +4030,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   </div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" placeholder="http://..." value={teamAddForm.recoveryUrl} onChange={e => setTeamAddForm({ ...teamAddForm, recoveryUrl: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Hạn của Team Acc</label><input type="date" className="form-input w-full" value={teamAddForm.expiredAt} onChange={e => setTeamAddForm({ ...teamAddForm, expiredAt: e.target.value })} /></div>
+                  <div className="form-group">
+                    <label className="block text-xs text-slate-400 mb-1">🛒 Loại bán Datammo</label>
+                    <select className="form-input w-full" value={teamAddForm.saleMode} onChange={e => setTeamAddForm({ ...teamAddForm, saleMode: normalizeTeamSaleMode(e.target.value) })}>
+                      <option value="slot">Slot team (4 slot)</option>
+                      <option value="business">Business account (1 acc)</option>
+                    </select>
+                  </div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📝 Ghi chú</label><input className="form-input w-full" value={teamAddForm.note} onChange={e => setTeamAddForm({ ...teamAddForm, note: e.target.value })} /></div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
@@ -4033,6 +4069,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   </div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" value={teamEditForm.recoveryUrl} onChange={e => setTeamEditForm({ ...teamEditForm, recoveryUrl: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Hạn Team Acc</label><input type="date" className="form-input w-full" value={teamEditForm.expiredAt} onChange={e => setTeamEditForm({ ...teamEditForm, expiredAt: e.target.value })} /></div>
+                  <div className="form-group">
+                    <label className="block text-xs text-slate-400 mb-1">🛒 Loại bán Datammo</label>
+                    <select className="form-input w-full" value={teamEditForm.saleMode} onChange={e => setTeamEditForm({ ...teamEditForm, saleMode: normalizeTeamSaleMode(e.target.value) })}>
+                      <option value="slot">Slot team (4 slot)</option>
+                      <option value="business">Business account (1 acc)</option>
+                    </select>
+                  </div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📝 Ghi chú</label><input className="form-input w-full" value={teamEditForm.note} onChange={e => setTeamEditForm({ ...teamEditForm, note: e.target.value })} /></div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">

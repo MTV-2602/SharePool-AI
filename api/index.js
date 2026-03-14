@@ -91,6 +91,7 @@ const teamAccountSchema = new mongoose.Schema({
   password: { type: String, default: "" },      // Mật khẩu GPT
   emailPassword: { type: String, default: "" }, // Mật khẩu email
   recoveryUrl: { type: String, default: "" },   // Link recovery
+  saleMode: { type: String, default: "slot" },  // "slot" | "business"
   note: { type: String, default: "" },
   slots: { type: [teamSlotSchema], default: () => Array(4).fill(null).map(() => ({ status: "empty" })) },
   createdAt: { type: String },
@@ -227,6 +228,18 @@ const DATAMMO_VARIANT_PKG1 = "3dbd0d98-5ed5-4044-9557-8d8a902da45f";
 const DATAMMO_VARIANT_PKG2 = "98ed02c7-d28b-4287-945e-bdfb24a09397";
 const DATAMMO_VARIANT_PKG2_CHEAP = "b5449604-4fce-4edf-89d3-d4400d0f34a6";
 const DATAMMO_VARIANT_PKG3 = "5e3567bc-ada4-471d-b93b-725a0735b677";
+const DATAMMO_VARIANT_TEAM_BUSINESS = "8851247b-72de-4c31-ac84-470cb97abb0e";
+
+const TEAM_SALE_MODE_SLOT = "slot";
+const TEAM_SALE_MODE_BUSINESS = "business";
+const VALID_TEAM_SALE_MODES = [TEAM_SALE_MODE_SLOT, TEAM_SALE_MODE_BUSINESS];
+const normalizeTeamSaleMode = (value, fallback = TEAM_SALE_MODE_SLOT) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (VALID_TEAM_SALE_MODES.includes(normalized)) return normalized;
+  return fallback;
+};
 
 const PACKAGE2_SHELF_MAIN = "main";
 const PACKAGE2_SHELF_CHEAP = "cheap";
@@ -632,13 +645,31 @@ const getDatammoLines = (acc, options = {}) => {
 
   // 1) Logic cho GÓI 3 (Team Account - Business Slots)
   if (acc.slots !== undefined) {
+    const teamSaleMode = normalizeTeamSaleMode(acc.saleMode);
+    const teamSlots = Array.isArray(acc.slots) ? acc.slots : [];
+    const formatBusinessContent = () =>
+      `Business_${acc.id || acc.username}|${acc.username}|Bạn gửi kèm gmail chính chủ để admin up`;
     const formatTeamContent = (slotNum) => {
       // Key = "Slot N" đặt đầu để Datammo không dedup 4 dòng thành 1
       // Format: Slot 1|email|Bạn gửi gmail chính chủ để admin up
       return `Slot ${slotNum}|${acc.username}|Bạn gửi kèm gmail chính chủ để admin up`;
     };
 
-    acc.slots.forEach((slot, index) => {
+    if (teamSaleMode === TEAM_SALE_MODE_BUSINESS) {
+      const activeSlots = teamSlots.filter(
+        (slot) => slot.status !== "empty" && !!slot.gmail,
+      ).length;
+      // Business mode: each Team account is exactly 1 stock item, only when account is fully free.
+      if (activeSlots === 0) {
+        lines.push({
+          variantId: DATAMMO_VARIANT_TEAM_BUSINESS,
+          content: formatBusinessContent(),
+        });
+      }
+      return lines;
+    }
+
+    teamSlots.forEach((slot, index) => {
       // Slot trống được đẩy lên sàn MMO
       if (slot.status === "empty" || !slot.gmail) {
         lines.push({ variantId: DATAMMO_VARIANT_PKG3, content: formatTeamContent(index + 1) });
@@ -1526,6 +1557,7 @@ app.post("/api/team", verifyToken, async (req, res) => {
     const newAcc = {
       id: Date.now().toString(),
       ...req.body,
+      saleMode: normalizeTeamSaleMode(req.body.saleMode),
       slots: req.body.slots || Array(4).fill(null).map(() => ({ status: "empty" })),
       createdAt: now.toISOString(),
       expiredAt: req.body.expiredAt || expiredDate.toISOString(),
@@ -1540,7 +1572,15 @@ app.post("/api/team", verifyToken, async (req, res) => {
 app.put("/api/team/:id", verifyToken, async (req, res) => {
   try {
     const existing = await TeamAccount.findOne({ id: req.params.id });
-    const updated = await TeamAccount.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+    const updatePayload = { ...req.body };
+    if (updatePayload.saleMode !== undefined) {
+      updatePayload.saleMode = normalizeTeamSaleMode(updatePayload.saleMode);
+    }
+    const updated = await TeamAccount.findOneAndUpdate(
+      { id: req.params.id },
+      updatePayload,
+      { new: true },
+    );
     await syncDatammoUpdateLocked(existing, updated);
     res.json({ message: "Updated", account: updated });
   } catch (e) { res.status(500).json({ error: e.message }); }
