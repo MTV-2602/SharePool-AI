@@ -1647,6 +1647,7 @@ function App() {
       subtitle: "Bán theo từng slot (tối đa 4 slot/account)",
       accounts: teamSlotAccounts,
       badgeClass: "bg-teal-900/40 text-teal-300 border-teal-700/60",
+      panelClass: "border-teal-700/40 bg-teal-950/10",
     },
     {
       key: "business",
@@ -1654,6 +1655,7 @@ function App() {
       subtitle: "Bán theo account gốc (1 account/item)",
       accounts: teamBusinessAccounts,
       badgeClass: "bg-cyan-900/40 text-cyan-300 border-cyan-700/60",
+      panelClass: "border-cyan-700/40 bg-cyan-950/10",
     },
   ];
 
@@ -3484,7 +3486,7 @@ function App() {
                     />
                   </div>
                   <div className="text-[11px] text-slate-400 mt-1">
-                    Đang đẩy đồng bộ Datammo... {bulkPushProgress.completed}/{bulkPushProgress.total} ({bulkPushProgress.percent}%)
+                    Đang đẩy đồng bộ Datammo... {bulkPushProgress.percent}%
                   </div>
                 </div>
               )}
@@ -4293,25 +4295,29 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 </div>
               </div>
 
-              {teamSections.map((section) => (
-                <div key={section.key} className="rounded-2xl border border-slate-700/70 bg-slate-900/40 p-4 sm:p-5 space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <h3 className="text-base sm:text-lg font-bold text-white">{section.title}</h3>
-                      <p className="text-xs text-slate-400">{section.subtitle}</p>
+              <div className="grid gap-6 xl:grid-cols-2 items-start">
+                {teamSections.map((section) => (
+                  <div
+                    key={section.key}
+                    className={`rounded-2xl border p-4 sm:p-5 space-y-4 shadow-lg ${section.panelClass}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-base sm:text-lg font-bold text-white">{section.title}</h3>
+                        <p className="text-xs text-slate-400">{section.subtitle}</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full border text-xs font-bold ${section.badgeClass}`}>
+                        {section.accounts.length} acc
+                      </span>
                     </div>
-                    <span className={`px-3 py-1 rounded-full border text-xs font-bold ${section.badgeClass}`}>
-                      {section.accounts.length} acc
-                    </span>
-                  </div>
 
-                  {section.accounts.length === 0 ? (
-                    <div className="text-center py-10 text-slate-500 italic border border-slate-700/50 rounded-xl">
-                      Chưa có tài khoản trong bảng này.
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {section.accounts.map((acc) => {
+                    {section.accounts.length === 0 ? (
+                      <div className="text-center py-10 text-slate-500 italic border border-slate-700/50 rounded-xl">
+                        Chưa có tài khoản trong bảng này.
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {section.accounts.map((acc) => {
                 const expDays = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000) : null;
                 const isExpired = expDays !== null && expDays <= 0;
                 const isNear = expDays !== null && expDays > 0 && expDays <= 7;
@@ -4547,10 +4553,11 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   </div>
                 );
               })}
-                    </div>
-                  )}
-                </div>
-              ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
