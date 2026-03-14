@@ -285,6 +285,83 @@ const isDatammoDuplicateError = (responseData) =>
   getDatammoUploadErrors(responseData).some((msg) =>
     /duplicate/i.test(String(msg || "")),
   );
+const DATAMMO_MIN_REQUEST_GAP_MS = toPositiveInt(
+  process.env.DATAMMO_MIN_REQUEST_GAP_MS,
+  300,
+);
+const DATAMMO_RATE_LIMIT_RETRIES = toPositiveInt(
+  process.env.DATAMMO_RATE_LIMIT_RETRIES,
+  6,
+);
+const DATAMMO_RATE_LIMIT_BASE_DELAY_MS = toPositiveInt(
+  process.env.DATAMMO_RATE_LIMIT_BASE_DELAY_MS,
+  1200,
+);
+let datammoRequestQueue = Promise.resolve();
+let datammoNextRequestAt = 0;
+const waitMs = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+const getDatammoErrorText = (err) => {
+  const responseData = err?.response?.data;
+  if (typeof responseData === "string") return responseData;
+  if (responseData) return JSON.stringify(responseData);
+  return String(err?.message || "");
+};
+const isDatammoRateLimitError = (err) => {
+  const status = Number(err?.response?.status || err?.status || 0);
+  if (status === 429) return true;
+  const text = getDatammoErrorText(err).toLowerCase();
+  return (
+    text.includes("too many requests") ||
+    text.includes("rate limit") ||
+    text.includes("try again later")
+  );
+};
+const enqueueDatammoRequest = async (fn) => {
+  const run = async () => {
+    const now = Date.now();
+    const waitFor = Math.max(0, datammoNextRequestAt - now);
+    if (waitFor > 0) await waitMs(waitFor);
+    datammoNextRequestAt = Date.now() + DATAMMO_MIN_REQUEST_GAP_MS;
+    return fn();
+  };
+  const task = datammoRequestQueue.then(run, run);
+  datammoRequestQueue = task.catch(() => undefined);
+  return task;
+};
+const postDatammo = async (
+  url,
+  payload,
+  options = {},
+) => {
+  const maxRetries = Math.max(
+    0,
+    Number.isFinite(Number(options.maxRetries))
+      ? Number(options.maxRetries)
+      : DATAMMO_RATE_LIMIT_RETRIES,
+  );
+  let attempt = 0;
+  while (true) {
+    try {
+      return await enqueueDatammoRequest(() =>
+        axios.post(url, payload, {
+          headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` },
+        }),
+      );
+    } catch (err) {
+      if (!isDatammoRateLimitError(err) || attempt >= maxRetries) {
+        throw err;
+      }
+      const backoff = Math.min(
+        DATAMMO_RATE_LIMIT_BASE_DELAY_MS * 2 ** attempt,
+        20000,
+      );
+      const jitter = Math.floor(Math.random() * 250);
+      await waitMs(backoff + jitter);
+      attempt += 1;
+    }
+  }
+};
 const sanitizeDatammoKey = (value) =>
   String(value || "")
     .trim()
@@ -409,10 +486,9 @@ const cleanupPackage2KeysOnDatammo = async (accountId) => {
   for (const target of targets) {
     for (const key of knownKeys) {
       try {
-        await axios.post(
+        await postDatammo(
           `${target.inventoryUrl}/delete`,
           { variantId: target.variantId, content: `${key}|` },
-          { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
         );
       } catch (err) {
         console.error(
@@ -787,10 +863,9 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   for (const item of toDelete) {
     const inventoryUrl = getDatammoInventoryUrl(item);
     try {
-      await axios.post(
+      await postDatammo(
         `${inventoryUrl}/delete`,
         { variantId: item.variantId, content: item.content },
-        { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
       );
       console.log("Datammo DELETE synced:", item.content, "=>", inventoryUrl);
     } catch (err) {
@@ -818,10 +893,9 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   for (const item of toAdd) {
     const inventoryUrl = getDatammoInventoryUrl(item);
     try {
-      const addResp = await axios.post(
+      const addResp = await postDatammo(
         inventoryUrl,
         { variantId: item.variantId, content: item.content },
-        { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
       );
       const hasDuplicateInBody = isDatammoDuplicateError(addResp?.data);
       if (hasDuplicateInBody) {
@@ -842,23 +916,20 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
         try {
           const primaryKey = getDatammoPrimaryKey(item);
           const keyOnlyContent = primaryKey ? `${primaryKey}|` : "";
-          await axios.post(
+          await postDatammo(
             `${inventoryUrl}/delete`,
             { variantId: item.variantId, content: item.content },
-            { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
           );
           if (keyOnlyContent && keyOnlyContent !== item.content) {
-            await axios.post(
+            await postDatammo(
               `${inventoryUrl}/delete`,
               { variantId: item.variantId, content: keyOnlyContent },
-              { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
             );
           }
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          const retryResp = await axios.post(
+          await waitMs(500);
+          const retryResp = await postDatammo(
             inventoryUrl,
             { variantId: item.variantId, content: item.content },
-            { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
           );
           const retryHasDuplicate = isDatammoDuplicateError(retryResp?.data);
           if (retryHasDuplicate) {
@@ -910,10 +981,9 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
                 newAcc.package2DatammoKeysUsed,
                 rotatedKey,
               );
-              const rotatedResp = await axios.post(
+              const rotatedResp = await postDatammo(
                 inventoryUrl,
                 { variantId: item.variantId, content: rotatedContent },
-                { headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` } },
               );
               if (isDatammoDuplicateError(rotatedResp?.data)) {
                 throw new Error(
