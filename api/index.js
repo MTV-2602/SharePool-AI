@@ -1242,6 +1242,136 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
   }
 });
 
+// 3.5 BULK PUSH TO SHELF (batch update type/shelf with Datammo sync)
+app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
+  try {
+    const targetType = String(req.body?.targetType || "").trim().toLowerCase();
+    if (!["package1", "package2"].includes(targetType)) {
+      return res
+        .status(400)
+        .json({ error: "targetType phải là package1 hoặc package2" });
+    }
+
+    const accountIds = Array.from(
+      new Set(
+        (Array.isArray(req.body?.accountIds) ? req.body.accountIds : [])
+          .map((id) => String(id || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    if (accountIds.length === 0) {
+      return res.status(400).json({ error: "Danh sách account trống" });
+    }
+
+    const targetShelf =
+      targetType === "package2"
+        ? normalizePackage2Shelf(req.body?.package2Shelf, PACKAGE2_SHELF_MAIN)
+        : PACKAGE2_SHELF_NONE;
+
+    const docs = await Account.find({ id: { $in: accountIds } }).lean();
+    const accountMap = new Map(docs.map((acc) => [String(acc.id), acc]));
+
+    const result = {
+      requested: accountIds.length,
+      updated: 0,
+      unchanged: 0,
+      skippedHasUsers: 0,
+      missing: 0,
+      failed: 0,
+      failedIds: [],
+    };
+
+    for (const id of accountIds) {
+      const existingAcc = accountMap.get(id);
+      if (!existingAcc) {
+        result.missing += 1;
+        continue;
+      }
+
+      const hasUsers =
+        Array.isArray(existingAcc.users) && existingAcc.users.length > 0;
+      if (hasUsers) {
+        result.skippedHasUsers += 1;
+        continue;
+      }
+
+      const currentShelf = normalizePackage2Shelf(
+        existingAcc.package2Shelf,
+        PACKAGE2_SHELF_NONE,
+      );
+      const isSameType = existingAcc.type === targetType;
+      const isSameShelf =
+        targetType === "package2"
+          ? currentShelf === targetShelf
+          : currentShelf === PACKAGE2_SHELF_NONE;
+      if (isSameType && isSameShelf) {
+        result.unchanged += 1;
+        continue;
+      }
+
+      try {
+        const normalizedPayload = normalizeChatgptPayload(
+          {
+            type: targetType,
+            package2Shelf: targetShelf,
+          },
+          existingAcc,
+        );
+
+        if (targetType === "package2") {
+          normalizedPayload.package2DatammoKey =
+            await resolveOwnedPackage2DatammoKey(
+              id,
+              normalizedPayload.package2DatammoKey ||
+                existingAcc.package2DatammoKey,
+              "bulk-push",
+            );
+          normalizedPayload.package2DatammoKeysUsed = mergeDatammoKeyHistory(
+            normalizedPayload.package2DatammoKeysUsed ||
+              existingAcc.package2DatammoKeysUsed,
+            normalizedPayload.package2DatammoKey,
+          );
+        } else {
+          normalizedPayload.package2DatammoKey = "";
+          normalizedPayload.package2DatammoKeysUsed = [];
+        }
+
+        const updatedAcc = await Account.findOneAndUpdate(
+          { id },
+          normalizedPayload,
+          { new: true },
+        );
+        if (!updatedAcc) {
+          result.failed += 1;
+          result.failedIds.push(id);
+          continue;
+        }
+
+        const syncOptions = {
+          forceOldPackage2Sync:
+            existingAcc.type === "package2" || targetType === "package2",
+          forceNewPackage2Sync: targetType === "package2",
+        };
+        await syncDatammoUpdateLocked(existingAcc, updatedAcc, syncOptions);
+        result.updated += 1;
+      } catch (err) {
+        result.failed += 1;
+        result.failedIds.push(id);
+        console.error("Bulk push account failed:", id, err.message);
+      }
+    }
+
+    return res.json({
+      message: "Bulk push completed",
+      targetType,
+      package2Shelf: targetShelf,
+      result,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // 4. DELETE ACCOUNT
 app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
   try {

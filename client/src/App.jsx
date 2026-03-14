@@ -114,6 +114,7 @@ function App() {
     addAccount: false,
     editAccount: false,
     deleteAccount: false,
+    bulkPush: false,
     changeType: {},
     changeShelf: {},
   });
@@ -128,6 +129,13 @@ function App() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showImportGPTModal, setShowImportGPTModal] = useState(false);
+  const [showBulkPushModal, setShowBulkPushModal] = useState(false);
+  const [selectedChatgptIds, setSelectedChatgptIds] = useState([]);
+  const [bulkPushForm, setBulkPushForm] = useState({
+    scope: "selected",
+    targetType: "package1",
+    package2Shelf: "main",
+  });
 
   // CUSTOM ALERT & CONFIRM MODAL
   const [alertInfo, setAlertInfo] = useState({
@@ -264,6 +272,11 @@ function App() {
     return () =>
       document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    const validIds = new Set(accounts.map((acc) => acc.id));
+    setSelectedChatgptIds((prev) => prev.filter((id) => validIds.has(id)));
+  }, [accounts]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -992,6 +1005,103 @@ function App() {
     }
   };
 
+  const handleToggleChatgptSelection = (accId, checked) => {
+    const id = String(accId || "");
+    if (!id) return;
+    setSelectedChatgptIds((prev) => {
+      if (checked) {
+        if (prev.includes(id)) return prev;
+        return [...prev, id];
+      }
+      return prev.filter((item) => item !== id);
+    });
+  };
+
+  const handleToggleSelectAllFilteredChatgpt = (
+    checked,
+    filteredAccountIds = [],
+  ) => {
+    const ids = Array.isArray(filteredAccountIds)
+      ? filteredAccountIds
+          .map((id) => String(id || "").trim())
+          .filter(Boolean)
+      : [];
+    setSelectedChatgptIds((prev) => {
+      const selected = new Set(prev);
+      if (checked) {
+        ids.forEach((id) => selected.add(id));
+      } else {
+        ids.forEach((id) => selected.delete(id));
+      }
+      return Array.from(selected);
+    });
+  };
+
+  const openBulkPushModal = (filteredAccounts = []) => {
+    const filteredIds = filteredAccounts.map((acc) => String(acc.id || ""));
+    const hasSelected = selectedChatgptIds.length > 0;
+    const hasFiltered = filteredIds.length > 0;
+    if (!hasSelected && !hasFiltered) {
+      showAlert("Thiếu dữ liệu", "Không có tài khoản nào để đẩy kệ.", "warning");
+      return;
+    }
+    setBulkPushForm((prev) => ({
+      ...prev,
+      scope: hasSelected ? "selected" : "filtered",
+    }));
+    setShowBulkPushModal(true);
+  };
+
+  const handleBulkPushToShelf = async (filteredAccounts = []) => {
+    const filteredIds = filteredAccounts.map((acc) => String(acc.id || ""));
+    const sourceIds =
+      bulkPushForm.scope === "filtered" ? filteredIds : selectedChatgptIds;
+    const accountIds = Array.from(
+      new Set(
+        sourceIds
+          .map((id) => String(id || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (!accountIds.length) {
+      showAlert("Thiếu dữ liệu", "Chưa có tài khoản nào được chọn.", "warning");
+      return;
+    }
+
+    const payload = {
+      accountIds,
+      targetType: bulkPushForm.targetType,
+      package2Shelf:
+        bulkPushForm.targetType === "package2"
+          ? normalizePackage2Shelf(bulkPushForm.package2Shelf)
+          : undefined,
+    };
+
+    setLoadingStates((prev) => ({ ...prev, bulkPush: true }));
+    try {
+      const response = await axios.post("/api/chatgpt/bulk-push-shelf", payload);
+      const result = response?.data?.result || {};
+      const msg = [
+        `Đã cập nhật: ${result.updated || 0}`,
+        `Không đổi: ${result.unchanged || 0}`,
+        `Bỏ qua (đang có khách): ${result.skippedHasUsers || 0}`,
+        `Không tìm thấy: ${result.missing || 0}`,
+        `Lỗi: ${result.failed || 0}`,
+      ].join("\n");
+      setShowBulkPushModal(false);
+      setSelectedChatgptIds([]);
+      await fetchData();
+      broadcastDataChange();
+      showAlert("Đẩy kệ hàng loạt xong", msg, "success");
+    } catch (error) {
+      const msg = error?.response?.data?.error || "Không thể đẩy kệ hàng loạt";
+      showAlert("Lỗi", msg, "error");
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, bulkPush: false }));
+    }
+  };
+
   const handleCopy = (text, message = "Đã copy nội dung!") => {
     navigator.clipboard.writeText(text);
     setToastMessage(message);
@@ -1292,6 +1402,50 @@ function App() {
       </div>
     );
   }
+
+  const filteredChatgptAccounts = accounts
+    .filter((acc) => {
+      if (gptSubTab === "package1") return acc.type === "package1";
+      if (gptSubTab === "package2") return acc.type === "package2";
+      if (gptSubTab === "unassigned") return !acc.type || acc.type === "unassigned";
+      return true;
+    })
+    .filter((acc) => {
+      if (gptSubTab !== "package2") return true;
+      if (package2ShelfTab === "all") return true;
+      if (acc.type !== "package2") return false;
+      return normalizePackage2Shelf(acc.package2Shelf) === package2ShelfTab;
+    })
+    .filter((acc) => {
+      if (!searchQuery.trim()) return true;
+      const queryNormalized = toNonAccentVietnamese(searchQuery);
+      if (
+        acc.username &&
+        toNonAccentVietnamese(acc.username).includes(queryNormalized)
+      ) {
+        return true;
+      }
+      if (acc.users && acc.users.length > 0) {
+        return acc.users.some((user) => {
+          const name = typeof user === "object" ? user.name : user;
+          return (
+            name &&
+            toNonAccentVietnamese(name).includes(queryNormalized)
+          );
+        });
+      }
+      return false;
+    });
+  const filteredChatgptIds = filteredChatgptAccounts.map((acc) =>
+    String(acc.id || ""),
+  );
+  const selectedChatgptIdSet = new Set(selectedChatgptIds);
+  const selectedInFilteredCount = filteredChatgptIds.filter((id) =>
+    selectedChatgptIdSet.has(id),
+  ).length;
+  const allFilteredSelected =
+    filteredChatgptIds.length > 0 &&
+    selectedInFilteredCount === filteredChatgptIds.length;
 
   // MAIN DASHBOARD
   return (
@@ -1684,12 +1838,31 @@ function App() {
                   )}
                 </div>
               </div>
-              <button
-                onClick={() => setShowImportGPTModal(true)}
-                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center"
-              >
-                <Upload size={18} /> Import Nhanh Tài Khoản
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-xs text-slate-300 px-3 py-2 bg-slate-800 rounded-lg border border-slate-700">
+                  Đã chọn: <span className="font-bold text-white">{selectedChatgptIds.length}</span>
+                </div>
+                {selectedChatgptIds.length > 0 && (
+                  <button
+                    onClick={() => setSelectedChatgptIds([])}
+                    className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg font-semibold text-sm"
+                  >
+                    Bỏ chọn
+                  </button>
+                )}
+                <button
+                  onClick={() => openBulkPushModal(filteredChatgptAccounts)}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center"
+                >
+                  <Globe size={18} /> Đẩy nhanh lên kệ
+                </button>
+                <button
+                  onClick={() => setShowImportGPTModal(true)}
+                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center"
+                >
+                  <Upload size={18} /> Import Nhanh Tài Khoản
+                </button>
+              </div>
             </div>
 
             {/* SUB-TABS: Gói 1 / Gói 2 / Chưa chọn */}
@@ -1777,6 +1950,20 @@ function App() {
                 <table className="legacy-table w-full border-collapse min-w-[800px]">
                   <thead>
                     <tr style={{ background: "rgba(15, 23, 42, 0.6)" }}>
+                      <th className="w-12 text-center">
+                        <input
+                          type="checkbox"
+                          checked={allFilteredSelected}
+                          onChange={(e) =>
+                            handleToggleSelectAllFilteredChatgpt(
+                              e.target.checked,
+                              filteredChatgptIds,
+                            )
+                          }
+                          title="Chọn tất cả tài khoản đang lọc"
+                          className="w-4 h-4 accent-emerald-500 cursor-pointer"
+                        />
+                      </th>
                       <th className="w-40">Loại Gói</th>
                       <th>Thông Tin</th>
                       <th className="w-32">Link Mail</th>
@@ -1785,56 +1972,22 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {accounts
-                      .filter((acc) => {
-                        // Filter by sub-tab
-                        if (gptSubTab === "package1") return acc.type === "package1";
-                        if (gptSubTab === "package2") return acc.type === "package2";
-                        if (gptSubTab === "unassigned") return !acc.type || acc.type === "unassigned";
-                        return true; // "all"
-                      })
-                      .filter((acc) => {
-                        if (gptSubTab !== "package2") return true;
-                        if (package2ShelfTab === "all") return true;
-                        if (acc.type !== "package2") return false;
-                        return normalizePackage2Shelf(acc.package2Shelf) === package2ShelfTab;
-                      })
-                      .filter((acc) => {
-                        if (!searchQuery.trim()) return true;
-                        const queryNormalized =
-                          toNonAccentVietnamese(searchQuery);
-
-                        // Tìm theo email (normalized)
-                        if (
-                          acc.username &&
-                          toNonAccentVietnamese(acc.username).includes(
-                            queryNormalized,
-                          )
-                        ) {
-                          return true;
-                        }
-
-                        // Tìm theo tên khách hàng (normalized)
-                        if (acc.users && acc.users.length > 0) {
-                          return acc.users.some((user) => {
-                            const name =
-                              typeof user === "object" ? user.name : user;
-                            return (
-                              name &&
-                              toNonAccentVietnamese(name).includes(
-                                queryNormalized,
-                              )
-                            );
-                          });
-                        }
-
-                        return false;
-                      })
-                      .map((acc) => (
+                    {filteredChatgptAccounts.map((acc) => (
                         <tr
                           key={acc.id}
                           className="hover:bg-slate-800/50 transition-colors"
                         >
+                          <td className="align-top text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedChatgptIdSet.has(String(acc.id || ""))}
+                              onChange={(e) =>
+                                handleToggleChatgptSelection(acc.id, e.target.checked)
+                              }
+                              title="Chọn tài khoản"
+                              className="mt-1 w-4 h-4 accent-emerald-500 cursor-pointer"
+                            />
+                          </td>
                           <td className="align-top">
                             <select
                               id={`select-type-${acc.id}`}
@@ -3028,6 +3181,114 @@ function App() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {showBulkPushModal && (
+        <div className="modal-overlay">
+          <div className="modal-box" style={{ maxWidth: "520px" }}>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white">Đẩy Nhanh Lên Kệ</h2>
+              <span
+                className="close cursor-pointer text-slate-400 hover:text-white"
+                onClick={() => setShowBulkPushModal(false)}
+              >
+                &times;
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              <div className="text-xs text-slate-300 bg-slate-800 border border-slate-700 rounded p-3">
+                Đang lọc: <span className="font-bold text-white">{filteredChatgptAccounts.length}</span> acc
+                {" • "}
+                Đã chọn: <span className="font-bold text-white">{selectedChatgptIds.length}</span> acc
+              </div>
+
+              <div className="form-group">
+                <label className="block text-xs text-slate-400 mb-1">Nguồn áp dụng</label>
+                <select
+                  className="form-input w-full"
+                  value={bulkPushForm.scope}
+                  onChange={(e) =>
+                    setBulkPushForm((prev) => ({
+                      ...prev,
+                      scope: e.target.value,
+                    }))
+                  }
+                >
+                  <option
+                    value="selected"
+                    disabled={selectedChatgptIds.length === 0}
+                  >
+                    Chỉ các acc đã chọn ({selectedChatgptIds.length})
+                  </option>
+                  <option value="filtered">
+                    Tất cả acc đang lọc ({filteredChatgptAccounts.length})
+                  </option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="block text-xs text-slate-400 mb-1">Đẩy theo gói</label>
+                <select
+                  className="form-input w-full"
+                  value={bulkPushForm.targetType}
+                  onChange={(e) =>
+                    setBulkPushForm((prev) => ({
+                      ...prev,
+                      targetType: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="package1">Gói 1 - Chia sẻ</option>
+                  <option value="package2">Gói 2 - Linh hoạt</option>
+                </select>
+              </div>
+
+              {bulkPushForm.targetType === "package2" && (
+                <div className="form-group">
+                  <label className="block text-xs text-slate-400 mb-1">Kệ Datammo</label>
+                  <select
+                    className="form-input w-full"
+                    value={bulkPushForm.package2Shelf}
+                    onChange={(e) =>
+                      setBulkPushForm((prev) => ({
+                        ...prev,
+                        package2Shelf: normalizePackage2Shelf(e.target.value),
+                      }))
+                    }
+                  >
+                    <option value="main">1 - Kệ tổng</option>
+                    <option value="cheap">2 - Kệ rẻ</option>
+                    <option value="none">3 - Không lên kệ</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowBulkPushModal(false)}
+                className="btn-secondary"
+                disabled={loadingStates.bulkPush}
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => handleBulkPushToShelf(filteredChatgptAccounts)}
+                className="btn-primary bg-emerald-600 hover:bg-emerald-500 flex items-center gap-2"
+                disabled={loadingStates.bulkPush}
+              >
+                {loadingStates.bulkPush ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" /> Đang đẩy...
+                  </>
+                ) : (
+                  "Đẩy ngay"
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
