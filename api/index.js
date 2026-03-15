@@ -649,6 +649,26 @@ const normalizePackage2Shelf = (shelf, fallback = PACKAGE2_SHELF_MAIN) => {
   if (VALID_PACKAGE2_SHELVES.includes(shelf)) return shelf;
   return fallback;
 };
+const getUserNameValue = (user) => {
+  if (typeof user === "string") return user;
+  if (user && typeof user === "object") return user.name || "";
+  return "";
+};
+const isDatammoManagedUser = (user) => {
+  const normalizedName = String(getUserNameValue(user) || "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalizedName.startsWith("datammo#") ||
+    normalizedName.startsWith("[datammo]")
+  );
+};
+const hasRegularPackage2Customer = (users = []) =>
+  Array.isArray(users) &&
+  users.some((user) => {
+    const name = String(getUserNameValue(user) || "").trim();
+    return name && !isDatammoManagedUser(user);
+  });
 const normalizeDatammoRouteShelf = (rawShelf) => {
   const raw = String(rawShelf || "")
     .trim()
@@ -1425,6 +1445,14 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       normalizedPayload.users !== undefined
         ? normalizedPayload.users
         : existingUsers;
+    const hadRegularPackage2Customer = hasRegularPackage2Customer(existingUsers);
+    const shouldAutoUnsetPackage2Shelf =
+      targetType === "package2" &&
+      (hasRegularPackage2Customer(nextUsers) ||
+        (normalizedPayload.users !== undefined &&
+          Array.isArray(nextUsers) &&
+          nextUsers.length === 0 &&
+          hadRegularPackage2Customer));
     const becamePackage2Available =
       existingAcc.type === "package2" &&
       targetType === "package2" &&
@@ -1447,6 +1475,9 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
           existingAcc.package2DatammoKeysUsed,
         normalizedPayload.package2DatammoKey,
       );
+      if (shouldAutoUnsetPackage2Shelf) {
+        normalizedPayload.package2Shelf = PACKAGE2_SHELF_NONE;
+      }
     } else {
       normalizedPayload.package2DatammoKey = "";
       normalizedPayload.package2DatammoKeysUsed = [];
@@ -1872,6 +1903,9 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
         toAcc.package2DatammoKeysUsed,
         toAcc.package2DatammoKey,
       );
+      if (hasRegularPackage2Customer(toAcc.users)) {
+        toAcc.package2Shelf = PACKAGE2_SHELF_NONE;
+      }
     }
     if (fromAcc.type === "package2" && (!fromAcc.users || fromAcc.users.length === 0)) {
       fromAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
@@ -1883,6 +1917,9 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
         fromAcc.package2DatammoKeysUsed,
         fromAcc.package2DatammoKey,
       );
+      if (hasRegularPackage2Customer(originalFromAcc.users)) {
+        fromAcc.package2Shelf = PACKAGE2_SHELF_NONE;
+      }
     }
 
     toAcc.markModified("users");
