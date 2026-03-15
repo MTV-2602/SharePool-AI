@@ -162,6 +162,34 @@ const addDurationToDate = (dateInput, duration = "1M") => {
 };
 const getDurationLabel = (duration = "1M") =>
   EXTEND_DURATION_OPTIONS.find((option) => option.value === duration)?.label || duration;
+const CUSTOMER_FILTER_OPTIONS = [
+  { value: "all", label: "Tất cả" },
+  { value: "with", label: "Có khách" },
+  { value: "without", label: "Không khách" },
+];
+const getAccountUsers = (account = {}) =>
+  Array.isArray(account?.users) ? account.users : [];
+const hasAssignedCustomer = (account = {}) =>
+  getAccountUsers(account).some((user) => {
+    if (typeof user === "string") return String(user).trim().length > 0;
+    if (user && typeof user === "object") {
+      return String(user.name || "").trim().length > 0;
+    }
+    return false;
+  });
+const hasAssignedTeamCustomer = (account = {}) =>
+  Array.isArray(account?.slots) &&
+  account.slots.some(
+    (slot) =>
+      slot &&
+      slot.status === "active" &&
+      String(slot.gmail || "").trim().length > 0,
+  );
+const matchesCustomerFilter = (hasCustomer, filterValue = "all") => {
+  if (filterValue === "with") return hasCustomer;
+  if (filterValue === "without") return !hasCustomer;
+  return true;
+};
 
 function App() {
   // LOGIN STATE
@@ -198,6 +226,9 @@ function App() {
   const [gptSubTab, setGptSubTab] = useState("all");
   const [package2ShelfTab, setPackage2ShelfTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [chatgptCustomerFilter, setChatgptCustomerFilter] = useState("all");
+  const [teamCustomerFilter, setTeamCustomerFilter] = useState("all");
+  const [simpleCustomerFilter, setSimpleCustomerFilter] = useState("all");
 
   // Loading states for buttons
 
@@ -463,6 +494,24 @@ function App() {
   const getDefaultOneMonthDateInput = () => {
     return addDurationToDate(new Date(), "1M").toISOString().split("T")[0];
   };
+  const renderCustomerFilterButtons = (value, onChange) => (
+    <div className="flex flex-wrap gap-2">
+      {CUSTOMER_FILTER_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+            value === option.value
+              ? "bg-blue-600 text-white border-blue-500"
+              : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
 
   // Helper to get joined date display
   const getUserDate = (u) => {
@@ -1752,6 +1801,9 @@ function App() {
       if (acc.type !== "package2") return false;
       return normalizePackage2Shelf(acc.package2Shelf) === package2ShelfTab;
     })
+    .filter((acc) =>
+      matchesCustomerFilter(hasAssignedCustomer(acc), chatgptCustomerFilter),
+    )
     .filter((acc) => {
       if (!searchQuery.trim()) return true;
       const queryNormalized = toNonAccentVietnamese(searchQuery);
@@ -1775,17 +1827,25 @@ function App() {
   const filteredChatgptIds = filteredChatgptAccounts.map((acc) =>
     String(acc.id || ""),
   );
-  const selectedChatgptIdSet = new Set(selectedChatgptIds);
+  const selectedChatgptIdSet = new Set(
+    selectedChatgptIds.map((id) => String(id || "")),
+  );
   const selectedInFilteredCount = filteredChatgptIds.filter((id) =>
     selectedChatgptIdSet.has(id),
   ).length;
   const allFilteredSelected =
     filteredChatgptIds.length > 0 &&
     selectedInFilteredCount === filteredChatgptIds.length;
-  const teamSlotAccounts = teamAccounts.filter(
+  const filteredTeamAccounts = teamAccounts.filter((acc) =>
+    matchesCustomerFilter(
+      hasAssignedTeamCustomer(acc),
+      teamCustomerFilter,
+    ),
+  );
+  const teamSlotAccounts = filteredTeamAccounts.filter(
     (acc) => normalizeTeamSaleMode(acc.saleMode) === "slot",
   );
-  const teamBusinessAccounts = teamAccounts.filter(
+  const teamBusinessAccounts = filteredTeamAccounts.filter(
     (acc) => normalizeTeamSaleMode(acc.saleMode) === "business",
   );
   const teamSections = [
@@ -2242,7 +2302,7 @@ function App() {
             </div>
 
             <div className="flex flex-col md:flex-row gap-4 justify-between mb-4">
-              <div className="flex-1 max-w-md">
+              <div className="flex-1 max-w-xl space-y-3">
                 <div className="relative">
                   <input
                     type="text"
@@ -2258,6 +2318,15 @@ function App() {
                     >
                       <X size={18} />
                     </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    Lọc khách
+                  </span>
+                  {renderCustomerFilterButtons(
+                    chatgptCustomerFilter,
+                    setChatgptCustomerFilter,
                   )}
                 </div>
               </div>
@@ -4259,7 +4328,14 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           });
         };
 
-        const searchFiltered = accs.filter(a =>
+        const presenceFiltered = accs.filter((a) =>
+          matchesCustomerFilter(
+            hasAssignedCustomer(a),
+            simpleCustomerFilter,
+          ),
+        );
+
+        const searchFiltered = presenceFiltered.filter(a =>
           a.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           a.users?.[0]?.name?.toLowerCase().includes(searchQuery.toLowerCase())
         );
@@ -4327,17 +4403,28 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             )}
 
             <div className="flex flex-wrap gap-3 mb-6 items-center justify-between">
-              <div className="flex items-center gap-3">
-                <input
-                  type="text"
-                  placeholder="Tìm email/khách..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="form-input w-64"
-                />
-                <span className="text-slate-500 text-sm">
-                  {filtered.length} tài khoản · {accs.filter(a => a.users?.length > 0).length} đang dùng
-                </span>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <input
+                    type="text"
+                    placeholder="Tìm email/khách..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="form-input w-64"
+                  />
+                  <span className="text-slate-500 text-sm">
+                    {filtered.length} tài khoản · {presenceFiltered.filter((a) => hasAssignedCustomer(a)).length} đang dùng
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    Lọc khách
+                  </span>
+                  {renderCustomerFilterButtons(
+                    simpleCustomerFilter,
+                    setSimpleCustomerFilter,
+                  )}
+                </div>
               </div>
               <button onClick={handleAddSimpleAcc} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white transition-all bg-${accentColor}-600 hover:bg-${accentColor}-500`}>
                 <UserPlus size={16} /> Thêm Tài Khoản {label}
@@ -4497,7 +4584,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             <div className="space-y-6">
               <div className="flex flex-wrap gap-2">
                 <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-slate-800 text-slate-200 border-slate-700">
-                  Tổng Team: {teamAccounts.length}
+                  Tổng Team: {filteredTeamAccounts.length}
                 </div>
                 <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-teal-900/40 text-teal-300 border-teal-700/60">
                   Team Slot: {teamSlotAccounts.length}
@@ -4505,6 +4592,16 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-cyan-900/40 text-cyan-300 border-cyan-700/60">
                   Team Business: {teamBusinessAccounts.length}
                 </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                  Lọc khách
+                </span>
+                {renderCustomerFilterButtons(
+                  teamCustomerFilter,
+                  setTeamCustomerFilter,
+                )}
               </div>
 
               <div className="grid gap-6 xl:grid-cols-2 items-start">
