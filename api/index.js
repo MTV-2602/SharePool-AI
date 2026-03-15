@@ -1942,6 +1942,26 @@ app.post("/api/team", verifyToken, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST add team account (Public - for Telegram bot)
+app.post("/api/team-public", async (req, res) => {
+  try {
+    const now = new Date();
+    const expiredDate = new Date(now);
+    expiredDate.setMonth(expiredDate.getMonth() + 1);
+    const newAcc = {
+      id: Date.now().toString(),
+      ...req.body,
+      saleMode: normalizeTeamSaleMode(req.body.saleMode),
+      slots: req.body.slots || Array(4).fill(null).map(() => ({ status: "empty" })),
+      createdAt: now.toISOString(),
+      expiredAt: req.body.expiredAt || expiredDate.toISOString(),
+    };
+    await TeamAccount.create(newAcc);
+    await syncDatammoUpdateLocked(null, newAcc);
+    res.json({ message: "Added", account: newAcc });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // PUT update team account (including slot management)
 app.put("/api/team/:id", verifyToken, async (req, res) => {
   try {

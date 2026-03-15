@@ -32,6 +32,39 @@ const checkPermission = (userId) => {
   return ALLOWED_USER_IDS.includes(userId);
 };
 
+const parseTeamAccountInput = (rawText) => {
+  if (!rawText) return null;
+
+  const cleanedText = rawText.replace(/^\[.*?\]/, "").trim();
+  if (!/^team\b/i.test(cleanedText)) return null;
+
+  const lines = cleanedText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const sourceLine = lines.find((line) => /-{3,}/.test(line)) || cleanedText;
+  const normalized = sourceLine.replace(/^team\s+/i, "").trim();
+  const parts = normalized
+    .split(/-{3,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length < 3) return null;
+
+  const [email, password, thirdPart = "", fourthPart = ""] = parts;
+  const emailPassword =
+    thirdPart && !/^https?:\/\//i.test(thirdPart) ? thirdPart : "";
+  const fallbackRecoveryMatch = rawText.match(/https?:\/\/\S+/i);
+  const recoveryUrl =
+    fourthPart ||
+    (/^https?:\/\//i.test(thirdPart) ? thirdPart : "") ||
+    (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : "");
+
+  if (!email || !password || !email.includes("@")) return null;
+
+  return { email, password, emailPassword, recoveryUrl };
+};
+
 // Normalize Vietnamese text for smart search (remove accents)
 const normalizeVietnamese = (str) => {
   if (!str) return "";
@@ -103,6 +136,11 @@ module.exports = async (req, res) => {
 *ChatGPT:* Paste format:
 \`\`\`
 email---password---recoveryUrl
+\`\`\`
+
+*Team:* Paste format:
+\`\`\`
+team email----gptpass----recoveryUrl
 \`\`\`
 
 *Coursera:* Paste format:
@@ -542,6 +580,48 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
           }
           return res.status(200).json({ ok: true });
         }
+      }
+
+      const parsedTeamAccount = parseTeamAccountInput(text);
+      if (parsedTeamAccount) {
+        const { email, password, emailPassword, recoveryUrl } =
+          parsedTeamAccount;
+
+        try {
+          await sendMessage(chatId, "⏳ Đang thêm team account...");
+
+          await axios.post(`${API_URL}/api/team-public`, {
+            username: email,
+            password,
+            emailPassword,
+            recoveryUrl,
+            note: "",
+            saleMode: "slot",
+          });
+
+          const successMessage = `
+✅ *TỰ ĐỘNG THÊM TEAM THÀNH CÔNG!*
+
+📧 *Email:* \`${email}\`
+🔑 *GPT Password:* \`${password}\`
+${emailPassword ? `📩 *Email Password:* \`${emailPassword}\`\n` : ""}🔗 *Recovery URL:* ${recoveryUrl || "_Không có_"}
+📦 *Mode:* slot team
+
+💡 *Tip:* Paste tiếp format \`team email----pass----link\` để thêm nhanh!
+              `;
+
+          await sendMessage(chatId, successMessage);
+        } catch (error) {
+          console.error(
+            "Auto-add team error:",
+            error.response?.data || error.message,
+          );
+          await sendMessage(
+            chatId,
+            `❌ Lỗi khi thêm team account: ${error.response?.data?.error || error.message}`,
+          );
+        }
+        return res.status(200).json({ ok: true });
       }
 
       // CHATGPT AUTO-DETECT: email---password---recoveryUrl format

@@ -23,6 +23,29 @@ const checkPermission = (msg) => {
   return ALLOWED_USER_IDS.includes(msg.from.id);
 };
 
+const parseTeamAccountInput = (rawText) => {
+  if (!rawText) return null;
+
+  const cleanedText = rawText.replace(/^\[.*?\]/, '').trim();
+  if (!/^team\b/i.test(cleanedText)) return null;
+
+  const lines = cleanedText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const sourceLine = lines.find((line) => /-{3,}/.test(line)) || cleanedText;
+  const normalized = sourceLine.replace(/^team\s+/i, '').trim();
+  const parts = normalized.split(/-{3,}/).map((part) => part.trim()).filter(Boolean);
+
+  if (parts.length < 3) return null;
+
+  const [email, password, thirdPart = '', fourthPart = ''] = parts;
+  const emailPassword = thirdPart && !/^https?:\/\//i.test(thirdPart) ? thirdPart : '';
+  const fallbackRecoveryMatch = rawText.match(/https?:\/\/\S+/i);
+  const recoveryUrl = fourthPart || (/^https?:\/\//i.test(thirdPart) ? thirdPart : '') || (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : '');
+
+  if (!email || !password || !email.includes('@')) return null;
+
+  return { email, password, emailPassword, recoveryUrl };
+};
+
 // Command: /start
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
@@ -47,6 +70,11 @@ bot.onText(/\/start/, (msg) => {
 *ChatGPT:* Paste format:
 \`\`\`
 email---password---recoveryUrl
+\`\`\`
+
+*Team:* Paste format:
+\`\`\`
+team email----gptpass----recoveryUrl
 \`\`\`
 
 *Coursera:* Paste format:
@@ -240,6 +268,47 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
         }
       }
     }
+  }
+
+  const parsedTeamAccount = parseTeamAccountInput(text);
+  if (parsedTeamAccount) {
+    const { email, password, emailPassword, recoveryUrl } = parsedTeamAccount;
+
+    try {
+      bot.sendMessage(chatId, '⏳ Đang thêm team account...');
+
+      const expiredAt = new Date();
+      expiredAt.setDate(expiredAt.getDate() + 30);
+      const expiredAtStr = expiredAt.toISOString();
+
+      await axios.post(`${API_URL}/api/team-public`, {
+        username: email,
+        password,
+        emailPassword,
+        recoveryUrl,
+        note: '',
+        saleMode: 'slot',
+        expiredAt: expiredAtStr
+      });
+
+      const successMessage = `
+✅ *TỰ ĐỘNG THÊM TEAM THÀNH CÔNG!*
+
+📧 *Email:* \`${email}\`
+🔑 *GPT Password:* \`${password}\`
+${emailPassword ? `📩 *Email Password:* \`${emailPassword}\`\n` : ''}🔗 *Recovery URL:* ${recoveryUrl || '_Không có_'}
+📦 *Mode:* slot team
+📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
+
+💡 *Tip:* Paste tiếp format \`team email----pass----link\` để thêm nhanh!
+      `;
+
+      bot.sendMessage(chatId, successMessage, { parse_mode: 'Markdown' });
+    } catch (error) {
+      console.error('Auto-add team error:', error.response?.data || error.message);
+      bot.sendMessage(chatId, `❌ Lỗi khi thêm team account: ${error.response?.data?.error || error.message}`);
+    }
+    return;
   }
 
   // CHATGPT AUTO-DETECT: email---password---url format
