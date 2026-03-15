@@ -873,6 +873,59 @@ const buildPackage1DatammoLines = (acc, options = {}) => {
 
   return lines;
 };
+const buildTeamDatammoLines = (acc, options = {}) => {
+  if (!acc || acc.slots === undefined) return [];
+  const includeAllSlots = options.includeAllSlots === true;
+  const includeBusiness = options.includeBusiness === true;
+  const saleMode = normalizeTeamSaleMode(acc.saleMode);
+  const teamSlots = Array.isArray(acc.slots) ? acc.slots : [];
+  const lines = [];
+  const businessContent = `${String(acc.username || "").trim()}|${String(
+    acc.password || "",
+  ).trim()}|${String(acc.recoveryUrl || "").trim()}`;
+  const slotContent = (slotNum) =>
+    `Slot ${slotNum}|${acc.username}|Báº¡n gá»­i kÃ¨m gmail chÃ­nh chá»§ Ä‘á»ƒ admin up`;
+
+  if (includeBusiness || saleMode === TEAM_SALE_MODE_BUSINESS) {
+    const activeSlots = teamSlots.filter(
+      (slot) => slot.status !== "empty" && !!slot.gmail,
+    ).length;
+    if (includeBusiness || activeSlots === 0) {
+      lines.push({
+        variantId: DATAMMO_VARIANT_TEAM_BUSINESS,
+        content: businessContent,
+      });
+    }
+  }
+
+  if (!includeAllSlots && saleMode === TEAM_SALE_MODE_BUSINESS) {
+    return lines;
+  }
+
+  for (let i = 1; i <= 4; i += 1) {
+    const slot = teamSlots[i - 1];
+    if (includeAllSlots || slot?.status === "empty" || !slot?.gmail) {
+      lines.push({
+        variantId: DATAMMO_VARIANT_PKG3,
+        content: slotContent(i),
+      });
+    }
+  }
+
+  return lines;
+};
+const snapshotDocument = (doc) => {
+  if (!doc) return null;
+  if (typeof doc.toObject === "function") {
+    return doc.toObject({ depopulate: true });
+  }
+  return JSON.parse(JSON.stringify(doc));
+};
+const restoreDocumentSnapshot = async (Model, id, snapshot) => {
+  if (!snapshot || !id) return null;
+  await Model.replaceOne({ id }, snapshot, { upsert: true });
+  return Model.findOne({ id });
+};
 
 const getDatammoLines = (acc, options = {}) => {
   if (!acc) return [];
@@ -968,12 +1021,15 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   const forceOldPackage2Sync = options.forceOldPackage2Sync === true;
   const forceNewPackage2Sync = options.forceNewPackage2Sync === true;
   const forcePackage1Resync = options.forcePackage1Resync === true;
+  const forceTeamResync = options.forceTeamResync === true;
   const strictDatammoSync =
     options.strictDatammoSync === true || options.throwOnSyncError === true;
   const isPackage2Context =
     oldAcc?.type === "package2" || newAcc?.type === "package2";
   const isPackage1Context =
     oldAcc?.type === "package1" || newAcc?.type === "package1";
+  const isTeamContext =
+    oldAcc?.slots !== undefined || newAcc?.slots !== undefined;
   const isManualPackage2ShelfSync = forceNewPackage2Sync && isPackage2Context;
   const syncErrors = [];
   const recordSyncError = (stage, item, inventoryUrl, errorValue) => {
@@ -1000,7 +1056,23 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   let toDelete = [];
   let toAdd = [];
 
-  if (forcePackage1Resync && isPackage1Context) {
+  if (forceTeamResync && isTeamContext) {
+    const deleteMap = new Map();
+    [
+      ...buildTeamDatammoLines(oldAcc, {
+        includeAllSlots: true,
+        includeBusiness: true,
+      }),
+      ...buildTeamDatammoLines(newAcc, {
+        includeAllSlots: true,
+        includeBusiness: true,
+      }),
+    ].forEach((line) => {
+      deleteMap.set(getDatammoLineKey(line), line);
+    });
+    toDelete = Array.from(deleteMap.values());
+    toAdd = newLines;
+  } else if (forcePackage1Resync && isPackage1Context) {
     const deleteMap = new Map();
     [
       ...buildPackage1DatammoLines(oldAcc, {
@@ -1460,6 +1532,7 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     const { id } = req.params;
 
     const existingAcc = await Account.findOne({ id: id });
+    const existingSnapshot = snapshotDocument(existingAcc);
     if (!existingAcc) {
       return res.status(404).json({ error: "Không tìm thấy account" });
     }
@@ -1557,13 +1630,36 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       forceOldPackage2Sync:
         isPackage2ShelfChanged || isManualShelfUpdate || isPackage2UsersUpdate,
       forceNewPackage2Sync: isManualShelfUpdate,
+      strictDatammoSync: true,
     };
 
     if (isShelfOnlyUpdate && !isPackage2ShelfChanged) {
       return res.json({ message: "Updated", account: updated, syncSkipped: true });
     }
 
-    await syncDatammoUpdateLocked(existingAcc, updated, syncOptions);
+    try {
+      await syncDatammoUpdateLocked(existingAcc, updated, syncOptions);
+    } catch (syncError) {
+      const rolledBack = await restoreDocumentSnapshot(
+        Account,
+        id,
+        existingSnapshot,
+      );
+      if (rolledBack) {
+        try {
+          await syncDatammoUpdateLocked(updated, rolledBack, syncOptions);
+        } catch (rollbackSyncError) {
+          console.error(
+            "Datammo rollback sync error (chatgpt update):",
+            rollbackSyncError?.syncErrors ||
+              rollbackSyncError?.response?.data ||
+              rollbackSyncError?.message ||
+              rollbackSyncError,
+          );
+        }
+      }
+      throw syncError;
+    }
 
     res.json({ message: "Updated", account: updated });
   } catch (error) {
@@ -1813,6 +1909,8 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
 
     const fromAcc = await TeamAccount.findOne({ id: fromAccId });
     const toAcc = await TeamAccount.findOne({ id: toAccId });
+    const fromSnapshot = snapshotDocument(fromAcc);
+    const toSnapshot = snapshotDocument(toAcc);
 
     if (!fromAcc || !toAcc) {
       return res.status(404).json({ error: "One or both team accounts not found" });
@@ -1867,10 +1965,40 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
 
     const updatedFrom = await TeamAccount.findOne({ id: fromAccId });
     const updatedTo = await TeamAccount.findOne({ id: toAccId });
-    await Promise.all([
-      syncDatammoUpdateLocked(fromAcc, updatedFrom),
-      syncDatammoUpdateLocked(toAcc, updatedTo),
-    ]);
+    const syncOptions = {
+      strictDatammoSync: true,
+      forceTeamResync: true,
+    };
+    try {
+      await Promise.all([
+        syncDatammoUpdateLocked(fromAcc, updatedFrom, syncOptions),
+        syncDatammoUpdateLocked(toAcc, updatedTo, syncOptions),
+      ]);
+    } catch (syncError) {
+      const [rolledBackFrom, rolledBackTo] = await Promise.all([
+        restoreDocumentSnapshot(TeamAccount, fromAccId, fromSnapshot),
+        restoreDocumentSnapshot(TeamAccount, toAccId, toSnapshot),
+      ]);
+      try {
+        await Promise.all([
+          rolledBackFrom
+            ? syncDatammoUpdateLocked(updatedFrom, rolledBackFrom, syncOptions)
+            : Promise.resolve(),
+          rolledBackTo
+            ? syncDatammoUpdateLocked(updatedTo, rolledBackTo, syncOptions)
+            : Promise.resolve(),
+        ]);
+      } catch (rollbackSyncError) {
+        console.error(
+          "Datammo rollback sync error (team move slot):",
+          rollbackSyncError?.syncErrors ||
+            rollbackSyncError?.response?.data ||
+            rollbackSyncError?.message ||
+            rollbackSyncError,
+        );
+      }
+      throw syncError;
+    }
 
     res.json({ message: "Team Slot moved successfully", from: updatedFrom, to: updatedTo });
   } catch (error) {
@@ -1977,16 +2105,46 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     await fromAcc.save();
 
     // Tự động tính toán DataMMO Add/Delete dựa trên biến động User Array
-    await Promise.all([
-      syncDatammoUpdateLocked(originalFromAcc, fromAcc, {
-        forcePackage1Resync:
-          originalFromAcc?.type === "package1" || fromAcc?.type === "package1",
-      }),
-      syncDatammoUpdateLocked(originalToAcc, toAcc, {
-        forcePackage1Resync:
-          originalToAcc?.type === "package1" || toAcc?.type === "package1",
-      }),
-    ]);
+    const fromSyncOptions = {
+      forcePackage1Resync:
+        originalFromAcc?.type === "package1" || fromAcc?.type === "package1",
+      strictDatammoSync: true,
+    };
+    const toSyncOptions = {
+      forcePackage1Resync:
+        originalToAcc?.type === "package1" || toAcc?.type === "package1",
+      strictDatammoSync: true,
+    };
+    try {
+      await Promise.all([
+        syncDatammoUpdateLocked(originalFromAcc, fromAcc, fromSyncOptions),
+        syncDatammoUpdateLocked(originalToAcc, toAcc, toSyncOptions),
+      ]);
+    } catch (syncError) {
+      const [rolledBackFrom, rolledBackTo] = await Promise.all([
+        restoreDocumentSnapshot(Account, fromAccId, originalFromAcc),
+        restoreDocumentSnapshot(Account, toAccId, originalToAcc),
+      ]);
+      try {
+        await Promise.all([
+          rolledBackFrom
+            ? syncDatammoUpdateLocked(fromAcc, rolledBackFrom, fromSyncOptions)
+            : Promise.resolve(),
+          rolledBackTo
+            ? syncDatammoUpdateLocked(toAcc, rolledBackTo, toSyncOptions)
+            : Promise.resolve(),
+        ]);
+      } catch (rollbackSyncError) {
+        console.error(
+          "Datammo rollback sync error (move user):",
+          rollbackSyncError?.syncErrors ||
+            rollbackSyncError?.response?.data ||
+            rollbackSyncError?.message ||
+            rollbackSyncError,
+        );
+      }
+      throw syncError;
+    }
 
     res.json({ message: "Moved user successfully", from: fromAcc, to: toAcc });
   } catch (error) {
@@ -2155,13 +2313,48 @@ app.post("/api/team-public", async (req, res) => {
 app.put("/api/team/:id", verifyToken, async (req, res) => {
   try {
     const existing = await TeamAccount.findOne({ id: req.params.id });
+    if (!existing) {
+      return res.status(404).json({ error: "Team account not found" });
+    }
+    const existingSnapshot = snapshotDocument(existing);
     const updatePayload = normalizeTeamPayload(req.body);
     const updated = await TeamAccount.findOneAndUpdate(
       { id: req.params.id },
       updatePayload,
       { new: true },
     );
-    await syncDatammoUpdateLocked(existing, updated);
+    const syncOptions = {
+      strictDatammoSync: true,
+      forceTeamResync:
+        req.body?.slots !== undefined ||
+        req.body?.saleMode !== undefined ||
+        req.body?.username !== undefined ||
+        req.body?.password !== undefined ||
+        req.body?.recoveryUrl !== undefined,
+    };
+    try {
+      await syncDatammoUpdateLocked(existing, updated, syncOptions);
+    } catch (syncError) {
+      const rolledBack = await restoreDocumentSnapshot(
+        TeamAccount,
+        req.params.id,
+        existingSnapshot,
+      );
+      if (rolledBack) {
+        try {
+          await syncDatammoUpdateLocked(updated, rolledBack, syncOptions);
+        } catch (rollbackSyncError) {
+          console.error(
+            "Datammo rollback sync error (team update):",
+            rollbackSyncError?.syncErrors ||
+              rollbackSyncError?.response?.data ||
+              rollbackSyncError?.message ||
+              rollbackSyncError,
+          );
+        }
+      }
+      throw syncError;
+    }
     res.json({
       message: "Updated",
       account: sanitizeTeamAccount(updated?.toObject?.() || updated),
