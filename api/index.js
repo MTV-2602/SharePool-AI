@@ -848,6 +848,31 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
 
   return normalized;
 };
+const buildPackage1DatammoLines = (acc, options = {}) => {
+  if (!acc || acc.type !== "package1") return [];
+  const users = Array.isArray(acc.users) ? acc.users : [];
+  const userCount = Math.max(0, Math.min(3, users.length));
+  const includeFilledSlots = options.includeFilledSlots === true;
+  const includeLegacyContent = options.includeLegacyContent === true;
+  const startSlot = includeFilledSlots ? 1 : userCount + 1;
+  const lines = [];
+
+  for (let i = startSlot; i <= 3; i += 1) {
+    lines.push({
+      variantId: DATAMMO_VARIANT_PKG1,
+      content: `Slot ${i}|${acc.username}|${acc.password}`,
+    });
+  }
+
+  if (includeLegacyContent) {
+    lines.push({
+      variantId: DATAMMO_VARIANT_PKG1,
+      content: `${acc.username}|${acc.password}`,
+    });
+  }
+
+  return lines;
+};
 
 const getDatammoLines = (acc, options = {}) => {
   if (!acc) return [];
@@ -929,6 +954,7 @@ const getDatammoLines = (acc, options = {}) => {
       });
     }
   } else if (acc.type === "package1") {
+    return buildPackage1DatammoLines(acc);
     const userCount = acc.users ? acc.users.length : 0;
     // Mỗi package 1 có 3 slot.
     for (let i = userCount + 1; i <= 3; i++) {
@@ -941,10 +967,13 @@ const getDatammoLines = (acc, options = {}) => {
 const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   const forceOldPackage2Sync = options.forceOldPackage2Sync === true;
   const forceNewPackage2Sync = options.forceNewPackage2Sync === true;
+  const forcePackage1Resync = options.forcePackage1Resync === true;
   const strictDatammoSync =
     options.strictDatammoSync === true || options.throwOnSyncError === true;
   const isPackage2Context =
     oldAcc?.type === "package2" || newAcc?.type === "package2";
+  const isPackage1Context =
+    oldAcc?.type === "package1" || newAcc?.type === "package1";
   const isManualPackage2ShelfSync = forceNewPackage2Sync && isPackage2Context;
   const syncErrors = [];
   const recordSyncError = (stage, item, inventoryUrl, errorValue) => {
@@ -971,7 +1000,23 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
   let toDelete = [];
   let toAdd = [];
 
-  if (isManualPackage2ShelfSync) {
+  if (forcePackage1Resync && isPackage1Context) {
+    const deleteMap = new Map();
+    [
+      ...buildPackage1DatammoLines(oldAcc, {
+        includeFilledSlots: true,
+        includeLegacyContent: true,
+      }),
+      ...buildPackage1DatammoLines(newAcc, {
+        includeFilledSlots: true,
+        includeLegacyContent: true,
+      }),
+    ].forEach((line) => {
+      deleteMap.set(getDatammoLineKey(line), line);
+    });
+    toDelete = Array.from(deleteMap.values());
+    toAdd = newLines;
+  } else if (isManualPackage2ShelfSync) {
     // Shelf switch must be delete-first-add-later to avoid duplicate key on Datammo.
     const deleteMap = new Map();
     [...rawOldLines, ...newLines].forEach((line) => {
@@ -1503,9 +1548,12 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       isManualShelfUpdate &&
       requestKeys.length > 0 &&
       requestKeys.every((key) => key === "package2Shelf");
+    const isPackage1UsersUpdate =
+      targetType === "package1" && normalizedPayload.users !== undefined;
     const isPackage2UsersUpdate =
       targetType === "package2" && normalizedPayload.users !== undefined;
     const syncOptions = {
+      forcePackage1Resync: isPackage1UsersUpdate,
       forceOldPackage2Sync:
         isPackage2ShelfChanged || isManualShelfUpdate || isPackage2UsersUpdate,
       forceNewPackage2Sync: isManualShelfUpdate,
@@ -1930,8 +1978,14 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
 
     // Tự động tính toán DataMMO Add/Delete dựa trên biến động User Array
     await Promise.all([
-      syncDatammoUpdateLocked(originalFromAcc, fromAcc),
-      syncDatammoUpdateLocked(originalToAcc, toAcc),
+      syncDatammoUpdateLocked(originalFromAcc, fromAcc, {
+        forcePackage1Resync:
+          originalFromAcc?.type === "package1" || fromAcc?.type === "package1",
+      }),
+      syncDatammoUpdateLocked(originalToAcc, toAcc, {
+        forcePackage1Resync:
+          originalToAcc?.type === "package1" || toAcc?.type === "package1",
+      }),
     ]);
 
     res.json({ message: "Moved user successfully", from: fromAcc, to: toAcc });
