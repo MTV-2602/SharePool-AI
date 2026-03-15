@@ -1598,7 +1598,7 @@ function App() {
             <h1 className="text-4xl md:text-5xl font-black mb-3 text-white">
               🛒 Dịch Vụ Tài Khoản Premium
             </h1>
-            <p className="text-slate-400 text-lg">Giá tốt · Cấp nhanh · Hỗ trợ 24/7</p>
+            <p className="text-slate-400 text-lg">Cấp nhanh · Ổn định · Hỗ trợ 24/7</p>
           </div>
 
           <div className="flex flex-col lg:flex-row gap-8 items-start">
@@ -1622,11 +1622,11 @@ function App() {
                       <span className="text-blue-300 font-bold">🔥 Gói 1 – Chia sẻ</span>
                       <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded font-bold">TIẾT KIỆM</span>
                     </div>
-                    <div className="text-2xl font-black text-yellow-400">50.000đ <span className="text-sm text-slate-400 font-normal">/tháng</span></div>
                     <ul className="mt-2 text-sm text-slate-300 space-y-1">
                       <li>• 👥 1 tài khoản / 3 người dùng chung</li>
                       <li>• ⚡ Cấp sẵn – vào dùng ngay</li>
                       <li>• 🔒 Không đổi mật khẩu</li>
+                      <li>• 💬 Liên hệ để nhận báo giá</li>
                     </ul>
                   </div>
                   <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
@@ -1634,11 +1634,11 @@ function App() {
                       <span className="text-purple-300 font-bold">🔥 Gói 2 – Riêng tư</span>
                       <span className="bg-purple-700 text-white text-xs px-2 py-0.5 rounded font-bold">PREMIUM</span>
                     </div>
-                    <div className="text-2xl font-black text-yellow-400">100.000đ <span className="text-sm text-slate-400 font-normal">/tháng</span></div>
                     <ul className="mt-2 text-sm text-slate-300 space-y-1">
                       <li>• 👤 Dùng 1 mình hoặc cùng bạn bè</li>
                       <li>• 🔑 Toàn quyền đăng nhập</li>
                       <li>• 🔄 Tự đổi mật khẩu</li>
+                      <li>• 💬 Liên hệ để nhận báo giá</li>
                     </ul>
                   </div>
                 </div>
@@ -1650,16 +1650,16 @@ function App() {
                   <span className="text-2xl">⭐</span>
                   <div>
                     <h2 className="text-xl font-black text-white">Tài Khoản Pro Khác</h2>
-                    <p className="text-teal-100 text-sm">Giá rẻ nhất thị trường, chất lượng đảm bảo</p>
+                    <p className="text-teal-100 text-sm">Nhiều dịch vụ, chất lượng đảm bảo</p>
                   </div>
                 </div>
                 <div className="p-5 grid sm:grid-cols-2 gap-3">
                   {[
-                    { logo: "/canvalogo.jpg", name: "Canva Edu", desc: "Dùng như Pro", price: "15k/tháng · 88k / 1 năm", bg: "bg-purple-900/40 border-purple-800" },
-                    { logo: "/netfflixlogo.png", name: "Netflix Premium", desc: "Full HD, 4K", price: "50k/tháng · 140k/3T · 250k/6T", bg: "bg-red-900/40 border-red-800" },
-                    { logo: "/quizletlogo.png", name: "Quizlet", desc: "Học tập thông minh", price: "20k / 1 tháng", bg: "bg-blue-900/40 border-blue-800" },
-                    { logo: "/capcutlogo.png", name: "CapCut Pro", desc: "Chỉnh video chuyên nghiệp", price: "45k / 1 tháng", bg: "bg-slate-800 border-slate-600" },
-                    { logo: "/ytblogo.png", name: "YouTube Premium", desc: "Không quảng cáo", price: "45k / 1 tháng", bg: "bg-rose-900/40 border-rose-800" },
+                    { logo: "/canvalogo.jpg", name: "Canva Edu", desc: "Dùng như Pro", note: "Liên hệ để nhận báo giá", bg: "bg-purple-900/40 border-purple-800" },
+                    { logo: "/netfflixlogo.png", name: "Netflix Premium", desc: "Full HD, 4K", note: "Liên hệ để nhận báo giá", bg: "bg-red-900/40 border-red-800" },
+                    { logo: "/quizletlogo.png", name: "Quizlet", desc: "Học tập thông minh", note: "Liên hệ để nhận báo giá", bg: "bg-blue-900/40 border-blue-800" },
+                    { logo: "/capcutlogo.png", name: "CapCut Pro", desc: "Chỉnh video chuyên nghiệp", note: "Liên hệ để nhận báo giá", bg: "bg-slate-800 border-slate-600" },
+                    { logo: "/ytblogo.png", name: "YouTube Premium", desc: "Không quảng cáo", note: "Liên hệ để nhận báo giá", bg: "bg-rose-900/40 border-rose-800" },
                   ].map((s, i) => (
                     <div key={i} className={`${s.bg} border rounded-xl p-4 flex items-center gap-3`}>
                       <div className="shrink-0 w-12 h-12 rounded-xl bg-white flex items-center justify-center overflow-hidden shadow">
@@ -1668,7 +1668,7 @@ function App() {
                       <div>
                         <div className="font-bold text-white">{s.name}</div>
                         <div className="text-xs text-slate-400 mb-0.5">{s.desc}</div>
-                        <div className="text-yellow-400 font-black text-sm">{s.price}</div>
+                        <div className="text-yellow-400 font-black text-sm">{s.note}</div>
                       </div>
                     </div>
                   ))}
