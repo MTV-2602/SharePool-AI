@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import axios from "./axiosConfig";
+import axios, { subscribeToApiActivity } from "./axiosConfig";
 import {
   Trash2,
   UserPlus,
@@ -216,6 +216,73 @@ const matchesCustomerFilter = (hasCustomer, filterValue = "all") => {
   if (filterValue === "without") return !hasCustomer;
   return true;
 };
+const createApiRequestLabel = (detail = {}) => {
+  const customLabel = String(detail?.label || "").trim();
+  if (customLabel) return customLabel;
+  const url = String(detail?.url || "").toLowerCase();
+  const method = String(detail?.method || "GET").toUpperCase();
+  if (url.includes("/api/data")) return "Đang tải lại dữ liệu";
+  if (url.includes("/api/login")) return "Đang đăng nhập";
+  if (url.includes("/bulk-push-shelf")) return "Đang đồng bộ Datammo";
+  if (url.includes("/team-move-slot")) return "Đang chuyển khách Team";
+  if (url.includes("/move-user")) return "Đang chuyển khách";
+  if (url.includes("/extend-user")) return "Đang gia hạn";
+  if (url.includes("/proxy-sheet")) return "Đang đồng bộ Google Sheet";
+  if (url.includes("/datammo")) return "Đang xử lý Datammo";
+  if (method === "POST") return "Đang tạo dữ liệu";
+  if (method === "PUT") return "Đang cập nhật dữ liệu";
+  if (method === "DELETE") return "Đang xóa dữ liệu";
+  return "Đang xử lý API";
+};
+const getRequestProgressFromState = (request = {}) => {
+  const explicitPercent = Number(request.percent);
+  if (Number.isFinite(explicitPercent) && explicitPercent >= 0) {
+    return Math.max(0, Math.min(100, explicitPercent));
+  }
+  const startedAt = Number(request.startedAt || Date.now());
+  const elapsedMs = Math.max(0, Date.now() - startedAt);
+  if (request.completedAt) {
+    const completionElapsed = Date.now() - Number(request.completedAt || Date.now());
+    return completionElapsed > 240 ? 100 : 95 + Math.min(5, completionElapsed / 48);
+  }
+  const stagedProgress = 12 + elapsedMs / 45;
+  return Math.min(90, stagedProgress);
+};
+const buildApiOverlayState = (requestsMap) => {
+  const requests = Array.from(requestsMap.values());
+  const activeRequests = requests.filter((item) => !item.completedAt);
+  const currentRequests = activeRequests.length > 0 ? activeRequests : requests;
+  if (currentRequests.length === 0) {
+    return {
+      visible: false,
+      progress: 0,
+      title: "",
+      detail: "",
+      requestCount: 0,
+    };
+  }
+  const progress =
+    currentRequests.reduce(
+      (sum, request) => sum + getRequestProgressFromState(request),
+      0,
+    ) / currentRequests.length;
+  const primaryRequest = currentRequests[currentRequests.length - 1];
+  const detail =
+    currentRequests.length > 1
+      ? `Đang chạy ${currentRequests.length} tác vụ API`
+      : primaryRequest.phase === "download"
+        ? "Đang nhận dữ liệu từ server"
+        : primaryRequest.phase === "upload"
+          ? "Đang gửi dữ liệu lên server"
+          : "Vui lòng chờ hoàn tất rồi thao tác tiếp";
+  return {
+    visible: true,
+    progress: Math.max(1, Math.min(100, Math.round(progress))),
+    title: createApiRequestLabel(primaryRequest),
+    detail,
+    requestCount: currentRequests.length,
+  };
+};
 
 function App() {
   // LOGIN STATE
@@ -248,6 +315,13 @@ function App() {
   const [simpleAddPlatform, setSimpleAddPlatform] = useState("netflix");
   const [simpleAddForm, setSimpleAddForm] = useState({ username: "", password: "", duration: "1M", note: "", customerName: "" });
   const [loading, setLoading] = useState(false);
+  const [apiOverlay, setApiOverlay] = useState({
+    visible: false,
+    progress: 0,
+    title: "",
+    detail: "",
+    requestCount: 0,
+  });
   const [activeTab, setActiveTab] = useState("chatgpt");
   const [gptSubTab, setGptSubTab] = useState("all");
   const [package2ShelfTab, setPackage2ShelfTab] = useState("all");
@@ -283,8 +357,11 @@ function App() {
   const channelRef = useRef(null);
   const dataVersionRef = useRef(0);
   const isFetchingDataRef = useRef(false);
+  const fetchDataPromiseRef = useRef(null);
   const seenDatammoOrderKeysRef = useRef(null);
   const hasInitializedDatammoOrdersRef = useRef(false);
+  const apiRequestsRef = useRef(new Map());
+  const apiOverlayTimerRef = useRef(null);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -359,6 +436,74 @@ function App() {
     note: "",
   });
 
+  const refreshApiOverlay = () => {
+    setApiOverlay(buildApiOverlayState(apiRequestsRef.current));
+  };
+
+  useEffect(() => {
+    const updateOverlayFromActivity = (event) => {
+      const detail = event?.detail || {};
+      const requestId = String(detail.requestId || "");
+      if (!requestId) return;
+
+      if (detail.type === "start") {
+        apiRequestsRef.current.set(requestId, {
+          requestId,
+          method: detail.method,
+          url: detail.url,
+          label: detail.label,
+          phase: "start",
+          startedAt: Date.now(),
+          percent: 8,
+        });
+      } else if (detail.type === "progress") {
+        const existing = apiRequestsRef.current.get(requestId);
+        if (!existing) return;
+        const loaded = Number(detail.loaded || 0);
+        const total = Number(detail.total || 0);
+        const rawPercent =
+          total > 0 ? Math.round((loaded / total) * 100) : Number.NaN;
+        const progressPercent = Number.isFinite(rawPercent)
+          ? Math.max(existing.percent || 8, Math.min(92, rawPercent))
+          : existing.percent || 8;
+        apiRequestsRef.current.set(requestId, {
+          ...existing,
+          phase: detail.phase || existing.phase,
+          percent: progressPercent,
+        });
+      } else if (detail.type === "finish") {
+        const existing = apiRequestsRef.current.get(requestId);
+        if (!existing) return;
+        apiRequestsRef.current.set(requestId, {
+          ...existing,
+          phase: detail.ok === false ? "error" : "complete",
+          percent: 100,
+          completedAt: Date.now(),
+        });
+        setTimeout(() => {
+          apiRequestsRef.current.delete(requestId);
+          refreshApiOverlay();
+        }, 260);
+      }
+
+      refreshApiOverlay();
+    };
+
+    const unsubscribe = subscribeToApiActivity(updateOverlayFromActivity);
+    apiOverlayTimerRef.current = setInterval(() => {
+      refreshApiOverlay();
+    }, 120);
+
+    return () => {
+      unsubscribe();
+      if (apiOverlayTimerRef.current) {
+        clearInterval(apiOverlayTimerRef.current);
+        apiOverlayTimerRef.current = null;
+      }
+      apiRequestsRef.current.clear();
+    };
+  }, []);
+
   // CHECK LOGIN ON LOAD - Verify token from localStorage
   useEffect(() => {
     const token = localStorage.getItem("admin_token");
@@ -396,7 +541,10 @@ function App() {
     const checkDataVersion = async () => {
       if (document.hidden) return;
       try {
-        const response = await axios.get("/api/data-version", { timeout: 8000 });
+        const response = await axios.get("/api/data-version", {
+          timeout: 8000,
+          skipGlobalLoading: true,
+        });
         const nextVersion = Number(response?.data?.version || 0);
         if (!Number.isFinite(nextVersion) || nextVersion <= 0) return;
 
@@ -451,10 +599,14 @@ function App() {
 
     try {
       // Backend authentication
-      const response = await axios.post("/api/login", {
-        email: loginForm.email.toLowerCase(),
-        password: loginForm.password,
-      });
+      const response = await axios.post(
+        "/api/login",
+        {
+          email: loginForm.email.toLowerCase(),
+          password: loginForm.password,
+        },
+        { requestLabel: "Đang đăng nhập" },
+      );
 
       if (response.data.success) {
         localStorage.setItem("admin_token", response.data.token);
@@ -701,56 +853,64 @@ function App() {
   };
 
   const fetchData = async (showLoader = true) => {
-    if (isFetchingDataRef.current) return;
-    isFetchingDataRef.current = true;
-    if (showLoader) setLoading(true);
-    try {
-      const res = await axios.get("/api/data", {
-        timeout: 10000,
-        headers: { "Cache-Control": "no-cache" },
-      });
-      const nextVersion = Number(res.data?.version || 0);
-      if (Number.isFinite(nextVersion) && nextVersion > 0) {
-        dataVersionRef.current = nextVersion;
-      }
-      syncDatammoOrderBanner(res.data?.datammoOrders);
-      if (res.data && res.data.chatgpt) {
-        const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
-        const sortedGPT = [...res.data.chatgpt]
-          .map((acc) => ({
-            ...acc,
-            package2Shelf:
-              acc.type === "package2"
-                ? normalizePackage2Shelf(acc.package2Shelf)
-                : "none",
-          }))
-          .sort((a, b) => {
-          const orderA = typeOrder[a.type] ?? 99;
-          const orderB = typeOrder[b.type] ?? 99;
-          if (orderA !== orderB) return orderA - orderB;
-          return new Date(b.createdAt) - new Date(a.createdAt);
-        });
-        setAccounts(sortedGPT);
-      } else {
-        setAccounts([]);
-      }
-      const sortA = (arr) => [...(arr || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      setNetflixAccounts(sortA(res.data?.netflix));
-      setCanvaAccounts(sortA(res.data?.canva));
-      setCapcutAccounts(sortA(res.data?.capcut));
-      setTeamAccounts(
-        sortA(res.data?.team).map((acc) => normalizeTeamAccountForUi(acc)),
-      );
-
-    } catch (error) {
-      if (showLoader) {
-        showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
-        setAccounts([]);
-      }
-    } finally {
-      if (showLoader) setLoading(false);
-      isFetchingDataRef.current = false;
+    if (isFetchingDataRef.current && fetchDataPromiseRef.current) {
+      return fetchDataPromiseRef.current;
     }
+    isFetchingDataRef.current = true;
+    const runFetch = (async () => {
+      if (showLoader) setLoading(true);
+      try {
+        const res = await axios.get("/api/data", {
+          timeout: 10000,
+          headers: { "Cache-Control": "no-cache" },
+          requestLabel: "Đang tải lại dữ liệu",
+          skipGlobalLoading: !showLoader,
+        });
+        const nextVersion = Number(res.data?.version || 0);
+        if (Number.isFinite(nextVersion) && nextVersion > 0) {
+          dataVersionRef.current = nextVersion;
+        }
+        syncDatammoOrderBanner(res.data?.datammoOrders);
+        if (res.data && res.data.chatgpt) {
+          const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
+          const sortedGPT = [...res.data.chatgpt]
+            .map((acc) => ({
+              ...acc,
+              package2Shelf:
+                acc.type === "package2"
+                  ? normalizePackage2Shelf(acc.package2Shelf)
+                  : "none",
+            }))
+            .sort((a, b) => {
+            const orderA = typeOrder[a.type] ?? 99;
+            const orderB = typeOrder[b.type] ?? 99;
+            if (orderA !== orderB) return orderA - orderB;
+            return new Date(b.createdAt) - new Date(a.createdAt);
+          });
+          setAccounts(sortedGPT);
+        } else {
+          setAccounts([]);
+        }
+        const sortA = (arr) => [...(arr || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        setNetflixAccounts(sortA(res.data?.netflix));
+        setCanvaAccounts(sortA(res.data?.canva));
+        setCapcutAccounts(sortA(res.data?.capcut));
+        setTeamAccounts(
+          sortA(res.data?.team).map((acc) => normalizeTeamAccountForUi(acc)),
+        );
+      } catch (error) {
+        if (showLoader) {
+          showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
+          setAccounts([]);
+        }
+      } finally {
+        if (showLoader) setLoading(false);
+        isFetchingDataRef.current = false;
+        fetchDataPromiseRef.current = null;
+      }
+    })();
+    fetchDataPromiseRef.current = runFetch;
+    return runFetch;
   };
 
   const handleAddAccount = async (e) => {
@@ -1658,10 +1818,44 @@ function App() {
     );
   };
 
+  const renderApiOverlay = () => {
+    if (!apiOverlay.visible) return null;
+    return (
+      <div className="fixed inset-0 z-[10000] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl border border-cyan-700/60 bg-slate-900/95 shadow-2xl overflow-hidden">
+          <div className="h-1.5 bg-slate-800">
+            <div
+              className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 transition-all duration-200"
+              style={{ width: `${apiOverlay.progress}%` }}
+            />
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-cyan-900/40 border border-cyan-700/50 flex items-center justify-center">
+                <Loader2 size={20} className="text-cyan-300 animate-spin" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold text-white">{apiOverlay.title || "Đang xử lý API"}</div>
+                <div className="text-xs text-slate-400">{apiOverlay.detail}</div>
+              </div>
+              <div className="text-2xl font-black text-cyan-300 tabular-nums">
+                {apiOverlay.progress}%
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs text-slate-300">
+              App đang khóa thao tác để tránh bấm trùng hoặc lệch dữ liệu.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // --- RENDER ---
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
+        {renderApiOverlay()}
         {/* TOP BANNER */}
         <div className="text-center py-3 px-4 text-sm font-semibold bg-blue-600 text-white">
           ✨ Liên hệ mua tài khoản qua Zalo: <a href="https://zalo.me/0345440153" target="_blank" rel="noreferrer" className="underline font-bold hover:text-yellow-300 transition-colors">0345440153</a>
@@ -1899,6 +2093,7 @@ function App() {
       className="min-h-screen text-slate-200 p-2 sm:p-4 md:p-8 font-sans overflow-x-hidden"
       style={{ backgroundColor: "#0f172a" }}
     >
+      {renderApiOverlay()}
       <div className="max-w-7xl mx-auto relative">
         {/* TOAST MSG */}
         {toastMessage && (
