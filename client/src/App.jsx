@@ -56,6 +56,37 @@ const getPackage2ShelfLabel = (value) => {
 };
 const normalizeTeamSaleMode = (value) =>
   value === "business" ? "business" : "slot";
+const buildEmptyTeamSlot = () => ({
+  status: "empty",
+  gmail: "",
+  customerName: "",
+  addedAt: "",
+  expiredAt: "",
+});
+const normalizeTeamSlotsForUi = (slots = []) =>
+  Array.from({ length: 4 }, (_, index) => {
+    const slot = Array.isArray(slots) ? slots[index] || {} : {};
+    const gmail = String(slot?.gmail || "").trim();
+    const isActive = String(slot?.status || "").toLowerCase() === "active" && gmail;
+    if (!isActive) return buildEmptyTeamSlot();
+    return {
+      status: "active",
+      gmail,
+      customerName: String(slot?.customerName || "").trim(),
+      addedAt: String(slot?.addedAt || ""),
+      expiredAt: String(slot?.expiredAt || ""),
+    };
+  });
+const getTeamCustomerCapacity = (value) =>
+  normalizeTeamSaleMode(
+    typeof value === "string" ? value : value?.saleMode,
+  ) === "business"
+    ? 1
+    : 4;
+const getActiveTeamCustomers = (account = {}) =>
+  normalizeTeamSlotsForUi(account?.slots).filter(
+    (slot) => slot.status === "active" && String(slot.gmail || "").trim(),
+  );
 const getTeamSaleModeLabel = (value) =>
   normalizeTeamSaleMode(value) === "business"
     ? "Business account (1 acc)"
@@ -124,6 +155,7 @@ const normalizeTeamAccountForUi = (account = {}) => {
   return {
     ...rest,
     saleMode: normalizeTeamSaleMode(rest.saleMode),
+    slots: normalizeTeamSlotsForUi(rest.slots),
   };
 };
 const DURATION_MONTHS_MAP = {
@@ -178,13 +210,7 @@ const hasAssignedCustomer = (account = {}) =>
     return false;
   });
 const hasAssignedTeamCustomer = (account = {}) =>
-  Array.isArray(account?.slots) &&
-  account.slots.some(
-    (slot) =>
-      slot &&
-      slot.status === "active" &&
-      String(slot.gmail || "").trim().length > 0,
-  );
+  getActiveTeamCustomers(account).length > 0;
 const matchesCustomerFilter = (hasCustomer, filterValue = "all") => {
   if (filterValue === "with") return hasCustomer;
   if (filterValue === "without") return !hasCustomer;
@@ -3404,18 +3430,20 @@ function App() {
                       const expDays = a.expiredAt ? Math.ceil((new Date(a.expiredAt) - new Date()) / 86400000) : null;
                       if (expDays !== null && expDays <= 0) return false; // Không chuyển vào acc hết hạn
 
-                      const emptySlots = (a.slots || []).filter(s => s.status === "empty" || !s.gmail);
-                      return emptySlots.length > 0; // Chỉ chuyển vào những bên còn trống slot
+                      const activeCustomers = getActiveTeamCustomers(a).length;
+                      return activeCustomers < getTeamCustomerCapacity(a);
                     })
                     .map((a) => {
-                      const filledSlots = (a.slots || []).filter(s => s.status !== "empty" && s.gmail).length;
+                      const filledSlots = getActiveTeamCustomers(a).length;
+                      const isBusinessMode = normalizeTeamSaleMode(a.saleMode) === "business";
+                      const capacity = getTeamCustomerCapacity(a);
                       return (
                         <option
                           key={a.id}
                           value={a.id}
                           className="py-2"
                         >
-                          [{filledSlots}/4 Slots] — {a.username}
+                          [{filledSlots}/{capacity} {isBusinessMode ? "khách" : "Slots"}] — {a.username}
                         </option>
                       );
                     });
@@ -4632,8 +4660,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 const isNear = expDays !== null && expDays > 0 && expDays <= 7;
                 const saleMode = normalizeTeamSaleMode(acc.saleMode);
                 const isBusinessMode = saleMode === "business";
-                const usedSlots = (acc.slots || []).filter((s) => s.status === "active" && !!s.gmail).length;
-                const hasEmptySlot = (acc.slots || []).some((s) => s.status === "empty" || !s.gmail);
+                const customerEntries = normalizeTeamSlotsForUi(acc.slots)
+                  .map((slot, si) => ({ slot, si }))
+                  .filter(({ slot }) => slot.status === "active" && !!slot.gmail);
+                const usedSlots = customerEntries.length;
+                const customerCapacity = getTeamCustomerCapacity(saleMode);
+                const hasCapacityAvailable = usedSlots < customerCapacity;
+                const isOverCapacity = usedSlots > customerCapacity;
                 return (
                   <div key={acc.id} className={`rounded-2xl border shadow-xl overflow-hidden ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}>
                     {/* Account header */}
@@ -4695,11 +4728,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                               <>↔ {isBusinessMode ? "Qua Slot team" : "Qua Business"}</>
                             )}
                           </button>
-                          <div className="text-xs text-indigo-300 font-bold mb-1">{usedSlots}/4 slot đã cấp</div>
+                          <div className="text-xs text-indigo-300 font-bold mb-1">
+                            {usedSlots}/{customerCapacity} {isBusinessMode ? "khách" : "slot đã cấp"}
+                          </div>
                         </div>
 
                         <div className="w-full flex flex-col gap-2 mt-auto pt-2">
-                          {hasEmptySlot ? (
+                          {hasCapacityAvailable ? (
                             <div className="flex flex-col gap-1 my-1 w-full">
                               {isBusinessMode ? (
                                 usedSlots === 0 ? (
@@ -4713,7 +4748,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                 )
                               ) : (
                                 <div className="w-full px-2 py-1 bg-teal-900/40 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex flex-col gap-0.5 shadow-sm items-center justify-center">
-                                  <span className="flex items-center gap-1"><Globe size={10} /> Đang lên kệ Datammo: Còn {4 - usedSlots} Slot</span>
+                                  <span className="flex items-center gap-1"><Globe size={10} /> Đang lên kệ Datammo: Còn {customerCapacity - usedSlots} Slot</span>
                                 </div>
                               )}
                               <div className="flex gap-2">
@@ -4746,7 +4781,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                               </div>
                             </div>
                           ) : (
-                            <div className="w-full text-center text-xs text-red-400 font-bold italic my-1 shadow-sm p-1 border border-red-900/30 rounded bg-red-900/10">Đã Kín 4/4 Slot</div>
+                            <div className="w-full text-center text-xs text-red-400 font-bold italic my-1 shadow-sm p-1 border border-red-900/30 rounded bg-red-900/10">
+                              {isBusinessMode
+                                ? isOverCapacity
+                                  ? `Business đang dư ${usedSlots - customerCapacity} khách, cần chuyển hoặc xóa bớt`
+                                  : "Business đã có khách (1/1)"
+                                : `Đã kín ${customerCapacity}/${customerCapacity} Slot`}
+                            </div>
                           )}
                           <button onClick={() => {
                             const info = `✅ Tài khoản GPT Team\nEmail: ${acc.username}\nPass: ${acc.password}${acc.recoveryUrl ? `\nLink lấy mã: ${acc.recoveryUrl}` : ""}`;
@@ -4764,11 +4805,8 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     </div>
                     {/* Slots */}
                     {usedSlots > 0 ? (
-                      <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {acc.slots?.map((slot, si) => {
-                          const isEmpty = slot.status === "empty" || !slot.gmail;
-                          if (isEmpty) return null; // Do not render empty slots
-
+                      <div className={`p-4 grid gap-3 ${isBusinessMode ? "grid-cols-1" : "grid-cols-2 sm:grid-cols-4"}`}>
+                        {customerEntries.map(({ slot, si }) => {
                           const sExpDays = slot.expiredAt ? Math.ceil((new Date(slot.expiredAt) - new Date()) / 86400000) : null;
                           const sExpired = sExpDays !== null && sExpDays <= 0;
                           const sNear = sExpDays !== null && sExpDays > 0 && sExpDays <= 3;
@@ -4777,6 +4815,9 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                             <div key={si} className={`rounded-xl border p-3 flex flex-col gap-1 w-full ${sExpired ? "border-red-800 bg-red-950/30" : sNear ? "border-yellow-800 bg-yellow-950/20" : "border-indigo-700/50 bg-indigo-900/20"}`}>
                               <>
                                 <div className="flex-1 space-y-0.5">
+                                  <div className="text-[10px] uppercase tracking-wide text-slate-400 font-bold">
+                                    {isBusinessMode ? "Khách Business" : `Slot ${si + 1}`}
+                                  </div>
                                   <span className={`font-bold text-xs truncate max-w-full flex items-center gap-1 ${sExpired ? "text-red-500" : sNear ? "text-yellow-400" : "text-white"}`} title={slot.customerName}>
                                     {sExpired && <AlertCircle size={12} />}
                                     {sNear && <AlertTriangle size={12} />}
@@ -4812,7 +4853,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                     type="button"
                                     onClick={() => openMoveSlotModal(acc.id, si, slot)}
                                     className="bg-orange-600 hover:bg-orange-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
-                                    title="Chuyển Slot"
+                                    title={isBusinessMode ? "Chuyển khách" : "Chuyển Slot"}
                                   >
                                     <ArrowRightLeft size={14} />
                                   </button>
@@ -4820,16 +4861,16 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                     type="button"
                                     onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.addedAt ? new Date(slot.addedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]); setSlotFormExpiredAt(slot.expiredAt ? new Date(slot.expiredAt).toISOString().split("T")[0] : addDurationToDate(new Date(), "1M").toISOString().split("T")[0]); setShowSlotModal(true); }}
                                     className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
-                                    title="Sửa Slot"
+                                    title={isBusinessMode ? "Sửa khách" : "Sửa Slot"}
                                   >
                                     <Pencil size={14} />
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      showConfirm("Xóa Slot", `Xóa khách ${slot.customerName}?`, async () => {
+                                      showConfirm(isBusinessMode ? "Xóa khách Business" : "Xóa Slot", `Xóa khách ${slot.customerName}?`, async () => {
                                         const updSlots = [...acc.slots];
-                                        updSlots[si] = { status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
+                                        updSlots[si] = buildEmptyTeamSlot();
                                         await axios.put(`/api/team/${acc.id}`, { slots: updSlots });
                                         fetchData();
                                       });
@@ -4938,6 +4979,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             const slot = slotTarget.slot || {};
             const isEmpty = slot.status === "empty" || !slot.gmail;
             const parentAcc = teamAccounts.find(a => a.id === slotTarget.accId);
+            const isBusinessMode = normalizeTeamSaleMode(parentAcc?.saleMode) === "business";
 
             let showWarning = false;
             let daysLeft = 0;
@@ -4952,7 +4994,9 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
               <div className="modal-overlay">
                 <div className="modal-box" style={{ maxWidth: "450px" }}>
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-bold text-white mb-0">{isEmpty ? "➕ Gán Khách vào" : "✏️ Sửa"} Slot {(slotTarget.slotIdx ?? 0) + 1}</h3>
+                    <h3 className="text-xl font-bold text-white mb-0">
+                      {isEmpty ? "➕ Gán Khách vào" : "✏️ Sửa"} {isBusinessMode ? "Business" : `Slot ${(slotTarget.slotIdx ?? 0) + 1}`}
+                    </h3>
                     <span className="close cursor-pointer text-slate-400 hover:text-white text-2xl" onClick={() => setShowSlotModal(false)}>&times;</span>
                   </div>
 
@@ -4977,17 +5021,17 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     {!isEmpty ? (
                       <button onClick={async () => {
                         if (!parentAcc) return;
-                        const updSlots = Array(4).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
-                        updSlots[slotTarget.slotIdx] = { status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
+                        const updSlots = Array(4).fill(null).map((_, i) => (parentAcc.slots || [])[i] || buildEmptyTeamSlot());
+                        updSlots[slotTarget.slotIdx] = buildEmptyTeamSlot();
                         await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
                         setShowSlotModal(false); fetchData();
-                      }} className="bg-red-800 hover:bg-red-700 text-white px-3 py-2 rounded text-sm font-bold flex items-center gap-2"><Trash2 size={16} /> Xóa Slot</button>
+                      }} className="bg-red-800 hover:bg-red-700 text-white px-3 py-2 rounded text-sm font-bold flex items-center gap-2"><Trash2 size={16} /> {isBusinessMode ? "Xóa khách" : "Xóa Slot"}</button>
                     ) : (<div></div>)}
                     <div className="flex gap-2">
                       <button onClick={() => setShowSlotModal(false)} className="btn-secondary">Hủy</button>
                       <button onClick={async () => {
                         if (!parentAcc) return;
-                        const updSlots = Array(4).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
+                        const updSlots = Array(4).fill(null).map((_, i) => (parentAcc.slots || [])[i] || buildEmptyTeamSlot());
                         const joinDate = slotFormExp ? new Date(slotFormExp) : new Date();
                         const expireDate = slotFormExpiredAt ? new Date(slotFormExpiredAt) : addDurationToDate(joinDate, "1M");
                         updSlots[slotTarget.slotIdx] = { status: slotFormGmail ? "active" : "empty", gmail: slotFormGmail, customerName: slotFormName, addedAt: joinDate.toISOString(), expiredAt: expireDate.toISOString() };

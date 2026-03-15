@@ -319,8 +319,52 @@ const normalizeLegacyExtDays = (value, fallback = "1M") => {
       return fallback;
   }
 };
+const buildEmptyTeamSlot = () => ({
+  status: "empty",
+  gmail: "",
+  customerName: "",
+  addedAt: "",
+  expiredAt: "",
+});
 const buildEmptyTeamSlots = () =>
-  Array(4).fill(null).map(() => ({ status: "empty" }));
+  Array(4).fill(null).map(() => buildEmptyTeamSlot());
+const isFilledTeamSlot = (slot = {}) =>
+  String(slot?.status || "").toLowerCase() !== "empty" &&
+  String(slot?.gmail || "").trim().length > 0;
+const normalizeTeamSlots = (slots = []) =>
+  Array.from({ length: 4 }, (_, index) => {
+    const slot = Array.isArray(slots) ? slots[index] || {} : {};
+    if (!isFilledTeamSlot(slot)) {
+      return buildEmptyTeamSlot();
+    }
+    return {
+      status: "active",
+      gmail: String(slot.gmail || "").trim(),
+      customerName: String(slot.customerName || "").trim(),
+      addedAt: String(slot.addedAt || ""),
+      expiredAt: String(slot.expiredAt || ""),
+    };
+  });
+const countActiveTeamCustomers = (slots = []) =>
+  normalizeTeamSlots(slots).filter((slot) => isFilledTeamSlot(slot)).length;
+const buildTeamBusinessLimitError = (activeCount = 0) => {
+  const error = new Error(
+    activeCount > 1
+      ? `Team Business chỉ được có 1 khách. Hiện đang có ${activeCount} khách, hãy chuyển hoặc xóa bớt trước.`
+      : "Team Business chỉ được có tối đa 1 khách.",
+  );
+  error.statusCode = 400;
+  return error;
+};
+const assertValidTeamSlotsForSaleMode = (saleMode, slots = []) => {
+  const activeCount = countActiveTeamCustomers(slots);
+  if (
+    normalizeTeamSaleMode(saleMode) === TEAM_SALE_MODE_BUSINESS &&
+    activeCount > 1
+  ) {
+    throw buildTeamBusinessLimitError(activeCount);
+  }
+};
 const normalizeTeamPayload = (payload = {}, options = {}) => {
   const normalized = { ...(payload || {}) };
   delete normalized.emailPassword;
@@ -342,6 +386,9 @@ const normalizeTeamPayload = (payload = {}, options = {}) => {
   if (normalized.slots !== undefined && !Array.isArray(normalized.slots)) {
     normalized.slots = buildEmptyTeamSlots();
   }
+  if (normalized.slots !== undefined) {
+    normalized.slots = normalizeTeamSlots(normalized.slots);
+  }
   if (options.defaultSlots && normalized.slots === undefined) {
     normalized.slots = buildEmptyTeamSlots();
   }
@@ -353,7 +400,7 @@ const sanitizeTeamAccount = (account = {}) => {
   return {
     ...rest,
     saleMode: normalizeTeamSaleMode(rest.saleMode),
-    slots: Array.isArray(rest.slots) ? rest.slots : buildEmptyTeamSlots(),
+    slots: normalizeTeamSlots(rest.slots),
   };
 };
 
@@ -878,7 +925,7 @@ const buildTeamDatammoLines = (acc, options = {}) => {
   const includeAllSlots = options.includeAllSlots === true;
   const includeBusiness = options.includeBusiness === true;
   const saleMode = normalizeTeamSaleMode(acc.saleMode);
-  const teamSlots = Array.isArray(acc.slots) ? acc.slots : [];
+  const teamSlots = normalizeTeamSlots(acc.slots);
   const lines = [];
   const businessContent = `${String(acc.username || "").trim()}|${String(
     acc.password || "",
@@ -936,7 +983,7 @@ const getDatammoLines = (acc, options = {}) => {
   // 1) Logic cho GÓI 3 (Team Account - Business Slots)
   if (acc.slots !== undefined) {
     const teamSaleMode = normalizeTeamSaleMode(acc.saleMode);
-    const teamSlots = Array.isArray(acc.slots) ? acc.slots : [];
+    const teamSlots = normalizeTeamSlots(acc.slots);
     const formatBusinessContent = () => {
       const teamUsername = String(acc.username || "").trim();
       const teamPassword = String(acc.password || "").trim();
@@ -1928,7 +1975,16 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
     }
 
     if (!toAcc.slots) {
-      toAcc.slots = Array(4).fill({ status: "empty" });
+      toAcc.slots = buildEmptyTeamSlots();
+    }
+
+    if (
+      normalizeTeamSaleMode(toAcc.saleMode) === TEAM_SALE_MODE_BUSINESS &&
+      countActiveTeamCustomers(toAcc.slots) >= 1
+    ) {
+      return res.status(400).json({
+        error: "Team Business đích đã có khách rồi (1/1).",
+      });
     }
 
     // Find first empty slot in destination
@@ -2281,10 +2337,14 @@ app.post("/api/team", verifyToken, async (req, res) => {
       createdAt: now.toISOString(),
       expiredAt: normalizedBody.expiredAt || expiredDate.toISOString(),
     };
+    newAcc.slots = normalizeTeamSlots(newAcc.slots);
+    assertValidTeamSlotsForSaleMode(newAcc.saleMode, newAcc.slots);
     await TeamAccount.create(newAcc);
     await syncDatammoUpdateLocked(null, newAcc);
     res.json({ message: "Added", account: sanitizeTeamAccount(newAcc) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
 });
 
 // POST add team account (Public - for Telegram bot)
@@ -2303,10 +2363,14 @@ app.post("/api/team-public", async (req, res) => {
       createdAt: now.toISOString(),
       expiredAt: normalizedBody.expiredAt || expiredDate.toISOString(),
     };
+    newAcc.slots = normalizeTeamSlots(newAcc.slots);
+    assertValidTeamSlotsForSaleMode(newAcc.saleMode, newAcc.slots);
     await TeamAccount.create(newAcc);
     await syncDatammoUpdateLocked(null, newAcc);
     res.json({ message: "Added", account: sanitizeTeamAccount(newAcc) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
 });
 
 // PUT update team account (including slot management)
@@ -2318,6 +2382,18 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
     }
     const existingSnapshot = snapshotDocument(existing);
     const updatePayload = normalizeTeamPayload(req.body);
+    if (updatePayload.slots !== undefined) {
+      updatePayload.slots = normalizeTeamSlots(updatePayload.slots);
+    }
+    const nextSaleMode =
+      updatePayload.saleMode !== undefined
+        ? updatePayload.saleMode
+        : existing.saleMode;
+    const nextSlots =
+      updatePayload.slots !== undefined ? updatePayload.slots : existing.slots;
+    if (updatePayload.saleMode !== undefined || updatePayload.slots !== undefined) {
+      assertValidTeamSlotsForSaleMode(nextSaleMode, nextSlots);
+    }
     const updated = await TeamAccount.findOneAndUpdate(
       { id: req.params.id },
       updatePayload,
@@ -2359,7 +2435,9 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
       message: "Updated",
       account: sanitizeTeamAccount(updated?.toObject?.() || updated),
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
 });
 
 // DELETE team account
