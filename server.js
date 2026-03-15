@@ -33,7 +33,8 @@ const accountSchema = new mongoose.Schema({
     type: { type: String, default: 'unassigned' },
     users: [{
         name: String,
-        joinedAt: String // ISO String
+        joinedAt: String, // ISO String
+        expiredAt: String
     }],
     note: String,
     link: String,
@@ -46,7 +47,7 @@ const singleUserSchema = new mongoose.Schema({
     id: { type: String, unique: true },
     username: { type: String, required: true },
     password: { type: String, default: "" },
-    users: [{ name: String, joinedAt: String }], // max 1
+    users: [{ name: String, joinedAt: String, expiredAt: String }], // max 1
     note: String,
     duration: { type: String, default: "1M" }, // 1M, 3M, 6M, 1Y
     status: { type: String, default: "available" },
@@ -65,7 +66,8 @@ const courseraSchema = new mongoose.Schema({
     type: { type: String, default: 'coursera' },
     users: [{
         name: String,
-        joinedAt: String
+        joinedAt: String,
+        expiredAt: String
     }],
     note: String,
     status: { type: String, default: 'available' },
@@ -75,6 +77,44 @@ const courseraSchema = new mongoose.Schema({
 
 const Account = mongoose.model('Account', accountSchema);
 const Coursera = mongoose.model('Coursera', courseraSchema);
+
+const normalizeDurationCode = (value, fallback = '1M') => {
+    const normalized = String(value || '').trim().toUpperCase();
+    return ['1M', '2M', '3M', '6M', '1Y'].includes(normalized) ? normalized : fallback;
+};
+
+const clampMonthDay = (year, monthIndex, dayOfMonth) => {
+    const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+    return Math.min(dayOfMonth, lastDay);
+};
+
+const addMonthsClamped = (dateInput, months) => {
+    const baseDate = new Date(dateInput);
+    if (Number.isNaN(baseDate.getTime())) return new Date();
+    const result = new Date(baseDate);
+    const originalDay = result.getDate();
+    result.setDate(1);
+    result.setMonth(result.getMonth() + months);
+    result.setDate(clampMonthDay(result.getFullYear(), result.getMonth(), originalDay));
+    return result;
+};
+
+const addDurationToDate = (dateInput, duration = '1M') => {
+    const normalized = normalizeDurationCode(duration);
+    if (normalized === '1Y') return addMonthsClamped(dateInput, 12);
+    return addMonthsClamped(dateInput, { '1M': 1, '2M': 2, '3M': 3, '6M': 6 }[normalized] || 1);
+};
+
+const normalizeLegacyExtDays = (value, fallback = '1M') => {
+    switch (parseInt(value, 10)) {
+        case 30: return '1M';
+        case 60: return '2M';
+        case 90: return '3M';
+        case 180: return '6M';
+        case 365: return '1Y';
+        default: return fallback;
+    }
+};
 
 // --- MIGRATION LOGIC (Tự động chuyển dữ liệu cũ lên Cloud) ---
 async function migrateDataIfNeeded() {
@@ -315,9 +355,9 @@ app.post('/api/move-user', async (req, res) => {
     }
 });
 
-// EXTEND USER (+30/90/180/... DAYS)
+// EXTEND USER (+ calendar duration)
 app.post('/api/extend-user', async (req, res) => {
-    const { accId, userIndex, platform } = req.body;
+    const { accId, userIndex, platform, extDays: bodyExtDays, extDuration: bodyExtDuration } = req.body;
     try {
         const Model = platform === "netflix" ? Netflix : platform === "capcut" ? Capcut : platform === "canva" ? Canva : Account;
         const acc = await Model.findOne({ id: accId });
@@ -327,25 +367,17 @@ app.post('/api/extend-user', async (req, res) => {
         const now = new Date();
         const joinedAt = new Date(user.joinedAt || now);
 
-        const diffTime = now.getTime() - joinedAt.getTime();
-        const daysUsed = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const defaultDuration = platform && platform !== "chatgpt"
+            ? normalizeDurationCode(acc.duration)
+            : '1M';
+        const extDuration = bodyExtDuration
+            ? normalizeDurationCode(bodyExtDuration, defaultDuration)
+            : normalizeLegacyExtDays(bodyExtDays, defaultDuration);
+        const currentExpiry = addDurationToDate(joinedAt, defaultDuration);
 
-        let extDays = 30;
-        if (platform && platform !== "chatgpt") {
-            const m = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
-            extDays = m[acc.duration] || 30;
-        }
-
-        if (daysUsed >= extDays) {
-            // Đã hết hạn: reset về hôm nay → thêm ngày mới
-            user.joinedAt = now.toISOString();
-            user.note = (user.note ? user.note + ' ' : '') + `[Renewed on ${now.toLocaleDateString()}]`;
-        } else {
-            // Chưa hết hạn
-            const newJoinedAt = new Date(joinedAt.getTime() + (extDays * 24 * 60 * 60 * 1000));
-            user.joinedAt = newJoinedAt.toISOString();
-            user.note = (user.note ? user.note + ' ' : '') + `[Extended +${extDays}d on ${now.toLocaleDateString()}]`;
-        }
+        const baseDate = currentExpiry > now ? currentExpiry : now;
+        user.expiredAt = addDurationToDate(baseDate, extDuration).toISOString();
+        user.note = (user.note ? user.note + ' ' : '') + `[Extended +${extDuration} on ${now.toLocaleDateString()}]`;
 
         // markModified để Mongoose detect thay đổi trong subdocument array
         acc.markModified('users');

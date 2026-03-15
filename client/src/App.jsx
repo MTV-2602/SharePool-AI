@@ -126,6 +126,42 @@ const normalizeTeamAccountForUi = (account = {}) => {
     saleMode: normalizeTeamSaleMode(rest.saleMode),
   };
 };
+const DURATION_MONTHS_MAP = {
+  "1M": 1,
+  "2M": 2,
+  "3M": 3,
+  "6M": 6,
+  "1Y": 12,
+};
+const EXTEND_DURATION_OPTIONS = [
+  { value: "1M", label: "1 Tháng" },
+  { value: "2M", label: "2 Tháng" },
+  { value: "3M", label: "3 Tháng" },
+  { value: "6M", label: "6 Tháng" },
+  { value: "1Y", label: "1 Năm" },
+];
+const clampMonthDay = (year, monthIndex, dayOfMonth) => {
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return Math.min(dayOfMonth, lastDay);
+};
+const addMonthsClamped = (dateInput, months) => {
+  const baseDate = new Date(dateInput);
+  if (Number.isNaN(baseDate.getTime())) return new Date();
+  const result = new Date(baseDate);
+  const originalDay = result.getDate();
+  result.setDate(1);
+  result.setMonth(result.getMonth() + months);
+  result.setDate(clampMonthDay(result.getFullYear(), result.getMonth(), originalDay));
+  return result;
+};
+const addDurationToDate = (dateInput, duration = "1M") => {
+  const normalizedDuration = String(duration || "1M").toUpperCase();
+  const months = DURATION_MONTHS_MAP[normalizedDuration];
+  if (!months) return new Date(dateInput);
+  return addMonthsClamped(dateInput, months);
+};
+const getDurationLabel = (duration = "1M") =>
+  EXTEND_DURATION_OPTIONS.find((option) => option.value === duration)?.label || duration;
 
 function App() {
   // LOGIN STATE
@@ -151,7 +187,7 @@ function App() {
 
   const [showExtendModal, setShowExtendModal] = useState(false);
   const [extendData, setExtendData] = useState(null);
-  const [extendDaysOption, setExtendDaysOption] = useState("30");
+  const [extendDaysOption, setExtendDaysOption] = useState("1M");
 
   const [showImportTeamModal, setShowImportTeamModal] = useState(false);
   const [showSimpleAddModal, setShowSimpleAddModal] = useState(false);
@@ -425,9 +461,7 @@ function App() {
   // Helper to safely get user name
   const getUserName = (u) => (typeof u === "object" && u !== null ? u.name : u);
   const getDefaultOneMonthDateInput = () => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + 1);
-    return d.toISOString().split("T")[0];
+    return addDurationToDate(new Date(), "1M").toISOString().split("T")[0];
   };
 
   // Helper to get joined date display
@@ -459,16 +493,6 @@ function App() {
     return null;
   };
 
-  const getDurationDays = (durationStr) => {
-    switch (durationStr) {
-      case "1M": return 30;
-      case "3M": return 90;
-      case "6M": return 180;
-      case "1Y": return 365;
-      default: return 30; // default for chatgpt etc
-    }
-  };
-
   // Helper to calculate days remaining (positive = còn hạn, âm = đã quá hạn)
   const getDaysRemaining = (u, accDuration = "1M") => {
     if (typeof u === "object" && u !== null && u.expiredAt) {
@@ -476,13 +500,16 @@ function App() {
         return Math.ceil((new Date(u.expiredAt) - new Date()) / 86400000);
       } catch (e) { }
     }
-    const used = getDaysUsed(u);
-    if (used === null) return null;
-    const totalDays = getDurationDays(accDuration);
-    return totalDays - used;
+    if (typeof u === "object" && u !== null && u.joinedAt) {
+      try {
+        const expiryDate = addDurationToDate(u.joinedAt, accDuration);
+        return Math.ceil((expiryDate - new Date()) / 86400000);
+      } catch (e) { }
+    }
+    return null;
   };
 
-  // Helper: tính ngày hết hạn của khách = expiredAt OR joinedAt + duration days
+  // Helper: tính ngày hết hạn của khách = expiredAt OR joinedAt + duration
   const getUserExpiryDate = (u, accDuration = "1M") => {
     if (typeof u === "object" && u !== null) {
       if (u.expiredAt) {
@@ -490,8 +517,7 @@ function App() {
       }
       if (u.joinedAt) {
         try {
-          const totalDays = getDurationDays(accDuration);
-          const d = new Date(new Date(u.joinedAt).getTime() + totalDays * 24 * 60 * 60 * 1000);
+          const d = addDurationToDate(u.joinedAt, accDuration);
           return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
         } catch (e) { return ""; }
       }
@@ -717,7 +743,7 @@ function App() {
       newUsers.push({
         name: name.trim(),
         joinedAt: joinedAt || new Date().toISOString(),
-        expiredAt: expiredAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        expiredAt: expiredAt || addDurationToDate(joinedAt || new Date(), "1M").toISOString(),
       });
     } else {
       const oldJoinDate =
@@ -775,7 +801,7 @@ function App() {
     }
 
     setExtendData({ accId, userIndex, platform, currentName: userName, currentExpire, userObj });
-    setExtendDaysOption("30");
+    setExtendDaysOption("1M");
     setShowExtendModal(true);
   };
 
@@ -785,7 +811,7 @@ function App() {
 
     setLoadingStates((prev) => ({ ...prev, extendUser: true }));
     try {
-      const extDays = parseInt(extendDaysOption, 10);
+      const extensionLabel = getDurationLabel(extendDaysOption);
       if (extendData.platform === "team") {
         // Team Account Slot Extension
         const teamAcc = teamAccounts.find(a => a.id === extendData.accId);
@@ -795,7 +821,7 @@ function App() {
 
         const now = new Date();
         const baseDate = slot.expiredAt && new Date(slot.expiredAt) > now ? new Date(slot.expiredAt) : now;
-        const newExpiredAt = new Date(baseDate.getTime() + extDays * 24 * 60 * 60 * 1000).toISOString();
+        const newExpiredAt = addDurationToDate(baseDate, extendDaysOption).toISOString();
 
         updSlots[extendData.userIndex] = { ...slot, expiredAt: newExpiredAt };
         await axios.put(`/api/team/${teamAcc.id}`, { slots: updSlots });
@@ -805,14 +831,14 @@ function App() {
           accId: extendData.accId,
           userIndex: extendData.userIndex,
           platform: extendData.platform,
-          extDays
+          extDuration: extendDaysOption,
         });
       }
 
       setShowExtendModal(false);
       fetchData();
       broadcastDataChange();
-      showAlert("Thành Công", `Đã gia hạn (+${extDays} ngày)!`, "success");
+      showAlert("Thành Công", `Đã gia hạn thêm ${extensionLabel}!`, "success");
     } catch (error) {
       showAlert("Lỗi", error.response?.data?.error || "Không thể gia hạn", "error");
     } finally {
@@ -939,12 +965,13 @@ function App() {
         // Check if user object has name (valid user)
         if (typeof u === "object" && u !== null && u.name) {
           const days = getDaysUsed(u);
+          const daysRemaining = getDaysRemaining(u);
 
           // User còn hạn nếu:
-          // - Có joinedAt và daysUsed < 30
+          // - Có expiry còn thời hạn
           // - Hoặc không có joinedAt (mới thêm, chưa set ngày) -> coi như còn hạn
           const isActive =
-            (days !== null && days < 30) ||
+            (daysRemaining !== null && daysRemaining > 0) ||
             u.joinedAt === null ||
             u.joinedAt === undefined;
 
@@ -955,6 +982,7 @@ function App() {
               userIndex: idx,
               accountUsername: accToDelete.username,
               daysUsed: days !== null ? days : 0,
+              daysRemaining: daysRemaining !== null ? daysRemaining : null,
             });
           }
         }
@@ -2777,7 +2805,7 @@ function App() {
                                                 handleExtendUser(acc.id, 0, u)
                                               }
                                               className="text-green-400 hover:text-white"
-                                              title="Gia hạn (+30 ngày)"
+                                              title="Gia hạn"
                                             >
                                               <RotateCw size={14} />
                                             </button>
@@ -3381,11 +3409,9 @@ function App() {
                 value={extendDaysOption}
                 onChange={e => setExtendDaysOption(e.target.value)}
               >
-                <option value="30">1 Tháng (+30 ngày)</option>
-                <option value="60">2 Tháng (+60 ngày)</option>
-                <option value="90">3 Tháng (+90 ngày)</option>
-                <option value="180">6 Tháng (+180 ngày)</option>
-                <option value="365">1 Năm (+365 ngày)</option>
+                {EXTEND_DURATION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
               </select>
             </div>
 
@@ -3969,7 +3995,7 @@ function App() {
                         ngày •
                         <span className="text-green-400 font-bold">
                           {" "}
-                          Còn {30 - user.daysUsed} ngày
+                          Còn {user.daysRemaining ?? 0} ngày
                         </span>
                       </div>
                     </div>
@@ -4601,7 +4627,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                       setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
                                       setSlotFormGmail("datammo@guest.com"); setSlotFormName("[Datammo] Khách mới");
                                       setSlotFormExp(new Date().toISOString().split("T")[0]);
-                                      setSlotFormExpiredAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+                                      setSlotFormExpiredAt(addDurationToDate(new Date(), "1M").toISOString().split("T")[0]);
                                       setShowSlotModal(true);
                                     }
                                   }} className="bg-teal-700 hover:bg-teal-600 font-bold text-white px-2 py-1.5 rounded text-xs flex-1 transition-colors shadow flex items-center justify-center gap-1" title="Tự động điền Form với chữ Datammo">
@@ -4614,7 +4640,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                     setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
                                     setSlotFormGmail(""); setSlotFormName("");
                                     setSlotFormExp(new Date().toISOString().split("T")[0]);
-                                    setSlotFormExpiredAt(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+                                    setSlotFormExpiredAt(addDurationToDate(new Date(), "1M").toISOString().split("T")[0]);
                                     setShowSlotModal(true);
                                   }
                                 }} className={`bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-2 py-1.5 rounded text-xs transition-colors shadow flex items-center justify-center gap-1 ${isBusinessMode ? "w-full" : "flex-1"}`} title="Gán Khách ngoài">
@@ -4695,7 +4721,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.addedAt ? new Date(slot.addedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]); setSlotFormExpiredAt(slot.expiredAt ? new Date(slot.expiredAt).toISOString().split("T")[0] : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]); setShowSlotModal(true); }}
+                                    onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.addedAt ? new Date(slot.addedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]); setSlotFormExpiredAt(slot.expiredAt ? new Date(slot.expiredAt).toISOString().split("T")[0] : addDurationToDate(new Date(), "1M").toISOString().split("T")[0]); setShowSlotModal(true); }}
                                     className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
                                     title="Sửa Slot"
                                   >
@@ -4838,7 +4864,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                       <AlertTriangle className="text-yellow-500 shrink-0" size={20} />
                       <div className="text-xs text-yellow-200">
                         <span className="font-bold block text-sm text-yellow-500">CẢNH BÁO HẠN DÙNG</span>
-                        Tài khoản Team này chỉ còn <b>{daysLeft} ngày</b> (&lt; 30 ngày).<br />Khách mua tháng có thể bị gián đoạn!
+                        Tài khoản Team này chỉ còn <b>{daysLeft} ngày</b> (&lt; 1 tháng).<br />Khách mua tháng có thể bị gián đoạn!
                       </div>
                     </div>
                   )}
@@ -4866,7 +4892,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         if (!parentAcc) return;
                         const updSlots = Array(4).fill(null).map((_, i) => (parentAcc.slots || [])[i] || { status: "empty" });
                         const joinDate = slotFormExp ? new Date(slotFormExp) : new Date();
-                        const expireDate = slotFormExpiredAt ? new Date(slotFormExpiredAt) : new Date(joinDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+                        const expireDate = slotFormExpiredAt ? new Date(slotFormExpiredAt) : addDurationToDate(joinDate, "1M");
                         updSlots[slotTarget.slotIdx] = { status: slotFormGmail ? "active" : "empty", gmail: slotFormGmail, customerName: slotFormName, addedAt: joinDate.toISOString(), expiredAt: expireDate.toISOString() };
                         await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
                         setShowSlotModal(false); fetchData();
@@ -4890,12 +4916,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
         const durOpts = opts[simpleAddPlatform] || opts.netflix;
         const isCanva = simpleAddPlatform === "canva";
 
-        const calcExp = (dur) => {
-          const d = new Date();
-          const m = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
-          d.setDate(d.getDate() + (m[dur] || 30));
-          return d.toISOString();
-        };
+        const calcExp = (dur) => addDurationToDate(new Date(), dur).toISOString();
 
         const handleSubmit = async (e) => {
           e.preventDefault();
@@ -4963,9 +4984,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 
         const handleDurationChange = (e) => {
           const newDur = e.target.value;
-          const d = new Date();
-          const m = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
-          d.setDate(d.getDate() + (m[newDur] || 30));
+          const d = addDurationToDate(new Date(), newDur);
           setSimpleEditForm(p => ({ ...p, duration: newDur, expiredAt: d.toISOString().split('T')[0] }));
         };
 

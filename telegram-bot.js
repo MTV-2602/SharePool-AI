@@ -44,6 +44,39 @@ const parseTeamAccountInput = (rawText) => {
 
   return { email, password, recoveryUrl };
 };
+const clampMonthDay = (year, monthIndex, dayOfMonth) => {
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return Math.min(dayOfMonth, lastDay);
+};
+const addMonthsClamped = (dateInput, months) => {
+  const baseDate = new Date(dateInput);
+  if (Number.isNaN(baseDate.getTime())) return new Date();
+  const result = new Date(baseDate);
+  const originalDay = result.getDate();
+  result.setDate(1);
+  result.setMonth(result.getMonth() + months);
+  result.setDate(clampMonthDay(result.getFullYear(), result.getMonth(), originalDay));
+  return result;
+};
+const durationToMonths = (duration = '1M') => ({
+  '1M': 1,
+  '2M': 2,
+  '3M': 3,
+  '6M': 6,
+  '1Y': 12,
+}[String(duration || '1M').toUpperCase()] || 1);
+const getUserRemainingDays = (user, duration = '1M') => {
+  if (!user) return null;
+  const now = new Date();
+  if (user.expiredAt) {
+    return Math.ceil((new Date(user.expiredAt) - now) / (1000 * 60 * 60 * 24));
+  }
+  if (user.joinedAt) {
+    const fallbackExpiry = addMonthsClamped(user.joinedAt, durationToMonths(duration));
+    return Math.ceil((fallbackExpiry - now) / (1000 * 60 * 60 * 24));
+  }
+  return null;
+};
 
 // Command: /start
 bot.onText(/\/start/, (msg) => {
@@ -146,18 +179,11 @@ bot.onText(/\/stats/, async (msg) => {
       if (acc.users && acc.users.length > 0) {
         totalUsers += acc.users.length;
         acc.users.forEach(u => {
-          if (u.joinedAt) {
-            const today = new Date();
-            const joined = new Date(u.joinedAt);
-            const daysUsed = Math.floor((today - joined) / (1000 * 60 * 60 * 24));
-
-            if (daysUsed < 30) {
-              activeUsers++;
-            } else {
-              expiredUsers++;
-            }
-          } else {
+          const daysRemaining = getUserRemainingDays(u, acc.duration || '1M');
+          if (daysRemaining === null || daysRemaining > 0) {
             activeUsers++;
+          } else {
+            expiredUsers++;
           }
         });
       }
@@ -228,8 +254,7 @@ bot.on('message', async (msg) => {
         try {
           bot.sendMessage(chatId, '⏳ Đang thêm tài khoản Coursera vào Sheet...');
 
-          const expiredAt = new Date();
-          expiredAt.setDate(expiredAt.getDate() + 365); // Coursera: 1 năm
+          const expiredAt = addMonthsClamped(new Date(), 12); // Coursera: 1 năm
 
           // Format dữ liệu giống web: [email, password, courseCode]
           const sheetData = [[
@@ -276,8 +301,7 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
     try {
       bot.sendMessage(chatId, '⏳ Đang thêm team account...');
 
-      const expiredAt = new Date();
-      expiredAt.setDate(expiredAt.getDate() + 30);
+      const expiredAt = addMonthsClamped(new Date(), 1);
       const expiredAtStr = expiredAt.toISOString();
 
       await axios.post(`${API_URL}/api/team-public`, {
@@ -334,9 +358,7 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
         try {
           bot.sendMessage(chatId, '⏳ Đang thêm account...');
 
-          // Tính expiredAt: +30 ngày
-          const expiredAt = new Date();
-          expiredAt.setDate(expiredAt.getDate() + 30);
+          const expiredAt = addMonthsClamped(new Date(), 1);
           const expiredAtStr = expiredAt.toISOString();
 
           await axios.post(`${API_URL}/api/chatgpt`, {

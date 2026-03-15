@@ -259,12 +259,65 @@ const DATAMMO_VARIANT_TEAM_BUSINESS = "8851247b-72de-4c31-ac84-470cb97abb0e";
 const TEAM_SALE_MODE_SLOT = "slot";
 const TEAM_SALE_MODE_BUSINESS = "business";
 const VALID_TEAM_SALE_MODES = [TEAM_SALE_MODE_SLOT, TEAM_SALE_MODE_BUSINESS];
+const VALID_DURATION_CODES = ["1M", "2M", "3M", "6M", "1Y"];
 const normalizeTeamSaleMode = (value, fallback = TEAM_SALE_MODE_SLOT) => {
   const normalized = String(value || "")
     .trim()
     .toLowerCase();
   if (VALID_TEAM_SALE_MODES.includes(normalized)) return normalized;
   return fallback;
+};
+const normalizeDurationCode = (value, fallback = "1M") => {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (VALID_DURATION_CODES.includes(normalized)) return normalized;
+  return fallback;
+};
+const clampMonthDay = (year, monthIndex, dayOfMonth) => {
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return Math.min(dayOfMonth, lastDay);
+};
+const addMonthsClamped = (dateInput, months) => {
+  const baseDate = new Date(dateInput);
+  if (Number.isNaN(baseDate.getTime())) return new Date();
+  const result = new Date(baseDate);
+  const originalDay = result.getDate();
+  result.setDate(1);
+  result.setMonth(result.getMonth() + months);
+  result.setDate(clampMonthDay(result.getFullYear(), result.getMonth(), originalDay));
+  return result;
+};
+const addDurationToDate = (dateInput, duration = "1M") => {
+  const normalizedDuration = normalizeDurationCode(duration);
+  if (normalizedDuration === "1Y") {
+    return addMonthsClamped(dateInput, 12);
+  }
+  return addMonthsClamped(
+    dateInput,
+    {
+      "1M": 1,
+      "2M": 2,
+      "3M": 3,
+      "6M": 6,
+    }[normalizedDuration] || 1,
+  );
+};
+const normalizeLegacyExtDays = (value, fallback = "1M") => {
+  switch (parseInt(value, 10)) {
+    case 30:
+      return "1M";
+    case 60:
+      return "2M";
+    case 90:
+      return "3M";
+    case 180:
+      return "6M";
+    case 365:
+      return "1Y";
+    default:
+      return fallback;
+  }
 };
 const buildEmptyTeamSlots = () =>
   Array(4).fill(null).map(() => ({ status: "empty" }));
@@ -1907,7 +1960,7 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
 
 // 4.6 EXTEND USER (+ custom DAYS)
 app.post("/api/extend-user", verifyToken, async (req, res) => {
-  const { accId, userIndex, platform, extDays: bodyExtDays } = req.body;
+  const { accId, userIndex, platform, extDays: bodyExtDays, extDuration: bodyExtDuration } = req.body;
   try {
     const Model = platform === "netflix" ? Netflix : platform === "capcut" ? Capcut : platform === "canva" ? Canva : Account;
     const acc = await Model.findOne({ id: accId });
@@ -1917,34 +1970,31 @@ app.post("/api/extend-user", verifyToken, async (req, res) => {
     const user = acc.users[userIndex];
     const now = new Date();
 
-    // Determine extension days
-    let extDays = parseInt(bodyExtDays, 10);
-    if (!extDays || isNaN(extDays) || extDays <= 0) {
-      extDays = 30;
-      if (platform && platform !== "chatgpt") {
-        const m = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
-        extDays = m[acc.duration] || 30;
-      }
-    }
+    const defaultDuration =
+      platform && platform !== "chatgpt"
+        ? normalizeDurationCode(acc.duration)
+        : "1M";
+    const extDuration = bodyExtDuration
+      ? normalizeDurationCode(bodyExtDuration, defaultDuration)
+      : normalizeLegacyExtDays(bodyExtDays, defaultDuration);
 
-    // Determine current expiration. If missing, fallback to joinedAt + extDays
-    let currentExpiredAtTime;
+    // Determine current expiration. If missing, fallback to joinedAt + current duration
+    let currentExpiredAt = null;
     if (user.expiredAt) {
-      currentExpiredAtTime = new Date(user.expiredAt).getTime();
+      currentExpiredAt = new Date(user.expiredAt);
     } else {
       const joinedAt = user.joinedAt ? new Date(user.joinedAt) : now;
-      currentExpiredAtTime = joinedAt.getTime() + extDays * 24 * 60 * 60 * 1000;
+      currentExpiredAt = addDurationToDate(joinedAt, defaultDuration);
     }
 
-    if (currentExpiredAtTime <= now.getTime()) {
-      // Đã hết hạn: reset `expiredAt` tính từ hôm nay
-      user.expiredAt = new Date(now.getTime() + extDays * 24 * 60 * 60 * 1000).toISOString();
-      user.note = (user.note ? user.note + " " : "") + `[Renewed on ${now.toLocaleDateString()}]`;
-    } else {
-      // Chưa hết hạn: cộng dồn thêm extDays vào expiredAt hiện đại
-      user.expiredAt = new Date(currentExpiredAtTime + extDays * 24 * 60 * 60 * 1000).toISOString();
-      user.note = (user.note ? user.note + " " : "") + `[Extended +${extDays}d on ${now.toLocaleDateString()}]`;
-    }
+    const baseDate =
+      currentExpiredAt && currentExpiredAt.getTime() > now.getTime()
+        ? currentExpiredAt
+        : now;
+    user.expiredAt = addDurationToDate(baseDate, extDuration).toISOString();
+    user.note =
+      (user.note ? user.note + " " : "") +
+      `[Extended +${extDuration} on ${now.toLocaleDateString()}]`;
 
     // markModified để Mongoose detect thay đổi trong subdocument array
     acc.markModified("users");
