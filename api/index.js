@@ -925,6 +925,12 @@ const buildPackage1DatammoLines = (acc, options = {}) => {
 
   return lines;
 };
+const buildTeamBusinessDatammoContent = (acc = {}) =>
+  `${String(acc.username || "").trim()}|${String(acc.password || "").trim()}|${String(
+    acc.recoveryUrl || "",
+  ).trim()}`;
+const buildTeamSlotDatammoContent = (acc = {}, slotNum = 1) =>
+  `Slot ${slotNum}|${String(acc.username || "").trim()}|Bạn gửi kèm gmail chính chủ để admin up`;
 const buildTeamDatammoLines = (acc, options = {}) => {
   if (!acc || acc.slots === undefined) return [];
   const includeAllSlots = options.includeAllSlots === true;
@@ -932,6 +938,7 @@ const buildTeamDatammoLines = (acc, options = {}) => {
   const saleMode = normalizeTeamSaleMode(acc.saleMode);
   const teamSlots = normalizeTeamSlots(acc.slots);
   const lines = [];
+  const datammoBusinessContent = buildTeamBusinessDatammoContent(acc);
   const businessContent = `${String(acc.username || "").trim()}|${String(
     acc.password || "",
   ).trim()}|${String(acc.recoveryUrl || "").trim()}`;
@@ -945,7 +952,7 @@ const buildTeamDatammoLines = (acc, options = {}) => {
     if (includeBusiness || activeSlots === 0) {
       lines.push({
         variantId: DATAMMO_VARIANT_TEAM_BUSINESS,
-        content: businessContent,
+        content: datammoBusinessContent,
       });
     }
   }
@@ -959,7 +966,7 @@ const buildTeamDatammoLines = (acc, options = {}) => {
     if (includeAllSlots || slot?.status === "empty" || !slot?.gmail) {
       lines.push({
         variantId: DATAMMO_VARIANT_PKG3,
-        content: slotContent(i),
+        content: buildTeamSlotDatammoContent(acc, i),
       });
     }
   }
@@ -1037,7 +1044,7 @@ const getDatammoLines = (acc, options = {}) => {
       if (activeSlots === 0) {
         lines.push({
           variantId: DATAMMO_VARIANT_TEAM_BUSINESS,
-          content: formatBusinessContent(),
+          content: buildTeamBusinessDatammoContent(acc),
         });
       }
       return lines;
@@ -1046,7 +1053,10 @@ const getDatammoLines = (acc, options = {}) => {
     teamSlots.forEach((slot, index) => {
       // Slot trống được đẩy lên sàn MMO
       if (slot.status === "empty" || !slot.gmail) {
-        lines.push({ variantId: DATAMMO_VARIANT_PKG3, content: formatTeamContent(index + 1) });
+        lines.push({
+          variantId: DATAMMO_VARIANT_PKG3,
+          content: buildTeamSlotDatammoContent(acc, index + 1),
+        });
       }
     });
     return lines;
