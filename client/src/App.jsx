@@ -3378,15 +3378,18 @@ function App() {
             e.preventDefault();
             const raw = teamImportText;
             if (!raw || !raw.trim()) return;
-            const m1 = raw.match(/\[.*?\]([\s\S]*?)\[/);
-            const middle = m1 ? m1[1] : raw;
-            const normalized = middle.replace(/----/g, "|||");
-            const parts = normalized.split("|||").map(s => s.trim());
+            const lines = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+            const sourceLine = lines.find((line) => line.includes("----")) || raw.trim();
+            const normalized = sourceLine.replace(/^team\s+/i, "").trim();
+            const parts = normalized.split(/-{4,}/).map((s) => s.trim()).filter(Boolean);
             const email = parts[0] || "";
             const gptPass = parts[1] || "";
-            const emailPass = parts[2] || "";
+            const thirdPart = parts[2] || "";
+            const fourthPart = parts[3] || "";
+            const emailPass = thirdPart && !/^https?:\/\//i.test(thirdPart) ? thirdPart : "";
+            const fallbackRecoveryMatch = raw.match(/https?:\/\/\S+/i);
             const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
-            const recoveryUrl = recoveryMatch ? recoveryMatch[1].trim() : "";
+            const recoveryUrl = fourthPart || (/^https?:\/\//i.test(thirdPart) ? thirdPart : "") || (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : "") || (recoveryMatch ? recoveryMatch[1].trim() : "");
 
             setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl: recoveryUrl, note: "", expiredAt: getDefaultOneMonthDateInput(), saleMode: "slot" });
             setShowImportTeamModal(false);
@@ -3398,6 +3401,7 @@ function App() {
             </h2>
             <div className="form-group mb-4">
               <label className="text-slate-300 font-bold mb-1 block">Dán Raw Format tại đây:</label>
+              <p className="text-xs text-slate-400 mb-2">Format moi: team email@domain.com----gptpass----https://generator.email/...</p>
               <textarea
                 className="form-input w-full h-32 text-sm font-mono leading-tight bg-slate-800"
                 placeholder="email----pass----pass...&#10;[接收验证码的地址]..."
