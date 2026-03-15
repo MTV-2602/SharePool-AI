@@ -283,6 +283,25 @@ const buildApiOverlayState = (requestsMap) => {
     requestCount: currentRequests.length,
   };
 };
+const getRecordUpdatedAt = (record = {}) => String(record?.updatedAt || "").trim();
+const withExpectedUpdatedAt = (payload = {}, record = {}) => {
+  const expectedUpdatedAt = getRecordUpdatedAt(record);
+  if (!expectedUpdatedAt) return { ...(payload || {}) };
+  return {
+    ...(payload || {}),
+    expectedUpdatedAt,
+  };
+};
+const buildMoveExpectedPayload = (payload = {}, fromRecord = {}, toRecord = {}) => {
+  const nextPayload = { ...(payload || {}) };
+  const fromExpectedUpdatedAt = getRecordUpdatedAt(fromRecord);
+  const toExpectedUpdatedAt = getRecordUpdatedAt(toRecord);
+  if (fromExpectedUpdatedAt) nextPayload.fromExpectedUpdatedAt = fromExpectedUpdatedAt;
+  if (toExpectedUpdatedAt) nextPayload.toExpectedUpdatedAt = toExpectedUpdatedAt;
+  return nextPayload;
+};
+const getApiErrorMessage = (error, fallback) =>
+  error?.response?.data?.error || error?.message || fallback;
 
 function App() {
   // LOGIN STATE
@@ -334,7 +353,7 @@ function App() {
 
   const [showAssignUserModal, setShowAssignUserModal] = useState(false);
   const [showSimpleEditModal, setShowSimpleEditModal] = useState(false);
-  const [simpleEditForm, setSimpleEditForm] = useState({ id: "", username: "", password: "", duration: "1M", note: "", expiredAt: "" });
+  const [simpleEditForm, setSimpleEditForm] = useState({ id: "", username: "", password: "", duration: "1M", note: "", expiredAt: "", updatedAt: "" });
   const [assignUserAcc, setAssignUserAcc] = useState(null);
   const [assignUserName, setAssignUserName] = useState("");
 
@@ -994,12 +1013,15 @@ function App() {
     const loadingKey = userModalMode === "add" ? "addUser" : "editUser";
     setLoadingStates((prev) => ({ ...prev, [loadingKey]: true }));
     try {
-      await axios.put(`/api/chatgpt/${accId}`, { users: newUsers });
+      await axios.put(
+        `/api/chatgpt/${accId}`,
+        withExpectedUpdatedAt({ users: newUsers }, acc),
+      );
       setShowUserModal(false);
       fetchData();
       broadcastDataChange();
     } catch (err) {
-      showAlert("Lỗi", "Không lưu được khách hàng", "error");
+      showAlert("Lỗi", getApiErrorMessage(err, "Không lưu được khách hàng"), "error");
     } finally {
       setLoadingStates((prev) => ({ ...prev, [loadingKey]: false }));
     }
@@ -1015,11 +1037,14 @@ function App() {
         const newUsers = acc.users.filter((_, i) => i !== userIndex);
         setLoadingStates((prev) => ({ ...prev, deleteUser: true }));
         try {
-          await axios.put(`/api/chatgpt/${accId}`, { users: newUsers });
+          await axios.put(
+            `/api/chatgpt/${accId}`,
+            withExpectedUpdatedAt({ users: newUsers }, acc),
+          );
           fetchData();
           broadcastDataChange();
         } catch (err) {
-          showAlert("Lỗi", "Lỗi xóa khách", "error");
+          showAlert("Lỗi", getApiErrorMessage(err, "Lỗi xóa khách"), "error");
         } finally {
           setLoadingStates((prev) => ({ ...prev, deleteUser: false }));
         }
@@ -1059,14 +1084,28 @@ function App() {
         const newExpiredAt = addDurationToDate(baseDate, extendDaysOption).toISOString();
 
         updSlots[extendData.userIndex] = { ...slot, expiredAt: newExpiredAt };
-        await axios.put(`/api/team/${teamAcc.id}`, { slots: updSlots });
+        await axios.put(
+          `/api/team/${teamAcc.id}`,
+          withExpectedUpdatedAt({ slots: updSlots }, teamAcc),
+        );
       } else {
         // General Account Extension
+        const extendAcc =
+          extendData.platform === "chatgpt"
+            ? accounts.find((acc) => acc.id === extendData.accId)
+            : (
+                {
+                  netflix: netflixAccounts,
+                  capcut: capcutAccounts,
+                  canva: canvaAccounts,
+                }[extendData.platform] || []
+              ).find((acc) => acc.id === extendData.accId);
         await axios.post("/api/extend-user", {
           accId: extendData.accId,
           userIndex: extendData.userIndex,
           platform: extendData.platform,
           extDuration: extendDaysOption,
+          expectedUpdatedAt: getRecordUpdatedAt(extendAcc),
         });
       }
 
@@ -1075,7 +1114,7 @@ function App() {
       broadcastDataChange();
       showAlert("Thành Công", `Đã gia hạn thêm ${extensionLabel}!`, "success");
     } catch (error) {
-      showAlert("Lỗi", error.response?.data?.error || "Không thể gia hạn", "error");
+      showAlert("Lỗi", getApiErrorMessage(error, "Không thể gia hạn"), "error");
     } finally {
       setLoadingStates((prev) => ({ ...prev, extendUser: false }));
     }
@@ -1102,13 +1141,16 @@ function App() {
 
     setLoadingStates((prev) => ({ ...prev, editAccount: true }));
     try {
-      await axios.put(`/api/chatgpt/${editingAcc.id}`, editingAcc);
+      await axios.put(
+        `/api/chatgpt/${editingAcc.id}`,
+        withExpectedUpdatedAt(editingAcc, originalAcc),
+      );
       setShowEditModal(false);
       setEditingAcc(null);
       fetchData();
       broadcastDataChange();
     } catch (error) {
-      showAlert("Lỗi", "Lỗi cập nhật", "error");
+      showAlert("Lỗi", getApiErrorMessage(error, "Lỗi cập nhật"), "error");
     } finally {
       setLoadingStates((prev) => ({ ...prev, editAccount: false }));
     }
@@ -1128,18 +1170,52 @@ function App() {
 
     setLoadingStates((prev) => ({ ...prev, moveUser: true }));
     try {
+      const fromRecord =
+        movingUser.platform === "chatgpt"
+          ? accounts.find((acc) => acc.id === movingUser.fromAccId)
+          : (
+              {
+                netflix: netflixAccounts,
+                capcut: capcutAccounts,
+                canva: canvaAccounts,
+              }[movingUser.platform] || []
+            ).find((acc) => acc.id === movingUser.fromAccId);
+      const toRecord =
+        movingUser.platform === "chatgpt"
+          ? accounts.find((acc) => acc.id === destinationAccId)
+          : (
+              {
+                netflix: netflixAccounts,
+                capcut: capcutAccounts,
+                canva: canvaAccounts,
+              }[movingUser.platform] || []
+            ).find((acc) => acc.id === destinationAccId);
       if (movingUser.platform === "chatgpt") {
-        await axios.post("/api/move-user", {
-          fromAccId: movingUser.fromAccId,
-          toAccId: destinationAccId,
-          userIndex: movingUser.userIndex,
-        });
+        await axios.post(
+          "/api/move-user",
+          buildMoveExpectedPayload(
+            {
+              fromAccId: movingUser.fromAccId,
+              toAccId: destinationAccId,
+              userIndex: movingUser.userIndex,
+            },
+            fromRecord,
+            toRecord,
+          ),
+        );
       } else {
-        await axios.post("/api/simple-move-user", {
-          fromAccId: movingUser.fromAccId,
-          toAccId: destinationAccId,
-          platform: movingUser.platform,
-        });
+        await axios.post(
+          "/api/simple-move-user",
+          buildMoveExpectedPayload(
+            {
+              fromAccId: movingUser.fromAccId,
+              toAccId: destinationAccId,
+              platform: movingUser.platform,
+            },
+            fromRecord,
+            toRecord,
+          ),
+        );
       }
       setShowMoveUserModal(false);
       setMovingUser(null);
@@ -1149,7 +1225,7 @@ function App() {
     } catch (error) {
       showAlert(
         "Lỗi",
-        error.response?.data?.error || "Lỗi khi chuyển khách",
+        getApiErrorMessage(error, "Lỗi khi chuyển khách"),
         "error",
       );
     } finally {
@@ -1170,18 +1246,27 @@ function App() {
 
     setLoadingStates((prev) => ({ ...prev, moveUser: true }));
     try {
-      await axios.post("/api/team-move-slot", {
-        fromAccId: movingSlot.fromAccId,
-        toAccId: destinationAccId,
-        slotIndex: movingSlot.slotIndex,
-      });
+      const fromTeam = teamAccounts.find((acc) => acc.id === movingSlot.fromAccId);
+      const toTeam = teamAccounts.find((acc) => acc.id === destinationAccId);
+      await axios.post(
+        "/api/team-move-slot",
+        buildMoveExpectedPayload(
+          {
+            fromAccId: movingSlot.fromAccId,
+            toAccId: destinationAccId,
+            slotIndex: movingSlot.slotIndex,
+          },
+          fromTeam,
+          toTeam,
+        ),
+      );
       setShowMoveSlotModal(false);
       setMovingSlot(null);
       fetchData();
       broadcastDataChange();
       showAlert("Thành Công", `Đã chuyển khách sang tài khoản Team khác!`, "success");
     } catch (error) {
-      showAlert("Lỗi", error.response?.data?.error || "Lỗi khi chuyển slot", "error");
+      showAlert("Lỗi", getApiErrorMessage(error, "Lỗi khi chuyển slot"), "error");
     } finally {
       setLoadingStates((prev) => ({ ...prev, moveUser: false }));
     }
@@ -1237,14 +1322,16 @@ function App() {
     // Không có user còn hạn - cho phép xóa (tự động xóa luôn cả expired users)
     setLoadingStates((prev) => ({ ...prev, deleteAccount: true }));
     try {
-      await axios.delete(`/api/chatgpt/${deletingId}`);
+      await axios.delete(`/api/chatgpt/${deletingId}`, {
+        data: withExpectedUpdatedAt({}, accToDelete),
+      });
       setShowDeleteModal(false);
       setDeletingId(null);
       setShowEditModal(false);
       fetchData();
       broadcastDataChange();
     } catch (error) {
-      showAlert("Lỗi", "Lỗi xóa: " + error.message, "error");
+      showAlert("Lỗi", getApiErrorMessage(error, "Lỗi xóa tài khoản"), "error");
     } finally {
       setLoadingStates((prev) => ({ ...prev, deleteAccount: false }));
     }
@@ -1278,12 +1365,14 @@ function App() {
     showConfirm("Xóa Team Acc", `Bạn có chắc chắn muốn xóa tài khoản "${accToDelete.username}"?`, async () => {
       setLoadingStates((prev) => ({ ...prev, deleteAccount: true }));
       try {
-        await axios.delete(`/api/team/${accId}`);
+        await axios.delete(`/api/team/${accId}`, {
+          data: withExpectedUpdatedAt({}, accToDelete),
+        });
         fetchData();
         broadcastDataChange();
         showAlert("Đã xóa", "Team account đã bị xóa.", "info");
       } catch (err) {
-        showAlert("Lỗi", "Lỗi xóa team account: " + err.message, "error");
+        showAlert("Lỗi", getApiErrorMessage(err, "Lỗi xóa team account"), "error");
       } finally {
         setLoadingStates((prev) => ({ ...prev, deleteAccount: false }));
       }
@@ -1329,10 +1418,16 @@ function App() {
             acc.type === "package2" ? acc.package2Shelf : "none",
           )
           : "none";
-      await axios.put(`/api/chatgpt/${acc.id}`, {
-        type: newType,
-        package2Shelf: nextShelf,
-      });
+      await axios.put(
+        `/api/chatgpt/${acc.id}`,
+        withExpectedUpdatedAt(
+          {
+            type: newType,
+            package2Shelf: nextShelf,
+          },
+          acc,
+        ),
+      );
       fetchData();
       broadcastDataChange();
     } catch (error) {
@@ -1363,9 +1458,15 @@ function App() {
       changeShelf: { ...prev.changeShelf, [acc.id]: true },
     }));
     try {
-      const response = await axios.put(`/api/chatgpt/${acc.id}`, {
-        package2Shelf: nextShelf,
-      });
+      const response = await axios.put(
+        `/api/chatgpt/${acc.id}`,
+        withExpectedUpdatedAt(
+          {
+            package2Shelf: nextShelf,
+          },
+          acc,
+        ),
+      );
       const updatedAcc = response?.data?.account;
       if (updatedAcc?.id) {
         setAccounts((prev) =>
@@ -1638,9 +1739,15 @@ function App() {
       teamMode: { ...(prev.teamMode || {}), [acc.id]: true },
     }));
     try {
-      const response = await axios.put(`/api/team/${acc.id}`, {
-        saleMode: targetMode,
-      });
+      const response = await axios.put(
+        `/api/team/${acc.id}`,
+        withExpectedUpdatedAt(
+          {
+            saleMode: targetMode,
+          },
+          acc,
+        ),
+      );
       const updatedAcc = response?.data?.account;
       if (updatedAcc?.id) {
         setTeamAccounts((prev) =>
@@ -1662,7 +1769,7 @@ function App() {
         "success",
       );
     } catch (error) {
-      const msg = error?.response?.data?.error || "Không thể đổi loại Team";
+      const msg = getApiErrorMessage(error, "Không thể đổi loại Team");
       showAlert("Lỗi", msg, "error");
     } finally {
       setLoadingStates((prev) => {
@@ -1821,8 +1928,8 @@ function App() {
   const renderApiOverlay = () => {
     if (!apiOverlay.visible) return null;
     return (
-      <div className="fixed inset-0 z-[10000] bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-2xl border border-cyan-700/60 bg-slate-900/95 shadow-2xl overflow-hidden">
+      <div className="fixed top-4 right-4 z-[10000] w-[min(92vw,420px)] pointer-events-none">
+        <div className="rounded-2xl border border-cyan-700/60 bg-slate-900/95 shadow-2xl overflow-hidden">
           <div className="h-1.5 bg-slate-800">
             <div
               className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 transition-all duration-200"
@@ -1843,7 +1950,7 @@ function App() {
               </div>
             </div>
             <div className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs text-slate-300">
-              App đang khóa thao tác để tránh bấm trùng hoặc lệch dữ liệu.
+              App vẫn dùng được, nhưng nên chờ request này xong để tránh lệch dữ liệu.
             </div>
           </div>
         </div>
@@ -2405,7 +2512,10 @@ function App() {
                                     if (type === "team_slot_expired") {
                                       const updSlots = [...acc.slots];
                                       updSlots[idx] = { ...u, status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
-                                      await axios.put(`/api/team/${acc.id}`, { slots: updSlots });
+                                      await axios.put(
+                                        `/api/team/${acc.id}`,
+                                        withExpectedUpdatedAt({ slots: updSlots }, acc),
+                                      );
                                       fetchData();
                                       showAlert("Thành công", "Đã xóa khách Team!", "success");
                                     } else {
@@ -4421,10 +4531,18 @@ function App() {
                             if (!fromAcc) return;
                             const updSlots = [...fromAcc.slots];
                             updSlots[slot.originalIndex] = { ...slot, status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
-                            await axios.put(`/api/team/${fromAcc.id}`, { slots: updSlots });
-                            fetchData();
-                            setShowOrphanedSlotsModal(false);
-                            showAlert("Đã xóa Slot", "Slot khách đã được giải phóng.", "info");
+                            try {
+                              await axios.put(
+                                `/api/team/${fromAcc.id}`,
+                                withExpectedUpdatedAt({ slots: updSlots }, fromAcc),
+                              );
+                              fetchData();
+                              broadcastDataChange();
+                              setShowOrphanedSlotsModal(false);
+                              showAlert("Đã xóa Slot", "Slot khách đã được giải phóng.", "info");
+                            } catch (error) {
+                              showAlert("Lỗi", getApiErrorMessage(error, "Không thể xóa slot"), "error");
+                            }
                           }}
                           className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold text-sm"
                         >
@@ -4522,6 +4640,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             duration: acc.duration || "1M",
             note: acc.note || "",
             expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split('T')[0] : "",
+            updatedAt: getRecordUpdatedAt(acc),
           });
           setShowSimpleEditModal(true);
         };
@@ -4529,9 +4648,14 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
         const handleDeleteSimpleAcc = (acc) => {
           showConfirm("Xóa Tài Khoản", `Bạn có chắc muốn xóa tài khoản ${acc.username}?`, async () => {
             try {
-              await axios.delete(`/api/${platform}/${acc.id}`);
+              await axios.delete(`/api/${platform}/${acc.id}`, {
+                data: {
+                  expectedUpdatedAt: getRecordUpdatedAt(acc),
+                },
+              });
               fetchData();
-            } catch (e) { showAlert("Lỗi", "Xóa thất bại", "error"); }
+              broadcastDataChange();
+            } catch (e) { showAlert("Lỗi", getApiErrorMessage(e, "Xóa thất bại"), "error"); }
           });
         };
 
@@ -4545,9 +4669,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
         const handleRemoveUser = (acc) => {
           showConfirm("Xóa Khách", `Bạn có chắc muốn xóa khách khỏi ${acc.username}?`, async () => {
             try {
-              await axios.put(`/api/${platform}/${acc.id}`, { users: [] });
+              await axios.put(
+                `/api/${platform}/${acc.id}`,
+                withExpectedUpdatedAt({ users: [] }, acc),
+              );
               fetchData();
-            } catch (e) { showAlert("Lỗi", "Xóa thất bại", "error"); }
+              broadcastDataChange();
+            } catch (e) { showAlert("Lỗi", getApiErrorMessage(e, "Xóa thất bại"), "error"); }
           });
         };
 
@@ -5064,10 +5192,18 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                     type="button"
                                     onClick={() => {
                                       showConfirm(isBusinessMode ? "Xóa khách Business" : "Xóa Slot", `Xóa khách ${slot.customerName}?`, async () => {
-                                        const updSlots = [...acc.slots];
-                                        updSlots[si] = buildEmptyTeamSlot();
-                                        await axios.put(`/api/team/${acc.id}`, { slots: updSlots });
-                                        fetchData();
+                                        try {
+                                          const updSlots = [...acc.slots];
+                                          updSlots[si] = buildEmptyTeamSlot();
+                                          await axios.put(
+                                            `/api/team/${acc.id}`,
+                                            withExpectedUpdatedAt({ slots: updSlots }, acc),
+                                          );
+                                          fetchData();
+                                          broadcastDataChange();
+                                        } catch (error) {
+                                          showAlert("Lỗi", getApiErrorMessage(error, "Không thể xóa khách"), "error");
+                                        }
                                       });
                                     }}
                                     className="bg-red-600 hover:bg-red-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
@@ -5126,7 +5262,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     try {
                       await axios.post("/api/team", { ...teamAddForm, expiredAt: teamAddForm.expiredAt ? new Date(teamAddForm.expiredAt).toISOString() : undefined });
                       setShowTeamAddModal(false); fetchData(); showAlert("Thành công", "Đã thêm Team Account!", "success");
-                    } catch (e) { showAlert("Lỗi", e.message, "error"); }
+                    } catch (e) { showAlert("Lỗi", getApiErrorMessage(e, "Không thể thêm Team Account"), "error"); }
                   }} className="btn-primary" style={{ background: "#4f46e5" }}>+ Thêm Team Acc</button>
                 </div>
               </div>
@@ -5160,9 +5296,19 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   <button onClick={() => setShowTeamEditModal(false)} className="btn-secondary">Hủy</button>
                   <button onClick={async () => {
                     try {
-                      await axios.put(`/api/team/${teamEditForm.id}`, { ...teamEditForm, expiredAt: teamEditForm.expiredAt ? new Date(teamEditForm.expiredAt).toISOString() : undefined });
+                      const currentTeamAcc = teamAccounts.find((item) => item.id === teamEditForm.id);
+                      await axios.put(
+                        `/api/team/${teamEditForm.id}`,
+                        withExpectedUpdatedAt(
+                          {
+                            ...teamEditForm,
+                            expiredAt: teamEditForm.expiredAt ? new Date(teamEditForm.expiredAt).toISOString() : undefined,
+                          },
+                          currentTeamAcc,
+                        ),
+                      );
                       setShowTeamEditModal(false); fetchData(); showAlert("Thành công", "Đã cập nhật!", "success");
-                    } catch (e) { showAlert("Lỗi", e.message, "error"); }
+                    } catch (e) { showAlert("Lỗi", getApiErrorMessage(e, "Không thể cập nhật Team Account"), "error"); }
                   }} className="btn-primary" style={{ background: "#2563eb" }}>Lưu</button>
                 </div>
               </div>
@@ -5218,7 +5364,10 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         if (!parentAcc) return;
                         const updSlots = Array(4).fill(null).map((_, i) => (parentAcc.slots || [])[i] || buildEmptyTeamSlot());
                         updSlots[slotTarget.slotIdx] = buildEmptyTeamSlot();
-                        await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
+                        await axios.put(
+                          `/api/team/${slotTarget.accId}`,
+                          withExpectedUpdatedAt({ slots: updSlots }, parentAcc),
+                        );
                         setShowSlotModal(false); fetchData();
                       }} className="bg-red-800 hover:bg-red-700 text-white px-3 py-2 rounded text-sm font-bold flex items-center gap-2"><Trash2 size={16} /> {isBusinessMode ? "Xóa khách" : "Xóa Slot"}</button>
                     ) : (<div></div>)}
@@ -5230,7 +5379,10 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         const joinDate = slotFormExp ? new Date(slotFormExp) : new Date();
                         const expireDate = slotFormExpiredAt ? new Date(slotFormExpiredAt) : addDurationToDate(joinDate, "1M");
                         updSlots[slotTarget.slotIdx] = { status: slotFormGmail ? "active" : "empty", gmail: slotFormGmail, customerName: slotFormName, addedAt: joinDate.toISOString(), expiredAt: expireDate.toISOString() };
-                        await axios.put(`/api/team/${slotTarget.accId}`, { slots: updSlots });
+                        await axios.put(
+                          `/api/team/${slotTarget.accId}`,
+                          withExpectedUpdatedAt({ slots: updSlots }, parentAcc),
+                        );
                         setShowSlotModal(false); fetchData();
                       }} className="btn-primary" style={{ background: "#4f46e5" }}>💾 Lưu</button>
                     </div>
@@ -5327,6 +5479,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
         const handleEditSubmit = async (e) => {
           e.preventDefault();
           try {
+            const currentSimpleAcc =
+              ({
+                netflix: netflixAccounts,
+                capcut: capcutAccounts,
+                canva: canvaAccounts,
+              }[activeTab] || []
+              ).find((acc) => acc.id === simpleEditForm.id);
             const bodyData = {
               username: simpleEditForm.username.trim(),
               password: simpleEditForm.password.trim(),
@@ -5336,11 +5495,15 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             if (simpleEditForm.expiredAt) {
               bodyData.expiredAt = new Date(simpleEditForm.expiredAt).toISOString();
             }
-            await axios.put(`/api/${activeTab}/${simpleEditForm.id}`, bodyData);
+            await axios.put(
+              `/api/${activeTab}/${simpleEditForm.id}`,
+              withExpectedUpdatedAt(bodyData, currentSimpleAcc || simpleEditForm),
+            );
             setShowSimpleEditModal(false);
             fetchData();
+            broadcastDataChange();
             showAlert("Thành công", "Đã cập nhật tài khoản", "success");
-          } catch (err) { showAlert("Lỗi", "Cập nhật thất bại", "error"); }
+          } catch (err) { showAlert("Lỗi", getApiErrorMessage(err, "Cập nhật thất bại"), "error"); }
         };
 
         return (
@@ -5398,11 +5561,15 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           try {
             const platform = activeTab;
             const newUsers = [{ name: assignUserName.trim(), joinedAt: new Date().toISOString() }];
-            await axios.put(`/api/${platform}/${assignUserAcc.id}`, { users: newUsers });
+            await axios.put(
+              `/api/${platform}/${assignUserAcc.id}`,
+              withExpectedUpdatedAt({ users: newUsers }, assignUserAcc),
+            );
             setShowAssignUserModal(false);
             setAssignUserAcc(null);
             fetchData();
-          } catch (e) { alert("Lỗi gán khách"); }
+            broadcastDataChange();
+          } catch (e) { showAlert("Lỗi", getApiErrorMessage(e, "Lỗi gán khách"), "error"); }
         };
 
         return (

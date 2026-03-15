@@ -65,6 +65,7 @@ const accountSchema = new mongoose.Schema({
   status: { type: String, default: "available" },
   createdAt: { type: String },
   expiredAt: { type: String },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
 });
 const Account =
   mongoose.models.Account || mongoose.model("Account", accountSchema);
@@ -79,6 +80,7 @@ const singleUserSchema = new mongoose.Schema({
   status: { type: String, default: "available" },
   createdAt: { type: String },
   expiredAt: { type: String },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
 });
 const Netflix = mongoose.models.Netflix || mongoose.model("Netflix", singleUserSchema);
 const Canva = mongoose.models.Canva || mongoose.model("Canva", singleUserSchema);
@@ -103,6 +105,7 @@ const teamAccountSchema = new mongoose.Schema({
   slots: { type: [teamSlotSchema], default: () => Array(4).fill(null).map(() => ({ status: "empty" })) },
   createdAt: { type: String },
   expiredAt: { type: String },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
 });
 const TeamAccount = mongoose.models.TeamAccount || mongoose.model("TeamAccount", teamAccountSchema);
 
@@ -368,6 +371,7 @@ const assertValidTeamSlotsForSaleMode = (saleMode, slots = []) => {
 const normalizeTeamPayload = (payload = {}, options = {}) => {
   const normalized = { ...(payload || {}) };
   delete normalized.emailPassword;
+  delete normalized.expectedUpdatedAt;
   if (normalized.username !== undefined) {
     normalized.username = String(normalized.username || "").trim();
   }
@@ -859,6 +863,7 @@ const getPackage2ShelfTargets = (acc, includeAllPackage2Shelves = false) => {
 
 const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
   const normalized = { ...payload };
+  delete normalized.expectedUpdatedAt;
   const targetType = normalized.type || existingAcc?.type || "unassigned";
 
   if (targetType === "package2") {
@@ -973,6 +978,33 @@ const restoreDocumentSnapshot = async (Model, id, snapshot) => {
   await Model.replaceOne({ id }, snapshot, { upsert: true });
   return Model.findOne({ id });
 };
+const getExpectedUpdatedAtValue = (value) => String(value || "").trim();
+const buildConcurrencyError = (label = "Dữ liệu") => {
+  const error = new Error(
+    `${label} vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.`,
+  );
+  error.statusCode = 409;
+  return error;
+};
+const buildConditionalUpdateFilter = (id, expectedUpdatedAt) => {
+  const filter = { id };
+  const expected = getExpectedUpdatedAtValue(expectedUpdatedAt);
+  if (expected) {
+    filter.updatedAt = expected;
+  }
+  return filter;
+};
+const ensureCurrentVersion = (doc, expectedUpdatedAt, label = "Dữ liệu") => {
+  const expected = getExpectedUpdatedAtValue(expectedUpdatedAt);
+  if (!expected) return;
+  if (getExpectedUpdatedAtValue(doc?.updatedAt) !== expected) {
+    throw buildConcurrencyError(label);
+  }
+};
+const withFreshUpdatedAt = (payload = {}) => ({
+  ...(payload || {}),
+  updatedAt: new Date().toISOString(),
+});
 
 const getDatammoLines = (acc, options = {}) => {
   if (!acc) return [];
@@ -1376,7 +1408,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
       version: latestDataVersion,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -1386,7 +1418,7 @@ app.get("/api/data-public", async (req, res) => {
     const accounts = await Account.find({}).lean();
     res.json({ chatgpt: accounts });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -1515,6 +1547,7 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
       ...normalizedBody,
       createdAt: now.toISOString(),
       expiredAt: expiredDate.toISOString(),
+      updatedAt: now.toISOString(),
     };
     if (newAcc.type === "package2") {
       newAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
@@ -1534,7 +1567,7 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
     await syncDatammoUpdateLocked(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -1551,6 +1584,7 @@ app.post("/api/chatgpt-public", async (req, res) => {
       ...normalizedBody,
       createdAt: now.toISOString(),
       expiredAt: expiredDate.toISOString(),
+      updatedAt: now.toISOString(),
     };
     if (newAcc.type === "package2") {
       newAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
@@ -1569,7 +1603,7 @@ app.post("/api/chatgpt-public", async (req, res) => {
     await syncDatammoUpdateLocked(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -1577,12 +1611,16 @@ app.post("/api/chatgpt-public", async (req, res) => {
 app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const expectedUpdatedAt = getExpectedUpdatedAtValue(
+      req.body?.expectedUpdatedAt,
+    );
 
     const existingAcc = await Account.findOne({ id: id });
     const existingSnapshot = snapshotDocument(existingAcc);
     if (!existingAcc) {
-      return res.status(404).json({ error: "Không tìm thấy account" });
+      return res.status(404).json({ error: "Khong tim thay account" });
     }
+    ensureCurrentVersion(existingAcc, expectedUpdatedAt, "Tai khoan nay");
 
     // Validate package2: chỉ được tối đa 1 khách hàng
     const normalizedPayload = normalizeChatgptPayload(req.body, existingAcc);
@@ -1647,9 +1685,19 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       normalizedPayload.package2DatammoKey = "";
       normalizedPayload.package2DatammoKeysUsed = [];
     }
-    const updated = await Account.findOneAndUpdate({ id: id }, normalizedPayload, {
-      new: true,
-    });
+    const updated = await Account.findOneAndUpdate(
+      buildConditionalUpdateFilter(id, expectedUpdatedAt),
+      withFreshUpdatedAt(normalizedPayload),
+      {
+        new: true,
+      },
+    );
+    if (!updated) {
+      return res.status(409).json({
+        error:
+          "Tài khoản này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+      });
+    }
     const existingShelf = normalizePackage2Shelf(
       existingAcc.package2Shelf,
       PACKAGE2_SHELF_NONE,
@@ -1710,7 +1758,7 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
 
     res.json({ message: "Updated", account: updated });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -1939,20 +1987,37 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
 app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const existing = await Account.findOneAndDelete({ id: id });
+    const expectedUpdatedAt = getExpectedUpdatedAtValue(
+      req.body?.expectedUpdatedAt || req.query?.expectedUpdatedAt,
+    );
+    const existing = await Account.findOneAndDelete(
+      buildConditionalUpdateFilter(id, expectedUpdatedAt),
+    );
+    if (!existing && expectedUpdatedAt) {
+      return res.status(409).json({
+        error:
+          "Tài khoản này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+      });
+    }
     if (existing) {
       await syncDatammoUpdateLocked(existing, null);
     }
     res.json({ message: "Deleted" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
 // 4.4 TEAM MOVE SLOT
 app.post("/api/team-move-slot", verifyToken, async (req, res) => {
   try {
-    const { fromAccId, toAccId, slotIndex } = req.body;
+    const {
+      fromAccId,
+      toAccId,
+      slotIndex,
+      fromExpectedUpdatedAt,
+      toExpectedUpdatedAt,
+    } = req.body;
 
     const fromAcc = await TeamAccount.findOne({ id: fromAccId });
     const toAcc = await TeamAccount.findOne({ id: toAccId });
@@ -1962,6 +2027,8 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
     if (!fromAcc || !toAcc) {
       return res.status(404).json({ error: "One or both team accounts not found" });
     }
+    ensureCurrentVersion(fromAcc, fromExpectedUpdatedAt, "Team nguồn");
+    ensureCurrentVersion(toAcc, toExpectedUpdatedAt, "Team đích");
 
     if (!fromAcc.slots || !fromAcc.slots[slotIndex] || fromAcc.slots[slotIndex].status === "empty") {
       return res.status(400).json({ error: "Slot not found or is empty in source team account" });
@@ -1999,25 +2066,38 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
     delete slotToMove._id; // prevent duplicate id errors in subdocuments
 
     // Use atomic $set updates to guarantee Database correctly writes the arrays
-    await TeamAccount.updateOne(
-      { id: toAccId },
-      { $set: { [`slots.${emptySlotIdx}`]: slotToMove } }
-    );
-
-    await TeamAccount.updateOne(
-      { id: fromAccId },
+    const toMoveResult = await TeamAccount.updateOne(
+      buildConditionalUpdateFilter(toAccId, toAcc.updatedAt),
       {
         $set: {
-          [`slots.${slotIndex}`]: {
-            status: "empty",
-            gmail: "",
-            customerName: "",
-            addedAt: "",
-            expiredAt: ""
-          }
+          [`slots.${emptySlotIdx}`]: slotToMove,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+    if (toMoveResult.modifiedCount !== 1) {
+      return res.status(409).json({
+        error:
+          "Team đích vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+      });
+    }
+
+    const fromMoveResult = await TeamAccount.updateOne(
+      buildConditionalUpdateFilter(fromAccId, fromAcc.updatedAt),
+      {
+        $set: {
+          [`slots.${slotIndex}`]: buildEmptyTeamSlot(),
+          updatedAt: new Date().toISOString(),
         }
       }
     );
+    if (fromMoveResult.modifiedCount !== 1) {
+      await restoreDocumentSnapshot(TeamAccount, toAccId, toSnapshot);
+      return res.status(409).json({
+        error:
+          "Team nguồn vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+      });
+    }
 
     const updatedFrom = await TeamAccount.findOne({ id: fromAccId });
     const updatedTo = await TeamAccount.findOne({ id: toAccId });
@@ -2058,14 +2138,20 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
 
     res.json({ message: "Team Slot moved successfully", from: updatedFrom, to: updatedTo });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
 // 4.5 MOVE USER (ATOMIC TRANSFER)
 app.post("/api/move-user", verifyToken, async (req, res) => {
   try {
-    const { fromAccId, toAccId, userIndex } = req.body;
+    const {
+      fromAccId,
+      toAccId,
+      userIndex,
+      fromExpectedUpdatedAt,
+      toExpectedUpdatedAt,
+    } = req.body;
 
     const fromAcc = await Account.findOne({ id: fromAccId });
     const toAcc = await Account.findOne({ id: toAccId });
@@ -2073,6 +2159,8 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     if (!fromAcc || !toAcc) {
       return res.status(404).json({ error: "One or both accounts not found" });
     }
+    ensureCurrentVersion(fromAcc, fromExpectedUpdatedAt, "Tài khoản nguồn");
+    ensureCurrentVersion(toAcc, toExpectedUpdatedAt, "Tài khoản đích");
 
     if (!fromAcc.users || !fromAcc.users[userIndex]) {
       return res.status(400).json({ error: "User not found in source account" });
@@ -2154,11 +2242,49 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
       }
     }
 
-    toAcc.markModified("users");
-    fromAcc.markModified("users");
+    const toPersisted = await Account.updateOne(
+      buildConditionalUpdateFilter(toAccId, originalToAcc.updatedAt),
+      {
+        $set: {
+          users: toAcc.users || [],
+          type: toAcc.type,
+          package2Shelf: toAcc.package2Shelf,
+          package2DatammoKey: toAcc.package2DatammoKey || "",
+          package2DatammoKeysUsed: toAcc.package2DatammoKeysUsed || [],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
+    if (toPersisted.modifiedCount !== 1) {
+      return res.status(409).json({
+        error:
+          "Tài khoản đích vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+      });
+    }
 
-    await toAcc.save();
-    await fromAcc.save();
+    const fromPersisted = await Account.updateOne(
+      buildConditionalUpdateFilter(fromAccId, originalFromAcc.updatedAt),
+      {
+        $set: {
+          users: fromAcc.users || [],
+          type: fromAcc.type,
+          package2Shelf: fromAcc.package2Shelf,
+          package2DatammoKey: fromAcc.package2DatammoKey || "",
+          package2DatammoKeysUsed: fromAcc.package2DatammoKeysUsed || [],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
+    if (fromPersisted.modifiedCount !== 1) {
+      await restoreDocumentSnapshot(Account, toAccId, originalToAcc);
+      return res.status(409).json({
+        error:
+          "Tài khoản nguồn vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+      });
+    }
+
+    const persistedFrom = await Account.findOne({ id: fromAccId });
+    const persistedTo = await Account.findOne({ id: toAccId });
 
     // Tự động tính toán DataMMO Add/Delete dựa trên biến động User Array
     const fromSyncOptions = {
@@ -2173,8 +2299,8 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     };
     try {
       await Promise.all([
-        syncDatammoUpdateLocked(originalFromAcc, fromAcc, fromSyncOptions),
-        syncDatammoUpdateLocked(originalToAcc, toAcc, toSyncOptions),
+        syncDatammoUpdateLocked(originalFromAcc, persistedFrom, fromSyncOptions),
+        syncDatammoUpdateLocked(originalToAcc, persistedTo, toSyncOptions),
       ]);
     } catch (syncError) {
       const [rolledBackFrom, rolledBackTo] = await Promise.all([
@@ -2184,10 +2310,10 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
       try {
         await Promise.all([
           rolledBackFrom
-            ? syncDatammoUpdateLocked(fromAcc, rolledBackFrom, fromSyncOptions)
+            ? syncDatammoUpdateLocked(persistedFrom, rolledBackFrom, fromSyncOptions)
             : Promise.resolve(),
           rolledBackTo
-            ? syncDatammoUpdateLocked(toAcc, rolledBackTo, toSyncOptions)
+            ? syncDatammoUpdateLocked(persistedTo, rolledBackTo, toSyncOptions)
             : Promise.resolve(),
         ]);
       } catch (rollbackSyncError) {
@@ -2202,16 +2328,22 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
       throw syncError;
     }
 
-    res.json({ message: "Moved user successfully", from: fromAcc, to: toAcc });
+    res.json({ message: "Moved user successfully", from: persistedFrom, to: persistedTo });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
 // 4.5.1 MOVE USER FOR SINGLE PLATFORMS (Netflix, Capcut, Canva)
 app.post("/api/simple-move-user", verifyToken, async (req, res) => {
   try {
-    const { fromAccId, toAccId, platform } = req.body;
+    const {
+      fromAccId,
+      toAccId,
+      platform,
+      fromExpectedUpdatedAt,
+      toExpectedUpdatedAt,
+    } = req.body;
 
     const Model = platform === "netflix" ? Netflix : platform === "capcut" ? Capcut : platform === "canva" ? Canva : null;
     if (!Model) return res.status(400).json({ error: "Invalid platform" });
@@ -2222,6 +2354,8 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
     if (!fromAcc || !toAcc) {
       return res.status(404).json({ error: "Một trong hai tài khoản không tồn tại" });
     }
+    ensureCurrentVersion(fromAcc, fromExpectedUpdatedAt, "Tai khoan nguon");
+    ensureCurrentVersion(toAcc, toExpectedUpdatedAt, "Tai khoan dich");
 
     if (!fromAcc.users || fromAcc.users.length === 0) {
       return res.status(400).json({ error: "Không tìm thấy khách trong tài khoản nguồn" });
@@ -2239,6 +2373,8 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
     }
 
     const userToMove = fromAcc.users[0];
+    const fromSnapshot = snapshotDocument(fromAcc);
+    const toSnapshot = snapshotDocument(toAcc);
 
     // BẢO LƯU NGÀY HẾT HẠN CỦA KHÁCH NETFLIX/CAPCUT KHI CHUYỂN
     // Nếu khách chưa có expiredAt cá nhân, họ đang dùng hạn của account cũ (fromAcc)
@@ -2247,30 +2383,66 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
       userToMove.expiredAt = fromAcc.expiredAt;
     }
 
-    if (!toAcc.users) toAcc.users = [];
-    toAcc.users.push(userToMove);
-    fromAcc.users.splice(0, 1);
+    const nextToUsers = Array.isArray(toAcc.users)
+      ? [...toAcc.users, userToMove]
+      : [userToMove];
+    const nextFromUsers = (fromAcc.users || []).slice(1);
 
-    toAcc.markModified("users");
-    fromAcc.markModified("users");
+    const persistedTo = await Model.findOneAndUpdate(
+      buildConditionalUpdateFilter(toAccId, toSnapshot?.updatedAt),
+      {
+        $set: {
+          users: nextToUsers,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { new: true },
+    );
+    if (!persistedTo) {
+      throw buildConcurrencyError("Tai khoan dich");
+    }
 
-    await toAcc.save();
-    await fromAcc.save();
+    const persistedFrom = await Model.findOneAndUpdate(
+      buildConditionalUpdateFilter(fromAccId, fromSnapshot?.updatedAt),
+      {
+        $set: {
+          users: nextFromUsers,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { new: true },
+    );
+    if (!persistedFrom) {
+      await restoreDocumentSnapshot(Model, toAccId, toSnapshot);
+      throw buildConcurrencyError("Tai khoan nguon");
+    }
 
-    res.json({ message: "Đã chuyển khách thành công", from: fromAcc, to: toAcc });
+    res.json({
+      message: "Da chuyen khach thanh cong",
+      from: persistedFrom,
+      to: persistedTo,
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
 // 4.6 EXTEND USER (+ custom DAYS)
 app.post("/api/extend-user", verifyToken, async (req, res) => {
-  const { accId, userIndex, platform, extDays: bodyExtDays, extDuration: bodyExtDuration } = req.body;
+  const {
+    accId,
+    userIndex,
+    platform,
+    extDays: bodyExtDays,
+    extDuration: bodyExtDuration,
+    expectedUpdatedAt,
+  } = req.body;
   try {
     const Model = platform === "netflix" ? Netflix : platform === "capcut" ? Capcut : platform === "canva" ? Canva : Account;
     const acc = await Model.findOne({ id: accId });
     if (!acc || !acc.users[userIndex])
       return res.status(404).json({ error: "User/Account not found" });
+    ensureCurrentVersion(acc, expectedUpdatedAt, "Tai khoan nay");
 
     const user = acc.users[userIndex];
     const now = new Date();
@@ -2303,10 +2475,11 @@ app.post("/api/extend-user", verifyToken, async (req, res) => {
 
     // markModified để Mongoose detect thay đổi trong subdocument array
     acc.markModified("users");
+    acc.updatedAt = now.toISOString();
     await acc.save();
     res.json({ message: "User extended successfully", updatedUser: user });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -2318,7 +2491,7 @@ app.get("/api/team", verifyToken, async (req, res) => {
   try {
     const teams = await TeamAccount.find({}).lean();
     res.json(teams.map((teamAcc) => sanitizeTeamAccount(teamAcc)));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 });
 
 // POST add team account
@@ -2336,6 +2509,7 @@ app.post("/api/team", verifyToken, async (req, res) => {
       ...normalizedBody,
       createdAt: now.toISOString(),
       expiredAt: normalizedBody.expiredAt || expiredDate.toISOString(),
+      updatedAt: now.toISOString(),
     };
     newAcc.slots = normalizeTeamSlots(newAcc.slots);
     assertValidTeamSlotsForSaleMode(newAcc.saleMode, newAcc.slots);
@@ -2362,6 +2536,7 @@ app.post("/api/team-public", async (req, res) => {
       ...normalizedBody,
       createdAt: now.toISOString(),
       expiredAt: normalizedBody.expiredAt || expiredDate.toISOString(),
+      updatedAt: now.toISOString(),
     };
     newAcc.slots = normalizeTeamSlots(newAcc.slots);
     assertValidTeamSlotsForSaleMode(newAcc.saleMode, newAcc.slots);
@@ -2380,6 +2555,10 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
     if (!existing) {
       return res.status(404).json({ error: "Team account not found" });
     }
+    const expectedUpdatedAt = getExpectedUpdatedAtValue(
+      req.body?.expectedUpdatedAt,
+    );
+    ensureCurrentVersion(existing, expectedUpdatedAt, "Team account này");
     const existingSnapshot = snapshotDocument(existing);
     const updatePayload = normalizeTeamPayload(req.body);
     if (updatePayload.slots !== undefined) {
@@ -2395,10 +2574,16 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
       assertValidTeamSlotsForSaleMode(nextSaleMode, nextSlots);
     }
     const updated = await TeamAccount.findOneAndUpdate(
-      { id: req.params.id },
-      updatePayload,
+      buildConditionalUpdateFilter(req.params.id, expectedUpdatedAt),
+      withFreshUpdatedAt(updatePayload),
       { new: true },
     );
+    if (!updated) {
+      return res.status(409).json({
+        error:
+          "Team account này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+      });
+    }
     const syncOptions = {
       strictDatammoSync: true,
       forceTeamResync:
@@ -2443,7 +2628,18 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
 // DELETE team account
 app.delete("/api/team/:id", verifyToken, async (req, res) => {
   try {
-    const existing = await TeamAccount.findOneAndDelete({ id: req.params.id });
+    const expectedUpdatedAt = getExpectedUpdatedAtValue(
+      req.body?.expectedUpdatedAt || req.query?.expectedUpdatedAt,
+    );
+    const existing = await TeamAccount.findOneAndDelete(
+      buildConditionalUpdateFilter(req.params.id, expectedUpdatedAt),
+    );
+    if (!existing && expectedUpdatedAt) {
+      return res.status(409).json({
+        error:
+          "Team account này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+      });
+    }
     if (existing) await syncDatammoUpdateLocked(existing, null);
     res.json({ message: "Deleted" });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2458,7 +2654,8 @@ const makeSingleUserRoutes = (router, Model, platformRoute) => {
         id: Date.now().toString(),
         ...req.body,
         users: req.body.users || [],
-        createdAt: now.toISOString()
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString()
       };
       await Model.create(newAcc);
       res.json({ message: "Added successfully", account: newAcc });
@@ -2470,16 +2667,42 @@ const makeSingleUserRoutes = (router, Model, platformRoute) => {
       if (req.body.users !== undefined && req.body.users.length > 1) {
         return res.status(400).json({ error: `${platformRoute} chỉ được 1 khách hàng` });
       }
-      const updated = await Model.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+      const expectedUpdatedAt = getExpectedUpdatedAtValue(
+        req.body?.expectedUpdatedAt,
+      );
+      const payload = { ...(req.body || {}) };
+      delete payload.expectedUpdatedAt;
+      const updated = await Model.findOneAndUpdate(
+        buildConditionalUpdateFilter(req.params.id, expectedUpdatedAt),
+        withFreshUpdatedAt(payload),
+        { new: true },
+      );
+      if (!updated && expectedUpdatedAt) {
+        return res.status(409).json({
+          error:
+            "Tài khoản này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+        });
+      }
       res.json({ message: "Updated successfully", account: updated });
-    } catch (error) { res.status(500).json({ error: error.message }); }
+    } catch (error) { res.status(error.statusCode || 500).json({ error: error.message }); }
   });
 
   router.delete(`/api/${platformRoute}/:id`, verifyToken, async (req, res) => {
     try {
-      await Model.findOneAndDelete({ id: req.params.id });
+      const expectedUpdatedAt = getExpectedUpdatedAtValue(
+        req.body?.expectedUpdatedAt || req.query?.expectedUpdatedAt,
+      );
+      const deleted = await Model.findOneAndDelete(
+        buildConditionalUpdateFilter(req.params.id, expectedUpdatedAt),
+      );
+      if (!deleted && expectedUpdatedAt) {
+        return res.status(409).json({
+          error:
+            "Tài khoản này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+        });
+      }
       res.json({ message: "Deleted successfully" });
-    } catch (error) { res.status(500).json({ error: error.message }); }
+    } catch (error) { res.status(error.statusCode || 500).json({ error: error.message }); }
   });
 };
 
