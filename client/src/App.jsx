@@ -582,7 +582,7 @@ function App() {
     };
 
     checkDataVersion();
-    const interval = setInterval(checkDataVersion, 15000);
+    const interval = setInterval(checkDataVersion, 3000);
 
     return () => {
       isMounted = false;
