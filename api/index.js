@@ -15,6 +15,7 @@ app.use(bodyParser.json());
 // --- MONGODB CONNECTION ---
 // Cache connection to avoid reconnecting on every request (Vercel specific)
 let isConnected = false;
+let didCleanupLegacyTeamEmailPassword = false;
 const toPositiveInt = (value, fallback) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
@@ -36,6 +37,13 @@ const connectDB = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI, MONGO_CONNECT_OPTIONS);
     isConnected = true;
+    if (!didCleanupLegacyTeamEmailPassword) {
+      await TeamAccount.updateMany(
+        { emailPassword: { $exists: true } },
+        { $unset: { emailPassword: "" } },
+      );
+      didCleanupLegacyTeamEmailPassword = true;
+    }
     console.log("✅ MongoDB Connected via Vercel");
   } catch (error) {
     console.error("❌ MongoDB Connection Error:", error);
@@ -89,7 +97,6 @@ const teamAccountSchema = new mongoose.Schema({
   id: { type: String, unique: true },
   username: { type: String, required: true },   // Email chính của team
   password: { type: String, default: "" },      // Mật khẩu GPT
-  emailPassword: { type: String, default: "" }, // Mật khẩu email
   recoveryUrl: { type: String, default: "" },   // Link recovery
   saleMode: { type: String, default: "slot" },  // "slot" | "business"
   note: { type: String, default: "" },
@@ -258,6 +265,43 @@ const normalizeTeamSaleMode = (value, fallback = TEAM_SALE_MODE_SLOT) => {
     .toLowerCase();
   if (VALID_TEAM_SALE_MODES.includes(normalized)) return normalized;
   return fallback;
+};
+const buildEmptyTeamSlots = () =>
+  Array(4).fill(null).map(() => ({ status: "empty" }));
+const normalizeTeamPayload = (payload = {}, options = {}) => {
+  const normalized = { ...(payload || {}) };
+  delete normalized.emailPassword;
+  if (normalized.username !== undefined) {
+    normalized.username = String(normalized.username || "").trim();
+  }
+  if (normalized.password !== undefined) {
+    normalized.password = String(normalized.password || "").trim();
+  }
+  if (normalized.recoveryUrl !== undefined) {
+    normalized.recoveryUrl = String(normalized.recoveryUrl || "").trim();
+  }
+  if (normalized.note !== undefined) {
+    normalized.note = String(normalized.note || "");
+  }
+  if (normalized.saleMode !== undefined || options.defaultSaleMode) {
+    normalized.saleMode = normalizeTeamSaleMode(normalized.saleMode);
+  }
+  if (normalized.slots !== undefined && !Array.isArray(normalized.slots)) {
+    normalized.slots = buildEmptyTeamSlots();
+  }
+  if (options.defaultSlots && normalized.slots === undefined) {
+    normalized.slots = buildEmptyTeamSlots();
+  }
+  return normalized;
+};
+const sanitizeTeamAccount = (account = {}) => {
+  if (!account) return account;
+  const { emailPassword, ...rest } = account;
+  return {
+    ...rest,
+    saleMode: normalizeTeamSaleMode(rest.saleMode),
+    slots: Array.isArray(rest.slots) ? rest.slots : buildEmptyTeamSlots(),
+  };
 };
 
 const PACKAGE2_SHELF_MAIN = "main";
@@ -1090,7 +1134,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
       netflix: netflixAccs,
       canva: canvaAccs,
       capcut: capcutAccs,
-      team: teamAccs,
+      team: teamAccs.map((teamAcc) => sanitizeTeamAccount(teamAcc)),
       datammoOrders,
       version: latestDataVersion,
     });
@@ -1918,7 +1962,7 @@ app.post("/api/extend-user", verifyToken, async (req, res) => {
 app.get("/api/team", verifyToken, async (req, res) => {
   try {
     const teams = await TeamAccount.find({}).lean();
-    res.json(teams);
+    res.json(teams.map((teamAcc) => sanitizeTeamAccount(teamAcc)));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1928,17 +1972,19 @@ app.post("/api/team", verifyToken, async (req, res) => {
     const now = new Date();
     const expiredDate = new Date(now);
     expiredDate.setMonth(expiredDate.getMonth() + 1);
+    const normalizedBody = normalizeTeamPayload(req.body, {
+      defaultSaleMode: true,
+      defaultSlots: true,
+    });
     const newAcc = {
       id: Date.now().toString(),
-      ...req.body,
-      saleMode: normalizeTeamSaleMode(req.body.saleMode),
-      slots: req.body.slots || Array(4).fill(null).map(() => ({ status: "empty" })),
+      ...normalizedBody,
       createdAt: now.toISOString(),
-      expiredAt: req.body.expiredAt || expiredDate.toISOString(),
+      expiredAt: normalizedBody.expiredAt || expiredDate.toISOString(),
     };
     await TeamAccount.create(newAcc);
     await syncDatammoUpdateLocked(null, newAcc);
-    res.json({ message: "Added", account: newAcc });
+    res.json({ message: "Added", account: sanitizeTeamAccount(newAcc) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1948,17 +1994,19 @@ app.post("/api/team-public", async (req, res) => {
     const now = new Date();
     const expiredDate = new Date(now);
     expiredDate.setMonth(expiredDate.getMonth() + 1);
+    const normalizedBody = normalizeTeamPayload(req.body, {
+      defaultSaleMode: true,
+      defaultSlots: true,
+    });
     const newAcc = {
       id: Date.now().toString(),
-      ...req.body,
-      saleMode: normalizeTeamSaleMode(req.body.saleMode),
-      slots: req.body.slots || Array(4).fill(null).map(() => ({ status: "empty" })),
+      ...normalizedBody,
       createdAt: now.toISOString(),
-      expiredAt: req.body.expiredAt || expiredDate.toISOString(),
+      expiredAt: normalizedBody.expiredAt || expiredDate.toISOString(),
     };
     await TeamAccount.create(newAcc);
     await syncDatammoUpdateLocked(null, newAcc);
-    res.json({ message: "Added", account: newAcc });
+    res.json({ message: "Added", account: sanitizeTeamAccount(newAcc) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1966,17 +2014,17 @@ app.post("/api/team-public", async (req, res) => {
 app.put("/api/team/:id", verifyToken, async (req, res) => {
   try {
     const existing = await TeamAccount.findOne({ id: req.params.id });
-    const updatePayload = { ...req.body };
-    if (updatePayload.saleMode !== undefined) {
-      updatePayload.saleMode = normalizeTeamSaleMode(updatePayload.saleMode);
-    }
+    const updatePayload = normalizeTeamPayload(req.body);
     const updated = await TeamAccount.findOneAndUpdate(
       { id: req.params.id },
       updatePayload,
       { new: true },
     );
     await syncDatammoUpdateLocked(existing, updated);
-    res.json({ message: "Updated", account: updated });
+    res.json({
+      message: "Updated",
+      account: sanitizeTeamAccount(updated?.toObject?.() || updated),
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

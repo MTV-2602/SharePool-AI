@@ -37,13 +37,12 @@ const parseTeamAccountInput = (rawText) => {
   if (parts.length < 3) return null;
 
   const [email, password, thirdPart = '', fourthPart = ''] = parts;
-  const emailPassword = thirdPart && !/^https?:\/\//i.test(thirdPart) ? thirdPart : '';
   const fallbackRecoveryMatch = rawText.match(/https?:\/\/\S+/i);
   const recoveryUrl = fourthPart || (/^https?:\/\//i.test(thirdPart) ? thirdPart : '') || (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : '');
 
   if (!email || !password || !email.includes('@')) return null;
 
-  return { email, password, emailPassword, recoveryUrl };
+  return { email, password, recoveryUrl };
 };
 
 // Command: /start
@@ -272,7 +271,7 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
 
   const parsedTeamAccount = parseTeamAccountInput(text);
   if (parsedTeamAccount) {
-    const { email, password, emailPassword, recoveryUrl } = parsedTeamAccount;
+    const { email, password, recoveryUrl } = parsedTeamAccount;
 
     try {
       bot.sendMessage(chatId, '⏳ Đang thêm team account...');
@@ -284,7 +283,6 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
       await axios.post(`${API_URL}/api/team-public`, {
         username: email,
         password,
-        emailPassword,
         recoveryUrl,
         note: '',
         saleMode: 'slot',
@@ -296,7 +294,7 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
 
 📧 *Email:* \`${email}\`
 🔑 *GPT Password:* \`${password}\`
-${emailPassword ? `📩 *Email Password:* \`${emailPassword}\`\n` : ''}🔗 *Recovery URL:* ${recoveryUrl || '_Không có_'}
+🔗 *Recovery URL:* ${recoveryUrl || '_Không có_'}
 📦 *Mode:* slot team
 📅 *Hết hạn:* ${expiredAt.toLocaleDateString('vi-VN')}
 

@@ -52,8 +52,6 @@ const parseTeamAccountInput = (rawText) => {
   if (parts.length < 3) return null;
 
   const [email, password, thirdPart = "", fourthPart = ""] = parts;
-  const emailPassword =
-    thirdPart && !/^https?:\/\//i.test(thirdPart) ? thirdPart : "";
   const fallbackRecoveryMatch = rawText.match(/https?:\/\/\S+/i);
   const recoveryUrl =
     fourthPart ||
@@ -62,7 +60,7 @@ const parseTeamAccountInput = (rawText) => {
 
   if (!email || !password || !email.includes("@")) return null;
 
-  return { email, password, emailPassword, recoveryUrl };
+  return { email, password, recoveryUrl };
 };
 
 // Normalize Vietnamese text for smart search (remove accents)
@@ -584,8 +582,7 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
 
       const parsedTeamAccount = parseTeamAccountInput(text);
       if (parsedTeamAccount) {
-        const { email, password, emailPassword, recoveryUrl } =
-          parsedTeamAccount;
+        const { email, password, recoveryUrl } = parsedTeamAccount;
 
         try {
           await sendMessage(chatId, "⏳ Đang thêm team account...");
@@ -593,7 +590,6 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
           await axios.post(`${API_URL}/api/team-public`, {
             username: email,
             password,
-            emailPassword,
             recoveryUrl,
             note: "",
             saleMode: "slot",
@@ -604,7 +600,7 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
 
 📧 *Email:* \`${email}\`
 🔑 *GPT Password:* \`${password}\`
-${emailPassword ? `📩 *Email Password:* \`${emailPassword}\`\n` : ""}🔗 *Recovery URL:* ${recoveryUrl || "_Không có_"}
+🔗 *Recovery URL:* ${recoveryUrl || "_Không có_"}
 📦 *Mode:* slot team
 
 💡 *Tip:* Paste tiếp format \`team email----pass----link\` để thêm nhanh!

@@ -95,6 +95,37 @@ const persistSeenDatammoOrderKeys = (keys = []) => {
     // Ignore localStorage write issues.
   }
 };
+const buildTeamFormState = (overrides = {}) => ({
+  username: "",
+  password: "",
+  recoveryUrl: "",
+  note: "",
+  expiredAt: "",
+  saleMode: "slot",
+  ...overrides,
+});
+const buildTeamEditFormState = (overrides = {}) => ({
+  id: "",
+  ...buildTeamFormState(),
+  ...overrides,
+});
+const buildChatgptCopyText = (account = {}) => {
+  const lines = [
+    `Tài khoản: ${account.username || ""}`,
+    `Mật khẩu: ${account.password || ""}`,
+  ];
+  if (account.type === "package2" && account.link) {
+    lines.push(`Link: ${account.link}`);
+  }
+  return lines.join("\n");
+};
+const normalizeTeamAccountForUi = (account = {}) => {
+  const { emailPassword, ...rest } = account || {};
+  return {
+    ...rest,
+    saleMode: normalizeTeamSaleMode(rest.saleMode),
+  };
+};
 
 function App() {
   // LOGIN STATE
@@ -108,8 +139,8 @@ function App() {
   const [teamAccounts, setTeamAccounts] = useState([]);
   const [showTeamAddModal, setShowTeamAddModal] = useState(false);
   const [showTeamEditModal, setShowTeamEditModal] = useState(false);
-  const [teamAddForm, setTeamAddForm] = useState({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "", saleMode: "slot" });
-  const [teamEditForm, setTeamEditForm] = useState({ id: "", username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: "", saleMode: "slot" });
+  const [teamAddForm, setTeamAddForm] = useState(buildTeamFormState());
+  const [teamEditForm, setTeamEditForm] = useState(buildTeamEditFormState());
   const [showSlotModal, setShowSlotModal] = useState(false);
   const [slotTarget, setSlotTarget] = useState({ accId: null, slotIdx: null, slot: null });
   const [slotFormGmail, setSlotFormGmail] = useState("");
@@ -607,10 +638,7 @@ function App() {
       setCanvaAccounts(sortA(res.data?.canva));
       setCapcutAccounts(sortA(res.data?.capcut));
       setTeamAccounts(
-        sortA(res.data?.team).map((acc) => ({
-          ...acc,
-          saleMode: normalizeTeamSaleMode(acc.saleMode),
-        })),
+        sortA(res.data?.team).map((acc) => normalizeTeamAccountForUi(acc)),
       );
 
     } catch (error) {
@@ -2446,9 +2474,9 @@ function App() {
                             <div className="mt-3">
                               <button
                                 className="bg-indigo-600/80 hover:bg-indigo-400 px-3 py-1.5 rounded text-white text-xs font-bold flex items-center gap-2 transition-transform shadow-md hover:-translate-y-0.5"
-                                onClick={() => handleCopy(`${acc.username}|${acc.password}${acc.type === "package2" && acc.link ? `|${acc.link}` : ""}`, acc.type === "package2" && acc.link ? "Đã copy TK|MK|Link" : "Đã copy TK|MK")}
+                                onClick={() => handleCopy(buildChatgptCopyText(acc), acc.type === "package2" && acc.link ? "Đã copy Tài khoản, Mật khẩu & Link" : "Đã copy Tài khoản & Mật khẩu")}
                               >
-                                <Copy size={14} /> Copy TK|MK{acc.type === "package2" && acc.link ? "|Link" : ""}
+                                <Copy size={14} /> Copy TK, MK{acc.type === "package2" && acc.link ? " & Link" : ""}
                               </button>
                             </div>
                             {acc.expiredAt && (
@@ -3386,12 +3414,11 @@ function App() {
             const gptPass = parts[1] || "";
             const thirdPart = parts[2] || "";
             const fourthPart = parts[3] || "";
-            const emailPass = thirdPart && !/^https?:\/\//i.test(thirdPart) ? thirdPart : "";
             const fallbackRecoveryMatch = raw.match(/https?:\/\/\S+/i);
             const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
             const recoveryUrl = fourthPart || (/^https?:\/\//i.test(thirdPart) ? thirdPart : "") || (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : "") || (recoveryMatch ? recoveryMatch[1].trim() : "");
 
-            setTeamAddForm({ username: email, password: gptPass, emailPassword: emailPass, recoveryUrl: recoveryUrl, note: "", expiredAt: getDefaultOneMonthDateInput(), saleMode: "slot" });
+            setTeamAddForm(buildTeamFormState({ username: email, password: gptPass, recoveryUrl: recoveryUrl, expiredAt: getDefaultOneMonthDateInput() }));
             setShowImportTeamModal(false);
             setTeamImportText("");
             setShowTeamAddModal(true);
@@ -3401,10 +3428,10 @@ function App() {
             </h2>
             <div className="form-group mb-4">
               <label className="text-slate-300 font-bold mb-1 block">Dán Raw Format tại đây:</label>
-              <p className="text-xs text-slate-400 mb-2">Format moi: team email@domain.com----gptpass----https://generator.email/...</p>
+              <p className="text-xs text-slate-400 mb-2">Format mới: team email@domain.com----gptpass----https://generator.email/... (không cần pass email)</p>
               <textarea
                 className="form-input w-full h-32 text-sm font-mono leading-tight bg-slate-800"
-                placeholder="email----pass----pass...&#10;[接收验证码的地址]..."
+                placeholder="team email@domain.com----gptpass----https://generator.email/..."
                 value={teamImportText}
                 onChange={e => setTeamImportText(e.target.value)}
                 autoFocus
@@ -4430,7 +4457,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 📋 Nhập Format
               </button>
               <button
-                onClick={() => { setTeamAddForm({ username: "", password: "", emailPassword: "", recoveryUrl: "", note: "", expiredAt: getDefaultOneMonthDateInput(), saleMode: "slot" }); setShowTeamAddModal(true); }}
+                onClick={() => { setTeamAddForm(buildTeamFormState({ expiredAt: getDefaultOneMonthDateInput() })); setShowTeamAddModal(true); }}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-500"
               >
                 <UserPlus size={16} /> Thêm Team Acc
@@ -4505,15 +4532,6 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                               <Copy size={14} /> Copy
                             </button>
                           </div>
-                          {acc.emailPassword && (
-                            <div className="flex items-center gap-2">
-                              <span className="w-20 text-slate-400">Pass Mail:</span>
-                              <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[120px]">{acc.emailPassword}</span>
-                              <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors" onClick={() => handleCopy(acc.emailPassword, "Đã copy Pass Email")} title="Copy Pass Email">
-                                <Copy size={14} /> Copy
-                              </button>
-                            </div>
-                          )}
                           {acc.recoveryUrl && (
                             <div className="flex items-center gap-2 mt-1">
                               <span className="w-20 text-slate-400">Recovery:</span>
@@ -4608,14 +4626,14 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                             <div className="w-full text-center text-xs text-red-400 font-bold italic my-1 shadow-sm p-1 border border-red-900/30 rounded bg-red-900/10">Đã Kín 4/4 Slot</div>
                           )}
                           <button onClick={() => {
-                            const info = `✅ Tài khoản GPT Team\nEmail: ${acc.username}\nPass: ${acc.password}${acc.emailPassword ? `\nPass Mail: ${acc.emailPassword}` : ""}${acc.recoveryUrl ? `\nLink lấy mã: ${acc.recoveryUrl}` : ""}`;
+                            const info = `✅ Tài khoản GPT Team\nEmail: ${acc.username}\nPass: ${acc.password}${acc.recoveryUrl ? `\nLink lấy mã: ${acc.recoveryUrl}` : ""}`;
                             handleCopy(info, "Đã copy toàn bộ form Team");
                           }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 w-full justify-center shadow-lg transition-transform hover:scale-105 mb-1">
                             <Copy size={16} /> COPY CẢ CỤM
                           </button>
 
                           <div className="flex gap-2 w-full relative group">
-                            <button onClick={() => { setTeamEditForm({ id: acc.id, username: acc.username, password: acc.password, emailPassword: acc.emailPassword || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode) }); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
+                            <button onClick={() => { setTeamEditForm(buildTeamEditFormState({ id: acc.id, username: acc.username, password: acc.password, recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode) })); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
                             <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
                           </div>
                         </div>
@@ -4731,10 +4749,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 
                 <div className="space-y-3">
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📧 Email chính (Team)</label><input className="form-input w-full" placeholder="teamacc@outlook.com" value={teamAddForm.username} onChange={e => setTeamAddForm({ ...teamAddForm, username: e.target.value })} /></div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamAddForm.password} onChange={e => setTeamAddForm({ ...teamAddForm, password: e.target.value })} /></div>
-                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📩 Email Password</label><input className="form-input w-full" value={teamAddForm.emailPassword} onChange={e => setTeamAddForm({ ...teamAddForm, emailPassword: e.target.value })} /></div>
-                  </div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamAddForm.password} onChange={e => setTeamAddForm({ ...teamAddForm, password: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" placeholder="http://..." value={teamAddForm.recoveryUrl} onChange={e => setTeamAddForm({ ...teamAddForm, recoveryUrl: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Hạn của Team Acc</label><input type="date" className="form-input w-full" value={teamAddForm.expiredAt} onChange={e => setTeamAddForm({ ...teamAddForm, expiredAt: e.target.value })} /></div>
                   <div className="form-group">
@@ -4770,10 +4785,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 
                 <div className="space-y-3">
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📧 Email</label><input className="form-input w-full" value={teamEditForm.username} onChange={e => setTeamEditForm({ ...teamEditForm, username: e.target.value })} /></div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamEditForm.password} onChange={e => setTeamEditForm({ ...teamEditForm, password: e.target.value })} /></div>
-                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📩 Email Password</label><input className="form-input w-full" value={teamEditForm.emailPassword} onChange={e => setTeamEditForm({ ...teamEditForm, emailPassword: e.target.value })} /></div>
-                  </div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamEditForm.password} onChange={e => setTeamEditForm({ ...teamEditForm, password: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" value={teamEditForm.recoveryUrl} onChange={e => setTeamEditForm({ ...teamEditForm, recoveryUrl: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Hạn Team Acc</label><input type="date" className="form-input w-full" value={teamEditForm.expiredAt} onChange={e => setTeamEditForm({ ...teamEditForm, expiredAt: e.target.value })} /></div>
                   <div className="form-group">
