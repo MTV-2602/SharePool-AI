@@ -11,6 +11,7 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // --- MONGODB CONNECTION ---
 // Cache connection to avoid reconnecting on every request (Vercel specific)
@@ -800,7 +801,12 @@ const getDatammoPartnerTokenFromReq = (req) => {
     req.headers["x_api_token"];
   const authToken = req.headers.authorization?.replace(/^Bearer\s+/i, "");
   const queryToken = req.query?.api_token || req.query?.token || req.query?.key;
-  return String(headerToken || authToken || queryToken || "").trim();
+  const bodyToken =
+    req.body?.api_token ||
+    req.body?.token ||
+    req.body?.key ||
+    req.body?.password;
+  return String(headerToken || authToken || queryToken || bodyToken || "").trim();
 };
 const verifyDatammoPartnerToken = (req, res, next) => {
   const token = getDatammoPartnerTokenFromReq(req);
@@ -1719,9 +1725,17 @@ app.all(
         const cheapPrice = Number(process.env.DATAMMO_PACKAGE2_CHEAP_PRICE || 0);
         const selectedPrice =
           shelf === PACKAGE2_SHELF_MAIN ? mainPrice : cheapPrice;
-        const payload = { stock, success: true };
+        const payload = {
+          success: true,
+          status: true,
+          stock,
+          amount: stock,
+          quantity: stock,
+          sum: stock,
+        };
         if (Number.isFinite(selectedPrice) && selectedPrice > 0) {
           payload.price = selectedPrice;
+          payload.amount_money = selectedPrice;
         }
         return res.json(payload);
       } catch (error) {
@@ -1766,6 +1780,8 @@ app.all(
 
       return res.json({
         success: true,
+        status: true,
+        msg: "success",
         data: claimed.map((item) => item.delivery),
       });
     } catch (error) {
