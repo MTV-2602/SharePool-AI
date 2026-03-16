@@ -307,6 +307,7 @@ const buildMoveExpectedPayload = (payload = {}, fromRecord = {}, toRecord = {}) 
   if (toExpectedUpdatedAt) nextPayload.toExpectedUpdatedAt = toExpectedUpdatedAt;
   return nextPayload;
 };
+const buildDatammoResyncKey = (scope = "", id = "") => `${scope}:${String(id || "")}`;
 const getApiErrorMessage = (error, fallback) =>
   error?.response?.data?.error || error?.message || fallback;
 
@@ -364,6 +365,7 @@ function App() {
   const [simpleEditForm, setSimpleEditForm] = useState({ id: "", username: "", password: "", duration: "1M", note: "", expiredAt: "", updatedAt: "" });
   const [assignUserAcc, setAssignUserAcc] = useState(null);
   const [assignUserName, setAssignUserName] = useState("");
+  const [datammoResyncLoading, setDatammoResyncLoading] = useState({});
 
   const [loadingStates, setLoadingStates] = useState({
     addUser: false,
@@ -1776,6 +1778,50 @@ function App() {
         delete next[acc.id];
         return { ...prev, teamMode: next };
       });
+    }
+  };
+
+  const handleResyncChatgptDatammo = async (acc) => {
+    if (!acc?.id || !["package1", "package2"].includes(acc.type)) return;
+    const loadingKey = buildDatammoResyncKey("chatgpt", acc.id);
+    if (datammoResyncLoading[loadingKey]) return;
+
+    setDatammoResyncLoading((prev) => ({ ...prev, [loadingKey]: true }));
+    try {
+      await axios.post(
+        `/api/chatgpt/${acc.id}/resync-datammo`,
+        withExpectedUpdatedAt({}, acc),
+        { requestLabel: "Đang resync Datammo" },
+      );
+      await fetchData();
+      broadcastDataChange();
+      showAlert("Thành công", "Đã resync Datammo cho tài khoản này.", "success");
+    } catch (error) {
+      showAlert("Lỗi", getApiErrorMessage(error, "Không thể resync Datammo"), "error");
+    } finally {
+      setDatammoResyncLoading((prev) => ({ ...prev, [loadingKey]: false }));
+    }
+  };
+
+  const handleResyncTeamDatammo = async (acc) => {
+    if (!acc?.id) return;
+    const loadingKey = buildDatammoResyncKey("team", acc.id);
+    if (datammoResyncLoading[loadingKey]) return;
+
+    setDatammoResyncLoading((prev) => ({ ...prev, [loadingKey]: true }));
+    try {
+      await axios.post(
+        `/api/team/${acc.id}/resync-datammo`,
+        withExpectedUpdatedAt({}, acc),
+        { requestLabel: "Đang resync Datammo" },
+      );
+      await fetchData();
+      broadcastDataChange();
+      showAlert("Thành công", "Đã resync Datammo cho Team này.", "success");
+    } catch (error) {
+      showAlert("Lỗi", getApiErrorMessage(error, "Không thể resync Datammo"), "error");
+    } finally {
+      setDatammoResyncLoading((prev) => ({ ...prev, [loadingKey]: false }));
     }
   };
 
@@ -3317,6 +3363,20 @@ function App() {
                           </td>
                           <td className="text-center">
                             <div className="flex justify-center gap-2">
+                              {["package1", "package2"].includes(acc.type) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleResyncChatgptDatammo(acc)}
+                                  disabled={!!datammoResyncLoading[buildDatammoResyncKey("chatgpt", acc.id)]}
+                                  className="bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white p-2 rounded transition-colors disabled:opacity-60 disabled:cursor-wait"
+                                  title="Resync Datammo"
+                                >
+                                  <RefreshCw
+                                    size={16}
+                                    className={datammoResyncLoading[buildDatammoResyncKey("chatgpt", acc.id)] ? "animate-spin" : ""}
+                                  />
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -5131,6 +5191,17 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           </button>
 
                           <div className="flex gap-2 w-full relative group">
+                            <button
+                              onClick={() => handleResyncTeamDatammo(acc)}
+                              disabled={!!datammoResyncLoading[buildDatammoResyncKey("team", acc.id)]}
+                              className="bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center disabled:opacity-60 disabled:cursor-wait"
+                            >
+                              <RefreshCw
+                                size={11}
+                                className={datammoResyncLoading[buildDatammoResyncKey("team", acc.id)] ? "animate-spin" : ""}
+                              />
+                              Resync
+                            </button>
                             <button onClick={() => { setTeamEditForm(buildTeamEditFormState({ id: acc.id, username: acc.username, password: acc.password, recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode) })); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
                             <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
                           </div>

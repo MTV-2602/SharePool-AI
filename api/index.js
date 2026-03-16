@@ -2029,6 +2029,36 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
   }
 });
 
+app.post("/api/chatgpt/:id/resync-datammo", verifyToken, async (req, res) => {
+  try {
+    const expectedUpdatedAt = getExpectedUpdatedAtValue(
+      req.body?.expectedUpdatedAt,
+    );
+    const existing = await Account.findOne({ id: req.params.id });
+    if (!existing) {
+      return res.status(404).json({ error: "Account not found" });
+    }
+    ensureCurrentVersion(existing, expectedUpdatedAt, "Tai khoan nay");
+
+    if (!["package1", "package2"].includes(String(existing.type || ""))) {
+      return res.status(400).json({
+        error: "Chi ho tro resync Datammo cho goi 1 va goi 2",
+      });
+    }
+
+    await syncDatammoUpdateLocked(existing, existing, {
+      forcePackage1Resync: existing.type === "package1",
+      forceOldPackage2Sync: existing.type === "package2",
+      forceNewPackage2Sync: existing.type === "package2",
+      strictDatammoSync: true,
+    });
+
+    res.json({ message: "Resynced Datammo", account: existing });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 // 4.4 TEAM MOVE SLOT
 app.post("/api/team-move-slot", verifyToken, async (req, res) => {
   try {
@@ -2664,6 +2694,31 @@ app.delete("/api/team/:id", verifyToken, async (req, res) => {
     if (existing) await syncDatammoUpdateLocked(existing, null);
     res.json({ message: "Deleted" });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/team/:id/resync-datammo", verifyToken, async (req, res) => {
+  try {
+    const expectedUpdatedAt = getExpectedUpdatedAtValue(
+      req.body?.expectedUpdatedAt,
+    );
+    const existing = await TeamAccount.findOne({ id: req.params.id });
+    if (!existing) {
+      return res.status(404).json({ error: "Team account not found" });
+    }
+    ensureCurrentVersion(existing, expectedUpdatedAt, "Team account nay");
+
+    await syncDatammoUpdateLocked(existing, existing, {
+      forceTeamResync: true,
+      strictDatammoSync: true,
+    });
+
+    res.json({
+      message: "Resynced Datammo",
+      account: sanitizeTeamAccount(existing?.toObject?.() || existing),
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
 });
 
 // SINGLE USER ROUTES (Netflix, Canva, Capcut)
