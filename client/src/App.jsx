@@ -106,6 +106,20 @@ const extractDatammoOrderIdFromUser = (user) => {
   const match = /^datammo#(.+)$/i.exec(rawName);
   return match?.[1] ? String(match[1]).trim() : "";
 };
+const findDatammoOrderIdForAccount = (accountId, orders = []) => {
+  const normalizedId = String(accountId || "").trim();
+  if (!normalizedId) return "";
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const accounts = Array.isArray(order?.accounts) ? order.accounts : [];
+    const matched = accounts.some(
+      (item) => String(item?.accountId || "").trim() === normalizedId,
+    );
+    if (matched) {
+      return String(order?.orderId || "").trim();
+    }
+  }
+  return "";
+};
 const normalizeDatammoWarrantyCases = (cases = []) =>
   [...(Array.isArray(cases) ? cases : [])].sort(
     (a, b) =>
@@ -373,6 +387,7 @@ function App() {
   const [capcutAccounts, setCapcutAccounts] = useState([]);
   const [teamAccounts, setTeamAccounts] = useState([]);
   const [datammoWarrantyCases, setDatammoWarrantyCases] = useState([]);
+  const [datammoOrderHistory, setDatammoOrderHistory] = useState([]);
   const [showTeamAddModal, setShowTeamAddModal] = useState(false);
   const [showTeamEditModal, setShowTeamEditModal] = useState(false);
   const [teamAddForm, setTeamAddForm] = useState(buildTeamFormState());
@@ -977,6 +992,9 @@ function App() {
         setCapcutAccounts(sortA(res.data?.capcut));
         setTeamAccounts(
           sortA(res.data?.team).map((acc) => normalizeTeamAccountForUi(acc)),
+        );
+        setDatammoOrderHistory(
+          Array.isArray(res.data?.datammoOrders) ? res.data.datammoOrders : [],
         );
         setDatammoWarrantyCases(
           normalizeDatammoWarrantyCases(res.data?.datammoWarrantyCases),
@@ -3603,7 +3621,14 @@ function App() {
                                 const package2Shelf = normalizePackage2Shelf(acc.package2Shelf);
                                 const package2ShelfLabel = getPackage2ShelfLabel(package2Shelf);
                                 const isOnDatammoShelf = package2Shelf !== "none";
-                                const datammoOrderId = extractDatammoOrderIdFromUser(u);
+                                const datammoOrderId =
+                                  extractDatammoOrderIdFromUser(u) ||
+                                  findDatammoOrderIdForAccount(
+                                    acc.id,
+                                    datammoOrderHistory,
+                                  );
+                                const canOpenDatammoWarranty =
+                                  !!u && isDatammoManagedUser(u) && !!datammoOrderId;
                                 const warrantyInfo = getDatammoWarrantyInfoForAccount(
                                   acc.id,
                                   datammoWarrantyCases,
@@ -3686,7 +3711,7 @@ function App() {
                                           )}
                                         </div>
                                         <div className="flex gap-2">
-                                          {datammoOrderId && (
+                                          {canOpenDatammoWarranty && (
                                             <button
                                               type="button"
                                               onClick={() => openWarrantyModal(acc)}
@@ -3838,6 +3863,24 @@ function App() {
                                   />
                                 </button>
                               )}
+                              {acc.type === "package2" &&
+                                Array.isArray(acc.users) &&
+                                acc.users.length === 1 &&
+                                isDatammoManagedUser(acc.users[0]) &&
+                                (extractDatammoOrderIdFromUser(acc.users[0]) ||
+                                  findDatammoOrderIdForAccount(
+                                    acc.id,
+                                    datammoOrderHistory,
+                                  )) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openWarrantyModal(acc)}
+                                    className="bg-slate-700 hover:bg-cyan-600 text-slate-300 hover:text-white p-2 rounded transition-colors"
+                                    title="Bảo hành Datammo"
+                                  >
+                                    <Shield size={16} />
+                                  </button>
+                                )}
                               <button
                                 type="button"
                                 onClick={() => {

@@ -747,6 +747,16 @@ const extractDatammoOrderIdFromUser = (user) => {
   if (hashMatch?.[1]) return String(hashMatch[1]).trim();
   return "";
 };
+const findLatestDatammoOrderIdForAccount = async (accountId) => {
+  const normalizedId = String(accountId || "").trim();
+  if (!normalizedId) return "";
+  const latestOrder = await DatammoOrder.findOne({
+    "accounts.accountId": normalizedId,
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+  return String(latestOrder?.orderId || "").trim();
+};
 const hasRegularPackage2Customer = (users = []) =>
   Array.isArray(users) &&
   users.some((user) => {
@@ -2157,7 +2167,9 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       });
     }
 
-    const orderId = extractDatammoOrderIdFromUser(sourceUser);
+    const orderId =
+      extractDatammoOrderIdFromUser(sourceUser) ||
+      (await findLatestDatammoOrderIdForAccount(sourceAcc.id));
     if (!orderId) {
       return res.status(400).json({
         error: "Không xác định được order Datammo từ tài khoản lỗi",
