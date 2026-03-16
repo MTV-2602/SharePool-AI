@@ -921,6 +921,11 @@ const getShopminiOrderId = (req) =>
       req.body?.order_code ||
       `shopmini_${Date.now()}`,
   ).trim();
+const isPlaceholderLikeValue = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  return raw.includes("{") || raw.includes("}") || /^(test|preview)$/i.test(raw);
+};
 const buildPackage2SaleFilter = (shelf) => {
   const minExpiredAt = new Date(
     Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
@@ -1775,15 +1780,14 @@ app.all(
         const payload = {
           success: true,
           status: true,
+          result: true,
           stock,
           amount: stock,
           quantity: stock,
           sum: stock,
+          price: Number.isFinite(selectedPrice) ? selectedPrice : 0,
+          amount_money: Number.isFinite(selectedPrice) ? selectedPrice : 0,
         };
-        if (Number.isFinite(selectedPrice) && selectedPrice > 0) {
-          payload.price = selectedPrice;
-          payload.amount_money = selectedPrice;
-        }
         return res.json(payload);
       } catch (error) {
         return res
@@ -1794,7 +1798,27 @@ app.all(
 
     const quantity = getShopminiBuyQuantity(req);
     const orderId = getShopminiOrderId(req);
+    const rawQuantity =
+      req.query?.quantity ||
+      req.query?.soluong ||
+      req.query?.so_luong ||
+      req.query?.amount ||
+      req.body?.quantity ||
+      req.body?.soluong ||
+      req.body?.so_luong ||
+      req.body?.amount;
     let claimed = [];
+
+    if (isPlaceholderLikeValue(orderId) || isPlaceholderLikeValue(rawQuantity)) {
+      return res.json({
+        success: true,
+        status: true,
+        result: true,
+        msg: "preview-success",
+        data: ["preview_user|preview_pass|preview_link"],
+        accounts: ["preview_user|preview_pass|preview_link"],
+      });
+    }
 
     try {
       const available = await Account.countDocuments(buildPackage2SaleFilter(shelf));
@@ -1843,8 +1867,10 @@ app.all(
       return res.json({
         success: true,
         status: true,
+        result: true,
         msg: "success",
         data: claimed.map((item) => item.delivery),
+        accounts: claimed.map((item) => item.delivery),
       });
     } catch (error) {
       if (claimed.length > 0) {
