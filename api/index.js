@@ -128,6 +128,33 @@ const DatammoOrder =
   mongoose.models.DatammoOrder ||
   mongoose.model("DatammoOrder", datammoOrderSchema);
 
+const datammoWarrantyRoundSchema = new mongoose.Schema(
+  {
+    sequence: { type: Number, default: 1 },
+    fromAccountId: { type: String, default: "" },
+    fromUsername: { type: String, default: "" },
+    toAccountId: { type: String, default: "" },
+    toUsername: { type: String, default: "" },
+    reason: { type: String, default: "" },
+    createdAt: { type: String, default: () => new Date().toISOString() },
+  },
+  { _id: false },
+);
+const datammoWarrantyCaseSchema = new mongoose.Schema({
+  orderId: { type: String, default: "", index: true },
+  rootAccountId: { type: String, default: "" },
+  rootUsername: { type: String, default: "" },
+  currentAccountId: { type: String, default: "", index: true },
+  currentUsername: { type: String, default: "" },
+  status: { type: String, default: "active" },
+  rounds: { type: [datammoWarrantyRoundSchema], default: [] },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+const DatammoWarrantyCase =
+  mongoose.models.DatammoWarrantyCase ||
+  mongoose.model("DatammoWarrantyCase", datammoWarrantyCaseSchema);
+
 const datammoKeyRegistrySchema = new mongoose.Schema({
   key: { type: String, unique: true, required: true, index: true },
   accountId: { type: String, default: "" },
@@ -714,12 +741,24 @@ const isDatammoManagedUser = (user) => {
     normalizedName.startsWith("[datammo]")
   );
 };
+const extractDatammoOrderIdFromUser = (user) => {
+  const rawName = String(getUserNameValue(user) || "").trim();
+  const hashMatch = /^datammo#(.+)$/i.exec(rawName);
+  if (hashMatch?.[1]) return String(hashMatch[1]).trim();
+  return "";
+};
 const hasRegularPackage2Customer = (users = []) =>
   Array.isArray(users) &&
   users.some((user) => {
     const name = String(getUserNameValue(user) || "").trim();
     return name && !isDatammoManagedUser(user);
   });
+const appendAuditNoteLine = (note, nextLine) => {
+  const current = String(note || "").trim();
+  const extra = String(nextLine || "").trim();
+  if (!extra) return current;
+  return current ? `${current}\n${extra}` : extra;
+};
 const normalizeDatammoRouteShelf = (rawShelf) => {
   const raw = String(rawShelf || "")
     .trim()
@@ -1408,13 +1447,22 @@ const syncDatammoUpdateLocked = async (oldAcc, newAcc, options = {}) => {
 
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
-    const [accounts, netflixAccs, canvaAccs, capcutAccs, teamAccs, datammoOrders] = await Promise.all([
+    const [
+      accounts,
+      netflixAccs,
+      canvaAccs,
+      capcutAccs,
+      teamAccs,
+      datammoOrders,
+      datammoWarrantyCases,
+    ] = await Promise.all([
       Account.find({}).lean(),
       Netflix.find({}).lean(),
       Canva.find({}).lean(),
       Capcut.find({}).lean(),
       TeamAccount.find({}).lean(),
       DatammoOrder.find({}).sort({ createdAt: -1 }).limit(10).lean(),
+      DatammoWarrantyCase.find({}).sort({ updatedAt: -1 }).limit(100).lean(),
     ]);
     res.json({
       chatgpt: accounts,
@@ -1423,6 +1471,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
       capcut: capcutAccs,
       team: teamAccs.map((teamAcc) => sanitizeTeamAccount(teamAcc)),
       datammoOrders,
+      datammoWarrantyCases,
       version: latestDataVersion,
     });
   } catch (error) {
@@ -2054,6 +2103,229 @@ app.post("/api/chatgpt/:id/resync-datammo", verifyToken, async (req, res) => {
     });
 
     res.json({ message: "Resynced Datammo", account: existing });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
+  try {
+    const sourceExpectedUpdatedAt = getExpectedUpdatedAtValue(
+      req.body?.sourceExpectedUpdatedAt || req.body?.expectedUpdatedAt,
+    );
+    const replacementExpectedUpdatedAt = getExpectedUpdatedAtValue(
+      req.body?.replacementExpectedUpdatedAt,
+    );
+    const replacementAccountId = String(
+      req.body?.replacementAccountId || "",
+    ).trim();
+    const reason = String(req.body?.reason || "").trim();
+
+    if (!replacementAccountId) {
+      return res.status(400).json({ error: "Thiếu tài khoản thay thế" });
+    }
+
+    const sourceAcc = await Account.findOne({ id: req.params.id });
+    const replacementAcc = await Account.findOne({ id: replacementAccountId });
+
+    if (!sourceAcc || !replacementAcc) {
+      return res.status(404).json({ error: "Không tìm thấy tài khoản bảo hành" });
+    }
+    ensureCurrentVersion(sourceAcc, sourceExpectedUpdatedAt, "Tài khoản lỗi");
+    ensureCurrentVersion(
+      replacementAcc,
+      replacementExpectedUpdatedAt,
+      "Tài khoản thay thế",
+    );
+
+    if (sourceAcc.id === replacementAcc.id) {
+      return res.status(400).json({
+        error: "Tài khoản thay thế phải khác tài khoản đang lỗi",
+      });
+    }
+    if (sourceAcc.type !== "package2" || replacementAcc.type !== "package2") {
+      return res.status(400).json({
+        error: "Bảo hành hiện chỉ hỗ trợ tài khoản Datammo gói 2",
+      });
+    }
+
+    const sourceUsers = Array.isArray(sourceAcc.users) ? sourceAcc.users : [];
+    const sourceUser = sourceUsers[0];
+    if (sourceUsers.length !== 1 || !isDatammoManagedUser(sourceUser)) {
+      return res.status(400).json({
+        error: "Tài khoản này không phải acc Datammo đang giữ khách để bảo hành",
+      });
+    }
+
+    const orderId = extractDatammoOrderIdFromUser(sourceUser);
+    if (!orderId) {
+      return res.status(400).json({
+        error: "Không xác định được order Datammo từ tài khoản lỗi",
+      });
+    }
+
+    if (Array.isArray(replacementAcc.users) && replacementAcc.users.length > 0) {
+      return res.status(400).json({
+        error: "Tài khoản thay thế đang có khách, không thể dùng để bảo hành",
+      });
+    }
+    if (
+      replacementAcc.expiredAt &&
+      new Date(replacementAcc.expiredAt).getTime() <= Date.now()
+    ) {
+      return res.status(400).json({
+        error: "Tài khoản thay thế đã hết hạn",
+      });
+    }
+
+    const activeCaseConflict = await DatammoWarrantyCase.findOne({
+      status: "active",
+      $or: [
+        { rootAccountId: replacementAcc.id },
+        { currentAccountId: replacementAcc.id },
+        { "rounds.fromAccountId": replacementAcc.id },
+        { "rounds.toAccountId": replacementAcc.id },
+      ],
+    }).lean();
+    if (activeCaseConflict) {
+      return res.status(400).json({
+        error: "Tài khoản thay thế này đang nằm trong một luồng bảo hành khác",
+      });
+    }
+
+    const sourceSnapshot = snapshotDocument(sourceAcc);
+    const replacementSnapshot = snapshotDocument(replacementAcc);
+    const nowIso = new Date().toISOString();
+    const replacementKey = await resolveOwnedPackage2DatammoKey(
+      replacementAcc.id,
+      replacementAcc.package2DatammoKey,
+      "warranty-replacement",
+    );
+    const persistedReplacement = await Account.findOneAndUpdate(
+      buildConditionalUpdateFilter(replacementAcc.id, replacementExpectedUpdatedAt),
+      {
+        $set: {
+          users: sourceUsers,
+          package2Shelf: PACKAGE2_SHELF_NONE,
+          package2DatammoKey: replacementKey,
+          package2DatammoKeysUsed: mergeDatammoKeyHistory(
+            replacementAcc.package2DatammoKeysUsed,
+            replacementKey,
+          ),
+          note: appendAuditNoteLine(
+            replacementAcc.note,
+            `[Warranty replacement ${orderId} at ${nowIso}]${reason ? ` ${reason}` : ""}`,
+          ),
+          updatedAt: nowIso,
+        },
+      },
+      { new: true },
+    );
+    if (!persistedReplacement) {
+      throw buildConcurrencyError("Tài khoản thay thế");
+    }
+
+    const persistedSource = await Account.findOneAndUpdate(
+      buildConditionalUpdateFilter(sourceAcc.id, sourceExpectedUpdatedAt),
+      {
+        $set: {
+          users: [],
+          package2Shelf: PACKAGE2_SHELF_NONE,
+          note: appendAuditNoteLine(
+            sourceAcc.note,
+            `[Warranty source ${orderId} -> ${replacementAcc.username} at ${nowIso}]${reason ? ` ${reason}` : ""}`,
+          ),
+          updatedAt: nowIso,
+        },
+      },
+      { new: true },
+    );
+    if (!persistedSource) {
+      await restoreDocumentSnapshot(Account, replacementAcc.id, replacementSnapshot);
+      throw buildConcurrencyError("Tài khoản lỗi");
+    }
+
+    const syncOptions = {
+      forceOldPackage2Sync: true,
+      forceNewPackage2Sync: true,
+      strictDatammoSync: true,
+    };
+
+    try {
+      await Promise.all([
+        syncDatammoUpdateLocked(sourceAcc, persistedSource, syncOptions),
+        syncDatammoUpdateLocked(replacementAcc, persistedReplacement, syncOptions),
+      ]);
+    } catch (syncError) {
+      const [rolledBackSource, rolledBackReplacement] = await Promise.all([
+        restoreDocumentSnapshot(Account, sourceAcc.id, sourceSnapshot),
+        restoreDocumentSnapshot(Account, replacementAcc.id, replacementSnapshot),
+      ]);
+      try {
+        await Promise.all([
+          rolledBackSource
+            ? syncDatammoUpdateLocked(persistedSource, rolledBackSource, syncOptions)
+            : Promise.resolve(),
+          rolledBackReplacement
+            ? syncDatammoUpdateLocked(
+                persistedReplacement,
+                rolledBackReplacement,
+                syncOptions,
+              )
+            : Promise.resolve(),
+        ]);
+      } catch (rollbackSyncError) {
+        console.error(
+          "Datammo rollback sync error (warranty):",
+          rollbackSyncError?.syncErrors ||
+            rollbackSyncError?.response?.data ||
+            rollbackSyncError?.message ||
+            rollbackSyncError,
+        );
+      }
+      throw syncError;
+    }
+
+    let warrantyCase = await DatammoWarrantyCase.findOne({
+      status: "active",
+      currentAccountId: sourceAcc.id,
+      orderId,
+    });
+    const nextRound = {
+      sequence: (warrantyCase?.rounds?.length || 0) + 1,
+      fromAccountId: sourceAcc.id,
+      fromUsername: sourceAcc.username,
+      toAccountId: persistedReplacement.id,
+      toUsername: persistedReplacement.username,
+      reason,
+      createdAt: nowIso,
+    };
+
+    if (!warrantyCase) {
+      warrantyCase = await DatammoWarrantyCase.create({
+        orderId,
+        rootAccountId: sourceAcc.id,
+        rootUsername: sourceAcc.username,
+        currentAccountId: persistedReplacement.id,
+        currentUsername: persistedReplacement.username,
+        rounds: [nextRound],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+    } else {
+      warrantyCase.rounds = [...(warrantyCase.rounds || []), nextRound];
+      warrantyCase.currentAccountId = persistedReplacement.id;
+      warrantyCase.currentUsername = persistedReplacement.username;
+      warrantyCase.updatedAt = nowIso;
+      await warrantyCase.save();
+    }
+
+    res.json({
+      message: "Đã tạo bảo hành Datammo",
+      source: persistedSource,
+      replacement: persistedReplacement,
+      warrantyCase,
+    });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }

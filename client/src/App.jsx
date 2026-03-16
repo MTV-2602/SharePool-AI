@@ -95,6 +95,47 @@ const DATAMMO_SEEN_ORDER_KEYS_STORAGE_KEY = "datammo_seen_order_keys";
 const DATAMMO_RECENT_ORDER_WINDOW_MS = 15 * 60 * 1000;
 const buildDatammoOrderKey = (order = {}) =>
   String(order._id || order.id || `${order.orderId || "order"}|${order.createdAt || ""}`);
+const getDatammoUserName = (user) =>
+  typeof user === "string" ? user : String(user?.name || "");
+const isDatammoManagedUser = (user) => {
+  const normalized = getDatammoUserName(user).trim().toLowerCase();
+  return normalized.startsWith("datammo#") || normalized.startsWith("[datammo]");
+};
+const extractDatammoOrderIdFromUser = (user) => {
+  const rawName = getDatammoUserName(user).trim();
+  const match = /^datammo#(.+)$/i.exec(rawName);
+  return match?.[1] ? String(match[1]).trim() : "";
+};
+const normalizeDatammoWarrantyCases = (cases = []) =>
+  [...(Array.isArray(cases) ? cases : [])].sort(
+    (a, b) =>
+      new Date(b?.updatedAt || b?.createdAt || 0).getTime() -
+      new Date(a?.updatedAt || a?.createdAt || 0).getTime(),
+  );
+const getDatammoWarrantyInfoForAccount = (accountId, cases = []) => {
+  const normalizedId = String(accountId || "");
+  if (!normalizedId) return null;
+  for (const warrantyCase of Array.isArray(cases) ? cases : []) {
+    const rounds = Array.isArray(warrantyCase?.rounds) ? warrantyCase.rounds : [];
+    if (String(warrantyCase?.currentAccountId || "") === normalizedId) {
+      return { role: "current", warrantyCase };
+    }
+    if (String(warrantyCase?.rootAccountId || "") === normalizedId) {
+      return { role: "root", warrantyCase };
+    }
+    const participates = rounds.some(
+      (round) =>
+        String(round?.fromAccountId || "") === normalizedId ||
+        String(round?.toAccountId || "") === normalizedId,
+    );
+    if (participates) {
+      return { role: "history", warrantyCase };
+    }
+  }
+  return null;
+};
+const isAccountBusyInDatammoWarranty = (accountId, cases = []) =>
+  !!getDatammoWarrantyInfoForAccount(accountId, cases);
 const createDatammoBatchProgressState = () => ({
   active: false,
   title: "",
@@ -331,6 +372,7 @@ function App() {
   const [canvaAccounts, setCanvaAccounts] = useState([]);
   const [capcutAccounts, setCapcutAccounts] = useState([]);
   const [teamAccounts, setTeamAccounts] = useState([]);
+  const [datammoWarrantyCases, setDatammoWarrantyCases] = useState([]);
   const [showTeamAddModal, setShowTeamAddModal] = useState(false);
   const [showTeamEditModal, setShowTeamEditModal] = useState(false);
   const [teamAddForm, setTeamAddForm] = useState(buildTeamFormState());
@@ -387,6 +429,7 @@ function App() {
     editAccount: false,
     deleteAccount: false,
     bulkPush: false,
+    warranty: false,
     teamMode: {},
     changeType: {},
     changeShelf: {},
@@ -407,6 +450,10 @@ function App() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showImportGPTModal, setShowImportGPTModal] = useState(false);
   const [showBulkPushModal, setShowBulkPushModal] = useState(false);
+  const [showWarrantyModal, setShowWarrantyModal] = useState(false);
+  const [warrantySourceAcc, setWarrantySourceAcc] = useState(null);
+  const [warrantyReplacementId, setWarrantyReplacementId] = useState("");
+  const [warrantyReason, setWarrantyReason] = useState("");
   const [selectedChatgptIds, setSelectedChatgptIds] = useState([]);
   const [bulkPushForm, setBulkPushForm] = useState({
     scope: "selected",
@@ -930,6 +977,9 @@ function App() {
         setCapcutAccounts(sortA(res.data?.capcut));
         setTeamAccounts(
           sortA(res.data?.team).map((acc) => normalizeTeamAccountForUi(acc)),
+        );
+        setDatammoWarrantyCases(
+          normalizeDatammoWarrantyCases(res.data?.datammoWarrantyCases),
         );
       } catch (error) {
         if (showLoader) {
@@ -1835,6 +1885,62 @@ function App() {
       showAlert("Lỗi", getApiErrorMessage(error, "Không thể resync Datammo"), "error");
     } finally {
       setDatammoResyncLoading((prev) => ({ ...prev, [loadingKey]: false }));
+    }
+  };
+
+  const openWarrantyModal = (acc) => {
+    setWarrantySourceAcc(acc);
+    setWarrantyReplacementId("");
+    setWarrantyReason("");
+    setShowWarrantyModal(true);
+  };
+
+  const handleCreateDatammoWarranty = async (event) => {
+    event.preventDefault();
+    if (!warrantySourceAcc?.id || !warrantyReplacementId) {
+      showAlert("Thiếu dữ liệu", "Vui lòng chọn tài khoản thay thế.", "warning");
+      return;
+    }
+
+    const replacementAcc = accounts.find(
+      (acc) => String(acc.id || "") === String(warrantyReplacementId || ""),
+    );
+    if (!replacementAcc) {
+      showAlert("Lỗi", "Không tìm thấy tài khoản thay thế.", "error");
+      return;
+    }
+
+    setLoadingStates((prev) => ({ ...prev, warranty: true }));
+    try {
+      await axios.post(
+        `/api/chatgpt/${warrantySourceAcc.id}/warranty`,
+        {
+          replacementAccountId: warrantyReplacementId,
+          reason: warrantyReason,
+          sourceExpectedUpdatedAt: getRecordUpdatedAt(warrantySourceAcc),
+          replacementExpectedUpdatedAt: getRecordUpdatedAt(replacementAcc),
+        },
+        { requestLabel: "Đang tạo bảo hành Datammo" },
+      );
+      setShowWarrantyModal(false);
+      setWarrantySourceAcc(null);
+      setWarrantyReplacementId("");
+      setWarrantyReason("");
+      await fetchData();
+      broadcastDataChange();
+      showAlert(
+        "Thành công",
+        "Đã tạo bảo hành và chuyển khách Datammo sang acc thay thế.",
+        "success",
+      );
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể tạo bảo hành Datammo"),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, warranty: false }));
     }
   };
 
@@ -3497,6 +3603,15 @@ function App() {
                                 const package2Shelf = normalizePackage2Shelf(acc.package2Shelf);
                                 const package2ShelfLabel = getPackage2ShelfLabel(package2Shelf);
                                 const isOnDatammoShelf = package2Shelf !== "none";
+                                const datammoOrderId = extractDatammoOrderIdFromUser(u);
+                                const warrantyInfo = getDatammoWarrantyInfoForAccount(
+                                  acc.id,
+                                  datammoWarrantyCases,
+                                );
+                                const warrantyCase = warrantyInfo?.warrantyCase;
+                                const warrantyRounds = Array.isArray(warrantyCase?.rounds)
+                                  ? warrantyCase.rounds
+                                  : [];
                                 const daysRemaining = u ? getDaysRemaining(u) : null;
                                 const isExpired = daysRemaining !== null && daysRemaining <= 0;
                                 const isNearExpiry =
@@ -3556,8 +3671,31 @@ function App() {
                                               🕑 HH: {getUserExpiryDate(u)}
                                             </span>
                                           )}
+                                          {warrantyCase && (
+                                            <div
+                                              className={`mt-2 ml-6 px-2 py-1 rounded text-[10px] font-semibold border ${
+                                                warrantyInfo?.role === "current"
+                                                  ? "bg-cyan-900/30 text-cyan-200 border-cyan-700/50"
+                                                  : "bg-amber-900/30 text-amber-200 border-amber-700/50"
+                                              }`}
+                                            >
+                                              {warrantyInfo?.role === "current"
+                                                ? `Đang thay bảo hành cho order ${warrantyCase.orderId || datammoOrderId} · lần ${warrantyRounds.length}`
+                                                : `Đã bảo hành sang ${warrantyCase.currentUsername || "acc khác"} · order ${warrantyCase.orderId || datammoOrderId} · lần ${warrantyRounds.length}`}
+                                            </div>
+                                          )}
                                         </div>
                                         <div className="flex gap-2">
+                                          {datammoOrderId && (
+                                            <button
+                                              type="button"
+                                              onClick={() => openWarrantyModal(acc)}
+                                              className="text-cyan-400 hover:text-white"
+                                              title="Bảo hành Datammo"
+                                            >
+                                              <Shield size={14} />
+                                            </button>
+                                          )}
                                           {/* EXTEND BUTTON (Only for Expired/Near Expiry) */}
                                           {(isExpired || isNearExpiry) && (
                                             <button
@@ -3621,6 +3759,22 @@ function App() {
                                       </div>
                                     ) : (
                                       <div className="flex flex-col gap-2">
+                                        {warrantyCase && (
+                                          <div
+                                            className={`w-full px-2 py-1 font-bold rounded text-[10px] border flex flex-col gap-0.5 shadow-sm ${
+                                              warrantyInfo?.role === "current"
+                                                ? "bg-cyan-900/30 text-cyan-200 border-cyan-700/50"
+                                                : "bg-amber-900/30 text-amber-200 border-amber-700/50"
+                                            }`}
+                                          >
+                                            <span className="flex items-center justify-center gap-1">
+                                              <Shield size={10} />
+                                              {warrantyInfo?.role === "current"
+                                                ? `Đang thay bảo hành order ${warrantyCase.orderId || datammoOrderId}`
+                                                : `Đã bảo hành sang ${warrantyCase.currentUsername || "acc khác"}`}
+                                            </span>
+                                          </div>
+                                        )}
                                         <div
                                           className={`text-center w-full px-2 py-1 font-bold rounded text-[10px] uppercase border flex flex-col gap-0.5 shadow-sm ${isOnDatammoShelf
                                             ? "bg-teal-900/30 text-teal-400 border-teal-800/50"
@@ -5981,6 +6135,120 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 
 
       {/* ========================================================= */}
+      {showWarrantyModal && warrantySourceAcc && (() => {
+        const eligibleReplacementAccounts = accounts.filter((acc) => {
+          if (String(acc?.id || "") === String(warrantySourceAcc?.id || "")) {
+            return false;
+          }
+          if (acc?.type !== "package2") return false;
+          if (Array.isArray(acc?.users) && acc.users.length > 0) return false;
+          if (
+            acc?.expiredAt &&
+            new Date(acc.expiredAt).getTime() <= Date.now()
+          ) {
+            return false;
+          }
+          return !isAccountBusyInDatammoWarranty(acc?.id, datammoWarrantyCases);
+        });
+        const sourceUser = Array.isArray(warrantySourceAcc?.users)
+          ? warrantySourceAcc.users[0]
+          : null;
+        const orderId = extractDatammoOrderIdFromUser(sourceUser);
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <form
+              onSubmit={handleCreateDatammoWarranty}
+              className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full shadow-2xl"
+              style={{ maxWidth: "560px" }}
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Shield size={20} className="text-cyan-400" />
+                  Tạo bảo hành Datammo
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setShowWarrantyModal(false)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700/50 mb-4 space-y-1">
+                <div className="text-sm text-slate-400">
+                  Order: <span className="font-semibold text-white">{orderId || "Không rõ"}</span>
+                </div>
+                <div className="text-sm text-slate-400">
+                  Acc lỗi hiện tại:
+                  <span className="ml-2 font-mono text-white">{warrantySourceAcc.username}</span>
+                </div>
+                <div className="text-xs text-slate-500">
+                  Khách Datammo sẽ được chuyển sang acc thay thế, acc lỗi sẽ bị gỡ khỏi kho và ghi vào lịch sử bảo hành.
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">
+                    Tài khoản thay thế *
+                  </label>
+                  <select
+                    required
+                    value={warrantyReplacementId}
+                    onChange={(e) => setWarrantyReplacementId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                  >
+                    <option value="">Chọn acc package2 trống...</option>
+                    {eligibleReplacementAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.username} · {getPackage2ShelfLabel(acc.package2Shelf)} · {formatDate(acc.expiredAt)}
+                      </option>
+                    ))}
+                  </select>
+                  {eligibleReplacementAccounts.length === 0 && (
+                    <div className="mt-2 text-xs text-yellow-400">
+                      Không có acc package2 trống phù hợp để bảo hành.
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">
+                    Lý do bảo hành
+                  </label>
+                  <textarea
+                    value={warrantyReason}
+                    onChange={(e) => setWarrantyReason(e.target.value)}
+                    rows={3}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all resize-none"
+                    placeholder="Ví dụ: acc die, login lỗi, mất quyền truy cập..."
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowWarrantyModal(false)}
+                  className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={loadingStates.warranty || eligibleReplacementAccounts.length === 0}
+                  className="flex-1 p-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition-colors disabled:opacity-60 disabled:cursor-wait"
+                >
+                  {loadingStates.warranty ? "Đang bảo hành..." : "Xác nhận bảo hành"}
+                </button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
+
       {/* MODAL GÁN KHÁCH (NETFLIX, CAPCUT, CANVA)                    */}
       {/* ========================================================= */}
       {showAssignUserModal && assignUserAcc && (() => {
