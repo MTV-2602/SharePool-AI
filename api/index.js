@@ -454,7 +454,7 @@ const isDatammoDuplicateError = (responseData) =>
   );
 const DATAMMO_MIN_REQUEST_GAP_MS = toPositiveInt(
   process.env.DATAMMO_MIN_REQUEST_GAP_MS,
-  300,
+  1200,
 );
 const DATAMMO_RATE_LIMIT_RETRIES = toPositiveInt(
   process.env.DATAMMO_RATE_LIMIT_RETRIES,

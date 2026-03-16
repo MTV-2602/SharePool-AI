@@ -1866,7 +1866,7 @@ function App() {
 
     showConfirm(
       "Đồng bộ tất cả Datammo",
-      `Sẽ đồng bộ ${targets.length} tài khoản đang quản lý với Datammo. Tiếp tục chứ?`,
+      `Sẽ đồng bộ ${targets.length} tài khoản đang quản lý với Datammo.\nChế độ an toàn: chạy tuần tự từng tài khoản để tránh dồn request.\nTiếp tục chứ?`,
       async () => {
         let completed = 0;
         let success = 0;
@@ -2538,6 +2538,9 @@ function App() {
                 </div>
                 <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-cyan-200">
                   Tiến độ thực: {datammoBatchProgress.percent}%
+                </div>
+                <div className="mt-1 text-[11px] text-slate-400">
+                  Chế độ an toàn: tuần tự từng tài khoản, backend tự giãn nhịp gọi Datammo.
                 </div>
               </div>
             )}
