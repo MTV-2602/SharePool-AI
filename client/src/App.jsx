@@ -94,31 +94,71 @@ const getTeamSaleModeLabel = (value) =>
 const DATAMMO_SEEN_ORDER_KEYS_STORAGE_KEY = "datammo_seen_order_keys";
 const DATAMMO_RECENT_ORDER_WINDOW_MS = 15 * 60 * 1000;
 const buildDatammoOrderKey = (order = {}) =>
-  String(order._id || order.id || `${order.orderId || "order"}|${order.createdAt || ""}`);
+  String(
+    order._id ||
+      order.id ||
+      `${order.provider || "datammo"}|${order.orderId || "order"}|${order.createdAt || ""}`,
+  );
+const normalizeMarketplaceProvider = (value, fallback = "datammo") => {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "shopmini") return "shopmini";
+  if (raw === "datammo") return "datammo";
+  return fallback;
+};
+const getMarketplaceProviderLabel = (value) =>
+  normalizeMarketplaceProvider(value) === "shopmini" ? "Shopmini" : "Datammo";
 const getDatammoUserName = (user) =>
   typeof user === "string" ? user : String(user?.name || "");
 const isDatammoManagedUser = (user) => {
   const normalized = getDatammoUserName(user).trim().toLowerCase();
-  return normalized.startsWith("datammo#") || normalized.startsWith("[datammo]");
+  return (
+    normalized.startsWith("datammo#") ||
+    normalized.startsWith("[datammo]") ||
+    normalized.startsWith("shopmini#") ||
+    normalized.startsWith("[shopmini]")
+  );
+};
+const getMarketplaceOrderInfoFromUser = (user) => {
+  const rawName = getDatammoUserName(user).trim();
+  const datammoMatch = /^datammo#(.+)$/i.exec(rawName);
+  if (datammoMatch?.[1]) {
+    return { provider: "datammo", orderId: String(datammoMatch[1]).trim() };
+  }
+  const shopminiMatch = /^shopmini#(.+)$/i.exec(rawName);
+  if (shopminiMatch?.[1]) {
+    return { provider: "shopmini", orderId: String(shopminiMatch[1]).trim() };
+  }
+  if (/^\[datammo\]/i.test(rawName)) {
+    return { provider: "datammo", orderId: "" };
+  }
+  if (/^\[shopmini\]/i.test(rawName)) {
+    return { provider: "shopmini", orderId: "" };
+  }
+  return { provider: "", orderId: "" };
 };
 const extractDatammoOrderIdFromUser = (user) => {
-  const rawName = getDatammoUserName(user).trim();
-  const match = /^datammo#(.+)$/i.exec(rawName);
-  return match?.[1] ? String(match[1]).trim() : "";
+  return String(getMarketplaceOrderInfoFromUser(user).orderId || "").trim();
 };
-const findDatammoOrderIdForAccount = (accountId, orders = []) => {
+const findMarketplaceOrderForAccount = (accountId, orders = [], provider = "") => {
   const normalizedId = String(accountId || "").trim();
   if (!normalizedId) return "";
+  const normalizedProvider = normalizeMarketplaceProvider(provider, "");
   for (const order of Array.isArray(orders) ? orders : []) {
+    if (
+      normalizedProvider &&
+      normalizeMarketplaceProvider(order?.provider, "") !== normalizedProvider
+    ) {
+      continue;
+    }
     const accounts = Array.isArray(order?.accounts) ? order.accounts : [];
     const matched = accounts.some(
       (item) => String(item?.accountId || "").trim() === normalizedId,
     );
     if (matched) {
-      return String(order?.orderId || "").trim();
+      return order;
     }
   }
-  return "";
+  return null;
 };
 const normalizeDatammoWarrantyCases = (cases = []) =>
   [...(Array.isArray(cases) ? cases : [])].sort(
@@ -994,7 +1034,7 @@ function App() {
           sortA(res.data?.team).map((acc) => normalizeTeamAccountForUi(acc)),
         );
         setDatammoOrderHistory(
-          Array.isArray(res.data?.datammoOrders) ? res.data.datammoOrders : [],
+          normalizeDatammoOrders(res.data?.datammoOrders),
         );
         setDatammoWarrantyCases(
           normalizeDatammoWarrantyCases(res.data?.datammoWarrantyCases),
@@ -1928,6 +1968,13 @@ function App() {
       return;
     }
 
+    const sourceManagedInfo = getMarketplaceOrderInfoFromUser(
+      Array.isArray(warrantySourceAcc?.users) ? warrantySourceAcc.users[0] : null,
+    );
+    const sourceProviderLabel = getMarketplaceProviderLabel(
+      sourceManagedInfo.provider || "datammo",
+    );
+
     setLoadingStates((prev) => ({ ...prev, warranty: true }));
     try {
       await axios.post(
@@ -1938,7 +1985,7 @@ function App() {
           sourceExpectedUpdatedAt: getRecordUpdatedAt(warrantySourceAcc),
           replacementExpectedUpdatedAt: getRecordUpdatedAt(replacementAcc),
         },
-        { requestLabel: "Đang tạo bảo hành Datammo" },
+        { requestLabel: `Đang tạo bảo hành ${sourceProviderLabel}` },
       );
       setShowWarrantyModal(false);
       setWarrantySourceAcc(null);
@@ -1948,13 +1995,13 @@ function App() {
       broadcastDataChange();
       showAlert(
         "Thành công",
-        "Đã tạo bảo hành và chuyển khách Datammo sang acc thay thế.",
+        `Đã tạo bảo hành và chuyển khách ${sourceProviderLabel} sang acc thay thế.`,
         "success",
       );
     } catch (error) {
       showAlert(
         "Lỗi",
-        getApiErrorMessage(error, "Không thể tạo bảo hành Datammo"),
+        getApiErrorMessage(error, `Không thể tạo bảo hành ${sourceProviderLabel}`),
         "error",
       );
     } finally {
@@ -2697,13 +2744,14 @@ function App() {
                 </div>
                 <div className="min-w-0">
                   <div className="text-[11px] uppercase tracking-[0.18em] font-black text-emerald-300">
-                    Datammo Seller Alert
+                    Seller Order Alert
                   </div>
                   <div className="text-lg md:text-xl font-black text-white">
-                    Vừa có đơn mới từ Datammo
+                    Vừa có đơn mới từ sàn
                   </div>
                   <div className="mt-3 space-y-2">
                     {recentDatammoOrders.slice(0, 3).map((order) => {
+                      const providerLabel = getMarketplaceProviderLabel(order?.provider);
                       const accountsInOrder =
                         Array.isArray(order.accounts) && order.accounts.length > 0
                           ? order.accounts
@@ -2714,12 +2762,15 @@ function App() {
                           className="rounded-xl border border-emerald-400/15 bg-black/15 px-3 py-2"
                         >
                           <div className="space-y-1">
+                            <div className="inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.15em] text-emerald-200">
+                              {providerLabel}
+                            </div>
                             {accountsInOrder.map((account, index) => (
                               <div
                                 key={`${buildDatammoOrderKey(order)}-${index}`}
                                 className="font-semibold text-white break-all"
                               >
-                                Vừa bán acc {account.username || account.accountId || "Không rõ"} cho order {order.orderId || "N/A"}
+                                {providerLabel} vừa bán acc {account.username || account.accountId || "Không rõ"} cho order {order.orderId || "N/A"}
                               </div>
                             ))}
                           </div>
@@ -3621,12 +3672,23 @@ function App() {
                                 const package2Shelf = normalizePackage2Shelf(acc.package2Shelf);
                                 const package2ShelfLabel = getPackage2ShelfLabel(package2Shelf);
                                 const isOnDatammoShelf = package2Shelf !== "none";
-                                const datammoOrderId =
-                                  extractDatammoOrderIdFromUser(u) ||
-                                  findDatammoOrderIdForAccount(
-                                    acc.id,
-                                    datammoOrderHistory,
-                                  );
+                                const managedOrderInfo = getMarketplaceOrderInfoFromUser(u);
+                                const latestMarketplaceOrder = findMarketplaceOrderForAccount(
+                                  acc.id,
+                                  datammoOrderHistory,
+                                  managedOrderInfo.provider,
+                                );
+                                const datammoOrderId = String(
+                                  managedOrderInfo.orderId ||
+                                    latestMarketplaceOrder?.orderId ||
+                                    "",
+                                ).trim();
+                                const managedProvider = normalizeMarketplaceProvider(
+                                  managedOrderInfo.provider || latestMarketplaceOrder?.provider,
+                                );
+                                const providerLabel = getMarketplaceProviderLabel(
+                                  managedProvider,
+                                );
                                 const canOpenDatammoWarranty =
                                   !!u && isDatammoManagedUser(u) && !!datammoOrderId;
                                 const warrantyInfo = getDatammoWarrantyInfoForAccount(
@@ -3634,6 +3696,9 @@ function App() {
                                   datammoWarrantyCases,
                                 );
                                 const warrantyCase = warrantyInfo?.warrantyCase;
+                                const warrantyProviderLabel = getMarketplaceProviderLabel(
+                                  warrantyCase?.provider || managedProvider,
+                                );
                                 const warrantyRounds = Array.isArray(warrantyCase?.rounds)
                                   ? warrantyCase.rounds
                                   : [];
@@ -3696,6 +3761,11 @@ function App() {
                                               🕑 HH: {getUserExpiryDate(u)}
                                             </span>
                                           )}
+                                          {isDatammoManagedUser(u) && (
+                                            <span className="mt-2 ml-6 inline-flex w-fit items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-200">
+                                              {providerLabel}
+                                            </span>
+                                          )}
                                           {warrantyCase && (
                                             <div
                                               className={`mt-2 ml-6 px-2 py-1 rounded text-[10px] font-semibold border ${
@@ -3705,8 +3775,8 @@ function App() {
                                               }`}
                                             >
                                               {warrantyInfo?.role === "current"
-                                                ? `Đang thay bảo hành cho order ${warrantyCase.orderId || datammoOrderId} · lần ${warrantyRounds.length}`
-                                                : `Đã bảo hành sang ${warrantyCase.currentUsername || "acc khác"} · order ${warrantyCase.orderId || datammoOrderId} · lần ${warrantyRounds.length}`}
+                                                ? `${warrantyProviderLabel} đang thay bảo hành cho order ${warrantyCase.orderId || datammoOrderId} · lần ${warrantyRounds.length}`
+                                                : `${warrantyProviderLabel} đã bảo hành sang ${warrantyCase.currentUsername || "acc khác"} · order ${warrantyCase.orderId || datammoOrderId} · lần ${warrantyRounds.length}`}
                                             </div>
                                           )}
                                         </div>
@@ -3716,7 +3786,7 @@ function App() {
                                               type="button"
                                               onClick={() => openWarrantyModal(acc)}
                                               className="text-cyan-400 hover:text-white"
-                                              title="Bảo hành Datammo"
+                                              title={`Bảo hành ${providerLabel}`}
                                             >
                                               <Shield size={14} />
                                             </button>
@@ -3795,8 +3865,8 @@ function App() {
                                             <span className="flex items-center justify-center gap-1">
                                               <Shield size={10} />
                                               {warrantyInfo?.role === "current"
-                                                ? `Đang thay bảo hành order ${warrantyCase.orderId || datammoOrderId}`
-                                                : `Đã bảo hành sang ${warrantyCase.currentUsername || "acc khác"}`}
+                                                ? `${warrantyProviderLabel} đang thay bảo hành order ${warrantyCase.orderId || datammoOrderId}`
+                                                : `${warrantyProviderLabel} đã bảo hành sang ${warrantyCase.currentUsername || "acc khác"}`}
                                             </span>
                                           </div>
                                         )}
@@ -3867,16 +3937,24 @@ function App() {
                                 Array.isArray(acc.users) &&
                                 acc.users.length === 1 &&
                                 isDatammoManagedUser(acc.users[0]) &&
-                                (extractDatammoOrderIdFromUser(acc.users[0]) ||
-                                  findDatammoOrderIdForAccount(
+                                (() => {
+                                  const managedInfo = getMarketplaceOrderInfoFromUser(
+                                    acc.users[0],
+                                  );
+                                  const latestOrder = findMarketplaceOrderForAccount(
                                     acc.id,
                                     datammoOrderHistory,
-                                  )) && (
+                                    managedInfo.provider,
+                                  );
+                                  return (
+                                    managedInfo.orderId || latestOrder?.orderId || ""
+                                  );
+                                })() && (
                                   <button
                                     type="button"
                                     onClick={() => openWarrantyModal(acc)}
                                     className="bg-slate-700 hover:bg-cyan-600 text-slate-300 hover:text-white p-2 rounded transition-colors"
-                                    title="Bảo hành Datammo"
+                                    title="Bảo hành đơn sàn"
                                   >
                                     <Shield size={16} />
                                   </button>
@@ -6196,7 +6274,18 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
         const sourceUser = Array.isArray(warrantySourceAcc?.users)
           ? warrantySourceAcc.users[0]
           : null;
-        const orderId = extractDatammoOrderIdFromUser(sourceUser);
+        const sourceManagedInfo = getMarketplaceOrderInfoFromUser(sourceUser);
+        const latestMarketplaceOrder = findMarketplaceOrderForAccount(
+          warrantySourceAcc?.id,
+          datammoOrderHistory,
+          sourceManagedInfo.provider,
+        );
+        const orderId = String(
+          sourceManagedInfo.orderId || latestMarketplaceOrder?.orderId || "",
+        ).trim();
+        const providerLabel = getMarketplaceProviderLabel(
+          sourceManagedInfo.provider || latestMarketplaceOrder?.provider,
+        );
 
         return (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -6208,7 +6297,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   <Shield size={20} className="text-cyan-400" />
-                  Tạo bảo hành Datammo
+                  Tạo bảo hành {providerLabel}
                 </h2>
                 <button
                   type="button"
@@ -6228,7 +6317,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   <span className="ml-2 font-mono text-white">{warrantySourceAcc.username}</span>
                 </div>
                 <div className="text-xs text-slate-500">
-                  Khách Datammo sẽ được chuyển sang acc thay thế, acc lỗi sẽ bị gỡ khỏi kho và ghi vào lịch sử bảo hành.
+                  Khách {providerLabel} sẽ được chuyển sang acc thay thế, acc lỗi sẽ bị gỡ khỏi kho và ghi vào lịch sử bảo hành.
                 </div>
               </div>
 

@@ -119,6 +119,7 @@ const datammoOrderAccountSchema = new mongoose.Schema(
   { _id: false },
 );
 const datammoOrderSchema = new mongoose.Schema({
+  provider: { type: String, default: "datammo", index: true },
   orderId: { type: String, default: "" },
   shelf: { type: String, default: "" },
   quantity: { type: Number, default: 0 },
@@ -142,6 +143,7 @@ const datammoWarrantyRoundSchema = new mongoose.Schema(
   { _id: false },
 );
 const datammoWarrantyCaseSchema = new mongoose.Schema({
+  provider: { type: String, default: "datammo", index: true },
   orderId: { type: String, default: "", index: true },
   rootAccountId: { type: String, default: "" },
   rootUsername: { type: String, default: "" },
@@ -730,6 +732,16 @@ const normalizePackage2Shelf = (shelf, fallback = PACKAGE2_SHELF_MAIN) => {
   if (VALID_PACKAGE2_SHELVES.includes(shelf)) return shelf;
   return fallback;
 };
+const normalizeMarketplaceProvider = (value, fallback = "datammo") => {
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (raw === "shopmini") return "shopmini";
+  if (raw === "datammo") return "datammo";
+  return fallback;
+};
+const getMarketplaceProviderLabel = (value) =>
+  normalizeMarketplaceProvider(value) === "shopmini" ? "Shopmini" : "Datammo";
 const getUserNameValue = (user) => {
   if (typeof user === "string") return user;
   if (user && typeof user === "object") return user.name || "";
@@ -741,24 +753,45 @@ const isDatammoManagedUser = (user) => {
     .toLowerCase();
   return (
     normalizedName.startsWith("datammo#") ||
-    normalizedName.startsWith("[datammo]")
+    normalizedName.startsWith("[datammo]") ||
+    normalizedName.startsWith("shopmini#") ||
+    normalizedName.startsWith("[shopmini]")
   );
 };
-const extractDatammoOrderIdFromUser = (user) => {
+const getMarketplaceOrderInfoFromUser = (user) => {
   const rawName = String(getUserNameValue(user) || "").trim();
   const hashMatch = /^datammo#(.+)$/i.exec(rawName);
-  if (hashMatch?.[1]) return String(hashMatch[1]).trim();
-  return "";
+  if (hashMatch?.[1]) {
+    return { provider: "datammo", orderId: String(hashMatch[1]).trim() };
+  }
+  const shopminiMatch = /^shopmini#(.+)$/i.exec(rawName);
+  if (shopminiMatch?.[1]) {
+    return { provider: "shopmini", orderId: String(shopminiMatch[1]).trim() };
+  }
+  if (/^\[datammo\]/i.test(rawName)) {
+    return { provider: "datammo", orderId: "" };
+  }
+  if (/^\[shopmini\]/i.test(rawName)) {
+    return { provider: "shopmini", orderId: "" };
+  }
+  return { provider: "", orderId: "" };
 };
-const findLatestDatammoOrderIdForAccount = async (accountId) => {
+const extractDatammoOrderIdFromUser = (user) => {
+  const info = getMarketplaceOrderInfoFromUser(user);
+  return String(info.orderId || "").trim();
+};
+const findLatestMarketplaceOrderForAccount = async (accountId, provider = "") => {
   const normalizedId = String(accountId || "").trim();
-  if (!normalizedId) return "";
-  const latestOrder = await DatammoOrder.findOne({
-    "accounts.accountId": normalizedId,
-  })
+  if (!normalizedId) return null;
+  const filter = { "accounts.accountId": normalizedId };
+  const normalizedProvider = normalizeMarketplaceProvider(provider, "");
+  if (normalizedProvider) {
+    filter.provider = normalizedProvider;
+  }
+  const latestOrder = await DatammoOrder.findOne(filter)
     .sort({ createdAt: -1 })
     .lean();
-  return String(latestOrder?.orderId || "").trim();
+  return latestOrder || null;
 };
 const hasRegularPackage2Customer = (users = []) =>
   Array.isArray(users) &&
@@ -980,6 +1013,25 @@ const rollbackClaimedPackage2Accounts = async (claimed = []) => {
       await syncDatammoUpdateLocked(item.updatedAcc, restored);
     }
   }
+};
+const logMarketplaceOrder = async ({
+  provider,
+  orderId,
+  shelf,
+  quantity,
+  claimed,
+}) => {
+  await DatammoOrder.create({
+    provider: normalizeMarketplaceProvider(provider),
+    orderId,
+    shelf,
+    quantity,
+    accounts: (Array.isArray(claimed) ? claimed : []).map((item) => ({
+      accountId: String(item?.updatedAcc?.id || item?.oldAcc?.id || ""),
+      username: String(item?.updatedAcc?.username || item?.oldAcc?.username || ""),
+      delivery: String(item?.delivery || ""),
+    })),
+  });
 };
 
 const getPackage2ShelfTargets = (acc, includeAllPackage2Shelves = false) => {
@@ -1665,17 +1717,12 @@ app.get(
       }
 
       try {
-        await DatammoOrder.create({
+        await logMarketplaceOrder({
+          provider: "datammo",
           orderId,
           shelf,
           quantity,
-          accounts: claimed.map((item) => ({
-            accountId: String(item?.updatedAcc?.id || item?.oldAcc?.id || ""),
-            username: String(
-              item?.updatedAcc?.username || item?.oldAcc?.username || "",
-            ),
-            delivery: String(item?.delivery || ""),
-          })),
+          claimed,
         });
       } catch (orderLogError) {
         console.error(
@@ -1773,6 +1820,21 @@ app.all(
           message: "Stock changed during processing. Please retry.",
           available: claimed.length,
         });
+      }
+
+      try {
+        await logMarketplaceOrder({
+          provider: "shopmini",
+          orderId,
+          shelf,
+          quantity,
+          claimed,
+        });
+      } catch (orderLogError) {
+        console.error(
+          "Shopmini order log error:",
+          orderLogError?.message || orderLogError,
+        );
       }
 
       bumpDataVersion();
@@ -2339,24 +2401,32 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
     }
     if (sourceAcc.type !== "package2" || replacementAcc.type !== "package2") {
       return res.status(400).json({
-        error: "Bảo hành hiện chỉ hỗ trợ tài khoản Datammo gói 2",
+        error: "Bảo hành hiện chỉ hỗ trợ tài khoản seller gói 2",
       });
     }
 
     const sourceUsers = Array.isArray(sourceAcc.users) ? sourceAcc.users : [];
     const sourceUser = sourceUsers[0];
+    const sourceManagedInfo = getMarketplaceOrderInfoFromUser(sourceUser);
     if (sourceUsers.length !== 1 || !isDatammoManagedUser(sourceUser)) {
       return res.status(400).json({
-        error: "Tài khoản này không phải acc Datammo đang giữ khách để bảo hành",
+        error: "Tài khoản này không phải acc seller đang giữ khách để bảo hành",
       });
     }
 
-    const orderId =
-      extractDatammoOrderIdFromUser(sourceUser) ||
-      (await findLatestDatammoOrderIdForAccount(sourceAcc.id));
+    const fallbackOrder = await findLatestMarketplaceOrderForAccount(
+      sourceAcc.id,
+      sourceManagedInfo.provider,
+    );
+    const orderId = String(
+      sourceManagedInfo.orderId || fallbackOrder?.orderId || "",
+    ).trim();
+    const provider = normalizeMarketplaceProvider(
+      sourceManagedInfo.provider || fallbackOrder?.provider,
+    );
     if (!orderId) {
       return res.status(400).json({
-        error: "Không xác định được order Datammo từ tài khoản lỗi",
+        error: "Không xác định được order seller từ tài khoản lỗi",
       });
     }
 
@@ -2483,6 +2553,7 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
     }
 
     let warrantyCase = await DatammoWarrantyCase.findOne({
+      provider,
       status: "active",
       currentAccountId: sourceAcc.id,
       orderId,
@@ -2499,6 +2570,7 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
 
     if (!warrantyCase) {
       warrantyCase = await DatammoWarrantyCase.create({
+        provider,
         orderId,
         rootAccountId: sourceAcc.id,
         rootUsername: sourceAcc.username,
@@ -2517,7 +2589,7 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
     }
 
     res.json({
-      message: "Đã tạo bảo hành Datammo",
+      message: `Đã tạo bảo hành ${getMarketplaceProviderLabel(provider)}`,
       source: persistedSource,
       replacement: persistedReplacement,
       warrantyCase,
