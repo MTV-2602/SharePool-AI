@@ -525,6 +525,8 @@ function App() {
   const [gptSubTab, setGptSubTab] = useState("all");
   const [package2ShelfTab, setPackage2ShelfTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [highlightedChatgptAccountId, setHighlightedChatgptAccountId] =
+    useState("");
   const [chatgptCustomerFilter, setChatgptCustomerFilter] = useState("all");
   const [marketplaceOrderQuery, setMarketplaceOrderQuery] = useState("");
   const [marketplaceOrderProviderFilter, setMarketplaceOrderProviderFilter] =
@@ -2018,6 +2020,46 @@ function App() {
     setWarrantyReplacementId("");
     setWarrantyReason("");
     setShowWarrantyModal(true);
+  };
+
+  const focusChatgptAccountFromMarketplace = (accountId, label = "") => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return;
+    setActiveTab("chatgpt");
+    setGptSubTab("package2");
+    setPackage2ShelfTab("all");
+    setChatgptCustomerFilter("all");
+    if (label) {
+      setSearchQuery(String(label || "").trim());
+    }
+    setHighlightedChatgptAccountId(normalizedId);
+    setTimeout(() => {
+      const row = document.getElementById(`chatgpt-account-row-${normalizedId}`);
+      if (row) {
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 120);
+    setTimeout(() => {
+      setHighlightedChatgptAccountId((prev) =>
+        prev === normalizedId ? "" : prev,
+      );
+    }, 4000);
+  };
+
+  const openWarrantyFromMarketplaceOrder = (item = {}) => {
+    const normalizedId = String(item?.currentAccountId || "").trim();
+    const targetAcc = accounts.find(
+      (acc) => String(acc?.id || "").trim() === normalizedId,
+    );
+    if (!targetAcc) {
+      showAlert(
+        "Không tìm thấy acc",
+        "Không tìm thấy acc hiện tại của order này trong danh sách.",
+        "warning",
+      );
+      return;
+    }
+    openWarrantyModal(targetAcc);
   };
 
   const handleCreateDatammoWarranty = async (event) => {
@@ -3525,6 +3567,32 @@ function App() {
                                           ? "Dang thay bao hanh"
                                           : "Dang dung acc goc"}
                                       </div>
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openWarrantyFromMarketplaceOrder(item)
+                                          }
+                                          className="rounded-lg bg-cyan-600 hover:bg-cyan-500 px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
+                                        >
+                                          {item.warrantyRounds > 0
+                                            ? "Bao hanh tiep"
+                                            : "Bao hanh"}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            focusChatgptAccountFromMarketplace(
+                                              item.currentAccountId,
+                                              item.currentUsername ||
+                                                item.currentAccountId,
+                                            )
+                                          }
+                                          className="rounded-lg bg-slate-700 hover:bg-slate-600 px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
+                                        >
+                                          Toi acc
+                                        </button>
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -3613,8 +3681,14 @@ function App() {
                   <tbody>
                     {filteredChatgptAccounts.map((acc) => (
                         <tr
+                          id={`chatgpt-account-row-${acc.id}`}
                           key={acc.id}
-                          className="hover:bg-slate-800/50 transition-colors"
+                          className={`hover:bg-slate-800/50 transition-colors ${
+                            String(highlightedChatgptAccountId || "") ===
+                            String(acc.id || "")
+                              ? "bg-cyan-900/20 ring-1 ring-cyan-500/50"
+                              : ""
+                          }`}
                         >
                           <td className="align-top text-center">
                             <input
