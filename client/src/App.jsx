@@ -2030,7 +2030,7 @@ function App() {
     setActiveTab("chatgpt");
     setGptSubTab("package2");
     setPackage2ShelfTab(
-      activeMarketplaceAccountIds?.has(normalizedId) ? "sold" : "all",
+      marketplaceTrackedAccountIds?.has(normalizedId) ? "sold" : "all",
     );
     setSoldPackage2ProviderFilter("all");
     setChatgptCustomerFilter("all");
@@ -2704,21 +2704,76 @@ function App() {
     datammoOrderHistory,
     datammoWarrantyCases,
   );
-  const activeMarketplaceAccountMap = new Map();
+  const marketplaceTrackedAccountMap = new Map();
+  const registerMarketplaceTrackedAccount = (
+    accountId,
+    payload = {},
+    overwrite = false,
+  ) => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return;
+    if (!overwrite && marketplaceTrackedAccountMap.has(normalizedId)) return;
+    marketplaceTrackedAccountMap.set(normalizedId, {
+      accountId: normalizedId,
+      provider: normalizeMarketplaceProvider(payload?.provider),
+      providerLabel: getMarketplaceProviderLabel(payload?.provider),
+      orderId: String(payload?.orderId || "").trim(),
+      role: String(payload?.role || ""),
+      label: String(payload?.label || "").trim(),
+      order: payload?.order || null,
+      summary: payload?.summary || null,
+    });
+  };
   marketplaceOrderSummaries.forEach((order) => {
     order.accountSummaries.forEach((item) => {
-      const currentAccountId = String(item?.currentAccountId || "").trim();
-      if (!currentAccountId) return;
-      activeMarketplaceAccountMap.set(currentAccountId, {
-        provider: normalizeMarketplaceProvider(order?.provider),
-        providerLabel: getMarketplaceProviderLabel(order?.provider),
+      const provider = normalizeMarketplaceProvider(order?.provider);
+      const commonPayload = {
+        provider,
         orderId: String(order?.orderId || "").trim(),
-        summary: item,
         order,
+        summary: item,
+      };
+      registerMarketplaceTrackedAccount(item?.soldAccountId, {
+        ...commonPayload,
+        role: item?.warrantyRounds > 0 ? "source" : "sold",
+        label: item?.soldUsername,
+      });
+      registerMarketplaceTrackedAccount(item?.currentAccountId, {
+        ...commonPayload,
+        role:
+          String(item?.currentAccountId || "") === String(item?.soldAccountId || "")
+            ? "sold"
+            : "current",
+        label: item?.currentUsername,
+      }, true);
+      const rounds = Array.isArray(item?.warrantyCase?.rounds)
+        ? item.warrantyCase.rounds
+        : [];
+      rounds.forEach((round) => {
+        registerMarketplaceTrackedAccount(round?.fromAccountId, {
+          ...commonPayload,
+          role:
+            String(round?.fromAccountId || "") ===
+            String(item?.soldAccountId || "")
+              ? "source"
+              : "history",
+          label: round?.fromUsername,
+        });
+        registerMarketplaceTrackedAccount(round?.toAccountId, {
+          ...commonPayload,
+          role:
+            String(round?.toAccountId || "") ===
+            String(item?.currentAccountId || "")
+              ? "current"
+              : "history",
+          label: round?.toUsername,
+        }, true);
       });
     });
   });
-  const activeMarketplaceAccountIds = new Set(activeMarketplaceAccountMap.keys());
+  const marketplaceTrackedAccountIds = new Set(
+    marketplaceTrackedAccountMap.keys(),
+  );
   const filteredChatgptAccounts = accounts
     .filter((acc) => {
       if (gptSubTab === "package1") return acc.type === "package1";
@@ -2728,7 +2783,7 @@ function App() {
     })
     .filter((acc) => {
       if (gptSubTab !== "package2") return true;
-      const isSoldMarketplaceAccount = activeMarketplaceAccountIds.has(
+      const isSoldMarketplaceAccount = marketplaceTrackedAccountIds.has(
         String(acc?.id || ""),
       );
       if (package2ShelfTab === "sold") {
@@ -2736,7 +2791,7 @@ function App() {
         if (soldPackage2ProviderFilter === "all") return true;
         return (
           normalizeMarketplaceProvider(
-            activeMarketplaceAccountMap.get(String(acc?.id || ""))?.provider,
+            marketplaceTrackedAccountMap.get(String(acc?.id || ""))?.provider,
           ) === normalizeMarketplaceProvider(soldPackage2ProviderFilter)
         );
       }
@@ -3420,21 +3475,21 @@ function App() {
             {gptSubTab === "package2" && (() => {
               const package2Accs = accounts.filter((a) => a.type === "package2");
               const soldPackage2Accs = package2Accs.filter((acc) =>
-                activeMarketplaceAccountIds.has(String(acc?.id || "")),
+                marketplaceTrackedAccountIds.has(String(acc?.id || "")),
               );
               const regularPackage2Accs = package2Accs.filter(
-                (acc) => !activeMarketplaceAccountIds.has(String(acc?.id || "")),
+                (acc) => !marketplaceTrackedAccountIds.has(String(acc?.id || "")),
               );
               const soldDatammoCount = soldPackage2Accs.filter(
                 (acc) =>
                   normalizeMarketplaceProvider(
-                    activeMarketplaceAccountMap.get(String(acc?.id || ""))?.provider,
+                    marketplaceTrackedAccountMap.get(String(acc?.id || ""))?.provider,
                   ) === "datammo",
               ).length;
               const soldShopminiCount = soldPackage2Accs.filter(
                 (acc) =>
                   normalizeMarketplaceProvider(
-                    activeMarketplaceAccountMap.get(String(acc?.id || ""))?.provider,
+                    marketplaceTrackedAccountMap.get(String(acc?.id || ""))?.provider,
                   ) === "shopmini",
               ).length;
               const mainCount = regularPackage2Accs.filter(
