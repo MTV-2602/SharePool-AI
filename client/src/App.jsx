@@ -95,6 +95,15 @@ const DATAMMO_SEEN_ORDER_KEYS_STORAGE_KEY = "datammo_seen_order_keys";
 const DATAMMO_RECENT_ORDER_WINDOW_MS = 15 * 60 * 1000;
 const buildDatammoOrderKey = (order = {}) =>
   String(order._id || order.id || `${order.orderId || "order"}|${order.createdAt || ""}`);
+const createDatammoBatchProgressState = () => ({
+  active: false,
+  total: 0,
+  completed: 0,
+  success: 0,
+  failed: 0,
+  percent: 0,
+  currentLabel: "",
+});
 const normalizeDatammoOrders = (orders = []) =>
   [...(Array.isArray(orders) ? orders : [])].sort(
     (a, b) =>
@@ -408,6 +417,9 @@ function App() {
     completed: 0,
     percent: 0,
   });
+  const [datammoBatchProgress, setDatammoBatchProgress] = useState(
+    createDatammoBatchProgressState(),
+  );
 
   // CUSTOM ALERT & CONFIRM MODAL
   const [alertInfo, setAlertInfo] = useState({
@@ -1825,6 +1837,105 @@ function App() {
     }
   };
 
+  const handleResyncAllDatammo = async () => {
+    if (datammoBatchProgress.active) return;
+
+    const targets = [
+      ...accounts
+        .filter((acc) => ["package1", "package2"].includes(String(acc?.type || "")))
+        .map((acc) => ({
+          scope: "chatgpt",
+          id: acc.id,
+          label: `ChatGPT - ${acc.username || acc.id}`,
+          url: `/api/chatgpt/${acc.id}/resync-datammo`,
+          body: withExpectedUpdatedAt({}, acc),
+        })),
+      ...teamAccounts.map((acc) => ({
+        scope: "team",
+        id: acc.id,
+        label: `Team - ${acc.username || acc.id}`,
+        url: `/api/team/${acc.id}/resync-datammo`,
+        body: withExpectedUpdatedAt({}, acc),
+      })),
+    ];
+
+    if (targets.length === 0) {
+      showAlert("Thiếu dữ liệu", "Không có tài khoản nào để đồng bộ Datammo.", "warning");
+      return;
+    }
+
+    showConfirm(
+      "Đồng bộ tất cả Datammo",
+      `Sẽ đồng bộ ${targets.length} tài khoản đang quản lý với Datammo. Tiếp tục chứ?`,
+      async () => {
+        let completed = 0;
+        let success = 0;
+        let failed = 0;
+        const failedLabels = [];
+
+        setDatammoBatchProgress({
+          active: true,
+          total: targets.length,
+          completed: 0,
+          success: 0,
+          failed: 0,
+          percent: 0,
+          currentLabel: targets[0]?.label || "",
+        });
+
+        try {
+          for (const target of targets) {
+            setDatammoBatchProgress((prev) => ({
+              ...prev,
+              currentLabel: target.label,
+            }));
+            try {
+              await axios.post(target.url, target.body, {
+                requestLabel: "Đang đồng bộ tất cả Datammo",
+                skipGlobalLoading: true,
+              });
+              success += 1;
+            } catch (error) {
+              failed += 1;
+              failedLabels.push(
+                `${target.label}: ${getApiErrorMessage(error, "Không thể resync Datammo")}`,
+              );
+            } finally {
+              completed += 1;
+              setDatammoBatchProgress((prev) => ({
+                ...prev,
+                completed,
+                success,
+                failed,
+                percent:
+                  targets.length > 0
+                    ? Math.round((completed / targets.length) * 100)
+                    : 100,
+              }));
+            }
+          }
+
+          await fetchData();
+          broadcastDataChange();
+
+          const detailLines = failedLabels.slice(0, 5);
+          const hiddenCount = Math.max(0, failedLabels.length - detailLines.length);
+          if (hiddenCount > 0) {
+            detailLines.push(`... và ${hiddenCount} lỗi khác`);
+          }
+
+          showAlert(
+            failed === 0 ? "Đồng bộ hoàn tất" : "Đồng bộ xong nhưng có lỗi",
+            `Đã xử lý ${targets.length} tài khoản.\nThành công: ${success}\nThất bại: ${failed}${detailLines.length ? `\n${detailLines.join("\n")}` : ""}`,
+            failed === 0 ? "success" : "warning",
+          );
+        } finally {
+          setDatammoBatchProgress(createDatammoBatchProgressState());
+        }
+      },
+    );
+  };
+
   const handleCopy = (text, message = "Đã copy nội dung!") => {
     navigator.clipboard.writeText(text);
     setToastMessage(message);
@@ -2387,6 +2498,50 @@ function App() {
         {activeTab === "chatgpt" && (
           <div>
             {/* GLOBAL EXPIRY / RESCUE BANNER */}
+            {datammoBatchProgress.active && (
+              <div className="mb-4 rounded-xl border border-cyan-700/50 bg-cyan-950/20 p-4 shadow-lg">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-bold text-cyan-300">
+                      Đang đồng bộ toàn bộ Datammo
+                    </div>
+                    <div className="text-xs text-slate-300">
+                      Đang xử lý:{" "}
+                      <span className="font-semibold text-white">
+                        {datammoBatchProgress.currentLabel || "Đang chuẩn bị..."}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-slate-300">
+                    <div>
+                      {datammoBatchProgress.completed}/{datammoBatchProgress.total} tài khoản
+                    </div>
+                    <div>
+                      Thành công:{" "}
+                      <span className="font-semibold text-emerald-300">
+                        {datammoBatchProgress.success}
+                      </span>{" "}
+                      • Thất bại:{" "}
+                      <span className="font-semibold text-rose-300">
+                        {datammoBatchProgress.failed}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-300"
+                    style={{
+                      width: `${Math.max(0, Math.min(100, datammoBatchProgress.percent || 0))}%`,
+                    }}
+                  />
+                </div>
+                <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-cyan-200">
+                  Tiến độ thực: {datammoBatchProgress.percent}%
+                </div>
+              </div>
+            )}
+
             {(() => {
               const urgentList = [];
 
@@ -2732,9 +2887,23 @@ function App() {
                 )}
                 <button
                   onClick={() => openBulkPushModal(filteredChatgptAccounts)}
-                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center"
+                  disabled={datammoBatchProgress.active}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center disabled:opacity-60 disabled:cursor-wait disabled:hover:translate-y-0"
                 >
                   <Globe size={18} /> Đẩy nhanh lên kệ
+                </button>
+                <button
+                  onClick={handleResyncAllDatammo}
+                  disabled={datammoBatchProgress.active}
+                  className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center disabled:opacity-60 disabled:cursor-wait disabled:hover:translate-y-0"
+                >
+                  <RefreshCw
+                    size={18}
+                    className={datammoBatchProgress.active ? "animate-spin" : ""}
+                  />
+                  {datammoBatchProgress.active
+                    ? `Đang đồng bộ ${datammoBatchProgress.completed}/${datammoBatchProgress.total}`
+                    : "Đồng bộ tất cả Datammo"}
                 </button>
                 <button
                   onClick={() => setShowImportGPTModal(true)}
@@ -3367,7 +3536,10 @@ function App() {
                                 <button
                                   type="button"
                                   onClick={() => handleResyncChatgptDatammo(acc)}
-                                  disabled={!!datammoResyncLoading[buildDatammoResyncKey("chatgpt", acc.id)]}
+                                  disabled={
+                                    !!datammoResyncLoading[buildDatammoResyncKey("chatgpt", acc.id)] ||
+                                    datammoBatchProgress.active
+                                  }
                                   className="bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white p-2 rounded transition-colors disabled:opacity-60 disabled:cursor-wait"
                                   title="Resync Datammo"
                                 >
@@ -5193,7 +5365,10 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           <div className="flex gap-2 w-full relative group">
                             <button
                               onClick={() => handleResyncTeamDatammo(acc)}
-                              disabled={!!datammoResyncLoading[buildDatammoResyncKey("team", acc.id)]}
+                              disabled={
+                                !!datammoResyncLoading[buildDatammoResyncKey("team", acc.id)] ||
+                                datammoBatchProgress.active
+                              }
                               className="bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center disabled:opacity-60 disabled:cursor-wait"
                             >
                               <RefreshCw
