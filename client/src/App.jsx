@@ -97,6 +97,7 @@ const buildDatammoOrderKey = (order = {}) =>
   String(order._id || order.id || `${order.orderId || "order"}|${order.createdAt || ""}`);
 const createDatammoBatchProgressState = () => ({
   active: false,
+  title: "",
   total: 0,
   completed: 0,
   success: 0,
@@ -1837,6 +1838,137 @@ function App() {
     }
   };
 
+  const buildChatgptDatammoTargets = (list = []) =>
+    (Array.isArray(list) ? list : [])
+      .filter((acc) => ["package1", "package2"].includes(String(acc?.type || "")))
+      .map((acc) => ({
+        label: `ChatGPT - ${acc.username || acc.id}`,
+        url: `/api/chatgpt/${acc.id}/resync-datammo`,
+        body: withExpectedUpdatedAt({}, acc),
+      }));
+
+  const buildTeamDatammoTargets = (list = []) =>
+    (Array.isArray(list) ? list : []).map((acc) => ({
+      label: `Team - ${acc.username || acc.id}`,
+      url: `/api/team/${acc.id}/resync-datammo`,
+      body: withExpectedUpdatedAt({}, acc),
+    }));
+
+  const runDatammoBatchResync = ({
+    title = "Đồng bộ Datammo",
+    targets = [],
+    emptyMessage = "Không có tài khoản nào để đồng bộ Datammo.",
+  } = {}) => {
+    if (datammoBatchProgress.active) return;
+    if (!targets.length) {
+      showAlert("Thiếu dữ liệu", emptyMessage, "warning");
+      return;
+    }
+
+    showConfirm(
+      title,
+      `Sẽ đồng bộ ${targets.length} tài khoản.\nChế độ an toàn: chạy tuần tự từng tài khoản để tránh dồn request.\nTiếp tục chứ?`,
+      async () => {
+        let completed = 0;
+        let success = 0;
+        let failed = 0;
+        const failedLabels = [];
+
+        setDatammoBatchProgress({
+          active: true,
+          title,
+          total: targets.length,
+          completed: 0,
+          success: 0,
+          failed: 0,
+          percent: 0,
+          currentLabel: targets[0]?.label || "",
+        });
+
+        try {
+          for (const target of targets) {
+            setDatammoBatchProgress((prev) => ({
+              ...prev,
+              title,
+              currentLabel: target.label,
+            }));
+
+            try {
+              await axios.post(target.url, target.body, {
+                requestLabel: title,
+                skipGlobalLoading: true,
+              });
+              success += 1;
+            } catch (error) {
+              failed += 1;
+              failedLabels.push(
+                `${target.label}: ${getApiErrorMessage(error, "Không thể resync Datammo")}`,
+              );
+            } finally {
+              completed += 1;
+              setDatammoBatchProgress((prev) => ({
+                ...prev,
+                completed,
+                success,
+                failed,
+                percent:
+                  targets.length > 0
+                    ? Math.round((completed / targets.length) * 100)
+                    : 100,
+              }));
+            }
+          }
+
+          await fetchData();
+          broadcastDataChange();
+
+          const detailLines = failedLabels.slice(0, 5);
+          const hiddenCount = Math.max(0, failedLabels.length - detailLines.length);
+          if (hiddenCount > 0) {
+            detailLines.push(`... và ${hiddenCount} lỗi khác`);
+          }
+
+          showAlert(
+            failed === 0 ? "Đồng bộ hoàn tất" : "Đồng bộ xong nhưng có lỗi",
+            `Đã xử lý ${targets.length} tài khoản.\nThành công: ${success}\nThất bại: ${failed}${detailLines.length ? `\n${detailLines.join("\n")}` : ""}`,
+            failed === 0 ? "success" : "warning",
+          );
+        } finally {
+          setDatammoBatchProgress(createDatammoBatchProgressState());
+        }
+      },
+    );
+  };
+
+  const getChatgptDatammoScopeLabel = () => {
+    if (gptSubTab === "package1") return "Đồng bộ Gói 1 đang xem";
+    if (gptSubTab === "package2") {
+      if (package2ShelfTab === "main") return "Đồng bộ Gói 2 - Kệ tổng";
+      if (package2ShelfTab === "cheap") return "Đồng bộ Gói 2 - Kệ rẻ";
+      if (package2ShelfTab === "none") return "Đồng bộ Gói 2 - Không kệ";
+      return "Đồng bộ Gói 2 đang xem";
+    }
+    if (gptSubTab === "unassigned") return "Đồng bộ ChatGPT chưa phân loại";
+    return "Đồng bộ ChatGPT đang xem";
+  };
+
+  const handleResyncVisibleChatgptDatammo = () => {
+    runDatammoBatchResync({
+      title: getChatgptDatammoScopeLabel(),
+      targets: buildChatgptDatammoTargets(filteredChatgptAccounts),
+      emptyMessage:
+        "Không có tài khoản ChatGPT hợp lệ trong phần đang xem để đồng bộ.",
+    });
+  };
+
+  const handleResyncTeamGroupDatammo = (list = [], label = "Team đang xem") => {
+    runDatammoBatchResync({
+      title: `Đồng bộ ${label}`,
+      targets: buildTeamDatammoTargets(list),
+      emptyMessage: `Không có tài khoản trong nhóm ${label} để đồng bộ.`,
+    });
+  };
+
   const handleResyncAllDatammo = async () => {
     if (datammoBatchProgress.active) return;
 
@@ -2503,7 +2635,7 @@ function App() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-bold text-cyan-300">
-                      Đang đồng bộ toàn bộ Datammo
+                      {datammoBatchProgress.title || "Đang đồng bộ Datammo"}
                     </div>
                     <div className="text-xs text-slate-300">
                       Đang xử lý:{" "}
@@ -2896,7 +3028,7 @@ function App() {
                   <Globe size={18} /> Đẩy nhanh lên kệ
                 </button>
                 <button
-                  onClick={handleResyncAllDatammo}
+                  onClick={handleResyncVisibleChatgptDatammo}
                   disabled={datammoBatchProgress.active}
                   className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center disabled:opacity-60 disabled:cursor-wait disabled:hover:translate-y-0"
                 >
@@ -2906,7 +3038,7 @@ function App() {
                   />
                   {datammoBatchProgress.active
                     ? `Đang đồng bộ ${datammoBatchProgress.completed}/${datammoBatchProgress.total}`
-                    : "Đồng bộ tất cả Datammo"}
+                    : "Đồng bộ phần đang xem"}
                 </button>
                 <button
                   onClick={() => setShowImportGPTModal(true)}
@@ -5189,6 +5321,45 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-cyan-900/40 text-cyan-300 border-cyan-700/60">
                   Team Business: {teamBusinessAccounts.length}
                 </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleResyncTeamGroupDatammo(
+                      filteredTeamAccounts,
+                      "Team đang lọc",
+                    )
+                  }
+                  disabled={datammoBatchProgress.active}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-cyan-700/30 text-cyan-200 border-cyan-600/40 hover:bg-cyan-700/50 disabled:opacity-60 disabled:cursor-wait"
+                >
+                  Đồng bộ Team đang lọc
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleResyncTeamGroupDatammo(teamSlotAccounts, "Team Slot")
+                  }
+                  disabled={datammoBatchProgress.active}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-teal-700/30 text-teal-200 border-teal-600/40 hover:bg-teal-700/50 disabled:opacity-60 disabled:cursor-wait"
+                >
+                  Đồng bộ Team Slot
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleResyncTeamGroupDatammo(
+                      teamBusinessAccounts,
+                      "Team Business",
+                    )
+                  }
+                  disabled={datammoBatchProgress.active}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-indigo-700/30 text-indigo-200 border-indigo-600/40 hover:bg-indigo-700/50 disabled:opacity-60 disabled:cursor-wait"
+                >
+                  Đồng bộ Team Business
+                </button>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
