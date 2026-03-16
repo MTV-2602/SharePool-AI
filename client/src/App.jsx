@@ -205,6 +205,70 @@ const normalizeDatammoOrders = (orders = []) =>
     (a, b) =>
       new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime(),
   );
+const buildMarketplaceOrderSummaries = (orders = [], warrantyCases = []) =>
+  normalizeDatammoOrders(orders).map((order) => {
+    const provider = normalizeMarketplaceProvider(order?.provider);
+    const providerLabel = getMarketplaceProviderLabel(provider);
+    const orderId = String(order?.orderId || "").trim();
+    const accountItems = Array.isArray(order?.accounts) ? order.accounts : [];
+    const accountSummaries = accountItems.map((account) => {
+      const soldAccountId = String(account?.accountId || "").trim();
+      const soldUsername = String(
+        account?.username || soldAccountId || "Không rõ acc",
+      ).trim();
+      const warrantyCase = (Array.isArray(warrantyCases) ? warrantyCases : []).find(
+        (item) =>
+          normalizeMarketplaceProvider(item?.provider) === provider &&
+          String(item?.orderId || "").trim() === orderId &&
+          String(item?.rootAccountId || "").trim() === soldAccountId,
+      );
+      const warrantyRounds = Array.isArray(warrantyCase?.rounds)
+        ? warrantyCase.rounds
+        : [];
+      const currentUsername = String(
+        warrantyCase?.currentUsername || soldUsername || "Không rõ acc",
+      ).trim();
+      return {
+        soldAccountId,
+        soldUsername,
+        currentAccountId: String(
+          warrantyCase?.currentAccountId || soldAccountId || "",
+        ).trim(),
+        currentUsername,
+        warrantyRounds: warrantyRounds.length,
+        warrantyCase,
+      };
+    });
+    const totalWarrantyRounds = accountSummaries.reduce(
+      (sum, item) => sum + Number(item?.warrantyRounds || 0),
+      0,
+    );
+    const searchIndex = toNonAccentVietnamese(
+      [
+        providerLabel,
+        provider,
+        orderId,
+        ...(accountSummaries || []).flatMap((item) => [
+          item?.soldUsername,
+          item?.currentUsername,
+          item?.soldAccountId,
+          item?.currentAccountId,
+        ]),
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    return {
+      ...order,
+      provider,
+      providerLabel,
+      orderId,
+      accountSummaries,
+      totalWarrantyRounds,
+      hasWarranty: accountSummaries.some((item) => item.warrantyRounds > 0),
+      searchIndex,
+    };
+  });
 const loadSeenDatammoOrderKeys = () => {
   if (typeof window === "undefined") return new Set();
   try {
@@ -462,6 +526,9 @@ function App() {
   const [package2ShelfTab, setPackage2ShelfTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [chatgptCustomerFilter, setChatgptCustomerFilter] = useState("all");
+  const [marketplaceOrderQuery, setMarketplaceOrderQuery] = useState("");
+  const [marketplaceOrderProviderFilter, setMarketplaceOrderProviderFilter] =
+    useState("all");
   const [teamCustomerFilter, setTeamCustomerFilter] = useState("all");
   const [simpleCustomerFilter, setSimpleCustomerFilter] = useState("all");
 
@@ -2625,6 +2692,23 @@ function App() {
   const filteredChatgptIds = filteredChatgptAccounts.map((acc) =>
     String(acc.id || ""),
   );
+  const marketplaceOrderSummaries = buildMarketplaceOrderSummaries(
+    datammoOrderHistory,
+    datammoWarrantyCases,
+  );
+  const filteredMarketplaceOrders = marketplaceOrderSummaries.filter((order) => {
+    if (
+      marketplaceOrderProviderFilter !== "all" &&
+      normalizeMarketplaceProvider(order?.provider) !==
+        normalizeMarketplaceProvider(marketplaceOrderProviderFilter)
+    ) {
+      return false;
+    }
+    if (!marketplaceOrderQuery.trim()) return true;
+    return String(order?.searchIndex || "").includes(
+      toNonAccentVietnamese(marketplaceOrderQuery),
+    );
+  });
   const selectedChatgptIdSet = new Set(
     selectedChatgptIds.map((id) => String(id || "")),
   );
@@ -3294,6 +3378,202 @@ function App() {
                 </div>
               );
             })()}
+
+            {gptSubTab === "package2" && (
+              <div className="mb-5 rounded-2xl border border-slate-700 bg-slate-900/60 shadow-lg overflow-hidden">
+                <div className="border-b border-slate-700/80 px-4 py-3 md:px-5 md:py-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.16em] font-black text-cyan-300">
+                        Don san
+                      </div>
+                      <div className="text-lg font-black text-white">
+                        Datammo + Shopmini
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">
+                        Ke re la kho chung cua Datammo va Shopmini. Ban ben nao cung tu tru kho ben con lai.
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      Dang hien{" "}
+                      <span className="font-bold text-white">
+                        {filteredMarketplaceOrders.length}
+                      </span>{" "}
+                      / {marketplaceOrderSummaries.length} don gan nhat
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex-1 max-w-xl">
+                      <input
+                        type="text"
+                        placeholder="Tim theo order, acc goc, acc bao hanh..."
+                        value={marketplaceOrderQuery}
+                        onChange={(e) => setMarketplaceOrderQuery(e.target.value)}
+                        className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { value: "all", label: "Tat ca" },
+                        { value: "datammo", label: "Datammo" },
+                        { value: "shopmini", label: "Shopmini" },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() =>
+                            setMarketplaceOrderProviderFilter(option.value)
+                          }
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                            marketplaceOrderProviderFilter === option.value
+                              ? "bg-cyan-600 text-white border-cyan-500"
+                              : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white hover:bg-slate-700"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[860px] text-sm">
+                    <thead className="bg-slate-950/60 text-slate-300 uppercase text-[11px] tracking-[0.12em]">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Nguon</th>
+                        <th className="px-4 py-3 text-left">Order</th>
+                        <th className="px-4 py-3 text-left">Acc da ban</th>
+                        <th className="px-4 py-3 text-left">Acc hien tai</th>
+                        <th className="px-4 py-3 text-left">Bao hanh</th>
+                        <th className="px-4 py-3 text-left">Thoi gian</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredMarketplaceOrders.length > 0 ? (
+                        filteredMarketplaceOrders.map((order) => (
+                          <tr
+                            key={buildDatammoOrderKey(order)}
+                            className="border-t border-slate-800/80 align-top"
+                          >
+                            <td className="px-4 py-3">
+                              <span
+                                className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.12em] border ${
+                                  order.provider === "shopmini"
+                                    ? "bg-orange-500/10 text-orange-200 border-orange-500/30"
+                                    : "bg-emerald-500/10 text-emerald-200 border-emerald-500/30"
+                                }`}
+                              >
+                                {order.providerLabel}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="font-mono text-white font-semibold break-all">
+                                {order.orderId || "Khong ro"}
+                              </div>
+                              <div className="mt-1 text-xs text-slate-500">
+                                So luong: {order.quantity || order.accountSummaries.length || 0}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="space-y-2">
+                                {order.accountSummaries.map((item, index) => (
+                                  <div
+                                    key={`${buildDatammoOrderKey(order)}-sold-${index}`}
+                                    className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2"
+                                  >
+                                    <div className="font-semibold text-white break-all">
+                                      {item.soldUsername || item.soldAccountId || "Khong ro acc"}
+                                    </div>
+                                    {item.soldAccountId && (
+                                      <div className="mt-1 text-[11px] text-slate-500 break-all">
+                                        ID: {item.soldAccountId}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="space-y-2">
+                                {order.accountSummaries.map((item, index) => {
+                                  const isReplaced =
+                                    String(item.currentAccountId || "") !==
+                                    String(item.soldAccountId || "");
+                                  return (
+                                    <div
+                                      key={`${buildDatammoOrderKey(order)}-current-${index}`}
+                                      className={`rounded-lg border px-3 py-2 ${
+                                        isReplaced
+                                          ? "border-cyan-700/40 bg-cyan-950/20"
+                                          : "border-slate-800 bg-slate-900/50"
+                                      }`}
+                                    >
+                                      <div className="font-semibold text-white break-all">
+                                        {item.currentUsername ||
+                                          item.currentAccountId ||
+                                          "Khong ro acc"}
+                                      </div>
+                                      <div
+                                        className={`mt-1 text-[11px] font-semibold ${
+                                          isReplaced
+                                            ? "text-cyan-300"
+                                            : "text-slate-500"
+                                        }`}
+                                      >
+                                        {isReplaced
+                                          ? "Dang thay bao hanh"
+                                          : "Dang dung acc goc"}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="space-y-2">
+                                {order.accountSummaries.map((item, index) => (
+                                  <div
+                                    key={`${buildDatammoOrderKey(order)}-warranty-${index}`}
+                                    className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2"
+                                  >
+                                    <div className="font-semibold text-white">
+                                      {item.warrantyRounds > 0
+                                        ? `${item.warrantyRounds} lan`
+                                        : "Chua bao hanh"}
+                                    </div>
+                                    {item.warrantyRounds > 0 && item.warrantyCase && (
+                                      <div className="mt-1 text-[11px] text-slate-400 break-all">
+                                        {item.soldUsername} {"->"}{" "}
+                                        {item.currentUsername || item.currentAccountId}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
+                              {order.createdAt
+                                ? new Date(order.createdAt).toLocaleString("vi-VN")
+                                : "--"}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr className="border-t border-slate-800/80">
+                          <td
+                            colSpan={6}
+                            className="px-4 py-8 text-center text-sm text-slate-500"
+                          >
+                            Khong co don nao khop bo loc hien tai.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             <div
               style={{

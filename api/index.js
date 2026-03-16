@@ -1612,7 +1612,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
       Canva.find({}).lean(),
       Capcut.find({}).lean(),
       TeamAccount.find({}).lean(),
-      DatammoOrder.find({}).sort({ createdAt: -1 }).limit(10).lean(),
+      DatammoOrder.find({}).sort({ createdAt: -1 }).limit(100).lean(),
       DatammoWarrantyCase.find({}).sort({ updatedAt: -1 }).limit(100).lean(),
     ]);
     res.json({
