@@ -908,19 +908,27 @@ const buildPackage1DatammoLines = (acc, options = {}) => {
   const includeLegacyContent = options.includeLegacyContent === true;
   const startSlot = includeFilledSlots ? 1 : userCount + 1;
   const lines = [];
+  const username = String(acc.username || "").trim();
+  const password = String(acc.password || "").trim();
 
   for (let i = startSlot; i <= 3; i += 1) {
     lines.push({
       variantId: DATAMMO_VARIANT_PKG1,
-      content: `Slot ${i}|${acc.username}|${acc.password}`,
+      content: `Slot ${i}|${username}|${password}`,
     });
   }
 
   if (includeLegacyContent) {
     lines.push({
       variantId: DATAMMO_VARIANT_PKG1,
-      content: `${acc.username}|${acc.password}`,
+      content: `${username}|${password}`,
     });
+    for (let i = 1; i <= 3; i += 1) {
+      lines.push({
+        variantId: DATAMMO_VARIANT_PKG1,
+        content: `${username}|${password}|Slot ${i}`,
+      });
+    }
   }
 
   return lines;
@@ -2010,7 +2018,10 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
       });
     }
     if (existing) {
-      await syncDatammoUpdateLocked(existing, null);
+      await syncDatammoUpdateLocked(existing, null, {
+        forcePackage1Resync: existing?.type === "package1",
+        strictDatammoSync: true,
+      });
     }
     res.json({ message: "Deleted" });
   } catch (error) {
