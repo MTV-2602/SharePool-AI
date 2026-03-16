@@ -524,6 +524,8 @@ function App() {
   const [activeTab, setActiveTab] = useState("chatgpt");
   const [gptSubTab, setGptSubTab] = useState("all");
   const [package2ShelfTab, setPackage2ShelfTab] = useState("all");
+  const [soldPackage2ProviderFilter, setSoldPackage2ProviderFilter] =
+    useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [highlightedChatgptAccountId, setHighlightedChatgptAccountId] =
     useState("");
@@ -2027,7 +2029,10 @@ function App() {
     if (!normalizedId) return;
     setActiveTab("chatgpt");
     setGptSubTab("package2");
-    setPackage2ShelfTab("all");
+    setPackage2ShelfTab(
+      activeMarketplaceAccountIds?.has(normalizedId) ? "sold" : "all",
+    );
+    setSoldPackage2ProviderFilter("all");
     setChatgptCustomerFilter("all");
     if (label) {
       setSearchQuery(String(label || "").trim());
@@ -2695,6 +2700,25 @@ function App() {
     );
   }
 
+  const marketplaceOrderSummaries = buildMarketplaceOrderSummaries(
+    datammoOrderHistory,
+    datammoWarrantyCases,
+  );
+  const activeMarketplaceAccountMap = new Map();
+  marketplaceOrderSummaries.forEach((order) => {
+    order.accountSummaries.forEach((item) => {
+      const currentAccountId = String(item?.currentAccountId || "").trim();
+      if (!currentAccountId) return;
+      activeMarketplaceAccountMap.set(currentAccountId, {
+        provider: normalizeMarketplaceProvider(order?.provider),
+        providerLabel: getMarketplaceProviderLabel(order?.provider),
+        orderId: String(order?.orderId || "").trim(),
+        summary: item,
+        order,
+      });
+    });
+  });
+  const activeMarketplaceAccountIds = new Set(activeMarketplaceAccountMap.keys());
   const filteredChatgptAccounts = accounts
     .filter((acc) => {
       if (gptSubTab === "package1") return acc.type === "package1";
@@ -2704,6 +2728,19 @@ function App() {
     })
     .filter((acc) => {
       if (gptSubTab !== "package2") return true;
+      const isSoldMarketplaceAccount = activeMarketplaceAccountIds.has(
+        String(acc?.id || ""),
+      );
+      if (package2ShelfTab === "sold") {
+        if (!isSoldMarketplaceAccount) return false;
+        if (soldPackage2ProviderFilter === "all") return true;
+        return (
+          normalizeMarketplaceProvider(
+            activeMarketplaceAccountMap.get(String(acc?.id || ""))?.provider,
+          ) === normalizeMarketplaceProvider(soldPackage2ProviderFilter)
+        );
+      }
+      if (isSoldMarketplaceAccount) return false;
       if (package2ShelfTab === "all") return true;
       if (acc.type !== "package2") return false;
       return normalizePackage2Shelf(acc.package2Shelf) === package2ShelfTab;
@@ -2733,10 +2770,6 @@ function App() {
     });
   const filteredChatgptIds = filteredChatgptAccounts.map((acc) =>
     String(acc.id || ""),
-  );
-  const marketplaceOrderSummaries = buildMarketplaceOrderSummaries(
-    datammoOrderHistory,
-    datammoWarrantyCases,
   );
   const filteredMarketplaceOrders = marketplaceOrderSummaries.filter((order) => {
     if (
@@ -3386,37 +3419,101 @@ function App() {
 
             {gptSubTab === "package2" && (() => {
               const package2Accs = accounts.filter((a) => a.type === "package2");
-              const mainCount = package2Accs.filter(
+              const soldPackage2Accs = package2Accs.filter((acc) =>
+                activeMarketplaceAccountIds.has(String(acc?.id || "")),
+              );
+              const regularPackage2Accs = package2Accs.filter(
+                (acc) => !activeMarketplaceAccountIds.has(String(acc?.id || "")),
+              );
+              const soldDatammoCount = soldPackage2Accs.filter(
+                (acc) =>
+                  normalizeMarketplaceProvider(
+                    activeMarketplaceAccountMap.get(String(acc?.id || ""))?.provider,
+                  ) === "datammo",
+              ).length;
+              const soldShopminiCount = soldPackage2Accs.filter(
+                (acc) =>
+                  normalizeMarketplaceProvider(
+                    activeMarketplaceAccountMap.get(String(acc?.id || ""))?.provider,
+                  ) === "shopmini",
+              ).length;
+              const mainCount = regularPackage2Accs.filter(
                 (a) => normalizePackage2Shelf(a.package2Shelf) === "main",
               ).length;
-              const cheapCount = package2Accs.filter(
+              const cheapCount = regularPackage2Accs.filter(
                 (a) => normalizePackage2Shelf(a.package2Shelf) === "cheap",
               ).length;
-              const noneCount = package2Accs.filter(
+              const noneCount = regularPackage2Accs.filter(
                 (a) => normalizePackage2Shelf(a.package2Shelf) === "none",
               ).length;
               const shelfTabs = [
-                { key: "all", label: "Kệ: Tất cả", count: package2Accs.length, color: "bg-slate-600" },
+                { key: "all", label: "Kệ: Tất cả", count: regularPackage2Accs.length, color: "bg-slate-600" },
                 { key: "main", label: "Kệ tổng", count: mainCount, color: "bg-teal-600" },
                 { key: "cheap", label: "Kệ rẻ", count: cheapCount, color: "bg-emerald-600" },
                 { key: "none", label: "Không kệ", count: noneCount, color: "bg-slate-700" },
+                { key: "sold", label: "Đã bán", count: soldPackage2Accs.length, color: "bg-amber-600" },
               ];
               return (
-                <div className="flex gap-2 flex-wrap mb-4">
-                  {shelfTabs.map((t) => (
-                    <button
-                      key={t.key}
-                      onClick={() => setPackage2ShelfTab(t.key)}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-full font-bold text-xs transition-all border ${package2ShelfTab === t.key
-                          ? `${t.color} text-white border-transparent`
-                          : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
-                        }`}
-                    >
-                      {t.label}
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${package2ShelfTab === t.key ? "bg-white/20" : "bg-slate-700 text-slate-300"
-                        }`}>{t.count}</span>
-                    </button>
-                  ))}
+                <div className="mb-4 space-y-3">
+                  <div className="flex gap-2 flex-wrap">
+                    {shelfTabs.map((t) => (
+                      <button
+                        key={t.key}
+                        onClick={() => setPackage2ShelfTab(t.key)}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full font-bold text-xs transition-all border ${package2ShelfTab === t.key
+                            ? `${t.color} text-white border-transparent`
+                            : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
+                          }`}
+                      >
+                        {t.label}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${package2ShelfTab === t.key ? "bg-white/20" : "bg-slate-700 text-slate-300"
+                          }`}>{t.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {package2ShelfTab === "sold" && (
+                    <div className="flex gap-2 flex-wrap">
+                      {[
+                        {
+                          key: "all",
+                          label: "Tất cả nguồn",
+                          count: soldPackage2Accs.length,
+                        },
+                        {
+                          key: "datammo",
+                          label: "Datammo",
+                          count: soldDatammoCount,
+                        },
+                        {
+                          key: "shopmini",
+                          label: "Shopmini",
+                          count: soldShopminiCount,
+                        },
+                      ].map((option) => (
+                        <button
+                          key={option.key}
+                          type="button"
+                          onClick={() => setSoldPackage2ProviderFilter(option.key)}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-full font-bold text-xs transition-all border ${
+                            soldPackage2ProviderFilter === option.key
+                              ? "bg-amber-600 text-white border-transparent"
+                              : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white hover:bg-slate-700"
+                          }`}
+                        >
+                          {option.label}
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                              soldPackage2ProviderFilter === option.key
+                                ? "bg-white/20"
+                                : "bg-slate-700 text-slate-300"
+                            }`}
+                          >
+                            {option.count}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })()}
