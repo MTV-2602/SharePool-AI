@@ -239,14 +239,10 @@ const getRequestProgressFromState = (request = {}) => {
   if (Number.isFinite(explicitPercent) && explicitPercent >= 0) {
     return Math.max(0, Math.min(100, explicitPercent));
   }
-  const startedAt = Number(request.startedAt || Date.now());
-  const elapsedMs = Math.max(0, Date.now() - startedAt);
   if (request.completedAt) {
-    const completionElapsed = Date.now() - Number(request.completedAt || Date.now());
-    return completionElapsed > 240 ? 100 : 95 + Math.min(5, completionElapsed / 48);
+    return 100;
   }
-  const stagedProgress = 12 + elapsedMs / 45;
-  return Math.min(90, stagedProgress);
+  return null;
 };
 const buildApiOverlayState = (requestsMap) => {
   const requests = Array.from(requestsMap.values());
@@ -256,16 +252,23 @@ const buildApiOverlayState = (requestsMap) => {
     return {
       visible: false,
       progress: 0,
+      indeterminate: false,
       title: "",
       detail: "",
       requestCount: 0,
     };
   }
+  const progressValues = currentRequests
+    .map((request) => getRequestProgressFromState(request))
+    .filter((value) => Number.isFinite(value));
+  const hasIndeterminateActiveRequest = activeRequests.some(
+    (request) => !Number.isFinite(getRequestProgressFromState(request)),
+  );
   const progress =
-    currentRequests.reduce(
-      (sum, request) => sum + getRequestProgressFromState(request),
-      0,
-    ) / currentRequests.length;
+    progressValues.length > 0
+      ? progressValues.reduce((sum, value) => sum + value, 0) /
+        progressValues.length
+      : null;
   const primaryRequest = currentRequests[currentRequests.length - 1];
   const detail =
     currentRequests.length > 1
@@ -277,7 +280,11 @@ const buildApiOverlayState = (requestsMap) => {
           : "Vui lòng chờ hoàn tất rồi thao tác tiếp";
   return {
     visible: true,
-    progress: Math.max(1, Math.min(100, Math.round(progress))),
+    progress:
+      progress === null
+        ? null
+        : Math.max(1, Math.min(100, Math.round(progress))),
+    indeterminate: hasIndeterminateActiveRequest || progress === null,
     title: createApiRequestLabel(primaryRequest),
     detail,
     requestCount: currentRequests.length,
@@ -337,6 +344,7 @@ function App() {
   const [apiOverlay, setApiOverlay] = useState({
     visible: false,
     progress: 0,
+    indeterminate: false,
     title: "",
     detail: "",
     requestCount: 0,
@@ -380,7 +388,6 @@ function App() {
   const seenDatammoOrderKeysRef = useRef(null);
   const hasInitializedDatammoOrdersRef = useRef(false);
   const apiRequestsRef = useRef(new Map());
-  const apiOverlayTimerRef = useRef(null);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -473,7 +480,6 @@ function App() {
           label: detail.label,
           phase: "start",
           startedAt: Date.now(),
-          percent: 8,
         });
       } else if (detail.type === "progress") {
         const existing = apiRequestsRef.current.get(requestId);
@@ -483,8 +489,8 @@ function App() {
         const rawPercent =
           total > 0 ? Math.round((loaded / total) * 100) : Number.NaN;
         const progressPercent = Number.isFinite(rawPercent)
-          ? Math.max(existing.percent || 8, Math.min(92, rawPercent))
-          : existing.percent || 8;
+          ? Math.max(existing.percent || 0, Math.min(99, rawPercent))
+          : existing.percent;
         apiRequestsRef.current.set(requestId, {
           ...existing,
           phase: detail.phase || existing.phase,
@@ -509,16 +515,9 @@ function App() {
     };
 
     const unsubscribe = subscribeToApiActivity(updateOverlayFromActivity);
-    apiOverlayTimerRef.current = setInterval(() => {
-      refreshApiOverlay();
-    }, 120);
 
     return () => {
       unsubscribe();
-      if (apiOverlayTimerRef.current) {
-        clearInterval(apiOverlayTimerRef.current);
-        apiOverlayTimerRef.current = null;
-      }
       apiRequestsRef.current.clear();
     };
   }, []);
@@ -536,7 +535,7 @@ function App() {
       if (now < expiryTime) {
         // Token still valid
         setIsAuthenticated(true);
-        setTimeout(() => fetchData(), 100);
+        setTimeout(() => fetchData(true), 100);
       } else {
         // Token expired, clear storage
         localStorage.removeItem("admin_token");
@@ -631,7 +630,7 @@ function App() {
         localStorage.setItem("admin_token", response.data.token);
         localStorage.setItem("token_expires_at", response.data.expiresAt);
         setIsAuthenticated(true);
-        fetchData();
+        fetchData(true);
         showAlert(
           "Xin chào",
           response.data.message || "Đăng nhập thành công! 👋",
@@ -871,7 +870,7 @@ function App() {
     });
   };
 
-  const fetchData = async (showLoader = true) => {
+  const fetchData = async (showLoader = false) => {
     if (isFetchingDataRef.current && fetchDataPromiseRef.current) {
       return fetchDataPromiseRef.current;
     }
@@ -1930,11 +1929,15 @@ function App() {
     return (
       <div className="fixed top-4 right-4 z-[10000] w-[min(92vw,420px)] pointer-events-none">
         <div className="rounded-2xl border border-cyan-700/60 bg-slate-900/95 shadow-2xl overflow-hidden">
-          <div className="h-1.5 bg-slate-800">
-            <div
-              className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 transition-all duration-200"
-              style={{ width: `${apiOverlay.progress}%` }}
-            />
+          <div className="h-1.5 bg-slate-800 overflow-hidden">
+            {apiOverlay.indeterminate ? (
+              <div className="h-full w-full bg-gradient-to-r from-cyan-400/70 via-blue-500 to-emerald-400/70 animate-pulse" />
+            ) : (
+              <div
+                className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-emerald-400 transition-all duration-200"
+                style={{ width: `${apiOverlay.progress || 0}%` }}
+              />
+            )}
           </div>
           <div className="p-5 space-y-4">
             <div className="flex items-center gap-3">
@@ -1945,12 +1948,20 @@ function App() {
                 <div className="text-sm font-bold text-white">{apiOverlay.title || "Đang xử lý API"}</div>
                 <div className="text-xs text-slate-400">{apiOverlay.detail}</div>
               </div>
-              <div className="text-2xl font-black text-cyan-300 tabular-nums">
-                {apiOverlay.progress}%
-              </div>
+              {apiOverlay.indeterminate ? (
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">
+                  Live
+                </div>
+              ) : (
+                <div className="text-2xl font-black text-cyan-300 tabular-nums">
+                  {apiOverlay.progress}%
+                </div>
+              )}
             </div>
             <div className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs text-slate-300">
-              App vẫn dùng được, nhưng nên chờ request này xong để tránh lệch dữ liệu.
+              {apiOverlay.indeterminate
+                ? "Request này không có progress byte-thật từ browser, nên app chỉ hiện trạng thái đang xử lý."
+                : "App vẫn dùng được, nhưng nên chờ request này xong để tránh lệch dữ liệu."}
             </div>
           </div>
         </div>
