@@ -280,6 +280,8 @@ app.get("/api/test", (req, res) => {
 const DATAMMO_URL = "https://datammo.com/api/v1/products/748e605c-d400-4c44-a958-0525494c700b/inventory";
 const DATAMMO_CHEAP_URL = "https://datammo.com/api/v1/products/746e1bbd-b625-41c5-8e62-2ef160bc0cf8/inventory";
 const DATAMMO_TOKEN = "sk_1773222055913_er0acsx8dyj";
+const SHOPMINI_PRIVATE_API_TOKEN =
+  process.env.SHOPMINI_PRIVATE_API_TOKEN || "537e6b485382ed5f7c71f3dfd0a6be23";
 const DATAMMO_VARIANT_PKG1 = "3dbd0d98-5ed5-4044-9557-8d8a902da45f";
 const DATAMMO_VARIANT_PKG2 = "98ed02c7-d28b-4287-945e-bdfb24a09397";
 const DATAMMO_VARIANT_PKG2_CHEAP = "b5449604-4fce-4edf-89d3-d4400d0f34a6";
@@ -807,6 +809,79 @@ const verifyDatammoPartnerToken = (req, res, next) => {
   }
   next();
 };
+const verifyShopminiPrivateToken = (req, res, next) => {
+  const token = getDatammoPartnerTokenFromReq(req);
+  if (!token || token !== SHOPMINI_PRIVATE_API_TOKEN) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+  next();
+};
+const resolveShopminiShelfFromReq = (req) =>
+  normalizeDatammoRouteShelf(
+    req.params?.shelf ||
+      req.query?.shelf ||
+      req.body?.shelf ||
+      req.query?.group ||
+      req.query?.variant,
+  ) || PACKAGE2_SHELF_CHEAP;
+const resolveShopminiActionFromReq = (req) => {
+  const action = String(
+    req.query?.action ||
+      req.query?.type ||
+      req.query?.method ||
+      req.query?.cmd ||
+      req.body?.action ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  if (
+    ["buy", "order", "purchase", "payment", "thanhtoan", "mua"].includes(action)
+  ) {
+    return "buy";
+  }
+  if (
+    req.query?.quantity != null ||
+    req.query?.soluong != null ||
+    req.query?.so_luong != null ||
+    req.query?.amount != null ||
+    req.query?.order_id != null ||
+    req.query?.madon != null ||
+    req.body?.quantity != null ||
+    req.body?.soluong != null ||
+    req.body?.so_luong != null ||
+    req.body?.amount != null ||
+    req.body?.order_id != null ||
+    req.body?.madon != null
+  ) {
+    return "buy";
+  }
+  return "stock";
+};
+const getShopminiBuyQuantity = (req) =>
+  getSafeBuyQuantity(
+    req.query?.quantity ||
+      req.query?.soluong ||
+      req.query?.so_luong ||
+      req.query?.amount ||
+      req.body?.quantity ||
+      req.body?.soluong ||
+      req.body?.so_luong ||
+      req.body?.amount,
+  );
+const getShopminiOrderId = (req) =>
+  String(
+    req.query?.order_id ||
+      req.query?.orderId ||
+      req.query?.madon ||
+      req.query?.order_code ||
+      req.query?.id ||
+      req.body?.order_id ||
+      req.body?.orderId ||
+      req.body?.madon ||
+      req.body?.order_code ||
+      `shopmini_${Date.now()}`,
+  ).trim();
 const buildPackage2SaleFilter = (shelf) => {
   const minExpiredAt = new Date(
     Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
@@ -835,17 +910,25 @@ const resolveDatammoShelfFromReq = (req) => {
   if (variantId === DATAMMO_VARIANT_PKG2_CHEAP) return PACKAGE2_SHELF_CHEAP;
   return normalizeDatammoRouteShelf(req.params?.shelf || req.query?.shelf);
 };
-const claimPackage2AccountsForOrder = async ({ shelf, quantity, orderId }) => {
+const claimPackage2AccountsForOrder = async ({
+  shelf,
+  quantity,
+  orderId,
+  managedUserName,
+}) => {
   const claimed = [];
   for (let i = 0; i < quantity; i += 1) {
     const nowIso = new Date().toISOString();
+    const assignedUserName = String(
+      managedUserName || `Datammo#${orderId || Date.now()}`,
+    ).trim();
     const oldAcc = await Account.findOneAndUpdate(
       buildPackage2SaleFilter(shelf),
       {
         $set: {
           users: [
             {
-              name: `Datammo#${orderId || Date.now()}`,
+              name: assignedUserName,
               joinedAt: nowIso,
               expiredAt: "",
             },
@@ -1607,6 +1690,91 @@ app.get(
         await rollbackClaimedPackage2Accounts(claimed);
       }
       return res.status(500).json({ success: false, message: error.message });
+    }
+  },
+);
+
+app.all(
+  [
+    "/api/shopmini/input.php",
+    "/api/shopmini/input.php/:shelf",
+    "/api/shopmini/:shelf/input.php",
+  ],
+  verifyShopminiPrivateToken,
+  async (req, res) => {
+    const shelf = resolveShopminiShelfFromReq(req);
+    const action = resolveShopminiActionFromReq(req);
+
+    if (!shelf) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing or invalid shelf. Use main or cheap.",
+      });
+    }
+
+    if (action !== "buy") {
+      try {
+        const stock = await Account.countDocuments(buildPackage2SaleFilter(shelf));
+        const mainPrice = Number(process.env.DATAMMO_PACKAGE2_MAIN_PRICE || 0);
+        const cheapPrice = Number(process.env.DATAMMO_PACKAGE2_CHEAP_PRICE || 0);
+        const selectedPrice =
+          shelf === PACKAGE2_SHELF_MAIN ? mainPrice : cheapPrice;
+        const payload = { stock, success: true };
+        if (Number.isFinite(selectedPrice) && selectedPrice > 0) {
+          payload.price = selectedPrice;
+        }
+        return res.json(payload);
+      } catch (error) {
+        return res
+          .status(500)
+          .json({ success: false, message: error.message || "Stock error" });
+      }
+    }
+
+    const quantity = getShopminiBuyQuantity(req);
+    const orderId = getShopminiOrderId(req);
+    let claimed = [];
+
+    try {
+      const available = await Account.countDocuments(buildPackage2SaleFilter(shelf));
+      if (available < quantity) {
+        return res.status(409).json({
+          success: false,
+          message: `Insufficient stock (${available}/${quantity})`,
+          available,
+        });
+      }
+
+      claimed = await claimPackage2AccountsForOrder({
+        shelf,
+        quantity,
+        orderId,
+        managedUserName: `Shopmini#${orderId || Date.now()}`,
+      });
+
+      if (claimed.length < quantity) {
+        await rollbackClaimedPackage2Accounts(claimed);
+        return res.status(409).json({
+          success: false,
+          message: "Stock changed during processing. Please retry.",
+          available: claimed.length,
+        });
+      }
+
+      bumpDataVersion();
+      notifyClients();
+
+      return res.json({
+        success: true,
+        data: claimed.map((item) => item.delivery),
+      });
+    } catch (error) {
+      if (claimed.length > 0) {
+        await rollbackClaimedPackage2Accounts(claimed);
+      }
+      return res
+        .status(500)
+        .json({ success: false, message: error.message || "Buy error" });
     }
   },
 );
