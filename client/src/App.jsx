@@ -2941,7 +2941,7 @@ function App() {
               // Case D: Gói 2 còn <=25 ngày và không có khách → cảnh báo gỡ khỏi Datammo
               accounts.forEach((acc) => {
                 if (acc.type !== "package2") return;
-                if (normalizePackage2Shelf(acc.package2Shelf) === "none") return;
+                if (normalizePackage2Shelf(acc.package2Shelf) !== "cheap") return;
                 if (acc.users && acc.users.length > 0) return; // đang có khách, bỏ qua
                 const daysLeft = acc.expiredAt
                   ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
@@ -2953,7 +2953,7 @@ function App() {
                     u: { name: `Gói 2 còn ${daysLeft} ngày` },
                     idx: -1,
                     days: daysLeft,
-                    msg: `⚠️ Gói 2 sắp hết hạn (còn ${daysLeft} ngày). Hãy gỡ khỏi shop Datammo!`,
+                    msg: `Tai khoan trong kho market con ${daysLeft} ngay. Hay dua ve kho duoi 25 ngay hoac kho tong!`,
                   });
                 }
               });
@@ -3113,9 +3113,7 @@ function App() {
                             ) : type === "pkg2_expiring_soon" ? (
                               // Gói 2 sắp hết hạn: nhắc nhở admin gỡ khỏi Datammo
                               <div className="flex items-center gap-2">
-                                <span className="text-yellow-400 text-xs font-bold px-3 py-1.5 bg-yellow-900/30 border border-yellow-700/40 rounded">
-                                  🛒 Đã tự gỡ khỏi Datammo (hệ thống tự động)
-                                </span>
+                                <span className="text-yellow-400 text-xs font-bold px-3 py-1.5 bg-yellow-900/30 border border-yellow-700/40 rounded">Kho market tu dong - can chuyen kho</span>
                               </div>
                             ) : null}
                           </div>
