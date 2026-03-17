@@ -18,6 +18,7 @@ let isConnected = false;
 let didCleanupLegacyTeamEmailPassword = false;
 let didCleanupLegacyChatgptMarketKeys = false;
 let didMigrateLegacyCollections = false;
+let didNormalizeLegacyDatammoCustomers = false;
 const toPositiveInt = (value, fallback) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
@@ -34,10 +35,71 @@ const MONGO_CONNECT_OPTIONS = {
   socketTimeoutMS: toPositiveInt(process.env.MONGO_SOCKET_TIMEOUT_MS, 20000),
 };
 
+const getLegacyMigrationUserName = (user) => {
+  if (typeof user === "string") return user;
+  if (user && typeof user === "object") return user.name || "";
+  return "";
+};
+
+const isLegacyDatammoManagedUser = (user) => {
+  const normalizedName = String(getLegacyMigrationUserName(user) || "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalizedName.startsWith("datammo#") || normalizedName.startsWith("[datammo]")
+  );
+};
+
+const buildLegacyDatammoCustomerNoteLine = (user) => {
+  const name = String(getLegacyMigrationUserName(user) || "").trim();
+  const joinedAt =
+    user && typeof user === "object" ? String(user.joinedAt || "").trim() : "";
+  const expiredAt =
+    user && typeof user === "object" ? String(user.expiredAt || "").trim() : "";
+  const details = [`[Legacy Datammo customer] ${name || "Khong ro ten"}`];
+  if (joinedAt) details.push(`joined: ${joinedAt}`);
+  if (expiredAt) details.push(`expired: ${expiredAt}`);
+  return details.join(" | ");
+};
+
+const appendLegacyMigrationNote = (note, lines = []) => {
+  const current = String(note || "").trim();
+  const extras = (Array.isArray(lines) ? lines : [])
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+  if (extras.length === 0) return current;
+  return [current, ...extras].filter(Boolean).join("\n");
+};
+
+const transformLegacyChatgptAccountForMigration = (doc = {}) => {
+  const migrated = { ...doc };
+  const users = Array.isArray(doc.users) ? doc.users : [];
+  const regularUsers = [];
+  const datammoCustomerNotes = [];
+
+  users.forEach((user) => {
+    if (isLegacyDatammoManagedUser(user)) {
+      datammoCustomerNotes.push(buildLegacyDatammoCustomerNoteLine(user));
+      return;
+    }
+    regularUsers.push(user);
+  });
+
+  migrated.users = regularUsers;
+  migrated.note = appendLegacyMigrationNote(doc.note, datammoCustomerNotes);
+
+  if (datammoCustomerNotes.length > 0) {
+    migrated.package2Shelf = "none";
+  }
+
+  return migrated;
+};
+
 const migrateLegacyCollection = async ({
   legacyName,
   targetName,
   keyField = "_id",
+  transformDoc = null,
 }) => {
   if (!legacyName || !targetName || legacyName === targetName) return 0;
   const db = mongoose.connection?.db;
@@ -53,23 +115,25 @@ const migrateLegacyCollection = async ({
 
   const operations = legacyDocs
     .map((doc) => {
+      const nextDoc =
+        typeof transformDoc === "function" ? transformDoc(doc) : doc;
       if (keyField === "_id") {
         return {
           updateOne: {
-            filter: { _id: doc._id },
-            update: { $setOnInsert: doc },
+            filter: { _id: nextDoc._id },
+            update: { $setOnInsert: nextDoc },
             upsert: true,
           },
         };
       }
 
-      const keyValue = String(doc?.[keyField] || "").trim();
+      const keyValue = String(nextDoc?.[keyField] || "").trim();
       if (!keyValue) return null;
 
       return {
         updateOne: {
           filter: { [keyField]: keyValue },
-          update: { $setOnInsert: doc },
+          update: { $setOnInsert: nextDoc },
           upsert: true,
         },
       };
@@ -86,7 +150,12 @@ const migrateLegacyCollectionsIfNeeded = async () => {
   if (didMigrateLegacyCollections) return;
 
   const mappings = [
-    { legacyName: "accounts", targetName: "chatgpt_accounts", keyField: "id" },
+    {
+      legacyName: "accounts",
+      targetName: "chatgpt_accounts",
+      keyField: "id",
+      transformDoc: transformLegacyChatgptAccountForMigration,
+    },
     {
       legacyName: "teamaccounts",
       targetName: "chatgpt_team_accounts",
@@ -125,12 +194,58 @@ const migrateLegacyCollectionsIfNeeded = async () => {
   }
 };
 
+const normalizeLegacyDatammoCustomersIfNeeded = async () => {
+  if (didNormalizeLegacyDatammoCustomers) return;
+
+  const accountsWithDatammoUsers = await Account.find({
+    users: { $elemMatch: { name: /^(datammo#|\[datammo\])/i } },
+  }).lean();
+
+  let normalizedCount = 0;
+  for (const account of accountsWithDatammoUsers) {
+    const nextAccount = transformLegacyChatgptAccountForMigration(account);
+    const currentUsers = JSON.stringify(Array.isArray(account.users) ? account.users : []);
+    const nextUsers = JSON.stringify(Array.isArray(nextAccount.users) ? nextAccount.users : []);
+    const currentNote = String(account.note || "");
+    const nextNote = String(nextAccount.note || "");
+    const currentShelf = String(account.package2Shelf || "");
+    const nextShelf = String(nextAccount.package2Shelf || "");
+
+    if (
+      currentUsers === nextUsers &&
+      currentNote === nextNote &&
+      currentShelf === nextShelf
+    ) {
+      continue;
+    }
+
+    await Account.updateOne(
+      { id: account.id },
+      {
+        $set: {
+          users: nextAccount.users,
+          note: nextAccount.note,
+          package2Shelf: nextAccount.package2Shelf,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
+    normalizedCount += 1;
+  }
+
+  didNormalizeLegacyDatammoCustomers = true;
+  if (normalizedCount > 0) {
+    console.log(`Normalized legacy Datammo customers into notes: ${normalizedCount}`);
+  }
+};
+
 const connectDB = async () => {
   if (isConnected) return;
   try {
     await mongoose.connect(process.env.MONGO_URI, MONGO_CONNECT_OPTIONS);
     isConnected = true;
     await migrateLegacyCollectionsIfNeeded();
+    await normalizeLegacyDatammoCustomersIfNeeded();
     if (!didCleanupLegacyTeamEmailPassword) {
       await TeamAccount.updateMany(
         { emailPassword: { $exists: true } },
