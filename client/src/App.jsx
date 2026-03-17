@@ -680,6 +680,10 @@ function App() {
   const [marketplaceOrderQuery, setMarketplaceOrderQuery] = useState("");
   const [marketplaceOrderProviderFilter, setMarketplaceOrderProviderFilter] =
     useState("all");
+  const [teamMarketplaceOrderQuery, setTeamMarketplaceOrderQuery] =
+    useState("");
+  const [teamMarketplaceOrderProviderFilter, setTeamMarketplaceOrderProviderFilter] =
+    useState("all");
   const [teamCustomerFilter, setTeamCustomerFilter] = useState("all");
   const [teamExpiryFilter, setTeamExpiryFilter] = useState("all");
   const [teamExpiryMin, setTeamExpiryMin] = useState("");
@@ -2180,6 +2184,14 @@ function App() {
     const targetMode = normalizeTeamSaleMode(nextMode);
     const currentMode = normalizeTeamSaleMode(acc?.saleMode);
     if (!acc?.id || targetMode === currentMode) return;
+    if (!isTeamTotalWarehouse(acc)) {
+      showAlert(
+        "Khong the doi loai",
+        "Team ngoai kho tong khong duoc doi qua Slot/Business o day.",
+        "warning",
+      );
+      return;
+    }
 
     setLoadingStates((prev) => ({
       ...prev,
@@ -3119,7 +3131,13 @@ function App() {
   const filteredChatgptIds = filteredChatgptAccounts.map((acc) =>
     String(acc.id || ""),
   );
-  const filteredMarketplaceOrders = marketplaceOrderSummaries.filter((order) => {
+  const chatgptMarketplaceOrderSummaries = marketplaceOrderSummaries.filter(
+    (order) => normalizeMarketplaceScope(order?.scope) === "chatgpt",
+  );
+  const teamMarketplaceOrderSummaries = marketplaceOrderSummaries.filter(
+    (order) => normalizeMarketplaceScope(order?.scope) === "team",
+  );
+  const filteredChatgptMarketplaceOrders = chatgptMarketplaceOrderSummaries.filter((order) => {
     if (
       marketplaceOrderProviderFilter !== "all" &&
       normalizeMarketplaceProvider(order?.provider) !==
@@ -3130,6 +3148,19 @@ function App() {
     if (!marketplaceOrderQuery.trim()) return true;
     return String(order?.searchIndex || "").includes(
       toNonAccentVietnamese(marketplaceOrderQuery),
+    );
+  });
+  const filteredTeamMarketplaceOrders = teamMarketplaceOrderSummaries.filter((order) => {
+    if (
+      teamMarketplaceOrderProviderFilter !== "all" &&
+      normalizeMarketplaceProvider(order?.provider) !==
+        normalizeMarketplaceProvider(teamMarketplaceOrderProviderFilter)
+    ) {
+      return false;
+    }
+    if (!teamMarketplaceOrderQuery.trim()) return true;
+    return String(order?.searchIndex || "").includes(
+      toNonAccentVietnamese(teamMarketplaceOrderQuery),
     );
   });
   const selectedChatgptIdSet = new Set(
@@ -3994,9 +4025,9 @@ function App() {
                     <div className="text-xs text-slate-400">
                       Dang hien{" "}
                       <span className="font-bold text-white">
-                        {filteredMarketplaceOrders.length}
+                        {filteredChatgptMarketplaceOrders.length}
                       </span>{" "}
-                      / {marketplaceOrderSummaries.length} don gan nhat
+                      / {chatgptMarketplaceOrderSummaries.length} don gan nhat
                     </div>
                   </div>
                   <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -4047,8 +4078,8 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredMarketplaceOrders.length > 0 ? (
-                        filteredMarketplaceOrders.map((order) => (
+                      {filteredChatgptMarketplaceOrders.length > 0 ? (
+                        filteredChatgptMarketplaceOrders.map((order) => (
                           <tr
                             key={buildDatammoOrderKey(order)}
                             className="border-t border-slate-800/80 align-top"
@@ -6935,6 +6966,223 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   Day sang kho duoi 25
                 </button>
               </div>
+              {teamWarehouseTab === "market" && (
+                <div className="mb-1 rounded-2xl border border-slate-700 bg-slate-900/60 shadow-lg overflow-hidden">
+                  <div className="border-b border-slate-700/80 px-4 py-3 md:px-5 md:py-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.16em] font-black text-cyan-300">
+                          Don san Team
+                        </div>
+                        <div className="text-lg font-black text-white">
+                          Datammo + Shopmini
+                        </div>
+                        <div className="mt-1 text-xs text-slate-400">
+                          Team market chi ban Business qua API. Don seller va bao hanh duoc theo doi rieng tai day.
+                        </div>
+                        <div className="mt-1 text-xs text-amber-300">
+                          Slot Team khong ban qua API va admin tu them theo don.
+                        </div>
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        Dang hien{" "}
+                        <span className="font-bold text-white">
+                          {filteredTeamMarketplaceOrders.length}
+                        </span>{" "}
+                        / {teamMarketplaceOrderSummaries.length} don gan nhat
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="flex-1 max-w-xl">
+                        <input
+                          type="text"
+                          placeholder="Tim theo order, team goc, team bao hanh..."
+                          value={teamMarketplaceOrderQuery}
+                          onChange={(e) => setTeamMarketplaceOrderQuery(e.target.value)}
+                          className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { value: "all", label: "Tat ca" },
+                          { value: "datammo", label: "Datammo" },
+                          { value: "shopmini", label: "Shopmini" },
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() =>
+                              setTeamMarketplaceOrderProviderFilter(option.value)
+                            }
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                              teamMarketplaceOrderProviderFilter === option.value
+                                ? "bg-cyan-600 text-white border-cyan-500"
+                                : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white hover:bg-slate-700"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[860px] text-sm">
+                      <thead className="bg-slate-950/60 text-slate-300 uppercase text-[11px] tracking-[0.12em]">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Nguon</th>
+                          <th className="px-4 py-3 text-left">Order</th>
+                          <th className="px-4 py-3 text-left">Team da ban</th>
+                          <th className="px-4 py-3 text-left">Team hien tai</th>
+                          <th className="px-4 py-3 text-left">Bao hanh</th>
+                          <th className="px-4 py-3 text-left">Thoi gian</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredTeamMarketplaceOrders.length > 0 ? (
+                          filteredTeamMarketplaceOrders.map((order) => (
+                            <tr
+                              key={`${buildDatammoOrderKey(order)}-team`}
+                              className="border-t border-slate-800/80 align-top"
+                            >
+                              <td className="px-4 py-3">
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.12em] border ${
+                                    order.provider === "shopmini"
+                                      ? "bg-orange-500/10 text-orange-200 border-orange-500/30"
+                                      : "bg-emerald-500/10 text-emerald-200 border-emerald-500/30"
+                                  }`}
+                                >
+                                  {order.providerLabel}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="font-mono text-white font-semibold break-all">
+                                  {order.orderId || "Khong ro"}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  So luong: {order.quantity || order.accountSummaries.length || 0}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="space-y-2">
+                                  {order.accountSummaries.map((item, index) => (
+                                    <div
+                                      key={`${buildDatammoOrderKey(order)}-team-sold-${index}`}
+                                      className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2"
+                                    >
+                                      <div className="font-semibold text-white break-all">
+                                        {item.soldUsername || item.soldAccountId || "Khong ro team"}
+                                      </div>
+                                      {item.soldAccountId && (
+                                        <div className="mt-1 text-[11px] text-slate-500 break-all">
+                                          ID: {item.soldAccountId}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="space-y-2">
+                                  {order.accountSummaries.map((item, index) => {
+                                    const isReplaced =
+                                      String(item.currentAccountId || "") !==
+                                      String(item.soldAccountId || "");
+                                    return (
+                                      <div
+                                        key={`${buildDatammoOrderKey(order)}-team-current-${index}`}
+                                        className={`rounded-lg border px-3 py-2 ${
+                                          isReplaced
+                                            ? "border-cyan-700/40 bg-cyan-950/20"
+                                            : "border-slate-800 bg-slate-900/50"
+                                        }`}
+                                      >
+                                        <div className="font-semibold text-white break-all">
+                                          {item.currentUsername ||
+                                            item.currentAccountId ||
+                                            "Khong ro team"}
+                                        </div>
+                                        <div
+                                          className={`mt-1 text-[11px] font-semibold ${
+                                            isReplaced
+                                              ? "text-cyan-300"
+                                              : "text-slate-500"
+                                          }`}
+                                        >
+                                          {isReplaced
+                                            ? "Dang thay bao hanh"
+                                            : "Dang dung team goc"}
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              openWarrantyFromMarketplaceOrder(item)
+                                            }
+                                            className="rounded-lg bg-cyan-600 hover:bg-cyan-500 px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
+                                          >
+                                            {item.warrantyRounds > 0
+                                              ? "Bao hanh tiep"
+                                              : "Bao hanh"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              focusMarketplaceAccountFromSummary(item)
+                                            }
+                                            className="rounded-lg bg-slate-700 hover:bg-slate-600 px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
+                                          >
+                                            Toi team
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="space-y-2">
+                                  {order.accountSummaries.map((item, index) => (
+                                    <div
+                                      key={`${buildDatammoOrderKey(order)}-team-warranty-${index}`}
+                                      className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2"
+                                    >
+                                      <div className="font-semibold text-white">
+                                        {item.warrantyRounds > 0
+                                          ? `${item.warrantyRounds} lan`
+                                          : "Chua bao hanh"}
+                                      </div>
+                                      <div className="mt-1 text-[11px] text-slate-400 break-all">
+                                        {item.warrantyRounds > 0
+                                          ? item.warrantySummary
+                                          : "Dang dung team goc"}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">
+                                {order.timeLabel || "-"}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td
+                              colSpan={6}
+                              className="px-4 py-10 text-center text-slate-500"
+                            >
+                              Khong co don Team nao khop bo loc hien tai.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
               <div className="grid gap-6 xl:grid-cols-2 items-start">
                 {teamSections.map((section) => (
                   <div
@@ -7013,6 +7261,45 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     }) &&
                     !!teamMarketplaceOrderId) ||
                     !!teamWarrantyCase);
+                const showTeamMarketplaceManagementCard =
+                  isBusinessMode &&
+                  (isTeamMarketWarehouse(acc) ||
+                    (!!activeBusinessSlot &&
+                      isDatammoManagedUser({
+                        name: activeBusinessSlot?.customerName || "",
+                      })) ||
+                    !!teamWarrantyCase);
+                const teamMarketplaceCardClasses =
+                  teamWarrantyInfo?.role === "current"
+                    ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
+                    : teamWarrantyCase
+                      ? "border-amber-700/50 bg-amber-950/20 text-amber-100"
+                      : "border-emerald-700/50 bg-emerald-950/20 text-emerald-100";
+                const teamMarketplaceChipClasses =
+                  teamWarrantyInfo?.role === "current"
+                    ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-200"
+                    : teamWarrantyCase
+                      ? "border-amber-500/30 bg-amber-500/15 text-amber-200"
+                      : "border-emerald-500/30 bg-emerald-500/15 text-emerald-200";
+                const teamMarketplaceStatusLabel = teamWarrantyCase
+                  ? teamWarrantyInfo?.role === "current"
+                    ? "Dang bao hanh"
+                    : "Lich su bao hanh"
+                  : !!activeBusinessSlot &&
+                      isDatammoManagedUser({
+                        name: activeBusinessSlot?.customerName || "",
+                      })
+                    ? "Da ban"
+                    : "Chua ban";
+                const teamMarketplaceCustomerName = String(
+                  activeBusinessSlot?.customerName || "",
+                ).trim();
+                const teamSellerProviderLabel =
+                  teamWarrantyCase?.provider || teamManagedProvider
+                    ? getMarketplaceProviderLabel(
+                        teamWarrantyCase?.provider || teamManagedProvider,
+                      )
+                    : "Datammo + Shopmini";
                 return (
                   <div id={`team-account-row-${acc.id}`} key={acc.id} className={`rounded-2xl border shadow-xl overflow-hidden ${String(highlightedTeamAccountId || "") === String(acc.id || "") ? "ring-1 ring-cyan-500/50 bg-cyan-900/10" : ""} ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}>
                     {/* Account header */}
@@ -7094,75 +7381,109 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                               Dang cap nhat kho...
                             </div>
                           )}
-                          {teamWarrantyCase && teamWarrantyRounds.length > 0 && (
+                          {showTeamMarketplaceManagementCard && (
                             <div
-                              className={`w-full rounded-md border px-2.5 py-2 text-[10px] shadow-sm ${
-                                teamWarrantyInfo?.role === "current"
-                                  ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
-                                  : "border-amber-700/50 bg-amber-950/20 text-amber-100"
-                              }`}
+                              className={`w-full rounded-xl border px-3 py-3 shadow-sm ${teamMarketplaceCardClasses}`}
                             >
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="inline-flex items-center rounded-full border border-white/10 bg-slate-900/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white">
-                                  {getMarketplaceProviderLabel(
-                                    teamWarrantyCase?.provider || teamManagedProvider,
-                                  )}
-                                </span>
-                                <span className="text-[10px] font-bold text-white">
-                                  Bao hanh lan {teamWarrantyRounds.length}
-                                </span>
-                              </div>
-                              <div className="mt-1 text-[10px] text-slate-300">
-                                Don {teamWarrantyCase?.orderId || teamMarketplaceOrderId || "?"}
-                              </div>
-                              <div className="mt-0.5 text-[10px]">
-                                <span
-                                  className={
-                                    teamWarrantyInfo?.role === "current"
-                                      ? "text-cyan-200"
-                                      : "text-amber-200"
-                                  }
-                                >
-                                  {teamWarrantyInfo?.role === "current"
-                                    ? "Acc dang thay"
-                                    : teamWarrantyInfo?.role === "history"
-                                      ? "Acc da thay"
-                                      : "Acc loi goc"}
-                                </span>
-                                {teamWarrantyInfo?.role === "current" ? (
-                                  <span className="text-slate-300"> • Acc hien tai cua don</span>
-                                ) : teamLatestWarrantyTarget ? (
-                                  <span className="text-slate-300">
-                                    {" "}
-                                    • Hien tai:{" "}
-                                    <span className="font-semibold text-white">
-                                      {teamLatestWarrantyTarget}
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-slate-950/40">
+                                      <Shield size={12} />
                                     </span>
-                                  </span>
-                                ) : null}
+                                    <div>
+                                      <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white">
+                                        Team market
+                                      </div>
+                                      <div className="mt-0.5 text-[10px] leading-relaxed text-slate-300">
+                                        {teamSellerProviderLabel} ·{" "}
+                                        {teamMarketplaceCustomerName || "Business chua ban"}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                                <span
+                                  className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${teamMarketplaceChipClasses}`}
+                                >
+                                  {teamMarketplaceStatusLabel}
+                                </span>
                               </div>
+                              <div className="mt-3 space-y-1.5 text-[10px]">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-slate-400">Order</span>
+                                  <span className="font-semibold text-white">
+                                    {teamMarketplaceOrderId || "Chua co"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-slate-400">Kho</span>
+                                  <span className="font-semibold text-white">
+                                    {getTeamWarehouseLabel(acc.warehouse)}
+                                  </span>
+                                </div>
+                                {teamWarrantyCase && (
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span className="text-slate-400">Bao hanh</span>
+                                    <span className="font-semibold text-white">
+                                      Lan {teamWarrantyRounds.length}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-1.5">
+                                <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                  {teamSellerProviderLabel}
+                                </span>
+                                {teamWarrantyCase && (
+                                  <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-amber-200">
+                                    {teamWarrantyInfo?.role === "current"
+                                      ? "Acc dang thay"
+                                      : teamWarrantyInfo?.role === "history"
+                                        ? "Acc da thay"
+                                        : "Acc loi goc"}
+                                  </span>
+                                )}
+                              </div>
+                              {teamWarrantyCase && (
+                                <div className="mt-3 rounded-lg border border-white/10 bg-slate-950/30 px-2.5 py-2 text-[10px] text-slate-200">
+                                  {teamWarrantyInfo?.role === "current" ? (
+                                    <div>Team nay dang la team hien tai cua don.</div>
+                                  ) : teamLatestWarrantyTarget ? (
+                                    <div>
+                                      Hien tai dang thay boi{" "}
+                                      <span className="font-semibold text-white">
+                                        {teamLatestWarrantyTarget}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div>Dang luu lich su bao hanh cua don seller.</div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleQuickTeamSaleModeChange(
-                                acc,
-                                isBusinessMode ? "slot" : "business",
-                              )
-                            }
-                            disabled={!!loadingStates.teamMode?.[acc.id]}
-                            className={`text-[11px] px-2 py-1 rounded border font-bold inline-flex items-center gap-1 transition-colors ${isBusinessMode ? "bg-teal-900/30 text-teal-300 border-teal-700/60 hover:bg-teal-800/40" : "bg-cyan-900/30 text-cyan-300 border-cyan-700/60 hover:bg-cyan-800/40"} ${loadingStates.teamMode?.[acc.id] ? "opacity-60 cursor-wait" : ""}`}
-                            title="Đổi nhanh loại Team"
-                          >
-                            {loadingStates.teamMode?.[acc.id] ? (
-                              <>
-                                <Loader2 size={11} className="animate-spin" /> Đang đổi...
-                              </>
-                            ) : (
-                              <>↔ {isBusinessMode ? "Qua Slot team" : "Qua Business"}</>
-                            )}
-                          </button>
+                          {isTeamTotalWarehouse(acc) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleQuickTeamSaleModeChange(
+                                  acc,
+                                  isBusinessMode ? "slot" : "business",
+                                )
+                              }
+                              disabled={!!loadingStates.teamMode?.[acc.id]}
+                              className={`text-[11px] px-2 py-1 rounded border font-bold inline-flex items-center gap-1 transition-colors ${isBusinessMode ? "bg-teal-900/30 text-teal-300 border-teal-700/60 hover:bg-teal-800/40" : "bg-cyan-900/30 text-cyan-300 border-cyan-700/60 hover:bg-cyan-800/40"} ${loadingStates.teamMode?.[acc.id] ? "opacity-60 cursor-wait" : ""}`}
+                              title="Đổi nhanh loại Team"
+                            >
+                              {loadingStates.teamMode?.[acc.id] ? (
+                                <>
+                                  <Loader2 size={11} className="animate-spin" /> Đang đổi...
+                                </>
+                              ) : (
+                                <>↔ {isBusinessMode ? "Qua Slot team" : "Qua Business"}</>
+                              )}
+                            </button>
+                          )}
                           <div className="text-xs text-indigo-300 font-bold mb-1">
                             {usedSlots}/{customerCapacity} {isBusinessMode ? "khách" : "slot đã cấp"}
                           </div>
@@ -7171,40 +7492,34 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         <div className="w-full flex flex-col gap-2 mt-auto pt-2">
                           {hasCapacityAvailable ? (
                             <div className="flex flex-col gap-1 my-1 w-full">
-                              <div className={`w-full px-2 py-1 font-bold rounded text-[10px] uppercase border flex flex-col gap-0.5 shadow-sm items-center justify-center ${
-                                isTeamMarketWarehouse(acc)
-                                  ? "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"
-                                  : isTeamShortWarehouse(acc)
-                                    ? "bg-amber-900/30 text-amber-300 border-amber-700/50"
-                                    : "bg-slate-800 text-slate-300 border-slate-700"
-                              }`}>
-                                <span className="flex items-center gap-1">
-                                  <Globe size={10} />
-                                  {isTeamMarketWarehouse(acc)
-                                    ? "Kho market - Business chua ban"
-                                    : isTeamShortWarehouse(acc)
-                                      ? "Kho duoi 25 ngay - day tay"
-                                      : "Kho tong"}
-                                </span>
-                              </div>
                               {isTeamTotalWarehouse(acc) ? (
-                                <div className="flex gap-2">
-                                  <button onClick={() => {
-                                    const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
-                                    if (emptyIdx !== -1) {
-                                      setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
-                                      setSlotFormGmail(""); setSlotFormName("");
-                                      setSlotFormExp(new Date().toISOString().split("T")[0]);
-                                      setSlotFormExpiredAt(addDurationToDate(new Date(), "1M").toISOString().split("T")[0]);
-                                      setShowSlotModal(true);
-                                    }
-                                  }} className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-2 py-1.5 rounded text-xs transition-colors shadow flex items-center justify-center gap-1 w-full" title="Gan khach thuong">
-                                    <UserPlus size={14} /> Khach
-                                  </button>
+                                <div className="flex flex-col gap-2">
+                                  <div className="w-full px-2 py-1 font-bold rounded text-[10px] uppercase border flex flex-col gap-0.5 shadow-sm items-center justify-center bg-slate-800 text-slate-300 border-slate-700">
+                                    <span className="flex items-center gap-1">
+                                      <Globe size={10} />
+                                      Kho tong
+                                    </span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button onClick={() => {
+                                      const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
+                                      if (emptyIdx !== -1) {
+                                        setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
+                                        setSlotFormGmail(""); setSlotFormName("");
+                                        setSlotFormExp(new Date().toISOString().split("T")[0]);
+                                        setSlotFormExpiredAt(addDurationToDate(new Date(), "1M").toISOString().split("T")[0]);
+                                        setShowSlotModal(true);
+                                      }
+                                    }} className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-2 py-1.5 rounded text-xs transition-colors shadow flex items-center justify-center gap-1 w-full" title="Gan khach thuong">
+                                      <UserPlus size={14} /> Khach
+                                    </button>
+                                  </div>
                                 </div>
                               ) : (
-                                <div className="w-full text-center text-xs text-slate-400 font-bold italic my-1 shadow-sm p-1 border border-slate-700 rounded bg-slate-900/30">
-                                  Team trong {getTeamWarehouseLabel(acc.warehouse)} se cho ban qua API, khong them khach tay tai day.
+                                <div className="w-full text-center text-xs text-slate-400 font-bold italic my-1 shadow-sm p-2 border border-slate-700 rounded bg-slate-900/30">
+                                  {isTeamMarketWarehouse(acc)
+                                    ? "Team Business trong kho market se duoc ban tu dong qua Datammo + Shopmini."
+                                    : "Team Business trong kho duoi 25 chi de day tay, khong di vao API stock/buy."}
                                 </div>
                               )}
                             </div>

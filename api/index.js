@@ -3230,6 +3230,17 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
           "Team dang co khach. Vui long xoa hoac chuyen khach truoc khi doi kho.",
       });
     }
+    if (
+      updatePayload.saleMode !== undefined &&
+      normalizeTeamSaleMode(updatePayload.saleMode) !==
+        normalizeTeamSaleMode(existing.saleMode) &&
+      currentWarehouse !== TEAM_WAREHOUSE_TOTAL
+    ) {
+      return res.status(400).json({
+        error:
+          "Team ngoai kho tong khong duoc doi qua Slot/Business. Hay dua ve kho tong truoc.",
+      });
+    }
 
     const updated = await TeamAccount.findOneAndUpdate(
       buildConditionalUpdateFilter(req.params.id, expectedUpdatedAt),
