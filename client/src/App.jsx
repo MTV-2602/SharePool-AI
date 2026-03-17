@@ -3414,13 +3414,13 @@ function App() {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-xs text-slate-300 px-3 py-2 bg-slate-800 rounded-lg border border-slate-700">
+                <div className="hidden text-xs text-slate-300 px-3 py-2 bg-slate-800 rounded-lg border border-slate-700">
                   Đã chọn: <span className="font-bold text-white">{selectedChatgptIds.length}</span>
                 </div>
                 {selectedChatgptIds.length > 0 && (
                   <button
                     onClick={() => setSelectedChatgptIds([])}
-                    className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg font-semibold text-sm"
+                    className="hidden items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg font-semibold text-sm"
                   >
                     Bỏ chọn
                   </button>
@@ -3428,14 +3428,14 @@ function App() {
                 <button
                   onClick={() => openBulkPushModal(filteredChatgptAccounts)}
                   disabled={datammoBatchProgress.active}
-                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center disabled:opacity-60 disabled:cursor-wait disabled:hover:translate-y-0"
+                  className="hidden items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center disabled:opacity-60 disabled:cursor-wait disabled:hover:translate-y-0"
                 >
                   <Globe size={18} /> Đẩy nhanh lên kệ
                 </button>
                 <button
                   onClick={handleResyncVisibleChatgptDatammo}
                   disabled={datammoBatchProgress.active}
-                  className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center disabled:opacity-60 disabled:cursor-wait disabled:hover:translate-y-0"
+                  className="hidden items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center disabled:opacity-60 disabled:cursor-wait disabled:hover:translate-y-0"
                 >
                   <RefreshCw
                     size={18}
@@ -4539,7 +4539,7 @@ function App() {
                                     !!datammoResyncLoading[buildDatammoResyncKey("chatgpt", acc.id)] ||
                                     datammoBatchProgress.active
                                   }
-                                  className="bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white p-2 rounded transition-colors disabled:opacity-60 disabled:cursor-wait"
+                                  className="hidden bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white p-2 rounded transition-colors disabled:opacity-60 disabled:cursor-wait"
                                   title="Dong bo kho market"
                                 >
                                   <RefreshCw
