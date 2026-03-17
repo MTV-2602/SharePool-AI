@@ -54,9 +54,15 @@ const singleUserSchema = new mongoose.Schema({
     createdAt: { type: String },
     expiredAt: { type: String },
 });
-const Netflix = mongoose.models.Netflix || mongoose.model("Netflix", singleUserSchema);
-const Canva = mongoose.models.Canva || mongoose.model("Canva", singleUserSchema);
-const Capcut = mongoose.models.Capcut || mongoose.model("Capcut", singleUserSchema);
+const Netflix =
+    mongoose.models.Netflix ||
+    mongoose.model("Netflix", singleUserSchema, "netflix_accounts");
+const Canva =
+    mongoose.models.Canva ||
+    mongoose.model("Canva", singleUserSchema, "canva_accounts");
+const Capcut =
+    mongoose.models.Capcut ||
+    mongoose.model("Capcut", singleUserSchema, "capcut_accounts");
 
 // Define Schema for Coursera Accounts
 const courseraSchema = new mongoose.Schema({
@@ -75,7 +81,9 @@ const courseraSchema = new mongoose.Schema({
     expiredAt: { type: String }
 });
 
-const Account = mongoose.model('Account', accountSchema);
+const Account =
+    mongoose.models.Account ||
+    mongoose.model('Account', accountSchema, 'chatgpt_accounts');
 const Coursera = mongoose.model('Coursera', courseraSchema);
 
 const normalizeDurationCode = (value, fallback = '1M') => {

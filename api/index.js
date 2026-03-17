@@ -19,6 +19,7 @@ let didCleanupLegacyTeamEmailPassword = false;
 let didCleanupLegacyChatgptMarketKeys = false;
 let didMigrateLegacyCollections = false;
 let didNormalizeLegacyDatammoCustomers = false;
+let didDropLegacyCollections = false;
 const toPositiveInt = (value, fallback) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
@@ -194,6 +195,66 @@ const migrateLegacyCollectionsIfNeeded = async () => {
   }
 };
 
+const dropLegacyCollectionsIfSafe = async () => {
+  if (didDropLegacyCollections) return;
+  const db = mongoose.connection?.db;
+  if (!db) return;
+
+  const legacyMappings = [
+    { legacyName: "accounts", targetName: "chatgpt_accounts" },
+    { legacyName: "teamaccounts", targetName: "chatgpt_team_accounts" },
+    { legacyName: "datammoorders", targetName: "marketplace_orders" },
+    {
+      legacyName: "datammowarrantycases",
+      targetName: "marketplace_warranty_cases",
+    },
+    { legacyName: "netflixes", targetName: "netflix_accounts" },
+    { legacyName: "canvas", targetName: "canva_accounts" },
+    { legacyName: "capcuts", targetName: "capcut_accounts" },
+    { legacyName: "datammokeyregistries", targetName: null },
+    { legacyName: "marketplace_key_registries", targetName: null },
+  ];
+
+  const dropped = [];
+  for (const { legacyName, targetName } of legacyMappings) {
+    const legacyCollections = await db
+      .listCollections({ name: legacyName })
+      .toArray();
+    if (legacyCollections.length === 0) continue;
+
+    if (!targetName) {
+      await db.dropCollection(legacyName);
+      dropped.push(legacyName);
+      continue;
+    }
+
+    const targetCollections = await db
+      .listCollections({ name: targetName })
+      .toArray();
+    if (targetCollections.length === 0) continue;
+
+    const [legacyCount, targetCount] = await Promise.all([
+      db.collection(legacyName).countDocuments({}),
+      db.collection(targetName).countDocuments({}),
+    ]);
+
+    if (legacyCount > 0 && targetCount === 0) {
+      console.warn(
+        `Skip dropping legacy collection ${legacyName} because ${targetName} is empty.`,
+      );
+      continue;
+    }
+
+    await db.dropCollection(legacyName);
+    dropped.push(legacyName);
+  }
+
+  didDropLegacyCollections = true;
+  if (dropped.length > 0) {
+    console.log(`Dropped legacy collections: ${dropped.join(", ")}`);
+  }
+};
+
 const normalizeLegacyDatammoCustomersIfNeeded = async () => {
   if (didNormalizeLegacyDatammoCustomers) return;
 
@@ -246,6 +307,7 @@ const connectDB = async () => {
     isConnected = true;
     await migrateLegacyCollectionsIfNeeded();
     await normalizeLegacyDatammoCustomersIfNeeded();
+    await dropLegacyCollectionsIfSafe();
     if (!didCleanupLegacyTeamEmailPassword) {
       await TeamAccount.updateMany(
         { emailPassword: { $exists: true } },
