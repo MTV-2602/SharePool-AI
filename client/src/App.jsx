@@ -368,11 +368,10 @@ const CUSTOMER_FILTER_OPTIONS = [
 const EXPIRY_FILTER_OPTIONS = [
   { value: "all", label: "Tat ca han" },
   { value: "expired", label: "Da het han" },
-  { value: "1_7", label: "1-7 ngay" },
-  { value: "8_15", label: "8-15 ngay" },
-  { value: "16_30", label: "16-30 ngay" },
-  { value: "31_60", label: "31-60 ngay" },
-  { value: "over_60", label: "Tren 60 ngay" },
+  { value: "under_15", label: "Duoi 15" },
+  { value: "15_20", label: "15-20" },
+  { value: "20_25", label: "20-25" },
+  { value: "25_31", label: "25-31" },
   { value: "no_expiry", label: "Khong co han" },
 ];
 const getAccountUsers = (account = {}) =>
@@ -403,11 +402,10 @@ const matchesExpiryFilter = (daysRemaining, filterValue = "all") => {
   if (filterValue === "no_expiry") return daysRemaining === null;
   if (daysRemaining === null) return false;
   if (filterValue === "expired") return daysRemaining <= 0;
-  if (filterValue === "1_7") return daysRemaining >= 1 && daysRemaining <= 7;
-  if (filterValue === "8_15") return daysRemaining >= 8 && daysRemaining <= 15;
-  if (filterValue === "16_30") return daysRemaining >= 16 && daysRemaining <= 30;
-  if (filterValue === "31_60") return daysRemaining >= 31 && daysRemaining <= 60;
-  if (filterValue === "over_60") return daysRemaining > 60;
+  if (filterValue === "under_15") return daysRemaining >= 1 && daysRemaining < 15;
+  if (filterValue === "15_20") return daysRemaining >= 15 && daysRemaining <= 20;
+  if (filterValue === "20_25") return daysRemaining >= 20 && daysRemaining <= 25;
+  if (filterValue === "25_31") return daysRemaining >= 25 && daysRemaining <= 31;
   return true;
 };
 const normalizeExpiryRangeInput = (value) => {
