@@ -4237,15 +4237,20 @@ function App() {
                                     : warrantyInfo?.role === "history"
                                       ? "Acc da thay"
                                       : "Acc loi goc";
+                                const latestWarrantyTarget =
+                                  warrantyCase?.currentUsername ||
+                                  warrantyRounds[warrantyRounds.length - 1]?.toUsername ||
+                                  warrantyCase?.currentAccountId ||
+                                  "";
                                 const renderWarrantySummary = (extraClasses = "") => {
                                   if (!warrantyCase || warrantyRounds.length === 0) {
                                     return null;
                                   }
                                   return (
                                     <div
-                                      className={`${extraClasses} rounded-lg border px-2.5 py-2 text-[10px] shadow-sm ${
+                                      className={`${extraClasses} rounded-md border px-2.5 py-2 text-[10px] shadow-sm ${
                                         warrantyInfo?.role === "current"
-                                          ? "border-cyan-700/50 bg-cyan-950/30 text-cyan-100"
+                                          ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
                                           : "border-amber-700/50 bg-amber-950/20 text-amber-100"
                                       }`}
                                     >
@@ -4253,14 +4258,39 @@ function App() {
                                         <span className="inline-flex items-center rounded-full border border-white/10 bg-slate-900/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white">
                                           {warrantyProviderLabel}
                                         </span>
-                                        <span className="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-white/90">
-                                          {warrantyRoleLabel}
-                                        </span>
-                                        <span className="text-[10px] text-slate-300">
-                                          Don {warrantyCase.orderId || datammoOrderId || "?"}
+                                        <span className="text-[10px] font-bold text-white">
+                                          Bao hanh lan {warrantyRounds.length}
                                         </span>
                                       </div>
-                                      <div className="mt-2 space-y-1.5">
+                                      <div className="mt-1 text-[10px] text-slate-300">
+                                        Don {warrantyCase.orderId || datammoOrderId || "?"}
+                                      </div>
+                                      <div className="mt-0.5 text-[10px]">
+                                        <span
+                                          className={
+                                            warrantyInfo?.role === "current"
+                                              ? "text-cyan-200"
+                                              : "text-amber-200"
+                                          }
+                                        >
+                                          {warrantyRoleLabel}
+                                        </span>
+                                        {warrantyInfo?.role === "current" ? (
+                                          <span className="text-slate-300">
+                                            {" "}
+                                            • Acc hien tai cua don
+                                          </span>
+                                        ) : latestWarrantyTarget ? (
+                                          <span className="text-slate-300">
+                                            {" "}
+                                            • Hien tai:{" "}
+                                            <span className="font-semibold text-white">
+                                              {latestWarrantyTarget}
+                                            </span>
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                      <div className="hidden mt-2 space-y-1.5">
                                         {warrantyRounds.map((round, roundIndex) => {
                                           const isRoundSource =
                                             String(round?.fromAccountId || "") ===
