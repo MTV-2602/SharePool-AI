@@ -408,6 +408,30 @@ const matchesExpiryFilter = (daysRemaining, filterValue = "all") => {
   if (filterValue === "over_60") return daysRemaining > 60;
   return true;
 };
+const normalizeExpiryRangeInput = (value) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.floor(parsed));
+};
+const matchesExpiryRange = (daysRemaining, minValue = "", maxValue = "") => {
+  const min = normalizeExpiryRangeInput(minValue);
+  const max = normalizeExpiryRangeInput(maxValue);
+  if (min === null && max === null) return true;
+  if (daysRemaining === null) return false;
+  if (min !== null && daysRemaining < min) return false;
+  if (max !== null && daysRemaining > max) return false;
+  return true;
+};
+const getExpiryRemainingLabel = (dateInput) => {
+  if (!dateInput) return null;
+  const daysRemaining = getAccountDaysRemaining({ expiredAt: dateInput });
+  if (daysRemaining === null) return null;
+  if (daysRemaining <= 0) return { text: `Da het han ${Math.abs(daysRemaining)} ngay`, className: "text-red-400" };
+  if (daysRemaining <= 7) return { text: `Con ${daysRemaining} ngay`, className: "text-yellow-400" };
+  return { text: `Con ${daysRemaining} ngay`, className: "text-emerald-400" };
+};
 const createApiRequestLabel = (detail = {}) => {
   const customLabel = String(detail?.label || "").trim();
   if (customLabel) return customLabel;
@@ -553,13 +577,19 @@ function App() {
     useState("");
   const [chatgptCustomerFilter, setChatgptCustomerFilter] = useState("all");
   const [chatgptExpiryFilter, setChatgptExpiryFilter] = useState("all");
+  const [chatgptExpiryMin, setChatgptExpiryMin] = useState("");
+  const [chatgptExpiryMax, setChatgptExpiryMax] = useState("");
   const [marketplaceOrderQuery, setMarketplaceOrderQuery] = useState("");
   const [marketplaceOrderProviderFilter, setMarketplaceOrderProviderFilter] =
     useState("all");
   const [teamCustomerFilter, setTeamCustomerFilter] = useState("all");
   const [teamExpiryFilter, setTeamExpiryFilter] = useState("all");
+  const [teamExpiryMin, setTeamExpiryMin] = useState("");
+  const [teamExpiryMax, setTeamExpiryMax] = useState("");
   const [simpleCustomerFilter, setSimpleCustomerFilter] = useState("all");
   const [simpleExpiryFilter, setSimpleExpiryFilter] = useState("all");
+  const [simpleExpiryMin, setSimpleExpiryMin] = useState("");
+  const [simpleExpiryMax, setSimpleExpiryMax] = useState("");
 
   // Loading states for buttons
 
@@ -624,7 +654,9 @@ function App() {
     index: null,
     name: "",
     joinedAt: null,
+    expiredAt: null,
   });
+  const userExpiryPreview = getExpiryRemainingLabel(currentUserData.expiredAt);
 
   // Move User State
   const [showMoveUserModal, setShowMoveUserModal] = useState(false);
@@ -919,6 +951,38 @@ function App() {
     </select>
   );
 
+  const renderExpiryRangeInputs = (minValue, onMinChange, maxValue, onMaxChange) => (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        type="number"
+        min="0"
+        inputMode="numeric"
+        value={minValue}
+        onChange={(e) => onMinChange(e.target.value.replace(/[^\d]/g, ""))}
+        placeholder="Tu ngay"
+        className="w-24 bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
+      />
+      <span className="text-slate-500 text-xs font-bold uppercase tracking-wide">den</span>
+      <input
+        type="number"
+        min="0"
+        inputMode="numeric"
+        value={maxValue}
+        onChange={(e) => onMaxChange(e.target.value.replace(/[^\d]/g, ""))}
+        placeholder="Den ngay"
+        className="w-24 bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
+      />
+      {(minValue || maxValue) && (
+        <button
+          type="button"
+          onClick={() => { onMinChange(""); onMaxChange(""); }}
+          className="text-xs px-2.5 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white font-bold"
+        >
+          Xoa
+        </button>
+      )}
+    </div>
+  );
   // Helper to get joined date display
   const getUserDate = (u) => {
     if (typeof u === "object" && u !== null && u.joinedAt) {
@@ -2540,6 +2604,13 @@ function App() {
     .filter((acc) =>
       matchesExpiryFilter(getAccountDaysRemaining(acc), chatgptExpiryFilter),
     )
+    .filter((acc) =>
+      matchesExpiryRange(
+        getAccountDaysRemaining(acc),
+        chatgptExpiryMin,
+        chatgptExpiryMax,
+      ),
+    )
     .filter((acc) => {
       if (!searchQuery.trim()) return true;
       const queryNormalized = toNonAccentVietnamese(searchQuery);
@@ -2594,6 +2665,13 @@ function App() {
     )
     .filter((acc) =>
       matchesExpiryFilter(getAccountDaysRemaining(acc), teamExpiryFilter),
+    )
+    .filter((acc) =>
+      matchesExpiryRange(
+        getAccountDaysRemaining(acc),
+        teamExpiryMin,
+        teamExpiryMax,
+      ),
     );
   const teamSlotAccounts = filteredTeamAccounts.filter(
     (acc) => normalizeTeamSaleMode(acc.saleMode) === "slot",
@@ -3095,6 +3173,12 @@ function App() {
                   {renderExpiryFilterSelect(
                     chatgptExpiryFilter,
                     setChatgptExpiryFilter,
+                  )}
+                  {renderExpiryRangeInputs(
+                    chatgptExpiryMin,
+                    setChatgptExpiryMin,
+                    chatgptExpiryMax,
+                    setChatgptExpiryMax,
                   )}
                 </div>
               </div>
@@ -4984,6 +5068,11 @@ function App() {
                   });
                 }}
               />
+              {userExpiryPreview && (
+                <div className={`mt-2 text-xs font-bold ${userExpiryPreview.className}`}>
+                  {userExpiryPreview.text}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
@@ -5557,6 +5646,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           )
           .filter((a) =>
             matchesExpiryFilter(getAccountDaysRemaining(a), simpleExpiryFilter),
+          )
+          .filter((a) =>
+            matchesExpiryRange(
+              getAccountDaysRemaining(a),
+              simpleExpiryMin,
+              simpleExpiryMax,
+            ),
           );
 
         const searchFiltered = presenceFiltered.filter(a =>
@@ -5654,6 +5750,12 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   {renderExpiryFilterSelect(
                     simpleExpiryFilter,
                     setSimpleExpiryFilter,
+                  )}
+                  {renderExpiryRangeInputs(
+                    simpleExpiryMin,
+                    setSimpleExpiryMin,
+                    simpleExpiryMax,
+                    setSimpleExpiryMax,
                   )}
                 </div>
               </div>
@@ -5839,6 +5941,12 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 {renderExpiryFilterSelect(
                   teamExpiryFilter,
                   setTeamExpiryFilter,
+                )}
+                {renderExpiryRangeInputs(
+                  teamExpiryMin,
+                  setTeamExpiryMin,
+                  teamExpiryMax,
+                  setTeamExpiryMax,
                 )}
               </div>
 
