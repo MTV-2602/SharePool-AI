@@ -400,6 +400,7 @@ const teamAccountSchema = new mongoose.Schema({
   password: { type: String, default: "" },      // Mật khẩu GPT
   recoveryUrl: { type: String, default: "" },   // Link recovery
   saleMode: { type: String, default: "slot" },  // "slot" | "business"
+  warehouse: { type: String, default: "total" }, // "total" | "market" | "short"
   note: { type: String, default: "" },
   slots: { type: [teamSlotSchema], default: () => Array(4).fill(null).map(() => ({ status: "empty" })) },
   createdAt: { type: String },
@@ -412,13 +413,18 @@ const TeamAccount =
 
 const datammoOrderAccountSchema = new mongoose.Schema(
   {
+    scope: { type: String, default: "chatgpt" },
+    itemType: { type: String, default: "chatgpt_account" },
+    resourceKey: { type: String, default: "" },
     accountId: { type: String, default: "" },
     username: { type: String, default: "" },
+    slotIndex: { type: Number, default: -1 },
     delivery: { type: String, default: "" },
   },
   { _id: false },
 );
 const datammoOrderSchema = new mongoose.Schema({
+  scope: { type: String, default: "chatgpt", index: true },
   provider: { type: String, default: "datammo", index: true },
   orderId: { type: String, default: "" },
   shelf: { type: String, default: "" },
@@ -433,22 +439,34 @@ const DatammoOrder =
 const datammoWarrantyRoundSchema = new mongoose.Schema(
   {
     sequence: { type: Number, default: 1 },
+    scope: { type: String, default: "chatgpt" },
+    itemType: { type: String, default: "chatgpt_account" },
+    fromResourceKey: { type: String, default: "" },
     fromAccountId: { type: String, default: "" },
     fromUsername: { type: String, default: "" },
+    fromSlotIndex: { type: Number, default: -1 },
+    toResourceKey: { type: String, default: "" },
     toAccountId: { type: String, default: "" },
     toUsername: { type: String, default: "" },
+    toSlotIndex: { type: Number, default: -1 },
     reason: { type: String, default: "" },
     createdAt: { type: String, default: () => new Date().toISOString() },
   },
   { _id: false },
 );
 const datammoWarrantyCaseSchema = new mongoose.Schema({
+  scope: { type: String, default: "chatgpt", index: true },
+  itemType: { type: String, default: "chatgpt_account" },
   provider: { type: String, default: "datammo", index: true },
   orderId: { type: String, default: "", index: true },
+  rootResourceKey: { type: String, default: "" },
   rootAccountId: { type: String, default: "" },
   rootUsername: { type: String, default: "" },
+  rootSlotIndex: { type: Number, default: -1 },
+  currentResourceKey: { type: String, default: "", index: true },
   currentAccountId: { type: String, default: "", index: true },
   currentUsername: { type: String, default: "" },
+  currentSlotIndex: { type: Number, default: -1 },
   status: { type: String, default: "active" },
   rounds: { type: [datammoWarrantyRoundSchema], default: [] },
   createdAt: { type: String, default: () => new Date().toISOString() },
@@ -573,7 +591,6 @@ app.get("/api/test", (req, res) => {
 // 1. GET ALL DATA (Protected - requires token)
 
 // --- DATAMMO INTEGRATION ---
-const DATAMMO_URL = "https://datammo.com/api/v1/products/748e605c-d400-4c44-a958-0525494c700b/inventory";
 const DATAMMO_TOKEN = "sk_1773222055913_er0acsx8dyj";
 const SHOPMINI_PRIVATE_API_TOKEN =
   process.env.SHOPMINI_PRIVATE_API_TOKEN || "537e6b485382ed5f7c71f3dfd0a6be23";
@@ -585,12 +602,27 @@ const DATAMMO_VARIANT_TEAM_BUSINESS = "8851247b-72de-4c31-ac84-470cb97abb0e";
 const TEAM_SALE_MODE_SLOT = "slot";
 const TEAM_SALE_MODE_BUSINESS = "business";
 const VALID_TEAM_SALE_MODES = [TEAM_SALE_MODE_SLOT, TEAM_SALE_MODE_BUSINESS];
+const TEAM_WAREHOUSE_TOTAL = "total";
+const TEAM_WAREHOUSE_MARKET = "market";
+const TEAM_WAREHOUSE_SHORT = "short";
+const VALID_TEAM_WAREHOUSES = [
+  TEAM_WAREHOUSE_TOTAL,
+  TEAM_WAREHOUSE_MARKET,
+  TEAM_WAREHOUSE_SHORT,
+];
 const VALID_DURATION_CODES = ["1M", "2M", "3M", "6M", "1Y"];
 const normalizeTeamSaleMode = (value, fallback = TEAM_SALE_MODE_SLOT) => {
   const normalized = String(value || "")
     .trim()
     .toLowerCase();
   if (VALID_TEAM_SALE_MODES.includes(normalized)) return normalized;
+  return fallback;
+};
+const normalizeTeamWarehouse = (value, fallback = TEAM_WAREHOUSE_TOTAL) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (VALID_TEAM_WAREHOUSES.includes(normalized)) return normalized;
   return fallback;
 };
 const normalizeDurationCode = (value, fallback = "1M") => {
@@ -691,6 +723,106 @@ const assertValidTeamSlotsForSaleMode = (saleMode, slots = []) => {
     throw buildTeamBusinessLimitError(activeCount);
   }
 };
+const getTeamDaysLeft = (account = {}) => {
+  if (!account?.expiredAt) return null;
+  const daysLeft = Math.ceil(
+    (new Date(account.expiredAt).getTime() - Date.now()) / 86400000,
+  );
+  return Number.isFinite(daysLeft) ? daysLeft : null;
+};
+const getAvailableTeamSlotIndices = (slots = []) =>
+  normalizeTeamSlots(slots)
+    .map((slot, index) => ({ slot, index }))
+    .filter(
+      ({ slot }) =>
+        String(slot?.status || "").toLowerCase() === "empty" ||
+        !String(slot?.gmail || "").trim(),
+    )
+    .map(({ index }) => index);
+const isEligibleForTeamMarketSale = (account = {}) => {
+  const warehouse = normalizeTeamWarehouse(
+    account?.warehouse,
+    TEAM_WAREHOUSE_TOTAL,
+  );
+  if (warehouse !== TEAM_WAREHOUSE_MARKET) return false;
+  const saleMode = normalizeTeamSaleMode(account?.saleMode);
+  const daysLeft = getTeamDaysLeft(account);
+  if (daysLeft !== null && daysLeft <= PACKAGE2_MIN_DAYS_FOR_SALE) return false;
+  if (saleMode === TEAM_SALE_MODE_BUSINESS) {
+    return countActiveTeamCustomers(account?.slots) === 0;
+  }
+  return getAvailableTeamSlotIndices(account?.slots).length > 0;
+};
+const normalizeTeamWarehouseState = (account = {}) => {
+  const saleMode = normalizeTeamSaleMode(account?.saleMode);
+  const currentWarehouse = normalizeTeamWarehouse(
+    account?.warehouse,
+    TEAM_WAREHOUSE_TOTAL,
+  );
+
+  if (currentWarehouse === TEAM_WAREHOUSE_SHORT) {
+    return saleMode === TEAM_SALE_MODE_BUSINESS
+      ? TEAM_WAREHOUSE_SHORT
+      : TEAM_WAREHOUSE_TOTAL;
+  }
+
+  if (currentWarehouse !== TEAM_WAREHOUSE_MARKET) {
+    return TEAM_WAREHOUSE_TOTAL;
+  }
+
+  return isEligibleForTeamMarketSale(account)
+    ? TEAM_WAREHOUSE_MARKET
+    : TEAM_WAREHOUSE_TOTAL;
+};
+const syncTeamWarehouseStateIfNeeded = async (account) => {
+  if (!account?.id) return account;
+  const currentWarehouse = normalizeTeamWarehouse(
+    account?.warehouse,
+    TEAM_WAREHOUSE_TOTAL,
+  );
+  const nextWarehouse = normalizeTeamWarehouseState(account);
+  if (currentWarehouse === nextWarehouse) return account;
+  const updated = await TeamAccount.findOneAndUpdate(
+    { id: account.id },
+    {
+      $set: {
+        warehouse: nextWarehouse,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+    { new: true },
+  );
+  return updated || account;
+};
+const reconcileTeamMarketInventory = async () => {
+  const minExpiredAt = new Date(
+    Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  await TeamAccount.updateMany(
+    {
+      warehouse: TEAM_WAREHOUSE_MARKET,
+      expiredAt: { $lte: minExpiredAt },
+    },
+    {
+      $set: {
+        warehouse: TEAM_WAREHOUSE_TOTAL,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  );
+  await TeamAccount.updateMany(
+    {
+      warehouse: TEAM_WAREHOUSE_SHORT,
+      saleMode: { $ne: TEAM_SALE_MODE_BUSINESS },
+    },
+    {
+      $set: {
+        warehouse: TEAM_WAREHOUSE_TOTAL,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  );
+};
 const normalizeTeamPayload = (payload = {}, options = {}) => {
   const normalized = { ...(payload || {}) };
   delete normalized.emailPassword;
@@ -710,6 +842,12 @@ const normalizeTeamPayload = (payload = {}, options = {}) => {
   if (normalized.saleMode !== undefined || options.defaultSaleMode) {
     normalized.saleMode = normalizeTeamSaleMode(normalized.saleMode);
   }
+  if (normalized.warehouse !== undefined || options.defaultWarehouse) {
+    normalized.warehouse = normalizeTeamWarehouse(
+      normalized.warehouse,
+      TEAM_WAREHOUSE_TOTAL,
+    );
+  }
   if (normalized.slots !== undefined && !Array.isArray(normalized.slots)) {
     normalized.slots = buildEmptyTeamSlots();
   }
@@ -719,6 +857,16 @@ const normalizeTeamPayload = (payload = {}, options = {}) => {
   if (options.defaultSlots && normalized.slots === undefined) {
     normalized.slots = buildEmptyTeamSlots();
   }
+  if (
+    normalizeTeamWarehouse(normalized.warehouse, TEAM_WAREHOUSE_TOTAL) ===
+      TEAM_WAREHOUSE_SHORT &&
+    normalizeTeamSaleMode(
+      normalized.saleMode,
+      TEAM_SALE_MODE_SLOT,
+    ) !== TEAM_SALE_MODE_BUSINESS
+  ) {
+    normalized.warehouse = TEAM_WAREHOUSE_TOTAL;
+  }
   return normalized;
 };
 const sanitizeTeamAccount = (account = {}) => {
@@ -727,6 +875,7 @@ const sanitizeTeamAccount = (account = {}) => {
   return {
     ...rest,
     saleMode: normalizeTeamSaleMode(rest.saleMode),
+    warehouse: normalizeTeamWarehouse(rest.warehouse),
     slots: normalizeTeamSlots(rest.slots),
   };
 };
@@ -747,86 +896,6 @@ const VALID_PACKAGE2_SHELVES = [
 const DATAMMO_PARTNER_API_TOKEN =
   process.env.DATAMMO_PARTNER_API_TOKEN || DATAMMO_TOKEN;
 
-const getDatammoInventoryUrl = (line) => line?.inventoryUrl || DATAMMO_URL;
-const getDatammoLineKey = (line) =>
-  `${getDatammoInventoryUrl(line)}||${line.variantId}||${line.content}`;
-const DATAMMO_MIN_REQUEST_GAP_MS = toPositiveInt(
-  process.env.DATAMMO_MIN_REQUEST_GAP_MS,
-  1200,
-);
-const DATAMMO_RATE_LIMIT_RETRIES = toPositiveInt(
-  process.env.DATAMMO_RATE_LIMIT_RETRIES,
-  6,
-);
-const DATAMMO_RATE_LIMIT_BASE_DELAY_MS = toPositiveInt(
-  process.env.DATAMMO_RATE_LIMIT_BASE_DELAY_MS,
-  1200,
-);
-let datammoRequestQueue = Promise.resolve();
-let datammoNextRequestAt = 0;
-const waitMs = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
-const getDatammoErrorText = (err) => {
-  const responseData = err?.response?.data;
-  if (typeof responseData === "string") return responseData;
-  if (responseData) return JSON.stringify(responseData);
-  return String(err?.message || "");
-};
-const isDatammoRateLimitError = (err) => {
-  const status = Number(err?.response?.status || err?.status || 0);
-  if (status === 429) return true;
-  const text = getDatammoErrorText(err).toLowerCase();
-  return (
-    text.includes("too many requests") ||
-    text.includes("rate limit") ||
-    text.includes("try again later")
-  );
-};
-const enqueueDatammoRequest = async (fn) => {
-  const run = async () => {
-    const now = Date.now();
-    const waitFor = Math.max(0, datammoNextRequestAt - now);
-    if (waitFor > 0) await waitMs(waitFor);
-    datammoNextRequestAt = Date.now() + DATAMMO_MIN_REQUEST_GAP_MS;
-    return fn();
-  };
-  const task = datammoRequestQueue.then(run, run);
-  datammoRequestQueue = task.catch(() => undefined);
-  return task;
-};
-const postDatammo = async (
-  url,
-  payload,
-  options = {},
-) => {
-  const maxRetries = Math.max(
-    0,
-    Number.isFinite(Number(options.maxRetries))
-      ? Number(options.maxRetries)
-      : DATAMMO_RATE_LIMIT_RETRIES,
-  );
-  let attempt = 0;
-  while (true) {
-    try {
-      return await enqueueDatammoRequest(() =>
-        axios.post(url, payload, {
-          headers: { Authorization: `Bearer ${DATAMMO_TOKEN}` },
-        }),
-      );
-    } catch (err) {
-      if (!isDatammoRateLimitError(err) || attempt >= maxRetries) {
-        throw err;
-      }
-      const backoff = Math.min(
-        DATAMMO_RATE_LIMIT_BASE_DELAY_MS * 2 ** attempt,
-        20000,
-      );
-      const jitter = Math.floor(Math.random() * 250);
-      await waitMs(backoff + jitter);
-      attempt += 1;
-    }
-  }
-};
 const normalizePackage2Shelf = (shelf, fallback = CHATGPT_TOTAL_VALUE) => {
   if (shelf === PACKAGE2_SHELF_CHEAP) return PACKAGE2_SHELF_CHEAP;
   if (shelf === PACKAGE2_SHELF_MAIN) return CHATGPT_MANUAL_MARKET_VALUE;
@@ -958,13 +1027,43 @@ const extractDatammoOrderIdFromUser = (user) => {
   const info = getMarketplaceOrderInfoFromUser(user);
   return String(info.orderId || "").trim();
 };
-const findLatestMarketplaceOrderForAccount = async (accountId, provider = "") => {
+const buildMarketplaceResourceKey = ({
+  scope = "chatgpt",
+  itemType = "chatgpt_account",
+  accountId = "",
+  slotIndex = -1,
+} = {}) => {
+  const normalizedScope = String(scope || "chatgpt").trim().toLowerCase();
+  const normalizedType = String(itemType || "chatgpt_account")
+    .trim()
+    .toLowerCase();
+  const normalizedAccountId = String(accountId || "").trim();
+  if (normalizedScope === "team" && normalizedType === "team_slot") {
+    return `team_slot:${normalizedAccountId}:${Number(slotIndex)}`;
+  }
+  if (normalizedScope === "team" && normalizedType === "team_business") {
+    return `team_business:${normalizedAccountId}`;
+  }
+  return normalizedAccountId;
+};
+const getMarketplaceOrderInfoFromTeamSlot = (slot = {}) =>
+  getMarketplaceOrderInfoFromUser({
+    name: String(slot?.customerName || "").trim(),
+  });
+const findLatestMarketplaceOrderForAccount = async (
+  accountId,
+  provider = "",
+  scope = "",
+) => {
   const normalizedId = String(accountId || "").trim();
   if (!normalizedId) return null;
   const filter = { "accounts.accountId": normalizedId };
   const normalizedProvider = normalizeMarketplaceProvider(provider, "");
   if (normalizedProvider) {
     filter.provider = normalizedProvider;
+  }
+  if (scope) {
+    filter.scope = String(scope || "").trim().toLowerCase();
   }
   const latestOrder = await DatammoOrder.findOne(filter)
     .sort({ createdAt: -1 })
@@ -1196,6 +1295,7 @@ const rollbackClaimedPackage2Accounts = async (claimed = []) => {
   }
 };
 const logMarketplaceOrder = async ({
+  scope = "chatgpt",
   provider,
   orderId,
   shelf,
@@ -1203,13 +1303,26 @@ const logMarketplaceOrder = async ({
   claimed,
 }) => {
   await DatammoOrder.create({
+    scope: String(scope || "chatgpt").trim().toLowerCase(),
     provider: normalizeMarketplaceProvider(provider),
     orderId,
     shelf: shelf || "market",
     quantity,
     accounts: (Array.isArray(claimed) ? claimed : []).map((item) => ({
+      scope: String(item?.scope || scope || "chatgpt").trim().toLowerCase(),
+      itemType: String(item?.itemType || "chatgpt_account").trim(),
+      resourceKey: String(
+        item?.resourceKey ||
+          buildMarketplaceResourceKey({
+            scope: item?.scope || scope || "chatgpt",
+            itemType: item?.itemType || "chatgpt_account",
+            accountId: item?.updatedAcc?.id || item?.oldAcc?.id || "",
+            slotIndex: item?.slotIndex,
+          }),
+      ).trim(),
       accountId: String(item?.updatedAcc?.id || item?.oldAcc?.id || ""),
       username: String(item?.updatedAcc?.username || item?.oldAcc?.username || ""),
+      slotIndex: Number.isInteger(item?.slotIndex) ? item.slotIndex : -1,
       delivery: String(item?.delivery || ""),
     })),
   });
@@ -1237,54 +1350,12 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
 
   return normalized;
 };
-const buildTeamBusinessDatammoContent = (acc = {}) =>
+const buildTeamBusinessDeliveryLine = (acc = {}) =>
   `${String(acc.username || "").trim()}|${String(acc.password || "").trim()}|${String(
     acc.recoveryUrl || "",
   ).trim()}`;
-const buildTeamSlotDatammoContent = (acc = {}, slotNum = 1) =>
-  `Slot ${slotNum}|${String(acc.username || "").trim()}|Bạn gửi kèm gmail chính chủ để admin up`;
-const buildTeamDatammoLines = (acc, options = {}) => {
-  if (!acc || acc.slots === undefined) return [];
-  const includeAllSlots = options.includeAllSlots === true;
-  const includeBusiness = options.includeBusiness === true;
-  const saleMode = normalizeTeamSaleMode(acc.saleMode);
-  const teamSlots = normalizeTeamSlots(acc.slots);
-  const lines = [];
-  const datammoBusinessContent = buildTeamBusinessDatammoContent(acc);
-  const businessContent = `${String(acc.username || "").trim()}|${String(
-    acc.password || "",
-  ).trim()}|${String(acc.recoveryUrl || "").trim()}`;
-  const slotContent = (slotNum) =>
-    `Slot ${slotNum}|${acc.username}|Báº¡n gá»­i kÃ¨m gmail chÃ­nh chá»§ Ä‘á»ƒ admin up`;
-
-  if (includeBusiness || saleMode === TEAM_SALE_MODE_BUSINESS) {
-    const activeSlots = teamSlots.filter(
-      (slot) => slot.status !== "empty" && !!slot.gmail,
-    ).length;
-    if (includeBusiness || activeSlots === 0) {
-      lines.push({
-        variantId: DATAMMO_VARIANT_TEAM_BUSINESS,
-        content: datammoBusinessContent,
-      });
-    }
-  }
-
-  if (!includeAllSlots && saleMode === TEAM_SALE_MODE_BUSINESS) {
-    return lines;
-  }
-
-  for (let i = 1; i <= 4; i += 1) {
-    const slot = teamSlots[i - 1];
-    if (includeAllSlots || slot?.status === "empty" || !slot?.gmail) {
-      lines.push({
-        variantId: DATAMMO_VARIANT_PKG3,
-        content: buildTeamSlotDatammoContent(acc, i),
-      });
-    }
-  }
-
-  return lines;
-};
+const buildTeamSlotDeliveryLine = (acc = {}, slotNum = 1) =>
+  `Slot ${slotNum}|${String(acc.username || "").trim()}|Ban gui kem gmail chinh chu de admin up`;
 const snapshotDocument = (doc) => {
   if (!doc) return null;
   if (typeof doc.toObject === "function") {
@@ -1325,177 +1396,186 @@ const withFreshUpdatedAt = (payload = {}) => ({
   updatedAt: new Date().toISOString(),
 });
 
-const getDatammoLines = (acc) => {
-  if (!acc || acc.slots === undefined) return [];
-  const lines = [];
-  const teamSaleMode = normalizeTeamSaleMode(acc.saleMode);
-  const teamSlots = normalizeTeamSlots(acc.slots);
-
-  if (teamSaleMode === TEAM_SALE_MODE_BUSINESS) {
-    const activeSlots = teamSlots.filter(
-      (slot) => slot.status !== "empty" && !!slot.gmail,
-    ).length;
-    if (activeSlots === 0) {
-      lines.push({
-        variantId: DATAMMO_VARIANT_TEAM_BUSINESS,
-        content: buildTeamBusinessDatammoContent(acc),
-      });
-    }
-    return lines;
-  }
-
-  teamSlots.forEach((slot, index) => {
-    if (slot.status === "empty" || !slot.gmail) {
-      lines.push({
-        variantId: DATAMMO_VARIANT_PKG3,
-        content: buildTeamSlotDatammoContent(acc, index + 1),
-      });
-    }
-  });
-
-  return lines;
+const resolveTeamMarketplaceMode = (value, fallback = TEAM_SALE_MODE_SLOT) => {
+  const normalized = normalizeTeamSaleMode(value, fallback);
+  return normalized;
 };
-
-const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
-  const forceTeamResync = options.forceTeamResync === true;
-  const strictDatammoSync =
-    options.strictDatammoSync === true || options.throwOnSyncError === true;
-  const isTeamContext =
-    oldAcc?.slots !== undefined || newAcc?.slots !== undefined;
-
-  if (!isTeamContext) {
-    return {
-      toDelete: 0,
-      toAdd: 0,
-      failed: 0,
-      syncErrors: [],
-      skipped: true,
-    };
-  }
-
-  const syncErrors = [];
-  const recordSyncError = (stage, item, inventoryUrl, errorValue) => {
-    const errorText =
-      typeof errorValue === "string"
-        ? errorValue
-        : JSON.stringify(errorValue || "unknown error");
-    syncErrors.push({
-      stage,
-      inventoryUrl: inventoryUrl || getDatammoInventoryUrl(item),
-      variantId: item?.variantId || "",
-      content: item?.content || "",
-      error: errorText,
-    });
-  };
-
-  const rawOldLines = getDatammoLines(oldAcc);
-  const newLines = getDatammoLines(newAcc);
-
-  let toDelete = [];
-  let toAdd = [];
-
-  if (forceTeamResync) {
-    const deleteMap = new Map();
-    [
-      ...buildTeamDatammoLines(oldAcc, {
-        includeAllSlots: true,
-        includeBusiness: true,
-      }),
-      ...buildTeamDatammoLines(newAcc, {
-        includeAllSlots: true,
-        includeBusiness: true,
-      }),
-    ].forEach((line) => {
-      deleteMap.set(getDatammoLineKey(line), line);
-    });
-    toDelete = Array.from(deleteMap.values());
-    toAdd = newLines;
-  } else {
-    const newLineKeys = new Set(newLines.map(getDatammoLineKey));
-    const oldLineKeys = new Set(rawOldLines.map(getDatammoLineKey));
-
-    toDelete = rawOldLines.filter(
-      (oldLine) => !newLineKeys.has(getDatammoLineKey(oldLine)),
-    );
-    toAdd = newLines.filter(
-      (newLine) => !oldLineKeys.has(getDatammoLineKey(newLine)),
-    );
-  }
-
-  for (const item of toDelete) {
-    const inventoryUrl = getDatammoInventoryUrl(item);
-    try {
-      await postDatammo(
-        `${inventoryUrl}/delete`,
-        { variantId: item.variantId, content: item.content },
-      );
-      console.log("Datammo DELETE synced:", item.content, "=>", inventoryUrl);
-    } catch (err) {
-      const deleteErr = err?.response?.data || err.message;
-      recordSyncError("delete", item, inventoryUrl, deleteErr);
-      console.error("Datammo DELETE err:", deleteErr);
-    }
-  }
-
-  for (const item of toAdd) {
-    const inventoryUrl = getDatammoInventoryUrl(item);
-    try {
-      await postDatammo(
-        inventoryUrl,
-        { variantId: item.variantId, content: item.content },
-      );
-      console.log("Datammo ADD synced:", item.content, "=>", inventoryUrl);
-    } catch (err) {
-      const addErr = err?.response?.data || err.message;
-      recordSyncError("add", item, inventoryUrl, addErr);
-      console.error("Datammo ADD err:", addErr);
-    }
-  }
-
-  if (strictDatammoSync && syncErrors.length > 0) {
-    const syncError = new Error(
-      `Datammo sync failed for ${syncErrors.length} item(s)`,
-    );
-    syncError.code = "DATAMMO_SYNC_FAILED";
-    syncError.syncErrors = syncErrors;
-    throw syncError;
-  }
-
+const resolveTeamMarketplaceModeFromReq = (req) => {
+  const variantId = String(req.query?.variant_id || req.query?.variantId || "").trim();
+  if (variantId === DATAMMO_VARIANT_TEAM_BUSINESS) return TEAM_SALE_MODE_BUSINESS;
+  if (variantId === DATAMMO_VARIANT_PKG3) return TEAM_SALE_MODE_SLOT;
+  const rawMode = String(req.params?.mode || req.query?.mode || req.body?.mode || "").trim().toLowerCase();
+  if (rawMode === TEAM_SALE_MODE_BUSINESS) return TEAM_SALE_MODE_BUSINESS;
+  if (rawMode === TEAM_SALE_MODE_SLOT) return TEAM_SALE_MODE_SLOT;
+  return "";
+};
+const buildTeamMarketplaceSellableAccounts = async (mode) => {
+  const saleMode = resolveTeamMarketplaceMode(mode);
+  const accounts = await TeamAccount.find({
+    saleMode,
+    warehouse: TEAM_WAREHOUSE_MARKET,
+  }).sort({ createdAt: 1, id: 1 }).lean();
+  return accounts.filter((account) => isEligibleForTeamMarketSale(account));
+};
+const countTeamMarketplaceStock = async (mode) => {
+  const saleMode = resolveTeamMarketplaceMode(mode);
+  const accounts = await buildTeamMarketplaceSellableAccounts(saleMode);
+  if (saleMode === TEAM_SALE_MODE_BUSINESS) return accounts.length;
+  return accounts.reduce(
+    (sum, account) => sum + getAvailableTeamSlotIndices(account?.slots).length,
+    0,
+  );
+};
+const buildManagedTeamCustomer = (provider, orderId, joinDate) => {
+  const normalizedProvider = normalizeMarketplaceProvider(provider);
+  const orderCode = String(orderId || Date.now()).trim();
+  const joinedAt = new Date(joinDate || new Date());
+  const expiresAt = addDurationToDate(joinedAt, "1M");
   return {
-    toDelete: toDelete.length,
-    toAdd: toAdd.length,
-    failed: syncErrors.length,
-    syncErrors,
+    status: "active",
+    gmail:
+      normalizedProvider === "shopmini"
+        ? "shopmini@guest.local"
+        : "datammo@guest.local",
+    customerName:
+      normalizedProvider === "shopmini"
+        ? `Shopmini#${orderCode}`
+        : `Datammo#${orderCode}`,
+    addedAt: joinedAt.toISOString(),
+    expiredAt: expiresAt.toISOString(),
   };
 };
-const datammoSyncLocks = new Map();
-const getDatammoSyncLockKey = (oldAcc, newAcc) =>
-  String(newAcc?.id || oldAcc?.id || "global");
-const syncDatammoUpdateLocked = async (oldAcc, newAcc, options = {}) => {
-  const lockKey = getDatammoSyncLockKey(oldAcc, newAcc);
-  const previous = datammoSyncLocks.get(lockKey) || Promise.resolve();
-  let releaseCurrent = null;
-  const current = new Promise((resolve) => {
-    releaseCurrent = resolve;
-  });
-  const chain = previous.then(() => current);
-  datammoSyncLocks.set(lockKey, chain);
-
-  await previous;
-  try {
-    return await syncDatammoUpdate(oldAcc, newAcc, options);
-  } finally {
-    if (releaseCurrent) releaseCurrent();
-    if (datammoSyncLocks.get(lockKey) === chain) {
-      datammoSyncLocks.delete(lockKey);
+const claimTeamBusinessAccountsForOrder = async ({ quantity, orderId, provider }) => {
+  const claimed = [];
+  for (let i = 0; i < quantity; i += 1) {
+    let reserved = null;
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const oldAcc = await TeamAccount.findOne({
+        saleMode: TEAM_SALE_MODE_BUSINESS,
+        warehouse: TEAM_WAREHOUSE_MARKET,
+      }).sort({ createdAt: 1, id: 1 }).lean();
+      if (!oldAcc) break;
+      if (!isEligibleForTeamMarketSale(oldAcc)) {
+        await syncTeamWarehouseStateIfNeeded(oldAcc);
+        continue;
+      }
+      const teamSlots = normalizeTeamSlots(oldAcc.slots);
+      const emptySlotIndex = getAvailableTeamSlotIndices(teamSlots)[0];
+      if (!Number.isInteger(emptySlotIndex) || emptySlotIndex < 0) {
+        await syncTeamWarehouseStateIfNeeded(oldAcc);
+        continue;
+      }
+      teamSlots[emptySlotIndex] = buildManagedTeamCustomer(provider, orderId, new Date());
+      const updatedAcc = await TeamAccount.findOneAndUpdate(
+        buildConditionalUpdateFilter(oldAcc.id, oldAcc.updatedAt),
+        withFreshUpdatedAt({ slots: teamSlots }),
+        { new: true },
+      );
+      if (!updatedAcc) continue;
+      reserved = {
+        oldAcc,
+        updatedAcc,
+        saleMode: TEAM_SALE_MODE_BUSINESS,
+        scope: "team",
+        itemType: "team_business",
+        slotIndex: emptySlotIndex,
+        resourceKey: buildMarketplaceResourceKey({
+          scope: "team",
+          itemType: "team_business",
+          accountId: updatedAcc.id,
+          slotIndex: emptySlotIndex,
+        }),
+        delivery: buildTeamBusinessDeliveryLine(updatedAcc),
+      };
+      break;
     }
+    if (!reserved) break;
+    claimed.push(reserved);
   }
+  return claimed;
+};
+const claimTeamSlotAccountsForOrder = async ({ quantity, orderId, provider }) => {
+  const claimed = [];
+  for (let i = 0; i < quantity; i += 1) {
+    let reserved = null;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const oldAcc = await TeamAccount.findOne({
+        saleMode: TEAM_SALE_MODE_SLOT,
+        warehouse: TEAM_WAREHOUSE_MARKET,
+      }).sort({ createdAt: 1, id: 1 }).lean();
+      if (!oldAcc) break;
+      if (!isEligibleForTeamMarketSale(oldAcc)) {
+        await syncTeamWarehouseStateIfNeeded(oldAcc);
+        continue;
+      }
+      const teamSlots = normalizeTeamSlots(oldAcc.slots);
+      const emptySlotIndex = getAvailableTeamSlotIndices(teamSlots)[0];
+      if (!Number.isInteger(emptySlotIndex) || emptySlotIndex < 0) {
+        await syncTeamWarehouseStateIfNeeded(oldAcc);
+        continue;
+      }
+      teamSlots[emptySlotIndex] = buildManagedTeamCustomer(provider, orderId, new Date());
+      const updatedAcc = await TeamAccount.findOneAndUpdate(
+        buildConditionalUpdateFilter(oldAcc.id, oldAcc.updatedAt),
+        withFreshUpdatedAt({ slots: teamSlots }),
+        { new: true },
+      );
+      if (!updatedAcc) continue;
+      reserved = {
+        oldAcc,
+        updatedAcc,
+        saleMode: TEAM_SALE_MODE_SLOT,
+        scope: "team",
+        itemType: "team_slot",
+        slotIndex: emptySlotIndex,
+        resourceKey: buildMarketplaceResourceKey({
+          scope: "team",
+          itemType: "team_slot",
+          accountId: updatedAcc.id,
+          slotIndex: emptySlotIndex,
+        }),
+        delivery: buildTeamSlotDeliveryLine(updatedAcc, emptySlotIndex + 1),
+      };
+      break;
+    }
+    if (!reserved) break;
+    claimed.push(reserved);
+  }
+  return claimed;
+};
+const claimTeamAccountsForOrder = async ({ quantity, orderId, provider, saleMode }) => {
+  if (resolveTeamMarketplaceMode(saleMode) === TEAM_SALE_MODE_BUSINESS) {
+    return claimTeamBusinessAccountsForOrder({ quantity, orderId, provider });
+  }
+  return claimTeamSlotAccountsForOrder({ quantity, orderId, provider });
+};
+const rollbackClaimedTeamAccounts = async (claimed = []) => {
+  for (const item of claimed) {
+    if (!item?.oldAcc?.id) continue;
+    await TeamAccount.findOneAndUpdate(
+      { id: item.oldAcc.id },
+      {
+        $set: {
+          slots: normalizeTeamSlots(item.oldAcc.slots),
+          saleMode: normalizeTeamSaleMode(item.oldAcc.saleMode),
+          warehouse: normalizeTeamWarehouse(item.oldAcc.warehouse, TEAM_WAREHOUSE_TOTAL),
+          note: item.oldAcc.note || "",
+          updatedAt: item.oldAcc.updatedAt || new Date().toISOString(),
+        },
+      },
+    );
+  }
+};
+const buildTeamMarketplaceStockPayload = async (mode) => {
+  const stock = await countTeamMarketplaceStock(mode);
+  return { stock };
 };
 // ---------------------------
 
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
     await reconcileChatgptMarketInventory();
+    await reconcileTeamMarketInventory();
     const [
       accounts,
       netflixAccs,
@@ -1538,6 +1618,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
 app.get("/api/data-public", async (req, res) => {
   try {
     await reconcileChatgptMarketInventory();
+    await reconcileTeamMarketInventory();
     const accounts = await Account.find({}).lean();
     res.json({
       chatgpt: accounts.map((acc) => ({
@@ -1759,6 +1840,239 @@ app.all(
     } catch (error) {
       if (claimed.length > 0) {
         await rollbackClaimedPackage2Accounts(claimed);
+      }
+      return res
+        .status(500)
+        .json({ success: false, message: error.message || "Buy error" });
+    }
+  },
+);
+
+app.get(
+  ["/api/datammo/team/stock", "/api/datammo/team/stock/:mode"],
+  verifyDatammoPartnerToken,
+  async (req, res) => {
+    try {
+      await reconcileTeamMarketInventory();
+      const saleMode = resolveTeamMarketplaceModeFromReq(req);
+      if (!saleMode) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing team mode",
+        });
+      }
+      const payload = await buildTeamMarketplaceStockPayload(saleMode);
+      return res.json(payload);
+    } catch (error) {
+      return res
+        .status(error.statusCode || 500)
+        .json({ success: false, message: error.message || "Stock error" });
+    }
+  },
+);
+
+app.get(
+  ["/api/datammo/team/buy", "/api/datammo/team/buy/:mode"],
+  verifyDatammoPartnerToken,
+  async (req, res) => {
+    const quantity = getSafeBuyQuantity(req.query?.quantity);
+    const orderId = String(
+      req.query?.order_id || req.query?.orderId || `dm_team_${Date.now()}`,
+    ).trim();
+    let claimed = [];
+    try {
+      await reconcileTeamMarketInventory();
+      const saleMode = resolveTeamMarketplaceModeFromReq(req);
+      if (!saleMode) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing team mode",
+        });
+      }
+      const available = await countTeamMarketplaceStock(saleMode);
+      if (available < quantity) {
+        return res.status(409).json({
+          success: false,
+          message: `Insufficient stock (${available}/${quantity})`,
+          available,
+        });
+      }
+
+      claimed = await claimTeamAccountsForOrder({
+        quantity,
+        orderId,
+        provider: "datammo",
+        saleMode,
+      });
+
+      if (claimed.length < quantity) {
+        await rollbackClaimedTeamAccounts(claimed);
+        return res.status(409).json({
+          success: false,
+          message: "Stock changed during processing. Please retry.",
+          available: claimed.length,
+        });
+      }
+
+      try {
+        await logMarketplaceOrder({
+          scope: "team",
+          provider: "datammo",
+          orderId,
+          shelf: "market",
+          quantity,
+          claimed,
+        });
+      } catch (orderLogError) {
+        console.error(
+          "Datammo team order log error:",
+          orderLogError?.message || orderLogError,
+        );
+      }
+
+      bumpDataVersion();
+      notifyClients();
+
+      return res.json({
+        success: true,
+        data: claimed.map((item) => item.delivery),
+      });
+    } catch (error) {
+      if (claimed.length > 0) {
+        await rollbackClaimedTeamAccounts(claimed);
+      }
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  },
+);
+
+app.all(
+  [
+    "/api/shopmini/team/input.php",
+    "/api/shopmini/team/input.php/:mode",
+    "/api/shopmini/team/:mode/input.php",
+  ],
+  verifyShopminiPrivateToken,
+  async (req, res) => {
+    const action = resolveShopminiActionFromReq(req);
+
+    if (action !== "buy") {
+      try {
+        await reconcileTeamMarketInventory();
+        const saleMode = resolveTeamMarketplaceModeFromReq(req);
+        if (!saleMode) {
+          return res.status(400).json({
+            success: false,
+            message: "Missing team mode",
+          });
+        }
+        const payload = await buildTeamMarketplaceStockPayload(saleMode);
+        return res.json({
+          success: true,
+          status: true,
+          result: true,
+          stock: payload.stock,
+          amount: payload.stock,
+          quantity: payload.stock,
+          sum: payload.stock,
+          price: 0,
+          amount_money: 0,
+        });
+      } catch (error) {
+        return res
+          .status(500)
+          .json({ success: false, message: error.message || "Stock error" });
+      }
+    }
+
+    const quantity = getShopminiBuyQuantity(req);
+    const orderId = getShopminiOrderId(req);
+    const rawQuantity =
+      req.query?.quantity ||
+      req.query?.soluong ||
+      req.query?.so_luong ||
+      req.query?.amount ||
+      req.body?.quantity ||
+      req.body?.soluong ||
+      req.body?.so_luong ||
+      req.body?.amount;
+    let claimed = [];
+
+    if (isPlaceholderLikeValue(orderId) || isPlaceholderLikeValue(rawQuantity)) {
+      return res.json({
+        success: true,
+        status: true,
+        result: true,
+        msg: "preview-success",
+        data: ["preview_team|preview_pass|preview_link"],
+        accounts: ["preview_team|preview_pass|preview_link"],
+      });
+    }
+
+    try {
+      await reconcileTeamMarketInventory();
+      const saleMode = resolveTeamMarketplaceModeFromReq(req);
+      if (!saleMode) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing team mode",
+        });
+      }
+      const available = await countTeamMarketplaceStock(saleMode);
+      if (available < quantity) {
+        return res.status(409).json({
+          success: false,
+          message: `Insufficient stock (${available}/${quantity})`,
+          available,
+        });
+      }
+
+      claimed = await claimTeamAccountsForOrder({
+        quantity,
+        orderId,
+        provider: "shopmini",
+        saleMode,
+      });
+
+      if (claimed.length < quantity) {
+        await rollbackClaimedTeamAccounts(claimed);
+        return res.status(409).json({
+          success: false,
+          message: "Stock changed during processing. Please retry.",
+          available: claimed.length,
+        });
+      }
+
+      try {
+        await logMarketplaceOrder({
+          scope: "team",
+          provider: "shopmini",
+          orderId,
+          shelf: "market",
+          quantity,
+          claimed,
+        });
+      } catch (orderLogError) {
+        console.error(
+          "Shopmini team order log error:",
+          orderLogError?.message || orderLogError,
+        );
+      }
+
+      bumpDataVersion();
+      notifyClients();
+
+      return res.json({
+        success: true,
+        status: true,
+        result: true,
+        msg: "success",
+        data: claimed.map((item) => item.delivery),
+        accounts: claimed.map((item) => item.delivery),
+      });
+    } catch (error) {
+      if (claimed.length > 0) {
+        await rollbackClaimedTeamAccounts(claimed);
       }
       return res
         .status(500)
@@ -2237,42 +2551,16 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
 
     const updatedFrom = await TeamAccount.findOne({ id: fromAccId });
     const updatedTo = await TeamAccount.findOne({ id: toAccId });
-    const syncOptions = {
-      strictDatammoSync: true,
-      forceTeamResync: true,
-    };
-    try {
-      await Promise.all([
-        syncDatammoUpdateLocked(fromAcc, updatedFrom, syncOptions),
-        syncDatammoUpdateLocked(toAcc, updatedTo, syncOptions),
-      ]);
-    } catch (syncError) {
-      const [rolledBackFrom, rolledBackTo] = await Promise.all([
-        restoreDocumentSnapshot(TeamAccount, fromAccId, fromSnapshot),
-        restoreDocumentSnapshot(TeamAccount, toAccId, toSnapshot),
-      ]);
-      try {
-        await Promise.all([
-          rolledBackFrom
-            ? syncDatammoUpdateLocked(updatedFrom, rolledBackFrom, syncOptions)
-            : Promise.resolve(),
-          rolledBackTo
-            ? syncDatammoUpdateLocked(updatedTo, rolledBackTo, syncOptions)
-            : Promise.resolve(),
-        ]);
-      } catch (rollbackSyncError) {
-        console.error(
-          "Datammo rollback sync error (team move slot):",
-          rollbackSyncError?.syncErrors ||
-            rollbackSyncError?.response?.data ||
-            rollbackSyncError?.message ||
-            rollbackSyncError,
-        );
-      }
-      throw syncError;
-    }
+    const [reconciledFrom, reconciledTo] = await Promise.all([
+      syncTeamWarehouseStateIfNeeded(updatedFrom),
+      syncTeamWarehouseStateIfNeeded(updatedTo),
+    ]);
 
-    res.json({ message: "Team Slot moved successfully", from: updatedFrom, to: updatedTo });
+    res.json({
+      message: "Team Slot moved successfully",
+      from: sanitizeTeamAccount(reconciledFrom?.toObject?.() || reconciledFrom),
+      to: sanitizeTeamAccount(reconciledTo?.toObject?.() || reconciledTo),
+    });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -2583,9 +2871,12 @@ app.post("/api/team", verifyToken, async (req, res) => {
     };
     newAcc.slots = normalizeTeamSlots(newAcc.slots);
     assertValidTeamSlotsForSaleMode(newAcc.saleMode, newAcc.slots);
-    await TeamAccount.create(newAcc);
-    await syncDatammoUpdateLocked(null, newAcc);
-    res.json({ message: "Added", account: sanitizeTeamAccount(newAcc) });
+    const created = await TeamAccount.create(newAcc);
+    const synced = await syncTeamWarehouseStateIfNeeded(created);
+    res.json({
+      message: "Added",
+      account: sanitizeTeamAccount(synced?.toObject?.() || synced),
+    });
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message });
   }
@@ -2610,9 +2901,12 @@ app.post("/api/team-public", async (req, res) => {
     };
     newAcc.slots = normalizeTeamSlots(newAcc.slots);
     assertValidTeamSlotsForSaleMode(newAcc.saleMode, newAcc.slots);
-    await TeamAccount.create(newAcc);
-    await syncDatammoUpdateLocked(null, newAcc);
-    res.json({ message: "Added", account: sanitizeTeamAccount(newAcc) });
+    const created = await TeamAccount.create(newAcc);
+    const synced = await syncTeamWarehouseStateIfNeeded(created);
+    res.json({
+      message: "Added",
+      account: sanitizeTeamAccount(synced?.toObject?.() || synced),
+    });
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message });
   }
@@ -2628,8 +2922,7 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
     const expectedUpdatedAt = getExpectedUpdatedAtValue(
       req.body?.expectedUpdatedAt,
     );
-    ensureCurrentVersion(existing, expectedUpdatedAt, "Team account này");
-    const existingSnapshot = snapshotDocument(existing);
+    ensureCurrentVersion(existing, expectedUpdatedAt, "Team account nay");
     const updatePayload = normalizeTeamPayload(req.body);
     if (updatePayload.slots !== undefined) {
       updatePayload.slots = normalizeTeamSlots(updatePayload.slots);
@@ -2640,9 +2933,31 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
         : existing.saleMode;
     const nextSlots =
       updatePayload.slots !== undefined ? updatePayload.slots : existing.slots;
-    if (updatePayload.saleMode !== undefined || updatePayload.slots !== undefined) {
+    if (
+      updatePayload.saleMode !== undefined ||
+      updatePayload.slots !== undefined
+    ) {
       assertValidTeamSlotsForSaleMode(nextSaleMode, nextSlots);
     }
+
+    const currentWarehouse = normalizeTeamWarehouse(
+      existing.warehouse,
+      TEAM_WAREHOUSE_TOTAL,
+    );
+    const nextWarehouse =
+      updatePayload.warehouse !== undefined
+        ? normalizeTeamWarehouse(updatePayload.warehouse, currentWarehouse)
+        : currentWarehouse;
+    if (
+      nextWarehouse !== currentWarehouse &&
+      countActiveTeamCustomers(existing.slots) > 0
+    ) {
+      return res.status(400).json({
+        error:
+          "Team dang co khach. Vui long xoa hoac chuyen khach truoc khi doi kho.",
+      });
+    }
+
     const updated = await TeamAccount.findOneAndUpdate(
       buildConditionalUpdateFilter(req.params.id, expectedUpdatedAt),
       withFreshUpdatedAt(updatePayload),
@@ -2651,44 +2966,13 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
     if (!updated) {
       return res.status(409).json({
         error:
-          "Team account này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+          "Team account nay vua duoc admin khac cap nhat. Vui long tai lai du lieu roi thu lai.",
       });
     }
-    const syncOptions = {
-      strictDatammoSync: true,
-      forceTeamResync:
-        req.body?.slots !== undefined ||
-        req.body?.saleMode !== undefined ||
-        req.body?.username !== undefined ||
-        req.body?.password !== undefined ||
-        req.body?.recoveryUrl !== undefined,
-    };
-    try {
-      await syncDatammoUpdateLocked(existing, updated, syncOptions);
-    } catch (syncError) {
-      const rolledBack = await restoreDocumentSnapshot(
-        TeamAccount,
-        req.params.id,
-        existingSnapshot,
-      );
-      if (rolledBack) {
-        try {
-          await syncDatammoUpdateLocked(updated, rolledBack, syncOptions);
-        } catch (rollbackSyncError) {
-          console.error(
-            "Datammo rollback sync error (team update):",
-            rollbackSyncError?.syncErrors ||
-              rollbackSyncError?.response?.data ||
-              rollbackSyncError?.message ||
-              rollbackSyncError,
-          );
-        }
-      }
-      throw syncError;
-    }
+    const reconciled = await syncTeamWarehouseStateIfNeeded(updated);
     res.json({
       message: "Updated",
-      account: sanitizeTeamAccount(updated?.toObject?.() || updated),
+      account: sanitizeTeamAccount(reconciled?.toObject?.() || reconciled),
     });
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message });
@@ -2707,36 +2991,12 @@ app.delete("/api/team/:id", verifyToken, async (req, res) => {
     if (!existing && expectedUpdatedAt) {
       return res.status(409).json({
         error:
-          "Team account này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+          "Team account nay vua duoc admin khac cap nhat. Vui long tai lai du lieu roi thu lai.",
       });
     }
-    if (existing) await syncDatammoUpdateLocked(existing, null);
     res.json({ message: "Deleted" });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/api/team/:id/resync-datammo", verifyToken, async (req, res) => {
-  try {
-    const expectedUpdatedAt = getExpectedUpdatedAtValue(
-      req.body?.expectedUpdatedAt,
-    );
-    const existing = await TeamAccount.findOne({ id: req.params.id });
-    if (!existing) {
-      return res.status(404).json({ error: "Team account not found" });
-    }
-    ensureCurrentVersion(existing, expectedUpdatedAt, "Team account nay");
-
-    await syncDatammoUpdateLocked(existing, existing, {
-      forceTeamResync: true,
-      strictDatammoSync: true,
-    });
-
-    res.json({
-      message: "Resynced Datammo",
-      account: sanitizeTeamAccount(existing?.toObject?.() || existing),
-    });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

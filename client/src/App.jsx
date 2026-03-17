@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import {
   Trash2,
@@ -70,6 +70,23 @@ const isChatgptShortDateWarehouse = (acc = {}) =>
   normalizePackage2Shelf(acc?.package2Shelf) === "main";
 const normalizeTeamSaleMode = (value) =>
   value === "business" ? "business" : "slot";
+const normalizeTeamWarehouse = (value) => {
+  if (value === "market") return "market";
+  if (value === "short") return "short";
+  return "total";
+};
+const getTeamWarehouseLabel = (value) =>
+  normalizeTeamWarehouse(value) === "market"
+    ? "Kho market"
+    : normalizeTeamWarehouse(value) === "short"
+      ? "Kho duoi 25 ngay"
+      : "Kho tong";
+const isTeamMarketWarehouse = (account = {}) =>
+  normalizeTeamWarehouse(account?.warehouse) === "market";
+const isTeamShortWarehouse = (account = {}) =>
+  normalizeTeamWarehouse(account?.warehouse) === "short";
+const isTeamTotalWarehouse = (account = {}) =>
+  normalizeTeamWarehouse(account?.warehouse) === "total";
 const buildEmptyTeamSlot = () => ({
   status: "empty",
   gmail: "",
@@ -306,6 +323,7 @@ const buildTeamFormState = (overrides = {}) => ({
   note: "",
   expiredAt: "",
   saleMode: "slot",
+  warehouse: "total",
   ...overrides,
 });
 const buildTeamEditFormState = (overrides = {}) => ({
@@ -365,6 +383,7 @@ const normalizeTeamAccountForUi = (account = {}) => {
   return {
     ...rest,
     saleMode: normalizeTeamSaleMode(rest.saleMode),
+    warehouse: normalizeTeamWarehouse(rest.warehouse),
     slots: normalizeTeamSlotsForUi(rest.slots),
   };
 };
@@ -630,6 +649,8 @@ function App() {
   const [teamExpiryFilter, setTeamExpiryFilter] = useState("all");
   const [teamExpiryMin, setTeamExpiryMin] = useState("");
   const [teamExpiryMax, setTeamExpiryMax] = useState("");
+  const [teamWarehouseTab, setTeamWarehouseTab] = useState("all");
+  const [teamTotalTypeTab, setTeamTotalTypeTab] = useState("all");
   const [simpleCustomerFilter, setSimpleCustomerFilter] = useState("all");
   const [simpleExpiryFilter, setSimpleExpiryFilter] = useState("all");
   const [simpleExpiryMin, setSimpleExpiryMin] = useState("");
@@ -654,6 +675,7 @@ function App() {
     deleteAccount: false,
     warranty: false,
     teamMode: {},
+    changeTeamWarehouse: {},
     changeType: {},
     changeShelf: {},
   });
@@ -2139,10 +2161,11 @@ function App() {
       );
       const updatedAcc = response?.data?.account;
       if (updatedAcc?.id) {
+        const normalizedTeamAcc = normalizeTeamAccountForUi(updatedAcc);
         setTeamAccounts((prev) =>
           prev.map((item) =>
-            item.id === updatedAcc.id
-              ? { ...item, ...updatedAcc, saleMode: normalizeTeamSaleMode(updatedAcc.saleMode) }
+            item.id === normalizedTeamAcc.id
+              ? { ...item, ...normalizedTeamAcc }
               : item,
           ),
         );
@@ -2166,6 +2189,190 @@ function App() {
         delete next[acc.id];
         return { ...prev, teamMode: next };
       });
+    }
+  };
+
+  const handleTeamWarehouseChange = async (acc, nextWarehouse) => {
+    const targetWarehouse = normalizeTeamWarehouse(nextWarehouse);
+    const currentWarehouse = normalizeTeamWarehouse(acc?.warehouse);
+    if (!acc?.id || targetWarehouse === currentWarehouse) return;
+
+    const activeCustomers = getActiveTeamCustomers(acc);
+    if (activeCustomers.length > 0) {
+      showAlert(
+        "Khong the chuyen kho",
+        "Team dang co khach nen khong the doi kho.",
+        "warning",
+      );
+      return;
+    }
+
+    const isBusinessMode = normalizeTeamSaleMode(acc?.saleMode) === "business";
+    const daysLeft = getAccountDaysRemaining(acc);
+
+    if (targetWarehouse === "short" && !isBusinessMode) {
+      showAlert(
+        "Khong hop le",
+        "Kho duoi 25 ngay chi dung cho Team Business.",
+        "warning",
+      );
+      return;
+    }
+
+    if (targetWarehouse === "market" && daysLeft !== null && daysLeft <= 25) {
+      showAlert(
+        "Khong the day vao kho market",
+        "Team con 25 ngay tro xuong phai de o kho tong hoac kho duoi 25 ngay.",
+        "warning",
+      );
+      return;
+    }
+
+    setLoadingStates((prev) => ({
+      ...prev,
+      changeTeamWarehouse: {
+        ...(prev.changeTeamWarehouse || {}),
+        [acc.id]: true,
+      },
+    }));
+
+    try {
+      const response = await axios.put(
+        `/api/team/${acc.id}`,
+        withExpectedUpdatedAt({ warehouse: targetWarehouse }, acc),
+      );
+      const updatedAcc = response?.data?.account;
+      if (updatedAcc?.id) {
+        const normalizedTeamAcc = normalizeTeamAccountForUi(updatedAcc);
+        setTeamAccounts((prev) =>
+          prev.map((item) =>
+            item.id === normalizedTeamAcc.id
+              ? { ...item, ...normalizedTeamAcc }
+              : item,
+          ),
+        );
+      } else {
+        await fetchData(false);
+      }
+      broadcastDataChange();
+      showAlert(
+        "Da chuyen kho",
+        `Team da duoc chuyen sang ${getTeamWarehouseLabel(targetWarehouse)}.`,
+        "success",
+      );
+    } catch (error) {
+      showAlert(
+        "Loi",
+        getApiErrorMessage(error, "Khong the doi kho Team"),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => {
+        const next = { ...(prev.changeTeamWarehouse || {}) };
+        delete next[acc.id];
+        return { ...prev, changeTeamWarehouse: next };
+      });
+    }
+  };
+
+  const handleBulkTeamWarehouseMove = async (targetWarehouse) => {
+    const target = normalizeTeamWarehouse(targetWarehouse);
+    const selectedAccounts = teamAccounts.filter((acc) =>
+      selectedTeamIds.includes(String(acc?.id || "")),
+    );
+
+    if (selectedAccounts.length === 0) {
+      showAlert(
+        "Khong co du lieu",
+        "Hay chon Team truoc khi chuyen kho.",
+        "warning",
+      );
+      return;
+    }
+
+    const targetLabel = getTeamWarehouseLabel(target);
+    let success = 0;
+    let failed = 0;
+    let occupied = 0;
+    let unsupported = 0;
+    let nearExpiry = 0;
+    let unchanged = 0;
+    const failedLabels = [];
+
+    setLoadingStates((prev) => ({ ...prev, bulkWarehouseMove: true }));
+    try {
+      for (const acc of selectedAccounts) {
+        const currentWarehouse = normalizeTeamWarehouse(acc?.warehouse);
+        const activeCustomers = getActiveTeamCustomers(acc);
+        const isBusinessMode = normalizeTeamSaleMode(acc?.saleMode) === "business";
+        const daysLeft = getAccountDaysRemaining(acc);
+
+        if (activeCustomers.length > 0) {
+          occupied += 1;
+          continue;
+        }
+        if (currentWarehouse === target) {
+          unchanged += 1;
+          continue;
+        }
+        if (target === "short" && !isBusinessMode) {
+          unsupported += 1;
+          continue;
+        }
+        if (target === "market" && daysLeft !== null && daysLeft <= 25) {
+          nearExpiry += 1;
+          continue;
+        }
+
+        try {
+          await axios.put(
+            `/api/team/${acc.id}`,
+            withExpectedUpdatedAt({ warehouse: target }, acc),
+          );
+          success += 1;
+        } catch (error) {
+          failed += 1;
+          failedLabels.push(
+            `${acc.username}: ${getApiErrorMessage(
+              error,
+              "Khong the chuyen kho",
+            )}`,
+          );
+        }
+      }
+
+      await fetchData(false);
+      broadcastDataChange();
+      setSelectedTeamIds([]);
+
+      const summaryLines = [
+        `Thanh cong: ${success}`,
+        `That bai: ${failed}`,
+      ];
+      if (occupied > 0) {
+        summaryLines.push(`Bo qua Team dang co khach: ${occupied}`);
+      }
+      if (unsupported > 0) {
+        summaryLines.push(`Bo qua Team khong hop kho duoi 25: ${unsupported}`);
+      }
+      if (nearExpiry > 0) {
+        summaryLines.push(`Bo qua Team duoi 25 ngay cho kho market: ${nearExpiry}`);
+      }
+      if (unchanged > 0) {
+        summaryLines.push(`Bo qua Team da o ${targetLabel}: ${unchanged}`);
+      }
+      failedLabels.slice(0, 5).forEach((line) => summaryLines.push(line));
+      if (failedLabels.length > 5) {
+        summaryLines.push(`... va ${failedLabels.length - 5} loi khac`);
+      }
+
+      showAlert(
+        failed === 0 ? "Chuyen kho xong" : "Chuyen kho xong nhung co loi",
+        summaryLines.join("\n"),
+        failed === 0 ? "success" : "warning",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, bulkWarehouseMove: false }));
     }
   };
 
@@ -2828,7 +3035,26 @@ function App() {
         teamExpiryMax,
       ),
     );
-  const filteredTeamIds = filteredTeamAccounts.map((acc) => String(acc?.id || ""));
+  const teamTotalAccounts = filteredTeamAccounts.filter((acc) => {
+    if (!isTeamTotalWarehouse(acc)) return false;
+    if (teamTotalTypeTab === "all") return true;
+    return normalizeTeamSaleMode(acc.saleMode) === teamTotalTypeTab;
+  });
+  const teamMarketAccounts = filteredTeamAccounts.filter((acc) =>
+    isTeamMarketWarehouse(acc),
+  );
+  const teamShortAccounts = filteredTeamAccounts.filter((acc) =>
+    isTeamShortWarehouse(acc),
+  );
+  const teamVisibleAccounts =
+    teamWarehouseTab === "total"
+      ? teamTotalAccounts
+      : teamWarehouseTab === "market"
+        ? teamMarketAccounts
+        : teamWarehouseTab === "short"
+          ? teamShortAccounts
+          : filteredTeamAccounts;
+  const filteredTeamIds = teamVisibleAccounts.map((acc) => String(acc?.id || ""));
   const selectedTeamIdSet = new Set(
     selectedTeamIds.map((id) => String(id || "")),
   );
@@ -2838,25 +3064,25 @@ function App() {
   const allFilteredTeamSelected =
     filteredTeamIds.length > 0 &&
     selectedFilteredTeamCount === filteredTeamIds.length;
-  const teamSlotAccounts = filteredTeamAccounts.filter(
+  const teamSlotAccounts = teamVisibleAccounts.filter(
     (acc) => normalizeTeamSaleMode(acc.saleMode) === "slot",
   );
-  const teamBusinessAccounts = filteredTeamAccounts.filter(
+  const teamBusinessAccounts = teamVisibleAccounts.filter(
     (acc) => normalizeTeamSaleMode(acc.saleMode) === "business",
   );
   const teamSections = [
     {
       key: "slot",
-      title: "Team Slot",
-      subtitle: "Bán theo từng slot (tối đa 4 slot/account)",
+      title: "Goi chia se 4 slot",
+      subtitle: "1 account Team cho toi da 4 khach",
       accounts: teamSlotAccounts,
       badgeClass: "bg-emerald-900/40 text-emerald-300 border-emerald-700/60",
       panelClass: "border-teal-700/40 bg-teal-950/10",
     },
     {
       key: "business",
-      title: "Team Business",
-      subtitle: "Bán theo account gốc (1 account/item)",
+      title: "Nguyen acc Business",
+      subtitle: "1 account = 1 khach Business",
       accounts: teamBusinessAccounts,
       badgeClass: "bg-cyan-900/40 text-cyan-300 border-cyan-700/60",
       panelClass: "border-cyan-700/40 bg-cyan-950/10",
@@ -6134,8 +6360,8 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           {/* Header */}
           <div className="flex flex-wrap gap-3 mb-6 items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold text-white">🏢 ChatGPT Team Accounts</h2>
-              <p className="text-slate-400 text-sm">Mỗi tài khoản có tối đa 4 slot Gmail khách</p>
+              <h2 className="text-xl font-bold text-white">Kho Team ChatGPT</h2>
+              <p className="text-slate-400 text-sm">Quan ly theo kho tong / kho market / kho duoi 25 ngay</p>
             </div>
             <div className="flex flex-wrap gap-2 justify-end">
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-xs font-semibold text-slate-200">
@@ -6184,16 +6410,61 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           ) : (
             <div className="space-y-6">
               <div className="flex flex-wrap gap-2">
-                <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-slate-800 text-slate-200 border-slate-700">
-                  Tổng Team: {filteredTeamAccounts.length}
-                </div>
-                <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-emerald-900/40 text-emerald-300 border-emerald-700/60">
-                  Team Slot: {teamSlotAccounts.length}
-                </div>
-                <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-cyan-900/40 text-cyan-300 border-cyan-700/60">
-                  Team Business: {teamBusinessAccounts.length}
-                </div>
+                {[
+                  { key: "all", label: "Tat ca", count: filteredTeamAccounts.length, color: "bg-slate-800" },
+                  { key: "total", label: "Kho tong", count: teamTotalAccounts.length, color: "bg-blue-600" },
+                  { key: "market", label: "Kho market", count: teamMarketAccounts.length, color: "bg-emerald-600" },
+                  { key: "short", label: "Kho duoi 25", count: teamShortAccounts.length, color: "bg-amber-600" },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setTeamWarehouseTab(tab.key)}
+                    className={`px-4 py-2 rounded-full text-sm font-bold transition-colors ${
+                      teamWarehouseTab === tab.key
+                        ? `${tab.color} text-white`
+                        : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    }`}
+                  >
+                    {tab.label} {tab.count}
+                  </button>
+                ))}
               </div>
+
+              {teamWarehouseTab === "total" && (
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { key: "all", label: "Tat ca", count: teamTotalAccounts.length },
+                    {
+                      key: "slot",
+                      label: "Goi chia se",
+                      count: teamTotalAccounts.filter(
+                        (acc) => normalizeTeamSaleMode(acc.saleMode) === "slot",
+                      ).length,
+                    },
+                    {
+                      key: "business",
+                      label: "Nguyen acc",
+                      count: teamTotalAccounts.filter(
+                        (acc) => normalizeTeamSaleMode(acc.saleMode) === "business",
+                      ).length,
+                    },
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setTeamTotalTypeTab(tab.key)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                        teamTotalTypeTab === tab.key
+                          ? "bg-indigo-600 text-white"
+                          : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                      }`}
+                    >
+                      {tab.label} {tab.count}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
@@ -6267,6 +6538,27 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   className="flex items-center gap-2 bg-cyan-700 hover:bg-cyan-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Copy size={18} /> Copy format web
+                </button>
+                <button
+                  onClick={() => handleBulkTeamWarehouseMove("total")}
+                  disabled={selectedTeamIds.length === 0}
+                  className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Ve kho tong
+                </button>
+                <button
+                  onClick={() => handleBulkTeamWarehouseMove("market")}
+                  disabled={selectedTeamIds.length === 0}
+                  className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Day sang kho market
+                </button>
+                <button
+                  onClick={() => handleBulkTeamWarehouseMove("short")}
+                  disabled={selectedTeamIds.length === 0}
+                  className="flex items-center gap-2 bg-amber-700 hover:bg-amber-600 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Day sang kho duoi 25
                 </button>
               </div>
               <div className="grid gap-6 xl:grid-cols-2 items-start">
@@ -6354,6 +6646,35 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                             {isExpired ? `❌ Hết hạn ${Math.abs(expDays)}d trước` : expDays !== null ? `✅ Còn ${expDays} ngày` : ""}
                           </div>
                           <div className="text-xs text-cyan-300 font-bold mb-1">{getTeamSaleModeLabel(saleMode)}</div>
+                          <select
+                            value={normalizeTeamWarehouse(acc.warehouse)}
+                            onChange={(e) =>
+                              handleTeamWarehouseChange(acc, e.target.value)
+                            }
+                            disabled={
+                              !!loadingStates.teamMode?.[acc.id] ||
+                              !!loadingStates.changeTeamWarehouse?.[acc.id] ||
+                              usedSlots > 0
+                            }
+                            className={`w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center ${
+                              normalizeTeamWarehouse(acc.warehouse) === "market"
+                                ? "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"
+                                : normalizeTeamWarehouse(acc.warehouse) === "short"
+                                  ? "bg-amber-900/40 text-amber-300 border-amber-700/60"
+                                  : "bg-slate-800 text-slate-300 border-slate-600"
+                            }`}
+                          >
+                            <option value="total">Kho tong</option>
+                            <option value="market">Kho market</option>
+                            {isBusinessMode && (
+                              <option value="short">Kho duoi 25 ngay</option>
+                            )}
+                          </select>
+                          {loadingStates.changeTeamWarehouse?.[acc.id] && (
+                            <div className="text-center mt-1 text-[10px] text-emerald-300">
+                              Dang cap nhat kho...
+                            </div>
+                          )}
                           <button
                             type="button"
                             onClick={() =>
@@ -6382,49 +6703,44 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         <div className="w-full flex flex-col gap-2 mt-auto pt-2">
                           {hasCapacityAvailable ? (
                             <div className="flex flex-col gap-1 my-1 w-full">
-                              {isBusinessMode ? (
-                                usedSlots === 0 ? (
-                                  <div className="w-full px-2 py-1 bg-teal-900/40 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex flex-col gap-0.5 shadow-sm items-center justify-center">
-                                    <span className="flex items-center gap-1"><Globe size={10} /> Đang lên kệ Datammo: Business (1 acc)</span>
-                                  </div>
-                                ) : (
-                                  <div className="w-full px-2 py-1 bg-amber-900/30 text-amber-300 font-bold rounded text-[10px] uppercase border border-amber-700/50 flex flex-col gap-0.5 shadow-sm items-center justify-center">
-                                    <span className="flex items-center gap-1"><AlertTriangle size={10} /> Business tạm dừng lên kệ (đang có khách)</span>
-                                  </div>
-                                )
-                              ) : (
-                                <div className="w-full px-2 py-1 bg-teal-900/40 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex flex-col gap-0.5 shadow-sm items-center justify-center">
-                                  <span className="flex items-center gap-1"><Globe size={10} /> Đang lên kệ Datammo: Còn {customerCapacity - usedSlots} Slot</span>
-                                </div>
-                              )}
-                              <div className="flex gap-2">
-                                {!isBusinessMode && (
+                              <div className={`w-full px-2 py-1 font-bold rounded text-[10px] uppercase border flex flex-col gap-0.5 shadow-sm items-center justify-center ${
+                                isTeamMarketWarehouse(acc)
+                                  ? "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"
+                                  : isTeamShortWarehouse(acc)
+                                    ? "bg-amber-900/30 text-amber-300 border-amber-700/50"
+                                    : "bg-slate-800 text-slate-300 border-slate-700"
+                              }`}>
+                                <span className="flex items-center gap-1">
+                                  <Globe size={10} />
+                                  {isTeamMarketWarehouse(acc)
+                                    ? isBusinessMode
+                                      ? "Kho market - Business chua ban"
+                                      : `Kho market - con ${customerCapacity - usedSlots} slot trong`
+                                    : isTeamShortWarehouse(acc)
+                                      ? "Kho duoi 25 ngay - day tay"
+                                      : "Kho tong"}
+                                </span>
+                              </div>
+                              {isTeamTotalWarehouse(acc) ? (
+                                <div className="flex gap-2">
                                   <button onClick={() => {
                                     const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
                                     if (emptyIdx !== -1) {
                                       setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
-                                      setSlotFormGmail("datammo@guest.com"); setSlotFormName("[Datammo] Khách mới");
+                                      setSlotFormGmail(""); setSlotFormName("");
                                       setSlotFormExp(new Date().toISOString().split("T")[0]);
                                       setSlotFormExpiredAt(addDurationToDate(new Date(), "1M").toISOString().split("T")[0]);
                                       setShowSlotModal(true);
                                     }
-                                  }} className="bg-teal-700 hover:bg-teal-600 font-bold text-white px-2 py-1.5 rounded text-xs flex-1 transition-colors shadow flex items-center justify-center gap-1" title="Tự động điền Form với chữ Datammo">
-                                    + Datammo
+                                  }} className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-2 py-1.5 rounded text-xs transition-colors shadow flex items-center justify-center gap-1 w-full" title="Gan khach thuong">
+                                    <UserPlus size={14} /> Khach
                                   </button>
-                                )}
-                                <button onClick={() => {
-                                  const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
-                                  if (emptyIdx !== -1) {
-                                    setSlotTarget({ accId: acc.id, slotIdx: emptyIdx, slot: acc.slots[emptyIdx] });
-                                    setSlotFormGmail(""); setSlotFormName("");
-                                    setSlotFormExp(new Date().toISOString().split("T")[0]);
-                                    setSlotFormExpiredAt(addDurationToDate(new Date(), "1M").toISOString().split("T")[0]);
-                                    setShowSlotModal(true);
-                                  }
-                                }} className={`bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-2 py-1.5 rounded text-xs transition-colors shadow flex items-center justify-center gap-1 ${isBusinessMode ? "w-full" : "flex-1"}`} title="Gán Khách ngoài">
-                                  <UserPlus size={14} /> Khách
-                                </button>
-                              </div>
+                                </div>
+                              ) : (
+                                <div className="w-full text-center text-xs text-slate-400 font-bold italic my-1 shadow-sm p-1 border border-slate-700 rounded bg-slate-900/30">
+                                  Team trong {getTeamWarehouseLabel(acc.warehouse)} se cho ban qua API, khong them khach tay tai day.
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <div className="w-full text-center text-xs text-red-400 font-bold italic my-1 shadow-sm p-1 border border-red-900/30 rounded bg-red-900/10">
@@ -6443,7 +6759,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           </button>
 
                           <div className="flex gap-2 w-full relative group">
-                            <button onClick={() => { setTeamEditForm(buildTeamEditFormState({ id: acc.id, username: acc.username, password: acc.password, recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode) })); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
+                            <button onClick={() => { setTeamEditForm(buildTeamEditFormState({ id: acc.id, username: acc.username, password: acc.password, recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode), warehouse: normalizeTeamWarehouse(acc.warehouse) })); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
                             <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
                           </div>
                         </div>
@@ -6561,32 +6877,29 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             <div className="modal-overlay">
               <div className="modal-box" style={{ maxWidth: "520px" }}>
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-white">➕ Thêm Team Account</h3>
+                  <h3 className="text-xl font-bold text-white">Them Team Account</h3>
                   <span className="close cursor-pointer text-slate-400 hover:text-white" onClick={() => setShowTeamAddModal(false)}>&times;</span>
                 </div>
 
                 <div className="space-y-3">
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📧 Email chính (Team)</label><input className="form-input w-full" placeholder="teamacc@outlook.com" value={teamAddForm.username} onChange={e => setTeamAddForm({ ...teamAddForm, username: e.target.value })} /></div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamAddForm.password} onChange={e => setTeamAddForm({ ...teamAddForm, password: e.target.value })} /></div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" placeholder="http://..." value={teamAddForm.recoveryUrl} onChange={e => setTeamAddForm({ ...teamAddForm, recoveryUrl: e.target.value })} /></div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Hạn của Team Acc</label><input type="date" className="form-input w-full" value={teamAddForm.expiredAt} onChange={e => setTeamAddForm({ ...teamAddForm, expiredAt: e.target.value })} /></div>
-                  <div className="form-group">
-                    <label className="block text-xs text-slate-400 mb-1">🛒 Loại bán Datammo</label>
-                    <select className="form-input w-full" value={teamAddForm.saleMode} onChange={e => setTeamAddForm({ ...teamAddForm, saleMode: normalizeTeamSaleMode(e.target.value) })}>
-                      <option value="slot">Slot team (4 slot)</option>
-                      <option value="business">Business account (1 acc)</option>
-                    </select>
-                  </div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📝 Ghi chú</label><input className="form-input w-full" value={teamAddForm.note} onChange={e => setTeamAddForm({ ...teamAddForm, note: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Email chinh (Team)</label><input className="form-input w-full" placeholder="teamacc@outlook.com" value={teamAddForm.username} onChange={e => setTeamAddForm({ ...teamAddForm, username: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">GPT Password</label><input className="form-input w-full" value={teamAddForm.password} onChange={e => setTeamAddForm({ ...teamAddForm, password: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Recovery URL</label><input className="form-input w-full" placeholder="http://..." value={teamAddForm.recoveryUrl} onChange={e => setTeamAddForm({ ...teamAddForm, recoveryUrl: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Han cua Team Acc</label><input type="date" className="form-input w-full" value={teamAddForm.expiredAt} onChange={e => setTeamAddForm({ ...teamAddForm, expiredAt: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Loai Team</label><select className="form-input w-full" value={teamAddForm.saleMode} onChange={e => setTeamAddForm({ ...teamAddForm, saleMode: normalizeTeamSaleMode(e.target.value) })}><option value="slot">Slot team (4 slot)</option><option value="business">Business account (1 acc)</option></select></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Kho Team</label><select className="form-input w-full" value={normalizeTeamWarehouse(teamAddForm.warehouse)} onChange={e => setTeamAddForm({ ...teamAddForm, warehouse: normalizeTeamWarehouse(e.target.value) })}><option value="total">Kho tong</option><option value="market">Kho market</option>{normalizeTeamSaleMode(teamAddForm.saleMode) === "business" && (<option value="short">Kho duoi 25 ngay</option>)}</select></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Ghi chu</label><input className="form-input w-full" value={teamAddForm.note} onChange={e => setTeamAddForm({ ...teamAddForm, note: e.target.value })} /></div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={() => setShowTeamAddModal(false)} className="btn-secondary">Hủy</button>
+                  <button onClick={() => setShowTeamAddModal(false)} className="btn-secondary">Huy</button>
                   <button onClick={async () => {
                     try {
                       await axios.post("/api/team", { ...teamAddForm, expiredAt: teamAddForm.expiredAt ? new Date(teamAddForm.expiredAt).toISOString() : undefined });
-                      setShowTeamAddModal(false); fetchData(); showAlert("Thành công", "Đã thêm Team Account!", "success");
-                    } catch (e) { showAlert("Lỗi", getApiErrorMessage(e, "Không thể thêm Team Account"), "error"); }
-                  }} className="btn-primary" style={{ background: "#4f46e5" }}>+ Thêm Team Acc</button>
+                      setShowTeamAddModal(false);
+                      fetchData();
+                      showAlert("Thanh cong", "Da them Team Account!", "success");
+                    } catch (e) { showAlert("Loi", getApiErrorMessage(e, "Khong the them Team Account"), "error"); }
+                  }} className="btn-primary" style={{ background: "#4f46e5" }}>Them Team Acc</button>
                 </div>
               </div>
             </div>
@@ -6597,31 +6910,26 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             <div className="modal-overlay">
               <div className="modal-box" style={{ maxWidth: "520px" }}>
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-white">✏️ Sửa Team Account</h3>
+                  <h3 className="text-xl font-bold text-white">Sua Team Account</h3>
                   <span className="close cursor-pointer text-slate-400 hover:text-white" onClick={() => setShowTeamEditModal(false)}>&times;</span>
                 </div>
 
                 <div className="space-y-3">
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📧 Email</label><input className="form-input w-full" value={teamEditForm.username} onChange={e => setTeamEditForm({ ...teamEditForm, username: e.target.value })} /></div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔑 GPT Password</label><input className="form-input w-full" value={teamEditForm.password} onChange={e => setTeamEditForm({ ...teamEditForm, password: e.target.value })} /></div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">🔗 Recovery URL</label><input className="form-input w-full" value={teamEditForm.recoveryUrl} onChange={e => setTeamEditForm({ ...teamEditForm, recoveryUrl: e.target.value })} /></div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Hạn Team Acc</label><input type="date" className="form-input w-full" value={teamEditForm.expiredAt} onChange={e => setTeamEditForm({ ...teamEditForm, expiredAt: e.target.value })} /></div>
-                  <div className="form-group">
-                    <label className="block text-xs text-slate-400 mb-1">🛒 Loại bán Datammo</label>
-                    <select className="form-input w-full" value={teamEditForm.saleMode} onChange={e => setTeamEditForm({ ...teamEditForm, saleMode: normalizeTeamSaleMode(e.target.value) })}>
-                      <option value="slot">Slot team (4 slot)</option>
-                      <option value="business">Business account (1 acc)</option>
-                    </select>
-                  </div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📝 Ghi chú</label><input className="form-input w-full" value={teamEditForm.note} onChange={e => setTeamEditForm({ ...teamEditForm, note: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Email</label><input className="form-input w-full" value={teamEditForm.username} onChange={e => setTeamEditForm({ ...teamEditForm, username: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">GPT Password</label><input className="form-input w-full" value={teamEditForm.password} onChange={e => setTeamEditForm({ ...teamEditForm, password: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Recovery URL</label><input className="form-input w-full" value={teamEditForm.recoveryUrl} onChange={e => setTeamEditForm({ ...teamEditForm, recoveryUrl: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Han Team Acc</label><input type="date" className="form-input w-full" value={teamEditForm.expiredAt} onChange={e => setTeamEditForm({ ...teamEditForm, expiredAt: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Loai Team</label><select className="form-input w-full" value={teamEditForm.saleMode} onChange={e => setTeamEditForm({ ...teamEditForm, saleMode: normalizeTeamSaleMode(e.target.value) })}><option value="slot">Slot team (4 slot)</option><option value="business">Business account (1 acc)</option></select></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Kho Team</label><select className="form-input w-full" value={normalizeTeamWarehouse(teamEditForm.warehouse)} onChange={e => setTeamEditForm({ ...teamEditForm, warehouse: normalizeTeamWarehouse(e.target.value) })}><option value="total">Kho tong</option><option value="market">Kho market</option>{normalizeTeamSaleMode(teamEditForm.saleMode) === "business" && (<option value="short">Kho duoi 25 ngay</option>)}</select></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Ghi chu</label><input className="form-input w-full" value={teamEditForm.note} onChange={e => setTeamEditForm({ ...teamEditForm, note: e.target.value })} /></div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={() => setShowTeamEditModal(false)} className="btn-secondary">Hủy</button>
+                  <button onClick={() => setShowTeamEditModal(false)} className="btn-secondary">Huy</button>
                   <button onClick={async () => {
                     try {
                       const currentTeamAcc = teamAccounts.find((item) => item.id === teamEditForm.id);
                       await axios.put(
-                        `/api/team/${teamEditForm.id}`,
+                        "/api/team/" + teamEditForm.id,
                         withExpectedUpdatedAt(
                           {
                             ...teamEditForm,
@@ -6630,9 +6938,11 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           currentTeamAcc,
                         ),
                       );
-                      setShowTeamEditModal(false); fetchData(); showAlert("Thành công", "Đã cập nhật!", "success");
-                    } catch (e) { showAlert("Lỗi", getApiErrorMessage(e, "Không thể cập nhật Team Account"), "error"); }
-                  }} className="btn-primary" style={{ background: "#2563eb" }}>Lưu</button>
+                      setShowTeamEditModal(false);
+                      fetchData();
+                      showAlert("Thanh cong", "Da cap nhat!", "success");
+                    } catch (e) { showAlert("Loi", getApiErrorMessage(e, "Khong the cap nhat Team Account"), "error"); }
+                  }} className="btn-primary" style={{ background: "#2563eb" }}>Luu</button>
                 </div>
               </div>
             </div>
