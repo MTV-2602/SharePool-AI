@@ -69,7 +69,8 @@ const accountSchema = new mongoose.Schema({
   updatedAt: { type: String, default: () => new Date().toISOString() },
 });
 const Account =
-  mongoose.models.Account || mongoose.model("Account", accountSchema);
+  mongoose.models.Account ||
+  mongoose.model("Account", accountSchema, "chatgpt_accounts");
 
 const singleUserSchema = new mongoose.Schema({
   id: { type: String, unique: true },
@@ -83,9 +84,15 @@ const singleUserSchema = new mongoose.Schema({
   expiredAt: { type: String },
   updatedAt: { type: String, default: () => new Date().toISOString() },
 });
-const Netflix = mongoose.models.Netflix || mongoose.model("Netflix", singleUserSchema);
-const Canva = mongoose.models.Canva || mongoose.model("Canva", singleUserSchema);
-const Capcut = mongoose.models.Capcut || mongoose.model("Capcut", singleUserSchema);
+const Netflix =
+  mongoose.models.Netflix ||
+  mongoose.model("Netflix", singleUserSchema, "netflix_accounts");
+const Canva =
+  mongoose.models.Canva ||
+  mongoose.model("Canva", singleUserSchema, "canva_accounts");
+const Capcut =
+  mongoose.models.Capcut ||
+  mongoose.model("Capcut", singleUserSchema, "capcut_accounts");
 
 // Team Account Schema (ChatGPT Team - up to 4 Gmail slots)
 const teamSlotSchema = new mongoose.Schema({
@@ -108,7 +115,9 @@ const teamAccountSchema = new mongoose.Schema({
   expiredAt: { type: String },
   updatedAt: { type: String, default: () => new Date().toISOString() },
 });
-const TeamAccount = mongoose.models.TeamAccount || mongoose.model("TeamAccount", teamAccountSchema);
+const TeamAccount =
+  mongoose.models.TeamAccount ||
+  mongoose.model("TeamAccount", teamAccountSchema, "chatgpt_team_accounts");
 
 const datammoOrderAccountSchema = new mongoose.Schema(
   {
@@ -128,7 +137,7 @@ const datammoOrderSchema = new mongoose.Schema({
 });
 const DatammoOrder =
   mongoose.models.DatammoOrder ||
-  mongoose.model("DatammoOrder", datammoOrderSchema);
+  mongoose.model("DatammoOrder", datammoOrderSchema, "marketplace_orders");
 
 const datammoWarrantyRoundSchema = new mongoose.Schema(
   {
@@ -156,7 +165,11 @@ const datammoWarrantyCaseSchema = new mongoose.Schema({
 });
 const DatammoWarrantyCase =
   mongoose.models.DatammoWarrantyCase ||
-  mongoose.model("DatammoWarrantyCase", datammoWarrantyCaseSchema);
+  mongoose.model(
+    "DatammoWarrantyCase",
+    datammoWarrantyCaseSchema,
+    "marketplace_warranty_cases",
+  );
 
 const datammoKeyRegistrySchema = new mongoose.Schema({
   key: { type: String, unique: true, required: true, index: true },
@@ -167,7 +180,11 @@ const datammoKeyRegistrySchema = new mongoose.Schema({
 });
 const DatammoKeyRegistry =
   mongoose.models.DatammoKeyRegistry ||
-  mongoose.model("DatammoKeyRegistry", datammoKeyRegistrySchema);
+  mongoose.model(
+    "DatammoKeyRegistry",
+    datammoKeyRegistrySchema,
+    "marketplace_key_registries",
+  );
 
 // Middleware to ensure DB is connected before processing
 app.use(async (req, res, next) => {

@@ -528,6 +528,7 @@ function App() {
   });
   const [activeTab, setActiveTab] = useState("chatgpt");
   const [gptSubTab, setGptSubTab] = useState("all");
+  const [chatgptTotalTypeTab, setChatgptTotalTypeTab] = useState("all");
   const [package2ShelfTab, setPackage2ShelfTab] = useState("all");
   const [soldPackage2ProviderFilter, setSoldPackage2ProviderFilter] =
     useState("all");
@@ -2784,8 +2785,9 @@ function App() {
   );
   const filteredChatgptAccounts = accounts
     .filter((acc) => {
-      if (gptSubTab === "package1") return acc.type === "package1";
-      if (gptSubTab === "package2") return acc.type === "package2";
+      if (gptSubTab === "total") {
+        return ["package1", "package2"].includes(String(acc?.type || ""));
+      }
       if (gptSubTab === "market") {
         return ["package1", "package2"].includes(String(acc?.type || ""));
       }
@@ -2809,12 +2811,16 @@ function App() {
         }
         return !isSoldMarketplaceAccount && isInMarketWarehouse;
       }
-      if (["package1", "package2", "unassigned"].includes(gptSubTab)) {
+      if (["total", "unassigned"].includes(gptSubTab)) {
         if (isSoldMarketplaceAccount) return false;
         if (gptSubTab === "unassigned") return true;
         return !isInMarketWarehouse;
       }
       return true;
+    })
+    .filter((acc) => {
+      if (gptSubTab !== "total" || chatgptTotalTypeTab === "all") return true;
+      return acc.type === chatgptTotalTypeTab;
     })
     .filter((acc) =>
       matchesCustomerFilter(hasAssignedCustomer(acc), chatgptCustomerFilter),
@@ -3454,7 +3460,7 @@ function App() {
               </div>
             </div>
 
-            {/* SUB-TABS: Gói 1 / Gói 2 / Chưa chọn */}
+            {/* SUB-TABS: Kho tong / Kho market / Chua chon */}
             {(() => {
               const totalPoolAccounts = accounts.filter(
                 (a) =>
@@ -3462,8 +3468,7 @@ function App() {
                   !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
                   !isChatgptMarketWarehouse(a),
               );
-              const pkg1Count = totalPoolAccounts.filter((a) => a.type === "package1").length;
-              const pkg2Count = totalPoolAccounts.filter((a) => a.type === "package2").length;
+              const totalCount = totalPoolAccounts.length;
               const marketCount = accounts.filter(
                 (a) =>
                   (["package1", "package2"].includes(String(a?.type || "")) &&
@@ -3471,26 +3476,21 @@ function App() {
                   marketplaceTrackedAccountIds.has(String(a?.id || "")),
               ).length;
               const unassignedCount = accounts.filter(a => !a.type || a.type === "unassigned").length;
-              const marketTab = {
-                key: "market",
-                label: "Kho market",
-                count: marketCount,
-                color: "bg-emerald-600",
-              };
               const tabs = [
-                { key: "all", label: "📋 Tất cả", count: accounts.length, color: "bg-slate-600" },
-                { key: "package1", label: "👥 Gói 1 – Chia sẻ", count: pkg1Count, color: "bg-blue-600" },
-                { key: "package2", label: "🔒 Gói 2 – Riêng tư", count: pkg2Count, color: "bg-purple-600" },
-                { key: "unassigned", label: "❓ Chưa chọn", count: unassignedCount, color: "bg-slate-700" },
+                { key: "all", label: "Tat ca", count: accounts.length, color: "bg-slate-600" },
+                { key: "total", label: "Kho tong", count: totalCount, color: "bg-blue-600" },
+                { key: "market", label: "Kho market", count: marketCount, color: "bg-emerald-600" },
+                { key: "unassigned", label: "Chua chon", count: unassignedCount, color: "bg-slate-700" },
               ];
               return (
                 <div className="flex gap-2 flex-wrap mb-4">
-                  {[...tabs.slice(0, 3), marketTab, ...tabs.slice(3)].map(t => (
+                  {tabs.map(t => (
                     <button
                       key={t.key}
                       onClick={() => {
                         setGptSubTab(t.key);
                         if (t.key !== "market") setPackage2ShelfTab("all");
+                        if (t.key !== "total") setChatgptTotalTypeTab("all");
                       }}
                       className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full font-bold text-sm transition-all shadow-sm border ${gptSubTab === t.key
                           ? `${t.color} text-white border-transparent`
@@ -3502,6 +3502,44 @@ function App() {
                         }`}>{t.count}</span>
                     </button>
                   ))}
+                </div>
+              );
+            })()}
+
+            {gptSubTab === "total" && (() => {
+              const totalPoolAccounts = accounts.filter(
+                (a) =>
+                  ["package1", "package2"].includes(String(a?.type || "")) &&
+                  !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
+                  !isChatgptMarketWarehouse(a),
+              );
+              const totalTypeTabs = [
+                { key: "all", label: "Tat ca", count: totalPoolAccounts.length, color: "bg-slate-600" },
+                { key: "package1", label: "Goi 1", count: totalPoolAccounts.filter((a) => a.type === "package1").length, color: "bg-blue-600" },
+                { key: "package2", label: "Goi 2", count: totalPoolAccounts.filter((a) => a.type === "package2").length, color: "bg-purple-600" },
+              ];
+              return (
+                <div className="mb-4">
+                  <div className="flex gap-2 flex-wrap">
+                    {totalTypeTabs.map((t) => (
+                      <button
+                        key={t.key}
+                        onClick={() => setChatgptTotalTypeTab(t.key)}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full font-bold text-xs transition-all border ${
+                          chatgptTotalTypeTab === t.key
+                            ? `${t.color} text-white border-transparent`
+                            : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
+                        }`}
+                      >
+                        {t.label}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                          chatgptTotalTypeTab === t.key ? "bg-white/20" : "bg-slate-700 text-slate-300"
+                        }`}>
+                          {t.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               );
             })()}
@@ -3863,7 +3901,9 @@ function App() {
                           className="w-4 h-4 accent-emerald-500 cursor-pointer"
                         />
                       </th>
-                      <th className="w-40">Loại Gói</th>
+                      <th className="w-40">
+                        {gptSubTab === "market" ? "Kho / Trạng thái" : "Loại Gói"}
+                      </th>
                       <th>Thông Tin</th>
                       <th className="w-32">Link Mail</th>
                       <th className="w-64">Slot / Khách (Sửa/Xóa)</th>
