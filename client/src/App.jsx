@@ -3032,6 +3032,25 @@ function App() {
     filteredChatgptIds.length > 0 &&
     selectedInFilteredCount === filteredChatgptIds.length;
   const filteredTeamAccounts = teamAccounts
+    .filter((acc) => {
+      if (!searchQuery.trim()) return true;
+      const queryNormalized = toNonAccentVietnamese(searchQuery);
+      if (
+        acc.username &&
+        toNonAccentVietnamese(acc.username).includes(queryNormalized)
+      ) {
+        return true;
+      }
+      return normalizeTeamSlotsForUi(acc?.slots).some((slot) => {
+        const customerName = String(slot?.customerName || "").trim();
+        const gmail = String(slot?.gmail || "").trim();
+        return (
+          (customerName &&
+            toNonAccentVietnamese(customerName).includes(queryNormalized)) ||
+          (gmail && toNonAccentVietnamese(gmail).includes(queryNormalized))
+        );
+      });
+    })
     .filter((acc) =>
       matchesCustomerFilter(
         hasAssignedTeamCustomer(acc),
