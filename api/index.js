@@ -444,6 +444,9 @@ const PACKAGE2_SHELF_MAIN = "main";
 const PACKAGE2_SHELF_CHEAP = "cheap";
 const PACKAGE2_SHELF_NONE = "none";
 const PACKAGE2_MIN_DAYS_FOR_SALE = 25;
+const CHATGPT_MARKET_VALUE = PACKAGE2_SHELF_CHEAP;
+const CHATGPT_TOTAL_VALUE = PACKAGE2_SHELF_NONE;
+const CHATGPT_MARKET_SUPPORTED_TYPES = ["package1", "package2"];
 const VALID_PACKAGE2_SHELVES = [
   PACKAGE2_SHELF_MAIN,
   PACKAGE2_SHELF_CHEAP,
@@ -728,9 +731,97 @@ const rotatePackage2KeyForPendingAdds = async (newAcc, toAdd = []) => {
   });
 };
 
-const normalizePackage2Shelf = (shelf, fallback = PACKAGE2_SHELF_MAIN) => {
-  if (VALID_PACKAGE2_SHELVES.includes(shelf)) return shelf;
+const normalizePackage2Shelf = (shelf, fallback = CHATGPT_TOTAL_VALUE) => {
+  if (shelf === PACKAGE2_SHELF_CHEAP) return PACKAGE2_SHELF_CHEAP;
+  if (shelf === PACKAGE2_SHELF_MAIN || shelf === PACKAGE2_SHELF_NONE) {
+    return CHATGPT_TOTAL_VALUE;
+  }
   return fallback;
+};
+const supportsChatgptMarket = (type) =>
+  CHATGPT_MARKET_SUPPORTED_TYPES.includes(String(type || "").trim());
+const isChatgptMarketAccount = (acc = {}) =>
+  supportsChatgptMarket(acc?.type) &&
+  normalizePackage2Shelf(acc?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
+    CHATGPT_MARKET_VALUE;
+const hasAnyAssignedUsers = (users = []) =>
+  Array.isArray(users) && users.length > 0;
+const isEligibleForChatgptMarketSale = (acc = {}) => {
+  if (!supportsChatgptMarket(acc?.type)) return false;
+  if (!isChatgptMarketAccount(acc)) return false;
+  if (hasAnyAssignedUsers(acc?.users)) return false;
+  if (!acc?.expiredAt) return true;
+  const daysLeft = Math.ceil(
+    (new Date(acc.expiredAt).getTime() - Date.now()) / 86400000,
+  );
+  return Number.isFinite(daysLeft) ? daysLeft > PACKAGE2_MIN_DAYS_FOR_SALE : true;
+};
+const normalizeChatgptMarketAccountState = (acc = {}) => {
+  if (!acc || !supportsChatgptMarket(acc?.type)) {
+    return CHATGPT_TOTAL_VALUE;
+  }
+  const currentValue = normalizePackage2Shelf(
+    acc?.package2Shelf,
+    CHATGPT_TOTAL_VALUE,
+  );
+  if (currentValue !== CHATGPT_MARKET_VALUE) {
+    return CHATGPT_TOTAL_VALUE;
+  }
+  return isEligibleForChatgptMarketSale(acc)
+    ? CHATGPT_MARKET_VALUE
+    : CHATGPT_TOTAL_VALUE;
+};
+const syncChatgptMarketStateIfNeeded = async (acc) => {
+  if (!acc?.id || !supportsChatgptMarket(acc?.type)) return acc;
+  const nextWarehouse = normalizeChatgptMarketAccountState(acc);
+  const currentWarehouse = normalizePackage2Shelf(
+    acc?.package2Shelf,
+    CHATGPT_TOTAL_VALUE,
+  );
+  if (nextWarehouse === currentWarehouse) return acc;
+  const updated = await Account.findOneAndUpdate(
+    { id: acc.id },
+    {
+      $set: {
+        package2Shelf: nextWarehouse,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+    { new: true },
+  );
+  return updated || acc;
+};
+const reconcileChatgptMarketInventory = async () => {
+  await Account.updateMany(
+    {
+      type: { $in: CHATGPT_MARKET_SUPPORTED_TYPES },
+      package2Shelf: PACKAGE2_SHELF_MAIN,
+    },
+    {
+      $set: {
+        package2Shelf: CHATGPT_TOTAL_VALUE,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  );
+
+  const minExpiredAt = new Date(
+    Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  await Account.updateMany(
+    {
+      type: { $in: CHATGPT_MARKET_SUPPORTED_TYPES },
+      package2Shelf: CHATGPT_MARKET_VALUE,
+      expiredAt: { $lte: minExpiredAt },
+      "users.0": { $exists: false },
+    },
+    {
+      $set: {
+        package2Shelf: CHATGPT_TOTAL_VALUE,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  );
 };
 const normalizeMarketplaceProvider = (value, fallback = "datammo") => {
   const raw = String(value || "")
@@ -926,13 +1017,13 @@ const isPlaceholderLikeValue = (value) => {
   if (!raw) return false;
   return raw.includes("{") || raw.includes("}") || /^(test|preview)$/i.test(raw);
 };
-const buildPackage2SaleFilter = (shelf) => {
+const buildPackage2SaleFilter = () => {
   const minExpiredAt = new Date(
     Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
   ).toISOString();
   return {
-    type: "package2",
-    package2Shelf: shelf,
+    type: { $in: CHATGPT_MARKET_SUPPORTED_TYPES },
+    package2Shelf: CHATGPT_MARKET_VALUE,
     expiredAt: { $gt: minExpiredAt },
     $expr: {
       $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
@@ -955,7 +1046,6 @@ const resolveDatammoShelfFromReq = (req) => {
   return normalizeDatammoRouteShelf(req.params?.shelf || req.query?.shelf);
 };
 const claimPackage2AccountsForOrder = async ({
-  shelf,
   quantity,
   orderId,
   managedUserName,
@@ -967,7 +1057,7 @@ const claimPackage2AccountsForOrder = async ({
       managedUserName || `Datammo#${orderId || Date.now()}`,
     ).trim();
     const oldAcc = await Account.findOneAndUpdate(
-      buildPackage2SaleFilter(shelf),
+      buildPackage2SaleFilter(),
       {
         $set: {
           users: [
@@ -990,7 +1080,6 @@ const claimPackage2AccountsForOrder = async ({
     const updatedAcc = await Account.findOne({ id: oldAcc.id });
     if (!updatedAcc) break;
 
-    await syncDatammoUpdateLocked(oldAcc, updatedAcc);
     claimed.push({
       oldAcc,
       updatedAcc,
@@ -1002,21 +1091,23 @@ const claimPackage2AccountsForOrder = async ({
 const rollbackClaimedPackage2Accounts = async (claimed = []) => {
   for (const item of claimed) {
     if (!item?.oldAcc?.id || !item?.updatedAcc) continue;
-    const restored = await Account.findOneAndUpdate(
+    await Account.findOneAndUpdate(
       { id: item.oldAcc.id },
       {
         $set: {
           users: item.oldAcc.users || [],
           note: item.oldAcc.note || "",
           status: item.oldAcc.status || "available",
+          package2Shelf: normalizePackage2Shelf(
+            item.oldAcc.package2Shelf,
+            CHATGPT_TOTAL_VALUE,
+          ),
           package2DatammoKey: item.oldAcc.package2DatammoKey || "",
+          package2DatammoKeysUsed: item.oldAcc.package2DatammoKeysUsed || [],
+          updatedAt: item.oldAcc.updatedAt || new Date().toISOString(),
         },
       },
-      { new: true },
     );
-    if (restored) {
-      await syncDatammoUpdateLocked(item.updatedAcc, restored);
-    }
   }
 };
 const logMarketplaceOrder = async ({
@@ -1029,7 +1120,7 @@ const logMarketplaceOrder = async ({
   await DatammoOrder.create({
     provider: normalizeMarketplaceProvider(provider),
     orderId,
-    shelf,
+    shelf: shelf || "market",
     quantity,
     accounts: (Array.isArray(claimed) ? claimed : []).map((item) => ({
       accountId: String(item?.updatedAcc?.id || item?.oldAcc?.id || ""),
@@ -1061,18 +1152,22 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
   delete normalized.expectedUpdatedAt;
   const targetType = normalized.type || existingAcc?.type || "unassigned";
 
-  if (targetType === "package2") {
-    const fallbackShelf =
-      existingAcc?.type === "package2"
-        ? normalizePackage2Shelf(
-            existingAcc.package2Shelf,
-            PACKAGE2_SHELF_MAIN,
-          )
-        : PACKAGE2_SHELF_NONE;
+  if (supportsChatgptMarket(targetType)) {
+    const fallbackShelf = supportsChatgptMarket(existingAcc?.type)
+      ? normalizePackage2Shelf(
+          existingAcc?.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        )
+      : CHATGPT_TOTAL_VALUE;
     normalized.package2Shelf = normalizePackage2Shelf(
       normalized.package2Shelf,
       fallbackShelf,
     );
+  } else {
+    normalized.package2Shelf = CHATGPT_TOTAL_VALUE;
+  }
+
+  if (targetType === "package2") {
     const fallbackKey =
       existingAcc?.type === "package2"
         ? sanitizeDatammoKey(existingAcc.package2DatammoKey)
@@ -1088,7 +1183,6 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
       normalized.package2DatammoKey,
     );
   } else {
-    normalized.package2Shelf = PACKAGE2_SHELF_NONE;
     normalized.package2DatammoKey = "";
     normalized.package2DatammoKeysUsed = [];
   }
@@ -1310,6 +1404,18 @@ const getDatammoLines = (acc, options = {}) => {
 };
 
 const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
+  const isChatgptContext =
+    (oldAcc?.slots === undefined && supportsChatgptMarket(oldAcc?.type)) ||
+    (newAcc?.slots === undefined && supportsChatgptMarket(newAcc?.type));
+  if (isChatgptContext) {
+    return {
+      toDelete: 0,
+      toAdd: 0,
+      failed: 0,
+      syncErrors: [],
+      skipped: true,
+    };
+  }
   const forceOldPackage2Sync = options.forceOldPackage2Sync === true;
   const forceNewPackage2Sync = options.forceNewPackage2Sync === true;
   const forcePackage1Resync = options.forcePackage1Resync === true;
@@ -1603,6 +1709,7 @@ const syncDatammoUpdateLocked = async (oldAcc, newAcc, options = {}) => {
 
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
+    await reconcileChatgptMarketInventory();
     const [
       accounts,
       netflixAccs,
@@ -1621,7 +1728,13 @@ app.get("/api/data", verifyToken, async (req, res) => {
       DatammoWarrantyCase.find({}).sort({ updatedAt: -1 }).limit(100).lean(),
     ]);
     res.json({
-      chatgpt: accounts,
+      chatgpt: accounts.map((acc) => ({
+        ...acc,
+        package2Shelf: normalizePackage2Shelf(
+          acc?.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        ),
+      })),
       netflix: netflixAccs,
       canva: canvaAccs,
       capcut: capcutAccs,
@@ -1638,8 +1751,17 @@ app.get("/api/data", verifyToken, async (req, res) => {
 // 1.5 GET ALL DATA (Public - for Telegram bot)
 app.get("/api/data-public", async (req, res) => {
   try {
+    await reconcileChatgptMarketInventory();
     const accounts = await Account.find({}).lean();
-    res.json({ chatgpt: accounts });
+    res.json({
+      chatgpt: accounts.map((acc) => ({
+        ...acc,
+        package2Shelf: normalizePackage2Shelf(
+          acc?.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        ),
+      })),
+    });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -1651,19 +1773,11 @@ app.get(
   verifyDatammoPartnerToken,
   async (req, res) => {
     try {
-      const shelf = resolveDatammoShelfFromReq(req);
-      if (!shelf) {
-        return res.status(400).json({
-          success: false,
-          message: "Missing or invalid shelf. Use main or cheap.",
-        });
-      }
-
-      const stock = await Account.countDocuments(buildPackage2SaleFilter(shelf));
+      await reconcileChatgptMarketInventory();
+      const stock = await Account.countDocuments(buildPackage2SaleFilter());
       const mainPrice = Number(process.env.DATAMMO_PACKAGE2_MAIN_PRICE || 0);
       const cheapPrice = Number(process.env.DATAMMO_PACKAGE2_CHEAP_PRICE || 0);
-      const selectedPrice =
-        shelf === PACKAGE2_SHELF_MAIN ? mainPrice : cheapPrice;
+      const selectedPrice = cheapPrice > 0 ? cheapPrice : mainPrice;
 
       const payload = { stock };
       if (Number.isFinite(selectedPrice) && selectedPrice > 0) {
@@ -1682,14 +1796,6 @@ app.get(
   ["/api/datammo/buy", "/api/datammo/buy/:shelf"],
   verifyDatammoPartnerToken,
   async (req, res) => {
-    const shelf = resolveDatammoShelfFromReq(req);
-    if (!shelf) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing or invalid shelf. Use main or cheap.",
-      });
-    }
-
     const quantity = getSafeBuyQuantity(req.query?.quantity);
     const orderId = String(
       req.query?.order_id || req.query?.orderId || `dm_${Date.now()}`,
@@ -1697,7 +1803,8 @@ app.get(
 
     let claimed = [];
     try {
-      const available = await Account.countDocuments(buildPackage2SaleFilter(shelf));
+      await reconcileChatgptMarketInventory();
+      const available = await Account.countDocuments(buildPackage2SaleFilter());
       if (available < quantity) {
         return res.status(409).json({
           success: false,
@@ -1707,7 +1814,6 @@ app.get(
       }
 
       claimed = await claimPackage2AccountsForOrder({
-        shelf,
         quantity,
         orderId,
       });
@@ -1725,7 +1831,7 @@ app.get(
         await logMarketplaceOrder({
           provider: "datammo",
           orderId,
-          shelf,
+          shelf: "market",
           quantity,
           claimed,
         });
@@ -1760,23 +1866,15 @@ app.all(
   ],
   verifyShopminiPrivateToken,
   async (req, res) => {
-    const shelf = resolveShopminiShelfFromReq(req);
     const action = resolveShopminiActionFromReq(req);
-
-    if (!shelf) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing or invalid shelf. Use main or cheap.",
-      });
-    }
 
     if (action !== "buy") {
       try {
-        const stock = await Account.countDocuments(buildPackage2SaleFilter(shelf));
+        await reconcileChatgptMarketInventory();
+        const stock = await Account.countDocuments(buildPackage2SaleFilter());
         const mainPrice = Number(process.env.DATAMMO_PACKAGE2_MAIN_PRICE || 0);
         const cheapPrice = Number(process.env.DATAMMO_PACKAGE2_CHEAP_PRICE || 0);
-        const selectedPrice =
-          shelf === PACKAGE2_SHELF_MAIN ? mainPrice : cheapPrice;
+        const selectedPrice = cheapPrice > 0 ? cheapPrice : mainPrice;
         const payload = {
           success: true,
           status: true,
@@ -1821,7 +1919,8 @@ app.all(
     }
 
     try {
-      const available = await Account.countDocuments(buildPackage2SaleFilter(shelf));
+      await reconcileChatgptMarketInventory();
+      const available = await Account.countDocuments(buildPackage2SaleFilter());
       if (available < quantity) {
         return res.status(409).json({
           success: false,
@@ -1831,7 +1930,6 @@ app.all(
       }
 
       claimed = await claimPackage2AccountsForOrder({
-        shelf,
         quantity,
         orderId,
         managedUserName: `Shopmini#${orderId || Date.now()}`,
@@ -1850,7 +1948,7 @@ app.all(
         await logMarketplaceOrder({
           provider: "shopmini",
           orderId,
-          shelf,
+          shelf: "market",
           quantity,
           claimed,
         });
@@ -1999,7 +2097,7 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
         : existingUsers;
     const hadRegularPackage2Customer = hasRegularPackage2Customer(existingUsers);
     const shouldAutoUnsetPackage2Shelf =
-      targetType === "package2" &&
+      supportsChatgptMarket(targetType) &&
       (hasRegularPackage2Customer(nextUsers) ||
         (normalizedPayload.users !== undefined &&
           Array.isArray(nextUsers) &&
@@ -2028,7 +2126,7 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
         normalizedPayload.package2DatammoKey,
       );
       if (shouldAutoUnsetPackage2Shelf) {
-        normalizedPayload.package2Shelf = PACKAGE2_SHELF_NONE;
+        normalizedPayload.package2Shelf = CHATGPT_TOTAL_VALUE;
       }
     } else {
       normalizedPayload.package2DatammoKey = "";
@@ -2049,15 +2147,15 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     }
     const existingShelf = normalizePackage2Shelf(
       existingAcc.package2Shelf,
-      PACKAGE2_SHELF_NONE,
+      CHATGPT_TOTAL_VALUE,
     );
     const updatedShelf = normalizePackage2Shelf(
       normalizedPayload.package2Shelf,
-      PACKAGE2_SHELF_NONE,
+      CHATGPT_TOTAL_VALUE,
     );
     const isPackage2ShelfChanged = existingShelf !== updatedShelf;
     const isPackage2Context =
-      existingAcc.type === "package2" || targetType === "package2";
+      supportsChatgptMarket(existingAcc.type) || supportsChatgptMarket(targetType);
     const isManualShelfUpdate =
       isPackage2Context && req.body.package2Shelf !== undefined;
     const requestKeys = Object.keys(req.body || {});
@@ -2132,10 +2230,9 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
       return res.status(400).json({ error: "Danh sách account trống" });
     }
 
-    const targetShelf =
-      targetType === "package2"
-        ? normalizePackage2Shelf(req.body?.package2Shelf, PACKAGE2_SHELF_MAIN)
-        : PACKAGE2_SHELF_NONE;
+    const targetShelf = supportsChatgptMarket(targetType)
+      ? normalizePackage2Shelf(req.body?.package2Shelf, CHATGPT_TOTAL_VALUE)
+      : CHATGPT_TOTAL_VALUE;
 
     const docs = await Account.find({ id: { $in: accountIds } }).lean();
     const accountMap = new Map(docs.map((acc) => [String(acc.id), acc]));
@@ -2188,13 +2285,13 @@ app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
 
       const currentShelf = normalizePackage2Shelf(
         existingAcc.package2Shelf,
-        PACKAGE2_SHELF_NONE,
+        CHATGPT_TOTAL_VALUE,
       );
       const isSameType = existingAcc.type === targetType;
       const isSameShelf =
-        targetType === "package2"
+        supportsChatgptMarket(targetType)
           ? currentShelf === targetShelf
-          : currentShelf === PACKAGE2_SHELF_NONE;
+          : currentShelf === CHATGPT_TOTAL_VALUE;
       if (isSameType && isSameShelf) {
         result.unchanged += 1;
         return;
@@ -2377,14 +2474,16 @@ app.post("/api/chatgpt/:id/resync-datammo", verifyToken, async (req, res) => {
       });
     }
 
-    await syncDatammoUpdateLocked(existing, existing, {
-      forcePackage1Resync: existing.type === "package1",
-      forceOldPackage2Sync: existing.type === "package2",
-      forceNewPackage2Sync: existing.type === "package2",
+    const reconciled = await syncChatgptMarketStateIfNeeded(existing);
+
+    await syncDatammoUpdateLocked(reconciled, reconciled, {
+      forcePackage1Resync: reconciled.type === "package1",
+      forceOldPackage2Sync: reconciled.type === "package2",
+      forceNewPackage2Sync: reconciled.type === "package2",
       strictDatammoSync: true,
     });
 
-    res.json({ message: "Resynced Datammo", account: existing });
+    res.json({ message: "Resynced market state", account: reconciled });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -2470,6 +2569,17 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       });
     }
 
+    if (
+      normalizePackage2Shelf(
+        replacementAcc.package2Shelf,
+        CHATGPT_TOTAL_VALUE,
+      ) === CHATGPT_MARKET_VALUE
+    ) {
+      return res.status(400).json({
+        error: "Tai khoan thay the phai nam trong kho tong",
+      });
+    }
+
     const activeCaseConflict = await DatammoWarrantyCase.findOne({
       status: "active",
       $or: [
@@ -2498,7 +2608,7 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       {
         $set: {
           users: sourceUsers,
-          package2Shelf: PACKAGE2_SHELF_NONE,
+          package2Shelf: CHATGPT_TOTAL_VALUE,
           package2DatammoKey: replacementKey,
           package2DatammoKeysUsed: mergeDatammoKeyHistory(
             replacementAcc.package2DatammoKeysUsed,
@@ -2518,7 +2628,7 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       {
         $set: {
           users: [],
-          package2Shelf: PACKAGE2_SHELF_NONE,
+          package2Shelf: CHATGPT_TOTAL_VALUE,
           updatedAt: nowIso,
         },
       },
@@ -2833,7 +2943,7 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
         toAcc.package2DatammoKey,
       );
       if (hasRegularPackage2Customer(toAcc.users)) {
-        toAcc.package2Shelf = PACKAGE2_SHELF_NONE;
+        toAcc.package2Shelf = CHATGPT_TOTAL_VALUE;
       }
     }
     if (fromAcc.type === "package2" && (!fromAcc.users || fromAcc.users.length === 0)) {
@@ -2847,7 +2957,7 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
         fromAcc.package2DatammoKey,
       );
       if (hasRegularPackage2Customer(originalFromAcc.users)) {
-        fromAcc.package2Shelf = PACKAGE2_SHELF_NONE;
+        fromAcc.package2Shelf = CHATGPT_TOTAL_VALUE;
       }
     }
 

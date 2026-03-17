@@ -44,16 +44,21 @@ const toNonAccentVietnamese = (str) => {
 };
 
 const normalizePackage2Shelf = (value) => {
-  if (value === "cheap" || value === "none" || value === "main") return value;
-  return "main";
+  if (value === "cheap") return "cheap";
+  if (value === "main" || value === "none") return "none";
+  return "none";
 };
 
-const getPackage2ShelfLabel = (value) => {
-  const shelf = normalizePackage2Shelf(value);
-  if (shelf === "cheap") return "Kệ rẻ";
-  if (shelf === "none") return "Không lên kệ";
-  return "Kệ tổng";
-};
+const supportsChatgptMarketType = (value) =>
+  ["package1", "package2"].includes(String(value || "").trim());
+
+const getPackage2ShelfLabel = (value) =>
+  normalizePackage2Shelf(value) === "cheap" ? "Kho market" : "Kho tong";
+const getChatgptWarehouseLabel = (value) =>
+  normalizePackage2Shelf(value) === "cheap" ? "Kho market" : "Kho tong";
+const isChatgptMarketWarehouse = (acc = {}) =>
+  supportsChatgptMarketType(acc?.type) &&
+  normalizePackage2Shelf(acc?.package2Shelf) === "cheap";
 const normalizeTeamSaleMode = (value) =>
   value === "business" ? "business" : "slot";
 const buildEmptyTeamSlot = () => ({
@@ -584,7 +589,7 @@ function App() {
   const [bulkPushForm, setBulkPushForm] = useState({
     scope: "selected",
     targetType: "package1",
-    package2Shelf: "main",
+    package2Shelf: "cheap",
   });
   const [bulkPushProgress, setBulkPushProgress] = useState({
     total: 0,
@@ -1082,10 +1087,9 @@ function App() {
           const sortedGPT = [...res.data.chatgpt]
             .map((acc) => ({
               ...acc,
-              package2Shelf:
-                acc.type === "package2"
-                  ? normalizePackage2Shelf(acc.package2Shelf)
-                  : "none",
+              package2Shelf: supportsChatgptMarketType(acc.type)
+                ? normalizePackage2Shelf(acc.package2Shelf)
+                : "none",
             }))
             .sort((a, b) => {
             const orderA = typeOrder[a.type] ?? 99;
@@ -1605,12 +1609,9 @@ function App() {
       changeType: { ...prev.changeType, [acc.id]: true },
     }));
     try {
-      const nextShelf =
-        newType === "package2"
-          ? normalizePackage2Shelf(
-            acc.type === "package2" ? acc.package2Shelf : "none",
-          )
-          : "none";
+      const nextShelf = supportsChatgptMarketType(newType)
+        ? normalizePackage2Shelf(acc.package2Shelf)
+        : "none";
       await axios.put(
         `/api/chatgpt/${acc.id}`,
         withExpectedUpdatedAt(
@@ -1638,7 +1639,7 @@ function App() {
   };
 
   const handlePackage2ShelfChange = async (acc, shelfValue) => {
-    if (acc.type !== "package2") return;
+    if (!supportsChatgptMarketType(acc.type)) return;
     if (loadingStates.changeShelf[acc.id] || loadingStates.changeType[acc.id]) {
       return;
     }
@@ -1799,10 +1800,9 @@ function App() {
       return;
     }
 
-    const targetShelf =
-      bulkPushForm.targetType === "package2"
-        ? normalizePackage2Shelf(bulkPushForm.package2Shelf)
-        : undefined;
+    const targetShelf = supportsChatgptMarketType(bulkPushForm.targetType)
+      ? normalizePackage2Shelf(bulkPushForm.package2Shelf)
+      : undefined;
     const usernameById = new Map(
       accounts.map((acc) => [String(acc.id || ""), acc.username || ""]),
     );
@@ -2037,7 +2037,7 @@ function App() {
     const normalizedId = String(accountId || "").trim();
     if (!normalizedId) return;
     setActiveTab("chatgpt");
-    setGptSubTab("package2");
+    setGptSubTab("market");
     setPackage2ShelfTab(
       marketplaceTrackedAccountIds?.has(normalizedId) ? "sold" : "all",
     );
@@ -2235,15 +2235,14 @@ function App() {
   };
 
   const getChatgptDatammoScopeLabel = () => {
-    if (gptSubTab === "package1") return "Đồng bộ Gói 1 đang xem";
-    if (gptSubTab === "package2") {
-      if (package2ShelfTab === "main") return "Đồng bộ Gói 2 - Kệ tổng";
-      if (package2ShelfTab === "cheap") return "Đồng bộ Gói 2 - Kệ rẻ";
-      if (package2ShelfTab === "none") return "Đồng bộ Gói 2 - Không kệ";
-      return "Đồng bộ Gói 2 đang xem";
+    if (gptSubTab === "package1") return "Dong bo Goi 1 dang xem";
+    if (gptSubTab === "package2") return "Dong bo Goi 2 dang xem";
+    if (gptSubTab === "market") {
+      if (package2ShelfTab === "sold") return "Dong bo kho market - da ban";
+      return "Dong bo kho market - chua ban";
     }
-    if (gptSubTab === "unassigned") return "Đồng bộ ChatGPT chưa phân loại";
-    return "Đồng bộ ChatGPT đang xem";
+    if (gptSubTab === "unassigned") return "Dong bo ChatGPT chua phan loai";
+    return "Dong bo ChatGPT dang xem";
   };
 
   const handleResyncVisibleChatgptDatammo = () => {
@@ -2787,27 +2786,35 @@ function App() {
     .filter((acc) => {
       if (gptSubTab === "package1") return acc.type === "package1";
       if (gptSubTab === "package2") return acc.type === "package2";
+      if (gptSubTab === "market") {
+        return ["package1", "package2"].includes(String(acc?.type || ""));
+      }
       if (gptSubTab === "unassigned") return !acc.type || acc.type === "unassigned";
       return true;
     })
     .filter((acc) => {
-      if (gptSubTab !== "package2") return true;
       const isSoldMarketplaceAccount = marketplaceTrackedAccountIds.has(
         String(acc?.id || ""),
       );
-      if (package2ShelfTab === "sold") {
-        if (!isSoldMarketplaceAccount) return false;
-        if (soldPackage2ProviderFilter === "all") return true;
-        return (
-          normalizeMarketplaceProvider(
-            marketplaceTrackedAccountMap.get(String(acc?.id || ""))?.provider,
-          ) === normalizeMarketplaceProvider(soldPackage2ProviderFilter)
-        );
+      const isInMarketWarehouse = isChatgptMarketWarehouse(acc);
+      if (gptSubTab === "market") {
+        if (package2ShelfTab === "sold") {
+          if (!isSoldMarketplaceAccount) return false;
+          if (soldPackage2ProviderFilter === "all") return true;
+          return (
+            normalizeMarketplaceProvider(
+              marketplaceTrackedAccountMap.get(String(acc?.id || ""))?.provider,
+            ) === normalizeMarketplaceProvider(soldPackage2ProviderFilter)
+          );
+        }
+        return !isSoldMarketplaceAccount && isInMarketWarehouse;
       }
-      if (isSoldMarketplaceAccount) return false;
-      if (package2ShelfTab === "all") return true;
-      if (acc.type !== "package2") return false;
-      return normalizePackage2Shelf(acc.package2Shelf) === package2ShelfTab;
+      if (["package1", "package2", "unassigned"].includes(gptSubTab)) {
+        if (isSoldMarketplaceAccount) return false;
+        if (gptSubTab === "unassigned") return true;
+        return !isInMarketWarehouse;
+      }
+      return true;
     })
     .filter((acc) =>
       matchesCustomerFilter(hasAssignedCustomer(acc), chatgptCustomerFilter),
@@ -2875,7 +2882,7 @@ function App() {
       title: "Team Slot",
       subtitle: "Bán theo từng slot (tối đa 4 slot/account)",
       accounts: teamSlotAccounts,
-      badgeClass: "bg-teal-900/40 text-teal-300 border-teal-700/60",
+      badgeClass: "bg-emerald-900/40 text-emerald-300 border-emerald-700/60",
       panelClass: "border-teal-700/40 bg-teal-950/10",
     },
     {
@@ -3449,9 +3456,27 @@ function App() {
 
             {/* SUB-TABS: Gói 1 / Gói 2 / Chưa chọn */}
             {(() => {
-              const pkg1Count = accounts.filter(a => a.type === "package1").length;
-              const pkg2Count = accounts.filter(a => a.type === "package2").length;
+              const totalPoolAccounts = accounts.filter(
+                (a) =>
+                  ["package1", "package2"].includes(String(a?.type || "")) &&
+                  !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
+                  !isChatgptMarketWarehouse(a),
+              );
+              const pkg1Count = totalPoolAccounts.filter((a) => a.type === "package1").length;
+              const pkg2Count = totalPoolAccounts.filter((a) => a.type === "package2").length;
+              const marketCount = accounts.filter(
+                (a) =>
+                  (["package1", "package2"].includes(String(a?.type || "")) &&
+                    isChatgptMarketWarehouse(a)) ||
+                  marketplaceTrackedAccountIds.has(String(a?.id || "")),
+              ).length;
               const unassignedCount = accounts.filter(a => !a.type || a.type === "unassigned").length;
+              const marketTab = {
+                key: "market",
+                label: "Kho market",
+                count: marketCount,
+                color: "bg-emerald-600",
+              };
               const tabs = [
                 { key: "all", label: "📋 Tất cả", count: accounts.length, color: "bg-slate-600" },
                 { key: "package1", label: "👥 Gói 1 – Chia sẻ", count: pkg1Count, color: "bg-blue-600" },
@@ -3460,12 +3485,12 @@ function App() {
               ];
               return (
                 <div className="flex gap-2 flex-wrap mb-4">
-                  {tabs.map(t => (
+                  {[...tabs.slice(0, 3), marketTab, ...tabs.slice(3)].map(t => (
                     <button
                       key={t.key}
                       onClick={() => {
                         setGptSubTab(t.key);
-                        if (t.key !== "package2") setPackage2ShelfTab("all");
+                        if (t.key !== "market") setPackage2ShelfTab("all");
                       }}
                       className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full font-bold text-sm transition-all shadow-sm border ${gptSubTab === t.key
                           ? `${t.color} text-white border-transparent`
@@ -3481,13 +3506,17 @@ function App() {
               );
             })()}
 
-            {gptSubTab === "package2" && (() => {
-              const package2Accs = accounts.filter((a) => a.type === "package2");
+            {gptSubTab === "market" && (() => {
+              const package2Accs = accounts.filter((a) =>
+                ["package1", "package2"].includes(String(a?.type || "")),
+              );
               const soldPackage2Accs = package2Accs.filter((acc) =>
                 marketplaceTrackedAccountIds.has(String(acc?.id || "")),
               );
               const regularPackage2Accs = package2Accs.filter(
-                (acc) => !marketplaceTrackedAccountIds.has(String(acc?.id || "")),
+                (acc) =>
+                  !marketplaceTrackedAccountIds.has(String(acc?.id || "")) &&
+                  isChatgptMarketWarehouse(acc),
               );
               const soldDatammoCount = soldPackage2Accs.filter(
                 (acc) =>
@@ -3501,21 +3530,9 @@ function App() {
                     marketplaceTrackedAccountMap.get(String(acc?.id || ""))?.provider,
                   ) === "shopmini",
               ).length;
-              const mainCount = regularPackage2Accs.filter(
-                (a) => normalizePackage2Shelf(a.package2Shelf) === "main",
-              ).length;
-              const cheapCount = regularPackage2Accs.filter(
-                (a) => normalizePackage2Shelf(a.package2Shelf) === "cheap",
-              ).length;
-              const noneCount = regularPackage2Accs.filter(
-                (a) => normalizePackage2Shelf(a.package2Shelf) === "none",
-              ).length;
               const shelfTabs = [
-                { key: "all", label: "Kệ: Tất cả", count: regularPackage2Accs.length, color: "bg-slate-600" },
-                { key: "main", label: "Kệ tổng", count: mainCount, color: "bg-teal-600" },
-                { key: "cheap", label: "Kệ rẻ", count: cheapCount, color: "bg-emerald-600" },
-                { key: "none", label: "Không kệ", count: noneCount, color: "bg-slate-700" },
-                { key: "sold", label: "Đã bán", count: soldPackage2Accs.length, color: "bg-amber-600" },
+                { key: "all", label: "Chua ban", count: regularPackage2Accs.length, color: "bg-emerald-600" },
+                { key: "sold", label: "Da ban", count: soldPackage2Accs.length, color: "bg-amber-600" },
               ];
               return (
                 <div className="mb-4 space-y-3">
@@ -3582,7 +3599,7 @@ function App() {
               );
             })()}
 
-            {gptSubTab === "package2" && (
+            {gptSubTab === "market" && (
               <div className="mb-5 rounded-2xl border border-slate-700 bg-slate-900/60 shadow-lg overflow-hidden">
                 <div className="border-b border-slate-700/80 px-4 py-3 md:px-5 md:py-4">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -3903,7 +3920,7 @@ function App() {
                                 🔒 Gói 2: Linh hoạt
                               </option>
                             </select>
-                            {acc.type === "package2" && (
+                            {supportsChatgptMarketType(acc.type) && (
                               <div className="mt-2">
                                 <select
                                   value={normalizePackage2Shelf(acc.package2Shelf)}
@@ -3918,17 +3935,14 @@ function App() {
                                     w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center
                                     ${normalizePackage2Shelf(acc.package2Shelf) === "none"
                                       ? "bg-slate-800 text-slate-300 border-slate-600"
-                                      : "bg-teal-900/40 text-teal-300 border-teal-700/60"}
+                                      : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"}
                                   `}
                                 >
-                                  <option value="main">1 - Kệ tổng</option>
-                                  <option value="cheap">2 - Kệ rẻ</option>
-                                  <option value="none">3 - Không lên kệ</option>
+                                  <option value="none">Kho tong</option>
+                                  <option value="cheap">Kho market</option>
                                 </select>
                                 {loadingStates.changeShelf[acc.id] && (
-                                  <div className="text-center mt-1 text-[10px] text-teal-300">
-                                    đang đồng bộ kệ...
-                                  </div>
+                                  <div className="text-center mt-1 text-[10px] text-emerald-300">Dang cap nhat kho...</div>
                                 )}
                               </div>
                             )}
@@ -4025,29 +4039,20 @@ function App() {
                                     {acc.users?.length || 0}/3 Slot
                                   </span>
                                   {acc.users?.length < 3 ? (
-                                    <div className="flex gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => openAddUserModal(acc.id, "[Datammo] Khách mới")}
-                                        className="text-[10px] sm:text-xs px-2 py-0.5 rounded bg-teal-600 hover:bg-teal-500 font-bold text-white whitespace-nowrap"
-                                      >
-                                        + Datammo
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => openAddUserModal(acc.id)}
-                                        className="text-[10px] sm:text-xs px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white whitespace-nowrap"
-                                      >
-                                        + Khách
-                                      </button>
-                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => openAddUserModal(acc.id)}
+                                      className="text-[10px] sm:text-xs px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white whitespace-nowrap"
+                                    >
+                                      + Khach
+                                    </button>
                                   ) : (
                                     <span className="text-xs text-red-400 font-bold italic">Đã Đầy</span>
                                   )}
                                 </div>
-                                {acc.users?.length < 3 && (
-                                  <div className="mb-2 w-full px-2 py-0.5 bg-teal-900/40 text-teal-400 font-bold rounded text-[10px] uppercase border border-teal-800/50 flex items-center justify-center gap-1 shadow-sm">
-                                    <Globe size={10} /> Đang lên kệ Datammo: Còn {3 - (acc.users?.length || 0)} Slot
+                                {isChatgptMarketWarehouse(acc) && !marketplaceTrackedAccountIds.has(String(acc?.id || "")) && (
+                                  <div className="mb-2 w-full px-2 py-0.5 bg-emerald-900/40 text-emerald-300 font-bold rounded text-[10px] uppercase border border-emerald-800/50 flex items-center justify-center gap-1 shadow-sm">
+                                    <Globe size={10} /> Kho market - chua ban
                                   </div>
                                 )}
                                 <div className="space-y-1">
@@ -4199,8 +4204,11 @@ function App() {
                               (() => {
                                 const u = acc.users?.[0];
                                 const package2Shelf = normalizePackage2Shelf(acc.package2Shelf);
-                                const package2ShelfLabel = getPackage2ShelfLabel(package2Shelf);
-                                const isOnDatammoShelf = package2Shelf !== "none";
+                                const package2ShelfLabel = getChatgptWarehouseLabel(package2Shelf);
+                                const isTrackedMarketplaceAccount =
+                                  marketplaceTrackedAccountIds.has(String(acc?.id || ""));
+                                const isInMarketWarehouse = package2Shelf === "cheap";
+                                const isOnDatammoShelf = isInMarketWarehouse;
                                 const managedOrderInfo = getMarketplaceOrderInfoFromUser(u);
                                 const latestMarketplaceOrder = findMarketplaceOrderForAccount(
                                   acc.id,
@@ -4540,7 +4548,7 @@ function App() {
                                     datammoBatchProgress.active
                                   }
                                   className="bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white p-2 rounded transition-colors disabled:opacity-60 disabled:cursor-wait"
-                                  title="Resync Datammo"
+                                  title="Dong bo kho market"
                                 >
                                   <RefreshCw
                                     size={16}
@@ -4581,9 +4589,7 @@ function App() {
                                     ...acc,
                                     note: getVisibleAccountNote(acc.note),
                                     package2Shelf:
-                                      acc.type === "package2"
-                                        ? normalizePackage2Shelf(acc.package2Shelf)
-                                        : "none",
+                                      supportsChatgptMarketType(acc.type) ? normalizePackage2Shelf(acc.package2Shelf) : "none",
                                   });
                                   setShowEditModal(true);
                                 }}
@@ -5340,7 +5346,7 @@ function App() {
                 </select>
               </div>
 
-              {bulkPushForm.targetType === "package2" && (
+              {supportsChatgptMarketType(bulkPushForm.targetType) && (
                 <div className="form-group">
                   <label className="block text-xs text-slate-400 mb-1">Kệ Datammo</label>
                   <select
@@ -5353,9 +5359,8 @@ function App() {
                       }))
                     }
                   >
-                    <option value="main">1 - Kệ tổng</option>
-                    <option value="cheap">2 - Kệ rẻ</option>
-                    <option value="none">3 - Không lên kệ</option>
+                    <option value="none">Kho tong</option>
+                                  <option value="cheap">Kho market</option>
                   </select>
                 </div>
               )}
@@ -5459,27 +5464,13 @@ function App() {
                     setNewAcc({
                       ...newAcc,
                       type: nextType,
-                      package2Shelf:
-                        nextType === "package2"
-                          ? normalizePackage2Shelf(
-                            newAcc.package2Shelf === "none"
-                              ? "main"
-                              : newAcc.package2Shelf,
-                          )
-                          : "none",
+                      package2Shelf: supportsChatgptMarketType(nextType) ? normalizePackage2Shelf(newAcc.package2Shelf) : "none",
                     });
                   } else {
                     setEditingAcc({
                       ...editingAcc,
                       type: nextType,
-                      package2Shelf:
-                        nextType === "package2"
-                          ? normalizePackage2Shelf(
-                            editingAcc.package2Shelf === "none"
-                              ? "main"
-                              : editingAcc.package2Shelf,
-                          )
-                          : "none",
+                      package2Shelf: supportsChatgptMarketType(nextType) ? normalizePackage2Shelf(editingAcc.package2Shelf) : "none",
                     });
                   }
                 }}
@@ -5489,7 +5480,7 @@ function App() {
                 <option value="package2">🔒 Gói 2: Linh hoạt</option>
               </select>
             </div>
-            {(showAddModal ? newAcc.type : editingAcc.type) === "package2" && (
+            {supportsChatgptMarketType(showAddModal ? newAcc.type : editingAcc.type) && (
               <div className="form-group">
                 <label>Kệ Datammo cho Gói 2</label>
                 <select
@@ -5507,9 +5498,8 @@ function App() {
                       })
                   }
                 >
-                  <option value="main">1 - Kệ tổng</option>
-                  <option value="cheap">2 - Kệ rẻ</option>
-                  <option value="none">3 - Không lên kệ</option>
+                  <option value="none">Kho tong</option>
+                                  <option value="cheap">Kho market</option>
                 </select>
               </div>
             )}
@@ -6206,7 +6196,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-slate-800 text-slate-200 border-slate-700">
                   Tổng Team: {filteredTeamAccounts.length}
                 </div>
-                <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-teal-900/40 text-teal-300 border-teal-700/60">
+                <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-emerald-900/40 text-emerald-300 border-emerald-700/60">
                   Team Slot: {teamSlotAccounts.length}
                 </div>
                 <div className="px-3 py-1.5 rounded-full text-xs font-bold border bg-cyan-900/40 text-cyan-300 border-cyan-700/60">
@@ -7062,4 +7052,6 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 }
 
 export default App;
+
+
 
