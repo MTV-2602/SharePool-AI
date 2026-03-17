@@ -673,6 +673,7 @@ const PACKAGE2_SHELF_MAIN = "main";
 const PACKAGE2_SHELF_CHEAP = "cheap";
 const PACKAGE2_SHELF_NONE = "none";
 const PACKAGE2_MIN_DAYS_FOR_SALE = 25;
+const CHATGPT_MANUAL_MARKET_VALUE = PACKAGE2_SHELF_MAIN;
 const CHATGPT_MARKET_VALUE = PACKAGE2_SHELF_CHEAP;
 const CHATGPT_TOTAL_VALUE = PACKAGE2_SHELF_NONE;
 const CHATGPT_MARKET_SUPPORTED_TYPES = ["package1", "package2", "unassigned"];
@@ -766,9 +767,8 @@ const postDatammo = async (
 };
 const normalizePackage2Shelf = (shelf, fallback = CHATGPT_TOTAL_VALUE) => {
   if (shelf === PACKAGE2_SHELF_CHEAP) return PACKAGE2_SHELF_CHEAP;
-  if (shelf === PACKAGE2_SHELF_MAIN || shelf === PACKAGE2_SHELF_NONE) {
-    return CHATGPT_TOTAL_VALUE;
-  }
+  if (shelf === PACKAGE2_SHELF_MAIN) return CHATGPT_MANUAL_MARKET_VALUE;
+  if (shelf === PACKAGE2_SHELF_NONE) return CHATGPT_TOTAL_VALUE;
   return fallback;
 };
 const supportsChatgptMarket = (type) =>
@@ -799,6 +799,9 @@ const normalizeChatgptMarketAccountState = (acc = {}) => {
     acc?.package2Shelf,
     CHATGPT_TOTAL_VALUE,
   );
+  if (currentValue === CHATGPT_MANUAL_MARKET_VALUE) {
+    return CHATGPT_MANUAL_MARKET_VALUE;
+  }
   if (currentValue !== CHATGPT_MARKET_VALUE) {
     return CHATGPT_TOTAL_VALUE;
   }
@@ -827,19 +830,6 @@ const syncChatgptMarketStateIfNeeded = async (acc) => {
   return updated || acc;
 };
 const reconcileChatgptMarketInventory = async () => {
-  await Account.updateMany(
-    {
-      type: { $in: CHATGPT_MARKET_SUPPORTED_TYPES },
-      package2Shelf: PACKAGE2_SHELF_MAIN,
-    },
-    {
-      $set: {
-        package2Shelf: CHATGPT_TOTAL_VALUE,
-        updatedAt: new Date().toISOString(),
-      },
-    },
-  );
-
   const minExpiredAt = new Date(
     Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
   ).toISOString();
@@ -1817,6 +1807,23 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     ) {
       return res.status(400).json({
         error: "Khong the chuyen kho khi tai khoan dang co khach. Vui long xoa hoac chuyen khach truoc.",
+      });
+    }
+    const nextDaysLeft = existingAcc?.expiredAt
+      ? Math.ceil(
+          (new Date(existingAcc.expiredAt).getTime() - Date.now()) / 86400000,
+        )
+      : null;
+    if (
+      isManualShelfUpdate &&
+      requestedShelf === CHATGPT_MARKET_VALUE &&
+      nextDaysLeft !== null &&
+      Number.isFinite(nextDaysLeft) &&
+      nextDaysLeft <= PACKAGE2_MIN_DAYS_FOR_SALE
+    ) {
+      return res.status(400).json({
+        error:
+          "Tai khoan duoi 25 ngay khong duoc dua vao kho market tu dong. Hay day sang kho duoi 25 ngay.",
       });
     }
     const hadRegularPackage2Customer = hasRegularPackage2Customer(existingUsers);

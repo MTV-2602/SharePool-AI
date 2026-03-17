@@ -45,7 +45,8 @@ const toNonAccentVietnamese = (str) => {
 
 const normalizePackage2Shelf = (value) => {
   if (value === "cheap") return "cheap";
-  if (value === "main" || value === "none") return "none";
+  if (value === "main") return "main";
+  if (value === "none") return "none";
   return "none";
 };
 
@@ -55,12 +56,18 @@ const supportsChatgptMarketType = (value) =>
   );
 
 const getPackage2ShelfLabel = (value) =>
-  normalizePackage2Shelf(value) === "cheap" ? "Kho market" : "Kho tong";
-const getChatgptWarehouseLabel = (value) =>
-  normalizePackage2Shelf(value) === "cheap" ? "Kho market" : "Kho tong";
+  normalizePackage2Shelf(value) === "cheap"
+    ? "Kho market"
+    : normalizePackage2Shelf(value) === "main"
+      ? "Kho duoi 25 ngay"
+      : "Kho tong";
+const getChatgptWarehouseLabel = (value) => getPackage2ShelfLabel(value);
 const isChatgptMarketWarehouse = (acc = {}) =>
   supportsChatgptMarketType(acc?.type) &&
   normalizePackage2Shelf(acc?.package2Shelf) === "cheap";
+const isChatgptShortDateWarehouse = (acc = {}) =>
+  supportsChatgptMarketType(acc?.type) &&
+  normalizePackage2Shelf(acc?.package2Shelf) === "main";
 const normalizeTeamSaleMode = (value) =>
   value === "business" ? "business" : "slot";
 const buildEmptyTeamSlot = () => ({
@@ -1744,6 +1751,22 @@ function App() {
       );
       return;
     }
+    const daysLeft = acc?.expiredAt
+      ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
+      : null;
+    if (
+      nextShelf === "cheap" &&
+      daysLeft !== null &&
+      Number.isFinite(daysLeft) &&
+      daysLeft <= 25
+    ) {
+      showAlert(
+        "Khong the dua vao kho market",
+        "Tai khoan duoi 25 ngay chi nen day sang kho duoi 25 ngay.",
+        "warning",
+      );
+      return;
+    }
 
     setLoadingStates((prev) => ({
       ...prev,
@@ -1842,7 +1865,12 @@ function App() {
       targets.push(acc);
     });
 
-    const targetLabel = nextShelf === "cheap" ? "Kho market" : "Kho tong";
+      const targetLabel =
+        nextShelf === "cheap"
+          ? "Kho market"
+          : nextShelf === "main"
+            ? "Kho duoi 25 ngay"
+            : "Kho tong";
     if (targets.length === 0) {
       const reasons = [];
       if (unsupported.length) reasons.push(`Khong dung loai: ${unsupported.length}`);
@@ -2579,6 +2607,9 @@ function App() {
       if (gptSubTab === "market") {
         return supportsChatgptMarketType(acc?.type);
       }
+      if (gptSubTab === "short") {
+        return supportsChatgptMarketType(acc?.type);
+      }
       return true;
     })
     .filter((acc) => {
@@ -2586,6 +2617,7 @@ function App() {
         String(acc?.id || ""),
       );
       const isInMarketWarehouse = isChatgptMarketWarehouse(acc);
+      const isInShortDateWarehouse = isChatgptShortDateWarehouse(acc);
       if (gptSubTab === "market") {
         if (package2ShelfTab === "sold") {
           if (!isSoldMarketplaceAccount) return false;
@@ -2598,9 +2630,13 @@ function App() {
         }
         return !isSoldMarketplaceAccount && isInMarketWarehouse;
       }
+      if (gptSubTab === "short") {
+        if (isSoldMarketplaceAccount) return false;
+        return isInShortDateWarehouse;
+      }
       if (gptSubTab === "total") {
         if (isSoldMarketplaceAccount) return false;
-        return !isInMarketWarehouse;
+        return !isInMarketWarehouse && !isInShortDateWarehouse;
       }
       return true;
     })
@@ -3241,6 +3277,13 @@ function App() {
                   <Globe size={18} /> Đẩy sang kho market
                 </button>
                 <button
+                  onClick={() => handleBulkWarehouseMove("main")}
+                  disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
+                  className="flex items-center gap-2 bg-amber-700 hover:bg-amber-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Globe size={18} /> Day sang kho duoi 25
+                </button>
+                <button
                   onClick={() => setShowImportGPTModal(true)}
                   className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center"
                 >
@@ -3255,7 +3298,8 @@ function App() {
                 (a) =>
                   supportsChatgptMarketType(a?.type) &&
                   !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
-                  !isChatgptMarketWarehouse(a),
+                  !isChatgptMarketWarehouse(a) &&
+                  !isChatgptShortDateWarehouse(a),
               );
               const totalCount = totalPoolAccounts.length;
               const marketCount = accounts.filter(
@@ -3264,10 +3308,17 @@ function App() {
                     isChatgptMarketWarehouse(a)) ||
                   marketplaceTrackedAccountIds.has(String(a?.id || "")),
               ).length;
+              const shortDateCount = accounts.filter(
+                (a) =>
+                  supportsChatgptMarketType(a?.type) &&
+                  !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
+                  isChatgptShortDateWarehouse(a),
+              ).length;
               const tabs = [
                 { key: "all", label: "Tat ca", count: accounts.length, color: "bg-slate-600" },
                 { key: "total", label: "Kho tong", count: totalCount, color: "bg-blue-600" },
                 { key: "market", label: "Kho market", count: marketCount, color: "bg-emerald-600" },
+                { key: "short", label: "Kho duoi 25", count: shortDateCount, color: "bg-amber-600" },
               ];
               return (
                 <div className="flex gap-2 flex-wrap mb-4">
@@ -3298,7 +3349,8 @@ function App() {
                 (a) =>
                   supportsChatgptMarketType(a?.type) &&
                   !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
-                  !isChatgptMarketWarehouse(a),
+                  !isChatgptMarketWarehouse(a) &&
+                  !isChatgptShortDateWarehouse(a),
               );
               const totalTypeTabs = [
                 { key: "all", label: "Tat ca", count: totalPoolAccounts.length, color: "bg-slate-600" },
@@ -3437,7 +3489,10 @@ function App() {
                         Datammo + Shopmini
                       </div>
                       <div className="mt-1 text-xs text-slate-400">
-                        Ke re la kho chung cua Datammo va Shopmini. Ban ben nao cung tu tru kho ben con lai.
+                        Kho market la kho chung cua Datammo va Shopmini. Ban ben nao cung tu tru kho ben con lai.
+                      </div>
+                      <div className="mt-1 text-xs text-amber-300">
+                        Kho duoi 25 ngay la kho day tay, khong di vao API stock/buy tu dong.
                       </div>
                     </div>
                     <div className="text-xs text-slate-400">
@@ -3782,11 +3837,14 @@ function App() {
                                     w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center
                                     ${normalizePackage2Shelf(acc.package2Shelf) === "none"
                                       ? "bg-slate-800 text-slate-300 border-slate-600"
-                                      : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"}
+                                      : normalizePackage2Shelf(acc.package2Shelf) === "main"
+                                        ? "bg-amber-900/40 text-amber-300 border-amber-700/60"
+                                        : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"}
                                   `}
                                 >
                                   <option value="none">Kho tong</option>
                                   <option value="cheap">Kho market</option>
+                                  <option value="main">Kho duoi 25 ngay</option>
                                 </select>
                                 {loadingStates.changeShelf[acc.id] && (
                                   <div className="text-center mt-1 text-[10px] text-emerald-300">Dang cap nhat kho...</div>
@@ -3900,6 +3958,11 @@ function App() {
                                 {isChatgptMarketWarehouse(acc) && !marketplaceTrackedAccountIds.has(String(acc?.id || "")) && (
                                   <div className="mb-2 w-full px-2 py-0.5 bg-emerald-900/40 text-emerald-300 font-bold rounded text-[10px] uppercase border border-emerald-800/50 flex items-center justify-center gap-1 shadow-sm">
                                     <Globe size={10} /> Kho market - chua ban
+                                  </div>
+                                )}
+                                {isChatgptShortDateWarehouse(acc) && !marketplaceTrackedAccountIds.has(String(acc?.id || "")) && (
+                                  <div className="mb-2 w-full px-2 py-0.5 bg-amber-900/40 text-amber-300 font-bold rounded text-[10px] uppercase border border-amber-800/50 flex items-center justify-center gap-1 shadow-sm">
+                                    <Globe size={10} /> Kho duoi 25 ngay - day tay
                                   </div>
                                 )}
                                 <div className="space-y-1">
@@ -4343,14 +4406,18 @@ function App() {
                                         <div
                                           className={`text-center w-full px-2 py-1 font-bold rounded text-[10px] uppercase border flex flex-col gap-0.5 shadow-sm ${isOnDatammoShelf
                                             ? "bg-teal-900/30 text-teal-400 border-teal-800/50"
-                                            : "bg-slate-800 text-slate-300 border-slate-700"
+                                            : package2Shelf === "main"
+                                              ? "bg-amber-900/30 text-amber-300 border-amber-800/50"
+                                              : "bg-slate-800 text-slate-300 border-slate-700"
                                             }`}
                                         >
                                           <span className="flex items-center justify-center gap-1">
                                             <Globe size={10} />
                                             {isOnDatammoShelf
-                                              ? `Đang lên kệ Datammo (${package2ShelfLabel})`
-                                              : "Không lên kệ Datammo"}
+                                              ? `Dang o ${package2ShelfLabel}`
+                                              : package2Shelf === "main"
+                                                ? "Dang o kho duoi 25 ngay (day tay)"
+                                                : "Dang o kho tong"}
                                           </span>
                                         </div>
                                         {isOnDatammoShelf ? (
@@ -5215,7 +5282,7 @@ function App() {
             </div>
             {supportsChatgptMarketType(showAddModal ? newAcc.type : editingAcc.type) && (
               <div className="form-group">
-                <label>Kệ Datammo cho Gói 2</label>
+                <label>Kho ban ChatGPT</label>
                 <select
                   className="form-input"
                   value={normalizePackage2Shelf(showAddModal ? newAcc.package2Shelf : editingAcc.package2Shelf)}
@@ -5232,7 +5299,8 @@ function App() {
                   }
                 >
                   <option value="none">Kho tong</option>
-                                  <option value="cheap">Kho market</option>
+                  <option value="cheap">Kho market</option>
+                  <option value="main">Kho duoi 25 ngay</option>
                 </select>
               </div>
             )}
