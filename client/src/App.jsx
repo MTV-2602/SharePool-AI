@@ -4506,26 +4506,18 @@ function App() {
                                               : "Không lên kệ Datammo"}
                                           </span>
                                         </div>
-                                        <div className="flex gap-1">
-                                          {isOnDatammoShelf && (
-                                          <button
-                                            type="button"
-                                            onClick={() => openAddUserModal(acc.id, "[Datammo] Khách mới")}
-                                            className="w-1/2 text-center text-xs px-2 py-1.5 bg-teal-700 hover:bg-teal-600 font-bold rounded text-white transition-colors"
-                                            title="Gán Khách và tự điền tên Datammo"
-                                          >
-                                            + Datammo
-                                          </button>
-                                          )}
-                                          <button
-                                            type="button"
-                                            onClick={() => openAddUserModal(acc.id)}
-                                            className={`${isOnDatammoShelf ? "w-1/2" : "w-full"} text-center text-xs px-2 py-1.5 bg-slate-700 hover:bg-slate-600 rounded font-bold text-slate-300 transition-colors`}
-                                            title="Gán Khách ngoài bình thường"
-                                          >
-                                            + Khách Thường
-                                          </button>
-                                        </div>
+                                        {isOnDatammoShelf && (
+                                          <div className="flex gap-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => openAddUserModal(acc.id, "[Datammo] Khách mới")}
+                                              className="w-full text-center text-xs px-2 py-1.5 bg-teal-700 hover:bg-teal-600 font-bold rounded text-white transition-colors"
+                                              title="Gán Khách và tự điền tên Datammo"
+                                            >
+                                              + Datammo
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
                                     )}
                                   </div>
@@ -7052,6 +7044,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 }
 
 export default App;
+
 
 
 
