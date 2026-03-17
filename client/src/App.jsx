@@ -6137,7 +6137,30 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
               <h2 className="text-xl font-bold text-white">🏢 ChatGPT Team Accounts</h2>
               <p className="text-slate-400 text-sm">Mỗi tài khoản có tối đa 4 slot Gmail khách</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 justify-end">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-xs font-semibold text-slate-200">
+                Da chon <span className="text-white font-bold">{selectedTeamIds.length}</span>
+              </div>
+              <button
+                onClick={() =>
+                  handleToggleSelectAllFilteredTeam(
+                    !allFilteredTeamSelected,
+                    filteredTeamIds,
+                  )
+                }
+                disabled={filteredTeamIds.length === 0}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-emerald-700 hover:bg-emerald-600 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {allFilteredTeamSelected ? "Bo chon Team" : "Chon het Team"}
+              </button>
+              {selectedTeamIds.length > 0 && (
+                <button
+                  onClick={() => setSelectedTeamIds([])}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-white bg-slate-700 hover:bg-slate-600 text-sm"
+                >
+                  Bo chon
+                </button>
+              )}
               <button
                 onClick={() => {
                   setTeamImportText("");
