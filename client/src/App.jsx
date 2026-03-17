@@ -363,6 +363,16 @@ const CUSTOMER_FILTER_OPTIONS = [
   { value: "with", label: "Có khách" },
   { value: "without", label: "Không khách" },
 ];
+const EXPIRY_FILTER_OPTIONS = [
+  { value: "all", label: "Tat ca han" },
+  { value: "expired", label: "Da het han" },
+  { value: "1_7", label: "1-7 ngay" },
+  { value: "8_15", label: "8-15 ngay" },
+  { value: "16_30", label: "16-30 ngay" },
+  { value: "31_60", label: "31-60 ngay" },
+  { value: "over_60", label: "Tren 60 ngay" },
+  { value: "no_expiry", label: "Khong co han" },
+];
 const getAccountUsers = (account = {}) =>
   Array.isArray(account?.users) ? account.users : [];
 const hasAssignedCustomer = (account = {}) =>
@@ -378,6 +388,24 @@ const hasAssignedTeamCustomer = (account = {}) =>
 const matchesCustomerFilter = (hasCustomer, filterValue = "all") => {
   if (filterValue === "with") return hasCustomer;
   if (filterValue === "without") return !hasCustomer;
+  return true;
+};
+const getAccountDaysRemaining = (account = {}) => {
+  if (!account?.expiredAt) return null;
+  const expiresAt = new Date(account.expiredAt);
+  if (Number.isNaN(expiresAt.getTime())) return null;
+  return Math.ceil((expiresAt - new Date()) / 86400000);
+};
+const matchesExpiryFilter = (daysRemaining, filterValue = "all") => {
+  if (filterValue === "all") return true;
+  if (filterValue === "no_expiry") return daysRemaining === null;
+  if (daysRemaining === null) return false;
+  if (filterValue === "expired") return daysRemaining <= 0;
+  if (filterValue === "1_7") return daysRemaining >= 1 && daysRemaining <= 7;
+  if (filterValue === "8_15") return daysRemaining >= 8 && daysRemaining <= 15;
+  if (filterValue === "16_30") return daysRemaining >= 16 && daysRemaining <= 30;
+  if (filterValue === "31_60") return daysRemaining >= 31 && daysRemaining <= 60;
+  if (filterValue === "over_60") return daysRemaining > 60;
   return true;
 };
 const createApiRequestLabel = (detail = {}) => {
@@ -524,11 +552,14 @@ function App() {
   const [highlightedChatgptAccountId, setHighlightedChatgptAccountId] =
     useState("");
   const [chatgptCustomerFilter, setChatgptCustomerFilter] = useState("all");
+  const [chatgptExpiryFilter, setChatgptExpiryFilter] = useState("all");
   const [marketplaceOrderQuery, setMarketplaceOrderQuery] = useState("");
   const [marketplaceOrderProviderFilter, setMarketplaceOrderProviderFilter] =
     useState("all");
   const [teamCustomerFilter, setTeamCustomerFilter] = useState("all");
+  const [teamExpiryFilter, setTeamExpiryFilter] = useState("all");
   const [simpleCustomerFilter, setSimpleCustomerFilter] = useState("all");
+  const [simpleExpiryFilter, setSimpleExpiryFilter] = useState("all");
 
   // Loading states for buttons
 
@@ -872,6 +903,20 @@ function App() {
         </button>
       ))}
     </div>
+  );
+
+  const renderExpiryFilterSelect = (value, onChange) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
+    >
+      {EXPIRY_FILTER_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
   );
 
   // Helper to get joined date display
@@ -2492,6 +2537,9 @@ function App() {
     .filter((acc) =>
       matchesCustomerFilter(hasAssignedCustomer(acc), chatgptCustomerFilter),
     )
+    .filter((acc) =>
+      matchesExpiryFilter(getAccountDaysRemaining(acc), chatgptExpiryFilter),
+    )
     .filter((acc) => {
       if (!searchQuery.trim()) return true;
       const queryNormalized = toNonAccentVietnamese(searchQuery);
@@ -2537,12 +2585,16 @@ function App() {
   const allFilteredSelected =
     filteredChatgptIds.length > 0 &&
     selectedInFilteredCount === filteredChatgptIds.length;
-  const filteredTeamAccounts = teamAccounts.filter((acc) =>
-    matchesCustomerFilter(
-      hasAssignedTeamCustomer(acc),
-      teamCustomerFilter,
-    ),
-  );
+  const filteredTeamAccounts = teamAccounts
+    .filter((acc) =>
+      matchesCustomerFilter(
+        hasAssignedTeamCustomer(acc),
+        teamCustomerFilter,
+      ),
+    )
+    .filter((acc) =>
+      matchesExpiryFilter(getAccountDaysRemaining(acc), teamExpiryFilter),
+    );
   const teamSlotAccounts = filteredTeamAccounts.filter(
     (acc) => normalizeTeamSaleMode(acc.saleMode) === "slot",
   );
@@ -3036,6 +3088,13 @@ function App() {
                   {renderCustomerFilterButtons(
                     chatgptCustomerFilter,
                     setChatgptCustomerFilter,
+                  )}
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    Loc han
+                  </span>
+                  {renderExpiryFilterSelect(
+                    chatgptExpiryFilter,
+                    setChatgptExpiryFilter,
                   )}
                 </div>
               </div>
@@ -5489,12 +5548,16 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           });
         };
 
-        const presenceFiltered = accs.filter((a) =>
-          matchesCustomerFilter(
-            hasAssignedCustomer(a),
-            simpleCustomerFilter,
-          ),
-        );
+        const presenceFiltered = accs
+          .filter((a) =>
+            matchesCustomerFilter(
+              hasAssignedCustomer(a),
+              simpleCustomerFilter,
+            ),
+          )
+          .filter((a) =>
+            matchesExpiryFilter(getAccountDaysRemaining(a), simpleExpiryFilter),
+          );
 
         const searchFiltered = presenceFiltered.filter(a =>
           a.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -5584,6 +5647,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   {renderCustomerFilterButtons(
                     simpleCustomerFilter,
                     setSimpleCustomerFilter,
+                  )}
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    Loc han
+                  </span>
+                  {renderExpiryFilterSelect(
+                    simpleExpiryFilter,
+                    setSimpleExpiryFilter,
                   )}
                 </div>
               </div>
@@ -5762,6 +5832,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 {renderCustomerFilterButtons(
                   teamCustomerFilter,
                   setTeamCustomerFilter,
+                )}
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                  Loc han
+                </span>
+                {renderExpiryFilterSelect(
+                  teamExpiryFilter,
+                  setTeamExpiryFilter,
                 )}
               </div>
 
