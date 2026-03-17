@@ -746,12 +746,10 @@ const isEligibleForTeamMarketSale = (account = {}) => {
   );
   if (warehouse !== TEAM_WAREHOUSE_MARKET) return false;
   const saleMode = normalizeTeamSaleMode(account?.saleMode);
+  if (saleMode !== TEAM_SALE_MODE_BUSINESS) return false;
   const daysLeft = getTeamDaysLeft(account);
   if (daysLeft !== null && daysLeft <= PACKAGE2_MIN_DAYS_FOR_SALE) return false;
-  if (saleMode === TEAM_SALE_MODE_BUSINESS) {
-    return countActiveTeamCustomers(account?.slots) === 0;
-  }
-  return getAvailableTeamSlotIndices(account?.slots).length > 0;
+  return countActiveTeamCustomers(account?.slots) === 0;
 };
 const normalizeTeamWarehouseState = (account = {}) => {
   const saleMode = normalizeTeamSaleMode(account?.saleMode);
@@ -858,8 +856,9 @@ const normalizeTeamPayload = (payload = {}, options = {}) => {
     normalized.slots = buildEmptyTeamSlots();
   }
   if (
-    normalizeTeamWarehouse(normalized.warehouse, TEAM_WAREHOUSE_TOTAL) ===
-      TEAM_WAREHOUSE_SHORT &&
+    [TEAM_WAREHOUSE_MARKET, TEAM_WAREHOUSE_SHORT].includes(
+      normalizeTeamWarehouse(normalized.warehouse, TEAM_WAREHOUSE_TOTAL),
+    ) &&
     normalizeTeamSaleMode(
       normalized.saleMode,
       TEAM_SALE_MODE_SLOT,
@@ -1411,6 +1410,7 @@ const resolveTeamMarketplaceModeFromReq = (req) => {
 };
 const buildTeamMarketplaceSellableAccounts = async (mode) => {
   const saleMode = resolveTeamMarketplaceMode(mode);
+  if (saleMode !== TEAM_SALE_MODE_BUSINESS) return [];
   const accounts = await TeamAccount.find({
     saleMode,
     warehouse: TEAM_WAREHOUSE_MARKET,
@@ -1419,12 +1419,9 @@ const buildTeamMarketplaceSellableAccounts = async (mode) => {
 };
 const countTeamMarketplaceStock = async (mode) => {
   const saleMode = resolveTeamMarketplaceMode(mode);
+  if (saleMode !== TEAM_SALE_MODE_BUSINESS) return 0;
   const accounts = await buildTeamMarketplaceSellableAccounts(saleMode);
-  if (saleMode === TEAM_SALE_MODE_BUSINESS) return accounts.length;
-  return accounts.reduce(
-    (sum, account) => sum + getAvailableTeamSlotIndices(account?.slots).length,
-    0,
-  );
+  return accounts.length;
 };
 const buildManagedTeamCustomer = (provider, orderId, joinDate) => {
   const normalizedProvider = normalizeMarketplaceProvider(provider);
@@ -1547,7 +1544,7 @@ const claimTeamAccountsForOrder = async ({ quantity, orderId, provider, saleMode
   if (resolveTeamMarketplaceMode(saleMode) === TEAM_SALE_MODE_BUSINESS) {
     return claimTeamBusinessAccountsForOrder({ quantity, orderId, provider });
   }
-  return claimTeamSlotAccountsForOrder({ quantity, orderId, provider });
+  return [];
 };
 const rollbackClaimedTeamAccounts = async (claimed = []) => {
   for (const item of claimed) {
@@ -1889,6 +1886,12 @@ app.get(
           message: "Missing team mode",
         });
       }
+      if (saleMode !== TEAM_SALE_MODE_BUSINESS) {
+        return res.status(400).json({
+          success: false,
+          message: "Team slot khong ban qua API",
+        });
+      }
       const available = await countTeamMarketplaceStock(saleMode);
       if (available < quantity) {
         return res.status(409).json({
@@ -2016,6 +2019,12 @@ app.all(
         return res.status(400).json({
           success: false,
           message: "Missing team mode",
+        });
+      }
+      if (saleMode !== TEAM_SALE_MODE_BUSINESS) {
+        return res.status(400).json({
+          success: false,
+          message: "Team slot khong ban qua API",
         });
       }
       const available = await countTeamMarketplaceStock(saleMode);

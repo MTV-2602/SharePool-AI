@@ -2219,6 +2219,15 @@ function App() {
       return;
     }
 
+    if (targetWarehouse === "market" && !isBusinessMode) {
+      showAlert(
+        "Khong hop le",
+        "Kho market Team chi dung cho Business. Slot Team admin tu them theo don.",
+        "warning",
+      );
+      return;
+    }
+
     if (targetWarehouse === "market" && daysLeft !== null && daysLeft <= 25) {
       showAlert(
         "Khong the day vao kho market",
@@ -2319,6 +2328,10 @@ function App() {
           unsupported += 1;
           continue;
         }
+        if (target === "market" && !isBusinessMode) {
+          unsupported += 1;
+          continue;
+        }
         if (target === "market" && daysLeft !== null && daysLeft <= 25) {
           nearExpiry += 1;
           continue;
@@ -2353,7 +2366,7 @@ function App() {
         summaryLines.push(`Bo qua Team dang co khach: ${occupied}`);
       }
       if (unsupported > 0) {
-        summaryLines.push(`Bo qua Team khong hop kho duoi 25: ${unsupported}`);
+        summaryLines.push(`Bo qua Team khong hop le voi kho dich: ${unsupported}`);
       }
       if (nearExpiry > 0) {
         summaryLines.push(`Bo qua Team duoi 25 ngay cho kho market: ${nearExpiry}`);
@@ -3071,23 +3084,30 @@ function App() {
     (acc) => normalizeTeamSaleMode(acc.saleMode) === "business",
   );
   const teamSections = [
-    {
-      key: "slot",
-      title: "Goi chia se 4 slot",
-      subtitle: "1 account Team cho toi da 4 khach",
-      accounts: teamSlotAccounts,
-      badgeClass: "bg-emerald-900/40 text-emerald-300 border-emerald-700/60",
-      panelClass: "border-teal-700/40 bg-teal-950/10",
-    },
+    teamWarehouseTab === "market" || teamWarehouseTab === "short"
+      ? null
+      : {
+          key: "slot",
+          title: "Goi chia se 4 slot",
+          subtitle: "1 account Team cho toi da 4 khach",
+          accounts: teamSlotAccounts,
+          badgeClass: "bg-emerald-900/40 text-emerald-300 border-emerald-700/60",
+          panelClass: "border-teal-700/40 bg-teal-950/10",
+        },
     {
       key: "business",
       title: "Nguyen acc Business",
-      subtitle: "1 account = 1 khach Business",
+      subtitle:
+        teamWarehouseTab === "market"
+          ? "Business dang ban qua API"
+          : teamWarehouseTab === "short"
+            ? "Business duoi 25 ngay, day tay"
+            : "1 account = 1 khach Business",
       accounts: teamBusinessAccounts,
       badgeClass: "bg-cyan-900/40 text-cyan-300 border-cyan-700/60",
       panelClass: "border-cyan-700/40 bg-cyan-950/10",
     },
-  ];
+  ].filter(Boolean);
 
   // MAIN DASHBOARD
   return (
@@ -6665,7 +6685,9 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                             }`}
                           >
                             <option value="total">Kho tong</option>
-                            <option value="market">Kho market</option>
+                            {isBusinessMode && (
+                              <option value="market">Kho market</option>
+                            )}
                             {isBusinessMode && (
                               <option value="short">Kho duoi 25 ngay</option>
                             )}
@@ -6713,9 +6735,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                                 <span className="flex items-center gap-1">
                                   <Globe size={10} />
                                   {isTeamMarketWarehouse(acc)
-                                    ? isBusinessMode
-                                      ? "Kho market - Business chua ban"
-                                      : `Kho market - con ${customerCapacity - usedSlots} slot trong`
+                                    ? "Kho market - Business chua ban"
                                     : isTeamShortWarehouse(acc)
                                       ? "Kho duoi 25 ngay - day tay"
                                       : "Kho tong"}
@@ -6886,8 +6906,8 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">GPT Password</label><input className="form-input w-full" value={teamAddForm.password} onChange={e => setTeamAddForm({ ...teamAddForm, password: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Recovery URL</label><input className="form-input w-full" placeholder="http://..." value={teamAddForm.recoveryUrl} onChange={e => setTeamAddForm({ ...teamAddForm, recoveryUrl: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Han cua Team Acc</label><input type="date" className="form-input w-full" value={teamAddForm.expiredAt} onChange={e => setTeamAddForm({ ...teamAddForm, expiredAt: e.target.value })} /></div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Loai Team</label><select className="form-input w-full" value={teamAddForm.saleMode} onChange={e => setTeamAddForm({ ...teamAddForm, saleMode: normalizeTeamSaleMode(e.target.value) })}><option value="slot">Slot team (4 slot)</option><option value="business">Business account (1 acc)</option></select></div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Kho Team</label><select className="form-input w-full" value={normalizeTeamWarehouse(teamAddForm.warehouse)} onChange={e => setTeamAddForm({ ...teamAddForm, warehouse: normalizeTeamWarehouse(e.target.value) })}><option value="total">Kho tong</option><option value="market">Kho market</option>{normalizeTeamSaleMode(teamAddForm.saleMode) === "business" && (<option value="short">Kho duoi 25 ngay</option>)}</select></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Loai Team</label><select className="form-input w-full" value={teamAddForm.saleMode} onChange={e => { const nextSaleMode = normalizeTeamSaleMode(e.target.value); setTeamAddForm({ ...teamAddForm, saleMode: nextSaleMode, warehouse: nextSaleMode === "business" ? normalizeTeamWarehouse(teamAddForm.warehouse) : "total" }); }}><option value="slot">Slot team (4 slot)</option><option value="business">Business account (1 acc)</option></select></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Kho Team</label><select className="form-input w-full" value={normalizeTeamWarehouse(teamAddForm.warehouse)} onChange={e => setTeamAddForm({ ...teamAddForm, warehouse: normalizeTeamWarehouse(e.target.value) })}><option value="total">Kho tong</option>{normalizeTeamSaleMode(teamAddForm.saleMode) === "business" && (<option value="market">Kho market</option>)}{normalizeTeamSaleMode(teamAddForm.saleMode) === "business" && (<option value="short">Kho duoi 25 ngay</option>)}</select></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Ghi chu</label><input className="form-input w-full" value={teamAddForm.note} onChange={e => setTeamAddForm({ ...teamAddForm, note: e.target.value })} /></div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
@@ -6919,8 +6939,8 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">GPT Password</label><input className="form-input w-full" value={teamEditForm.password} onChange={e => setTeamEditForm({ ...teamEditForm, password: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Recovery URL</label><input className="form-input w-full" value={teamEditForm.recoveryUrl} onChange={e => setTeamEditForm({ ...teamEditForm, recoveryUrl: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Han Team Acc</label><input type="date" className="form-input w-full" value={teamEditForm.expiredAt} onChange={e => setTeamEditForm({ ...teamEditForm, expiredAt: e.target.value })} /></div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Loai Team</label><select className="form-input w-full" value={teamEditForm.saleMode} onChange={e => setTeamEditForm({ ...teamEditForm, saleMode: normalizeTeamSaleMode(e.target.value) })}><option value="slot">Slot team (4 slot)</option><option value="business">Business account (1 acc)</option></select></div>
-                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Kho Team</label><select className="form-input w-full" value={normalizeTeamWarehouse(teamEditForm.warehouse)} onChange={e => setTeamEditForm({ ...teamEditForm, warehouse: normalizeTeamWarehouse(e.target.value) })}><option value="total">Kho tong</option><option value="market">Kho market</option>{normalizeTeamSaleMode(teamEditForm.saleMode) === "business" && (<option value="short">Kho duoi 25 ngay</option>)}</select></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Loai Team</label><select className="form-input w-full" value={teamEditForm.saleMode} onChange={e => { const nextSaleMode = normalizeTeamSaleMode(e.target.value); setTeamEditForm({ ...teamEditForm, saleMode: nextSaleMode, warehouse: nextSaleMode === "business" ? normalizeTeamWarehouse(teamEditForm.warehouse) : "total" }); }}><option value="slot">Slot team (4 slot)</option><option value="business">Business account (1 acc)</option></select></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Kho Team</label><select className="form-input w-full" value={normalizeTeamWarehouse(teamEditForm.warehouse)} onChange={e => setTeamEditForm({ ...teamEditForm, warehouse: normalizeTeamWarehouse(e.target.value) })}><option value="total">Kho tong</option>{normalizeTeamSaleMode(teamEditForm.saleMode) === "business" && (<option value="market">Kho market</option>)}{normalizeTeamSaleMode(teamEditForm.saleMode) === "business" && (<option value="short">Kho duoi 25 ngay</option>)}</select></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Ghi chu</label><input className="form-input w-full" value={teamEditForm.note} onChange={e => setTeamEditForm({ ...teamEditForm, note: e.target.value })} /></div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
