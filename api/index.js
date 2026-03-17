@@ -705,6 +705,10 @@ const normalizeTeamSlots = (slots = []) =>
   });
 const countActiveTeamCustomers = (slots = []) =>
   normalizeTeamSlots(slots).filter((slot) => isFilledTeamSlot(slot)).length;
+const findFirstActiveTeamSlotEntry = (slots = []) =>
+  normalizeTeamSlots(slots)
+    .map((slot, index) => ({ slot, index }))
+    .find(({ slot }) => isFilledTeamSlot(slot)) || null;
 const buildTeamBusinessLimitError = (activeCount = 0) => {
   const error = new Error(
     activeCount > 1
@@ -2460,6 +2464,266 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       message: `Đã tạo bảo hành ${getMarketplaceProviderLabel(provider)}`,
       source: persistedSource,
       replacement: persistedReplacement,
+      warrantyCase,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
+  try {
+    const sourceExpectedUpdatedAt = getExpectedUpdatedAtValue(
+      req.body?.sourceExpectedUpdatedAt || req.body?.expectedUpdatedAt,
+    );
+    const replacementExpectedUpdatedAt = getExpectedUpdatedAtValue(
+      req.body?.replacementExpectedUpdatedAt,
+    );
+    const replacementAccountId = String(
+      req.body?.replacementAccountId || "",
+    ).trim();
+    const reason = String(req.body?.reason || "").trim();
+
+    if (!replacementAccountId) {
+      return res.status(400).json({ error: "Thieu tai khoan thay the" });
+    }
+
+    const sourceAcc = await TeamAccount.findOne({ id: req.params.id });
+    const replacementAcc = await TeamAccount.findOne({ id: replacementAccountId });
+
+    if (!sourceAcc || !replacementAcc) {
+      return res.status(404).json({ error: "Khong tim thay Team de bao hanh" });
+    }
+    ensureCurrentVersion(sourceAcc, sourceExpectedUpdatedAt, "Team loi");
+    ensureCurrentVersion(
+      replacementAcc,
+      replacementExpectedUpdatedAt,
+      "Team thay the",
+    );
+
+    if (sourceAcc.id === replacementAcc.id) {
+      return res.status(400).json({
+        error: "Tai khoan thay the phai khac tai khoan dang loi",
+      });
+    }
+    if (
+      normalizeTeamSaleMode(sourceAcc.saleMode) !== TEAM_SALE_MODE_BUSINESS ||
+      normalizeTeamSaleMode(replacementAcc.saleMode) !== TEAM_SALE_MODE_BUSINESS
+    ) {
+      return res.status(400).json({
+        error: "Bao hanh Team chi ap dung cho Business",
+      });
+    }
+
+    const sourceEntry = findFirstActiveTeamSlotEntry(sourceAcc.slots);
+    const sourceSlot = sourceEntry?.slot || null;
+    const sourceManagedInfo = getMarketplaceOrderInfoFromTeamSlot(sourceSlot);
+    if (!sourceSlot || !isDatammoManagedUser({ name: sourceSlot.customerName })) {
+      return res.status(400).json({
+        error: "Team nay khong phai acc seller dang giu khach de bao hanh",
+      });
+    }
+
+    const fallbackOrder = await findLatestMarketplaceOrderForAccount(
+      sourceAcc.id,
+      sourceManagedInfo.provider,
+      "team",
+    );
+    const orderId = String(
+      sourceManagedInfo.orderId || fallbackOrder?.orderId || "",
+    ).trim();
+    const provider = normalizeMarketplaceProvider(
+      sourceManagedInfo.provider || fallbackOrder?.provider,
+    );
+    if (!orderId) {
+      return res.status(400).json({
+        error: "Khong xac dinh duoc order seller cua Team loi",
+      });
+    }
+
+    if (countActiveTeamCustomers(replacementAcc.slots) > 0) {
+      return res.status(400).json({
+        error: "Team thay the dang co khach, khong the dung de bao hanh",
+      });
+    }
+    if (
+      replacementAcc.expiredAt &&
+      new Date(replacementAcc.expiredAt).getTime() <= Date.now()
+    ) {
+      return res.status(400).json({
+        error: "Team thay the da het han",
+      });
+    }
+
+    const replacementWarehouse = normalizeTeamWarehouse(
+      replacementAcc.warehouse,
+      TEAM_WAREHOUSE_TOTAL,
+    );
+    if (
+      ![TEAM_WAREHOUSE_TOTAL, TEAM_WAREHOUSE_MARKET].includes(
+        replacementWarehouse,
+      )
+    ) {
+      return res.status(400).json({
+        error: "Team thay the phai nam trong kho tong hoac kho market",
+      });
+    }
+
+    const activeCaseConflict = await DatammoWarrantyCase.findOne({
+      scope: "team",
+      status: "active",
+      $or: [
+        { rootAccountId: replacementAcc.id },
+        { currentAccountId: replacementAcc.id },
+        { "rounds.fromAccountId": replacementAcc.id },
+        { "rounds.toAccountId": replacementAcc.id },
+      ],
+    }).lean();
+    if (activeCaseConflict) {
+      return res.status(400).json({
+        error: "Team thay the nay dang nam trong mot luong bao hanh khac",
+      });
+    }
+
+    const replacementSlots = normalizeTeamSlots(replacementAcc.slots);
+    const replacementSlotIndex = getAvailableTeamSlotIndices(replacementSlots)[0];
+    if (!Number.isInteger(replacementSlotIndex) || replacementSlotIndex < 0) {
+      return res.status(400).json({
+        error: "Team thay the khong con cho trong de nhan khach",
+      });
+    }
+
+    const sourceSnapshot = snapshotDocument(sourceAcc);
+    const replacementSnapshot = snapshotDocument(replacementAcc);
+    const sourceSlots = normalizeTeamSlots(sourceAcc.slots);
+    sourceSlots[sourceEntry.index] = buildEmptyTeamSlot();
+    replacementSlots[replacementSlotIndex] = {
+      ...sourceSlot,
+      status: "active",
+      gmail: String(sourceSlot.gmail || "").trim(),
+      customerName: String(sourceSlot.customerName || "").trim(),
+      addedAt: String(sourceSlot.addedAt || new Date().toISOString()),
+      expiredAt: String(sourceSlot.expiredAt || ""),
+    };
+    const nowIso = new Date().toISOString();
+
+    const persistedReplacement = await TeamAccount.findOneAndUpdate(
+      buildConditionalUpdateFilter(replacementAcc.id, replacementExpectedUpdatedAt),
+      {
+        $set: {
+          slots: replacementSlots,
+          warehouse: TEAM_WAREHOUSE_TOTAL,
+          updatedAt: nowIso,
+        },
+      },
+      { new: true },
+    );
+    if (!persistedReplacement) {
+      throw buildConcurrencyError("Team thay the");
+    }
+
+    const persistedSource = await TeamAccount.findOneAndUpdate(
+      buildConditionalUpdateFilter(sourceAcc.id, sourceExpectedUpdatedAt),
+      {
+        $set: {
+          slots: sourceSlots,
+          warehouse: TEAM_WAREHOUSE_TOTAL,
+          updatedAt: nowIso,
+        },
+      },
+      { new: true },
+    );
+    if (!persistedSource) {
+      await restoreDocumentSnapshot(
+        TeamAccount,
+        replacementAcc.id,
+        replacementSnapshot,
+      );
+      throw buildConcurrencyError("Team loi");
+    }
+
+    let warrantyCase = await DatammoWarrantyCase.findOne({
+      scope: "team",
+      provider,
+      status: "active",
+      currentAccountId: sourceAcc.id,
+      orderId,
+    });
+    const nextRound = {
+      sequence: (warrantyCase?.rounds?.length || 0) + 1,
+      scope: "team",
+      itemType: "team_business",
+      fromResourceKey: buildMarketplaceResourceKey({
+        scope: "team",
+        itemType: "team_business",
+        accountId: sourceAcc.id,
+        slotIndex: sourceEntry.index,
+      }),
+      fromAccountId: sourceAcc.id,
+      fromUsername: sourceAcc.username,
+      fromSlotIndex: sourceEntry.index,
+      toResourceKey: buildMarketplaceResourceKey({
+        scope: "team",
+        itemType: "team_business",
+        accountId: persistedReplacement.id,
+        slotIndex: replacementSlotIndex,
+      }),
+      toAccountId: persistedReplacement.id,
+      toUsername: persistedReplacement.username,
+      toSlotIndex: replacementSlotIndex,
+      reason,
+      createdAt: nowIso,
+    };
+
+    if (!warrantyCase) {
+      warrantyCase = await DatammoWarrantyCase.create({
+        scope: "team",
+        itemType: "team_business",
+        provider,
+        orderId,
+        rootResourceKey: buildMarketplaceResourceKey({
+          scope: "team",
+          itemType: "team_business",
+          accountId: sourceAcc.id,
+          slotIndex: sourceEntry.index,
+        }),
+        rootAccountId: sourceAcc.id,
+        rootUsername: sourceAcc.username,
+        rootSlotIndex: sourceEntry.index,
+        currentResourceKey: buildMarketplaceResourceKey({
+          scope: "team",
+          itemType: "team_business",
+          accountId: persistedReplacement.id,
+          slotIndex: replacementSlotIndex,
+        }),
+        currentAccountId: persistedReplacement.id,
+        currentUsername: persistedReplacement.username,
+        currentSlotIndex: replacementSlotIndex,
+        rounds: [nextRound],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+    } else {
+      warrantyCase.rounds = [...(warrantyCase.rounds || []), nextRound];
+      warrantyCase.currentResourceKey = buildMarketplaceResourceKey({
+        scope: "team",
+        itemType: "team_business",
+        accountId: persistedReplacement.id,
+        slotIndex: replacementSlotIndex,
+      });
+      warrantyCase.currentAccountId = persistedReplacement.id;
+      warrantyCase.currentUsername = persistedReplacement.username;
+      warrantyCase.currentSlotIndex = replacementSlotIndex;
+      warrantyCase.updatedAt = nowIso;
+      await warrantyCase.save();
+    }
+
+    res.json({
+      message: `Da tao bao hanh ${getMarketplaceProviderLabel(provider)} cho Team`,
+      source: sanitizeTeamAccount(persistedSource?.toObject?.() || persistedSource),
+      replacement: sanitizeTeamAccount(
+        persistedReplacement?.toObject?.() || persistedReplacement,
+      ),
       warrantyCase,
     });
   } catch (error) {

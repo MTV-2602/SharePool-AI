@@ -170,14 +170,28 @@ const getMarketplaceOrderInfoFromUser = (user) => {
 const extractDatammoOrderIdFromUser = (user) => {
   return String(getMarketplaceOrderInfoFromUser(user).orderId || "").trim();
 };
-const findMarketplaceOrderForAccount = (accountId, orders = [], provider = "") => {
+const findMarketplaceOrderForAccount = (
+  accountId,
+  orders = [],
+  provider = "",
+  scope = "",
+) => {
   const normalizedId = String(accountId || "").trim();
   if (!normalizedId) return "";
   const normalizedProvider = normalizeMarketplaceProvider(provider, "");
+  const normalizedScope = scope
+    ? normalizeMarketplaceScope(scope)
+    : "";
   for (const order of Array.isArray(orders) ? orders : []) {
     if (
       normalizedProvider &&
       normalizeMarketplaceProvider(order?.provider, "") !== normalizedProvider
+    ) {
+      continue;
+    }
+    if (
+      normalizedScope &&
+      normalizeMarketplaceScope(order?.scope) !== normalizedScope
     ) {
       continue;
     }
@@ -197,10 +211,20 @@ const normalizeDatammoWarrantyCases = (cases = []) =>
       new Date(b?.updatedAt || b?.createdAt || 0).getTime() -
       new Date(a?.updatedAt || a?.createdAt || 0).getTime(),
   );
-const getDatammoWarrantyInfoForAccount = (accountId, cases = []) => {
+const normalizeMarketplaceScope = (scope) =>
+  String(scope || "").trim().toLowerCase() === "team" ? "team" : "chatgpt";
+const getDatammoWarrantyInfoForAccount = (
+  accountId,
+  cases = [],
+  scope = "chatgpt",
+) => {
   const normalizedId = String(accountId || "");
   if (!normalizedId) return null;
+  const normalizedScope = normalizeMarketplaceScope(scope);
   for (const warrantyCase of Array.isArray(cases) ? cases : []) {
+    if (normalizeMarketplaceScope(warrantyCase?.scope) !== normalizedScope) {
+      continue;
+    }
     const rounds = Array.isArray(warrantyCase?.rounds) ? warrantyCase.rounds : [];
     if (String(warrantyCase?.currentAccountId || "") === normalizedId) {
       return { role: "current", warrantyCase };
@@ -219,8 +243,11 @@ const getDatammoWarrantyInfoForAccount = (accountId, cases = []) => {
   }
   return null;
 };
-const isAccountBusyInDatammoWarranty = (accountId, cases = []) =>
-  !!getDatammoWarrantyInfoForAccount(accountId, cases);
+const isAccountBusyInDatammoWarranty = (
+  accountId,
+  cases = [],
+  scope = "chatgpt",
+) => !!getDatammoWarrantyInfoForAccount(accountId, cases, scope);
 const normalizeDatammoOrders = (orders = []) =>
   [...(Array.isArray(orders) ? orders : [])].sort(
     (a, b) =>
@@ -230,15 +257,18 @@ const buildMarketplaceOrderSummaries = (orders = [], warrantyCases = []) =>
   normalizeDatammoOrders(orders).map((order) => {
     const provider = normalizeMarketplaceProvider(order?.provider);
     const providerLabel = getMarketplaceProviderLabel(provider);
+    const scope = normalizeMarketplaceScope(order?.scope);
     const orderId = String(order?.orderId || "").trim();
     const accountItems = Array.isArray(order?.accounts) ? order.accounts : [];
     const accountSummaries = accountItems.map((account) => {
+      const accountScope = normalizeMarketplaceScope(account?.scope || scope);
       const soldAccountId = String(account?.accountId || "").trim();
       const soldUsername = String(
         account?.username || soldAccountId || "Không rõ acc",
       ).trim();
       const warrantyCase = (Array.isArray(warrantyCases) ? warrantyCases : []).find(
         (item) =>
+          normalizeMarketplaceScope(item?.scope) === accountScope &&
           normalizeMarketplaceProvider(item?.provider) === provider &&
           String(item?.orderId || "").trim() === orderId &&
           String(item?.rootAccountId || "").trim() === soldAccountId,
@@ -250,6 +280,8 @@ const buildMarketplaceOrderSummaries = (orders = [], warrantyCases = []) =>
         warrantyCase?.currentUsername || soldUsername || "Không rõ acc",
       ).trim();
       return {
+        scope: accountScope,
+        itemType: String(account?.itemType || "").trim(),
         soldAccountId,
         soldUsername,
         currentAccountId: String(
@@ -269,7 +301,9 @@ const buildMarketplaceOrderSummaries = (orders = [], warrantyCases = []) =>
         providerLabel,
         provider,
         orderId,
+        scope,
         ...(accountSummaries || []).flatMap((item) => [
+          item?.scope,
           item?.soldUsername,
           item?.currentUsername,
           item?.soldAccountId,
@@ -638,6 +672,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [highlightedChatgptAccountId, setHighlightedChatgptAccountId] =
     useState("");
+  const [highlightedTeamAccountId, setHighlightedTeamAccountId] = useState("");
   const [chatgptCustomerFilter, setChatgptCustomerFilter] = useState("all");
   const [chatgptExpiryFilter, setChatgptExpiryFilter] = useState("all");
   const [chatgptExpiryMin, setChatgptExpiryMin] = useState("");
@@ -696,6 +731,7 @@ function App() {
   const [showImportGPTModal, setShowImportGPTModal] = useState(false);
   const [showWarrantyModal, setShowWarrantyModal] = useState(false);
   const [warrantySourceAcc, setWarrantySourceAcc] = useState(null);
+  const [warrantySourceScope, setWarrantySourceScope] = useState("chatgpt");
   const [warrantyReplacementId, setWarrantyReplacementId] = useState("");
   const [warrantyReason, setWarrantyReason] = useState("");
   const [selectedChatgptIds, setSelectedChatgptIds] = useState([]);
@@ -2398,8 +2434,9 @@ function App() {
       .replace(/\s{2,}/g, " ")
       .trim();
 
-  const openWarrantyModal = (acc) => {
+  const openWarrantyModal = (acc, scope = "chatgpt") => {
     setWarrantySourceAcc(acc);
+    setWarrantySourceScope(normalizeMarketplaceScope(scope));
     setWarrantyReplacementId("");
     setWarrantyReason("");
     setShowWarrantyModal(true);
@@ -2432,11 +2469,63 @@ function App() {
     }, 4000);
   };
 
-  const openWarrantyFromMarketplaceOrder = (item = {}) => {
-    const normalizedId = String(item?.currentAccountId || "").trim();
-    const targetAcc = accounts.find(
+  const focusTeamAccountFromMarketplace = (accountId, label = "") => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return;
+    const targetAcc = teamAccounts.find(
       (acc) => String(acc?.id || "").trim() === normalizedId,
     );
+    setActiveTab("team");
+    if (targetAcc) {
+      const warehouse = normalizeTeamWarehouse(targetAcc.warehouse);
+      setTeamWarehouseTab(warehouse === "market" ? "market" : warehouse === "short" ? "short" : "total");
+      setTeamTotalTypeTab(
+        warehouse === "total"
+          ? normalizeTeamSaleMode(targetAcc.saleMode)
+          : "all",
+      );
+    } else {
+      setTeamWarehouseTab("all");
+      setTeamTotalTypeTab("all");
+    }
+    setTeamCustomerFilter("all");
+    if (label) {
+      setSearchQuery(String(label || "").trim());
+    }
+    setHighlightedTeamAccountId(normalizedId);
+    setTimeout(() => {
+      const row = document.getElementById(`team-account-row-${normalizedId}`);
+      if (row) {
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 120);
+    setTimeout(() => {
+      setHighlightedTeamAccountId((prev) =>
+        prev === normalizedId ? "" : prev,
+      );
+    }, 4000);
+  };
+
+  const focusMarketplaceAccountFromSummary = (item = {}) => {
+    if (normalizeMarketplaceScope(item?.scope) === "team") {
+      return focusTeamAccountFromMarketplace(
+        item.currentAccountId,
+        item.currentUsername || item.currentAccountId,
+      );
+    }
+    return focusChatgptAccountFromMarketplace(
+      item.currentAccountId,
+      item.currentUsername || item.currentAccountId,
+    );
+  };
+
+  const openWarrantyFromMarketplaceOrder = (item = {}) => {
+    const normalizedId = String(item?.currentAccountId || "").trim();
+    const scope = normalizeMarketplaceScope(item?.scope);
+    const targetAcc =
+      scope === "team"
+        ? teamAccounts.find((acc) => String(acc?.id || "").trim() === normalizedId)
+        : accounts.find((acc) => String(acc?.id || "").trim() === normalizedId);
     if (!targetAcc) {
       showAlert(
         "Không tìm thấy acc",
@@ -2445,7 +2534,7 @@ function App() {
       );
       return;
     }
-    openWarrantyModal(targetAcc);
+    openWarrantyModal(targetAcc, scope);
   };
 
   const handleCreateDatammoWarranty = async (event) => {
@@ -2455,25 +2544,43 @@ function App() {
       return;
     }
 
-    const replacementAcc = accounts.find(
-      (acc) => String(acc.id || "") === String(warrantyReplacementId || ""),
-    );
+    const sourceScope = normalizeMarketplaceScope(warrantySourceScope);
+    const replacementAcc =
+      sourceScope === "team"
+        ? teamAccounts.find(
+            (acc) => String(acc.id || "") === String(warrantyReplacementId || ""),
+          )
+        : accounts.find(
+            (acc) => String(acc.id || "") === String(warrantyReplacementId || ""),
+          );
     if (!replacementAcc) {
       showAlert("Lỗi", "Không tìm thấy tài khoản thay thế.", "error");
       return;
     }
 
-    const sourceManagedInfo = getMarketplaceOrderInfoFromUser(
-      Array.isArray(warrantySourceAcc?.users) ? warrantySourceAcc.users[0] : null,
-    );
+    const sourceManagedInfo =
+      sourceScope === "team"
+        ? getMarketplaceOrderInfoFromUser({
+            name:
+              getActiveTeamCustomers(warrantySourceAcc)[0]?.customerName || "",
+          })
+        : getMarketplaceOrderInfoFromUser(
+            Array.isArray(warrantySourceAcc?.users)
+              ? warrantySourceAcc.users[0]
+              : null,
+          );
     const sourceProviderLabel = getMarketplaceProviderLabel(
       sourceManagedInfo.provider || "datammo",
     );
+    const warrantyUrl =
+      sourceScope === "team"
+        ? `/api/team/${warrantySourceAcc.id}/warranty`
+        : `/api/chatgpt/${warrantySourceAcc.id}/warranty`;
 
     setLoadingStates((prev) => ({ ...prev, warranty: true }));
     try {
       await axios.post(
-        `/api/chatgpt/${warrantySourceAcc.id}/warranty`,
+        warrantyUrl,
         {
           replacementAccountId: warrantyReplacementId,
           reason: warrantyReason,
@@ -2877,6 +2984,9 @@ function App() {
   };
   marketplaceOrderSummaries.forEach((order) => {
     order.accountSummaries.forEach((item) => {
+      if (normalizeMarketplaceScope(item?.scope) !== "chatgpt") {
+        return;
+      }
       const provider = normalizeMarketplaceProvider(order?.provider);
       const commonPayload = {
         provider,
@@ -4027,11 +4137,7 @@ function App() {
                                         <button
                                           type="button"
                                           onClick={() =>
-                                            focusChatgptAccountFromMarketplace(
-                                              item.currentAccountId,
-                                              item.currentUsername ||
-                                                item.currentAccountId,
-                                            )
+                                            focusMarketplaceAccountFromSummary(item)
                                           }
                                           className="rounded-lg bg-slate-700 hover:bg-slate-600 px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
                                         >
@@ -6635,8 +6741,51 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 const customerCapacity = getTeamCustomerCapacity(saleMode);
                 const hasCapacityAvailable = usedSlots < customerCapacity;
                 const isOverCapacity = usedSlots > customerCapacity;
+                const activeBusinessSlot = isBusinessMode
+                  ? customerEntries[0]?.slot || null
+                  : null;
+                const activeBusinessManagedInfo = getMarketplaceOrderInfoFromUser({
+                  name: activeBusinessSlot?.customerName || "",
+                });
+                const latestTeamMarketplaceOrder = findMarketplaceOrderForAccount(
+                  acc.id,
+                  datammoOrderHistory,
+                  activeBusinessManagedInfo.provider,
+                  "team",
+                );
+                const teamMarketplaceOrderId = String(
+                  activeBusinessManagedInfo.orderId ||
+                    latestTeamMarketplaceOrder?.orderId ||
+                    "",
+                ).trim();
+                const teamManagedProvider = normalizeMarketplaceProvider(
+                  activeBusinessManagedInfo.provider ||
+                    latestTeamMarketplaceOrder?.provider,
+                );
+                const teamWarrantyInfo = getDatammoWarrantyInfoForAccount(
+                  acc.id,
+                  datammoWarrantyCases,
+                  "team",
+                );
+                const teamWarrantyCase = teamWarrantyInfo?.warrantyCase;
+                const teamWarrantyRounds = Array.isArray(teamWarrantyCase?.rounds)
+                  ? teamWarrantyCase.rounds
+                  : [];
+                const teamLatestWarrantyTarget =
+                  teamWarrantyCase?.currentUsername ||
+                  teamWarrantyRounds[teamWarrantyRounds.length - 1]?.toUsername ||
+                  teamWarrantyCase?.currentAccountId ||
+                  "";
+                const canOpenTeamWarranty =
+                  isBusinessMode &&
+                  ((!!activeBusinessSlot &&
+                    isDatammoManagedUser({
+                      name: activeBusinessSlot?.customerName || "",
+                    }) &&
+                    !!teamMarketplaceOrderId) ||
+                    !!teamWarrantyCase);
                 return (
-                  <div key={acc.id} className={`rounded-2xl border shadow-xl overflow-hidden ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}>
+                  <div id={`team-account-row-${acc.id}`} key={acc.id} className={`rounded-2xl border shadow-xl overflow-hidden ${String(highlightedTeamAccountId || "") === String(acc.id || "") ? "ring-1 ring-cyan-500/50 bg-cyan-900/10" : ""} ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}>
                     {/* Account header */}
                     <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 bg-indigo-900/40 border-b border-slate-700">
                       <div className="flex items-start gap-3">
@@ -6714,6 +6863,55 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           {loadingStates.changeTeamWarehouse?.[acc.id] && (
                             <div className="text-center mt-1 text-[10px] text-emerald-300">
                               Dang cap nhat kho...
+                            </div>
+                          )}
+                          {teamWarrantyCase && teamWarrantyRounds.length > 0 && (
+                            <div
+                              className={`w-full rounded-md border px-2.5 py-2 text-[10px] shadow-sm ${
+                                teamWarrantyInfo?.role === "current"
+                                  ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
+                                  : "border-amber-700/50 bg-amber-950/20 text-amber-100"
+                              }`}
+                            >
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="inline-flex items-center rounded-full border border-white/10 bg-slate-900/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white">
+                                  {getMarketplaceProviderLabel(
+                                    teamWarrantyCase?.provider || teamManagedProvider,
+                                  )}
+                                </span>
+                                <span className="text-[10px] font-bold text-white">
+                                  Bao hanh lan {teamWarrantyRounds.length}
+                                </span>
+                              </div>
+                              <div className="mt-1 text-[10px] text-slate-300">
+                                Don {teamWarrantyCase?.orderId || teamMarketplaceOrderId || "?"}
+                              </div>
+                              <div className="mt-0.5 text-[10px]">
+                                <span
+                                  className={
+                                    teamWarrantyInfo?.role === "current"
+                                      ? "text-cyan-200"
+                                      : "text-amber-200"
+                                  }
+                                >
+                                  {teamWarrantyInfo?.role === "current"
+                                    ? "Acc dang thay"
+                                    : teamWarrantyInfo?.role === "history"
+                                      ? "Acc da thay"
+                                      : "Acc loi goc"}
+                                </span>
+                                {teamWarrantyInfo?.role === "current" ? (
+                                  <span className="text-slate-300"> • Acc hien tai cua don</span>
+                                ) : teamLatestWarrantyTarget ? (
+                                  <span className="text-slate-300">
+                                    {" "}
+                                    • Hien tai:{" "}
+                                    <span className="font-semibold text-white">
+                                      {teamLatestWarrantyTarget}
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                           )}
                           <button
@@ -6798,6 +6996,16 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           </button>
 
                           <div className="flex gap-2 w-full relative group">
+                            {canOpenTeamWarranty && (
+                              <button
+                                type="button"
+                                onClick={() => openWarrantyModal(acc, "team")}
+                                className="bg-slate-700 hover:bg-cyan-600 text-slate-300 hover:text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 justify-center transition-colors"
+                                title="Bao hanh don san Team"
+                              >
+                                <Shield size={11} />
+                              </button>
+                            )}
                             <button onClick={() => { setTeamEditForm(buildTeamEditFormState({ id: acc.id, username: acc.username, password: acc.password, recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode), warehouse: normalizeTeamWarehouse(acc.warehouse) })); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
                             <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
                           </div>
@@ -7243,9 +7451,30 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 
       {/* ========================================================= */}
       {showWarrantyModal && warrantySourceAcc && (() => {
-        const eligibleReplacementAccounts = accounts.filter((acc) => {
+        const sourceScope = normalizeMarketplaceScope(warrantySourceScope);
+        const isTeamWarranty = sourceScope === "team";
+        const eligibleReplacementAccounts = (
+          isTeamWarranty ? teamAccounts : accounts
+        ).filter((acc) => {
           if (String(acc?.id || "") === String(warrantySourceAcc?.id || "")) {
             return false;
+          }
+          if (isTeamWarranty) {
+            if (normalizeTeamSaleMode(acc?.saleMode) !== "business") return false;
+            if (getActiveTeamCustomers(acc).length > 0) return false;
+            if (
+              acc?.expiredAt &&
+              new Date(acc.expiredAt).getTime() <= Date.now()
+            ) {
+              return false;
+            }
+            const warehouse = normalizeTeamWarehouse(acc?.warehouse);
+            if (!["total", "market"].includes(warehouse)) return false;
+            return !isAccountBusyInDatammoWarranty(
+              acc?.id,
+              datammoWarrantyCases,
+              "team",
+            );
           }
           if (acc?.type !== "package2") return false;
           if (Array.isArray(acc?.users) && acc.users.length > 0) return false;
@@ -7255,16 +7484,28 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           ) {
             return false;
           }
-          return !isAccountBusyInDatammoWarranty(acc?.id, datammoWarrantyCases);
+          return !isAccountBusyInDatammoWarranty(
+            acc?.id,
+            datammoWarrantyCases,
+            "chatgpt",
+          );
         });
         const sourceUser = Array.isArray(warrantySourceAcc?.users)
           ? warrantySourceAcc.users[0]
           : null;
-        const sourceManagedInfo = getMarketplaceOrderInfoFromUser(sourceUser);
+        const sourceTeamCustomer = isTeamWarranty
+          ? getActiveTeamCustomers(warrantySourceAcc)[0] || null
+          : null;
+        const sourceManagedInfo = isTeamWarranty
+          ? getMarketplaceOrderInfoFromUser({
+              name: sourceTeamCustomer?.customerName || "",
+            })
+          : getMarketplaceOrderInfoFromUser(sourceUser);
         const latestMarketplaceOrder = findMarketplaceOrderForAccount(
           warrantySourceAcc?.id,
           datammoOrderHistory,
           sourceManagedInfo.provider,
+          sourceScope,
         );
         const orderId = String(
           sourceManagedInfo.orderId || latestMarketplaceOrder?.orderId || "",
@@ -7299,11 +7540,13 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   Order: <span className="font-semibold text-white">{orderId || "Không rõ"}</span>
                 </div>
                 <div className="text-sm text-slate-400">
-                  Acc lỗi hiện tại:
+                  {isTeamWarranty ? "Team lỗi hiện tại:" : "Acc lỗi hiện tại:"}
                   <span className="ml-2 font-mono text-white">{warrantySourceAcc.username}</span>
                 </div>
                 <div className="text-xs text-slate-500">
-                  Khách {providerLabel} sẽ được chuyển sang acc thay thế, acc lỗi sẽ bị gỡ khỏi kho và ghi vào lịch sử bảo hành.
+                  {isTeamWarranty
+                    ? `Khách ${providerLabel} của Team Business sẽ được chuyển sang Team thay thế, và lịch sử bảo hành sẽ được ghi lại theo từng lần.`
+                    : `Khách ${providerLabel} sẽ được chuyển sang acc thay thế, acc lỗi sẽ bị gỡ khỏi kho và ghi vào lịch sử bảo hành.`}
                 </div>
               </div>
 
@@ -7318,16 +7561,24 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     onChange={(e) => setWarrantyReplacementId(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
                   >
-                    <option value="">Chọn acc package2 trống...</option>
+                    <option value="">
+                      {isTeamWarranty
+                        ? "Chọn Team Business trống..."
+                        : "Chọn acc package2 trống..."}
+                    </option>
                     {eligibleReplacementAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
-                        {acc.username} · {getPackage2ShelfLabel(acc.package2Shelf)} · {formatDate(acc.expiredAt)}
+                        {isTeamWarranty
+                          ? `${acc.username} · ${getTeamWarehouseLabel(acc.warehouse)} · ${formatDate(acc.expiredAt)}`
+                          : `${acc.username} · ${getPackage2ShelfLabel(acc.package2Shelf)} · ${formatDate(acc.expiredAt)}`}
                       </option>
                     ))}
                   </select>
                   {eligibleReplacementAccounts.length === 0 && (
                     <div className="mt-2 text-xs text-yellow-400">
-                      Không có acc package2 trống phù hợp để bảo hành.
+                      {isTeamWarranty
+                        ? "Không có Team Business trống phù hợp để bảo hành."
+                        : "Không có acc package2 trống phù hợp để bảo hành."}
                     </div>
                   )}
                 </div>
