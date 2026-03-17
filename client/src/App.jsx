@@ -397,7 +397,6 @@ const createApiRequestLabel = (detail = {}) => {
   const method = String(detail?.method || "GET").toUpperCase();
   if (url.includes("/api/data")) return "Đang tải lại dữ liệu";
   if (url.includes("/api/login")) return "Đang đăng nhập";
-  if (url.includes("/bulk-push-shelf")) return "Đang đồng bộ Datammo";
   if (url.includes("/team-move-slot")) return "Đang chuyển khách Team";
   if (url.includes("/move-user")) return "Đang chuyển khách";
   if (url.includes("/extend-user")) return "Đang gia hạn";
@@ -560,7 +559,6 @@ function App() {
     addAccount: false,
     editAccount: false,
     deleteAccount: false,
-    bulkPush: false,
     warranty: false,
     teamMode: {},
     changeType: {},
@@ -581,22 +579,11 @@ function App() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showImportGPTModal, setShowImportGPTModal] = useState(false);
-  const [showBulkPushModal, setShowBulkPushModal] = useState(false);
   const [showWarrantyModal, setShowWarrantyModal] = useState(false);
   const [warrantySourceAcc, setWarrantySourceAcc] = useState(null);
   const [warrantyReplacementId, setWarrantyReplacementId] = useState("");
   const [warrantyReason, setWarrantyReason] = useState("");
   const [selectedChatgptIds, setSelectedChatgptIds] = useState([]);
-  const [bulkPushForm, setBulkPushForm] = useState({
-    scope: "selected",
-    targetType: "package1",
-    package2Shelf: "cheap",
-  });
-  const [bulkPushProgress, setBulkPushProgress] = useState({
-    total: 0,
-    completed: 0,
-    percent: 0,
-  });
   const [datammoBatchProgress, setDatammoBatchProgress] = useState(
     createDatammoBatchProgressState(),
   );
@@ -1722,207 +1709,6 @@ function App() {
     });
   };
 
-  const setBulkPushRealtimeProgress = (completed, total) => {
-    const safeTotal = Math.max(0, Number(total) || 0);
-    const safeCompleted = Math.max(
-      0,
-      Math.min(safeTotal, Number(completed) || 0),
-    );
-    const percent =
-      safeTotal > 0 ? Math.round((safeCompleted / safeTotal) * 100) : 0;
-    setBulkPushProgress({
-      total: safeTotal,
-      completed: safeCompleted,
-      percent,
-    });
-  };
-
-  const resetBulkPushProgress = () => {
-    setBulkPushRealtimeProgress(0, 0);
-  };
-
-  const mergeBulkPushResult = (aggregate, partial = {}) => {
-    aggregate.updated += Number(partial.updated || 0);
-    aggregate.unchanged += Number(partial.unchanged || 0);
-    aggregate.skippedHasUsers += Number(partial.skippedHasUsers || 0);
-    aggregate.missing += Number(partial.missing || 0);
-    aggregate.failed += Number(partial.failed || 0);
-
-    if (Array.isArray(partial.failedIds) && partial.failedIds.length > 0) {
-      aggregate.failedIds.push(...partial.failedIds);
-    }
-    if (Array.isArray(partial.missingIds) && partial.missingIds.length > 0) {
-      aggregate.missingIds.push(...partial.missingIds);
-    }
-    if (
-      Array.isArray(partial.failedDetails) &&
-      partial.failedDetails.length > 0
-    ) {
-      aggregate.failedDetails.push(...partial.failedDetails);
-    }
-    if (
-      Array.isArray(partial.skippedAccounts) &&
-      partial.skippedAccounts.length > 0
-    ) {
-      aggregate.skippedAccounts.push(...partial.skippedAccounts);
-    }
-  };
-
-  const openBulkPushModal = (filteredAccounts = []) => {
-    const filteredIds = filteredAccounts.map((acc) => String(acc.id || ""));
-    const hasSelected = selectedChatgptIds.length > 0;
-    const hasFiltered = filteredIds.length > 0;
-    if (!hasSelected && !hasFiltered) {
-      showAlert("Thiếu dữ liệu", "Không có tài khoản nào để đẩy kệ.", "warning");
-      return;
-    }
-    setBulkPushForm((prev) => ({
-      ...prev,
-      scope: hasSelected ? "selected" : "filtered",
-    }));
-    resetBulkPushProgress();
-    setShowBulkPushModal(true);
-  };
-
-  const handleBulkPushToShelf = async (filteredAccounts = []) => {
-    const filteredIds = filteredAccounts.map((acc) => String(acc.id || ""));
-    const sourceIds =
-      bulkPushForm.scope === "filtered" ? filteredIds : selectedChatgptIds;
-    const accountIds = Array.from(
-      new Set(
-        sourceIds
-          .map((id) => String(id || "").trim())
-          .filter(Boolean),
-      ),
-    );
-
-    if (!accountIds.length) {
-      showAlert("Thiếu dữ liệu", "Chưa có tài khoản nào được chọn.", "warning");
-      return;
-    }
-
-    const targetShelf = supportsChatgptMarketType(bulkPushForm.targetType)
-      ? normalizePackage2Shelf(bulkPushForm.package2Shelf)
-      : undefined;
-    const usernameById = new Map(
-      accounts.map((acc) => [String(acc.id || ""), acc.username || ""]),
-    );
-    const aggregateResult = {
-      requested: accountIds.length,
-      updated: 0,
-      unchanged: 0,
-      skippedHasUsers: 0,
-      missing: 0,
-      failed: 0,
-      failedIds: [],
-      missingIds: [],
-      failedDetails: [],
-      skippedAccounts: [],
-    };
-    const clientWorkerCount = Math.max(1, Math.min(4, accountIds.length));
-    let queueIndex = 0;
-    let processedCount = 0;
-    const markProcessed = () => {
-      processedCount += 1;
-      setBulkPushRealtimeProgress(processedCount, accountIds.length);
-    };
-
-    setBulkPushRealtimeProgress(0, accountIds.length);
-    setLoadingStates((prev) => ({ ...prev, bulkPush: true }));
-    try {
-      const workers = Array.from({ length: clientWorkerCount }, () =>
-        (async () => {
-          while (true) {
-            const currentIndex = queueIndex;
-            queueIndex += 1;
-            if (currentIndex >= accountIds.length) break;
-
-            const accountId = accountIds[currentIndex];
-            try {
-              const response = await axios.post("/api/chatgpt/bulk-push-shelf", {
-                accountIds: [accountId],
-                targetType: bulkPushForm.targetType,
-                package2Shelf: targetShelf,
-              });
-              mergeBulkPushResult(aggregateResult, response?.data?.result || {});
-            } catch (error) {
-              aggregateResult.failed += 1;
-              aggregateResult.failedIds.push(accountId);
-              aggregateResult.failedDetails.push({
-                id: accountId,
-                username: usernameById.get(accountId) || "",
-                reason:
-                  error?.response?.data?.error ||
-                  error?.message ||
-                  "Loi khong xac dinh",
-              });
-            } finally {
-              markProcessed();
-            }
-          }
-        })(),
-      );
-      await Promise.all(workers);
-      setBulkPushRealtimeProgress(accountIds.length, accountIds.length);
-
-      const requested = Number(
-        aggregateResult.requested || accountIds.length || 0,
-      );
-      const updated = Number(aggregateResult.updated || 0);
-      const unchanged = Number(aggregateResult.unchanged || 0);
-      const skippedHasUsers = Number(aggregateResult.skippedHasUsers || 0);
-      const missing = Number(aggregateResult.missing || 0);
-      const failed = Number(aggregateResult.failed || 0);
-      const unfinished = skippedHasUsers + missing + failed;
-      const failedDetails = Array.isArray(aggregateResult.failedDetails)
-        ? aggregateResult.failedDetails
-        : [];
-      const skippedAccounts = Array.isArray(aggregateResult.skippedAccounts)
-        ? aggregateResult.skippedAccounts
-        : [];
-      const msg = [
-        `Đã chọn: ${requested}`,
-        `Đẩy Datammo thành công: ${updated}`,
-        `Chưa hoàn tất: ${unfinished}`,
-        `Luồng xử lý song song: ${clientWorkerCount}`,
-        `Không đổi: ${unchanged}`,
-        `Bỏ qua (đang có khách): ${skippedHasUsers}`,
-        `Không tìm thấy: ${missing}`,
-        `Lỗi đồng bộ Datammo: ${failed}`,
-      ].join("\n");
-      const detailLines = [];
-      if (failedDetails.length > 0) {
-        detailLines.push("\nChi tiết lỗi:");
-        failedDetails.slice(0, 10).forEach((item) => {
-          const label = item?.username ? `${item.username} (${item.id})` : item?.id;
-          detailLines.push(`- ${label}: ${item?.reason || "Lỗi không xác định"}`);
-        });
-      }
-      if (skippedAccounts.length > 0) {
-        detailLines.push("\nBỏ qua do đang có khách:");
-        skippedAccounts.slice(0, 10).forEach((item) => {
-          const label = item?.username ? `${item.username} (${item.id})` : item?.id;
-          detailLines.push(`- ${label}`);
-        });
-      }
-      setShowBulkPushModal(false);
-      setSelectedChatgptIds([]);
-      await fetchData();
-      broadcastDataChange();
-      showAlert(
-        unfinished > 0 ? "Đẩy kệ chưa hoàn tất" : "Đẩy kệ hoàn tất",
-        `${msg}${detailLines.length ? `\n${detailLines.join("\n")}` : ""}`,
-        unfinished > 0 ? "warning" : "success",
-      );
-    } catch (error) {
-      const msg = error?.response?.data?.error || "Không thể đẩy kệ hàng loạt";
-      showAlert("Lỗi", msg, "error");
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, bulkPush: false }));
-      resetBulkPushProgress();
-    }
-  };
-
   const handleQuickTeamSaleModeChange = async (acc, nextMode) => {
     const targetMode = normalizeTeamSaleMode(nextMode);
     const currentMode = normalizeTeamSaleMode(acc?.saleMode);
@@ -1982,28 +1768,6 @@ function App() {
       )
       .replace(/\s{2,}/g, " ")
       .trim();
-
-  const handleResyncChatgptDatammo = async (acc) => {
-    if (!acc?.id || !["package1", "package2"].includes(acc.type)) return;
-    const loadingKey = buildDatammoResyncKey("chatgpt", acc.id);
-    if (datammoResyncLoading[loadingKey]) return;
-
-    setDatammoResyncLoading((prev) => ({ ...prev, [loadingKey]: true }));
-    try {
-      await axios.post(
-        `/api/chatgpt/${acc.id}/resync-datammo`,
-        withExpectedUpdatedAt({}, acc),
-        { requestLabel: "Đang resync Datammo" },
-      );
-      await fetchData();
-      broadcastDataChange();
-      showAlert("Thành công", "Đã resync Datammo cho tài khoản này.", "success");
-    } catch (error) {
-      showAlert("Lỗi", getApiErrorMessage(error, "Không thể resync Datammo"), "error");
-    } finally {
-      setDatammoResyncLoading((prev) => ({ ...prev, [loadingKey]: false }));
-    }
-  };
 
   const handleResyncTeamDatammo = async (acc) => {
     if (!acc?.id) return;
@@ -2133,132 +1897,7 @@ function App() {
     }
   };
 
-  const buildChatgptDatammoTargets = (list = []) =>
-    (Array.isArray(list) ? list : [])
-      .filter((acc) => ["package1", "package2"].includes(String(acc?.type || "")))
-      .map((acc) => ({
-        label: `ChatGPT - ${acc.username || acc.id}`,
-        url: `/api/chatgpt/${acc.id}/resync-datammo`,
-        body: withExpectedUpdatedAt({}, acc),
-      }));
-
-  const buildTeamDatammoTargets = (list = []) =>
-    (Array.isArray(list) ? list : []).map((acc) => ({
-      label: `Team - ${acc.username || acc.id}`,
-      url: `/api/team/${acc.id}/resync-datammo`,
-      body: withExpectedUpdatedAt({}, acc),
-    }));
-
-  const runDatammoBatchResync = ({
-    title = "Đồng bộ Datammo",
-    targets = [],
-    emptyMessage = "Không có tài khoản nào để đồng bộ Datammo.",
-  } = {}) => {
-    if (datammoBatchProgress.active) return;
-    if (!targets.length) {
-      showAlert("Thiếu dữ liệu", emptyMessage, "warning");
-      return;
-    }
-
-    showConfirm(
-      title,
-      `Sẽ đồng bộ ${targets.length} tài khoản.\nChế độ an toàn: chạy tuần tự từng tài khoản để tránh dồn request.\nTiếp tục chứ?`,
-      async () => {
-        let completed = 0;
-        let success = 0;
-        let failed = 0;
-        const failedLabels = [];
-
-        setDatammoBatchProgress({
-          active: true,
-          title,
-          total: targets.length,
-          completed: 0,
-          success: 0,
-          failed: 0,
-          percent: 0,
-          currentLabel: targets[0]?.label || "",
-        });
-
-        try {
-          for (const target of targets) {
-            setDatammoBatchProgress((prev) => ({
-              ...prev,
-              title,
-              currentLabel: target.label,
-            }));
-
-            try {
-              await axios.post(target.url, target.body, {
-                requestLabel: title,
-                skipGlobalLoading: true,
-              });
-              success += 1;
-            } catch (error) {
-              failed += 1;
-              failedLabels.push(
-                `${target.label}: ${getApiErrorMessage(error, "Không thể resync Datammo")}`,
-              );
-            } finally {
-              completed += 1;
-              setDatammoBatchProgress((prev) => ({
-                ...prev,
-                completed,
-                success,
-                failed,
-                percent:
-                  targets.length > 0
-                    ? Math.round((completed / targets.length) * 100)
-                    : 100,
-              }));
-            }
-          }
-
-          await fetchData();
-          broadcastDataChange();
-
-          const detailLines = failedLabels.slice(0, 5);
-          const hiddenCount = Math.max(0, failedLabels.length - detailLines.length);
-          if (hiddenCount > 0) {
-            detailLines.push(`... và ${hiddenCount} lỗi khác`);
-          }
-
-          showAlert(
-            failed === 0 ? "Đồng bộ hoàn tất" : "Đồng bộ xong nhưng có lỗi",
-            `Đã xử lý ${targets.length} tài khoản.\nThành công: ${success}\nThất bại: ${failed}${detailLines.length ? `\n${detailLines.join("\n")}` : ""}`,
-            failed === 0 ? "success" : "warning",
-          );
-        } finally {
-          setDatammoBatchProgress(createDatammoBatchProgressState());
-        }
-      },
-    );
-  };
-
-  const getChatgptDatammoScopeLabel = () => {
-    if (gptSubTab === "total") {
-      if (chatgptTotalTypeTab === "package1") return "Dong bo kho tong - Goi 1";
-      if (chatgptTotalTypeTab === "package2") return "Dong bo kho tong - Goi 2";
-      if (chatgptTotalTypeTab === "unassigned") return "Dong bo kho tong - Chua chon";
-      return "Dong bo kho tong";
-    }
-    if (gptSubTab === "market") {
-      if (package2ShelfTab === "sold") return "Dong bo kho market - da ban";
-      return "Dong bo kho market - chua ban";
-    }
-    return "Dong bo ChatGPT dang xem";
-  };
-
-  const handleResyncVisibleChatgptDatammo = () => {
-    runDatammoBatchResync({
-      title: getChatgptDatammoScopeLabel(),
-      targets: buildChatgptDatammoTargets(filteredChatgptAccounts),
-      emptyMessage:
-        "Không có tài khoản ChatGPT hợp lệ trong phần đang xem để đồng bộ.",
-    });
-  };
-
-  const handleResyncTeamGroupDatammo = (list = [], label = "Team đang xem") => {
+  const handleResyncTeamGroupDatammo = (list = [], label = "Team dang xem") => {
     runDatammoBatchResync({
       title: `Đồng bộ ${label}`,
       targets: buildTeamDatammoTargets(list),
@@ -2266,104 +1905,6 @@ function App() {
     });
   };
 
-  const handleResyncAllDatammo = async () => {
-    if (datammoBatchProgress.active) return;
-
-    const targets = [
-      ...accounts
-        .filter((acc) => ["package1", "package2"].includes(String(acc?.type || "")))
-        .map((acc) => ({
-          scope: "chatgpt",
-          id: acc.id,
-          label: `ChatGPT - ${acc.username || acc.id}`,
-          url: `/api/chatgpt/${acc.id}/resync-datammo`,
-          body: withExpectedUpdatedAt({}, acc),
-        })),
-      ...teamAccounts.map((acc) => ({
-        scope: "team",
-        id: acc.id,
-        label: `Team - ${acc.username || acc.id}`,
-        url: `/api/team/${acc.id}/resync-datammo`,
-        body: withExpectedUpdatedAt({}, acc),
-      })),
-    ];
-
-    if (targets.length === 0) {
-      showAlert("Thiếu dữ liệu", "Không có tài khoản nào để đồng bộ Datammo.", "warning");
-      return;
-    }
-
-    showConfirm(
-      "Đồng bộ tất cả Datammo",
-      `Sẽ đồng bộ ${targets.length} tài khoản đang quản lý với Datammo.\nChế độ an toàn: chạy tuần tự từng tài khoản để tránh dồn request.\nTiếp tục chứ?`,
-      async () => {
-        let completed = 0;
-        let success = 0;
-        let failed = 0;
-        const failedLabels = [];
-
-        setDatammoBatchProgress({
-          active: true,
-          total: targets.length,
-          completed: 0,
-          success: 0,
-          failed: 0,
-          percent: 0,
-          currentLabel: targets[0]?.label || "",
-        });
-
-        try {
-          for (const target of targets) {
-            setDatammoBatchProgress((prev) => ({
-              ...prev,
-              currentLabel: target.label,
-            }));
-            try {
-              await axios.post(target.url, target.body, {
-                requestLabel: "Đang đồng bộ tất cả Datammo",
-                skipGlobalLoading: true,
-              });
-              success += 1;
-            } catch (error) {
-              failed += 1;
-              failedLabels.push(
-                `${target.label}: ${getApiErrorMessage(error, "Không thể resync Datammo")}`,
-              );
-            } finally {
-              completed += 1;
-              setDatammoBatchProgress((prev) => ({
-                ...prev,
-                completed,
-                success,
-                failed,
-                percent:
-                  targets.length > 0
-                    ? Math.round((completed / targets.length) * 100)
-                    : 100,
-              }));
-            }
-          }
-
-          await fetchData();
-          broadcastDataChange();
-
-          const detailLines = failedLabels.slice(0, 5);
-          const hiddenCount = Math.max(0, failedLabels.length - detailLines.length);
-          if (hiddenCount > 0) {
-            detailLines.push(`... và ${hiddenCount} lỗi khác`);
-          }
-
-          showAlert(
-            failed === 0 ? "Đồng bộ hoàn tất" : "Đồng bộ xong nhưng có lỗi",
-            `Đã xử lý ${targets.length} tài khoản.\nThành công: ${success}\nThất bại: ${failed}${detailLines.length ? `\n${detailLines.join("\n")}` : ""}`,
-            failed === 0 ? "success" : "warning",
-          );
-        } finally {
-          setDatammoBatchProgress(createDatammoBatchProgressState());
-        }
-      },
-    );
-  };
 
   const handleCopy = (text, message = "Đã copy nội dung!") => {
     navigator.clipboard.writeText(text);
@@ -3439,26 +2980,7 @@ function App() {
                     Bỏ chọn
                   </button>
                 )}
-                <button
-                  onClick={() => openBulkPushModal(filteredChatgptAccounts)}
-                  disabled={datammoBatchProgress.active}
-                  className="hidden items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center disabled:opacity-60 disabled:cursor-wait disabled:hover:translate-y-0"
-                >
-                  <Globe size={18} /> Đẩy nhanh lên kệ
-                </button>
-                <button
-                  onClick={handleResyncVisibleChatgptDatammo}
-                  disabled={datammoBatchProgress.active}
-                  className="hidden items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center disabled:opacity-60 disabled:cursor-wait disabled:hover:translate-y-0"
-                >
-                  <RefreshCw
-                    size={18}
-                    className={datammoBatchProgress.active ? "animate-spin" : ""}
-                  />
-                  {datammoBatchProgress.active
-                    ? `Đang đồng bộ ${datammoBatchProgress.completed}/${datammoBatchProgress.total}`
-                    : "Đồng bộ phần đang xem"}
-                </button>
+                
                 <button
                   onClick={() => setShowImportGPTModal(true)}
                   className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center"
@@ -4595,49 +4117,45 @@ function App() {
                           </td>
                           <td className="text-center">
                             <div className="flex justify-center gap-2">
-                              {["package1", "package2"].includes(acc.type) && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleResyncChatgptDatammo(acc)}
-                                  disabled={
-                                    !!datammoResyncLoading[buildDatammoResyncKey("chatgpt", acc.id)] ||
-                                    datammoBatchProgress.active
-                                  }
-                                  className="hidden bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white p-2 rounded transition-colors disabled:opacity-60 disabled:cursor-wait"
-                                  title="Dong bo kho market"
-                                >
-                                  <RefreshCw
-                                    size={16}
-                                    className={datammoResyncLoading[buildDatammoResyncKey("chatgpt", acc.id)] ? "animate-spin" : ""}
-                                  />
-                                </button>
-                              )}
-                              {acc.type === "package2" &&
-                                Array.isArray(acc.users) &&
-                                acc.users.length === 1 &&
-                                isDatammoManagedUser(acc.users[0]) &&
-                                (() => {
-                                  const managedInfo = getMarketplaceOrderInfoFromUser(
-                                    acc.users[0],
-                                  );
-                                  const latestOrder = findMarketplaceOrderForAccount(
+                              {(() => {
+                                const primaryUser = Array.isArray(acc.users)
+                                  ? acc.users[0]
+                                  : null;
+                                const managedOrderInfo =
+                                  getMarketplaceOrderInfoFromUser(primaryUser);
+                                const latestMarketplaceOrder =
+                                  findMarketplaceOrderForAccount(
                                     acc.id,
                                     datammoOrderHistory,
-                                    managedInfo.provider,
+                                    managedOrderInfo.provider,
                                   );
-                                  return (
-                                    managedInfo.orderId || latestOrder?.orderId || ""
-                                  );
-                                })() && (
+                                const marketplaceOrderId = String(
+                                  managedOrderInfo.orderId ||
+                                    latestMarketplaceOrder?.orderId ||
+                                    "",
+                                ).trim();
+                                const hasWarrantyCase =
+                                  !!getDatammoWarrantyInfoForAccount(
+                                    acc.id,
+                                    datammoWarrantyCases,
+                                  )?.warrantyCase;
+                                const canOpenWarranty =
+                                  (!!primaryUser &&
+                                    isDatammoManagedUser(primaryUser) &&
+                                    !!marketplaceOrderId) ||
+                                  hasWarrantyCase;
+                                if (!canOpenWarranty) return null;
+                                return (
                                   <button
                                     type="button"
                                     onClick={() => openWarrantyModal(acc)}
                                     className="bg-slate-700 hover:bg-cyan-600 text-slate-300 hover:text-white p-2 rounded transition-colors"
-                                    title="Bảo hành đơn sàn"
+                                    title="Bao hanh don san"
                                   >
                                     <Shield size={16} />
                                   </button>
-                                )}
+                                );
+                              })()}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -5341,126 +4859,8 @@ function App() {
         </div>
       )}
 
-      {showBulkPushModal && (
-        <div className="modal-overlay">
-          <div className="modal-box" style={{ maxWidth: "520px" }}>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-white">Đẩy Nhanh Lên Kệ</h2>
-              <span
-                className="close cursor-pointer text-slate-400 hover:text-white"
-                onClick={() => setShowBulkPushModal(false)}
-              >
-                &times;
-              </span>
-            </div>
+      
 
-            <div className="space-y-3">
-              <div className="text-xs text-slate-300 bg-slate-800 border border-slate-700 rounded p-3">
-                Đang lọc: <span className="font-bold text-white">{filteredChatgptAccounts.length}</span> acc
-                {" • "}
-                Đã chọn: <span className="font-bold text-white">{selectedChatgptIds.length}</span> acc
-              </div>
-
-              <div className="form-group">
-                <label className="block text-xs text-slate-400 mb-1">Nguồn áp dụng</label>
-                <select
-                  className="form-input w-full"
-                  value={bulkPushForm.scope}
-                  onChange={(e) =>
-                    setBulkPushForm((prev) => ({
-                      ...prev,
-                      scope: e.target.value,
-                    }))
-                  }
-                >
-                  <option
-                    value="selected"
-                    disabled={selectedChatgptIds.length === 0}
-                  >
-                    Chỉ các acc đã chọn ({selectedChatgptIds.length})
-                  </option>
-                  <option value="filtered">
-                    Tất cả acc đang lọc ({filteredChatgptAccounts.length})
-                  </option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="block text-xs text-slate-400 mb-1">Đẩy theo gói</label>
-                <select
-                  className="form-input w-full"
-                  value={bulkPushForm.targetType}
-                  onChange={(e) =>
-                    setBulkPushForm((prev) => ({
-                      ...prev,
-                      targetType: e.target.value,
-                    }))
-                  }
-                >
-                  <option value="package1">Gói 1 - Chia sẻ</option>
-                  <option value="package2">Gói 2 - Linh hoạt</option>
-                </select>
-              </div>
-
-              {supportsChatgptMarketType(bulkPushForm.targetType) && (
-                <div className="form-group">
-                  <label className="block text-xs text-slate-400 mb-1">Kệ Datammo</label>
-                  <select
-                    className="form-input w-full"
-                    value={bulkPushForm.package2Shelf}
-                    onChange={(e) =>
-                      setBulkPushForm((prev) => ({
-                        ...prev,
-                        package2Shelf: normalizePackage2Shelf(e.target.value),
-                      }))
-                    }
-                  >
-                    <option value="none">Kho tong</option>
-                                  <option value="cheap">Kho market</option>
-                  </select>
-                </div>
-              )}
-
-              {loadingStates.bulkPush && (
-                <div className="pt-1">
-                  <div className="h-2 w-full bg-slate-800 border border-slate-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300"
-                      style={{ width: `${Math.max(0, Math.min(100, bulkPushProgress.percent || 0))}%` }}
-                    />
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1">
-                    Đang đẩy đồng bộ Datammo... {bulkPushProgress.percent}%
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                onClick={() => setShowBulkPushModal(false)}
-                className="btn-secondary"
-                disabled={loadingStates.bulkPush}
-              >
-                Hủy
-              </button>
-              <button
-                onClick={() => handleBulkPushToShelf(filteredChatgptAccounts)}
-                className="btn-primary bg-emerald-600 hover:bg-emerald-500 flex items-center gap-2"
-                disabled={loadingStates.bulkPush}
-              >
-                {loadingStates.bulkPush ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" /> Đang đẩy...
-                  </>
-                ) : (
-                  "Đẩy ngay"
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {(showAddModal || showEditModal) && (
         <div className="modal-overlay">
@@ -7108,6 +6508,8 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 }
 
 export default App;
+
+
 
 
 

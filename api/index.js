@@ -2,7 +2,6 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const axios = require("axios");
-const crypto = require("crypto");
 require("dotenv").config();
 const mongoose = require("mongoose");
 
@@ -17,6 +16,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Cache connection to avoid reconnecting on every request (Vercel specific)
 let isConnected = false;
 let didCleanupLegacyTeamEmailPassword = false;
+let didCleanupLegacyChatgptMarketKeys = false;
 const toPositiveInt = (value, fallback) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
@@ -45,9 +45,32 @@ const connectDB = async () => {
       );
       didCleanupLegacyTeamEmailPassword = true;
     }
-    console.log("✅ MongoDB Connected via Vercel");
+    if (!didCleanupLegacyChatgptMarketKeys) {
+      await Account.updateMany(
+        {
+          $or: [
+            { package2DatammoKey: { $exists: true } },
+            { package2DatammoKeysUsed: { $exists: true } },
+          ],
+        },
+        {
+          $unset: {
+            package2DatammoKey: "",
+            package2DatammoKeysUsed: "",
+          },
+        },
+      );
+      const legacyRegistryCollections = await mongoose.connection.db
+        .listCollections({ name: "marketplace_key_registries" })
+        .toArray();
+      if (legacyRegistryCollections.length > 0) {
+        await mongoose.connection.db.dropCollection("marketplace_key_registries");
+      }
+      didCleanupLegacyChatgptMarketKeys = true;
+    }
+    console.log("MongoDB Connected via Vercel");
   } catch (error) {
-    console.error("❌ MongoDB Connection Error:", error);
+    console.error("MongoDB Connection Error:", error);
   }
 };
 
@@ -58,8 +81,6 @@ const accountSchema = new mongoose.Schema({
   password: { type: String, required: true },
   type: { type: String, default: "unassigned" },
   package2Shelf: { type: String, default: "none" },
-  package2DatammoKey: { type: String, default: "" },
-  package2DatammoKeysUsed: [{ type: String }],
   users: [{ name: String, joinedAt: String, expiredAt: String }],
   note: String,
   link: String,
@@ -169,21 +190,6 @@ const DatammoWarrantyCase =
     "DatammoWarrantyCase",
     datammoWarrantyCaseSchema,
     "marketplace_warranty_cases",
-  );
-
-const datammoKeyRegistrySchema = new mongoose.Schema({
-  key: { type: String, unique: true, required: true, index: true },
-  accountId: { type: String, default: "" },
-  reason: { type: String, default: "" },
-  createdAt: { type: String, default: () => new Date().toISOString() },
-  updatedAt: { type: String, default: () => new Date().toISOString() },
-});
-const DatammoKeyRegistry =
-  mongoose.models.DatammoKeyRegistry ||
-  mongoose.model(
-    "DatammoKeyRegistry",
-    datammoKeyRegistrySchema,
-    "marketplace_key_registries",
   );
 
 // Middleware to ensure DB is connected before processing
@@ -298,11 +304,9 @@ app.get("/api/test", (req, res) => {
 
 // --- DATAMMO INTEGRATION ---
 const DATAMMO_URL = "https://datammo.com/api/v1/products/748e605c-d400-4c44-a958-0525494c700b/inventory";
-const DATAMMO_CHEAP_URL = "https://datammo.com/api/v1/products/746e1bbd-b625-41c5-8e62-2ef160bc0cf8/inventory";
 const DATAMMO_TOKEN = "sk_1773222055913_er0acsx8dyj";
 const SHOPMINI_PRIVATE_API_TOKEN =
   process.env.SHOPMINI_PRIVATE_API_TOKEN || "537e6b485382ed5f7c71f3dfd0a6be23";
-const DATAMMO_VARIANT_PKG1 = "3dbd0d98-5ed5-4044-9557-8d8a902da45f";
 const DATAMMO_VARIANT_PKG2 = "98ed02c7-d28b-4287-945e-bdfb24a09397";
 const DATAMMO_VARIANT_PKG2_CHEAP = "b5449604-4fce-4edf-89d3-d4400d0f34a6";
 const DATAMMO_VARIANT_PKG3 = "5e3567bc-ada4-471d-b93b-725a0735b677";
@@ -472,38 +476,9 @@ const VALID_PACKAGE2_SHELVES = [
 const DATAMMO_PARTNER_API_TOKEN =
   process.env.DATAMMO_PARTNER_API_TOKEN || DATAMMO_TOKEN;
 
-const DATAMMO_PKG2_SHELVES = {
-  [PACKAGE2_SHELF_MAIN]: {
-    inventoryUrl: DATAMMO_URL,
-    variantId: DATAMMO_VARIANT_PKG2,
-  },
-  [PACKAGE2_SHELF_CHEAP]: {
-    inventoryUrl: DATAMMO_CHEAP_URL,
-    variantId: DATAMMO_VARIANT_PKG2_CHEAP,
-  },
-};
-
 const getDatammoInventoryUrl = (line) => line?.inventoryUrl || DATAMMO_URL;
 const getDatammoLineKey = (line) =>
   `${getDatammoInventoryUrl(line)}||${line.variantId}||${line.content}`;
-const getDatammoPrimaryKey = (line) => {
-  const content = String(line?.content || "");
-  const key = content.split("|")[0]?.trim();
-  return key || "";
-};
-const isPackage2DatammoVariant = (variantId) =>
-  variantId === DATAMMO_VARIANT_PKG2 ||
-  variantId === DATAMMO_VARIANT_PKG2_CHEAP;
-const getDatammoUploadErrors = (responseData) => {
-  const data = responseData?.data || {};
-  const errors = Array.isArray(data.errors) ? data.errors : [];
-  const failedCount = Number(data.failed_count || 0);
-  return failedCount > 0 || errors.length > 0 ? errors : [];
-};
-const isDatammoDuplicateError = (responseData) =>
-  getDatammoUploadErrors(responseData).some((msg) =>
-    /duplicate/i.test(String(msg || "")),
-  );
 const DATAMMO_MIN_REQUEST_GAP_MS = toPositiveInt(
   process.env.DATAMMO_MIN_REQUEST_GAP_MS,
   1200,
@@ -581,173 +556,6 @@ const postDatammo = async (
     }
   }
 };
-const sanitizeDatammoKey = (value) =>
-  String(value || "")
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]/g, "")
-    .slice(0, 64);
-const normalizeDatammoKeyList = (keys) => {
-  const input = Array.isArray(keys) ? keys : [];
-  const result = [];
-  const seen = new Set();
-  input.forEach((item) => {
-    const key = sanitizeDatammoKey(item);
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    result.push(key);
-  });
-  // Keep history bounded.
-  return result.slice(-200);
-};
-const mergeDatammoKeyHistory = (keys, nextKey) =>
-  normalizeDatammoKeyList([...(Array.isArray(keys) ? keys : []), nextKey]);
-const buildBasePackage2DatammoKey = (accountId = "") => {
-  const safeAccountId = String(accountId || "")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .slice(-12);
-  return `p2_${safeAccountId || "acc"}`;
-};
-const createPackage2DatammoKey = (accountId = "") => {
-  const base = buildBasePackage2DatammoKey(accountId);
-  const timePart = Date.now().toString(36);
-  const randomPart = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-  return `${base}_${timePart}_${randomPart}`;
-};
-const claimPackage2DatammoKey = async (rawKey, accountId, reason = "") => {
-  const key = sanitizeDatammoKey(rawKey);
-  if (!key) return { ok: false, conflict: false, key: "" };
-
-  const ownerId = String(accountId || "");
-  const existing = await DatammoKeyRegistry.findOne({ key });
-  if (existing) {
-    const existingOwnerId = String(existing.accountId || "");
-    if (existingOwnerId && existingOwnerId !== ownerId) {
-      return { ok: false, conflict: true, key: "" };
-    }
-    existing.accountId = ownerId;
-    if (reason) existing.reason = reason;
-    existing.updatedAt = new Date().toISOString();
-    await existing.save();
-    return { ok: true, conflict: false, key };
-  }
-
-  try {
-    await DatammoKeyRegistry.create({
-      key,
-      accountId: ownerId,
-      reason,
-    });
-    return { ok: true, conflict: false, key };
-  } catch (err) {
-    if (err?.code === 11000) {
-      return { ok: false, conflict: true, key: "" };
-    }
-    throw err;
-  }
-};
-const reserveUniquePackage2DatammoKey = async (
-  accountId,
-  reason = "auto-reserve",
-) => {
-  for (let i = 0; i < 30; i += 1) {
-    const candidate = createPackage2DatammoKey(accountId);
-    const claimed = await claimPackage2DatammoKey(candidate, accountId, reason);
-    if (claimed.ok && claimed.key) return claimed.key;
-  }
-  throw new Error("Unable to reserve unique Datammo key after multiple retries.");
-};
-const resolveOwnedPackage2DatammoKey = async (
-  accountId,
-  preferredKey,
-  reason = "resolve-key",
-) => {
-  const preferred = sanitizeDatammoKey(preferredKey);
-  if (preferred) {
-    const claimedPreferred = await claimPackage2DatammoKey(
-      preferred,
-      accountId,
-      reason,
-    );
-    if (claimedPreferred.ok && claimedPreferred.key) return claimedPreferred.key;
-  }
-  return reserveUniquePackage2DatammoKey(accountId, reason);
-};
-const getPackage2DatammoKey = (acc) => {
-  const savedKey = sanitizeDatammoKey(acc?.package2DatammoKey);
-  if (savedKey) return savedKey;
-  return buildBasePackage2DatammoKey(acc?.id);
-};
-const replaceDatammoPrimaryKey = (content, newKey) => {
-  const raw = String(content || "");
-  const parts = raw.split("|");
-  if (parts.length === 0) return newKey;
-  parts[0] = newKey;
-  return parts.join("|");
-};
-const getPackage2KnownKeys = (acc) =>
-  normalizeDatammoKeyList([
-    ...(Array.isArray(acc?.package2DatammoKeysUsed)
-      ? acc.package2DatammoKeysUsed
-      : []),
-    acc?.package2DatammoKey,
-  ]);
-const cleanupPackage2KeysOnDatammo = async (accountId) => {
-  if (!accountId) return;
-  const latestAcc = await Account.findOne({ id: accountId });
-  if (!latestAcc || latestAcc.type !== "package2") return;
-
-  const knownKeys = getPackage2KnownKeys(latestAcc);
-  if (knownKeys.length === 0) return;
-
-  const targets = Object.values(DATAMMO_PKG2_SHELVES).filter(
-    (item) => item?.inventoryUrl && item?.variantId,
-  );
-  for (const target of targets) {
-    for (const key of knownKeys) {
-      try {
-        await postDatammo(
-          `${target.inventoryUrl}/delete`,
-          { variantId: target.variantId, content: `${key}|` },
-        );
-      } catch (err) {
-        console.error(
-          "Datammo cleanup by key err:",
-          err?.response?.data || err?.message || err,
-        );
-      }
-    }
-  }
-};
-const rotatePackage2KeyForPendingAdds = async (newAcc, toAdd = []) => {
-  if (!newAcc || newAcc.type !== "package2" || !newAcc.id) return;
-  const hasPackage2Add = toAdd.some((item) =>
-    isPackage2DatammoVariant(item?.variantId),
-  );
-  if (!hasPackage2Add) return;
-
-  const rotatedKey = await reserveUniquePackage2DatammoKey(
-    newAcc.id,
-    "pre-add-rotate",
-  );
-  await Account.updateOne(
-    { id: newAcc.id },
-    {
-      $set: { package2DatammoKey: rotatedKey },
-      $addToSet: { package2DatammoKeysUsed: rotatedKey },
-    },
-  );
-  newAcc.package2DatammoKey = rotatedKey;
-  newAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
-    newAcc.package2DatammoKeysUsed,
-    rotatedKey,
-  );
-
-  toAdd.forEach((item) => {
-    if (!isPackage2DatammoVariant(item?.variantId)) return;
-    item.content = replaceDatammoPrimaryKey(item.content, rotatedKey);
-  });
-};
-
 const normalizePackage2Shelf = (shelf, fallback = CHATGPT_TOTAL_VALUE) => {
   if (shelf === PACKAGE2_SHELF_CHEAP) return PACKAGE2_SHELF_CHEAP;
   if (shelf === PACKAGE2_SHELF_MAIN || shelf === PACKAGE2_SHELF_NONE) {
@@ -1119,8 +927,6 @@ const rollbackClaimedPackage2Accounts = async (claimed = []) => {
             item.oldAcc.package2Shelf,
             CHATGPT_TOTAL_VALUE,
           ),
-          package2DatammoKey: item.oldAcc.package2DatammoKey || "",
-          package2DatammoKeysUsed: item.oldAcc.package2DatammoKeysUsed || [],
           updatedAt: item.oldAcc.updatedAt || new Date().toISOString(),
         },
       },
@@ -1147,23 +953,6 @@ const logMarketplaceOrder = async ({
   });
 };
 
-const getPackage2ShelfTargets = (acc, includeAllPackage2Shelves = false) => {
-  const allShelves = Object.values(DATAMMO_PKG2_SHELVES).filter(
-    (item) => item?.inventoryUrl && item?.variantId,
-  );
-  if (includeAllPackage2Shelves) return allShelves;
-
-  const selectedShelf = normalizePackage2Shelf(
-    acc?.package2Shelf,
-    PACKAGE2_SHELF_MAIN,
-  );
-  if (selectedShelf === PACKAGE2_SHELF_NONE) return [];
-
-  const target = DATAMMO_PKG2_SHELVES[selectedShelf];
-  if (!target?.inventoryUrl || !target?.variantId) return [];
-  return [target];
-};
-
 const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
   const normalized = { ...payload };
   delete normalized.expectedUpdatedAt;
@@ -1184,60 +973,7 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
     normalized.package2Shelf = CHATGPT_TOTAL_VALUE;
   }
 
-  if (targetType === "package2") {
-    const fallbackKey =
-      existingAcc?.type === "package2"
-        ? sanitizeDatammoKey(existingAcc.package2DatammoKey)
-        : "";
-    const requestedKey = sanitizeDatammoKey(normalized.package2DatammoKey);
-    normalized.package2DatammoKey = requestedKey || fallbackKey || "";
-    const fallbackKeyHistory =
-      existingAcc?.type === "package2"
-        ? normalizeDatammoKeyList(existingAcc.package2DatammoKeysUsed)
-        : [];
-    normalized.package2DatammoKeysUsed = mergeDatammoKeyHistory(
-      fallbackKeyHistory,
-      normalized.package2DatammoKey,
-    );
-  } else {
-    normalized.package2DatammoKey = "";
-    normalized.package2DatammoKeysUsed = [];
-  }
-
   return normalized;
-};
-const buildPackage1DatammoLines = (acc, options = {}) => {
-  if (!acc || acc.type !== "package1") return [];
-  const users = Array.isArray(acc.users) ? acc.users : [];
-  const userCount = Math.max(0, Math.min(3, users.length));
-  const includeFilledSlots = options.includeFilledSlots === true;
-  const includeLegacyContent = options.includeLegacyContent === true;
-  const startSlot = includeFilledSlots ? 1 : userCount + 1;
-  const lines = [];
-  const username = String(acc.username || "").trim();
-  const password = String(acc.password || "").trim();
-
-  for (let i = startSlot; i <= 3; i += 1) {
-    lines.push({
-      variantId: DATAMMO_VARIANT_PKG1,
-      content: `Slot ${i}|${username}|${password}`,
-    });
-  }
-
-  if (includeLegacyContent) {
-    lines.push({
-      variantId: DATAMMO_VARIANT_PKG1,
-      content: `${username}|${password}`,
-    });
-    for (let i = 1; i <= 3; i += 1) {
-      lines.push({
-        variantId: DATAMMO_VARIANT_PKG1,
-        content: `${username}|${password}|Slot ${i}`,
-      });
-    }
-  }
-
-  return lines;
 };
 const buildTeamBusinessDatammoContent = (acc = {}) =>
   `${String(acc.username || "").trim()}|${String(acc.password || "").trim()}|${String(
@@ -1327,104 +1063,45 @@ const withFreshUpdatedAt = (payload = {}) => ({
   updatedAt: new Date().toISOString(),
 });
 
-const getDatammoLines = (acc, options = {}) => {
-  if (!acc) return [];
+const getDatammoLines = (acc) => {
+  if (!acc || acc.slots === undefined) return [];
   const lines = [];
-  const includeAllPackage2Shelves = options.includeAllPackage2Shelves === true;
-  const forcePackage2Sync = options.forcePackage2Sync === true;
+  const teamSaleMode = normalizeTeamSaleMode(acc.saleMode);
+  const teamSlots = normalizeTeamSlots(acc.slots);
 
-  // 1) Logic cho GÓI 3 (Team Account - Business Slots)
-  if (acc.slots !== undefined) {
-    const teamSaleMode = normalizeTeamSaleMode(acc.saleMode);
-    const teamSlots = normalizeTeamSlots(acc.slots);
-    const formatBusinessContent = () => {
-      const teamUsername = String(acc.username || "").trim();
-      const teamPassword = String(acc.password || "").trim();
-      const emailLink = String(acc.recoveryUrl || "").trim();
-      // Team Business must publish direct credentials format: TK|MK|Link email
-      return `${teamUsername}|${teamPassword}|${emailLink}`;
-    };
-    const formatTeamContent = (slotNum) => {
-      // Key = "Slot N" đặt đầu để Datammo không dedup 4 dòng thành 1
-      // Format: Slot 1|email|Bạn gửi gmail chính chủ để admin up
-      return `Slot ${slotNum}|${acc.username}|Bạn gửi kèm gmail chính chủ để admin up`;
-    };
-
-    if (teamSaleMode === TEAM_SALE_MODE_BUSINESS) {
-      const activeSlots = teamSlots.filter(
-        (slot) => slot.status !== "empty" && !!slot.gmail,
-      ).length;
-      // Business mode: each Team account is exactly 1 stock item, only when account is fully free.
-      if (activeSlots === 0) {
-        lines.push({
-          variantId: DATAMMO_VARIANT_TEAM_BUSINESS,
-          content: buildTeamBusinessDatammoContent(acc),
-        });
-      }
-      return lines;
+  if (teamSaleMode === TEAM_SALE_MODE_BUSINESS) {
+    const activeSlots = teamSlots.filter(
+      (slot) => slot.status !== "empty" && !!slot.gmail,
+    ).length;
+    if (activeSlots === 0) {
+      lines.push({
+        variantId: DATAMMO_VARIANT_TEAM_BUSINESS,
+        content: buildTeamBusinessDatammoContent(acc),
+      });
     }
-
-    teamSlots.forEach((slot, index) => {
-      // Slot trống được đẩy lên sàn MMO
-      if (slot.status === "empty" || !slot.gmail) {
-        lines.push({
-          variantId: DATAMMO_VARIANT_PKG3,
-          content: buildTeamSlotDatammoContent(acc, index + 1),
-        });
-      }
-    });
     return lines;
   }
 
-  // 2) Logic cho Account thông thường (Gói 1: Shared, Gói 2: Private)
-  const formatContent = (slotInfo) => {
-    // Package2 (Private): DatammoKey|TK|MK|Link
-    // Package1 (Shared): Slot N|TK|MK
-    const includeLink = acc.type === "package2" && acc.link;
-    const creds = `${acc.username}|${acc.password}${includeLink ? `|${acc.link}` : ""}`;
-    if (acc.type === "package2") {
-      const datammoKey = getPackage2DatammoKey(acc);
-      return `${datammoKey}|${creds}`;
-    }
-    return slotInfo ? `${slotInfo}|${creds}` : creds;
-  };
-
-  if (acc.type === "package2") {
-    const daysLeft = acc.expiredAt
-      ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
-      : 999;
-    const canSellPackage2 =
-      (!acc.users || acc.users.length === 0) && daysLeft > PACKAGE2_MIN_DAYS_FOR_SALE;
-    if (forcePackage2Sync || canSellPackage2) {
-      // Chỉ đẩy lên Datammo nếu còn HƠN 25 ngày (tránh bán acc sắp hết hạn)
-      const targetShelves = getPackage2ShelfTargets(
-        acc,
-        includeAllPackage2Shelves,
-      );
-      targetShelves.forEach((targetShelf) => {
-        lines.push({
-          inventoryUrl: targetShelf.inventoryUrl,
-          variantId: targetShelf.variantId,
-          content: formatContent(""),
-        });
+  teamSlots.forEach((slot, index) => {
+    if (slot.status === "empty" || !slot.gmail) {
+      lines.push({
+        variantId: DATAMMO_VARIANT_PKG3,
+        content: buildTeamSlotDatammoContent(acc, index + 1),
       });
     }
-  } else if (acc.type === "package1") {
-    return buildPackage1DatammoLines(acc);
-    const userCount = acc.users ? acc.users.length : 0;
-    // Mỗi package 1 có 3 slot.
-    for (let i = userCount + 1; i <= 3; i++) {
-      lines.push({ variantId: DATAMMO_VARIANT_PKG1, content: formatContent(`Slot ${i}`) });
-    }
-  }
+  });
+
   return lines;
 };
 
 const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
-  const isChatgptContext =
-    (oldAcc?.slots === undefined && supportsChatgptMarket(oldAcc?.type)) ||
-    (newAcc?.slots === undefined && supportsChatgptMarket(newAcc?.type));
-  if (isChatgptContext) {
+  const forceTeamResync = options.forceTeamResync === true;
+  const strictDatammoSync =
+    options.strictDatammoSync === true || options.throwOnSyncError === true;
+  const isTeamContext =
+    oldAcc?.slots !== undefined || newAcc?.slots !== undefined;
+
+  if (!isTeamContext) {
     return {
       toDelete: 0,
       toAdd: 0,
@@ -1433,19 +1110,7 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
       skipped: true,
     };
   }
-  const forceOldPackage2Sync = options.forceOldPackage2Sync === true;
-  const forceNewPackage2Sync = options.forceNewPackage2Sync === true;
-  const forcePackage1Resync = options.forcePackage1Resync === true;
-  const forceTeamResync = options.forceTeamResync === true;
-  const strictDatammoSync =
-    options.strictDatammoSync === true || options.throwOnSyncError === true;
-  const isPackage2Context =
-    oldAcc?.type === "package2" || newAcc?.type === "package2";
-  const isPackage1Context =
-    oldAcc?.type === "package1" || newAcc?.type === "package1";
-  const isTeamContext =
-    oldAcc?.slots !== undefined || newAcc?.slots !== undefined;
-  const isManualPackage2ShelfSync = forceNewPackage2Sync && isPackage2Context;
+
   const syncErrors = [];
   const recordSyncError = (stage, item, inventoryUrl, errorValue) => {
     const errorText =
@@ -1460,18 +1125,14 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
       error: errorText,
     });
   };
-  const rawOldLines = getDatammoLines(oldAcc, {
-    includeAllPackage2Shelves: true,
-    forcePackage2Sync: forceOldPackage2Sync,
-  });
-  const newLines = getDatammoLines(newAcc, {
-    forcePackage2Sync: forceNewPackage2Sync,
-  });
+
+  const rawOldLines = getDatammoLines(oldAcc);
+  const newLines = getDatammoLines(newAcc);
 
   let toDelete = [];
   let toAdd = [];
 
-  if (forceTeamResync && isTeamContext) {
+  if (forceTeamResync) {
     const deleteMap = new Map();
     [
       ...buildTeamDatammoLines(oldAcc, {
@@ -1487,40 +1148,11 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
     });
     toDelete = Array.from(deleteMap.values());
     toAdd = newLines;
-  } else if (forcePackage1Resync && isPackage1Context) {
-    const deleteMap = new Map();
-    [
-      ...buildPackage1DatammoLines(oldAcc, {
-        includeFilledSlots: true,
-        includeLegacyContent: true,
-      }),
-      ...buildPackage1DatammoLines(newAcc, {
-        includeFilledSlots: true,
-        includeLegacyContent: true,
-      }),
-    ].forEach((line) => {
-      deleteMap.set(getDatammoLineKey(line), line);
-    });
-    toDelete = Array.from(deleteMap.values());
-    toAdd = newLines;
-  } else if (isManualPackage2ShelfSync) {
-    // Shelf switch must be delete-first-add-later to avoid duplicate key on Datammo.
-    const deleteMap = new Map();
-    [...rawOldLines, ...newLines].forEach((line) => {
-      deleteMap.set(getDatammoLineKey(line), line);
-    });
-    toDelete = Array.from(deleteMap.values());
-    toAdd = newLines;
   } else {
     const newLineKeys = new Set(newLines.map(getDatammoLineKey));
-    // On forced shelf switch, treat selected new shelf as "must add" to heal missing stock.
-    const shouldForceMustAdd = forceOldPackage2Sync || forceNewPackage2Sync;
-    const oldLines = shouldForceMustAdd
-      ? rawOldLines.filter((line) => !newLineKeys.has(getDatammoLineKey(line)))
-      : rawOldLines;
-    const oldLineKeys = new Set(oldLines.map(getDatammoLineKey));
+    const oldLineKeys = new Set(rawOldLines.map(getDatammoLineKey));
 
-    toDelete = oldLines.filter(
+    toDelete = rawOldLines.filter(
       (oldLine) => !newLineKeys.has(getDatammoLineKey(oldLine)),
     );
     toAdd = newLines.filter(
@@ -1543,147 +1175,21 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
     }
   }
 
-  // Ensure Datammo has processed DELETE before ADD when switching shelf.
-  if (isManualPackage2ShelfSync && toDelete.length > 0 && toAdd.length > 0) {
-    await new Promise((resolve) => setTimeout(resolve, 120));
-  }
-
-  // Hard guarantee against duplicate key reuse: rotate package2 key before every ADD batch.
-  await rotatePackage2KeyForPendingAdds(newAcc, toAdd);
-  if (
-    newAcc?.type === "package2" &&
-    newAcc?.id &&
-    toAdd.some((item) => isPackage2DatammoVariant(item?.variantId))
-  ) {
-    await cleanupPackage2KeysOnDatammo(newAcc.id);
-  }
-
   for (const item of toAdd) {
     const inventoryUrl = getDatammoInventoryUrl(item);
     try {
-      const addResp = await postDatammo(
+      await postDatammo(
         inventoryUrl,
         { variantId: item.variantId, content: item.content },
       );
-      const hasDuplicateInBody = isDatammoDuplicateError(addResp?.data);
-      if (hasDuplicateInBody) {
-        throw new Error(`Datammo duplicate: ${JSON.stringify(addResp?.data)}`);
-      }
       console.log("Datammo ADD synced:", item.content, "=>", inventoryUrl);
     } catch (err) {
-      const errData = err?.response?.data;
-      const errText =
-        typeof errData === "string"
-          ? errData
-          : JSON.stringify(errData || err.message || "");
-      const duplicateInResponse = isDatammoDuplicateError(errData);
-      const isDuplicateErr = duplicateInResponse || /duplicate/i.test(errText);
-
-      // Retry once for duplicate race condition (delete not yet committed).
-      if (isDuplicateErr && isPackage2DatammoVariant(item.variantId)) {
-        try {
-          const primaryKey = getDatammoPrimaryKey(item);
-          const keyOnlyContent = primaryKey ? `${primaryKey}|` : "";
-          await postDatammo(
-            `${inventoryUrl}/delete`,
-            { variantId: item.variantId, content: item.content },
-          );
-          if (keyOnlyContent && keyOnlyContent !== item.content) {
-            await postDatammo(
-              `${inventoryUrl}/delete`,
-              { variantId: item.variantId, content: keyOnlyContent },
-            );
-          }
-          await waitMs(500);
-          const retryResp = await postDatammo(
-            inventoryUrl,
-            { variantId: item.variantId, content: item.content },
-          );
-          const retryHasDuplicate = isDatammoDuplicateError(retryResp?.data);
-          if (retryHasDuplicate) {
-            throw new Error(
-              `Datammo duplicate after retry: ${JSON.stringify(retryResp?.data)}`,
-            );
-          }
-          console.log(
-            "Datammo ADD retry synced:",
-            item.content,
-            "=>",
-            inventoryUrl,
-          );
-          continue;
-        } catch (retryErr) {
-          const retryErrData = retryErr?.response?.data;
-          const retryErrText =
-            typeof retryErrData === "string"
-              ? retryErrData
-              : JSON.stringify(retryErrData || retryErr.message || "");
-          const retryIsDuplicate =
-            isDatammoDuplicateError(retryErrData) ||
-            /duplicate/i.test(retryErrText);
-
-          if (
-            retryIsDuplicate &&
-            newAcc?.type === "package2" &&
-            newAcc?.id &&
-            isPackage2DatammoVariant(item.variantId)
-          ) {
-            try {
-              const rotatedKey = await reserveUniquePackage2DatammoKey(
-                newAcc.id,
-                "duplicate-retry-rotate",
-              );
-              const rotatedContent = replaceDatammoPrimaryKey(
-                item.content,
-                rotatedKey,
-              );
-              await Account.updateOne(
-                { id: newAcc.id },
-                {
-                  $set: { package2DatammoKey: rotatedKey },
-                  $addToSet: { package2DatammoKeysUsed: rotatedKey },
-                },
-              );
-              newAcc.package2DatammoKey = rotatedKey;
-              newAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
-                newAcc.package2DatammoKeysUsed,
-                rotatedKey,
-              );
-              const rotatedResp = await postDatammo(
-                inventoryUrl,
-                { variantId: item.variantId, content: rotatedContent },
-              );
-              if (isDatammoDuplicateError(rotatedResp?.data)) {
-                throw new Error(
-                  `Datammo duplicate after key rotate: ${JSON.stringify(rotatedResp?.data)}`,
-                );
-              }
-              console.log(
-                "Datammo ADD rotated-key synced:",
-                rotatedContent,
-                "=>",
-                inventoryUrl,
-              );
-              continue;
-            } catch (rotateErr) {
-              console.error(
-                "Datammo ADD rotate-key err:",
-                rotateErr?.response?.data || rotateErr.message,
-              );
-            }
-          }
-          console.error(
-            "Datammo ADD retry err:",
-            retryErr?.response?.data || retryErr.message,
-          );
-        }
-      }
-
-      const addErr = errData || err.message;
+      const addErr = err?.response?.data || err.message;
       recordSyncError("add", item, inventoryUrl, addErr);
       console.error("Datammo ADD err:", addErr);
     }
   }
+
   if (strictDatammoSync && syncErrors.length > 0) {
     const syncError = new Error(
       `Datammo sync failed for ${syncErrors.length} item(s)`,
@@ -1692,6 +1198,7 @@ const syncDatammoUpdate = async (oldAcc, newAcc, options = {}) => {
     syncError.syncErrors = syncErrors;
     throw syncError;
   }
+
   return {
     toDelete: toDelete.length,
     toAdd: toAdd.length,
@@ -2013,22 +1520,7 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
       expiredAt: expiredDate.toISOString(),
       updatedAt: now.toISOString(),
     };
-    if (newAcc.type === "package2") {
-      newAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
-        newAcc.id,
-        newAcc.package2DatammoKey,
-        "create-account",
-      );
-      newAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
-        newAcc.package2DatammoKeysUsed,
-        newAcc.package2DatammoKey,
-      );
-    } else {
-      newAcc.package2DatammoKeysUsed = [];
-    }
     await Account.create(newAcc);
-    // Tự động đẩy lên Datammo
-    await syncDatammoUpdateLocked(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
@@ -2050,21 +1542,7 @@ app.post("/api/chatgpt-public", async (req, res) => {
       expiredAt: expiredDate.toISOString(),
       updatedAt: now.toISOString(),
     };
-    if (newAcc.type === "package2") {
-      newAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
-        newAcc.id,
-        newAcc.package2DatammoKey,
-        "create-public-account",
-      );
-      newAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
-        newAcc.package2DatammoKeysUsed,
-        newAcc.package2DatammoKey,
-      );
-    } else {
-      newAcc.package2DatammoKeysUsed = [];
-    }
     await Account.create(newAcc);
-    await syncDatammoUpdateLocked(null, newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
@@ -2120,34 +1598,8 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
           Array.isArray(nextUsers) &&
           nextUsers.length === 0 &&
           hadRegularPackage2Customer));
-    const becamePackage2Available =
-      existingAcc.type === "package2" &&
-      targetType === "package2" &&
-      existingUsers.length > 0 &&
-      Array.isArray(nextUsers) &&
-      nextUsers.length === 0;
-
-    if (targetType === "package2") {
-      const preferredKey = becamePackage2Available
-        ? ""
-        : normalizedPayload.package2DatammoKey || existingAcc.package2DatammoKey;
-      normalizedPayload.package2DatammoKey =
-        await resolveOwnedPackage2DatammoKey(
-          id,
-          preferredKey,
-          becamePackage2Available ? "recycle-after-sold" : "update-account",
-        );
-      normalizedPayload.package2DatammoKeysUsed = mergeDatammoKeyHistory(
-        normalizedPayload.package2DatammoKeysUsed ||
-          existingAcc.package2DatammoKeysUsed,
-        normalizedPayload.package2DatammoKey,
-      );
-      if (shouldAutoUnsetPackage2Shelf) {
-        normalizedPayload.package2Shelf = CHATGPT_TOTAL_VALUE;
-      }
-    } else {
-      normalizedPayload.package2DatammoKey = "";
-      normalizedPayload.package2DatammoKeysUsed = [];
+    if (targetType === "package2" && shouldAutoUnsetPackage2Shelf) {
+      normalizedPayload.package2Shelf = CHATGPT_TOTAL_VALUE;
     }
     const updated = await Account.findOneAndUpdate(
       buildConditionalUpdateFilter(id, expectedUpdatedAt),
@@ -2180,269 +1632,13 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       isManualShelfUpdate &&
       requestKeys.length > 0 &&
       requestKeys.every((key) => key === "package2Shelf");
-    const isPackage1UsersUpdate =
-      targetType === "package1" && normalizedPayload.users !== undefined;
-    const isPackage2UsersUpdate =
-      targetType === "package2" && normalizedPayload.users !== undefined;
-    const syncOptions = {
-      forcePackage1Resync: isPackage1UsersUpdate,
-      forceOldPackage2Sync:
-        isPackage2ShelfChanged || isManualShelfUpdate || isPackage2UsersUpdate,
-      forceNewPackage2Sync: isManualShelfUpdate,
-      strictDatammoSync: true,
-    };
-
     if (isShelfOnlyUpdate && !isPackage2ShelfChanged) {
       return res.json({ message: "Updated", account: updated, syncSkipped: true });
-    }
-
-    try {
-      await syncDatammoUpdateLocked(existingAcc, updated, syncOptions);
-    } catch (syncError) {
-      const rolledBack = await restoreDocumentSnapshot(
-        Account,
-        id,
-        existingSnapshot,
-      );
-      if (rolledBack) {
-        try {
-          await syncDatammoUpdateLocked(updated, rolledBack, syncOptions);
-        } catch (rollbackSyncError) {
-          console.error(
-            "Datammo rollback sync error (chatgpt update):",
-            rollbackSyncError?.syncErrors ||
-              rollbackSyncError?.response?.data ||
-              rollbackSyncError?.message ||
-              rollbackSyncError,
-          );
-        }
-      }
-      throw syncError;
     }
 
     res.json({ message: "Updated", account: updated });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
-  }
-});
-
-// 3.5 BULK PUSH TO SHELF (batch update type/shelf with Datammo sync)
-app.post("/api/chatgpt/bulk-push-shelf", verifyToken, async (req, res) => {
-  try {
-    const targetType = String(req.body?.targetType || "").trim().toLowerCase();
-    if (!["package1", "package2"].includes(targetType)) {
-      return res
-        .status(400)
-        .json({ error: "targetType phải là package1 hoặc package2" });
-    }
-
-    const accountIds = Array.from(
-      new Set(
-        (Array.isArray(req.body?.accountIds) ? req.body.accountIds : [])
-          .map((id) => String(id || "").trim())
-          .filter(Boolean),
-      ),
-    );
-    if (accountIds.length === 0) {
-      return res.status(400).json({ error: "Danh sách account trống" });
-    }
-
-    const targetShelf = supportsChatgptMarket(targetType)
-      ? normalizePackage2Shelf(req.body?.package2Shelf, CHATGPT_TOTAL_VALUE)
-      : CHATGPT_TOTAL_VALUE;
-
-    const docs = await Account.find({ id: { $in: accountIds } }).lean();
-    const accountMap = new Map(docs.map((acc) => [String(acc.id), acc]));
-
-    const result = {
-      requested: accountIds.length,
-      updated: 0,
-      unchanged: 0,
-      skippedHasUsers: 0,
-      missing: 0,
-      failed: 0,
-      failedIds: [],
-      failedDetails: [],
-      skippedAccounts: [],
-      missingIds: [],
-    };
-
-    const configuredConcurrency = toPositiveInt(
-      process.env.BULK_PUSH_CONCURRENCY,
-      6,
-    );
-    const workerCount = Math.max(
-      1,
-      Math.min(
-        20,
-        Number.isFinite(configuredConcurrency) ? configuredConcurrency : 6,
-      ),
-    );
-    let queueIndex = 0;
-
-    const processAccountId = async (id) => {
-      const existingAcc = accountMap.get(id);
-      if (!existingAcc) {
-        result.missing += 1;
-        result.missingIds.push(id);
-        return;
-      }
-
-      const hasUsers =
-        Array.isArray(existingAcc.users) && existingAcc.users.length > 0;
-      if (hasUsers) {
-        result.skippedHasUsers += 1;
-        result.skippedAccounts.push({
-          id,
-          username: existingAcc.username || "",
-          reason: "Đang có khách",
-        });
-        return;
-      }
-
-      const currentShelf = normalizePackage2Shelf(
-        existingAcc.package2Shelf,
-        CHATGPT_TOTAL_VALUE,
-      );
-      const isSameType = existingAcc.type === targetType;
-      const isSameShelf =
-        supportsChatgptMarket(targetType)
-          ? currentShelf === targetShelf
-          : currentShelf === CHATGPT_TOTAL_VALUE;
-      if (isSameType && isSameShelf) {
-        result.unchanged += 1;
-        return;
-      }
-
-      try {
-        const normalizedPayload = normalizeChatgptPayload(
-          {
-            type: targetType,
-            package2Shelf: targetShelf,
-          },
-          existingAcc,
-        );
-
-        if (targetType === "package2") {
-          normalizedPayload.package2DatammoKey =
-            await resolveOwnedPackage2DatammoKey(
-              id,
-              normalizedPayload.package2DatammoKey ||
-                existingAcc.package2DatammoKey,
-              "bulk-push",
-            );
-          normalizedPayload.package2DatammoKeysUsed = mergeDatammoKeyHistory(
-            normalizedPayload.package2DatammoKeysUsed ||
-              existingAcc.package2DatammoKeysUsed,
-            normalizedPayload.package2DatammoKey,
-          );
-        } else {
-          normalizedPayload.package2DatammoKey = "";
-          normalizedPayload.package2DatammoKeysUsed = [];
-        }
-
-        const updatedAcc = await Account.findOneAndUpdate(
-          { id },
-          normalizedPayload,
-          { new: true },
-        );
-        if (!updatedAcc) {
-          result.failed += 1;
-          result.failedIds.push(id);
-          return;
-        }
-
-        const syncOptions = {
-          forceOldPackage2Sync:
-            existingAcc.type === "package2" || targetType === "package2",
-          forceNewPackage2Sync: targetType === "package2",
-          strictDatammoSync: true,
-        };
-        try {
-          await syncDatammoUpdateLocked(existingAcc, updatedAcc, syncOptions);
-        } catch (syncErr) {
-          // Rollback DB state if Datammo sync fails to avoid false-success state.
-          try {
-            const rollbackPayload = normalizeChatgptPayload(
-              {
-                type: existingAcc.type,
-                package2Shelf: existingAcc.package2Shelf,
-                package2DatammoKey: existingAcc.package2DatammoKey || "",
-                package2DatammoKeysUsed: existingAcc.package2DatammoKeysUsed || [],
-              },
-              existingAcc,
-            );
-            const rolledBack = await Account.findOneAndUpdate(
-              { id },
-              rollbackPayload,
-              { new: true },
-            );
-            if (rolledBack) {
-              await syncDatammoUpdateLocked(updatedAcc, rolledBack, {
-                forceOldPackage2Sync: true,
-                forceNewPackage2Sync: rolledBack.type === "package2",
-              });
-            }
-          } catch (rollbackErr) {
-            console.error(
-              "Bulk push rollback failed:",
-              id,
-              rollbackErr?.response?.data || rollbackErr.message,
-            );
-          }
-          throw syncErr;
-        }
-        result.updated += 1;
-      } catch (err) {
-        result.failed += 1;
-        result.failedIds.push(id);
-        const syncDetails = Array.isArray(err?.syncErrors)
-          ? err.syncErrors
-              .slice(0, 3)
-              .map(
-                (item) =>
-                  `${item.stage} ${item.variantId || ""} ${item.error || ""}`.trim(),
-              )
-              .join(" | ")
-          : "";
-        const reason =
-          syncDetails ||
-          err?.response?.data?.error ||
-          err?.message ||
-          "Unknown error";
-        result.failedDetails.push({
-          id,
-          username: existingAcc?.username || "",
-          reason,
-        });
-        console.error("Bulk push account failed:", id, reason);
-      }
-    };
-
-    const workers = Array.from(
-      { length: Math.min(workerCount, accountIds.length) },
-      () =>
-        (async () => {
-          while (true) {
-            const currentIndex = queueIndex;
-            queueIndex += 1;
-            if (currentIndex >= accountIds.length) break;
-            const id = accountIds[currentIndex];
-            await processAccountId(id);
-          }
-        })(),
-    );
-    await Promise.all(workers);
-
-    return res.json({
-      message: "Bulk push completed",
-      targetType,
-      package2Shelf: targetShelf,
-      workerCount: Math.min(workerCount, accountIds.length),
-      result,
-    });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -2462,45 +1658,7 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
           "Tài khoản này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
       });
     }
-    if (existing) {
-      await syncDatammoUpdateLocked(existing, null, {
-        forcePackage1Resync: existing?.type === "package1",
-        strictDatammoSync: true,
-      });
-    }
     res.json({ message: "Deleted" });
-  } catch (error) {
-    res.status(error.statusCode || 500).json({ error: error.message });
-  }
-});
-
-app.post("/api/chatgpt/:id/resync-datammo", verifyToken, async (req, res) => {
-  try {
-    const expectedUpdatedAt = getExpectedUpdatedAtValue(
-      req.body?.expectedUpdatedAt,
-    );
-    const existing = await Account.findOne({ id: req.params.id });
-    if (!existing) {
-      return res.status(404).json({ error: "Account not found" });
-    }
-    ensureCurrentVersion(existing, expectedUpdatedAt, "Tai khoan nay");
-
-    if (!["package1", "package2"].includes(String(existing.type || ""))) {
-      return res.status(400).json({
-        error: "Chi ho tro resync Datammo cho goi 1 va goi 2",
-      });
-    }
-
-    const reconciled = await syncChatgptMarketStateIfNeeded(existing);
-
-    await syncDatammoUpdateLocked(reconciled, reconciled, {
-      forcePackage1Resync: reconciled.type === "package1",
-      forceOldPackage2Sync: reconciled.type === "package2",
-      forceNewPackage2Sync: reconciled.type === "package2",
-      strictDatammoSync: true,
-    });
-
-    res.json({ message: "Resynced market state", account: reconciled });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -2615,22 +1773,12 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
     const sourceSnapshot = snapshotDocument(sourceAcc);
     const replacementSnapshot = snapshotDocument(replacementAcc);
     const nowIso = new Date().toISOString();
-    const replacementKey = await resolveOwnedPackage2DatammoKey(
-      replacementAcc.id,
-      replacementAcc.package2DatammoKey,
-      "warranty-replacement",
-    );
     const persistedReplacement = await Account.findOneAndUpdate(
       buildConditionalUpdateFilter(replacementAcc.id, replacementExpectedUpdatedAt),
       {
         $set: {
           users: sourceUsers,
           package2Shelf: CHATGPT_TOTAL_VALUE,
-          package2DatammoKey: replacementKey,
-          package2DatammoKeysUsed: mergeDatammoKeyHistory(
-            replacementAcc.package2DatammoKeysUsed,
-            replacementKey,
-          ),
           updatedAt: nowIso,
         },
       },
@@ -2654,47 +1802,6 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
     if (!persistedSource) {
       await restoreDocumentSnapshot(Account, replacementAcc.id, replacementSnapshot);
       throw buildConcurrencyError("Tài khoản lỗi");
-    }
-
-    const syncOptions = {
-      forceOldPackage2Sync: true,
-      forceNewPackage2Sync: true,
-      strictDatammoSync: true,
-    };
-
-    try {
-      await Promise.all([
-        syncDatammoUpdateLocked(sourceAcc, persistedSource, syncOptions),
-        syncDatammoUpdateLocked(replacementAcc, persistedReplacement, syncOptions),
-      ]);
-    } catch (syncError) {
-      const [rolledBackSource, rolledBackReplacement] = await Promise.all([
-        restoreDocumentSnapshot(Account, sourceAcc.id, sourceSnapshot),
-        restoreDocumentSnapshot(Account, replacementAcc.id, replacementSnapshot),
-      ]);
-      try {
-        await Promise.all([
-          rolledBackSource
-            ? syncDatammoUpdateLocked(persistedSource, rolledBackSource, syncOptions)
-            : Promise.resolve(),
-          rolledBackReplacement
-            ? syncDatammoUpdateLocked(
-                persistedReplacement,
-                rolledBackReplacement,
-                syncOptions,
-              )
-            : Promise.resolve(),
-        ]);
-      } catch (rollbackSyncError) {
-        console.error(
-          "Datammo rollback sync error (warranty):",
-          rollbackSyncError?.syncErrors ||
-            rollbackSyncError?.response?.data ||
-            rollbackSyncError?.message ||
-            rollbackSyncError,
-        );
-      }
-      throw syncError;
     }
 
     let warrantyCase = await DatammoWarrantyCase.findOne({
@@ -2948,31 +2055,12 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     toAcc.users.push(userToMove);
     fromAcc.users.splice(userIndex, 1);
 
-    // Package2: keep a persisted Datammo key and rotate after sold cycle closes.
     if (toAcc.type === "package2") {
-      toAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
-        toAcc.id,
-        toAcc.package2DatammoKey,
-        "move-user-destination",
-      );
-      toAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
-        toAcc.package2DatammoKeysUsed,
-        toAcc.package2DatammoKey,
-      );
       if (hasRegularPackage2Customer(toAcc.users)) {
         toAcc.package2Shelf = CHATGPT_TOTAL_VALUE;
       }
     }
     if (fromAcc.type === "package2" && (!fromAcc.users || fromAcc.users.length === 0)) {
-      fromAcc.package2DatammoKey = await resolveOwnedPackage2DatammoKey(
-        fromAcc.id,
-        "",
-        "move-user-source-empty",
-      );
-      fromAcc.package2DatammoKeysUsed = mergeDatammoKeyHistory(
-        fromAcc.package2DatammoKeysUsed,
-        fromAcc.package2DatammoKey,
-      );
       if (hasRegularPackage2Customer(originalFromAcc.users)) {
         fromAcc.package2Shelf = CHATGPT_TOTAL_VALUE;
       }
@@ -2985,8 +2073,6 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
           users: toAcc.users || [],
           type: toAcc.type,
           package2Shelf: toAcc.package2Shelf,
-          package2DatammoKey: toAcc.package2DatammoKey || "",
-          package2DatammoKeysUsed: toAcc.package2DatammoKeysUsed || [],
           updatedAt: new Date().toISOString(),
         },
       },
@@ -3005,8 +2091,6 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
           users: fromAcc.users || [],
           type: fromAcc.type,
           package2Shelf: fromAcc.package2Shelf,
-          package2DatammoKey: fromAcc.package2DatammoKey || "",
-          package2DatammoKeysUsed: fromAcc.package2DatammoKeysUsed || [],
           updatedAt: new Date().toISOString(),
         },
       },
@@ -3021,49 +2105,6 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
 
     const persistedFrom = await Account.findOne({ id: fromAccId });
     const persistedTo = await Account.findOne({ id: toAccId });
-
-    // Tự động tính toán DataMMO Add/Delete dựa trên biến động User Array
-    const fromSyncOptions = {
-      forcePackage1Resync:
-        originalFromAcc?.type === "package1" || fromAcc?.type === "package1",
-      strictDatammoSync: true,
-    };
-    const toSyncOptions = {
-      forcePackage1Resync:
-        originalToAcc?.type === "package1" || toAcc?.type === "package1",
-      strictDatammoSync: true,
-    };
-    try {
-      await Promise.all([
-        syncDatammoUpdateLocked(originalFromAcc, persistedFrom, fromSyncOptions),
-        syncDatammoUpdateLocked(originalToAcc, persistedTo, toSyncOptions),
-      ]);
-    } catch (syncError) {
-      const [rolledBackFrom, rolledBackTo] = await Promise.all([
-        restoreDocumentSnapshot(Account, fromAccId, originalFromAcc),
-        restoreDocumentSnapshot(Account, toAccId, originalToAcc),
-      ]);
-      try {
-        await Promise.all([
-          rolledBackFrom
-            ? syncDatammoUpdateLocked(persistedFrom, rolledBackFrom, fromSyncOptions)
-            : Promise.resolve(),
-          rolledBackTo
-            ? syncDatammoUpdateLocked(persistedTo, rolledBackTo, toSyncOptions)
-            : Promise.resolve(),
-        ]);
-      } catch (rollbackSyncError) {
-        console.error(
-          "Datammo rollback sync error (move user):",
-          rollbackSyncError?.syncErrors ||
-            rollbackSyncError?.response?.data ||
-            rollbackSyncError?.message ||
-            rollbackSyncError,
-        );
-      }
-      throw syncError;
-    }
-
     res.json({ message: "Moved user successfully", from: persistedFrom, to: persistedTo });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
@@ -3533,4 +2574,7 @@ app.post("/api/telegram-webhook", telegramWebhook);
 
 // Helper for Vercel
 module.exports = app;
+
+
+
 
