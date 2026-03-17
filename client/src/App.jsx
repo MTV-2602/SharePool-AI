@@ -327,6 +327,39 @@ const buildChatgptCopyText = (account = {}) => {
   }
   return lines.join("\n");
 };
+const buildChatgptMarketplaceExportLine = (account = {}) => {
+  const username = String(account?.username || "").trim();
+  const password = String(account?.password || "").trim();
+  const link = String(account?.link || "").trim();
+  if (!username || !password) return "";
+  return link ? `${username}|${password}|${link}` : `${username}|${password}`;
+};
+const buildTeamMarketplaceExportLines = (account = {}) => {
+  const username = String(account?.username || "").trim();
+  const password = String(account?.password || "").trim();
+  const recoveryUrl = String(account?.recoveryUrl || "").trim();
+  if (!username || !password) return [];
+
+  const saleMode = normalizeTeamSaleMode(account?.saleMode);
+  if (saleMode === "business") {
+    const activeCustomers = getActiveTeamCustomers(account).length;
+    if (activeCustomers > 0) return [];
+    return [
+      recoveryUrl
+        ? `${username}|${password}|${recoveryUrl}`
+        : `${username}|${password}`,
+    ];
+  }
+
+  const slots = normalizeTeamSlotsForUi(account?.slots);
+  return slots
+    .map((slot, index) => ({ slot, index }))
+    .filter(({ slot }) => !slot?.gmail && slot?.status !== "active")
+    .map(
+      ({ index }) =>
+        `Slot ${index + 1}|${username}|Ban gui kem gmail chinh chu de admin up`,
+    );
+};
 const normalizeTeamAccountForUi = (account = {}) => {
   const { emailPassword, ...rest } = account || {};
   return {
@@ -644,6 +677,7 @@ function App() {
   const [warrantyReplacementId, setWarrantyReplacementId] = useState("");
   const [warrantyReason, setWarrantyReason] = useState("");
   const [selectedChatgptIds, setSelectedChatgptIds] = useState([]);
+  const [selectedTeamIds, setSelectedTeamIds] = useState([]);
   // CUSTOM ALERT & CONFIRM MODAL
   const [alertInfo, setAlertInfo] = useState({
     show: false,
@@ -850,6 +884,13 @@ function App() {
     const validIds = new Set(accounts.map((acc) => acc.id));
     setSelectedChatgptIds((prev) => prev.filter((id) => validIds.has(id)));
   }, [accounts]);
+
+  useEffect(() => {
+    const validIds = new Set(teamAccounts.map((acc) => String(acc?.id || "")));
+    setSelectedTeamIds((prev) =>
+      prev.filter((id) => validIds.has(String(id || ""))),
+    );
+  }, [teamAccounts]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -2016,6 +2057,67 @@ function App() {
     });
   };
 
+  const handleToggleTeamSelection = (accId, checked) => {
+    const id = String(accId || "");
+    if (!id) return;
+    setSelectedTeamIds((prev) => {
+      if (checked) {
+        if (prev.includes(id)) return prev;
+        return [...prev, id];
+      }
+      return prev.filter((item) => item !== id);
+    });
+  };
+
+  const handleToggleSelectAllFilteredTeam = (checked, filteredAccountIds = []) => {
+    const ids = Array.isArray(filteredAccountIds)
+      ? filteredAccountIds
+          .map((id) => String(id || "").trim())
+          .filter(Boolean)
+      : [];
+    setSelectedTeamIds((prev) => {
+      const selected = new Set(prev);
+      if (checked) {
+        ids.forEach((id) => selected.add(id));
+      } else {
+        ids.forEach((id) => selected.delete(id));
+      }
+      return Array.from(selected);
+    });
+  };
+
+  const handleCopySelectedChatgptMarketplaceFormat = () => {
+    const lines = accounts
+      .filter((acc) => selectedChatgptIds.includes(String(acc?.id || "")))
+      .map((acc) => buildChatgptMarketplaceExportLine(acc))
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      showAlert("Khong co du lieu", "Khong co acc hop le de copy format web.", "warning");
+      return;
+    }
+
+    handleCopy(lines.join("\n"), `Da copy ${lines.length} dong format web`);
+  };
+
+  const handleCopySelectedTeamMarketplaceFormat = () => {
+    const lines = teamAccounts
+      .filter((acc) => selectedTeamIds.includes(String(acc?.id || "")))
+      .flatMap((acc) => buildTeamMarketplaceExportLines(acc))
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      showAlert(
+        "Khong co du lieu",
+        "Khong co Team hop le de copy format web. Business dang co khach se duoc bo qua.",
+        "warning",
+      );
+      return;
+    }
+
+    handleCopy(lines.join("\n"), `Da copy ${lines.length} dong Team format web`);
+  };
+
   const handleQuickTeamSaleModeChange = async (acc, nextMode) => {
     const targetMode = normalizeTeamSaleMode(nextMode);
     const currentMode = normalizeTeamSaleMode(acc?.saleMode);
@@ -2726,6 +2828,16 @@ function App() {
         teamExpiryMax,
       ),
     );
+  const filteredTeamIds = filteredTeamAccounts.map((acc) => String(acc?.id || ""));
+  const selectedTeamIdSet = new Set(
+    selectedTeamIds.map((id) => String(id || "")),
+  );
+  const selectedFilteredTeamCount = filteredTeamIds.filter((id) =>
+    selectedTeamIdSet.has(id),
+  ).length;
+  const allFilteredTeamSelected =
+    filteredTeamIds.length > 0 &&
+    selectedFilteredTeamCount === filteredTeamIds.length;
   const teamSlotAccounts = filteredTeamAccounts.filter(
     (acc) => normalizeTeamSaleMode(acc.saleMode) === "slot",
   );
@@ -3284,6 +3396,13 @@ function App() {
                   className="flex items-center gap-2 bg-amber-700 hover:bg-amber-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Globe size={18} /> Day sang kho duoi 25
+                </button>
+                <button
+                  onClick={handleCopySelectedChatgptMarketplaceFormat}
+                  disabled={selectedChatgptIds.length === 0}
+                  className="flex items-center gap-2 bg-cyan-700 hover:bg-cyan-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Copy size={18} /> Copy format web
                 </button>
                 <button
                   onClick={() => setShowImportGPTModal(true)}
@@ -6095,6 +6214,38 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 )}
               </div>
 
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-xs text-slate-300 px-3 py-2 bg-slate-800 rounded-lg border border-slate-700">
+                  Da chon: <span className="font-bold text-white">{selectedTeamIds.length}</span>
+                </div>
+                <button
+                  onClick={() =>
+                    handleToggleSelectAllFilteredTeam(
+                      !allFilteredTeamSelected,
+                      filteredTeamIds,
+                    )
+                  }
+                  disabled={filteredTeamIds.length === 0}
+                  className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {allFilteredTeamSelected ? "Bo chon tat ca dang loc" : "Chon tat ca dang loc"}
+                </button>
+                {selectedTeamIds.length > 0 && (
+                  <button
+                    onClick={() => setSelectedTeamIds([])}
+                    className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg font-semibold text-sm"
+                  >
+                    Bo chon
+                  </button>
+                )}
+                <button
+                  onClick={handleCopySelectedTeamMarketplaceFormat}
+                  disabled={selectedTeamIds.length === 0}
+                  className="flex items-center gap-2 bg-cyan-700 hover:bg-cyan-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Copy size={18} /> Copy format web
+                </button>
+              </div>
               <div className="grid gap-6 xl:grid-cols-2 items-start">
                 {teamSections.map((section) => (
                   <div
@@ -6134,8 +6285,16 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   <div key={acc.id} className={`rounded-2xl border shadow-xl overflow-hidden ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}>
                     {/* Account header */}
                     <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 bg-indigo-900/40 border-b border-slate-700">
-                      <div>
-                        <div className="flex items-center gap-2 font-bold text-white text-sm">
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedTeamIdSet.has(String(acc?.id || ""))}
+                          onChange={(e) => handleToggleTeamSelection(acc.id, e.target.checked)}
+                          className="mt-1 w-4 h-4 accent-emerald-500 cursor-pointer shrink-0"
+                          title="Chon Team"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2 font-bold text-white text-sm">
                           <span className="text-indigo-300">🏢</span>
                           <span className="font-mono text-xl">{acc.username}</span>
                           <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors ml-2" onClick={() => handleCopy(acc.username, "Đã copy Tên Team")} title="Copy Username"><Copy size={14} /> Copy</button>
@@ -6164,6 +6323,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           )}
                         </div>
                         {acc.note && <div className="text-xs text-yellow-500/80 mt-3 italic bg-yellow-900/10 p-2 rounded inline-block">📝 {acc.note}</div>}
+                      </div>
                       </div>
                       <div className="flex flex-col items-end justify-between gap-1 shrink-0 h-full min-h-[140px] w-full sm:w-auto">
                         <div className="flex flex-col items-end gap-1 w-full">
