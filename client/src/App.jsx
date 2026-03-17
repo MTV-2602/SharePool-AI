@@ -543,6 +543,7 @@ function App() {
     deleteUser: false,
     moveUser: false,
     extendUser: false,
+    bulkWarehouseMove: false,
     addAccount: false,
     editAccount: false,
     deleteAccount: false,
@@ -1658,6 +1659,171 @@ function App() {
         changeShelf: { ...prev.changeShelf, [acc.id]: false },
       }));
     }
+  };
+
+  const handleBulkWarehouseMove = (targetShelf) => {
+    const nextShelf = normalizePackage2Shelf(targetShelf);
+    if (loadingStates.bulkWarehouseMove) return;
+
+    const selectedAccounts = accounts.filter((acc) =>
+      selectedChatgptIds.includes(String(acc?.id || "")),
+    );
+
+    const unsupported = [];
+    const soldAccounts = [];
+    const occupiedAccounts = [];
+    const nearExpiryAccounts = [];
+    const unchangedAccounts = [];
+    const targets = [];
+
+    selectedAccounts.forEach((acc) => {
+      const id = String(acc?.id || "");
+      const label = acc?.username || id || "Khong ro acc";
+      if (!supportsChatgptMarketType(acc?.type)) {
+        unsupported.push(label);
+        return;
+      }
+      if (marketplaceTrackedAccountIds.has(id)) {
+        soldAccounts.push(label);
+        return;
+      }
+
+      const currentShelf = normalizePackage2Shelf(acc?.package2Shelf);
+      if (currentShelf === nextShelf) {
+        unchangedAccounts.push(label);
+        return;
+      }
+
+      const hasUsers = Array.isArray(acc?.users) && acc.users.length > 0;
+      if (nextShelf === "cheap" && hasUsers) {
+        occupiedAccounts.push(label);
+        return;
+      }
+
+      const daysLeft = acc?.expiredAt
+        ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
+        : null;
+      if (
+        nextShelf === "cheap" &&
+        daysLeft !== null &&
+        Number.isFinite(daysLeft) &&
+        daysLeft <= 25
+      ) {
+        nearExpiryAccounts.push(label);
+        return;
+      }
+
+      targets.push(acc);
+    });
+
+    const targetLabel = nextShelf === "cheap" ? "Kho market" : "Kho tong";
+    if (targets.length === 0) {
+      const reasons = [];
+      if (unsupported.length) reasons.push(`Khong dung loai: ${unsupported.length}`);
+      if (soldAccounts.length) reasons.push(`Da ban: ${soldAccounts.length}`);
+      if (occupiedAccounts.length) reasons.push(`Dang co khach: ${occupiedAccounts.length}`);
+      if (nearExpiryAccounts.length) reasons.push(`Duoi 25 ngay: ${nearExpiryAccounts.length}`);
+      if (unchangedAccounts.length) reasons.push(`Da o ${targetLabel}: ${unchangedAccounts.length}`);
+      showAlert(
+        "Khong co acc hop le",
+        reasons.length > 0
+          ? reasons.join("\n")
+          : "Hay chon tai khoan hop le de chuyen kho.",
+        "warning",
+      );
+      return;
+    }
+
+    showConfirm(
+      "Chuyen kho nhanh",
+      `Se chuyen ${targets.length} tai khoan da chon sang ${targetLabel}.`,
+      async () => {
+        setLoadingStates((prev) => ({ ...prev, bulkWarehouseMove: true }));
+        const updatedMap = new Map();
+        const failedLabels = [];
+        let success = 0;
+        let failed = 0;
+
+        try {
+          for (const acc of targets) {
+            try {
+              const response = await axios.put(
+                `/api/chatgpt/${acc.id}`,
+                withExpectedUpdatedAt(
+                  {
+                    package2Shelf: nextShelf,
+                  },
+                  acc,
+                ),
+                {
+                  requestLabel: `Dang chuyen sang ${targetLabel}`,
+                  skipGlobalLoading: true,
+                },
+              );
+              const updatedAcc = response?.data?.account;
+              if (updatedAcc?.id) {
+                updatedMap.set(String(updatedAcc.id), {
+                  ...acc,
+                  ...updatedAcc,
+                  package2Shelf: normalizePackage2Shelf(updatedAcc.package2Shelf),
+                });
+              }
+              success += 1;
+            } catch (error) {
+              failed += 1;
+              failedLabels.push(
+                `${acc.username || acc.id}: ${getApiErrorMessage(
+                  error,
+                  "Khong the cap nhat kho",
+                )}`,
+              );
+            }
+          }
+
+          if (updatedMap.size > 0) {
+            setAccounts((prev) =>
+              prev.map((acc) => updatedMap.get(String(acc.id || "")) || acc),
+            );
+          } else {
+            await fetchData();
+          }
+
+          if (updatedMap.size !== targets.length) {
+            await fetchData();
+          }
+
+          setSelectedChatgptIds((prev) =>
+            prev.filter((id) => !updatedMap.has(String(id || ""))),
+          );
+          broadcastDataChange();
+
+          const skippedLines = [];
+          if (soldAccounts.length) skippedLines.push(`Da bo qua acc da ban: ${soldAccounts.length}`);
+          if (occupiedAccounts.length) skippedLines.push(`Da bo qua acc dang co khach: ${occupiedAccounts.length}`);
+          if (nearExpiryAccounts.length) skippedLines.push(`Da bo qua acc duoi 25 ngay: ${nearExpiryAccounts.length}`);
+          if (unsupported.length) skippedLines.push(`Da bo qua acc sai loai: ${unsupported.length}`);
+          if (unchangedAccounts.length) skippedLines.push(`Da bo qua acc da o ${targetLabel}: ${unchangedAccounts.length}`);
+          const failedPreview = failedLabels.slice(0, 5);
+          const hiddenFailed = Math.max(0, failedLabels.length - failedPreview.length);
+          if (hiddenFailed > 0) {
+            failedPreview.push(`... va ${hiddenFailed} loi khac`);
+          }
+
+          showAlert(
+            failed === 0 ? "Chuyen kho xong" : "Chuyen kho xong nhung co loi",
+            [
+              `Thanh cong: ${success}`,
+              `That bai: ${failed}`,
+              ...skippedLines,
+              ...failedPreview,
+            ].join("\n"),
+            failed === 0 ? "success" : "warning",
+          );
+        } finally {
+          setLoadingStates((prev) => ({ ...prev, bulkWarehouseMove: false }));
+        }
+      },
+    );
   };
 
   const handleToggleChatgptSelection = (accId, checked) => {
@@ -2874,18 +3040,31 @@ function App() {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="hidden text-xs text-slate-300 px-3 py-2 bg-slate-800 rounded-lg border border-slate-700">
+                <div className="text-xs text-slate-300 px-3 py-2 bg-slate-800 rounded-lg border border-slate-700">
                   Đã chọn: <span className="font-bold text-white">{selectedChatgptIds.length}</span>
                 </div>
                 {selectedChatgptIds.length > 0 && (
                   <button
                     onClick={() => setSelectedChatgptIds([])}
-                    className="hidden items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg font-semibold text-sm"
+                    className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg font-semibold text-sm"
                   >
                     Bỏ chọn
                   </button>
                 )}
-                
+                <button
+                  onClick={() => handleBulkWarehouseMove("none")}
+                  disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
+                  className="flex items-center gap-2 bg-blue-700 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <ArrowRightLeft size={18} /> Về kho tổng
+                </button>
+                <button
+                  onClick={() => handleBulkWarehouseMove("cheap")}
+                  disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
+                  className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Globe size={18} /> Đẩy sang kho market
+                </button>
                 <button
                   onClick={() => setShowImportGPTModal(true)}
                   className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center"
@@ -6360,4 +6539,3 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 }
 
 export default App;
-
