@@ -4761,140 +4761,318 @@ function App() {
                                 const isExpired = daysRemaining !== null && daysRemaining <= 0;
                                 const isNearExpiry =
                                   daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 3;
+                                const showMarketplaceManagementCard =
+                                  (!!u && isDatammoManagedUser(u)) ||
+                                  isTrackedMarketplaceAccount ||
+                                  !!warrantyCase;
+                                const marketplaceCardClasses =
+                                  warrantyInfo?.role === "current"
+                                    ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
+                                    : warrantyCase
+                                      ? "border-amber-700/50 bg-amber-950/20 text-amber-100"
+                                      : "border-indigo-700/40 bg-indigo-950/20 text-indigo-100";
+                                const marketplaceChipClasses =
+                                  warrantyInfo?.role === "current"
+                                    ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-200"
+                                    : warrantyCase
+                                      ? "border-amber-500/30 bg-amber-500/15 text-amber-200"
+                                      : "border-indigo-500/30 bg-indigo-500/15 text-indigo-200";
+                                const marketplaceStatusLabel = warrantyCase
+                                  ? warrantyInfo?.role === "current"
+                                    ? "Dang bao hanh"
+                                    : "Lich su bao hanh"
+                                  : "Da ban";
 
                                 return (
                                   <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
                                     {acc.users?.length > 0 ? (
-                                      <div
-                                        className={`flex justify-between items-center text-sm font-bold p-1 rounded ${isExpired ? "bg-red-900/20" : ""}`}
-                                      >
+                                      showMarketplaceManagementCard ? (
                                         <div
-                                          className={
-                                            isExpired
-                                              ? "text-red-400"
-                                              : "text-white"
-                                          }
+                                          className={`rounded-xl border px-3 py-3 shadow-sm ${marketplaceCardClasses}`}
                                         >
-                                          <span className="flex items-center gap-2">
-                                            {isExpired && (
-                                              <AlertCircle
-                                                size={14}
-                                                className="text-red-500"
-                                              />
-                                            )}
-                                            {isNearExpiry && (
-                                              <AlertTriangle
-                                                size={14}
-                                                className="text-yellow-500"
-                                              />
-                                            )}
-                                            👤 {getUserName(u)}
-                                          </span>
-                                          <span
-                                            className={`text-[10px] block ml-6 ${isExpired
-                                              ? "text-red-300"
-                                              : isNearExpiry
-                                                ? "text-yellow-400"
-                                                : daysRemaining !== null && daysRemaining > 30
-                                                  ? "text-purple-400"
-                                                  : "text-slate-400"
-                                              }`}
-                                          >
-                                            {getUserDate(u)}
-                                            {daysRemaining !== null && (
-                                              <span className="ml-1">
-                                                {isExpired
-                                                  ? `(HH ${Math.abs(daysRemaining)}ngày)`
-                                                  : `(Còn ${daysRemaining}ngày)`}
-                                              </span>
-                                            )}
-                                          </span>
-                                          {/* Ngày hết hạn khách */}
-                                          {getUserExpiryDate(u) && (
-                                            <span className={`text-[10px] block ml-6 font-semibold ${isExpired ? "text-red-500" : isNearExpiry ? "text-yellow-500" : "text-emerald-500"
-                                              }`}>
-                                              🕑 HH: {getUserExpiryDate(u)}
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                              <div className="flex items-center gap-2">
+                                                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-slate-950/40">
+                                                  <Shield size={12} />
+                                                </span>
+                                                <div>
+                                                  <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white">
+                                                    Don san
+                                                  </div>
+                                                  <div className="mt-0.5 text-[10px] leading-relaxed text-slate-300">
+                                                    {providerLabel} · {getUserName(u)}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <span
+                                              className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${marketplaceChipClasses}`}
+                                            >
+                                              {marketplaceStatusLabel}
                                             </span>
-                                          )}
-                                          {isDatammoManagedUser(u) && (
-                                            <span className="mt-2 ml-6 inline-flex w-fit items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-200">
+                                          </div>
+
+                                          <div className="mt-3 space-y-1.5 text-[10px]">
+                                            <div className="flex items-center justify-between gap-3">
+                                              <span className="text-slate-400">Order</span>
+                                              <span className="font-semibold text-white">
+                                                {datammoOrderId || "Khong ro"}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center justify-between gap-3">
+                                              <span className="text-slate-400">Ngay vao</span>
+                                              <span className="font-semibold text-white">
+                                                {getUserDate(u) || "--"}
+                                              </span>
+                                            </div>
+                                            {getUserExpiryDate(u) && (
+                                              <div className="flex items-center justify-between gap-3">
+                                                <span className="text-slate-400">Het han</span>
+                                                <span
+                                                  className={`font-semibold ${
+                                                    isExpired
+                                                      ? "text-red-300"
+                                                      : isNearExpiry
+                                                        ? "text-yellow-300"
+                                                        : "text-emerald-300"
+                                                  }`}
+                                                >
+                                                  {getUserExpiryDate(u)}
+                                                </span>
+                                              </div>
+                                            )}
+                                            {daysRemaining !== null && (
+                                              <div className="flex items-center justify-between gap-3">
+                                                <span className="text-slate-400">Tinh trang</span>
+                                                <span
+                                                  className={`font-semibold ${
+                                                    isExpired
+                                                      ? "text-red-300"
+                                                      : isNearExpiry
+                                                        ? "text-yellow-300"
+                                                        : "text-cyan-200"
+                                                  }`}
+                                                >
+                                                  {isExpired
+                                                    ? `Het han ${Math.abs(daysRemaining)} ngay`
+                                                    : `Con ${daysRemaining} ngay`}
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          <div className="mt-3 flex flex-wrap gap-1.5">
+                                            <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
                                               {providerLabel}
                                             </span>
-                                          )}
-                                          {renderWarrantySummary("mt-2 ml-6")}
-                                        </div>
-                                        <div className="flex gap-2">
-                                          {canOpenDatammoWarranty && (
-                                            <button
-                                              type="button"
-                                              onClick={() => openWarrantyModal(acc)}
-                                              className="text-cyan-400 hover:text-white"
-                                              title={`Bảo hành ${providerLabel}`}
-                                            >
-                                              <Shield size={14} />
-                                            </button>
-                                          )}
-                                          {/* EXTEND BUTTON (Only for Expired/Near Expiry) */}
-                                          {(isExpired || isNearExpiry) && (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleExtendUser(acc.id, 0, u)
-                                              }
-                                              className="text-green-400 hover:text-white"
-                                              title="Gia hạn"
-                                            >
-                                              <RotateCw size={14} />
-                                            </button>
-                                          )}
-
-                                          {/* MOVE BUTTON (Blocked if Expired) */}
-                                          {!isExpired ? (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                openMoveUserModal(acc.id, 0, u)
-                                              }
-                                              className="text-orange-400 hover:text-white"
-                                              title="Chuyển khách"
-                                            >
-                                              <ArrowRightLeft size={14} />
-                                            </button>
-                                          ) : (
-                                            <span
-                                              className="text-gray-600 cursor-not-allowed"
-                                              title="Hết hạn: Không thể chuyển"
-                                            >
-                                              <ArrowRightLeft size={14} />
+                                            <span className="rounded-full border border-white/10 bg-slate-950/50 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white/80">
+                                              Da ban
                                             </span>
+                                            {warrantyCase && (
+                                              <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-amber-200">
+                                                Bao hanh lan {warrantyRounds.length}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {warrantyCase && (
+                                            <div className="mt-3 rounded-lg border border-white/10 bg-slate-950/30 px-2.5 py-2 text-[10px] text-slate-200">
+                                              <div className="font-semibold text-white">
+                                                {warrantyRoleLabel}
+                                              </div>
+                                              {warrantyInfo?.role === "current" ? (
+                                                <div className="mt-1 text-slate-300">
+                                                  Acc nay dang la acc hien tai cua don.
+                                                </div>
+                                              ) : latestWarrantyTarget ? (
+                                                <div className="mt-1 text-slate-300">
+                                                  Hien tai dang thay boi{" "}
+                                                  <span className="font-semibold text-white">
+                                                    {latestWarrantyTarget}
+                                                  </span>
+                                                </div>
+                                              ) : null}
+                                            </div>
                                           )}
 
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              openEditUserModal(acc.id, 0, u)
-                                            }
-                                            className="text-blue-400 hover:text-white ml-1"
-                                            title="Sửa tên"
-                                          >
-                                            <Pencil size={14} />
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleDeleteUser(
-                                                acc.id,
-                                                0,
-                                                getUserName(u),
-                                              )
-                                            }
-                                            className="text-red-400 hover:text-white ml-1"
-                                            title="Xóa khách"
-                                          >
-                                            <Trash2 size={14} />
-                                          </button>
+                                          <div className="mt-3 grid grid-cols-2 gap-2">
+                                            {canOpenDatammoWarranty && (
+                                              <button
+                                                type="button"
+                                                onClick={() => openWarrantyModal(acc)}
+                                                className="rounded-lg bg-cyan-700 hover:bg-cyan-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
+                                                title={`Bảo hành ${providerLabel}`}
+                                              >
+                                                Bao hanh
+                                              </button>
+                                            )}
+                                            {(isExpired || isNearExpiry) && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleExtendUser(acc.id, 0, u)
+                                                }
+                                                className="rounded-lg bg-emerald-700 hover:bg-emerald-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
+                                                title="Gia hạn"
+                                              >
+                                                Gia han
+                                              </button>
+                                            )}
+                                            {!isExpired ? (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  openMoveUserModal(acc.id, 0, u)
+                                                }
+                                                className="rounded-lg bg-orange-700 hover:bg-orange-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
+                                                title="Chuyển khách"
+                                              >
+                                                Chuyen
+                                              </button>
+                                            ) : (
+                                              <div className="rounded-lg border border-slate-700 bg-slate-900/60 px-2.5 py-2 text-center text-[11px] font-bold text-slate-500">
+                                                Khong chuyen
+                                              </div>
+                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                openEditUserModal(acc.id, 0, u)
+                                              }
+                                              className="rounded-lg bg-blue-700 hover:bg-blue-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
+                                              title="Sửa tên"
+                                            >
+                                              Sua
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleDeleteUser(
+                                                  acc.id,
+                                                  0,
+                                                  getUserName(u),
+                                                )
+                                              }
+                                              className="col-span-2 rounded-lg bg-red-700 hover:bg-red-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
+                                              title="Xóa khách"
+                                            >
+                                              Xoa khach
+                                            </button>
+                                          </div>
                                         </div>
-                                      </div>
+                                      ) : (
+                                        <div
+                                          className={`flex justify-between items-center text-sm font-bold p-1 rounded ${isExpired ? "bg-red-900/20" : ""}`}
+                                        >
+                                          <div
+                                            className={
+                                              isExpired
+                                                ? "text-red-400"
+                                                : "text-white"
+                                            }
+                                          >
+                                            <span className="flex items-center gap-2">
+                                              {isExpired && (
+                                                <AlertCircle
+                                                  size={14}
+                                                  className="text-red-500"
+                                                />
+                                              )}
+                                              {isNearExpiry && (
+                                                <AlertTriangle
+                                                  size={14}
+                                                  className="text-yellow-500"
+                                                />
+                                              )}
+                                              👤 {getUserName(u)}
+                                            </span>
+                                            <span
+                                              className={`text-[10px] block ml-6 ${isExpired
+                                                ? "text-red-300"
+                                                : isNearExpiry
+                                                  ? "text-yellow-400"
+                                                  : daysRemaining !== null && daysRemaining > 30
+                                                    ? "text-purple-400"
+                                                    : "text-slate-400"
+                                                }`}
+                                            >
+                                              {getUserDate(u)}
+                                              {daysRemaining !== null && (
+                                                <span className="ml-1">
+                                                  {isExpired
+                                                    ? `(HH ${Math.abs(daysRemaining)}ngày)`
+                                                    : `(Còn ${daysRemaining}ngày)`}
+                                                </span>
+                                              )}
+                                            </span>
+                                            {getUserExpiryDate(u) && (
+                                              <span className={`text-[10px] block ml-6 font-semibold ${isExpired ? "text-red-500" : isNearExpiry ? "text-yellow-500" : "text-emerald-500"
+                                                }`}>
+                                                🕑 HH: {getUserExpiryDate(u)}
+                                              </span>
+                                            )}
+                                            {renderWarrantySummary("mt-2 ml-6")}
+                                          </div>
+                                          <div className="flex gap-2">
+                                            {(isExpired || isNearExpiry) && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleExtendUser(acc.id, 0, u)
+                                                }
+                                                className="text-green-400 hover:text-white"
+                                                title="Gia hạn"
+                                              >
+                                                <RotateCw size={14} />
+                                              </button>
+                                            )}
+                                            {!isExpired ? (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  openMoveUserModal(acc.id, 0, u)
+                                                }
+                                                className="text-orange-400 hover:text-white"
+                                                title="Chuyển khách"
+                                              >
+                                                <ArrowRightLeft size={14} />
+                                              </button>
+                                            ) : (
+                                              <span
+                                                className="text-gray-600 cursor-not-allowed"
+                                                title="Hết hạn: Không thể chuyển"
+                                              >
+                                                <ArrowRightLeft size={14} />
+                                              </span>
+                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                openEditUserModal(acc.id, 0, u)
+                                              }
+                                              className="text-blue-400 hover:text-white ml-1"
+                                              title="Sửa tên"
+                                            >
+                                              <Pencil size={14} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleDeleteUser(
+                                                  acc.id,
+                                                  0,
+                                                  getUserName(u),
+                                                )
+                                              }
+                                              className="text-red-400 hover:text-white ml-1"
+                                              title="Xóa khách"
+                                            >
+                                              <Trash2 size={14} />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )
                                     ) : (
                                       <div className="flex flex-col gap-2">
                                         {renderWarrantySummary()}
