@@ -4176,18 +4176,29 @@ function App() {
                                               : "Không lên kệ Datammo"}
                                           </span>
                                         </div>
-                                        {isOnDatammoShelf && (
+                                        {isOnDatammoShelf ? (
                                           <div className="flex gap-1">
                                             <button
                                               type="button"
-                                              onClick={() => openAddUserModal(acc.id, "[Datammo] Khách mới")}
+                                              onClick={() => openAddUserModal(acc.id, "[Datammo] Khach moi")}
                                               className="w-full text-center text-xs px-2 py-1.5 bg-teal-700 hover:bg-teal-600 font-bold rounded text-white transition-colors"
-                                              title="Gán Khách và tự điền tên Datammo"
+                                              title="Gan Khach va tu dien ten Datammo"
                                             >
                                               + Datammo
                                             </button>
                                           </div>
-                                        )}
+                                        ) : !marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
+                                          <div className="flex gap-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => openAddUserModal(acc.id)}
+                                              className="w-full text-center text-xs px-2 py-1.5 bg-blue-700 hover:bg-blue-600 font-bold rounded text-white transition-colors"
+                                              title="Them khach thuong"
+                                            >
+                                              + Khach
+                                            </button>
+                                          </div>
+                                        ) : null}
                                       </div>
                                     )}
                                   </div>
