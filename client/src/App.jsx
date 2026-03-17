@@ -195,16 +195,6 @@ const getDatammoWarrantyInfoForAccount = (accountId, cases = []) => {
 };
 const isAccountBusyInDatammoWarranty = (accountId, cases = []) =>
   !!getDatammoWarrantyInfoForAccount(accountId, cases);
-const createDatammoBatchProgressState = () => ({
-  active: false,
-  title: "",
-  total: 0,
-  completed: 0,
-  success: 0,
-  failed: 0,
-  percent: 0,
-  currentLabel: "",
-});
 const normalizeDatammoOrders = (orders = []) =>
   [...(Array.isArray(orders) ? orders : [])].sort(
     (a, b) =>
@@ -480,7 +470,6 @@ const buildMoveExpectedPayload = (payload = {}, fromRecord = {}, toRecord = {}) 
   if (toExpectedUpdatedAt) nextPayload.toExpectedUpdatedAt = toExpectedUpdatedAt;
   return nextPayload;
 };
-const buildDatammoResyncKey = (scope = "", id = "") => `${scope}:${String(id || "")}`;
 const getApiErrorMessage = (error, fallback) =>
   error?.response?.data?.error || error?.message || fallback;
 
@@ -548,8 +537,6 @@ function App() {
   const [simpleEditForm, setSimpleEditForm] = useState({ id: "", username: "", password: "", duration: "1M", note: "", expiredAt: "", updatedAt: "" });
   const [assignUserAcc, setAssignUserAcc] = useState(null);
   const [assignUserName, setAssignUserName] = useState("");
-  const [datammoResyncLoading, setDatammoResyncLoading] = useState({});
-
   const [loadingStates, setLoadingStates] = useState({
     addUser: false,
     editUser: false,
@@ -584,10 +571,6 @@ function App() {
   const [warrantyReplacementId, setWarrantyReplacementId] = useState("");
   const [warrantyReason, setWarrantyReason] = useState("");
   const [selectedChatgptIds, setSelectedChatgptIds] = useState([]);
-  const [datammoBatchProgress, setDatammoBatchProgress] = useState(
-    createDatammoBatchProgressState(),
-  );
-
   // CUSTOM ALERT & CONFIRM MODAL
   const [alertInfo, setAlertInfo] = useState({
     show: false,
@@ -1769,28 +1752,6 @@ function App() {
       .replace(/\s{2,}/g, " ")
       .trim();
 
-  const handleResyncTeamDatammo = async (acc) => {
-    if (!acc?.id) return;
-    const loadingKey = buildDatammoResyncKey("team", acc.id);
-    if (datammoResyncLoading[loadingKey]) return;
-
-    setDatammoResyncLoading((prev) => ({ ...prev, [loadingKey]: true }));
-    try {
-      await axios.post(
-        `/api/team/${acc.id}/resync-datammo`,
-        withExpectedUpdatedAt({}, acc),
-        { requestLabel: "Đang resync Datammo" },
-      );
-      await fetchData();
-      broadcastDataChange();
-      showAlert("Thành công", "Đã resync Datammo cho Team này.", "success");
-    } catch (error) {
-      showAlert("Lỗi", getApiErrorMessage(error, "Không thể resync Datammo"), "error");
-    } finally {
-      setDatammoResyncLoading((prev) => ({ ...prev, [loadingKey]: false }));
-    }
-  };
-
   const openWarrantyModal = (acc) => {
     setWarrantySourceAcc(acc);
     setWarrantyReplacementId("");
@@ -1896,15 +1857,6 @@ function App() {
       setLoadingStates((prev) => ({ ...prev, warranty: false }));
     }
   };
-
-  const handleResyncTeamGroupDatammo = (list = [], label = "Team dang xem") => {
-    runDatammoBatchResync({
-      title: `Đồng bộ ${label}`,
-      targets: buildTeamDatammoTargets(list),
-      emptyMessage: `Không có tài khoản trong nhóm ${label} để đồng bộ.`,
-    });
-  };
-
 
   const handleCopy = (text, message = "Đã copy nội dung!") => {
     navigator.clipboard.writeText(text);
@@ -2590,53 +2542,6 @@ function App() {
         {activeTab === "chatgpt" && (
           <div>
             {/* GLOBAL EXPIRY / RESCUE BANNER */}
-            {datammoBatchProgress.active && (
-              <div className="mb-4 rounded-xl border border-cyan-700/50 bg-cyan-950/20 p-4 shadow-lg">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-bold text-cyan-300">
-                      {datammoBatchProgress.title || "Đang đồng bộ Datammo"}
-                    </div>
-                    <div className="text-xs text-slate-300">
-                      Đang xử lý:{" "}
-                      <span className="font-semibold text-white">
-                        {datammoBatchProgress.currentLabel || "Đang chuẩn bị..."}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="text-right text-xs text-slate-300">
-                    <div>
-                      {datammoBatchProgress.completed}/{datammoBatchProgress.total} tài khoản
-                    </div>
-                    <div>
-                      Thành công:{" "}
-                      <span className="font-semibold text-emerald-300">
-                        {datammoBatchProgress.success}
-                      </span>{" "}
-                      • Thất bại:{" "}
-                      <span className="font-semibold text-rose-300">
-                        {datammoBatchProgress.failed}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-300"
-                    style={{
-                      width: `${Math.max(0, Math.min(100, datammoBatchProgress.percent || 0))}%`,
-                    }}
-                  />
-                </div>
-                <div className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-cyan-200">
-                  Tiến độ thực: {datammoBatchProgress.percent}%
-                </div>
-                <div className="mt-1 text-[11px] text-slate-400">
-                  Chế độ an toàn: tuần tự từng tài khoản, backend tự giãn nhịp gọi Datammo.
-                </div>
-              </div>
-            )}
-
             {(() => {
               const urgentList = [];
 
@@ -5660,45 +5565,6 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleResyncTeamGroupDatammo(
-                      filteredTeamAccounts,
-                      "Team đang lọc",
-                    )
-                  }
-                  disabled={datammoBatchProgress.active}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-cyan-700/30 text-cyan-200 border-cyan-600/40 hover:bg-cyan-700/50 disabled:opacity-60 disabled:cursor-wait"
-                >
-                  Đồng bộ Team đang lọc
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleResyncTeamGroupDatammo(teamSlotAccounts, "Team Slot")
-                  }
-                  disabled={datammoBatchProgress.active}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-teal-700/30 text-teal-200 border-teal-600/40 hover:bg-teal-700/50 disabled:opacity-60 disabled:cursor-wait"
-                >
-                  Đồng bộ Team Slot
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleResyncTeamGroupDatammo(
-                      teamBusinessAccounts,
-                      "Team Business",
-                    )
-                  }
-                  disabled={datammoBatchProgress.active}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-indigo-700/30 text-indigo-200 border-indigo-600/40 hover:bg-indigo-700/50 disabled:opacity-60 disabled:cursor-wait"
-                >
-                  Đồng bộ Team Business
-                </button>
-              </div>
-
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
                   Lọc khách
@@ -5874,20 +5740,6 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                           </button>
 
                           <div className="flex gap-2 w-full relative group">
-                            <button
-                              onClick={() => handleResyncTeamDatammo(acc)}
-                              disabled={
-                                !!datammoResyncLoading[buildDatammoResyncKey("team", acc.id)] ||
-                                datammoBatchProgress.active
-                              }
-                              className="bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center disabled:opacity-60 disabled:cursor-wait"
-                            >
-                              <RefreshCw
-                                size={11}
-                                className={datammoResyncLoading[buildDatammoResyncKey("team", acc.id)] ? "animate-spin" : ""}
-                              />
-                              Resync
-                            </button>
                             <button onClick={() => { setTeamEditForm(buildTeamEditFormState({ id: acc.id, username: acc.username, password: acc.password, recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode) })); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
                             <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
                           </div>
@@ -6508,9 +6360,4 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
 }
 
 export default App;
-
-
-
-
-
 
