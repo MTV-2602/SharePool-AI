@@ -675,7 +675,7 @@ const PACKAGE2_SHELF_NONE = "none";
 const PACKAGE2_MIN_DAYS_FOR_SALE = 25;
 const CHATGPT_MARKET_VALUE = PACKAGE2_SHELF_CHEAP;
 const CHATGPT_TOTAL_VALUE = PACKAGE2_SHELF_NONE;
-const CHATGPT_MARKET_SUPPORTED_TYPES = ["package1", "package2"];
+const CHATGPT_MARKET_SUPPORTED_TYPES = ["package1", "package2", "unassigned"];
 const VALID_PACKAGE2_SHELVES = [
   PACKAGE2_SHELF_MAIN,
   PACKAGE2_SHELF_CHEAP,
@@ -772,7 +772,9 @@ const normalizePackage2Shelf = (shelf, fallback = CHATGPT_TOTAL_VALUE) => {
   return fallback;
 };
 const supportsChatgptMarket = (type) =>
-  CHATGPT_MARKET_SUPPORTED_TYPES.includes(String(type || "").trim());
+  CHATGPT_MARKET_SUPPORTED_TYPES.includes(
+    String(type || "unassigned").trim() || "unassigned",
+  );
 const isChatgptMarketAccount = (acc = {}) =>
   supportsChatgptMarket(acc?.type) &&
   normalizePackage2Shelf(acc?.package2Shelf, CHATGPT_TOTAL_VALUE) ===

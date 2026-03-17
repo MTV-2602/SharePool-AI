@@ -50,7 +50,9 @@ const normalizePackage2Shelf = (value) => {
 };
 
 const supportsChatgptMarketType = (value) =>
-  ["package1", "package2"].includes(String(value || "").trim());
+  ["package1", "package2", "unassigned", ""].includes(
+    String(value || "").trim(),
+  );
 
 const getPackage2ShelfLabel = (value) =>
   normalizePackage2Shelf(value) === "cheap" ? "Kho market" : "Kho tong";
@@ -2565,14 +2567,10 @@ function App() {
   const filteredChatgptAccounts = accounts
     .filter((acc) => {
       if (gptSubTab === "total") {
-        return (
-          ["package1", "package2"].includes(String(acc?.type || "")) ||
-          !acc?.type ||
-          acc?.type === "unassigned"
-        );
+        return supportsChatgptMarketType(acc?.type);
       }
       if (gptSubTab === "market") {
-        return ["package1", "package2"].includes(String(acc?.type || ""));
+        return supportsChatgptMarketType(acc?.type);
       }
       return true;
     })
@@ -3229,16 +3227,14 @@ function App() {
             {(() => {
               const totalPoolAccounts = accounts.filter(
                 (a) =>
-                  (["package1", "package2"].includes(String(a?.type || "")) ||
-                    !a?.type ||
-                    a?.type === "unassigned") &&
+                  supportsChatgptMarketType(a?.type) &&
                   !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
                   !isChatgptMarketWarehouse(a),
               );
               const totalCount = totalPoolAccounts.length;
               const marketCount = accounts.filter(
                 (a) =>
-                  (["package1", "package2"].includes(String(a?.type || "")) &&
+                  (supportsChatgptMarketType(a?.type) &&
                     isChatgptMarketWarehouse(a)) ||
                   marketplaceTrackedAccountIds.has(String(a?.id || "")),
               ).length;
@@ -3274,9 +3270,7 @@ function App() {
             {gptSubTab === "total" && (() => {
               const totalPoolAccounts = accounts.filter(
                 (a) =>
-                  (["package1", "package2"].includes(String(a?.type || "")) ||
-                    !a?.type ||
-                    a?.type === "unassigned") &&
+                  supportsChatgptMarketType(a?.type) &&
                   !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
                   !isChatgptMarketWarehouse(a),
               );
@@ -3314,7 +3308,7 @@ function App() {
 
             {gptSubTab === "market" && (() => {
               const package2Accs = accounts.filter((a) =>
-                ["package1", "package2"].includes(String(a?.type || "")),
+                supportsChatgptMarketType(a?.type),
               );
               const soldPackage2Accs = package2Accs.filter((acc) =>
                 marketplaceTrackedAccountIds.has(String(acc?.id || "")),
