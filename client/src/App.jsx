@@ -318,7 +318,11 @@ const buildChatgptCopyText = (account = {}) => {
     `Tài khoản: ${account.username || ""}`,
     `Mật khẩu: ${account.password || ""}`,
   ];
-  if (account.type === "package2" && account.link) {
+  if (
+    account.link &&
+    (account.type === "package2" ||
+      normalizePackage2Shelf(account?.package2Shelf) !== "none")
+  ) {
     lines.push(`Link: ${account.link}`);
   }
   return lines.join("\n");
@@ -3886,7 +3890,7 @@ function App() {
                                 className="bg-indigo-600/80 hover:bg-indigo-400 px-3 py-1.5 rounded text-white text-xs font-bold flex items-center gap-2 transition-transform shadow-md hover:-translate-y-0.5"
                                 onClick={() => handleCopy(buildChatgptCopyText(acc), acc.type === "package2" && acc.link ? "Đã copy Tài khoản, Mật khẩu & Link" : "Đã copy Tài khoản & Mật khẩu")}
                               >
-                                <Copy size={14} /> Copy TK, MK{acc.type === "package2" && acc.link ? " & Link" : ""}
+                                <Copy size={14} /> Copy TK, MK{acc.link && (acc.type === "package2" || normalizePackage2Shelf(acc?.package2Shelf) !== "none") ? " & Link" : ""}
                               </button>
                             </div>
                             {acc.expiredAt && (
@@ -4108,7 +4112,10 @@ function App() {
                                   })}
                                 </div>
                               </div>
-                            ) : acc.type === "package2" ? (
+                            ) : acc.type === "package2" ||
+                              isChatgptMarketWarehouse(acc) ||
+                              isChatgptShortDateWarehouse(acc) ||
+                              marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
                               (() => {
                                 const u = acc.users?.[0];
                                 const package2Shelf = normalizePackage2Shelf(acc.package2Shelf);
