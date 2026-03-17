@@ -1727,6 +1727,14 @@ function App() {
     const nextShelf = normalizePackage2Shelf(shelfValue);
     const currentShelf = normalizePackage2Shelf(acc.package2Shelf);
     if (currentShelf === nextShelf) return;
+    if (hasAssignedCustomer(acc)) {
+      showAlert(
+        "Khong the chuyen kho",
+        "Tai khoan dang co khach. Vui long xoa hoac chuyen khach truoc khi doi kho.",
+        "warning",
+      );
+      return;
+    }
 
     setLoadingStates((prev) => ({
       ...prev,
@@ -1804,7 +1812,7 @@ function App() {
       }
 
       const hasUsers = Array.isArray(acc?.users) && acc.users.length > 0;
-      if (nextShelf === "cheap" && hasUsers) {
+      if (hasUsers) {
         occupiedAccounts.push(label);
         return;
       }
@@ -3740,9 +3748,15 @@ function App() {
                                   onChange={(e) =>
                                     handlePackage2ShelfChange(acc, e.target.value)
                                   }
+                                  title={
+                                    hasAssignedCustomer(acc)
+                                      ? "Tai khoan dang co khach nen khong the doi kho"
+                                      : "Doi kho tai khoan"
+                                  }
                                   disabled={
                                     loadingStates.changeType[acc.id] ||
-                                    loadingStates.changeShelf[acc.id]
+                                    loadingStates.changeShelf[acc.id] ||
+                                    hasAssignedCustomer(acc)
                                   }
                                   className={`
                                     w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center

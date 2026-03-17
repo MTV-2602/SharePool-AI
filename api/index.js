@@ -1798,6 +1798,25 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       normalizedPayload.users !== undefined
         ? normalizedPayload.users
         : existingUsers;
+    const existingShelf = normalizePackage2Shelf(
+      existingAcc.package2Shelf,
+      CHATGPT_TOTAL_VALUE,
+    );
+    const requestedShelf = req.body.package2Shelf !== undefined
+      ? normalizePackage2Shelf(req.body.package2Shelf, existingShelf)
+      : existingShelf;
+    const isManualShelfUpdate =
+      supportsChatgptMarket(targetType) && req.body.package2Shelf !== undefined;
+    const isPackage2ShelfChanged = existingShelf !== requestedShelf;
+    if (
+      isManualShelfUpdate &&
+      isPackage2ShelfChanged &&
+      hasAnyAssignedUsers(nextUsers)
+    ) {
+      return res.status(400).json({
+        error: "Khong the chuyen kho khi tai khoan dang co khach. Vui long xoa hoac chuyen khach truoc.",
+      });
+    }
     const hadRegularPackage2Customer = hasRegularPackage2Customer(existingUsers);
     const shouldAutoUnsetPackage2Shelf =
       supportsChatgptMarket(targetType) &&
@@ -1822,22 +1841,17 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
           "Tài khoản này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
       });
     }
-    const existingShelf = normalizePackage2Shelf(
-      existingAcc.package2Shelf,
-      CHATGPT_TOTAL_VALUE,
-    );
     const updatedShelf = normalizePackage2Shelf(
       normalizedPayload.package2Shelf,
       CHATGPT_TOTAL_VALUE,
     );
-    const isPackage2ShelfChanged = existingShelf !== updatedShelf;
     const isPackage2Context =
       supportsChatgptMarket(existingAcc.type) || supportsChatgptMarket(targetType);
-    const isManualShelfUpdate =
+    const isManualShelfUpdateForResponse =
       isPackage2Context && req.body.package2Shelf !== undefined;
     const requestKeys = Object.keys(req.body || {});
     const isShelfOnlyUpdate =
-      isManualShelfUpdate &&
+      isManualShelfUpdateForResponse &&
       requestKeys.length > 0 &&
       requestKeys.every((key) => key === "package2Shelf");
     if (isShelfOnlyUpdate && !isPackage2ShelfChanged) {
