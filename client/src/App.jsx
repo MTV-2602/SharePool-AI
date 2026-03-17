@@ -4898,23 +4898,74 @@ function App() {
                                     ) : (
                                       <div className="flex flex-col gap-2">
                                         {renderWarrantySummary()}
-                                        <div
-                                          className={`text-center w-full px-2 py-1 font-bold rounded text-[10px] uppercase border flex flex-col gap-0.5 shadow-sm ${isOnDatammoShelf
-                                            ? "bg-teal-900/30 text-teal-400 border-teal-800/50"
+                                        {(() => {
+                                          const warehouseCardClasses = isOnDatammoShelf
+                                            ? "border-emerald-700/50 bg-emerald-950/20 text-emerald-100"
                                             : package2Shelf === "main"
-                                              ? "bg-amber-900/30 text-amber-300 border-amber-800/50"
-                                              : "bg-slate-800 text-slate-300 border-slate-700"
-                                            }`}
-                                        >
-                                          <span className="flex items-center justify-center gap-1">
-                                            <Globe size={10} />
-                                            {isOnDatammoShelf
-                                              ? `Dang o ${package2ShelfLabel}`
-                                              : package2Shelf === "main"
-                                                ? "Dang o kho duoi 25 ngay (day tay)"
-                                                : "Dang o kho tong"}
-                                          </span>
-                                        </div>
+                                              ? "border-amber-700/50 bg-amber-950/20 text-amber-100"
+                                              : "border-slate-700/60 bg-slate-900/80 text-slate-100";
+                                          const warehouseChipClasses = isOnDatammoShelf
+                                            ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
+                                            : package2Shelf === "main"
+                                              ? "border-amber-500/30 bg-amber-500/15 text-amber-200"
+                                              : "border-slate-600/60 bg-slate-800 text-slate-200";
+                                          const warehouseTitle = isOnDatammoShelf
+                                            ? "Kho market"
+                                            : package2Shelf === "main"
+                                              ? "Kho duoi 25 ngay"
+                                              : "Kho tong";
+                                          const warehouseStatus = isOnDatammoShelf
+                                            ? "Chua ban"
+                                            : package2Shelf === "main"
+                                              ? "Day tay"
+                                              : "San sang";
+                                          const warehouseDescription = isOnDatammoShelf
+                                            ? "Acc dang nam trong kho market va se duoc ban tu dong qua Datammo + Shopmini."
+                                            : package2Shelf === "main"
+                                              ? "Acc duoi 25 ngay, chi de day tay va khong di vao API stock/buy."
+                                              : "Acc dang nam o kho tong, co the them khach tay hoac chuyen sang kho khac.";
+                                          return (
+                                            <div
+                                              className={`rounded-xl border px-3 py-3 shadow-sm ${warehouseCardClasses}`}
+                                            >
+                                              <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-slate-950/40">
+                                                      <Globe size={12} />
+                                                    </span>
+                                                    <div>
+                                                      <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white">
+                                                        {warehouseTitle}
+                                                      </div>
+                                                      <div className="mt-0.5 text-[10px] leading-relaxed text-slate-300">
+                                                        {warehouseDescription}
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                                <span
+                                                  className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${warehouseChipClasses}`}
+                                                >
+                                                  {warehouseStatus}
+                                                </span>
+                                              </div>
+                                              {isOnDatammoShelf && (
+                                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                                  <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-200">
+                                                    Datammo
+                                                  </span>
+                                                  <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                                    Shopmini
+                                                  </span>
+                                                  <span className="rounded-full border border-white/10 bg-slate-950/50 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white/80">
+                                                    1 acc / 1 thang
+                                                  </span>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })()}
                                         {isOnDatammoShelf ? (
                                           <div className="flex gap-1">
                                             <button
