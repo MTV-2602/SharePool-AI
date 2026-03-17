@@ -1973,6 +1973,15 @@ function App() {
     }
   };
 
+  const getVisibleAccountNote = (note) =>
+    String(note || "")
+      .replace(
+        /\[Warranty (?:replacement|source)[^\]]+\](?:\s*(?!\[Warranty\b)[^\[]*)?/gi,
+        " ",
+      )
+      .replace(/\s{2,}/g, " ")
+      .trim();
+
   const handleResyncChatgptDatammo = async (acc) => {
     if (!acc?.id || !["package1", "package2"].includes(acc.type)) return;
     const loadingKey = buildDatammoResyncKey("chatgpt", acc.id);
@@ -3972,9 +3981,9 @@ function App() {
                                 <span className="text-slate-600 italic">({formatDate(acc.expiredAt)})</span>
                               </div>
                             )}
-                            {acc.note && (
+                            {getVisibleAccountNote(acc.note) && (
                               <div className="text-xs text-yellow-500/80 italic mt-2 ml-6 bg-yellow-900/10 p-1.5 rounded inline-block">
-                                📝 {acc.note}
+                                📝 {getVisibleAccountNote(acc.note)}
                               </div>
                             )}
                           </td>
@@ -4222,6 +4231,89 @@ function App() {
                                 const warrantyRounds = Array.isArray(warrantyCase?.rounds)
                                   ? warrantyCase.rounds
                                   : [];
+                                const warrantyRoleLabel =
+                                  warrantyInfo?.role === "current"
+                                    ? "Acc dang thay"
+                                    : warrantyInfo?.role === "history"
+                                      ? "Acc da thay"
+                                      : "Acc loi goc";
+                                const renderWarrantySummary = (extraClasses = "") => {
+                                  if (!warrantyCase || warrantyRounds.length === 0) {
+                                    return null;
+                                  }
+                                  return (
+                                    <div
+                                      className={`${extraClasses} rounded-lg border px-2.5 py-2 text-[10px] shadow-sm ${
+                                        warrantyInfo?.role === "current"
+                                          ? "border-cyan-700/50 bg-cyan-950/30 text-cyan-100"
+                                          : "border-amber-700/50 bg-amber-950/20 text-amber-100"
+                                      }`}
+                                    >
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="inline-flex items-center rounded-full border border-white/10 bg-slate-900/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white">
+                                          {warrantyProviderLabel}
+                                        </span>
+                                        <span className="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-white/90">
+                                          {warrantyRoleLabel}
+                                        </span>
+                                        <span className="text-[10px] text-slate-300">
+                                          Don {warrantyCase.orderId || datammoOrderId || "?"}
+                                        </span>
+                                      </div>
+                                      <div className="mt-2 space-y-1.5">
+                                        {warrantyRounds.map((round, roundIndex) => {
+                                          const isRoundSource =
+                                            String(round?.fromAccountId || "") ===
+                                            String(acc.id || "");
+                                          const isRoundTarget =
+                                            String(round?.toAccountId || "") ===
+                                            String(acc.id || "");
+                                          return (
+                                            <div
+                                              key={`${acc.id}-warranty-round-${round?.sequence || round?.createdAt || roundIndex}`}
+                                              className={`rounded-md border px-2 py-1.5 ${
+                                                isRoundTarget
+                                                  ? "border-cyan-400/30 bg-cyan-500/10"
+                                                  : isRoundSource
+                                                    ? "border-amber-400/30 bg-amber-500/10"
+                                                    : "border-slate-700/60 bg-slate-950/40"
+                                              }`}
+                                            >
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[9px] font-black uppercase tracking-[0.08em] text-white/90">
+                                                  Lan {round?.sequence || roundIndex + 1}
+                                                </span>
+                                                {isRoundTarget && (
+                                                  <span className="text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                                    Acc nay
+                                                  </span>
+                                                )}
+                                                {isRoundSource && !isRoundTarget && (
+                                                  <span className="text-[9px] font-bold uppercase tracking-[0.08em] text-amber-200">
+                                                    Da doi ra
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <div className="mt-1 break-all leading-relaxed text-slate-200">
+                                                <span className="text-slate-400">
+                                                  {round?.fromUsername ||
+                                                    round?.fromAccountId ||
+                                                    "Khong ro acc"}
+                                                </span>
+                                                <span className="mx-1 text-slate-500">→</span>
+                                                <span className="font-semibold text-white">
+                                                  {round?.toUsername ||
+                                                    round?.toAccountId ||
+                                                    "Khong ro acc"}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                };
                                 const daysRemaining = u ? getDaysRemaining(u) : null;
                                 const isExpired = daysRemaining !== null && daysRemaining <= 0;
                                 const isNearExpiry =
@@ -4286,19 +4378,7 @@ function App() {
                                               {providerLabel}
                                             </span>
                                           )}
-                                          {warrantyCase && (
-                                            <div
-                                              className={`mt-2 ml-6 px-2 py-1 rounded text-[10px] font-semibold border ${
-                                                warrantyInfo?.role === "current"
-                                                  ? "bg-cyan-900/30 text-cyan-200 border-cyan-700/50"
-                                                  : "bg-amber-900/30 text-amber-200 border-amber-700/50"
-                                              }`}
-                                            >
-                                              {warrantyInfo?.role === "current"
-                                                ? `${warrantyProviderLabel} đang thay bảo hành cho order ${warrantyCase.orderId || datammoOrderId} · lần ${warrantyRounds.length}`
-                                                : `${warrantyProviderLabel} đã bảo hành sang ${warrantyCase.currentUsername || "acc khác"} · order ${warrantyCase.orderId || datammoOrderId} · lần ${warrantyRounds.length}`}
-                                            </div>
-                                          )}
+                                          {renderWarrantySummary("mt-2 ml-6")}
                                         </div>
                                         <div className="flex gap-2">
                                           {canOpenDatammoWarranty && (
@@ -4374,22 +4454,7 @@ function App() {
                                       </div>
                                     ) : (
                                       <div className="flex flex-col gap-2">
-                                        {warrantyCase && (
-                                          <div
-                                            className={`w-full px-2 py-1 font-bold rounded text-[10px] border flex flex-col gap-0.5 shadow-sm ${
-                                              warrantyInfo?.role === "current"
-                                                ? "bg-cyan-900/30 text-cyan-200 border-cyan-700/50"
-                                                : "bg-amber-900/30 text-amber-200 border-amber-700/50"
-                                            }`}
-                                          >
-                                            <span className="flex items-center justify-center gap-1">
-                                              <Shield size={10} />
-                                              {warrantyInfo?.role === "current"
-                                                ? `${warrantyProviderLabel} đang thay bảo hành order ${warrantyCase.orderId || datammoOrderId}`
-                                                : `${warrantyProviderLabel} đã bảo hành sang ${warrantyCase.currentUsername || "acc khác"}`}
-                                            </span>
-                                          </div>
-                                        )}
+                                        {renderWarrantySummary()}
                                         <div
                                           className={`text-center w-full px-2 py-1 font-bold rounded text-[10px] uppercase border flex flex-col gap-0.5 shadow-sm ${isOnDatammoShelf
                                             ? "bg-teal-900/30 text-teal-400 border-teal-800/50"
@@ -4484,6 +4549,7 @@ function App() {
                                 onClick={() => {
                                   setEditingAcc({
                                     ...acc,
+                                    note: getVisibleAccountNote(acc.note),
                                     package2Shelf:
                                       acc.type === "package2"
                                         ? normalizePackage2Shelf(acc.package2Shelf)

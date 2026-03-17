@@ -2504,10 +2504,6 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
             replacementAcc.package2DatammoKeysUsed,
             replacementKey,
           ),
-          note: appendAuditNoteLine(
-            replacementAcc.note,
-            `[Warranty replacement ${orderId} at ${nowIso}]${reason ? ` ${reason}` : ""}`,
-          ),
           updatedAt: nowIso,
         },
       },
@@ -2523,10 +2519,6 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
         $set: {
           users: [],
           package2Shelf: PACKAGE2_SHELF_NONE,
-          note: appendAuditNoteLine(
-            sourceAcc.note,
-            `[Warranty source ${orderId} -> ${replacementAcc.username} at ${nowIso}]${reason ? ` ${reason}` : ""}`,
-          ),
           updatedAt: nowIso,
         },
       },
