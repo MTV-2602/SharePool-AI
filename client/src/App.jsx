@@ -2236,13 +2236,16 @@ function App() {
   };
 
   const getChatgptDatammoScopeLabel = () => {
-    if (gptSubTab === "package1") return "Dong bo Goi 1 dang xem";
-    if (gptSubTab === "package2") return "Dong bo Goi 2 dang xem";
+    if (gptSubTab === "total") {
+      if (chatgptTotalTypeTab === "package1") return "Dong bo kho tong - Goi 1";
+      if (chatgptTotalTypeTab === "package2") return "Dong bo kho tong - Goi 2";
+      if (chatgptTotalTypeTab === "unassigned") return "Dong bo kho tong - Chua chon";
+      return "Dong bo kho tong";
+    }
     if (gptSubTab === "market") {
       if (package2ShelfTab === "sold") return "Dong bo kho market - da ban";
       return "Dong bo kho market - chua ban";
     }
-    if (gptSubTab === "unassigned") return "Dong bo ChatGPT chua phan loai";
     return "Dong bo ChatGPT dang xem";
   };
 
@@ -2786,12 +2789,15 @@ function App() {
   const filteredChatgptAccounts = accounts
     .filter((acc) => {
       if (gptSubTab === "total") {
-        return ["package1", "package2"].includes(String(acc?.type || ""));
+        return (
+          ["package1", "package2"].includes(String(acc?.type || "")) ||
+          !acc?.type ||
+          acc?.type === "unassigned"
+        );
       }
       if (gptSubTab === "market") {
         return ["package1", "package2"].includes(String(acc?.type || ""));
       }
-      if (gptSubTab === "unassigned") return !acc.type || acc.type === "unassigned";
       return true;
     })
     .filter((acc) => {
@@ -2811,15 +2817,17 @@ function App() {
         }
         return !isSoldMarketplaceAccount && isInMarketWarehouse;
       }
-      if (["total", "unassigned"].includes(gptSubTab)) {
+      if (gptSubTab === "total") {
         if (isSoldMarketplaceAccount) return false;
-        if (gptSubTab === "unassigned") return true;
         return !isInMarketWarehouse;
       }
       return true;
     })
     .filter((acc) => {
       if (gptSubTab !== "total" || chatgptTotalTypeTab === "all") return true;
+      if (chatgptTotalTypeTab === "unassigned") {
+        return !acc?.type || acc?.type === "unassigned";
+      }
       return acc.type === chatgptTotalTypeTab;
     })
     .filter((acc) =>
@@ -3460,11 +3468,13 @@ function App() {
               </div>
             </div>
 
-            {/* SUB-TABS: Kho tong / Kho market / Chua chon */}
+            {/* SUB-TABS: Tat ca / Kho tong / Kho market */}
             {(() => {
               const totalPoolAccounts = accounts.filter(
                 (a) =>
-                  ["package1", "package2"].includes(String(a?.type || "")) &&
+                  (["package1", "package2"].includes(String(a?.type || "")) ||
+                    !a?.type ||
+                    a?.type === "unassigned") &&
                   !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
                   !isChatgptMarketWarehouse(a),
               );
@@ -3475,12 +3485,10 @@ function App() {
                     isChatgptMarketWarehouse(a)) ||
                   marketplaceTrackedAccountIds.has(String(a?.id || "")),
               ).length;
-              const unassignedCount = accounts.filter(a => !a.type || a.type === "unassigned").length;
               const tabs = [
                 { key: "all", label: "Tat ca", count: accounts.length, color: "bg-slate-600" },
                 { key: "total", label: "Kho tong", count: totalCount, color: "bg-blue-600" },
                 { key: "market", label: "Kho market", count: marketCount, color: "bg-emerald-600" },
-                { key: "unassigned", label: "Chua chon", count: unassignedCount, color: "bg-slate-700" },
               ];
               return (
                 <div className="flex gap-2 flex-wrap mb-4">
@@ -3509,7 +3517,9 @@ function App() {
             {gptSubTab === "total" && (() => {
               const totalPoolAccounts = accounts.filter(
                 (a) =>
-                  ["package1", "package2"].includes(String(a?.type || "")) &&
+                  (["package1", "package2"].includes(String(a?.type || "")) ||
+                    !a?.type ||
+                    a?.type === "unassigned") &&
                   !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
                   !isChatgptMarketWarehouse(a),
               );
@@ -3517,6 +3527,7 @@ function App() {
                 { key: "all", label: "Tat ca", count: totalPoolAccounts.length, color: "bg-slate-600" },
                 { key: "package1", label: "Goi 1", count: totalPoolAccounts.filter((a) => a.type === "package1").length, color: "bg-blue-600" },
                 { key: "package2", label: "Goi 2", count: totalPoolAccounts.filter((a) => a.type === "package2").length, color: "bg-purple-600" },
+                { key: "unassigned", label: "Chua chon", count: totalPoolAccounts.filter((a) => !a?.type || a?.type === "unassigned").length, color: "bg-slate-700" },
               ];
               return (
                 <div className="mb-4">
