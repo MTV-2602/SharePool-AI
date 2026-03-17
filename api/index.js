@@ -17,6 +17,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 let isConnected = false;
 let didCleanupLegacyTeamEmailPassword = false;
 let didCleanupLegacyChatgptMarketKeys = false;
+let didMigrateLegacyCollections = false;
 const toPositiveInt = (value, fallback) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
@@ -33,11 +34,103 @@ const MONGO_CONNECT_OPTIONS = {
   socketTimeoutMS: toPositiveInt(process.env.MONGO_SOCKET_TIMEOUT_MS, 20000),
 };
 
+const migrateLegacyCollection = async ({
+  legacyName,
+  targetName,
+  keyField = "_id",
+}) => {
+  if (!legacyName || !targetName || legacyName === targetName) return 0;
+  const db = mongoose.connection?.db;
+  if (!db) return 0;
+
+  const legacyCollections = await db
+    .listCollections({ name: legacyName })
+    .toArray();
+  if (legacyCollections.length === 0) return 0;
+
+  const legacyDocs = await db.collection(legacyName).find({}).toArray();
+  if (legacyDocs.length === 0) return 0;
+
+  const operations = legacyDocs
+    .map((doc) => {
+      if (keyField === "_id") {
+        return {
+          updateOne: {
+            filter: { _id: doc._id },
+            update: { $setOnInsert: doc },
+            upsert: true,
+          },
+        };
+      }
+
+      const keyValue = String(doc?.[keyField] || "").trim();
+      if (!keyValue) return null;
+
+      return {
+        updateOne: {
+          filter: { [keyField]: keyValue },
+          update: { $setOnInsert: doc },
+          upsert: true,
+        },
+      };
+    })
+    .filter(Boolean);
+
+  if (operations.length === 0) return 0;
+
+  await db.collection(targetName).bulkWrite(operations, { ordered: false });
+  return operations.length;
+};
+
+const migrateLegacyCollectionsIfNeeded = async () => {
+  if (didMigrateLegacyCollections) return;
+
+  const mappings = [
+    { legacyName: "accounts", targetName: "chatgpt_accounts", keyField: "id" },
+    {
+      legacyName: "teamaccounts",
+      targetName: "chatgpt_team_accounts",
+      keyField: "id",
+    },
+    {
+      legacyName: "datammoorders",
+      targetName: "marketplace_orders",
+      keyField: "_id",
+    },
+    {
+      legacyName: "datammowarrantycases",
+      targetName: "marketplace_warranty_cases",
+      keyField: "_id",
+    },
+    {
+      legacyName: "netflixes",
+      targetName: "netflix_accounts",
+      keyField: "id",
+    },
+    { legacyName: "canvas", targetName: "canva_accounts", keyField: "id" },
+    { legacyName: "capcuts", targetName: "capcut_accounts", keyField: "id" },
+  ];
+
+  const migrated = [];
+  for (const mapping of mappings) {
+    const count = await migrateLegacyCollection(mapping);
+    if (count > 0) {
+      migrated.push(`${mapping.legacyName} -> ${mapping.targetName} (${count})`);
+    }
+  }
+
+  didMigrateLegacyCollections = true;
+  if (migrated.length > 0) {
+    console.log(`Migrated legacy collections: ${migrated.join(", ")}`);
+  }
+};
+
 const connectDB = async () => {
   if (isConnected) return;
   try {
     await mongoose.connect(process.env.MONGO_URI, MONGO_CONNECT_OPTIONS);
     isConnected = true;
+    await migrateLegacyCollectionsIfNeeded();
     if (!didCleanupLegacyTeamEmailPassword) {
       await TeamAccount.updateMany(
         { emailPassword: { $exists: true } },
