@@ -6419,8 +6419,28 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   )}
 
                   <div className="space-y-3">
-                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📧 Gmail Khách</label><input className="form-input w-full" placeholder="customer@gmail.com" value={slotFormGmail} onChange={e => setSlotFormGmail(e.target.value)} /></div>
-                    <div className="form-group"><label className="block text-xs text-slate-400 mb-1">👤 Tên Khách</label><input className="form-input w-full" placeholder="Nguyễn Văn A" value={slotFormName} onChange={e => setSlotFormName(e.target.value)} /></div>
+              <div className="form-group">
+                <label className="block text-xs text-slate-400 mb-1">
+                  {isBusinessMode ? "🏷️ Mã / Tên Khách" : "📧 Gmail Khách"}
+                </label>
+                <input
+                  className="form-input w-full"
+                  placeholder={isBusinessMode ? "VD: 260316LFTJDJXQ" : "customer@gmail.com"}
+                  value={slotFormGmail}
+                  onChange={e => setSlotFormGmail(e.target.value)}
+                />
+              </div>
+              {!isBusinessMode && (
+                <div className="form-group">
+                  <label className="block text-xs text-slate-400 mb-1">👤 Tên Khách</label>
+                  <input
+                    className="form-input w-full"
+                    placeholder="Nguyễn Văn A"
+                    value={slotFormName}
+                    onChange={e => setSlotFormName(e.target.value)}
+                  />
+                </div>
+              )}
                     <div className="form-group"><label className="block text-xs text-slate-400 mb-1">📅 Ngày Tham Gia</label><input type="date" className="form-input w-full" value={slotFormExp} onChange={e => setSlotFormExp(e.target.value)} /></div>
                     <div className="form-group"><label className="block text-xs text-yellow-400 mb-1">📅 Ngày Hết Hạn</label><input type="date" className="form-input w-full" value={slotFormExpiredAt} onChange={e => setSlotFormExpiredAt(e.target.value)} /></div>
                   </div>
