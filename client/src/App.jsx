@@ -3763,9 +3763,23 @@ function App() {
                                         : "Chua bao hanh"}
                                     </div>
                                     {item.warrantyRounds > 0 && item.warrantyCase && (
-                                      <div className="mt-1 text-[11px] text-slate-400 break-all">
-                                        {item.soldUsername} {"->"}{" "}
-                                        {item.currentUsername || item.currentAccountId}
+                                      <div className="mt-1 space-y-1 text-[11px] text-slate-400 break-all">
+                                        {item.warrantyCase.rounds.map((round, roundIndex) => (
+                                          <div
+                                            key={`${buildDatammoOrderKey(order)}-warranty-${index}-round-${round?.sequence || round?.createdAt || roundIndex}`}
+                                          >
+                                            <span className="font-medium text-amber-200">
+                                              Lan {round?.sequence || roundIndex + 1}:
+                                            </span>{" "}
+                                            {round?.fromUsername ||
+                                              round?.fromAccountId ||
+                                              "Khong ro acc"}{" "}
+                                            {"->"}{" "}
+                                            {round?.toUsername ||
+                                              round?.toAccountId ||
+                                              "Khong ro acc"}
+                                          </div>
+                                        ))}
                                       </div>
                                     )}
                                   </div>
