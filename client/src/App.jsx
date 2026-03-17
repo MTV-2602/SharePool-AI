@@ -943,7 +943,7 @@ function App() {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
+      className="min-w-[128px] bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
     >
       {EXPIRY_FILTER_OPTIONS.map((option) => (
         <option key={option.value} value={option.value}>
@@ -985,6 +985,15 @@ function App() {
       )}
     </div>
   );
+  const handleExpiryPresetChange = (nextValue, setFilter, setMin, setMax) => {
+    setFilter(nextValue);
+    setMin("");
+    setMax("");
+  };
+  const handleExpiryRangeChange = (nextValue, setter, setFilter) => {
+    setFilter("all");
+    setter(nextValue);
+  };
   // Helper to get joined date display
   const getUserDate = (u) => {
     if (typeof u === "object" && u !== null && u.joinedAt) {
@@ -3176,15 +3185,34 @@ function App() {
                   <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
                     Loc han
                   </span>
-                  {renderExpiryFilterSelect(
-                    chatgptExpiryFilter,
-                    setChatgptExpiryFilter,
-                  )}
                   {renderExpiryRangeInputs(
                     chatgptExpiryMin,
-                    setChatgptExpiryMin,
+                    (value) =>
+                      handleExpiryRangeChange(
+                        value,
+                        setChatgptExpiryMin,
+                        setChatgptExpiryFilter,
+                      ),
                     chatgptExpiryMax,
-                    setChatgptExpiryMax,
+                    (value) =>
+                      handleExpiryRangeChange(
+                        value,
+                        setChatgptExpiryMax,
+                        setChatgptExpiryFilter,
+                      ),
+                  )}
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Moc nhanh
+                  </span>
+                  {renderExpiryFilterSelect(
+                    chatgptExpiryFilter,
+                    (value) =>
+                      handleExpiryPresetChange(
+                        value,
+                        setChatgptExpiryFilter,
+                        setChatgptExpiryMin,
+                        setChatgptExpiryMax,
+                      ),
                   )}
                 </div>
               </div>
@@ -5755,15 +5783,34 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
                     Loc han
                   </span>
-                  {renderExpiryFilterSelect(
-                    simpleExpiryFilter,
-                    setSimpleExpiryFilter,
-                  )}
                   {renderExpiryRangeInputs(
                     simpleExpiryMin,
-                    setSimpleExpiryMin,
+                    (value) =>
+                      handleExpiryRangeChange(
+                        value,
+                        setSimpleExpiryMin,
+                        setSimpleExpiryFilter,
+                      ),
                     simpleExpiryMax,
-                    setSimpleExpiryMax,
+                    (value) =>
+                      handleExpiryRangeChange(
+                        value,
+                        setSimpleExpiryMax,
+                        setSimpleExpiryFilter,
+                      ),
+                  )}
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Moc nhanh
+                  </span>
+                  {renderExpiryFilterSelect(
+                    simpleExpiryFilter,
+                    (value) =>
+                      handleExpiryPresetChange(
+                        value,
+                        setSimpleExpiryFilter,
+                        setSimpleExpiryMin,
+                        setSimpleExpiryMax,
+                      ),
                   )}
                 </div>
               </div>
@@ -5946,15 +5993,34 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
                   Loc han
                 </span>
-                {renderExpiryFilterSelect(
-                  teamExpiryFilter,
-                  setTeamExpiryFilter,
-                )}
                 {renderExpiryRangeInputs(
                   teamExpiryMin,
-                  setTeamExpiryMin,
+                  (value) =>
+                    handleExpiryRangeChange(
+                      value,
+                      setTeamExpiryMin,
+                      setTeamExpiryFilter,
+                    ),
                   teamExpiryMax,
-                  setTeamExpiryMax,
+                  (value) =>
+                    handleExpiryRangeChange(
+                      value,
+                      setTeamExpiryMax,
+                      setTeamExpiryFilter,
+                    ),
+                )}
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Moc nhanh
+                </span>
+                {renderExpiryFilterSelect(
+                  teamExpiryFilter,
+                  (value) =>
+                    handleExpiryPresetChange(
+                      value,
+                      setTeamExpiryFilter,
+                      setTeamExpiryMin,
+                      setTeamExpiryMax,
+                    ),
                 )}
               </div>
 
