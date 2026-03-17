@@ -3894,6 +3894,19 @@ function App() {
                             />
                           </td>
                           <td className="align-top">
+                            {gptSubTab === "market" && (
+                              <div
+                                className={`w-full text-xs rounded px-2 py-2 outline-none font-bold border text-center ${
+                                  marketplaceTrackedAccountIds.has(String(acc.id || ""))
+                                    ? "bg-amber-900/40 text-amber-300 border-amber-700/50"
+                                    : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"
+                                }`}
+                              >
+                                {marketplaceTrackedAccountIds.has(String(acc.id || ""))
+                                  ? "Acc da ban"
+                                  : "Acc market"}
+                              </div>
+                            )}
                             <select
                               id={`select-type-${acc.id}`}
                               value={acc.type}
@@ -3902,7 +3915,7 @@ function App() {
                               }
                               disabled={loadingStates.changeType[acc.id]}
                               className={`
-                                            w-full text-xs rounded px-2 py-2 outline-none font-bold border cursor-pointer appearance-none text-center
+                                            ${gptSubTab === "market" ? "hidden" : "w-full"} text-xs rounded px-2 py-2 outline-none font-bold border cursor-pointer appearance-none text-center
                                             ${loadingStates.changeType[acc.id] ? "opacity-50 cursor-wait" : ""}
                                             ${acc.type === "package1"
                                   ? "bg-blue-900/40 text-blue-400 border-blue-700/50"
