@@ -970,6 +970,14 @@ const VALID_PACKAGE2_SHELVES = [
 ];
 const DATAMMO_PARTNER_API_TOKEN =
   process.env.DATAMMO_PARTNER_API_TOKEN || DATAMMO_TOKEN;
+const DATAMMO_TEST_PARTNER_API_TOKEN =
+  process.env.DATAMMO_TEST_PARTNER_API_TOKEN || DATAMMO_PARTNER_API_TOKEN;
+const SHOPMINI_TEST_PRIVATE_API_TOKEN =
+  process.env.SHOPMINI_TEST_PRIVATE_API_TOKEN || SHOPMINI_PRIVATE_API_TOKEN;
+const TEST_MARKETPLACE_STOCK = Math.max(
+  1,
+  Number(process.env.TEST_MARKETPLACE_STOCK || 9999),
+);
 
 const normalizePackage2Shelf = (shelf, fallback = CHATGPT_TOTAL_VALUE) => {
   if (shelf === PACKAGE2_SHELF_CHEAP) return PACKAGE2_SHELF_CHEAP;
@@ -1207,6 +1215,20 @@ const verifyShopminiPrivateToken = (req, res, next) => {
   }
   next();
 };
+const verifyDatammoTestPartnerToken = (req, res, next) => {
+  const token = getDatammoPartnerTokenFromReq(req);
+  if (!token || token !== DATAMMO_TEST_PARTNER_API_TOKEN) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+  next();
+};
+const verifyShopminiTestPrivateToken = (req, res, next) => {
+  const token = getDatammoPartnerTokenFromReq(req);
+  if (!token || token !== SHOPMINI_TEST_PRIVATE_API_TOKEN) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+  next();
+};
 const resolveShopminiShelfFromReq = (req) =>
   normalizeDatammoRouteShelf(
     req.params?.shelf ||
@@ -1248,6 +1270,21 @@ const resolveShopminiActionFromReq = (req) => {
     return "buy";
   }
   return "stock";
+};
+const buildMarketplaceTestLines = ({
+  orderId,
+  quantity,
+  provider = "datammo",
+}) => {
+  const normalizedProvider = normalizeMarketplaceProvider(provider);
+  const baseOrderId = String(orderId || `order${Date.now()}`)
+    .trim()
+    .replace(/\s+/g, "-");
+  const uniqueSeed = Date.now().toString(36);
+  return Array.from({ length: quantity }, (_, index) => {
+    const sequence = String(index + 1).padStart(2, "0");
+    return `TEST-${normalizedProvider}-${baseOrderId}-${uniqueSeed}-${sequence}|nhan tin shop`;
+  });
 };
 const getShopminiBuyQuantity = (req) =>
   getSafeBuyQuantity(
@@ -1643,6 +1680,82 @@ const buildTeamMarketplaceStockPayload = async (mode) => {
   const stock = await countTeamMarketplaceStock(mode);
   return { stock };
 };
+
+// TEST-ONLY marketplace endpoints: no DB writes, no stock reservation, no order log.
+app.get(
+  "/api/datammo/test/stock",
+  verifyDatammoTestPartnerToken,
+  async (req, res) => {
+    return res.json({
+      stock: TEST_MARKETPLACE_STOCK,
+      price: 0,
+      test: true,
+      provider: "datammo",
+    });
+  },
+);
+
+app.get(
+  "/api/datammo/test/buy",
+  verifyDatammoTestPartnerToken,
+  async (req, res) => {
+    const quantity = getSafeBuyQuantity(req.query?.quantity);
+    const orderId = String(
+      req.query?.order_id || req.query?.orderId || `order${Date.now()}`,
+    ).trim();
+    return res.json({
+      success: true,
+      test: true,
+      provider: "datammo",
+      data: buildMarketplaceTestLines({
+        orderId,
+        quantity,
+        provider: "datammo",
+      }),
+    });
+  },
+);
+
+app.all(
+  "/api/shopmini/test/input.php",
+  verifyShopminiTestPrivateToken,
+  async (req, res) => {
+    const action = resolveShopminiActionFromReq(req);
+    if (action !== "buy") {
+      return res.json({
+        success: true,
+        status: true,
+        result: true,
+        test: true,
+        provider: "shopmini",
+        stock: TEST_MARKETPLACE_STOCK,
+        amount: TEST_MARKETPLACE_STOCK,
+        quantity: TEST_MARKETPLACE_STOCK,
+        sum: TEST_MARKETPLACE_STOCK,
+        price: 0,
+        amount_money: 0,
+      });
+    }
+
+    const quantity = getShopminiBuyQuantity(req);
+    const orderId = String(getShopminiOrderId(req) || `order${Date.now()}`).trim();
+    const lines = buildMarketplaceTestLines({
+      orderId,
+      quantity,
+      provider: "shopmini",
+    });
+    return res.json({
+      success: true,
+      status: true,
+      result: true,
+      test: true,
+      provider: "shopmini",
+      msg: "test-success",
+      data: lines,
+      accounts: lines,
+    });
+  },
+);
 // ---------------------------
 
 app.get("/api/data", verifyToken, async (req, res) => {
