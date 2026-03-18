@@ -5477,7 +5477,7 @@ function App() {
           <form
             onSubmit={handleSubmitMoveUser}
             className="modal-box"
-            style={{ maxWidth: "450px" }}
+            style={{ maxWidth: "640px" }}
           >
             <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
               <ArrowRightLeft className="text-orange-500" /> Chuyển Khách Hàng
@@ -5494,6 +5494,14 @@ function App() {
                   ? new Date(movingUser.joinedAt).toLocaleDateString("vi-VN")
                   : "N/A"}
               </div>
+              {movingUser.expiredAt && (() => {
+                const movingExpiry = getExpiryStatus(movingUser.expiredAt);
+                return (
+                  <div className={`text-xs mt-1 font-bold ${movingExpiry.color}`}>
+                    Hết hạn: {movingExpiry.dateStr || "N/A"} • {movingExpiry.text}
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="form-group">
@@ -5521,82 +5529,124 @@ function App() {
                   </label>
                 );
               })()}
-              <select
-                className="form-input w-full"
-                value={destinationAccId}
-                onChange={(e) => setDestinationAccId(e.target.value)}
-                size={5} // List box style
-                required
-              >
-                <option value="" disabled>
-                  -- Chọn tài khoản --
-                </option>
-                {(() => {
-                  let sourceList = accounts;
-                  if (movingUser.platform === "netflix") sourceList = netflixAccounts;
-                  else if (movingUser.platform === "capcut") sourceList = capcutAccounts;
-                  else if (movingUser.platform === "canva") sourceList = canvaAccounts;
+              {(() => {
+                let sourceList = accounts;
+                if (movingUser.platform === "netflix") sourceList = netflixAccounts;
+                else if (movingUser.platform === "capcut") sourceList = capcutAccounts;
+                else if (movingUser.platform === "canva") sourceList = canvaAccounts;
 
-                  const sourceAcc = sourceList.find((a) => a.id === movingUser.fromAccId);
-                  const sourceType = sourceAcc?.type || "unassigned";
+                const sourceAcc = sourceList.find((a) => a.id === movingUser.fromAccId);
+                const sourceType = sourceAcc?.type || "unassigned";
 
-                  return sourceList
-                    .filter((a) => {
-                      if (a.id === movingUser.fromAccId) return false; // bỏ nguồn
-                      if (a.expiredAt && new Date(a.expiredAt) < new Date()) return false; // bỏ hết hạn (đếm sơ bộ)
-                      const users = a.users?.length || 0;
+                const destinationOptions = sourceList
+                  .filter((a) => {
+                    if (a.id === movingUser.fromAccId) return false;
+                    if (a.expiredAt && new Date(a.expiredAt) < new Date()) return false;
+                    const users = a.users?.length || 0;
 
-                      if (movingUser.platform !== "chatgpt") {
-                        // Cho single accounts (Netflix, Capcut, Canva), chỉ hiện acc chưa có khách
-                        return users < 1;
-                      }
+                    if (movingUser.platform !== "chatgpt") {
+                      return users < 1;
+                    }
 
-                      if (a.type === sourceType) {
-                        // Cùng loại: kiểm tra slot
-                        if (sourceType === "package1") return users < 3;
-                        if (sourceType === "package2") return users < 1;
-                      }
-                      if (a.type === "unassigned") {
-                        // Unassigned: có thể nhận bất kỳ loại
-                        if (sourceType === "package2") return users < 1;
-                        if (sourceType === "package1") return users < 3;
-                        return true;
-                      }
-                      return false;
-                    })
-                    .map((a) => {
-                      const slots = a.users?.length || 0;
-                      let maxSlots = 1;
-                      let typeLabel = movingUser.platform.toUpperCase();
+                    if (a.type === sourceType) {
+                      if (sourceType === "package1") return users < 3;
+                      if (sourceType === "package2") return users < 1;
+                    }
+                    if (a.type === "unassigned") {
+                      if (sourceType === "package2") return users < 1;
+                      if (sourceType === "package1") return users < 3;
+                      return true;
+                    }
+                    return false;
+                  })
+                  .map((a) => {
+                    const usedSlots = a.users?.length || 0;
+                    let maxSlots = 1;
+                    let typeLabel = movingUser.platform.toUpperCase();
 
-                      if (movingUser.platform === "chatgpt") {
-                        maxSlots = a.type === "package2" ? 1 : a.type === "package1" ? 3 : (sourceType === "package2" ? 1 : 3);
-                        typeLabel =
-                          a.type === "unassigned"
-                            ? "⭐ Unassigned → sẽ thành " + (sourceType === "package1" ? "Shared" : "Private")
-                            : a.type === "package2"
-                              ? "🔒 Private"
-                              : "👥 Shared";
-                      }
+                    if (movingUser.platform === "chatgpt") {
+                      maxSlots =
+                        a.type === "package2"
+                          ? 1
+                          : a.type === "package1"
+                            ? 3
+                            : sourceType === "package2"
+                              ? 1
+                              : 3;
+                      typeLabel =
+                        a.type === "unassigned"
+                          ? `Unassigned → sẽ thành ${sourceType === "package1" ? "Shared" : "Private"}`
+                          : a.type === "package2"
+                            ? "Private"
+                            : "Shared";
+                    }
 
-                      const displayUser =
-                        a.username.length > 25 ? a.username.substring(0, 22) + "..." : a.username;
-                      const dateStr = a.expiredAt
-                        ? new Date(a.expiredAt).toLocaleDateString("vi-VN")
-                        : "Vô hạn";
+                    return {
+                      id: a.id,
+                      username: a.username,
+                      usedSlots,
+                      maxSlots,
+                      typeLabel,
+                      expiry: getExpiryStatus(a.expiredAt),
+                    };
+                  });
 
-                      return (
-                        <option
-                          key={a.id}
-                          value={a.id}
-                          className="py-2"
-                        >
-                          [{slots}/{maxSlots}] {typeLabel} — {displayUser} (Hết: {dateStr})
-                        </option>
-                      );
-                    });
-                })()}
-              </select>
+                return (
+                  <>
+                    <input type="hidden" value={destinationAccId} readOnly required />
+                    <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900/60 p-2">
+                      {destinationOptions.length > 0 ? (
+                        destinationOptions.map((option) => {
+                          const selected = destinationAccId === option.id;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => setDestinationAccId(option.id)}
+                              className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
+                                selected
+                                  ? "border-orange-500 bg-orange-500/10 shadow-[0_0_0_1px_rgba(249,115,22,0.35)]"
+                                  : "border-slate-700 bg-slate-800/70 hover:border-slate-500 hover:bg-slate-800"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-white">
+                                    <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] text-cyan-200">
+                                      [{option.usedSlots}/{option.maxSlots}]
+                                    </span>
+                                    <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] text-amber-200">
+                                      {option.typeLabel}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 break-all text-sm font-semibold text-slate-100">
+                                    {option.username}
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-400">
+                                    Hết hạn: {option.expiry.dateStr || "Không có hạn"}
+                                  </div>
+                                  <div className={`mt-1 text-xs font-bold ${option.expiry.color}`}>
+                                    {option.expiry.text || "Không có hạn"}
+                                  </div>
+                                </div>
+                                {selected && (
+                                  <div className="shrink-0 rounded-full bg-orange-500 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white">
+                                    Đã chọn
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-800/60 px-3 py-4 text-sm text-slate-400">
+                          Không có tài khoản đích hợp lệ trong bộ lọc hiện tại.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
               {movingUser.platform === "chatgpt" && (
                 <p className="text-xs text-slate-500 mt-2 italic">
                   * Cùng loại gói hoặc tài khoản chưa phân loại (tự đổi loại sau khi nhận khách).
