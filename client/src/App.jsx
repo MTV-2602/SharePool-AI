@@ -2487,7 +2487,7 @@ function App() {
     const targetAcc = teamAccounts.find(
       (acc) => String(acc?.id || "").trim() === normalizedId,
     );
-    setActiveTab("team");
+    setActiveTab("chatgpt");
     if (targetAcc) {
       const warehouse = normalizeTeamWarehouse(targetAcc.warehouse);
       setTeamWarehouseTab(warehouse === "market" ? "market" : warehouse === "short" ? "short" : "total");
