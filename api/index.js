@@ -1295,6 +1295,24 @@ const buildMarketplaceTestLines = ({
     return `TEST-${normalizedProvider}-${baseOrderId}-${uniqueSeed}-${sequence}|nhan tin shop`;
   });
 };
+const buildShopminiDeliveryPayload = (lines = [], overrides = {}) => {
+  const safeLines = Array.isArray(lines) ? lines : [];
+  const message = String(overrides.msg || overrides.message || "success");
+  return {
+    success: true,
+    status: true,
+    result: true,
+    msg: message,
+    message,
+    data: safeLines,
+    accounts: safeLines,
+    products: safeLines,
+    items: safeLines,
+    list: safeLines,
+    content: safeLines.join("\n"),
+    ...overrides,
+  };
+};
 const getShopminiBuyQuantity = (req) =>
   getSafeBuyQuantity(
     req.query?.quantity ||
@@ -1753,16 +1771,11 @@ app.all(
       quantity,
       provider: "shopmini",
     });
-    return res.json({
-      success: true,
-      status: true,
-      result: true,
+    return res.json(buildShopminiDeliveryPayload(lines, {
       test: true,
       provider: "shopmini",
       msg: "test-success",
-      data: lines,
-      accounts: lines,
-    });
+    }));
   },
 );
 // ---------------------------
@@ -1970,14 +1983,12 @@ app.all(
     let claimed = [];
 
     if (isPlaceholderLikeValue(orderId) || isPlaceholderLikeValue(rawQuantity)) {
-      return res.json({
-        success: true,
-        status: true,
-        result: true,
-        msg: "preview-success",
-        data: ["preview_user|preview_pass|preview_link"],
-        accounts: ["preview_user|preview_pass|preview_link"],
-      });
+      return res.json(
+        buildShopminiDeliveryPayload(
+          ["preview_user|preview_pass|preview_link"],
+          { msg: "preview-success" },
+        ),
+      );
     }
 
     try {
@@ -2024,14 +2035,11 @@ app.all(
       bumpDataVersion();
       notifyClients();
 
-      return res.json({
-        success: true,
-        status: true,
-        result: true,
-        msg: "success",
-        data: claimed.map((item) => item.delivery),
-        accounts: claimed.map((item) => item.delivery),
-      });
+      return res.json(
+        buildShopminiDeliveryPayload(
+          claimed.map((item) => item.delivery),
+        ),
+      );
     } catch (error) {
       if (claimed.length > 0) {
         await rollbackClaimedPackage2Accounts(claimed);
@@ -2193,14 +2201,12 @@ app.all(
     let claimed = [];
 
     if (isPlaceholderLikeValue(orderId) || isPlaceholderLikeValue(rawQuantity)) {
-      return res.json({
-        success: true,
-        status: true,
-        result: true,
-        msg: "preview-success",
-        data: ["preview_team|preview_pass|preview_link"],
-        accounts: ["preview_team|preview_pass|preview_link"],
-      });
+      return res.json(
+        buildShopminiDeliveryPayload(
+          ["preview_team|preview_pass|preview_link"],
+          { msg: "preview-success" },
+        ),
+      );
     }
 
     try {
@@ -2255,14 +2261,11 @@ app.all(
       bumpDataVersion();
       notifyClients();
 
-      return res.json({
-        success: true,
-        status: true,
-        result: true,
-        msg: "success",
-        data: claimed.map((item) => item.delivery),
-        accounts: claimed.map((item) => item.delivery),
-      });
+      return res.json(
+        buildShopminiDeliveryPayload(
+          claimed.map((item) => item.delivery),
+        ),
+      );
     } catch (error) {
       if (claimed.length > 0) {
         await rollbackClaimedTeamAccounts(claimed);
