@@ -879,6 +879,17 @@ const reconcileTeamMarketInventory = async () => {
 };
 const normalizeTeamPayload = (payload = {}, options = {}) => {
   const normalized = { ...(payload || {}) };
+  const defaultSaleMode =
+    options.defaultSaleMode === true
+      ? TEAM_SALE_MODE_SLOT
+      : normalizeTeamSaleMode(options.defaultSaleMode, TEAM_SALE_MODE_SLOT);
+  const defaultWarehouse =
+    options.defaultWarehouse === true
+      ? TEAM_WAREHOUSE_TOTAL
+      : normalizeTeamWarehouse(
+          options.defaultWarehouse,
+          TEAM_WAREHOUSE_TOTAL,
+        );
   delete normalized.emailPassword;
   delete normalized.expectedUpdatedAt;
   if (normalized.username !== undefined) {
@@ -893,13 +904,22 @@ const normalizeTeamPayload = (payload = {}, options = {}) => {
   if (normalized.note !== undefined) {
     normalized.note = String(normalized.note || "");
   }
-  if (normalized.saleMode !== undefined || options.defaultSaleMode) {
-    normalized.saleMode = normalizeTeamSaleMode(normalized.saleMode);
+  if (
+    normalized.saleMode !== undefined ||
+    options.defaultSaleMode !== undefined
+  ) {
+    normalized.saleMode = normalizeTeamSaleMode(
+      normalized.saleMode,
+      defaultSaleMode,
+    );
   }
-  if (normalized.warehouse !== undefined || options.defaultWarehouse) {
+  if (
+    normalized.warehouse !== undefined ||
+    options.defaultWarehouse !== undefined
+  ) {
     normalized.warehouse = normalizeTeamWarehouse(
       normalized.warehouse,
-      TEAM_WAREHOUSE_TOTAL,
+      defaultWarehouse,
     );
   }
   if (normalized.slots !== undefined && !Array.isArray(normalized.slots)) {
@@ -913,11 +933,11 @@ const normalizeTeamPayload = (payload = {}, options = {}) => {
   }
   if (
     [TEAM_WAREHOUSE_MARKET, TEAM_WAREHOUSE_SHORT].includes(
-      normalizeTeamWarehouse(normalized.warehouse, TEAM_WAREHOUSE_TOTAL),
+      normalizeTeamWarehouse(normalized.warehouse, defaultWarehouse),
     ) &&
     normalizeTeamSaleMode(
       normalized.saleMode,
-      TEAM_SALE_MODE_SLOT,
+      defaultSaleMode,
     ) !== TEAM_SALE_MODE_BUSINESS
   ) {
     normalized.warehouse = TEAM_WAREHOUSE_TOTAL;
@@ -3252,7 +3272,10 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
       req.body?.expectedUpdatedAt,
     );
     ensureCurrentVersion(existing, expectedUpdatedAt, "Team account nay");
-    const updatePayload = normalizeTeamPayload(req.body);
+    const updatePayload = normalizeTeamPayload(req.body, {
+      defaultSaleMode: existing.saleMode,
+      defaultWarehouse: existing.warehouse,
+    });
     if (updatePayload.slots !== undefined) {
       updatePayload.slots = normalizeTeamSlots(updatePayload.slots);
     }
@@ -3284,6 +3307,17 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
       return res.status(400).json({
         error:
           "Team dang co khach. Vui long xoa hoac chuyen khach truoc khi doi kho.",
+      });
+    }
+    if (
+      [TEAM_WAREHOUSE_MARKET, TEAM_WAREHOUSE_SHORT].includes(nextWarehouse) &&
+      normalizeTeamSaleMode(nextSaleMode) !== TEAM_SALE_MODE_BUSINESS
+    ) {
+      return res.status(400).json({
+        error:
+          nextWarehouse === TEAM_WAREHOUSE_MARKET
+            ? "Kho market Team chi dung cho Business. Slot Team admin tu them theo don."
+            : "Kho duoi 25 ngay chi dung cho Team Business.",
       });
     }
     if (
