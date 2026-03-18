@@ -755,6 +755,17 @@ const isEligibleForTeamMarketSale = (account = {}) => {
   if (daysLeft !== null && daysLeft <= PACKAGE2_MIN_DAYS_FOR_SALE) return false;
   return countActiveTeamCustomers(account?.slots) === 0;
 };
+const shouldKeepTeamInMarketWarehouse = (account = {}) => {
+  const warehouse = normalizeTeamWarehouse(
+    account?.warehouse,
+    TEAM_WAREHOUSE_TOTAL,
+  );
+  if (warehouse !== TEAM_WAREHOUSE_MARKET) return false;
+  const saleMode = normalizeTeamSaleMode(account?.saleMode);
+  if (saleMode !== TEAM_SALE_MODE_BUSINESS) return false;
+  const daysLeft = getTeamDaysLeft(account);
+  return !(daysLeft !== null && daysLeft <= PACKAGE2_MIN_DAYS_FOR_SALE);
+};
 const normalizeTeamWarehouseState = (account = {}) => {
   const saleMode = normalizeTeamSaleMode(account?.saleMode);
   const currentWarehouse = normalizeTeamWarehouse(
@@ -772,7 +783,7 @@ const normalizeTeamWarehouseState = (account = {}) => {
     return TEAM_WAREHOUSE_TOTAL;
   }
 
-  return isEligibleForTeamMarketSale(account)
+  return shouldKeepTeamInMarketWarehouse(account)
     ? TEAM_WAREHOUSE_MARKET
     : TEAM_WAREHOUSE_TOTAL;
 };
@@ -1921,21 +1932,14 @@ app.get(
         });
       }
 
-      try {
-        await logMarketplaceOrder({
-          scope: "team",
-          provider: "datammo",
-          orderId,
-          shelf: "market",
-          quantity,
-          claimed,
-        });
-      } catch (orderLogError) {
-        console.error(
-          "Datammo team order log error:",
-          orderLogError?.message || orderLogError,
-        );
-      }
+      await logMarketplaceOrder({
+        scope: "team",
+        provider: "datammo",
+        orderId,
+        shelf: "market",
+        quantity,
+        claimed,
+      });
 
       bumpDataVersion();
       notifyClients();
@@ -2056,21 +2060,14 @@ app.all(
         });
       }
 
-      try {
-        await logMarketplaceOrder({
-          scope: "team",
-          provider: "shopmini",
-          orderId,
-          shelf: "market",
-          quantity,
-          claimed,
-        });
-      } catch (orderLogError) {
-        console.error(
-          "Shopmini team order log error:",
-          orderLogError?.message || orderLogError,
-        );
-      }
+      await logMarketplaceOrder({
+        scope: "team",
+        provider: "shopmini",
+        orderId,
+        shelf: "market",
+        quantity,
+        claimed,
+      });
 
       bumpDataVersion();
       notifyClients();
