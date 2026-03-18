@@ -2811,6 +2811,26 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
     ensureCurrentVersion(fromAcc, fromExpectedUpdatedAt, "Team nguồn");
     ensureCurrentVersion(toAcc, toExpectedUpdatedAt, "Team đích");
 
+    if (
+      normalizeTeamSaleMode(fromAcc.saleMode) !== TEAM_SALE_MODE_SLOT ||
+      normalizeTeamSaleMode(toAcc.saleMode) !== TEAM_SALE_MODE_SLOT
+    ) {
+      return res.status(400).json({
+        error: "Chuyen slot chi ap dung giua cac Team Slot.",
+      });
+    }
+
+    if (
+      normalizeTeamWarehouse(fromAcc.warehouse, TEAM_WAREHOUSE_TOTAL) !==
+        TEAM_WAREHOUSE_TOTAL ||
+      normalizeTeamWarehouse(toAcc.warehouse, TEAM_WAREHOUSE_TOTAL) !==
+        TEAM_WAREHOUSE_TOTAL
+    ) {
+      return res.status(400).json({
+        error: "Chi duoc chuyen slot giua cac Team trong kho tong.",
+      });
+    }
+
     if (!fromAcc.slots || !fromAcc.slots[slotIndex] || fromAcc.slots[slotIndex].status === "empty") {
       return res.status(400).json({ error: "Slot not found or is empty in source team account" });
     }

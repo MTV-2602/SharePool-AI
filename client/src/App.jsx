@@ -5711,7 +5711,7 @@ function App() {
           <form
             onSubmit={handleSubmitMoveSlot}
             className="modal-box"
-            style={{ maxWidth: "450px" }}
+            style={{ maxWidth: "560px" }}
           >
             <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
               <ArrowRightLeft className="text-orange-500" /> Chuyển Slot Khách
@@ -5720,7 +5720,7 @@ function App() {
             <div className="bg-slate-800 p-3 rounded mb-4 border border-slate-700">
               <div className="text-sm text-slate-400">Đang chuyển Slot:</div>
               <div className="font-bold text-lg text-white">
-                👤 {movingSlot.customerName || movingSlot.gmail}
+                {movingSlot.customerName || movingSlot.gmail}
               </div>
               <div className="text-xs text-slate-500 mt-1">
                 Tham gia:{" "}
@@ -5728,48 +5728,109 @@ function App() {
                   ? new Date(movingSlot.addedAt).toLocaleDateString("vi-VN")
                   : "N/A"}
               </div>
+              {movingSlot.expiredAt && (() => {
+                const movingExpiry = getExpiryStatus(movingSlot.expiredAt);
+                return (
+                  <>
+                    <div className="text-xs text-slate-400 mt-1">
+                      Hết hạn: {movingExpiry.dateStr || "Không có hạn"}
+                    </div>
+                    <div className={`text-xs font-bold mt-1 ${movingExpiry.color}`}>
+                      {movingExpiry.text || "Không có hạn"}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="form-group">
               <label className="text-orange-400 font-bold mb-1 block">
                 Chọn Team Account Đích
               </label>
-              <select
-                className="form-input w-full"
-                value={destinationAccId}
-                onChange={(e) => setDestinationAccId(e.target.value)}
-                size={5}
-                required
-              >
-                <option value="" disabled>
-                  -- Chọn tài khoản Team --
-                </option>
-                {(() => {
-                  return teamAccounts
-                    .filter((a) => {
-                      if (a.id === movingSlot.fromAccId) return false;
-                      const expDays = a.expiredAt ? Math.ceil((new Date(a.expiredAt) - new Date()) / 86400000) : null;
-                      if (expDays !== null && expDays <= 0) return false; // Không chuyển vào acc hết hạn
+              <div className="text-xs text-slate-500 mb-2 italic">
+                Chỉ hiện Team Slot còn ở Kho tổng và còn chỗ trống.
+              </div>
+              {(() => {
+                const destinationOptions = teamAccounts
+                  .filter((a) => {
+                    if (a.id === movingSlot.fromAccId) return false;
+                    if (normalizeTeamSaleMode(a.saleMode) !== "slot") return false;
+                    if (normalizeTeamWarehouse(a.warehouse) !== "total") return false;
+                    const expDays = a.expiredAt
+                      ? Math.ceil((new Date(a.expiredAt) - new Date()) / 86400000)
+                      : null;
+                    if (expDays !== null && expDays <= 0) return false;
+                    const activeCustomers = getActiveTeamCustomers(a).length;
+                    return activeCustomers < getTeamCustomerCapacity(a);
+                  })
+                  .map((a) => ({
+                    id: a.id,
+                    username: a.username,
+                    usedSlots: getActiveTeamCustomers(a).length,
+                    maxSlots: getTeamCustomerCapacity(a),
+                    warehouseLabel: getTeamWarehouseLabel(a.warehouse),
+                    expiry: getExpiryStatus(a.expiredAt),
+                  }));
 
-                      const activeCustomers = getActiveTeamCustomers(a).length;
-                      return activeCustomers < getTeamCustomerCapacity(a);
-                    })
-                    .map((a) => {
-                      const filledSlots = getActiveTeamCustomers(a).length;
-                      const isBusinessMode = normalizeTeamSaleMode(a.saleMode) === "business";
-                      const capacity = getTeamCustomerCapacity(a);
-                      return (
-                        <option
-                          key={a.id}
-                          value={a.id}
-                          className="py-2"
-                        >
-                          [{filledSlots}/{capacity} {isBusinessMode ? "khách" : "Slots"}] — {a.username}
-                        </option>
-                      );
-                    });
-                })()}
-              </select>
+                return (
+                  <>
+                    <input type="hidden" value={destinationAccId} readOnly required />
+                    <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900/60 p-2">
+                      {destinationOptions.length > 0 ? (
+                        destinationOptions.map((option) => {
+                          const selected = destinationAccId === option.id;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => setDestinationAccId(option.id)}
+                              className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
+                                selected
+                                  ? "border-orange-500 bg-orange-500/10 shadow-[0_0_0_1px_rgba(249,115,22,0.35)]"
+                                  : "border-slate-700 bg-slate-800/70 hover:border-slate-500 hover:bg-slate-800"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2 text-sm font-bold text-white">
+                                    <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] text-cyan-200">
+                                      [{option.usedSlots}/{option.maxSlots}] Slot
+                                    </span>
+                                    <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] text-amber-200">
+                                      Team Slot
+                                    </span>
+                                    <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] text-emerald-200">
+                                      {option.warehouseLabel}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 break-all text-sm font-semibold text-slate-100">
+                                    {option.username}
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-400">
+                                    Hết hạn: {option.expiry.dateStr || "Không có hạn"}
+                                  </div>
+                                  <div className={`mt-1 text-xs font-bold ${option.expiry.color}`}>
+                                    {option.expiry.text || "Không có hạn"}
+                                  </div>
+                                </div>
+                                {selected && (
+                                  <div className="shrink-0 rounded-full bg-orange-500 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white">
+                                    Đã chọn
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-800/60 px-3 py-4 text-sm text-slate-400">
+                          Không có Team Slot hợp lệ trong Kho tổng để nhận khách.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
