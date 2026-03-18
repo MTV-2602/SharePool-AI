@@ -766,6 +766,16 @@ const shouldKeepTeamInMarketWarehouse = (account = {}) => {
   const daysLeft = getTeamDaysLeft(account);
   return !(daysLeft !== null && daysLeft <= PACKAGE2_MIN_DAYS_FOR_SALE);
 };
+const hasManagedTeamBusinessCustomer = (account = {}) => {
+  if (normalizeTeamSaleMode(account?.saleMode) !== TEAM_SALE_MODE_BUSINESS) {
+    return false;
+  }
+  const activeSlotEntry = findFirstActiveTeamSlotEntry(account?.slots);
+  if (!activeSlotEntry?.slot) return false;
+  return isDatammoManagedUser({
+    name: String(activeSlotEntry.slot.customerName || "").trim(),
+  });
+};
 const normalizeTeamWarehouseState = (account = {}) => {
   const saleMode = normalizeTeamSaleMode(account?.saleMode);
   const currentWarehouse = normalizeTeamWarehouse(
@@ -776,6 +786,18 @@ const normalizeTeamWarehouseState = (account = {}) => {
   if (currentWarehouse === TEAM_WAREHOUSE_SHORT) {
     return saleMode === TEAM_SALE_MODE_BUSINESS
       ? TEAM_WAREHOUSE_SHORT
+      : TEAM_WAREHOUSE_TOTAL;
+  }
+
+  if (
+    currentWarehouse === TEAM_WAREHOUSE_TOTAL &&
+    hasManagedTeamBusinessCustomer(account)
+  ) {
+    return shouldKeepTeamInMarketWarehouse({
+      ...account,
+      warehouse: TEAM_WAREHOUSE_MARKET,
+    })
+      ? TEAM_WAREHOUSE_MARKET
       : TEAM_WAREHOUSE_TOTAL;
   }
 
@@ -811,6 +833,25 @@ const reconcileTeamMarketInventory = async () => {
   const minExpiredAt = new Date(
     Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
   ).toISOString();
+  await TeamAccount.updateMany(
+    {
+      warehouse: TEAM_WAREHOUSE_TOTAL,
+      saleMode: TEAM_SALE_MODE_BUSINESS,
+      expiredAt: { $gt: minExpiredAt },
+      slots: {
+        $elemMatch: {
+          status: "active",
+          customerName: /^(datammo#|\[datammo\]|shopmini#|\[shopmini\])/i,
+        },
+      },
+    },
+    {
+      $set: {
+        warehouse: TEAM_WAREHOUSE_MARKET,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  );
   await TeamAccount.updateMany(
     {
       warehouse: TEAM_WAREHOUSE_MARKET,
