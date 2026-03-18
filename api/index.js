@@ -1688,7 +1688,6 @@ app.get(
   async (req, res) => {
     return res.json({
       stock: TEST_MARKETPLACE_STOCK,
-      price: 0,
       test: true,
       provider: "datammo",
     });
@@ -1732,8 +1731,6 @@ app.all(
         amount: TEST_MARKETPLACE_STOCK,
         quantity: TEST_MARKETPLACE_STOCK,
         sum: TEST_MARKETPLACE_STOCK,
-        price: 0,
-        amount_money: 0,
       });
     }
 
