@@ -2910,6 +2910,24 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
 
     const sourceType = fromAcc.type; // Loại gói nguồn
     const currentUsers = toAcc.users?.length || 0;
+    const sourceWarehouse = normalizePackage2Shelf(
+      fromAcc.package2Shelf,
+      CHATGPT_TOTAL_VALUE,
+    );
+    const destinationWarehouse = normalizePackage2Shelf(
+      toAcc.package2Shelf,
+      CHATGPT_TOTAL_VALUE,
+    );
+
+    if (
+      destinationWarehouse !== CHATGPT_TOTAL_VALUE &&
+      destinationWarehouse !== sourceWarehouse
+    ) {
+      return res.status(400).json({
+        error:
+          "Chi duoc chuyen khach sang tai khoan cung kho voi tai khoan nguon hoac ve kho tong.",
+      });
+    }
 
     if (toAcc.type === sourceType) {
       // Cùng loại gói: kiểm tra slot

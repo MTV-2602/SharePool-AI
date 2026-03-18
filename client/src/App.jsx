@@ -5537,6 +5537,10 @@ function App() {
 
                 const sourceAcc = sourceList.find((a) => a.id === movingUser.fromAccId);
                 const sourceType = sourceAcc?.type || "unassigned";
+                const sourceWarehouse =
+                  movingUser.platform === "chatgpt"
+                    ? normalizePackage2Shelf(sourceAcc?.package2Shelf)
+                    : "none";
 
                 const destinationOptions = sourceList
                   .filter((a) => {
@@ -5546,6 +5550,16 @@ function App() {
 
                     if (movingUser.platform !== "chatgpt") {
                       return users < 1;
+                    }
+
+                    const destinationWarehouse = normalizePackage2Shelf(
+                      a?.package2Shelf,
+                    );
+                    if (
+                      destinationWarehouse !== sourceWarehouse &&
+                      destinationWarehouse !== "none"
+                    ) {
+                      return false;
                     }
 
                     if (a.type === sourceType) {
@@ -5587,6 +5601,10 @@ function App() {
                       usedSlots,
                       maxSlots,
                       typeLabel,
+                      warehouseLabel:
+                        movingUser.platform === "chatgpt"
+                          ? getPackage2ShelfLabel(a.package2Shelf)
+                          : movingUser.platform.toUpperCase(),
                       expiry: getExpiryStatus(a.expiredAt),
                     };
                   });
@@ -5618,6 +5636,11 @@ function App() {
                                     <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] text-amber-200">
                                       {option.typeLabel}
                                     </span>
+                                    {movingUser.platform === "chatgpt" && (
+                                      <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] text-emerald-200">
+                                        {option.warehouseLabel}
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="mt-2 break-all text-sm font-semibold text-slate-100">
                                     {option.username}
