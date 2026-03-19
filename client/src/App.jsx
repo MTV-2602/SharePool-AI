@@ -167,6 +167,40 @@ const getMarketplaceOrderInfoFromUser = (user) => {
   }
   return { provider: "", orderId: "" };
 };
+const getLegacyMarketplaceInfoFromNote = (note) => {
+  const lines = String(note || "")
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+  for (const line of lines) {
+    if (!/^\[Legacy Datammo customer\]/i.test(line)) continue;
+    const body = line.replace(/^\[Legacy Datammo customer\]\s*/i, "");
+    const parts = body
+      .split("|")
+      .map((part) => String(part || "").trim())
+      .filter(Boolean);
+    const name = String(parts.shift() || "").trim();
+    const orderInfo = getMarketplaceOrderInfoFromUser({ name });
+    const joinedAt = String(
+      parts.find((part) => /^joined:/i.test(part)) || "",
+    )
+      .replace(/^joined:\s*/i, "")
+      .trim();
+    const expiredAt = String(
+      parts.find((part) => /^expired:/i.test(part)) || "",
+    )
+      .replace(/^expired:\s*/i, "")
+      .trim();
+    return {
+      name,
+      provider: orderInfo.provider || "",
+      orderId: orderInfo.orderId || "",
+      joinedAt,
+      expiredAt,
+    };
+  }
+  return null;
+};
 const extractDatammoOrderIdFromUser = (user) => {
   return String(getMarketplaceOrderInfoFromUser(user).orderId || "").trim();
 };
@@ -1559,6 +1593,20 @@ function App() {
 
   // MOVE USER LOGIC
   const openMoveUserModal = (accId, index, userData, platform = "chatgpt") => {
+    if (platform === "chatgpt") {
+      const sourceAcc = accounts.find((acc) => acc.id === accId);
+      if (
+        marketplaceTrackedAccountIds.has(String(sourceAcc?.id || "")) ||
+        isDatammoManagedUser(userData)
+      ) {
+        showAlert(
+          "Khong the chuyen tay",
+          "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",
+          "warning",
+        );
+        return;
+      }
+    }
     setMovingUser({ fromAccId: accId, userIndex: index, platform, ...userData });
     setDestinationAccId("");
     setShowMoveUserModal(true);
@@ -1845,6 +1893,14 @@ function App() {
   const handlePackage2ShelfChange = async (acc, shelfValue) => {
     if (!supportsChatgptMarketType(acc.type)) return;
     if (loadingStates.changeShelf[acc.id] || loadingStates.changeType[acc.id]) {
+      return;
+    }
+    if (marketplaceTrackedAccountIds.has(String(acc?.id || ""))) {
+      showAlert(
+        "Khong the chuyen kho",
+        "Acc da ban qua san khong duoc doi kho tay. Neu can doi acc, hay dung Bao hanh.",
+        "warning",
+      );
       return;
     }
     const nextShelf = normalizePackage2Shelf(shelfValue);
@@ -2443,6 +2499,7 @@ function App() {
         /\[Warranty (?:replacement|source)[^\]]+\](?:\s*(?!\[Warranty\b)[^\[]*)?/gi,
         " ",
       )
+      .replace(/^\s*\[Legacy Datammo customer\][^\n]*(?:\r?\n|$)/gim, " ")
       .replace(/\s{2,}/g, " ")
       .trim();
 
@@ -4341,34 +4398,40 @@ function App() {
                             </select>
                             {supportsChatgptMarketType(acc.type) && (
                               <div className="mt-2">
-                                <select
-                                  value={normalizePackage2Shelf(acc.package2Shelf)}
-                                  onChange={(e) =>
-                                    handlePackage2ShelfChange(acc, e.target.value)
-                                  }
-                                  title={
-                                    hasAssignedCustomer(acc)
-                                      ? "Tai khoan dang co khach nen khong the doi kho"
-                                      : "Doi kho tai khoan"
-                                  }
-                                  disabled={
-                                    loadingStates.changeType[acc.id] ||
-                                    loadingStates.changeShelf[acc.id] ||
-                                    hasAssignedCustomer(acc)
-                                  }
-                                  className={`
-                                    w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center
-                                    ${normalizePackage2Shelf(acc.package2Shelf) === "none"
-                                      ? "bg-slate-800 text-slate-300 border-slate-600"
-                                      : normalizePackage2Shelf(acc.package2Shelf) === "main"
-                                        ? "bg-amber-900/40 text-amber-300 border-amber-700/60"
-                                        : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"}
-                                  `}
-                                >
-                                  <option value="none">Kho tong</option>
-                                  <option value="cheap">Kho market</option>
-                                  <option value="main">Kho duoi 25 ngay</option>
-                                </select>
+                                {marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
+                                  <div className="w-full rounded px-2 py-1.5 text-center text-[11px] font-semibold border bg-amber-900/40 text-amber-200 border-amber-700/60">
+                                    Khoa don san
+                                  </div>
+                                ) : (
+                                  <select
+                                    value={normalizePackage2Shelf(acc.package2Shelf)}
+                                    onChange={(e) =>
+                                      handlePackage2ShelfChange(acc, e.target.value)
+                                    }
+                                    title={
+                                      hasAssignedCustomer(acc)
+                                        ? "Tai khoan dang co khach nen khong the doi kho"
+                                        : "Doi kho tai khoan"
+                                    }
+                                    disabled={
+                                      loadingStates.changeType[acc.id] ||
+                                      loadingStates.changeShelf[acc.id] ||
+                                      hasAssignedCustomer(acc)
+                                    }
+                                    className={`
+                                      w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center
+                                      ${normalizePackage2Shelf(acc.package2Shelf) === "none"
+                                        ? "bg-slate-800 text-slate-300 border-slate-600"
+                                        : normalizePackage2Shelf(acc.package2Shelf) === "main"
+                                          ? "bg-amber-900/40 text-amber-300 border-amber-700/60"
+                                          : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"}
+                                    `}
+                                  >
+                                    <option value="none">Kho tong</option>
+                                    <option value="cheap">Kho market</option>
+                                    <option value="main">Kho duoi 25 ngay</option>
+                                  </select>
+                                )}
                                 {loadingStates.changeShelf[acc.id] && (
                                   <div className="text-center mt-1 text-[10px] text-emerald-300">Dang cap nhat kho...</div>
                                 )}
@@ -4643,8 +4706,14 @@ function App() {
                                 const package2ShelfLabel = getChatgptWarehouseLabel(package2Shelf);
                                 const isTrackedMarketplaceAccount =
                                   marketplaceTrackedAccountIds.has(String(acc?.id || ""));
+                                const trackedMarketplaceEntry =
+                                  marketplaceTrackedAccountMap.get(String(acc?.id || ""));
+                                const trackedMarketplaceSummary =
+                                  trackedMarketplaceEntry?.summary || null;
                                 const isInMarketWarehouse = package2Shelf === "cheap";
                                 const isOnDatammoShelf = isInMarketWarehouse;
+                                const legacyMarketplaceInfo =
+                                  getLegacyMarketplaceInfoFromNote(acc.note);
                                 const managedOrderInfo = getMarketplaceOrderInfoFromUser(u);
                                 const latestMarketplaceOrder = findMarketplaceOrderForAccount(
                                   acc.id,
@@ -4653,17 +4722,22 @@ function App() {
                                 );
                                 const datammoOrderId = String(
                                   managedOrderInfo.orderId ||
+                                    legacyMarketplaceInfo?.orderId ||
+                                    trackedMarketplaceEntry?.orderId ||
                                     latestMarketplaceOrder?.orderId ||
                                     "",
                                 ).trim();
                                 const managedProvider = normalizeMarketplaceProvider(
-                                  managedOrderInfo.provider || latestMarketplaceOrder?.provider,
+                                  managedOrderInfo.provider ||
+                                    legacyMarketplaceInfo?.provider ||
+                                    trackedMarketplaceEntry?.provider ||
+                                    latestMarketplaceOrder?.provider,
                                 );
                                 const providerLabel = getMarketplaceProviderLabel(
                                   managedProvider,
                                 );
-                                const canOpenDatammoWarranty =
-                                  !!u && isDatammoManagedUser(u) && !!datammoOrderId;
+                                const hasActualManagedMarketplaceUser =
+                                  !!u && isDatammoManagedUser(u);
                                 const warrantyInfo = getDatammoWarrantyInfoForAccount(
                                   acc.id,
                                   datammoWarrantyCases,
@@ -4686,6 +4760,62 @@ function App() {
                                   warrantyRounds[warrantyRounds.length - 1]?.toUsername ||
                                   warrantyCase?.currentAccountId ||
                                   "";
+                                const showMarketplaceManagementCard =
+                                  hasActualManagedMarketplaceUser ||
+                                  isTrackedMarketplaceAccount ||
+                                  !!warrantyCase;
+                                const displayMarketplaceUser = hasActualManagedMarketplaceUser
+                                  ? u
+                                  : showMarketplaceManagementCard
+                                    ? {
+                                        name:
+                                          legacyMarketplaceInfo?.name ||
+                                          trackedMarketplaceEntry?.label ||
+                                          trackedMarketplaceSummary?.currentUsername ||
+                                          trackedMarketplaceSummary?.soldUsername ||
+                                          `${providerLabel}#${datammoOrderId || "order"}`,
+                                        joinedAt:
+                                          legacyMarketplaceInfo?.joinedAt ||
+                                          trackedMarketplaceEntry?.order?.createdAt ||
+                                          latestMarketplaceOrder?.createdAt ||
+                                          "",
+                                        expiredAt:
+                                          legacyMarketplaceInfo?.expiredAt ||
+                                          "",
+                                      }
+                                    : null;
+                                const displayMarketplaceName = String(
+                                  getUserName(displayMarketplaceUser) ||
+                                    trackedMarketplaceEntry?.label ||
+                                    trackedMarketplaceSummary?.currentUsername ||
+                                    trackedMarketplaceSummary?.soldUsername ||
+                                    "",
+                                ).trim();
+                                const soldMarketplaceUsername = String(
+                                  trackedMarketplaceSummary?.soldUsername ||
+                                    acc?.username ||
+                                    "",
+                                ).trim();
+                                const currentMarketplaceUsername = String(
+                                  warrantyCase?.currentUsername ||
+                                    trackedMarketplaceSummary?.currentUsername ||
+                                    soldMarketplaceUsername ||
+                                    acc?.username ||
+                                    "",
+                                ).trim();
+                                const displayMarketplaceJoinedDate =
+                                  getUserDate(displayMarketplaceUser) ||
+                                  formatDate(
+                                    trackedMarketplaceEntry?.order?.createdAt ||
+                                      latestMarketplaceOrder?.createdAt,
+                                  ) ||
+                                  "--";
+                                const displayMarketplaceExpiryDate =
+                                  getUserExpiryDate(displayMarketplaceUser) ||
+                                  formatDate(acc?.expiredAt) ||
+                                  "";
+                                const canOpenDatammoWarranty =
+                                  showMarketplaceManagementCard && !!datammoOrderId;
                                 const renderWarrantySummary = (extraClasses = "") => {
                                   if (!warrantyCase || warrantyRounds.length === 0) {
                                     return null;
@@ -4788,14 +4918,12 @@ function App() {
                                     </div>
                                   );
                                 };
-                                const daysRemaining = u ? getDaysRemaining(u) : null;
+                                const daysRemaining = displayMarketplaceUser
+                                  ? getDaysRemaining(displayMarketplaceUser)
+                                  : null;
                                 const isExpired = daysRemaining !== null && daysRemaining <= 0;
                                 const isNearExpiry =
                                   daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 3;
-                                const showMarketplaceManagementCard =
-                                  (!!u && isDatammoManagedUser(u)) ||
-                                  isTrackedMarketplaceAccount ||
-                                  !!warrantyCase;
                                 const marketplaceCardClasses =
                                   warrantyInfo?.role === "current"
                                     ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
@@ -4816,7 +4944,7 @@ function App() {
 
                                 return (
                                   <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
-                                    {acc.users?.length > 0 ? (
+                                    {displayMarketplaceUser ? (
                                       showMarketplaceManagementCard ? (
                                         <div
                                           className={`rounded-xl border px-3 py-3 shadow-sm ${marketplaceCardClasses}`}
@@ -4832,7 +4960,7 @@ function App() {
                                                     Don san
                                                   </div>
                                                   <div className="mt-0.5 text-[10px] leading-relaxed text-slate-300">
-                                                    {providerLabel} · {getUserName(u)}
+                                                    {providerLabel} · {displayMarketplaceName || "Khach san"}
                                                   </div>
                                                 </div>
                                               </div>
@@ -4852,12 +4980,30 @@ function App() {
                                               </span>
                                             </div>
                                             <div className="flex items-center justify-between gap-3">
-                                              <span className="text-slate-400">Ngay vao</span>
+                                              <span className="text-slate-400">Khach san</span>
                                               <span className="font-semibold text-white">
-                                                {getUserDate(u) || "--"}
+                                                {displayMarketplaceName || "--"}
                                               </span>
                                             </div>
-                                            {getUserExpiryDate(u) && (
+                                            <div className="flex items-center justify-between gap-3">
+                                              <span className="text-slate-400">Acc da ban</span>
+                                              <span className="font-semibold text-white">
+                                                {soldMarketplaceUsername || "--"}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center justify-between gap-3">
+                                              <span className="text-slate-400">Acc hien tai</span>
+                                              <span className="font-semibold text-white">
+                                                {currentMarketplaceUsername || "--"}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center justify-between gap-3">
+                                              <span className="text-slate-400">Ngay vao</span>
+                                              <span className="font-semibold text-white">
+                                                {displayMarketplaceJoinedDate}
+                                              </span>
+                                            </div>
+                                            {displayMarketplaceExpiryDate && (
                                               <div className="flex items-center justify-between gap-3">
                                                 <span className="text-slate-400">Het han</span>
                                                 <span
@@ -4869,7 +5015,7 @@ function App() {
                                                         : "text-emerald-300"
                                                   }`}
                                                 >
-                                                  {getUserExpiryDate(u)}
+                                                  {displayMarketplaceExpiryDate}
                                                 </span>
                                               </div>
                                             )}
@@ -4927,7 +5073,14 @@ function App() {
                                             </div>
                                           )}
 
-                                          <div className="mt-3 grid grid-cols-2 gap-2">
+                                          <div
+                                            className={`mt-3 grid gap-2 ${
+                                              hasActualManagedMarketplaceUser &&
+                                              (isExpired || isNearExpiry)
+                                                ? "grid-cols-2"
+                                                : "grid-cols-1"
+                                            }`}
+                                          >
                                             {canOpenDatammoWarranty && (
                                               <button
                                                 type="button"
@@ -4950,46 +5103,17 @@ function App() {
                                                 Gia han
                                               </button>
                                             )}
-                                            {!isExpired ? (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  openMoveUserModal(acc.id, 0, u)
-                                                }
-                                                className="rounded-lg bg-orange-700 hover:bg-orange-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
-                                                title="Chuyển khách"
-                                              >
-                                                Chuyen
-                                              </button>
-                                            ) : (
-                                              <div className="rounded-lg border border-slate-700 bg-slate-900/60 px-2.5 py-2 text-center text-[11px] font-bold text-slate-500">
-                                                Khong chuyen
-                                              </div>
-                                            )}
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                openEditUserModal(acc.id, 0, u)
-                                              }
-                                              className="rounded-lg bg-blue-700 hover:bg-blue-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
-                                              title="Sửa tên"
+                                            <div
+                                              className={`rounded-lg border border-slate-700 bg-slate-950/50 px-2.5 py-2 text-center text-[11px] font-bold text-slate-300 ${
+                                                canOpenDatammoWarranty ||
+                                                (hasActualManagedMarketplaceUser &&
+                                                  (isExpired || isNearExpiry))
+                                                  ? "col-span-2"
+                                                  : ""
+                                              }`}
                                             >
-                                              Sua
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleDeleteUser(
-                                                  acc.id,
-                                                  0,
-                                                  getUserName(u),
-                                                )
-                                              }
-                                              className="col-span-2 rounded-lg bg-red-700 hover:bg-red-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
-                                              title="Xóa khách"
-                                            >
-                                              Xoa khach
-                                            </button>
+                                              Acc da ban qua san - khong chuyen tay. Neu can doi acc, hay dung Bao hanh.
+                                            </div>
                                           </div>
                                         </div>
                                       ) : (
@@ -5016,7 +5140,7 @@ function App() {
                                                   className="text-yellow-500"
                                                 />
                                               )}
-                                              👤 {getUserName(u)}
+                                              👤 {getUserName(displayMarketplaceUser)}
                                             </span>
                                             <span
                                               className={`text-[10px] block ml-6 ${isExpired
@@ -5028,7 +5152,7 @@ function App() {
                                                     : "text-slate-400"
                                                 }`}
                                             >
-                                              {getUserDate(u)}
+                                              {displayMarketplaceJoinedDate}
                                               {daysRemaining !== null && (
                                                 <span className="ml-1">
                                                   {isExpired
@@ -5037,16 +5161,17 @@ function App() {
                                                 </span>
                                               )}
                                             </span>
-                                            {getUserExpiryDate(u) && (
+                                            {displayMarketplaceExpiryDate && (
                                               <span className={`text-[10px] block ml-6 font-semibold ${isExpired ? "text-red-500" : isNearExpiry ? "text-yellow-500" : "text-emerald-500"
                                                 }`}>
-                                                🕑 HH: {getUserExpiryDate(u)}
+                                                🕑 HH: {displayMarketplaceExpiryDate}
                                               </span>
                                             )}
                                             {renderWarrantySummary("mt-2 ml-6")}
                                           </div>
                                           <div className="flex gap-2">
-                                            {(isExpired || isNearExpiry) && (
+                                            {hasActualManagedMarketplaceUser &&
+                                              (isExpired || isNearExpiry) && (
                                               <button
                                                 type="button"
                                                 onClick={() =>
@@ -5058,49 +5183,12 @@ function App() {
                                                 <RotateCw size={14} />
                                               </button>
                                             )}
-                                            {!isExpired ? (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  openMoveUserModal(acc.id, 0, u)
-                                                }
-                                                className="text-orange-400 hover:text-white"
-                                                title="Chuyển khách"
-                                              >
-                                                <ArrowRightLeft size={14} />
-                                              </button>
-                                            ) : (
-                                              <span
-                                                className="text-gray-600 cursor-not-allowed"
-                                                title="Hết hạn: Không thể chuyển"
-                                              >
-                                                <ArrowRightLeft size={14} />
-                                              </span>
-                                            )}
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                openEditUserModal(acc.id, 0, u)
-                                              }
-                                              className="text-blue-400 hover:text-white ml-1"
-                                              title="Sửa tên"
+                                            <span
+                                              className="text-slate-500 cursor-not-allowed"
+                                              title="Acc da ban qua san khong duoc chuyen tay"
                                             >
-                                              <Pencil size={14} />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleDeleteUser(
-                                                  acc.id,
-                                                  0,
-                                                  getUserName(u),
-                                                )
-                                              }
-                                              className="text-red-400 hover:text-white ml-1"
-                                              title="Xóa khách"
-                                            >
-                                              <Trash2 size={14} />
-                                            </button>
+                                              <ArrowRightLeft size={14} />
+                                            </span>
                                           </div>
                                         </div>
                                       )
@@ -5215,6 +5303,8 @@ function App() {
                                 const primaryUser = Array.isArray(acc.users)
                                   ? acc.users[0]
                                   : null;
+                                const trackedMarketplaceEntry =
+                                  marketplaceTrackedAccountMap.get(String(acc?.id || ""));
                                 const managedOrderInfo =
                                   getMarketplaceOrderInfoFromUser(primaryUser);
                                 const latestMarketplaceOrder =
@@ -5225,6 +5315,7 @@ function App() {
                                   );
                                 const marketplaceOrderId = String(
                                   managedOrderInfo.orderId ||
+                                    trackedMarketplaceEntry?.orderId ||
                                     latestMarketplaceOrder?.orderId ||
                                     "",
                                 ).trim();
@@ -5234,8 +5325,9 @@ function App() {
                                     datammoWarrantyCases,
                                   )?.warrantyCase;
                                 const canOpenWarranty =
-                                  (!!primaryUser &&
-                                    isDatammoManagedUser(primaryUser) &&
+                                  (marketplaceTrackedAccountIds.has(
+                                    String(acc?.id || ""),
+                                  ) &&
                                     !!marketplaceOrderId) ||
                                   hasWarrantyCase;
                                 if (!canOpenWarranty) return null;

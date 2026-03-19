@@ -2346,6 +2346,11 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     // Validate package2: chỉ được tối đa 1 khách hàng
     const normalizedPayload = normalizeChatgptPayload(req.body, existingAcc);
     const targetType = normalizedPayload.type || existingAcc.type;
+    const trackedMarketplaceOrder = await findLatestMarketplaceOrderForAccount(
+      id,
+      "",
+      "chatgpt",
+    );
 
     if (normalizedPayload.users !== undefined) {
       if (targetType === "package2" && normalizedPayload.users.length > 1) {
@@ -2355,6 +2360,12 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
 
     // ===== BACKEND GUARD: Chặn đổi gói khi đang có khách =====
     if (normalizedPayload.type && normalizedPayload.type !== existingAcc.type) {
+      if (trackedMarketplaceOrder) {
+        return res.status(400).json({
+          error:
+            "Acc da ban qua san khong duoc doi goi tay. Neu can doi acc, hay dung Bao hanh.",
+        });
+      }
       const currentUsers = existingAcc.users || [];
       if (currentUsers.length > 0) {
         return res.status(400).json({
@@ -2379,6 +2390,16 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     const isManualShelfUpdate =
       supportsChatgptMarket(targetType) && req.body.package2Shelf !== undefined;
     const isPackage2ShelfChanged = existingShelf !== requestedShelf;
+    if (
+      isManualShelfUpdate &&
+      isPackage2ShelfChanged &&
+      trackedMarketplaceOrder
+    ) {
+      return res.status(400).json({
+        error:
+          "Acc da ban qua san khong duoc doi kho tay. Neu can doi acc, hay dung Bao hanh.",
+      });
+    }
     if (
       isManualShelfUpdate &&
       isPackage2ShelfChanged &&
@@ -3071,6 +3092,24 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
 
     if (!fromAcc.users || !fromAcc.users[userIndex]) {
       return res.status(400).json({ error: "User not found in source account" });
+    }
+    const sourceMarketplaceOrder = await findLatestMarketplaceOrderForAccount(
+      fromAccId,
+      "",
+      "chatgpt",
+    );
+    const destinationMarketplaceOrder =
+      await findLatestMarketplaceOrderForAccount(toAccId, "", "chatgpt");
+    const sourceUserToMove = fromAcc.users[userIndex];
+    if (
+      isDatammoManagedUser(sourceUserToMove) ||
+      sourceMarketplaceOrder ||
+      destinationMarketplaceOrder
+    ) {
+      return res.status(400).json({
+        error:
+          "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",
+      });
     }
 
     // STRICT RULE: Cannot transfer to Expired Account
