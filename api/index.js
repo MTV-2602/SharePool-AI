@@ -2638,8 +2638,6 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       });
     }
 
-    const requiredExpiryTime = null;
-
     const fallbackOrder = await findLatestMarketplaceOrderForAccount(
       sourceAcc.id,
       sourceManagedInfo.provider,
@@ -2690,19 +2688,6 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       return res.status(400).json({
         error:
           "Tai khoan thay the nay dang nam trong mot luong bao hanh khac",
-      });
-    }
-
-    const replacementExpiryTime = replacementAcc.expiredAt
-      ? new Date(replacementAcc.expiredAt).getTime()
-      : null;
-    if (
-      requiredExpiryTime !== null &&
-      (!Number.isFinite(replacementExpiryTime) ||
-        replacementExpiryTime < requiredExpiryTime)
-    ) {
-      return res.status(400).json({
-        error: "Tai khoan thay the phai co han bang hoac lon hon han cua khach hien tai",
       });
     }
 
@@ -2849,8 +2834,6 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
         error: "Team nay khong phai acc seller dang giu khach de bao hanh",
       });
     }
-    const requiredExpiryTime = null;
-
     const fallbackOrder = await findLatestMarketplaceOrderForAccount(
       sourceAcc.id,
       sourceManagedInfo.provider,
@@ -2900,19 +2883,6 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
     if (replacementWarrantyCase) {
       return res.status(400).json({
         error: "Team thay the nay dang nam trong mot luong bao hanh khac",
-      });
-    }
-
-    const replacementExpiryTime = replacementAcc.expiredAt
-      ? new Date(replacementAcc.expiredAt).getTime()
-      : null;
-    if (
-      requiredExpiryTime !== null &&
-      (!Number.isFinite(replacementExpiryTime) ||
-        replacementExpiryTime < requiredExpiryTime)
-    ) {
-      return res.status(400).json({
-        error: "Team thay the phai co han bang hoac lon hon han cua khach hien tai",
       });
     }
 

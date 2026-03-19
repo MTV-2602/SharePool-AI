@@ -772,6 +772,8 @@ function App() {
   const [warrantySourceScope, setWarrantySourceScope] = useState("chatgpt");
   const [warrantyReplacementId, setWarrantyReplacementId] = useState("");
   const [warrantyReason, setWarrantyReason] = useState("");
+  const [warrantyReplacementSearch, setWarrantyReplacementSearch] = useState("");
+  const [warrantyWarehouseFilter, setWarrantyWarehouseFilter] = useState("all");
   const [selectedChatgptIds, setSelectedChatgptIds] = useState([]);
   const [selectedTeamIds, setSelectedTeamIds] = useState([]);
   // CUSTOM ALERT & CONFIRM MODAL
@@ -2508,6 +2510,8 @@ function App() {
     setWarrantySourceScope(normalizeMarketplaceScope(scope));
     setWarrantyReplacementId("");
     setWarrantyReason("");
+    setWarrantyReplacementSearch("");
+    setWarrantyWarehouseFilter("all");
     setShowWarrantyModal(true);
   };
 
@@ -2662,6 +2666,8 @@ function App() {
       setWarrantySourceAcc(null);
       setWarrantyReplacementId("");
       setWarrantyReason("");
+      setWarrantyReplacementSearch("");
+      setWarrantyWarehouseFilter("all");
       await fetchData();
       broadcastDataChange();
       showAlert(
@@ -8299,6 +8305,35 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           }
           return true;
         });
+        const filteredReplacementAccounts = eligibleReplacementAccounts.filter((acc) => {
+          const normalizedWarehouse = isTeamWarranty
+            ? normalizeTeamWarehouse(acc?.warehouse)
+            : normalizePackage2Shelf(acc?.package2Shelf, CHATGPT_TOTAL_VALUE);
+          if (
+            warrantyWarehouseFilter !== "all" &&
+            normalizedWarehouse !== warrantyWarehouseFilter
+          ) {
+            return false;
+          }
+          const searchIndex = toNonAccentVietnamese(
+            [
+              acc?.username,
+              isTeamWarranty
+                ? getTeamWarehouseLabel(acc?.warehouse)
+                : getPackage2ShelfLabel(acc?.package2Shelf),
+              formatDate(acc?.expiredAt),
+              getWarrantyRemainingDaysLabel(acc?.expiredAt),
+            ]
+              .filter(Boolean)
+              .join(" "),
+          );
+          return searchIndex.includes(
+            toNonAccentVietnamese(warrantyReplacementSearch),
+          );
+        });
+        const hasVisibleReplacementSelected = filteredReplacementAccounts.some(
+          (acc) => String(acc?.id || "") === String(warrantyReplacementId || ""),
+        );
         const sourceManagedInfo = isTeamWarranty
           ? getMarketplaceOrderInfoFromUser({
               name: sourceTeamCustomer?.customerName || "",
@@ -8331,7 +8366,12 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                 </h2>
                 <button
                   type="button"
-                  onClick={() => setShowWarrantyModal(false)}
+                  onClick={() => {
+                    setShowWarrantyModal(false);
+                    setWarrantyReplacementSearch("");
+                    setWarrantyWarehouseFilter("all");
+                    setWarrantyReplacementId("");
+                  }}
                   className="text-slate-400 hover:text-white"
                 >
                   <X size={20} />
@@ -8364,9 +8404,37 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   <label className="text-slate-400 text-sm block mb-1">
                     Tài khoản thay thế *
                   </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-2 mb-2">
+                    <input
+                      value={warrantyReplacementSearch}
+                      onChange={(e) => {
+                        setWarrantyReplacementSearch(e.target.value);
+                        setWarrantyReplacementId("");
+                      }}
+                      placeholder={
+                        isTeamWarranty
+                          ? "Tim Team thay the..."
+                          : "Tim acc thay the..."
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                    />
+                    <select
+                      value={warrantyWarehouseFilter}
+                      onChange={(e) => {
+                        setWarrantyWarehouseFilter(e.target.value);
+                        setWarrantyReplacementId("");
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
+                    >
+                      <option value="all">Tat ca kho</option>
+                      <option value={isTeamWarranty ? "total" : "none"}>Kho tong</option>
+                      <option value={isTeamWarranty ? "market" : "cheap"}>Kho market</option>
+                      <option value={isTeamWarranty ? "short" : "main"}>Kho duoi 25 ngay</option>
+                    </select>
+                  </div>
                   <select
                     required
-                    value={warrantyReplacementId}
+                    value={hasVisibleReplacementSelected ? warrantyReplacementId : ""}
                     onChange={(e) => setWarrantyReplacementId(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
                   >
@@ -8375,7 +8443,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                         ? "Chọn Team Business trống..."
                         : "Chọn acc trống..."}
                     </option>
-                    {eligibleReplacementAccounts.map((acc) => (
+                    {filteredReplacementAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
                         {isTeamWarranty
                           ? `${acc.username} · ${getTeamWarehouseLabel(acc.warehouse)} · ${formatDate(acc.expiredAt)} · ${getWarrantyRemainingDaysLabel(acc.expiredAt)}`
@@ -8383,12 +8451,15 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                       </option>
                     ))}
                   </select>
+                  <div className="mt-2 text-[11px] text-cyan-300">
+                    Hien {filteredReplacementAccounts.length}/{eligibleReplacementAccounts.length} acc sach
+                  </div>
                   <div className="mt-2 text-[11px] text-slate-400 leading-relaxed">
                     {isTeamWarranty
                       ? "Chi hien Team Business trong 100%: khong co khach, chua ban, khong nam trong bao hanh va chua het han."
                       : "Chi hien acc trong 100%: khong co khach, chua ban, khong nam trong bao hanh va chua het han."}
                   </div>
-                  {eligibleReplacementAccounts.length === 0 && (
+                  {filteredReplacementAccounts.length === 0 && (
                     <div className="mt-2 text-xs text-yellow-400">
                       {isTeamWarranty
                         ? "Khong co Team Business trong 100% phu hop de bao hanh."
@@ -8414,14 +8485,23 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
               <div className="flex gap-3 mt-6">
                 <button
                   type="button"
-                  onClick={() => setShowWarrantyModal(false)}
+                  onClick={() => {
+                    setShowWarrantyModal(false);
+                    setWarrantyReplacementSearch("");
+                    setWarrantyWarehouseFilter("all");
+                    setWarrantyReplacementId("");
+                  }}
                   className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  disabled={loadingStates.warranty || eligibleReplacementAccounts.length === 0}
+                  disabled={
+                    loadingStates.warranty ||
+                    filteredReplacementAccounts.length === 0 ||
+                    !hasVisibleReplacementSelected
+                  }
                   className="flex-1 p-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition-colors disabled:opacity-60 disabled:cursor-wait"
                 >
                   {loadingStates.warranty ? "Đang bảo hành..." : "Xác nhận bảo hành"}
