@@ -549,10 +549,13 @@ const buildChatgptMarketplaceExportLine = (account = {}) => {
   const otpSecret = String(account?.otpSecret || "").trim();
   const link = String(account?.link || "").trim();
   if (!username || !password) return "";
-  const parts = [username, password];
-  if (otpSecret) parts.push(otpSecret);
-  if (link) parts.push(link);
-  return parts.join("|");
+  const parts = [`TK: ${username}`, `MK: ${password}`];
+  if (otpSecret) {
+    parts.push(`2FA: ${otpSecret}`);
+    parts.push(`2FA.live: ${buildChatgpt2faLiveUrl(otpSecret)}`);
+  }
+  if (link) parts.push(`LINK: ${link}`);
+  return parts.join(" | ");
 };
 const buildTeamMarketplaceExportLines = (account = {}) => {
   const username = String(account?.username || "").trim();
@@ -565,10 +568,13 @@ const buildTeamMarketplaceExportLines = (account = {}) => {
   if (saleMode === "business") {
     const activeCustomers = getActiveTeamCustomers(account).length;
     if (activeCustomers > 0) return [];
-    const parts = [username, password];
-    if (otpSecret) parts.push(otpSecret);
-    if (recoveryUrl) parts.push(recoveryUrl);
-    return [parts.join("|")];
+    const parts = [`TK: ${username}`, `MK: ${password}`];
+    if (otpSecret) {
+      parts.push(`2FA: ${otpSecret}`);
+      parts.push(`2FA.live: ${buildChatgpt2faLiveUrl(otpSecret)}`);
+    }
+    if (recoveryUrl) parts.push(`LINK: ${recoveryUrl}`);
+    return [parts.join(" | ")];
   }
 
   const slots = normalizeTeamSlotsForUi(account?.slots);
