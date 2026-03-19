@@ -545,9 +545,13 @@ const parseChatgptQuickImportRows = (raw = "") => {
 const buildChatgptMarketplaceExportLine = (account = {}) => {
   const username = String(account?.username || "").trim();
   const password = String(account?.password || "").trim();
+  const otpSecret = String(account?.otpSecret || "").trim();
   const link = String(account?.link || "").trim();
   if (!username || !password) return "";
-  return link ? `${username}|${password}|${link}` : `${username}|${password}`;
+  const parts = [username, password];
+  if (otpSecret) parts.push(otpSecret);
+  if (link) parts.push(link);
+  return parts.join("|");
 };
 const buildTeamMarketplaceExportLines = (account = {}) => {
   const username = String(account?.username || "").trim();
