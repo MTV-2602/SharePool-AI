@@ -1360,9 +1360,44 @@ const buildShopminiDeliveryPayload = (lines = [], overrides = {}) => {
     ...overrides,
   };
 };
+const build2faLiveUrl = (otpSecret = "") => {
+  const normalized = String(otpSecret || "").trim();
+  return normalized
+    ? `https://2fa.live/tok/${encodeURIComponent(normalized)}`
+    : "";
+};
+const buildLabeledAccountDeliveryLine = ({
+  username = "",
+  password = "",
+  otpSecret = "",
+  link = "",
+  note = "",
+} = {}) => {
+  const normalizedUsername = String(username || "").trim();
+  const normalizedPassword = String(password || "").trim();
+  const normalizedOtpSecret = String(otpSecret || "").trim();
+  const normalizedLink = String(link || "").trim();
+  const normalizedNote = String(note || "").trim();
+  if (!normalizedUsername || !normalizedPassword) return "";
+  const parts = [`TK: ${normalizedUsername}`, `MK: ${normalizedPassword}`];
+  if (normalizedOtpSecret) {
+    parts.push(`2FA: ${normalizedOtpSecret}`);
+    const liveUrl = build2faLiveUrl(normalizedOtpSecret);
+    if (liveUrl) {
+      parts.push(`2FA.live: ${liveUrl}`);
+    }
+  }
+  if (normalizedLink) {
+    parts.push(`LINK: ${normalizedLink}`);
+  } else if (normalizedNote) {
+    parts.push(`NOTE: ${normalizedNote}`);
+  }
+  return parts.join(" | ");
+};
 const formatShopminiDeliveryLineForDisplay = (line = "") => {
   const raw = String(line || "").trim();
   if (!raw) return raw;
+  if (/^(TK:|SLOT:|NOTE:)/i.test(raw)) return raw;
   const parts = raw.split("|").map((part) => String(part || "").trim());
   if (parts.length === 0) return raw;
   const [username, password, ...rest] = parts;
@@ -1436,8 +1471,13 @@ const buildPackage2SaleFilter = () => {
     },
   };
 };
-const formatPackage2DeliveryLine = (acc) =>
-  `${acc.username}|${acc.password}${acc.link ? `|${acc.link}` : ""}`;
+const formatPackage2DeliveryLine = (acc = {}) =>
+  buildLabeledAccountDeliveryLine({
+    username: acc.username,
+    password: acc.password,
+    otpSecret: acc.otpSecret,
+    link: acc.link,
+  });
 const getSafeBuyQuantity = (value) => {
   const q = Number.parseInt(value, 10);
   if (!Number.isFinite(q) || q <= 0) return 1;
@@ -1582,9 +1622,12 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
   return normalized;
 };
 const buildTeamBusinessDeliveryLine = (acc = {}) =>
-  `${String(acc.username || "").trim()}|${String(acc.password || "").trim()}|${String(
-    acc.recoveryUrl || "",
-  ).trim()}`;
+  buildLabeledAccountDeliveryLine({
+    username: acc.username,
+    password: acc.password,
+    otpSecret: acc.otpSecret,
+    link: acc.recoveryUrl,
+  });
 const buildTeamSlotDeliveryLine = (acc = {}, slotNum = 1) =>
   `Slot ${slotNum}|${String(acc.username || "").trim()}|Ban gui kem gmail chinh chu de admin up`;
 const snapshotDocument = (doc) => {
