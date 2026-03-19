@@ -8227,6 +8227,10 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
       {showWarrantyModal && warrantySourceAcc && (() => {
         const sourceScope = normalizeMarketplaceScope(warrantySourceScope);
         const isTeamWarranty = sourceScope === "team";
+        const getWarrantyRemainingDaysLabel = (isoString) => {
+          const status = getExpiryStatus(isoString);
+          return status?.text || "Khong co han";
+        };
         const eligibleReplacementAccounts = (
           isTeamWarranty ? teamAccounts : accounts
         ).filter((acc) => {
@@ -8256,6 +8260,9 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             acc?.expiredAt &&
             new Date(acc.expiredAt).getTime() <= Date.now()
           ) {
+            return false;
+          }
+          if (normalizePackage2Shelf(acc?.package2Shelf) === "cheap") {
             return false;
           }
           return !isAccountBusyInDatammoWarranty(
@@ -8343,11 +8350,16 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     {eligibleReplacementAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
                         {isTeamWarranty
-                          ? `${acc.username} · ${getTeamWarehouseLabel(acc.warehouse)} · ${formatDate(acc.expiredAt)}`
-                          : `${acc.username} · ${getPackage2ShelfLabel(acc.package2Shelf)} · ${formatDate(acc.expiredAt)}`}
+                          ? `${acc.username} · ${getTeamWarehouseLabel(acc.warehouse)} · ${formatDate(acc.expiredAt)} · ${getWarrantyRemainingDaysLabel(acc.expiredAt)}`
+                          : `${acc.username} · ${getPackage2ShelfLabel(acc.package2Shelf)} · ${formatDate(acc.expiredAt)} · ${getWarrantyRemainingDaysLabel(acc.expiredAt)}`}
                       </option>
                     ))}
                   </select>
+                  <div className="mt-2 text-[11px] text-slate-400 leading-relaxed">
+                    {isTeamWarranty
+                      ? "Chi hien Team Business trong, chua het han, dang o kho tong/market va chua nam trong bao hanh khac."
+                      : "Chi hien acc Goi 2 trong, chua het han, khong o kho market va chua nam trong bao hanh khac."}
+                  </div>
                   {eligibleReplacementAccounts.length === 0 && (
                     <div className="mt-2 text-xs text-yellow-400">
                       {isTeamWarranty
