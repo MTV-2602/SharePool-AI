@@ -30,6 +30,7 @@ const accountSchema = new mongoose.Schema({
     id: { type: String, unique: true }, // Keep string ID compatibility
     username: { type: String, required: true },
     password: { type: String, required: true },
+    otpSecret: { type: String, default: '' },
     type: { type: String, default: 'unassigned' },
     users: [{
         name: String,

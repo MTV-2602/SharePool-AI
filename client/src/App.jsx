@@ -399,19 +399,140 @@ const buildTeamEditFormState = (overrides = {}) => ({
   ...buildTeamFormState(),
   ...overrides,
 });
+const buildChatgpt2faLiveUrl = (otpSecret = "") => {
+  const normalized = String(otpSecret || "").trim();
+  return normalized
+    ? `https://2fa.live/tok/${encodeURIComponent(normalized)}`
+    : "https://2fa.live/";
+};
+const shouldIncludeChatgptLinkInCopy = (account = {}) =>
+  !!(
+    account.link &&
+    (account.type === "package2" ||
+      normalizePackage2Shelf(account?.package2Shelf) !== "none")
+  );
+const getChatgptCopyButtonText = (account = {}) => {
+  let label = "Copy TK, MK";
+  if (String(account?.otpSecret || "").trim()) label += " & 2FA";
+  if (shouldIncludeChatgptLinkInCopy(account)) label += " & Link";
+  return label;
+};
+const getChatgptCopySuccessText = (account = {}) => {
+  let label = "Đã copy Tài khoản & Mật khẩu";
+  if (String(account?.otpSecret || "").trim()) label += " & 2FA";
+  if (shouldIncludeChatgptLinkInCopy(account)) label += " & Link";
+  return label;
+};
 const buildChatgptCopyText = (account = {}) => {
   const lines = [
     `Tài khoản: ${account.username || ""}`,
     `Mật khẩu: ${account.password || ""}`,
   ];
-  if (
-    account.link &&
-    (account.type === "package2" ||
-      normalizePackage2Shelf(account?.package2Shelf) !== "none")
-  ) {
+  if (String(account?.otpSecret || "").trim()) {
+    lines.push(`Mã 2FA: ${account.otpSecret}`);
+    lines.push(`2FA.live: ${buildChatgpt2faLiveUrl(account.otpSecret)}`);
+  }
+  if (shouldIncludeChatgptLinkInCopy(account)) {
     lines.push(`Link: ${account.link}`);
   }
   return lines.join("\n");
+};
+const addParsedChatgptImportRecord = (records, seenKeys, candidate = {}) => {
+  const normalized = {
+    username: String(candidate?.username || "").trim(),
+    password: String(candidate?.password || "").trim(),
+    link: String(candidate?.link || "").trim(),
+    otpSecret: String(candidate?.otpSecret || "").trim(),
+  };
+  if (normalized.username.length < 3 || normalized.password.length < 3) return;
+  const dedupeKey = [
+    normalized.username,
+    normalized.password,
+    normalized.link,
+    normalized.otpSecret,
+  ].join("|");
+  if (seenKeys.has(dedupeKey)) return;
+  seenKeys.add(dedupeKey);
+  records.push(normalized);
+};
+const parseChatgptQuickImportRows = (raw = "") => {
+  const cleanedRaw = String(raw || "").replace(/\r/g, "").replace(/\[.*?\]/g, "\n");
+  const records = [];
+  const seenKeys = new Set();
+
+  cleanedRaw.split("\n").forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line || line.includes("邮箱")) return;
+
+    if (line.includes("---")) {
+      const parts = line.split(/-{3,}/).map((part) => part.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        addParsedChatgptImportRecord(records, seenKeys, {
+          username: parts[0],
+          password: parts[1],
+          link: parts.find((part, index) => index >= 2 && /^https?:\/\//i.test(part)) || "",
+          otpSecret:
+            parts.find((part, index) => index >= 2 && !/^https?:\/\//i.test(part)) || "",
+        });
+      }
+      return;
+    }
+
+    if (!line.includes("|")) return;
+    const parts = line.split("|").map((part) => part.trim()).filter(Boolean);
+    if (parts.length < 2) return;
+
+    const [username, password, ...rest] = parts;
+    let link = "";
+    let otpSecret = "";
+    rest.forEach((part) => {
+      if (!link && /^https?:\/\//i.test(part)) {
+        link = part;
+      } else if (!otpSecret) {
+        otpSecret = part;
+      } else if (!link) {
+        link = part;
+      }
+    });
+    addParsedChatgptImportRecord(records, seenKeys, {
+      username,
+      password,
+      link,
+      otpSecret,
+    });
+  });
+
+  cleanedRaw.split(/\n\s*\n+/).forEach((rawBlock) => {
+    const candidate = {};
+    rawBlock
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .forEach((line) => {
+        const separatorIndex = line.indexOf(":");
+        if (separatorIndex === -1) return;
+        const key = toNonAccentVietnamese(line.slice(0, separatorIndex))
+          .replace(/\s+/g, " ")
+          .trim();
+        const value = line.slice(separatorIndex + 1).trim();
+        if (!value) return;
+
+        if (
+          /^(tai khoan|tai khoan dang nhap|username|email)$/.test(key)
+        ) {
+          candidate.username = value;
+        } else if (/^(mat khau|password|mk)$/.test(key)) {
+          candidate.password = value;
+        } else if (/^(ma 2fa|2fa|otp|ma otp)$/.test(key)) {
+          candidate.otpSecret = value;
+        } else if (/^(link|link mail|mail link|recovery|recovery link)$/.test(key)) {
+          candidate.link = value;
+        }
+      });
+    addParsedChatgptImportRecord(records, seenKeys, candidate);
+  });
+
+  return records;
 };
 const buildChatgptMarketplaceExportLine = (account = {}) => {
   const username = String(account?.username || "").trim();
@@ -827,6 +948,7 @@ function App() {
   const [newAcc, setNewAcc] = useState({
     username: "",
     password: "",
+    otpSecret: "",
     link: "",
     type: "unassigned",
     package2Shelf: "none",
@@ -1378,6 +1500,7 @@ function App() {
       setNewAcc({
         username: "",
         password: "",
+        otpSecret: "",
         link: "",
         type: "unassigned",
         package2Shelf: "none",
@@ -2703,47 +2826,22 @@ function App() {
     btn.innerText = "Đang xử lý...";
     let successCount = 0;
     let errorCount = 0;
-    const regex =
-      /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})[-]{3,}(.*?)[-]{3,}(http[s]?:\/\/[^\s]+)/g;
-    let match;
-    const foundMatches = [];
-    while ((match = regex.exec(raw)) !== null) {
-      foundMatches.push({
-        username: match[1].trim(),
-        password: match[2].trim(),
-        link: match[3].trim(),
-      });
-    }
+    const foundMatches = parseChatgptQuickImportRows(raw);
     if (foundMatches.length === 0) {
-      const lines = raw.split("\n");
-      for (const line of lines) {
-        if (!line.trim() || line.includes("邮箱")) continue;
-        const parts = line.split(/-{3,}/);
-        if (parts.length >= 3) {
-          foundMatches.push({
-            username: parts[0].trim(),
-            password: parts[1].trim(),
-            link: parts[2].trim(),
-          });
-        } else if (parts.length === 2) {
-          foundMatches.push({
-            username: parts[0].trim(),
-            password: parts[1].trim(),
-            link: "",
-          });
-        }
-      }
+      btn.disabled = false;
+      btn.innerText = originalText;
+      return showAlert(
+        "Không đọc được dữ liệu",
+        "Không tìm thấy dòng hợp lệ. Kiểm tra lại format import.",
+        "warning",
+      );
     }
     for (const item of foundMatches) {
-      if (item.username.length < 3 || item.password.length < 3) {
-        errorCount++;
-        continue;
-      }
-      // REMOVED 'note: Import Nhanh' as requested
       try {
         await axios.post("/api/chatgpt", {
           username: item.username,
           password: item.password,
+          otpSecret: item.otpSecret,
           link: item.link,
           type: "unassigned",
           note: "",
@@ -4541,7 +4639,7 @@ function App() {
                                 <Copy size={14} /> Copy
                               </button>
                             </div>
-                            <div className="text-slate-400 flex items-center gap-2 font-mono text-sm mt-1">
+                          <div className="text-slate-400 flex items-center gap-2 font-mono text-sm mt-1">
                               <span className="w-20 text-slate-400 text-xs">Mật khẩu:</span>
                               <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[120px]">{acc.password}</span>
                               <button
@@ -4552,12 +4650,36 @@ function App() {
                                 <Copy size={14} /> Copy
                               </button>
                             </div>
+                            {acc.otpSecret && (
+                              <div className="text-slate-400 flex items-start gap-2 font-mono text-sm mt-2">
+                                <span className="w-20 text-slate-400 text-xs pt-1">2FA:</span>
+                                <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-cyan-200 min-w-[120px] break-all">
+                                  {acc.otpSecret}
+                                </span>
+                                <button
+                                  className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors"
+                                  onClick={() => handleCopy(acc.otpSecret, "Đã copy mã 2FA Secret")}
+                                  title="Copy 2FA Secret"
+                                >
+                                  <Copy size={14} /> Copy
+                                </button>
+                                <a
+                                  href={buildChatgpt2faLiveUrl(acc.otpSecret)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="bg-cyan-700 hover:bg-cyan-600 px-2.5 py-1 rounded text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                                  title="Mở 2fa.live"
+                                >
+                                  <ExternalLink size={14} /> 2fa.live
+                                </a>
+                              </div>
+                            )}
                             <div className="mt-3">
                               <button
                                 className="bg-indigo-600/80 hover:bg-indigo-400 px-3 py-1.5 rounded text-white text-xs font-bold flex items-center gap-2 transition-transform shadow-md hover:-translate-y-0.5"
-                                onClick={() => handleCopy(buildChatgptCopyText(acc), acc.type === "package2" && acc.link ? "Đã copy Tài khoản, Mật khẩu & Link" : "Đã copy Tài khoản & Mật khẩu")}
+                                onClick={() => handleCopy(buildChatgptCopyText(acc), getChatgptCopySuccessText(acc))}
                               >
-                                <Copy size={14} /> Copy TK, MK{acc.link && (acc.type === "package2" || normalizePackage2Shelf(acc?.package2Shelf) !== "none") ? " & Link" : ""}
+                                <Copy size={14} /> {getChatgptCopyButtonText(acc)}
                               </button>
                             </div>
                             {acc.expiredAt && (
@@ -6351,6 +6473,19 @@ function App() {
               />
             </div>
             <div className="form-group">
+              <label>Mã 2FA Secret</label>
+              <input
+                className="form-input"
+                placeholder="Ví dụ: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
+                value={showAddModal ? newAcc.otpSecret : editingAcc.otpSecret || ""}
+                onChange={(e) =>
+                  showAddModal
+                    ? setNewAcc({ ...newAcc, otpSecret: e.target.value })
+                    : setEditingAcc({ ...editingAcc, otpSecret: e.target.value })
+                }
+              />
+            </div>
+            <div className="form-group">
               <label>Loại Gói</label>
               <select
                 className="form-input"
@@ -6739,16 +6874,36 @@ function App() {
               </span>
             </div>
             <p className="text-slate-400 text-sm mb-2">
-              Dán dữ liệu:{" "}
-              <code className="bg-slate-700 px-1 rounded">
-                email----pass----link
-              </code>
+              Hỗ trợ các dạng:
             </p>
+            <div className="text-xs text-slate-300 bg-slate-800/60 border border-slate-700 rounded-lg p-3 mb-3 space-y-2">
+              <div>
+                <code className="bg-slate-700 px-1 rounded">
+                  email----pass----link
+                </code>
+              </div>
+              <div>
+                <code className="bg-slate-700 px-1 rounded">
+                  email | pass | 2FA_SECRET
+                </code>
+              </div>
+              <div>
+                <code className="bg-slate-700 px-1 rounded">
+                  Tài khoản: ... / Mật khẩu: ... / Mã 2FA: ...
+                </code>
+              </div>
+            </div>
             <textarea
               id="bulkGPTData"
               className="form-input h-64 font-mono text-xs"
               placeholder="...
-UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/..."
+UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
+
+owenbertyoung1482@outlook.com | hanzoleged1102@@ | N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO
+
+Tài khoản: owenbertyoung1482@outlook.com
+Mật khẩu: hanzoleged1102@@
+Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
             ></textarea>
             <div className="flex justify-end gap-3 mt-4">
               <button

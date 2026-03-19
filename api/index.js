@@ -349,6 +349,7 @@ const accountSchema = new mongoose.Schema({
   id: { type: String, unique: true },
   username: { type: String, required: true },
   password: { type: String, required: true },
+  otpSecret: { type: String, default: "" },
   type: { type: String, default: "unassigned" },
   package2Shelf: { type: String, default: "none" },
   users: [{ name: String, joinedAt: String, expiredAt: String }],
@@ -1554,6 +1555,9 @@ const logMarketplaceOrder = async ({
 const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
   const normalized = { ...payload };
   delete normalized.expectedUpdatedAt;
+  normalized.otpSecret = String(
+    normalized.otpSecret ?? existingAcc?.otpSecret ?? "",
+  ).trim();
   const targetType = normalized.type || existingAcc?.type || "unassigned";
 
   if (supportsChatgptMarket(targetType)) {
