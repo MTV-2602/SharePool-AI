@@ -2015,9 +2015,9 @@ app.all(
 
     if (isPlaceholderLikeValue(orderId) || isPlaceholderLikeValue(rawQuantity)) {
       return res.json(
-        buildShopminiDeliveryPayload(
+        buildShopminiStrictSamplePayload(
           ["preview_user|preview_pass|preview_link"],
-          { preview: true, orderId },
+          { trans_id: orderId },
         ),
       );
     }
@@ -2067,9 +2067,9 @@ app.all(
       notifyClients();
 
       return res.json(
-        buildShopminiDeliveryPayload(
+        buildShopminiStrictSamplePayload(
           claimed.map((item) => item.delivery),
-          { orderId },
+          { trans_id: orderId },
         ),
       );
     } catch (error) {
@@ -2234,9 +2234,9 @@ app.all(
 
     if (isPlaceholderLikeValue(orderId) || isPlaceholderLikeValue(rawQuantity)) {
       return res.json(
-        buildShopminiDeliveryPayload(
+        buildShopminiStrictSamplePayload(
           ["preview_team|preview_pass|preview_link"],
-          { preview: true, orderId },
+          { trans_id: orderId },
         ),
       );
     }
@@ -2294,9 +2294,9 @@ app.all(
       notifyClients();
 
       return res.json(
-        buildShopminiDeliveryPayload(
+        buildShopminiStrictSamplePayload(
           claimed.map((item) => item.delivery),
-          { orderId },
+          { trans_id: orderId },
         ),
       );
     } catch (error) {
