@@ -1596,11 +1596,7 @@ function App() {
   // MOVE USER LOGIC
   const openMoveUserModal = (accId, index, userData, platform = "chatgpt") => {
     if (platform === "chatgpt") {
-      const sourceAcc = accounts.find((acc) => acc.id === accId);
-      if (
-        marketplaceTrackedAccountIds.has(String(sourceAcc?.id || "")) ||
-        isDatammoManagedUser(userData)
-      ) {
+      if (isDatammoManagedUser(userData)) {
         showAlert(
           "Khong the chuyen tay",
           "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",
@@ -5738,6 +5734,9 @@ function App() {
                     const destinationWarehouse = normalizePackage2Shelf(
                       a?.package2Shelf,
                     );
+                    if (marketplaceTrackedAccountIds.has(String(a?.id || ""))) {
+                      return false;
+                    }
                     if (
                       destinationWarehouse !== sourceWarehouse &&
                       destinationWarehouse !== "none"

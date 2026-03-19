@@ -3183,19 +3183,10 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     if (!fromAcc.users || !fromAcc.users[userIndex]) {
       return res.status(400).json({ error: "User not found in source account" });
     }
-    const sourceMarketplaceOrder = await findLatestMarketplaceOrderForAccount(
-      fromAccId,
-      "",
-      "chatgpt",
-    );
     const destinationMarketplaceOrder =
       await findLatestMarketplaceOrderForAccount(toAccId, "", "chatgpt");
     const sourceUserToMove = fromAcc.users[userIndex];
-    if (
-      isDatammoManagedUser(sourceUserToMove) ||
-      sourceMarketplaceOrder ||
-      destinationMarketplaceOrder
-    ) {
+    if (isDatammoManagedUser(sourceUserToMove) || destinationMarketplaceOrder) {
       return res.status(400).json({
         error:
           "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",
