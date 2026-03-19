@@ -4738,6 +4738,8 @@ function App() {
                                 );
                                 const hasActualManagedMarketplaceUser =
                                   !!u && isDatammoManagedUser(u);
+                                const hasRegularVisibleUser =
+                                  !!u && !isDatammoManagedUser(u);
                                 const warrantyInfo = getDatammoWarrantyInfoForAccount(
                                   acc.id,
                                   datammoWarrantyCases,
@@ -4764,26 +4766,28 @@ function App() {
                                   hasActualManagedMarketplaceUser ||
                                   isTrackedMarketplaceAccount ||
                                   !!warrantyCase;
-                                const displayMarketplaceUser = hasActualManagedMarketplaceUser
+                                const displayMarketplaceUser = hasRegularVisibleUser
                                   ? u
-                                  : showMarketplaceManagementCard
-                                    ? {
-                                        name:
-                                          legacyMarketplaceInfo?.name ||
-                                          trackedMarketplaceEntry?.label ||
-                                          trackedMarketplaceSummary?.currentUsername ||
-                                          trackedMarketplaceSummary?.soldUsername ||
-                                          `${providerLabel}#${datammoOrderId || "order"}`,
-                                        joinedAt:
-                                          legacyMarketplaceInfo?.joinedAt ||
-                                          trackedMarketplaceEntry?.order?.createdAt ||
-                                          latestMarketplaceOrder?.createdAt ||
-                                          "",
-                                        expiredAt:
-                                          legacyMarketplaceInfo?.expiredAt ||
-                                          "",
-                                      }
-                                    : null;
+                                  : hasActualManagedMarketplaceUser
+                                    ? u
+                                    : showMarketplaceManagementCard
+                                      ? {
+                                          name:
+                                            legacyMarketplaceInfo?.name ||
+                                            trackedMarketplaceEntry?.label ||
+                                            trackedMarketplaceSummary?.currentUsername ||
+                                            trackedMarketplaceSummary?.soldUsername ||
+                                            `${providerLabel}#${datammoOrderId || "order"}`,
+                                          joinedAt:
+                                            legacyMarketplaceInfo?.joinedAt ||
+                                            trackedMarketplaceEntry?.order?.createdAt ||
+                                            latestMarketplaceOrder?.createdAt ||
+                                            "",
+                                          expiredAt:
+                                            legacyMarketplaceInfo?.expiredAt ||
+                                            "",
+                                        }
+                                      : null;
                                 const displayMarketplaceName = String(
                                   getUserName(displayMarketplaceUser) ||
                                     trackedMarketplaceEntry?.label ||
