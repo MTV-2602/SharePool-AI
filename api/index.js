@@ -1464,6 +1464,14 @@ const rollbackClaimedPackage2Accounts = async (claimed = []) => {
     );
   }
 };
+const getWarrantyRequiredExpiryTime = (source = {}, customer = null) => {
+  const customerExpiry = String(customer?.expiredAt || "").trim();
+  const sourceExpiry = String(source?.expiredAt || "").trim();
+  const targetIso = customerExpiry || sourceExpiry;
+  if (!targetIso) return null;
+  const ts = new Date(targetIso).getTime();
+  return Number.isFinite(ts) ? ts : null;
+};
 const logMarketplaceOrder = async ({
   scope = "chatgpt",
   provider,
@@ -2571,6 +2579,11 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       });
     }
 
+    const requiredExpiryTime = getWarrantyRequiredExpiryTime(
+      sourceAcc,
+      sourceUser,
+    );
+
     const fallbackOrder = await findLatestMarketplaceOrderForAccount(
       sourceAcc.id,
       sourceManagedInfo.provider,
@@ -2601,27 +2614,20 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       });
     }
 
+    const replacementExpiryTime = replacementAcc.expiredAt
+      ? new Date(replacementAcc.expiredAt).getTime()
+      : null;
     if (
-      normalizePackage2Shelf(
-        replacementAcc.package2Shelf,
-        CHATGPT_TOTAL_VALUE,
-      ) === CHATGPT_MARKET_VALUE
+      requiredExpiryTime !== null &&
+      (!Number.isFinite(replacementExpiryTime) ||
+        replacementExpiryTime < requiredExpiryTime)
     ) {
       return res.status(400).json({
-        error: "Tai khoan thay the phai nam trong kho tong",
+        error: "Tai khoan thay the phai co han bang hoac lon hon han cua khach hien tai",
       });
     }
 
-    const activeCaseConflict = await DatammoWarrantyCase.findOne({
-      status: "active",
-      $or: [
-        { rootAccountId: replacementAcc.id },
-        { currentAccountId: replacementAcc.id },
-        { "rounds.fromAccountId": replacementAcc.id },
-        { "rounds.toAccountId": replacementAcc.id },
-      ],
-    }).lean();
-    if (activeCaseConflict) {
+    if (false) {
       return res.status(400).json({
         error: "Tài khoản thay thế này đang nằm trong một luồng bảo hành khác",
       });
@@ -2760,6 +2766,10 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
         error: "Team nay khong phai acc seller dang giu khach de bao hanh",
       });
     }
+    const requiredExpiryTime = getWarrantyRequiredExpiryTime(
+      sourceAcc,
+      sourceSlot,
+    );
 
     const fallbackOrder = await findLatestMarketplaceOrderForAccount(
       sourceAcc.id,
@@ -2792,33 +2802,16 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
       });
     }
 
-    const replacementWarehouse = normalizeTeamWarehouse(
-      replacementAcc.warehouse,
-      TEAM_WAREHOUSE_TOTAL,
-    );
+    const replacementExpiryTime = replacementAcc.expiredAt
+      ? new Date(replacementAcc.expiredAt).getTime()
+      : null;
     if (
-      ![TEAM_WAREHOUSE_TOTAL, TEAM_WAREHOUSE_MARKET].includes(
-        replacementWarehouse,
-      )
+      requiredExpiryTime !== null &&
+      (!Number.isFinite(replacementExpiryTime) ||
+        replacementExpiryTime < requiredExpiryTime)
     ) {
       return res.status(400).json({
-        error: "Team thay the phai nam trong kho tong hoac kho market",
-      });
-    }
-
-    const activeCaseConflict = await DatammoWarrantyCase.findOne({
-      scope: "team",
-      status: "active",
-      $or: [
-        { rootAccountId: replacementAcc.id },
-        { currentAccountId: replacementAcc.id },
-        { "rounds.fromAccountId": replacementAcc.id },
-        { "rounds.toAccountId": replacementAcc.id },
-      ],
-    }).lean();
-    if (activeCaseConflict) {
-      return res.status(400).json({
-        error: "Team thay the nay dang nam trong mot luong bao hanh khac",
+        error: "Team thay the phai co han bang hoac lon hon han cua khach hien tai",
       });
     }
 

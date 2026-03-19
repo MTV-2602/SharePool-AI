@@ -8231,6 +8231,22 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           const status = getExpiryStatus(isoString);
           return status?.text || "Khong co han";
         };
+        const sourceUser = Array.isArray(warrantySourceAcc?.users)
+          ? warrantySourceAcc.users[0]
+          : null;
+        const sourceTeamCustomer = isTeamWarranty
+          ? getActiveTeamCustomers(warrantySourceAcc)[0] || null
+          : null;
+        const requiredWarrantyExpiryIso = String(
+          (isTeamWarranty
+            ? sourceTeamCustomer?.expiredAt
+            : sourceUser?.expiredAt) ||
+            warrantySourceAcc?.expiredAt ||
+            "",
+        ).trim();
+        const requiredWarrantyExpiryTime = requiredWarrantyExpiryIso
+          ? new Date(requiredWarrantyExpiryIso).getTime()
+          : null;
         const eligibleReplacementAccounts = (
           isTeamWarranty ? teamAccounts : accounts
         ).filter((acc) => {
@@ -8246,13 +8262,17 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             ) {
               return false;
             }
-            const warehouse = normalizeTeamWarehouse(acc?.warehouse);
-            if (!["total", "market"].includes(warehouse)) return false;
-            return !isAccountBusyInDatammoWarranty(
-              acc?.id,
-              datammoWarrantyCases,
-              "team",
-            );
+            const replacementExpiryTime = acc?.expiredAt
+              ? new Date(acc.expiredAt).getTime()
+              : null;
+            if (
+              requiredWarrantyExpiryTime !== null &&
+              (!Number.isFinite(replacementExpiryTime) ||
+                replacementExpiryTime < requiredWarrantyExpiryTime)
+            ) {
+              return false;
+            }
+            return true;
           }
           if (acc?.type !== "package2") return false;
           if (Array.isArray(acc?.users) && acc.users.length > 0) return false;
@@ -8262,21 +8282,18 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           ) {
             return false;
           }
-          if (normalizePackage2Shelf(acc?.package2Shelf) === "cheap") {
+          const replacementExpiryTime = acc?.expiredAt
+            ? new Date(acc.expiredAt).getTime()
+            : null;
+          if (
+            requiredWarrantyExpiryTime !== null &&
+            (!Number.isFinite(replacementExpiryTime) ||
+              replacementExpiryTime < requiredWarrantyExpiryTime)
+          ) {
             return false;
           }
-          return !isAccountBusyInDatammoWarranty(
-            acc?.id,
-            datammoWarrantyCases,
-            "chatgpt",
-          );
+          return true;
         });
-        const sourceUser = Array.isArray(warrantySourceAcc?.users)
-          ? warrantySourceAcc.users[0]
-          : null;
-        const sourceTeamCustomer = isTeamWarranty
-          ? getActiveTeamCustomers(warrantySourceAcc)[0] || null
-          : null;
         const sourceManagedInfo = isTeamWarranty
           ? getMarketplaceOrderInfoFromUser({
               name: sourceTeamCustomer?.customerName || "",
@@ -8329,6 +8346,12 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     ? `Khách ${providerLabel} của Team Business sẽ được chuyển sang Team thay thế, và lịch sử bảo hành sẽ được ghi lại theo từng lần.`
                     : `Khách ${providerLabel} sẽ được chuyển sang acc thay thế, acc lỗi sẽ bị gỡ khỏi kho và ghi vào lịch sử bảo hành.`}
                 </div>
+                {requiredWarrantyExpiryIso && (
+                  <div className="text-xs text-cyan-300">
+                    Hạn khách hiện tại: {formatDate(requiredWarrantyExpiryIso)} ·{" "}
+                    {getWarrantyRemainingDaysLabel(requiredWarrantyExpiryIso)}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-4">
@@ -8357,8 +8380,8 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   </select>
                   <div className="mt-2 text-[11px] text-slate-400 leading-relaxed">
                     {isTeamWarranty
-                      ? "Chi hien Team Business trong, chua het han, dang o kho tong/market va chua nam trong bao hanh khac."
-                      : "Chi hien acc Goi 2 trong, chua het han, khong o kho market va chua nam trong bao hanh khac."}
+                      ? "Chi hien Team Business khong co khach va co han bang hoac lon hon han khach hien tai."
+                      : "Chi hien acc Goi 2 khong co khach va co han bang hoac lon hon han khach hien tai."}
                   </div>
                   {eligibleReplacementAccounts.length === 0 && (
                     <div className="mt-2 text-xs text-yellow-400">
