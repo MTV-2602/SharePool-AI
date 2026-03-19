@@ -1328,6 +1328,22 @@ const buildShopminiDeliveryPayload = (lines = [], overrides = {}) => {
     ...overrides,
   };
 };
+const buildShopminiStrictSamplePayload = (lines = [], overrides = {}) => {
+  const safeLines = Array.isArray(lines) ? lines : [];
+  const transId = String(
+    overrides.trans_id ||
+      overrides.transId ||
+      `JF${Math.random().toString(16).slice(2, 10)}${Date.now()
+        .toString(16)
+        .slice(-8)}`,
+  ).trim();
+  return {
+    status: "success",
+    msg: String(overrides.msg || "Tạo đơn hàng thành công!"),
+    trans_id: transId,
+    data: safeLines,
+  };
+};
 const getShopminiBuyQuantity = (req) =>
   getSafeBuyQuantity(
     req.query?.quantity ||
@@ -1787,10 +1803,8 @@ app.all(
       provider: "shopmini",
     });
     return res.json(
-      buildShopminiDeliveryPayload(lines, {
-        test: true,
-        provider: "shopmini",
-        orderId,
+      buildShopminiStrictSamplePayload(lines, {
+        trans_id: orderId,
       }),
     );
   },
