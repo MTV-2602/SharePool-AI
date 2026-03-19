@@ -991,6 +991,8 @@ function App() {
   const [movingUser, setMovingUser] = useState(null);
   const [movingSlot, setMovingSlot] = useState(null); // { fromAccId, userIndex, name, joinedAt }
   const [destinationAccId, setDestinationAccId] = useState("");
+  const [moveDestinationSearch, setMoveDestinationSearch] = useState("");
+  const [moveSlotDestinationSearch, setMoveSlotDestinationSearch] = useState("");
 
   // Orphaned Users Modal (when deleting account with active users)
   const [showOrphanedUsersModal, setShowOrphanedUsersModal] = useState(false);
@@ -1793,6 +1795,7 @@ function App() {
     }
     setMovingUser({ fromAccId: accId, userIndex: index, platform, ...userData });
     setDestinationAccId("");
+    setMoveDestinationSearch("");
     setShowMoveUserModal(true);
   };
 
@@ -1852,6 +1855,7 @@ function App() {
       }
       setShowMoveUserModal(false);
       setMovingUser(null);
+      setMoveDestinationSearch("");
       fetchData();
       broadcastDataChange();
       showAlert("Thành Công", `Đã chuyển khách sang tài khoản mới!`, "success");
@@ -1870,6 +1874,7 @@ function App() {
   const openMoveSlotModal = (accId, slIndex, sData) => {
     setMovingSlot({ fromAccId: accId, slotIndex: slIndex, ...sData });
     setDestinationAccId("");
+    setMoveSlotDestinationSearch("");
     setShowMoveSlotModal(true);
   };
 
@@ -1895,6 +1900,7 @@ function App() {
       );
       setShowMoveSlotModal(false);
       setMovingSlot(null);
+      setMoveSlotDestinationSearch("");
       fetchData();
       broadcastDataChange();
       showAlert("Thành Công", `Đã chuyển khách sang tài khoản Team khác!`, "success");
@@ -6054,11 +6060,38 @@ function App() {
                           : movingUser.platform.toUpperCase(),
                       expiry: getExpiryStatus(a.expiredAt),
                     };
+                  })
+                  .filter((option) => {
+                    const query = toNonAccentVietnamese(moveDestinationSearch);
+                    if (!query) return true;
+                    return toNonAccentVietnamese(
+                      [
+                        option.username,
+                        option.typeLabel,
+                        option.warehouseLabel,
+                        option.expiry?.dateStr,
+                        option.expiry?.text,
+                      ]
+                        .filter(Boolean)
+                        .join(" "),
+                    ).includes(query);
                   });
 
                 return (
                   <>
                     <input type="hidden" value={destinationAccId} readOnly required />
+                    <div className="mb-2">
+                      <input
+                        type="text"
+                        value={moveDestinationSearch}
+                        onChange={(e) => setMoveDestinationSearch(e.target.value)}
+                        placeholder="Tìm nhanh theo email, loại acc, kho..."
+                        className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-orange-500"
+                      />
+                      <div className="mt-1 text-[11px] text-slate-400">
+                        Đang hiện {destinationOptions.length} tài khoản đích hợp lệ
+                      </div>
+                    </div>
                     <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900/60 p-2">
                       {destinationOptions.length > 0 ? (
                         destinationOptions.map((option) => {
@@ -6127,7 +6160,10 @@ function App() {
             <div class="flex justify-end gap-3 mt-6">
               <button
                 type="button"
-                onClick={() => setShowMoveUserModal(false)}
+                onClick={() => {
+                  setShowMoveUserModal(false);
+                  setMoveDestinationSearch("");
+                }}
                 className="btn-secondary"
                 disabled={loadingStates.moveUser}
               >
@@ -6217,11 +6253,42 @@ function App() {
                     maxSlots: getTeamCustomerCapacity(a),
                     warehouseLabel: getTeamWarehouseLabel(a.warehouse),
                     expiry: getExpiryStatus(a.expiredAt),
-                  }));
+                  }))
+                  .filter((option) => {
+                    const query = toNonAccentVietnamese(
+                      moveSlotDestinationSearch,
+                    );
+                    if (!query) return true;
+                    return toNonAccentVietnamese(
+                      [
+                        option.username,
+                        option.warehouseLabel,
+                        option.expiry?.dateStr,
+                        option.expiry?.text,
+                        "Team Slot",
+                      ]
+                        .filter(Boolean)
+                        .join(" "),
+                    ).includes(query);
+                  });
 
                 return (
                   <>
                     <input type="hidden" value={destinationAccId} readOnly required />
+                    <div className="mb-2">
+                      <input
+                        type="text"
+                        value={moveSlotDestinationSearch}
+                        onChange={(e) =>
+                          setMoveSlotDestinationSearch(e.target.value)
+                        }
+                        placeholder="Tìm nhanh theo email hoặc kho..."
+                        className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-orange-500"
+                      />
+                      <div className="mt-1 text-[11px] text-slate-400">
+                        Đang hiện {destinationOptions.length} Team Slot hợp lệ
+                      </div>
+                    </div>
                     <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900/60 p-2">
                       {destinationOptions.length > 0 ? (
                         destinationOptions.map((option) => {
@@ -6283,7 +6350,10 @@ function App() {
             <div className="flex justify-end gap-3 mt-6">
               <button
                 type="button"
-                onClick={() => setShowMoveSlotModal(false)}
+                onClick={() => {
+                  setShowMoveSlotModal(false);
+                  setMoveSlotDestinationSearch("");
+                }}
                 className="btn-secondary"
                 disabled={loadingStates.moveUser}
               >
