@@ -98,12 +98,16 @@ const normalizeTeamSlotsForUi = (slots = []) =>
   Array.from({ length: 4 }, (_, index) => {
     const slot = Array.isArray(slots) ? slots[index] || {} : {};
     const gmail = String(slot?.gmail || "").trim();
-    const isActive = String(slot?.status || "").toLowerCase() === "active" && gmail;
+    const customerName = String(slot?.customerName || "").trim();
+    const hasCustomerIdentity = !!(gmail || customerName);
+    const isActive =
+      String(slot?.status || "").toLowerCase() === "active" &&
+      hasCustomerIdentity;
     if (!isActive) return buildEmptyTeamSlot();
     return {
       status: "active",
       gmail,
-      customerName: String(slot?.customerName || "").trim(),
+      customerName,
       addedAt: String(slot?.addedAt || ""),
       expiredAt: String(slot?.expiredAt || ""),
     };
