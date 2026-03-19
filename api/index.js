@@ -1333,15 +1333,6 @@ const formatShopminiDeliveryLineForDisplay = (line = "") => {
   if (!raw) return raw;
   const parts = raw.split("|").map((part) => String(part || "").trim());
   if (parts.length === 0) return raw;
-  if (/^slot\s+\d+/i.test(parts[0])) {
-    const [slotLabel, username, ...rest] = parts;
-    const segments = [];
-    if (slotLabel) segments.push(`SLOT: ${slotLabel}`);
-    if (username) segments.push(`TK: ${username}`);
-    const note = rest.join(" | ").trim();
-    if (note) segments.push(`NOTE: ${note}`);
-    return segments.join(" | ");
-  }
   const [username, password, ...rest] = parts;
   const segments = [];
   if (username) segments.push(`TK: ${username}`);
