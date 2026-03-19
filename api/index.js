@@ -1297,24 +1297,33 @@ const buildMarketplaceTestLines = ({
 };
 const buildShopminiDeliveryPayload = (lines = [], overrides = {}) => {
   const safeLines = Array.isArray(lines) ? lines : [];
-  const message = String(overrides.msg || overrides.message || "success");
+  const message = String(
+    overrides.msg || overrides.message || "Tao don hang thanh cong!",
+  );
   const textContent = safeLines.join("\n");
+  const transactionId = String(
+    overrides.trans_id ||
+      overrides.transId ||
+      overrides.orderId ||
+      `SM${Date.now().toString(36)}`,
+  ).trim();
   return {
     success: true,
     ok: true,
     code: 200,
-    status: true,
+    status: "success",
     result: true,
     msg: message,
     message,
-    data: textContent,
+    trans_id: transactionId,
+    data: safeLines,
     data_lines: safeLines,
     accounts: safeLines,
     products: safeLines,
     items: safeLines,
     list: safeLines,
-    product: textContent,
-    product_list: textContent,
+    product: safeLines,
+    product_list: safeLines,
     content: textContent,
     ...overrides,
   };
@@ -1781,6 +1790,7 @@ app.all(
       buildShopminiDeliveryPayload(lines, {
         test: true,
         provider: "shopmini",
+        orderId,
       }),
     );
   },
@@ -1993,7 +2003,7 @@ app.all(
       return res.json(
         buildShopminiDeliveryPayload(
           ["preview_user|preview_pass|preview_link"],
-          { preview: true },
+          { preview: true, orderId },
         ),
       );
     }
@@ -2045,6 +2055,7 @@ app.all(
       return res.json(
         buildShopminiDeliveryPayload(
           claimed.map((item) => item.delivery),
+          { orderId },
         ),
       );
     } catch (error) {
@@ -2211,7 +2222,7 @@ app.all(
       return res.json(
         buildShopminiDeliveryPayload(
           ["preview_team|preview_pass|preview_link"],
-          { preview: true },
+          { preview: true, orderId },
         ),
       );
     }
@@ -2271,6 +2282,7 @@ app.all(
       return res.json(
         buildShopminiDeliveryPayload(
           claimed.map((item) => item.delivery),
+          { orderId },
         ),
       );
     } catch (error) {
