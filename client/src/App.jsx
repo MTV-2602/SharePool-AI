@@ -5018,6 +5018,12 @@ function App() {
                                   acc.id,
                                   datammoWarrantyCases,
                                 );
+                                const trackedMarketplaceRole = String(
+                                  trackedMarketplaceEntry?.role || "",
+                                ).trim();
+                                const hasActiveMarketplaceTracking =
+                                  trackedMarketplaceRole === "sold" ||
+                                  trackedMarketplaceRole === "current";
                                 const warrantyCase = warrantyInfo?.warrantyCase;
                                 const warrantyProviderLabel = getMarketplaceProviderLabel(
                                   warrantyCase?.provider || managedProvider,
@@ -5641,6 +5647,14 @@ function App() {
                                   : null;
                                 const trackedMarketplaceEntry =
                                   marketplaceTrackedAccountMap.get(String(acc?.id || ""));
+                                const trackedMarketplaceRole = String(
+                                  trackedMarketplaceEntry?.role || "",
+                                ).trim();
+                                const hasActiveMarketplaceTracking =
+                                  trackedMarketplaceRole === "sold" ||
+                                  trackedMarketplaceRole === "current";
+                                const hasActualManagedMarketplaceUser =
+                                  !!primaryUser && isDatammoManagedUser(primaryUser);
                                 const managedOrderInfo =
                                   getMarketplaceOrderInfoFromUser(primaryUser);
                                 const latestMarketplaceOrder =
@@ -5655,17 +5669,15 @@ function App() {
                                     latestMarketplaceOrder?.orderId ||
                                     "",
                                 ).trim();
-                                const hasWarrantyCase =
-                                  !!getDatammoWarrantyInfoForAccount(
-                                    acc.id,
-                                    datammoWarrantyCases,
-                                  )?.warrantyCase;
+                                const warrantyInfo = getDatammoWarrantyInfoForAccount(
+                                  acc.id,
+                                  datammoWarrantyCases,
+                                );
                                 const canOpenWarranty =
-                                  (marketplaceTrackedAccountIds.has(
-                                    String(acc?.id || ""),
-                                  ) &&
-                                    !!marketplaceOrderId) ||
-                                  hasWarrantyCase;
+                                  (!!marketplaceOrderId &&
+                                    (hasActualManagedMarketplaceUser ||
+                                      hasActiveMarketplaceTracking)) ||
+                                  warrantyInfo?.role === "current";
                                 if (!canOpenWarranty) return null;
                                 return (
                                   <button
@@ -7860,6 +7872,15 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   datammoWarrantyCases,
                   "team",
                 );
+                const trackedTeamMarketplaceEntry = marketplaceTrackedAccountMap.get(
+                  String(acc?.id || ""),
+                );
+                const trackedTeamMarketplaceRole = String(
+                  trackedTeamMarketplaceEntry?.role || "",
+                ).trim();
+                const hasActiveTeamMarketplaceTracking =
+                  trackedTeamMarketplaceRole === "sold" ||
+                  trackedTeamMarketplaceRole === "current";
                 const teamWarrantyCase = teamWarrantyInfo?.warrantyCase;
                 const teamWarrantyRounds = Array.isArray(teamWarrantyCase?.rounds)
                   ? teamWarrantyCase.rounds
@@ -7876,7 +7897,9 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                       name: activeBusinessSlot?.customerName || "",
                     }) &&
                     !!teamMarketplaceOrderId) ||
-                    !!teamWarrantyCase);
+                    (!!teamMarketplaceOrderId &&
+                      hasActiveTeamMarketplaceTracking) ||
+                    teamWarrantyInfo?.role === "current");
                 const showTeamMarketplaceManagementCard =
                   isBusinessMode &&
                   (isTeamMarketWarehouse(acc) ||
