@@ -1328,8 +1328,35 @@ const buildShopminiDeliveryPayload = (lines = [], overrides = {}) => {
     ...overrides,
   };
 };
+const formatShopminiDeliveryLineForDisplay = (line = "") => {
+  const raw = String(line || "").trim();
+  if (!raw) return raw;
+  const parts = raw.split("|").map((part) => String(part || "").trim());
+  if (parts.length === 0) return raw;
+  if (/^slot\s+\d+/i.test(parts[0])) {
+    const [slotLabel, username, ...rest] = parts;
+    const segments = [];
+    if (slotLabel) segments.push(`SLOT: ${slotLabel}`);
+    if (username) segments.push(`TK: ${username}`);
+    const note = rest.join(" | ").trim();
+    if (note) segments.push(`NOTE: ${note}`);
+    return segments.join(" | ");
+  }
+  const [username, password, ...rest] = parts;
+  const segments = [];
+  if (username) segments.push(`TK: ${username}`);
+  if (password) segments.push(`MK: ${password}`);
+  const extra = rest.join(" | ").trim();
+  if (extra) {
+    segments.push(/^https?:\/\//i.test(extra) ? `LINK: ${extra}` : `NOTE: ${extra}`);
+  }
+  return segments.join(" | ") || raw;
+};
 const buildShopminiStrictSamplePayload = (lines = [], overrides = {}) => {
   const safeLines = Array.isArray(lines) ? lines : [];
+  const displayLines = safeLines.map((line) =>
+    formatShopminiDeliveryLineForDisplay(line),
+  );
   const transId = String(
     overrides.trans_id ||
       overrides.transId ||
@@ -1341,7 +1368,7 @@ const buildShopminiStrictSamplePayload = (lines = [], overrides = {}) => {
     status: "success",
     msg: String(overrides.msg || "Tạo đơn hàng thành công!"),
     trans_id: transId,
-    data: safeLines,
+    data: displayLines,
   };
 };
 const getShopminiBuyQuantity = (req) =>
