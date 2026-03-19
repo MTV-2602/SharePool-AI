@@ -8670,7 +8670,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         const filteredReplacementAccounts = eligibleReplacementAccounts.filter((acc) => {
           const normalizedWarehouse = isTeamWarranty
             ? normalizeTeamWarehouse(acc?.warehouse)
-            : normalizePackage2Shelf(acc?.package2Shelf, CHATGPT_TOTAL_VALUE);
+            : normalizePackage2Shelf(acc?.package2Shelf);
           if (
             warrantyWarehouseFilter !== "all" &&
             normalizedWarehouse !== warrantyWarehouseFilter
