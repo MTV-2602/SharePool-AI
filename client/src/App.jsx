@@ -5270,12 +5270,38 @@ function App() {
                                                 <RotateCw size={14} />
                                               </button>
                                             )}
-                                            <span
-                                              className="text-slate-500 cursor-not-allowed"
-                                              title="Acc da ban qua san khong duoc chuyen tay"
-                                            >
-                                              <ArrowRightLeft size={14} />
-                                            </span>
+                                            {!showMarketplaceManagementCard ? (
+                                              !isExpired ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    openMoveUserModal(
+                                                      acc.id,
+                                                      0,
+                                                      displayMarketplaceUser,
+                                                    )
+                                                  }
+                                                  className="text-orange-400 hover:text-white"
+                                                  title="Chuyen khach"
+                                                >
+                                                  <ArrowRightLeft size={14} />
+                                                </button>
+                                              ) : (
+                                                <span
+                                                  className="text-slate-500 cursor-not-allowed"
+                                                  title="Het han: Khong the chuyen"
+                                                >
+                                                  <ArrowRightLeft size={14} />
+                                                </span>
+                                              )
+                                            ) : (
+                                              <span
+                                                className="text-slate-500 cursor-not-allowed"
+                                                title="Acc da ban qua san khong duoc chuyen tay"
+                                              >
+                                                <ArrowRightLeft size={14} />
+                                              </span>
+                                            )}
                                           </div>
                                         </div>
                                       )
