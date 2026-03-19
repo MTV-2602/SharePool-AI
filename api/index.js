@@ -3127,7 +3127,7 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
         },
       }
     );
-    if (toMoveResult.modifiedCount !== 1) {
+    if ((toMoveResult.matchedCount || 0) !== 1) {
       return res.status(409).json({
         error:
           "Team đích vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
@@ -3143,7 +3143,7 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
         }
       }
     );
-    if (fromMoveResult.modifiedCount !== 1) {
+    if ((fromMoveResult.matchedCount || 0) !== 1) {
       await restoreDocumentSnapshot(TeamAccount, toAccId, toSnapshot);
       return res.status(409).json({
         error:
@@ -3287,7 +3287,7 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
         },
       },
     );
-    if (toPersisted.modifiedCount !== 1) {
+    if ((toPersisted.matchedCount || 0) !== 1) {
       return res.status(409).json({
         error:
           "Tài khoản đích vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
@@ -3305,7 +3305,7 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
         },
       },
     );
-    if (fromPersisted.modifiedCount !== 1) {
+    if ((fromPersisted.matchedCount || 0) !== 1) {
       await restoreDocumentSnapshot(Account, toAccId, originalToAcc);
       return res.status(409).json({
         error:
