@@ -594,6 +594,37 @@ const buildTeamBusinessCopyText = (account = {}) => {
   }
   return lines.join("\n");
 };
+const parseTeamImportTextToForm = (raw = "") => {
+  const input = String(raw || "").trim();
+  if (!input) return null;
+  const lines = input.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const sourceLine = lines.find((line) => line.includes("----")) || input;
+  const normalized = sourceLine.replace(/^team\s+/i, "").trim();
+  const parts = normalized.split(/-{4,}/).map((s) => s.trim()).filter(Boolean);
+  const email = parts[0] || "";
+  const gptPass = parts[1] || "";
+  const thirdPart = parts[2] || "";
+  const fourthPart = parts[3] || "";
+  const fifthPart = parts[4] || "";
+  const fallbackRecoveryMatch = input.match(/https?:\/\/\S+/i);
+  const recoveryMatch = input.match(/\[接收验证码的地址\](.*)/);
+  const otpSecret = !/^https?:\/\//i.test(thirdPart) && thirdPart ? thirdPart : "";
+  const recoveryUrl =
+    fifthPart ||
+    fourthPart ||
+    (/^https?:\/\//i.test(thirdPart) ? thirdPart : "") ||
+    (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : "") ||
+    (recoveryMatch ? recoveryMatch[1].trim() : "");
+
+  if (!email || !gptPass) return null;
+  return buildTeamFormState({
+    username: email,
+    password: gptPass,
+    otpSecret,
+    recoveryUrl,
+    expiredAt: getDefaultOneMonthDateInput(),
+  });
+};
 const normalizeTeamAccountForUi = (account = {}) => {
   const { emailPassword, ...rest } = account || {};
   return {
@@ -6276,29 +6307,12 @@ function App() {
         <div className="modal-overlay">
           <form className="modal-box" style={{ maxWidth: "500px" }} onSubmit={(e) => {
             e.preventDefault();
-            const raw = teamImportText;
-            if (!raw || !raw.trim()) return;
-            const lines = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-            const sourceLine = lines.find((line) => line.includes("----")) || raw.trim();
-            const normalized = sourceLine.replace(/^team\s+/i, "").trim();
-            const parts = normalized.split(/-{4,}/).map((s) => s.trim()).filter(Boolean);
-            const email = parts[0] || "";
-            const gptPass = parts[1] || "";
-            const thirdPart = parts[2] || "";
-            const fourthPart = parts[3] || "";
-            const fifthPart = parts[4] || "";
-            const fallbackRecoveryMatch = raw.match(/https?:\/\/\S+/i);
-            const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
-            const otpSecret =
-              !/^https?:\/\//i.test(thirdPart) && thirdPart ? thirdPart : "";
-            const recoveryUrl =
-              fifthPart ||
-              fourthPart ||
-              (/^https?:\/\//i.test(thirdPart) ? thirdPart : "") ||
-              (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : "") ||
-              (recoveryMatch ? recoveryMatch[1].trim() : "");
-
-            setTeamAddForm(buildTeamFormState({ username: email, password: gptPass, otpSecret, recoveryUrl: recoveryUrl, expiredAt: getDefaultOneMonthDateInput() }));
+            const parsedForm = parseTeamImportTextToForm(teamImportText);
+            if (!parsedForm) {
+              showAlert("Thiếu dữ liệu", "Không đọc được format Team hợp lệ.", "warning");
+              return;
+            }
+            setTeamAddForm(parsedForm);
             setShowImportTeamModal(false);
             setTeamImportText("");
             setShowTeamAddModal(true);
@@ -6309,6 +6323,7 @@ function App() {
             <div className="form-group mb-4">
               <label className="text-slate-300 font-bold mb-1 block">Dán Raw Format tại đây:</label>
               <p className="text-xs text-slate-400 mb-2">Format mới: team email@domain.com----gptpass----2FA_SECRET----https://generator.email/... (không cần pass email)</p>
+              <p className="text-[11px] text-cyan-300/80 mb-2">Chỉ cần thêm chữ <code className="bg-slate-700 px-1 rounded">team</code> ở đầu dòng là có thể parse hoặc thêm nhanh.</p>
               <textarea
                 className="form-input w-full h-32 text-sm font-mono leading-tight bg-slate-800"
                 placeholder="team email@domain.com----gptpass----2FA_SECRET----https://generator.email/..."
@@ -6319,6 +6334,32 @@ function App() {
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button type="button" onClick={() => setShowImportTeamModal(false)} className="btn-secondary">Hủy</button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const parsedForm = parseTeamImportTextToForm(teamImportText);
+                  if (!parsedForm) {
+                    showAlert("Thiếu dữ liệu", "Không đọc được format Team hợp lệ.", "warning");
+                    return;
+                  }
+                  try {
+                    await axios.post("/api/team", {
+                      ...parsedForm,
+                      expiredAt: parsedForm.expiredAt ? new Date(parsedForm.expiredAt).toISOString() : undefined,
+                    });
+                    setShowImportTeamModal(false);
+                    setTeamImportText("");
+                    await fetchData();
+                    broadcastDataChange();
+                    showAlert("Thành công", "Đã thêm nhanh Team Account từ raw format.", "success");
+                  } catch (error) {
+                    showAlert("Lỗi", getApiErrorMessage(error, "Không thể thêm nhanh Team Account"), "error");
+                  }
+                }}
+                className="btn-primary bg-emerald-600 hover:bg-emerald-500"
+              >
+                Thêm nhanh
+              </button>
               <button type="submit" className="btn-primary bg-indigo-600 hover:bg-indigo-500 flex items-center gap-2">
                 Phân Tích Dữ Liệu
               </button>
