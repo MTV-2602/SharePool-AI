@@ -5493,6 +5493,38 @@ function App() {
                                                 <ArrowRightLeft size={14} />
                                               </span>
                                             )}
+                                            {!showMarketplaceManagementCard && (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    openEditUserModal(
+                                                      acc.id,
+                                                      0,
+                                                      displayMarketplaceUser,
+                                                    )
+                                                  }
+                                                  className="text-blue-400 hover:text-white"
+                                                  title="Sua khach"
+                                                >
+                                                  <Pencil size={14} />
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    handleDeleteUser(
+                                                      acc.id,
+                                                      0,
+                                                      getUserName(displayMarketplaceUser),
+                                                    )
+                                                  }
+                                                  className="text-red-400 hover:text-white"
+                                                  title="Xoa khach"
+                                                >
+                                                  <X size={14} />
+                                                </button>
+                                              </>
+                                            )}
                                           </div>
                                         </div>
                                       )
