@@ -1717,6 +1717,23 @@ const buildManagedTeamCustomer = (provider, orderId, joinDate) => {
     expiredAt: expiresAt.toISOString(),
   };
 };
+const buildManagedMarketplaceUser = ({
+  provider,
+  orderId,
+  joinedAt,
+  expiredAt,
+} = {}) => {
+  const normalizedProvider = normalizeMarketplaceProvider(provider);
+  const orderCode = String(orderId || Date.now()).trim();
+  return {
+    name:
+      normalizedProvider === "shopmini"
+        ? `Shopmini#${orderCode}`
+        : `Datammo#${orderCode}`,
+    joinedAt: String(joinedAt || new Date().toISOString()).trim(),
+    expiredAt: String(expiredAt || "").trim(),
+  };
+};
 const claimTeamBusinessAccountsForOrder = async ({ quantity, orderId, provider }) => {
   const claimed = [];
   for (let i = 0; i < quantity; i += 1) {
@@ -2681,17 +2698,24 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
     }
 
     const sourceUsers = Array.isArray(sourceAcc.users) ? sourceAcc.users : [];
-    const sourceUser = sourceUsers[0];
-    const sourceManagedInfo = getMarketplaceOrderInfoFromUser(sourceUser);
-    if (sourceUsers.length !== 1 || !isDatammoManagedUser(sourceUser)) {
+    const sourceUser = sourceUsers[0] || null;
+    const hasManagedSourceUser =
+      sourceUsers.length === 1 && isDatammoManagedUser(sourceUser);
+    if (sourceUsers.length > 1) {
       return res.status(400).json({
-        error: "Tài khoản này không phải acc seller đang giữ khách để bảo hành",
+        error: "Tài khoản này đang có nhiều khách, không thể bảo hành seller tự động",
       });
     }
-
+    if (sourceUsers.length === 1 && !hasManagedSourceUser) {
+      return res.status(400).json({
+        error: "Tài khoản này đang giữ khách thường, không phải khách seller để bảo hành",
+      });
+    }
+    const sourceManagedInfo = getMarketplaceOrderInfoFromUser(sourceUser);
     const fallbackOrder = await findLatestMarketplaceOrderForAccount(
       sourceAcc.id,
       sourceManagedInfo.provider,
+      "chatgpt",
     );
     const orderId = String(
       sourceManagedInfo.orderId || fallbackOrder?.orderId || "",
@@ -2704,6 +2728,16 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
         error: "Không xác định được order seller từ tài khoản lỗi",
       });
     }
+    const sourceUsersForWarranty = hasManagedSourceUser
+      ? sourceUsers
+      : [
+          buildManagedMarketplaceUser({
+            provider,
+            orderId,
+            joinedAt: sourceUser?.joinedAt || fallbackOrder?.createdAt,
+            expiredAt: sourceUser?.expiredAt || sourceAcc?.expiredAt,
+          }),
+        ];
 
     if (Array.isArray(replacementAcc.users) && replacementAcc.users.length > 0) {
       return res.status(400).json({
@@ -2759,7 +2793,7 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
             replacementOriginalType === "unassigned"
               ? "package2"
               : replacementAcc.type,
-          users: sourceUsers,
+          users: sourceUsersForWarranty,
           package2Shelf: CHATGPT_TOTAL_VALUE,
           updatedAt: nowIso,
         },
@@ -2879,12 +2913,20 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
 
     const sourceEntry = findFirstActiveTeamSlotEntry(sourceAcc.slots);
     const sourceSlot = sourceEntry?.slot || null;
-    const sourceManagedInfo = getMarketplaceOrderInfoFromTeamSlot(sourceSlot);
-    if (!sourceSlot || !isDatammoManagedUser({ name: sourceSlot.customerName })) {
+    const activeSourceCustomerCount = countActiveTeamCustomers(sourceAcc.slots);
+    const hasManagedSourceSlot =
+      !!sourceSlot && isDatammoManagedUser({ name: sourceSlot.customerName });
+    if (activeSourceCustomerCount > 1) {
       return res.status(400).json({
-        error: "Team nay khong phai acc seller dang giu khach de bao hanh",
+        error: "Team nay dang co nhieu khach, khong the bao hanh seller tu dong",
       });
     }
+    if (activeSourceCustomerCount === 1 && !hasManagedSourceSlot) {
+      return res.status(400).json({
+        error: "Team nay dang giu khach thuong, khong phai khach seller de bao hanh",
+      });
+    }
+    const sourceManagedInfo = getMarketplaceOrderInfoFromTeamSlot(sourceSlot);
     const fallbackOrder = await findLatestMarketplaceOrderForAccount(
       sourceAcc.id,
       sourceManagedInfo.provider,
@@ -2901,6 +2943,16 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
         error: "Khong xac dinh duoc order seller cua Team loi",
       });
     }
+    const sourceSlotForWarranty = hasManagedSourceSlot
+      ? sourceSlot
+      : buildManagedTeamCustomer(
+          provider,
+          orderId,
+          sourceSlot?.addedAt || fallbackOrder?.createdAt || new Date(),
+        );
+    const sourceSlotIndex = Number.isInteger(sourceEntry?.index)
+      ? sourceEntry.index
+      : -1;
 
     if (countActiveTeamCustomers(replacementAcc.slots) > 0) {
       return res.status(400).json({
@@ -2948,14 +3000,16 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
     const sourceSnapshot = snapshotDocument(sourceAcc);
     const replacementSnapshot = snapshotDocument(replacementAcc);
     const sourceSlots = normalizeTeamSlots(sourceAcc.slots);
-    sourceSlots[sourceEntry.index] = buildEmptyTeamSlot();
+    if (sourceSlotIndex >= 0) {
+      sourceSlots[sourceSlotIndex] = buildEmptyTeamSlot();
+    }
     replacementSlots[replacementSlotIndex] = {
-      ...sourceSlot,
+      ...sourceSlotForWarranty,
       status: "active",
-      gmail: String(sourceSlot.gmail || "").trim(),
-      customerName: String(sourceSlot.customerName || "").trim(),
-      addedAt: String(sourceSlot.addedAt || new Date().toISOString()),
-      expiredAt: String(sourceSlot.expiredAt || ""),
+      gmail: String(sourceSlotForWarranty.gmail || "").trim(),
+      customerName: String(sourceSlotForWarranty.customerName || "").trim(),
+      addedAt: String(sourceSlotForWarranty.addedAt || new Date().toISOString()),
+      expiredAt: String(sourceSlotForWarranty.expiredAt || ""),
     };
     const nowIso = new Date().toISOString();
 
@@ -3005,15 +3059,15 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
       sequence: (warrantyCase?.rounds?.length || 0) + 1,
       scope: "team",
       itemType: "team_business",
-      fromResourceKey: buildMarketplaceResourceKey({
-        scope: "team",
-        itemType: "team_business",
-        accountId: sourceAcc.id,
-        slotIndex: sourceEntry.index,
-      }),
-      fromAccountId: sourceAcc.id,
-      fromUsername: sourceAcc.username,
-      fromSlotIndex: sourceEntry.index,
+        fromResourceKey: buildMarketplaceResourceKey({
+          scope: "team",
+          itemType: "team_business",
+          accountId: sourceAcc.id,
+          slotIndex: sourceSlotIndex,
+        }),
+        fromAccountId: sourceAcc.id,
+        fromUsername: sourceAcc.username,
+        fromSlotIndex: sourceSlotIndex,
       toResourceKey: buildMarketplaceResourceKey({
         scope: "team",
         itemType: "team_business",
@@ -3037,11 +3091,11 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
           scope: "team",
           itemType: "team_business",
           accountId: sourceAcc.id,
-          slotIndex: sourceEntry.index,
+          slotIndex: sourceSlotIndex,
         }),
         rootAccountId: sourceAcc.id,
         rootUsername: sourceAcc.username,
-        rootSlotIndex: sourceEntry.index,
+        rootSlotIndex: sourceSlotIndex,
         currentResourceKey: buildMarketplaceResourceKey({
           scope: "team",
           itemType: "team_business",
