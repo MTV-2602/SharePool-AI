@@ -405,6 +405,15 @@ const buildChatgpt2faLiveUrl = (otpSecret = "") => {
     ? `https://2fa.live/tok/${encodeURIComponent(normalized)}`
     : "https://2fa.live/";
 };
+const buildChatgpt2faCopyText = (otpSecret = "") => {
+  const normalized = String(otpSecret || "").trim();
+  if (!normalized) return "";
+  return [
+    `Mã 2FA: ${normalized}`,
+    "Lấy mã đăng nhập tại: https://2fa.live/",
+    `Mở nhanh: ${buildChatgpt2faLiveUrl(normalized)}`,
+  ].join("\n");
+};
 const shouldIncludeChatgptLinkInCopy = (account = {}) =>
   !!(
     account.link &&
@@ -429,8 +438,7 @@ const buildChatgptCopyText = (account = {}) => {
     `Mật khẩu: ${account.password || ""}`,
   ];
   if (String(account?.otpSecret || "").trim()) {
-    lines.push(`Mã 2FA: ${account.otpSecret}`);
-    lines.push(`2FA.live: ${buildChatgpt2faLiveUrl(account.otpSecret)}`);
+    lines.push(buildChatgpt2faCopyText(account.otpSecret));
   }
   if (shouldIncludeChatgptLinkInCopy(account)) {
     lines.push(`Link: ${account.link}`);
@@ -4658,7 +4666,12 @@ function App() {
                                 </span>
                                 <button
                                   className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors"
-                                  onClick={() => handleCopy(acc.otpSecret, "Đã copy mã 2FA Secret")}
+                                  onClick={() =>
+                                    handleCopy(
+                                      buildChatgpt2faCopyText(acc.otpSecret),
+                                      "Đã copy mã 2FA & hướng dẫn lấy mã đăng nhập",
+                                    )
+                                  }
                                   title="Copy 2FA Secret"
                                 >
                                   <Copy size={14} /> Copy
@@ -4672,6 +4685,11 @@ function App() {
                                 >
                                   <ExternalLink size={14} /> 2fa.live
                                 </a>
+                              </div>
+                            )}
+                            {acc.otpSecret && (
+                              <div className="text-[11px] text-cyan-300/80 mt-1 ml-[88px]">
+                                Dùng mã 2FA này trên 2fa.live để lấy mã đăng nhập.
                               </div>
                             )}
                             <div className="mt-3">
