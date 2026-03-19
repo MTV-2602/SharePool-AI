@@ -3126,6 +3126,52 @@ function App() {
       ),
     );
   };
+  const getMarketplaceSearchTextForAccount = (
+    accountId,
+    scope = "chatgpt",
+  ) => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return "";
+    const normalizedScope = normalizeMarketplaceScope(scope);
+    return (marketplaceOrderSummaries || [])
+      .flatMap((order) => {
+        const providerLabel = getMarketplaceProviderLabel(order?.provider);
+        const orderId = String(order?.orderId || "").trim();
+        return (Array.isArray(order?.accountSummaries) ? order.accountSummaries : [])
+          .filter((item) => {
+            if (normalizeMarketplaceScope(item?.scope) !== normalizedScope) {
+              return false;
+            }
+            const relatedIds = [
+              item?.soldAccountId,
+              item?.currentAccountId,
+              ...(Array.isArray(item?.warrantyCase?.rounds)
+                ? item.warrantyCase.rounds.flatMap((round) => [
+                    round?.fromAccountId,
+                    round?.toAccountId,
+                  ])
+                : []),
+            ]
+              .map((value) => String(value || "").trim())
+              .filter(Boolean);
+            return relatedIds.includes(normalizedId);
+          })
+          .map((item) =>
+            [
+              providerLabel,
+              order?.provider,
+              orderId,
+              item?.soldUsername,
+              item?.currentUsername,
+              item?.soldAccountId,
+              item?.currentAccountId,
+            ]
+              .filter(Boolean)
+              .join(" "),
+          );
+      })
+      .join(" ");
+  };
   const filteredChatgptAccounts = accounts
     .filter((acc) => {
       if (gptSubTab === "total") {
@@ -3205,6 +3251,16 @@ function App() {
           );
         });
       }
+      const marketplaceSearchText = getMarketplaceSearchTextForAccount(
+        acc?.id,
+        "chatgpt",
+      );
+      if (
+        marketplaceSearchText &&
+        toNonAccentVietnamese(marketplaceSearchText).includes(queryNormalized)
+      ) {
+        return true;
+      }
       return false;
     });
   const filteredChatgptIds = filteredChatgptAccounts.map((acc) =>
@@ -3261,7 +3317,7 @@ function App() {
       ) {
         return true;
       }
-      return normalizeTeamSlotsForUi(acc?.slots).some((slot) => {
+      const matchedTeamSlot = normalizeTeamSlotsForUi(acc?.slots).some((slot) => {
         const customerName = String(slot?.customerName || "").trim();
         const gmail = String(slot?.gmail || "").trim();
         return (
@@ -3270,6 +3326,15 @@ function App() {
           (gmail && toNonAccentVietnamese(gmail).includes(queryNormalized))
         );
       });
+      if (matchedTeamSlot) return true;
+      const marketplaceSearchText = getMarketplaceSearchTextForAccount(
+        acc?.id,
+        "team",
+      );
+      return (
+        marketplaceSearchText &&
+        toNonAccentVietnamese(marketplaceSearchText).includes(queryNormalized)
+      );
     })
     .filter((acc) =>
       matchesCustomerFilter(
