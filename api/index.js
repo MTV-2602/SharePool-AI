@@ -399,6 +399,7 @@ const teamAccountSchema = new mongoose.Schema({
   id: { type: String, unique: true },
   username: { type: String, required: true },   // Email chính của team
   password: { type: String, default: "" },      // Mật khẩu GPT
+  otpSecret: { type: String, default: "" },      // 2FA secret
   recoveryUrl: { type: String, default: "" },   // Link recovery
   saleMode: { type: String, default: "slot" },  // "slot" | "business"
   warehouse: { type: String, default: "total" }, // "total" | "market" | "short"
@@ -898,6 +899,9 @@ const normalizeTeamPayload = (payload = {}, options = {}) => {
   }
   if (normalized.password !== undefined) {
     normalized.password = String(normalized.password || "").trim();
+  }
+  if (normalized.otpSecret !== undefined) {
+    normalized.otpSecret = String(normalized.otpSecret || "").trim();
   }
   if (normalized.recoveryUrl !== undefined) {
     normalized.recoveryUrl = String(normalized.recoveryUrl || "").trim();

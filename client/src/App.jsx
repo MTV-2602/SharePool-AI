@@ -387,6 +387,7 @@ const persistSeenDatammoOrderKeys = (keys = []) => {
 const buildTeamFormState = (overrides = {}) => ({
   username: "",
   password: "",
+  otpSecret: "",
   recoveryUrl: "",
   note: "",
   expiredAt: "",
@@ -556,6 +557,7 @@ const buildChatgptMarketplaceExportLine = (account = {}) => {
 const buildTeamMarketplaceExportLines = (account = {}) => {
   const username = String(account?.username || "").trim();
   const password = String(account?.password || "").trim();
+  const otpSecret = String(account?.otpSecret || "").trim();
   const recoveryUrl = String(account?.recoveryUrl || "").trim();
   if (!username || !password) return [];
 
@@ -563,11 +565,10 @@ const buildTeamMarketplaceExportLines = (account = {}) => {
   if (saleMode === "business") {
     const activeCustomers = getActiveTeamCustomers(account).length;
     if (activeCustomers > 0) return [];
-    return [
-      recoveryUrl
-        ? `${username}|${password}|${recoveryUrl}`
-        : `${username}|${password}`,
-    ];
+    const parts = [username, password];
+    if (otpSecret) parts.push(otpSecret);
+    if (recoveryUrl) parts.push(recoveryUrl);
+    return [parts.join("|")];
   }
 
   const slots = normalizeTeamSlotsForUi(account?.slots);
@@ -578,6 +579,20 @@ const buildTeamMarketplaceExportLines = (account = {}) => {
       ({ index }) =>
         `Slot ${index + 1}|${username}|Ban gui kem gmail chinh chu de admin up`,
     );
+};
+const buildTeamBusinessCopyText = (account = {}) => {
+  const lines = [
+    "✅ Tài khoản GPT Team",
+    `Email: ${account?.username || ""}`,
+    `Pass: ${account?.password || ""}`,
+  ];
+  if (String(account?.otpSecret || "").trim()) {
+    lines.push(buildChatgpt2faCopyText(account.otpSecret));
+  }
+  if (String(account?.recoveryUrl || "").trim()) {
+    lines.push(`Link lấy mã: ${account.recoveryUrl}`);
+  }
+  return lines.join("\n");
 };
 const normalizeTeamAccountForUi = (account = {}) => {
   const { emailPassword, ...rest } = account || {};
@@ -6271,11 +6286,19 @@ function App() {
             const gptPass = parts[1] || "";
             const thirdPart = parts[2] || "";
             const fourthPart = parts[3] || "";
+            const fifthPart = parts[4] || "";
             const fallbackRecoveryMatch = raw.match(/https?:\/\/\S+/i);
             const recoveryMatch = raw.match(/\[接收验证码的地址\](.*)/);
-            const recoveryUrl = fourthPart || (/^https?:\/\//i.test(thirdPart) ? thirdPart : "") || (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : "") || (recoveryMatch ? recoveryMatch[1].trim() : "");
+            const otpSecret =
+              !/^https?:\/\//i.test(thirdPart) && thirdPart ? thirdPart : "";
+            const recoveryUrl =
+              fifthPart ||
+              fourthPart ||
+              (/^https?:\/\//i.test(thirdPart) ? thirdPart : "") ||
+              (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : "") ||
+              (recoveryMatch ? recoveryMatch[1].trim() : "");
 
-            setTeamAddForm(buildTeamFormState({ username: email, password: gptPass, recoveryUrl: recoveryUrl, expiredAt: getDefaultOneMonthDateInput() }));
+            setTeamAddForm(buildTeamFormState({ username: email, password: gptPass, otpSecret, recoveryUrl: recoveryUrl, expiredAt: getDefaultOneMonthDateInput() }));
             setShowImportTeamModal(false);
             setTeamImportText("");
             setShowTeamAddModal(true);
@@ -6285,10 +6308,10 @@ function App() {
             </h2>
             <div className="form-group mb-4">
               <label className="text-slate-300 font-bold mb-1 block">Dán Raw Format tại đây:</label>
-              <p className="text-xs text-slate-400 mb-2">Format mới: team email@domain.com----gptpass----https://generator.email/... (không cần pass email)</p>
+              <p className="text-xs text-slate-400 mb-2">Format mới: team email@domain.com----gptpass----2FA_SECRET----https://generator.email/... (không cần pass email)</p>
               <textarea
                 className="form-input w-full h-32 text-sm font-mono leading-tight bg-slate-800"
-                placeholder="team email@domain.com----gptpass----https://generator.email/..."
+                placeholder="team email@domain.com----gptpass----2FA_SECRET----https://generator.email/..."
                 value={teamImportText}
                 onChange={e => setTeamImportText(e.target.value)}
                 autoFocus
@@ -7848,6 +7871,35 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                               <Copy size={14} /> Copy
                             </button>
                           </div>
+                          {acc.otpSecret && (
+                            <div className="flex items-start gap-2 mt-1">
+                              <span className="w-20 text-slate-400 pt-1">2FA:</span>
+                              <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-cyan-200 min-w-[120px] break-all">
+                                {acc.otpSecret}
+                              </span>
+                              <button
+                                className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors"
+                                onClick={() =>
+                                  handleCopy(
+                                    buildChatgpt2faCopyText(acc.otpSecret),
+                                    "Đã copy mã 2FA Team & hướng dẫn lấy mã đăng nhập",
+                                  )
+                                }
+                                title="Copy 2FA Secret"
+                              >
+                                <Copy size={14} /> Copy
+                              </button>
+                              <a
+                                href={buildChatgpt2faLiveUrl(acc.otpSecret)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="bg-cyan-700 hover:bg-cyan-600 px-2.5 py-1 rounded text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                                title="Mở 2fa.live"
+                              >
+                                <ExternalLink size={14} /> 2fa.live
+                              </a>
+                            </div>
+                          )}
                           {acc.recoveryUrl && (
                             <div className="flex items-center gap-2 mt-1">
                               <span className="w-20 text-slate-400">Recovery:</span>
@@ -8052,8 +8104,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                             </div>
                           )}
                           <button onClick={() => {
-                            const info = `✅ Tài khoản GPT Team\nEmail: ${acc.username}\nPass: ${acc.password}${acc.recoveryUrl ? `\nLink lấy mã: ${acc.recoveryUrl}` : ""}`;
-                            handleCopy(info, "Đã copy toàn bộ form Team");
+                            handleCopy(buildTeamBusinessCopyText(acc), "Đã copy toàn bộ form Team");
                           }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 w-full justify-center shadow-lg transition-transform hover:scale-105 mb-1">
                             <Copy size={16} /> COPY CẢ CỤM
                           </button>
@@ -8069,7 +8120,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                 <Shield size={11} />
                               </button>
                             )}
-                            <button onClick={() => { setTeamEditForm(buildTeamEditFormState({ id: acc.id, username: acc.username, password: acc.password, recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode), warehouse: normalizeTeamWarehouse(acc.warehouse) })); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
+                            <button onClick={() => { setTeamEditForm(buildTeamEditFormState({ id: acc.id, username: acc.username, password: acc.password, otpSecret: acc.otpSecret || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode), warehouse: normalizeTeamWarehouse(acc.warehouse) })); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
                             <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
                           </div>
                         </div>
@@ -8194,6 +8245,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                 <div className="space-y-3">
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Email chinh (Team)</label><input className="form-input w-full" placeholder="teamacc@outlook.com" value={teamAddForm.username} onChange={e => setTeamAddForm({ ...teamAddForm, username: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">GPT Password</label><input className="form-input w-full" value={teamAddForm.password} onChange={e => setTeamAddForm({ ...teamAddForm, password: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Mã 2FA Secret</label><input className="form-input w-full" placeholder="Ví dụ: UCFWSM5RHRAKCETR66A5MTOVQX6BBUP7" value={teamAddForm.otpSecret} onChange={e => setTeamAddForm({ ...teamAddForm, otpSecret: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Recovery URL</label><input className="form-input w-full" placeholder="http://..." value={teamAddForm.recoveryUrl} onChange={e => setTeamAddForm({ ...teamAddForm, recoveryUrl: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Han cua Team Acc</label><input type="date" className="form-input w-full" value={teamAddForm.expiredAt} onChange={e => setTeamAddForm({ ...teamAddForm, expiredAt: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Loai Team</label><select className="form-input w-full" value={teamAddForm.saleMode} onChange={e => { const nextSaleMode = normalizeTeamSaleMode(e.target.value); setTeamAddForm({ ...teamAddForm, saleMode: nextSaleMode, warehouse: nextSaleMode === "business" ? normalizeTeamWarehouse(teamAddForm.warehouse) : "total" }); }}><option value="slot">Slot team (4 slot)</option><option value="business">Business account (1 acc)</option></select></div>
@@ -8227,6 +8279,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                 <div className="space-y-3">
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Email</label><input className="form-input w-full" value={teamEditForm.username} onChange={e => setTeamEditForm({ ...teamEditForm, username: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">GPT Password</label><input className="form-input w-full" value={teamEditForm.password} onChange={e => setTeamEditForm({ ...teamEditForm, password: e.target.value })} /></div>
+                  <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Mã 2FA Secret</label><input className="form-input w-full" placeholder="Ví dụ: UCFWSM5RHRAKCETR66A5MTOVQX6BBUP7" value={teamEditForm.otpSecret} onChange={e => setTeamEditForm({ ...teamEditForm, otpSecret: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Recovery URL</label><input className="form-input w-full" value={teamEditForm.recoveryUrl} onChange={e => setTeamEditForm({ ...teamEditForm, recoveryUrl: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Han Team Acc</label><input type="date" className="form-input w-full" value={teamEditForm.expiredAt} onChange={e => setTeamEditForm({ ...teamEditForm, expiredAt: e.target.value })} /></div>
                   <div className="form-group"><label className="block text-xs text-slate-400 mb-1">Loai Team</label><select className="form-input w-full" value={teamEditForm.saleMode} onChange={e => { const nextSaleMode = normalizeTeamSaleMode(e.target.value); setTeamEditForm({ ...teamEditForm, saleMode: nextSaleMode, warehouse: nextSaleMode === "business" ? normalizeTeamWarehouse(teamEditForm.warehouse) : "total" }); }}><option value="slot">Slot team (4 slot)</option><option value="business">Business account (1 acc)</option></select></div>
