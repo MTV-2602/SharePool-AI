@@ -1298,18 +1298,24 @@ const buildMarketplaceTestLines = ({
 const buildShopminiDeliveryPayload = (lines = [], overrides = {}) => {
   const safeLines = Array.isArray(lines) ? lines : [];
   const message = String(overrides.msg || overrides.message || "success");
+  const textContent = safeLines.join("\n");
   return {
     success: true,
+    ok: true,
+    code: 200,
     status: true,
     result: true,
     msg: message,
     message,
-    data: safeLines,
+    data: textContent,
+    data_lines: safeLines,
     accounts: safeLines,
     products: safeLines,
     items: safeLines,
     list: safeLines,
-    content: safeLines.join("\n"),
+    product: textContent,
+    product_list: textContent,
+    content: textContent,
     ...overrides,
   };
 };
