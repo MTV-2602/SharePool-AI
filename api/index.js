@@ -1771,11 +1771,12 @@ app.all(
       quantity,
       provider: "shopmini",
     });
-    return res.json(buildShopminiDeliveryPayload(lines, {
-      test: true,
-      provider: "shopmini",
-      msg: "test-success",
-    }));
+    return res.json(
+      buildShopminiDeliveryPayload(lines, {
+        test: true,
+        provider: "shopmini",
+      }),
+    );
   },
 );
 // ---------------------------
@@ -1986,7 +1987,7 @@ app.all(
       return res.json(
         buildShopminiDeliveryPayload(
           ["preview_user|preview_pass|preview_link"],
-          { msg: "preview-success" },
+          { preview: true },
         ),
       );
     }
@@ -2204,7 +2205,7 @@ app.all(
       return res.json(
         buildShopminiDeliveryPayload(
           ["preview_team|preview_pass|preview_link"],
-          { msg: "preview-success" },
+          { preview: true },
         ),
       );
     }
