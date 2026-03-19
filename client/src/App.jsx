@@ -410,8 +410,8 @@ const buildChatgpt2faCopyText = (otpSecret = "") => {
   if (!normalized) return "";
   return [
     `Mã 2FA: ${normalized}`,
-    "Lấy mã đăng nhập tại: https://2fa.live/",
-    `Mở nhanh: ${buildChatgpt2faLiveUrl(normalized)}`,
+    "vào 2FA.live nhập mã 2FA vào để lấy code đăng nhập hoặc link dưới này",
+    `2FA.live: ${buildChatgpt2faLiveUrl(normalized)}`,
   ].join("\n");
 };
 const shouldIncludeChatgptLinkInCopy = (account = {}) =>
