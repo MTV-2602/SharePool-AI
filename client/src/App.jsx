@@ -825,12 +825,7 @@ const withExpectedUpdatedAt = (payload = {}, record = {}) => {
   };
 };
 const buildMoveExpectedPayload = (payload = {}, fromRecord = {}, toRecord = {}) => {
-  const nextPayload = { ...(payload || {}) };
-  const fromExpectedUpdatedAt = getRecordUpdatedAt(fromRecord);
-  const toExpectedUpdatedAt = getRecordUpdatedAt(toRecord);
-  if (fromExpectedUpdatedAt) nextPayload.fromExpectedUpdatedAt = fromExpectedUpdatedAt;
-  if (toExpectedUpdatedAt) nextPayload.toExpectedUpdatedAt = toExpectedUpdatedAt;
-  return nextPayload;
+  return { ...(payload || {}) };
 };
 const getApiErrorMessage = (error, fallback) =>
   error?.response?.data?.error || error?.message || fallback;

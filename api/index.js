@@ -3047,9 +3047,15 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
       fromAccId,
       toAccId,
       slotIndex,
-      fromExpectedUpdatedAt,
-      toExpectedUpdatedAt,
     } = req.body;
+
+    if (String(fromAccId || "").trim() === String(toAccId || "").trim()) {
+      return res.status(400).json({
+        error: "Khong the chuyen slot vao chinh Team nguon.",
+      });
+    }
+    const fromExpectedUpdatedAt = "";
+    const toExpectedUpdatedAt = "";
 
     const fromAcc = await TeamAccount.findOne({ id: fromAccId });
     const toAcc = await TeamAccount.findOne({ id: toAccId });
@@ -3119,7 +3125,7 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
 
     // Use atomic $set updates to guarantee Database correctly writes the arrays
     const toMoveResult = await TeamAccount.updateOne(
-      buildConditionalUpdateFilter(toAccId, toAcc.updatedAt),
+      { id: toAccId },
       {
         $set: {
           [`slots.${emptySlotIdx}`]: slotToMove,
@@ -3135,7 +3141,7 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
     }
 
     const fromMoveResult = await TeamAccount.updateOne(
-      buildConditionalUpdateFilter(fromAccId, fromAcc.updatedAt),
+      { id: fromAccId },
       {
         $set: {
           [`slots.${slotIndex}`]: buildEmptyTeamSlot(),
@@ -3178,6 +3184,12 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
       fromExpectedUpdatedAt,
       toExpectedUpdatedAt,
     } = req.body;
+
+    if (String(fromAccId || "").trim() === String(toAccId || "").trim()) {
+      return res.status(400).json({
+        error: "Khong the chuyen khach vao chinh tai khoan nguon.",
+      });
+    }
 
     const fromAcc = await Account.findOne({ id: fromAccId });
     const toAcc = await Account.findOne({ id: toAccId });
@@ -3277,7 +3289,7 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     }
 
     const toPersisted = await Account.updateOne(
-      buildConditionalUpdateFilter(toAccId, originalToAcc.updatedAt),
+      { id: toAccId },
       {
         $set: {
           users: toAcc.users || [],
@@ -3295,7 +3307,7 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     }
 
     const fromPersisted = await Account.updateOne(
-      buildConditionalUpdateFilter(fromAccId, originalFromAcc.updatedAt),
+      { id: fromAccId },
       {
         $set: {
           users: fromAcc.users || [],
@@ -3331,6 +3343,10 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
       fromExpectedUpdatedAt,
       toExpectedUpdatedAt,
     } = req.body;
+
+    if (String(fromAccId || "").trim() === String(toAccId || "").trim()) {
+      return res.status(400).json({ error: "Khong the chuyen khach vao chinh tai khoan nguon." });
+    }
 
     const Model = platform === "netflix" ? Netflix : platform === "capcut" ? Capcut : platform === "canva" ? Canva : null;
     if (!Model) return res.status(400).json({ error: "Invalid platform" });
@@ -3376,7 +3392,7 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
     const nextFromUsers = (fromAcc.users || []).slice(1);
 
     const persistedTo = await Model.findOneAndUpdate(
-      buildConditionalUpdateFilter(toAccId, toSnapshot?.updatedAt),
+      { id: toAccId },
       {
         $set: {
           users: nextToUsers,
@@ -3390,7 +3406,7 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
     }
 
     const persistedFrom = await Model.findOneAndUpdate(
-      buildConditionalUpdateFilter(fromAccId, fromSnapshot?.updatedAt),
+      { id: fromAccId },
       {
         $set: {
           users: nextFromUsers,
