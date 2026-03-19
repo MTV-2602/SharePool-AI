@@ -3104,6 +3104,22 @@ function App() {
   const marketplaceTrackedAccountIds = new Set(
     marketplaceTrackedAccountMap.keys(),
   );
+  const isMarketplaceSoldAccountForScope = (
+    accountId,
+    scope = "chatgpt",
+  ) => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return false;
+    const normalizedScope = normalizeMarketplaceScope(scope);
+    return marketplaceOrderSummaries.some((order) =>
+      (Array.isArray(order?.accountSummaries) ? order.accountSummaries : []).some(
+        (item) =>
+          normalizeMarketplaceScope(item?.scope) === normalizedScope &&
+          (String(item?.soldAccountId || "").trim() === normalizedId ||
+            String(item?.currentAccountId || "").trim() === normalizedId),
+      ),
+    );
+  };
   const filteredChatgptAccounts = accounts
     .filter((acc) => {
       if (gptSubTab === "total") {
@@ -8244,9 +8260,6 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
             warrantySourceAcc?.expiredAt ||
             "",
         ).trim();
-        const requiredWarrantyExpiryTime = requiredWarrantyExpiryIso
-          ? new Date(requiredWarrantyExpiryIso).getTime()
-          : null;
         const eligibleReplacementAccounts = (
           isTeamWarranty ? teamAccounts : accounts
         ).filter((acc) => {
@@ -8256,39 +8269,31 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
           if (isTeamWarranty) {
             if (normalizeTeamSaleMode(acc?.saleMode) !== "business") return false;
             if (getActiveTeamCustomers(acc).length > 0) return false;
+            if (isMarketplaceSoldAccountForScope(acc?.id, "team")) return false;
+            if (isAccountBusyInDatammoWarranty(acc?.id, datammoWarrantyCases, "team")) {
+              return false;
+            }
             if (
               acc?.expiredAt &&
               new Date(acc.expiredAt).getTime() <= Date.now()
             ) {
               return false;
             }
-            const replacementExpiryTime = acc?.expiredAt
-              ? new Date(acc.expiredAt).getTime()
-              : null;
-            if (
-              requiredWarrantyExpiryTime !== null &&
-              (!Number.isFinite(replacementExpiryTime) ||
-                replacementExpiryTime < requiredWarrantyExpiryTime)
-            ) {
-              return false;
-            }
             return true;
           }
-          if (acc?.type !== "package2") return false;
+          if (!["package2", "unassigned"].includes(String(acc?.type || "").trim())) {
+            return false;
+          }
           if (Array.isArray(acc?.users) && acc.users.length > 0) return false;
+          if (isMarketplaceSoldAccountForScope(acc?.id, "chatgpt")) return false;
           if (
-            acc?.expiredAt &&
-            new Date(acc.expiredAt).getTime() <= Date.now()
+            isAccountBusyInDatammoWarranty(acc?.id, datammoWarrantyCases, "chatgpt")
           ) {
             return false;
           }
-          const replacementExpiryTime = acc?.expiredAt
-            ? new Date(acc.expiredAt).getTime()
-            : null;
           if (
-            requiredWarrantyExpiryTime !== null &&
-            (!Number.isFinite(replacementExpiryTime) ||
-              replacementExpiryTime < requiredWarrantyExpiryTime)
+            acc?.expiredAt &&
+            new Date(acc.expiredAt).getTime() <= Date.now()
           ) {
             return false;
           }
@@ -8368,7 +8373,7 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                     <option value="">
                       {isTeamWarranty
                         ? "Chọn Team Business trống..."
-                        : "Chọn acc package2 trống..."}
+                        : "Chọn acc trống..."}
                     </option>
                     {eligibleReplacementAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
@@ -8380,14 +8385,14 @@ UCanPlus1669@purinikiopiy.asia---zxcvbnm666..----https://mail.chatgpt.org.uk/...
                   </select>
                   <div className="mt-2 text-[11px] text-slate-400 leading-relaxed">
                     {isTeamWarranty
-                      ? "Chi hien Team Business khong co khach va co han bang hoac lon hon han khach hien tai."
-                      : "Chi hien acc Goi 2 khong co khach va co han bang hoac lon hon han khach hien tai."}
+                      ? "Chi hien Team Business trong 100%: khong co khach, chua ban, khong nam trong bao hanh va chua het han."
+                      : "Chi hien acc trong 100%: khong co khach, chua ban, khong nam trong bao hanh va chua het han."}
                   </div>
                   {eligibleReplacementAccounts.length === 0 && (
                     <div className="mt-2 text-xs text-yellow-400">
                       {isTeamWarranty
-                        ? "Không có Team Business trống phù hợp để bảo hành."
-                        : "Không có acc package2 trống phù hợp để bảo hành."}
+                        ? "Khong co Team Business trong 100% phu hop de bao hanh."
+                        : "Khong co acc trong 100% phu hop de bao hanh."}
                     </div>
                   )}
                 </div>

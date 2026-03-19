@@ -998,6 +998,10 @@ const supportsChatgptMarket = (type) =>
   CHATGPT_MARKET_SUPPORTED_TYPES.includes(
     String(type || "unassigned").trim() || "unassigned",
   );
+const supportsChatgptWarrantyReplacement = (type) =>
+  ["package2", "unassigned"].includes(
+    String(type || "unassigned").trim() || "unassigned",
+  );
 const isChatgptMarketAccount = (acc = {}) =>
   supportsChatgptMarket(acc?.type) &&
   normalizePackage2Shelf(acc?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
@@ -1161,6 +1165,29 @@ const findLatestMarketplaceOrderForAccount = async (
     .sort({ createdAt: -1 })
     .lean();
   return latestOrder || null;
+};
+const findActiveMarketplaceWarrantyCaseForAccount = async (
+  accountId,
+  scope = "chatgpt",
+) => {
+  const normalizedId = String(accountId || "").trim();
+  if (!normalizedId) return null;
+  const normalizedScope =
+    String(scope || "chatgpt").trim().toLowerCase() === "team"
+      ? "team"
+      : "chatgpt";
+  return (
+    (await DatammoWarrantyCase.findOne({
+      scope: normalizedScope,
+      status: "active",
+      $or: [
+        { rootAccountId: normalizedId },
+        { currentAccountId: normalizedId },
+        { "rounds.fromAccountId": normalizedId },
+        { "rounds.toAccountId": normalizedId },
+      ],
+    }).lean()) || null
+  );
 };
 const hasRegularPackage2Customer = (users = []) =>
   Array.isArray(users) &&
@@ -2582,10 +2609,24 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
         error: "Tài khoản thay thế phải khác tài khoản đang lỗi",
       });
     }
-    if (sourceAcc.type !== "package2" || replacementAcc.type !== "package2") {
+    if (false) {
       return res.status(400).json({
         error: "Bảo hành hiện chỉ hỗ trợ tài khoản seller gói 2",
       });
+    }
+
+    const replacementOriginalType =
+      String(replacementAcc?.type || "unassigned").trim() || "unassigned";
+    if (
+      !supportsChatgptWarrantyReplacement(sourceAcc.type) ||
+      !supportsChatgptWarrantyReplacement(replacementOriginalType)
+    ) {
+      return res.status(400).json({
+        error: "Bao hanh seller chi nhan acc Private trong hoac acc chua chon",
+      });
+    }
+    if (replacementOriginalType === "unassigned") {
+      replacementAcc.type = "package2";
     }
 
     const sourceUsers = Array.isArray(sourceAcc.users) ? sourceAcc.users : [];
@@ -2597,10 +2638,7 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       });
     }
 
-    const requiredExpiryTime = getWarrantyRequiredExpiryTime(
-      sourceAcc,
-      sourceUser,
-    );
+    const requiredExpiryTime = null;
 
     const fallbackOrder = await findLatestMarketplaceOrderForAccount(
       sourceAcc.id,
@@ -2632,6 +2670,29 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       });
     }
 
+    const replacementMarketplaceOrder = await findLatestMarketplaceOrderForAccount(
+      replacementAcc.id,
+      "",
+      "chatgpt",
+    );
+    if (replacementMarketplaceOrder) {
+      return res.status(400).json({
+        error:
+          "Tai khoan thay the da tung ban tren san, khong the dung de bao hanh",
+      });
+    }
+    const replacementWarrantyCase =
+      await findActiveMarketplaceWarrantyCaseForAccount(
+        replacementAcc.id,
+        "chatgpt",
+      );
+    if (replacementWarrantyCase) {
+      return res.status(400).json({
+        error:
+          "Tai khoan thay the nay dang nam trong mot luong bao hanh khac",
+      });
+    }
+
     const replacementExpiryTime = replacementAcc.expiredAt
       ? new Date(replacementAcc.expiredAt).getTime()
       : null;
@@ -2658,6 +2719,10 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       buildConditionalUpdateFilter(replacementAcc.id, replacementExpectedUpdatedAt),
       {
         $set: {
+          type:
+            replacementOriginalType === "unassigned"
+              ? "package2"
+              : replacementAcc.type,
           users: sourceUsers,
           package2Shelf: CHATGPT_TOTAL_VALUE,
           updatedAt: nowIso,
@@ -2784,10 +2849,7 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
         error: "Team nay khong phai acc seller dang giu khach de bao hanh",
       });
     }
-    const requiredExpiryTime = getWarrantyRequiredExpiryTime(
-      sourceAcc,
-      sourceSlot,
-    );
+    const requiredExpiryTime = null;
 
     const fallbackOrder = await findLatestMarketplaceOrderForAccount(
       sourceAcc.id,
@@ -2817,6 +2879,27 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
     ) {
       return res.status(400).json({
         error: "Team thay the da het han",
+      });
+    }
+
+    const replacementMarketplaceOrder = await findLatestMarketplaceOrderForAccount(
+      replacementAcc.id,
+      "",
+      "team",
+    );
+    if (replacementMarketplaceOrder) {
+      return res.status(400).json({
+        error: "Team thay the da tung ban tren san, khong the dung de bao hanh",
+      });
+    }
+    const replacementWarrantyCase =
+      await findActiveMarketplaceWarrantyCaseForAccount(
+        replacementAcc.id,
+        "team",
+      );
+    if (replacementWarrantyCase) {
+      return res.status(400).json({
+        error: "Team thay the nay dang nam trong mot luong bao hanh khac",
       });
     }
 
