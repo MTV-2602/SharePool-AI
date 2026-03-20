@@ -621,11 +621,14 @@ const parseTeamImportTextToForm = (raw = "") => {
   } else {
     parts = normalized.split(/\s+/).map((s) => s.trim()).filter(Boolean);
   }
-  const email = parts[0] || "";
-  const gptPass = parts[1] || "";
-  const thirdPart = parts[2] || "";
-  const fourthPart = parts[3] || "";
-  const fifthPart = parts[4] || "";
+  const normalizedParts = parts.map((part) =>
+    String(part || "").replace(/^(TK|TAI KHOAN|MAT KHAU|MK|2FA|LINK)\s*:\s*/i, "").trim(),
+  );
+  const email = normalizedParts[0] || "";
+  const gptPass = normalizedParts[1] || "";
+  const thirdPart = normalizedParts[2] || "";
+  const fourthPart = normalizedParts[3] || "";
+  const fifthPart = normalizedParts[4] || "";
   const fallbackRecoveryMatch = input.match(/https?:\/\/\S+/i);
   const recoveryMatch = input.match(/\[接收验证码的地址\](.*)/);
   const otpSecret = !/^https?:\/\//i.test(thirdPart) && thirdPart ? thirdPart : "";
@@ -643,6 +646,8 @@ const parseTeamImportTextToForm = (raw = "") => {
     otpSecret,
     recoveryUrl,
     expiredAt: getDefaultOneMonthDateInput(),
+    saleMode: "business",
+    warehouse: "total",
   });
 };
 const normalizeTeamAccountForUi = (account = {}) => {
