@@ -6456,11 +6456,16 @@ function App() {
       )}
 
       {/* IMPORT TEAM MODAL */}
-      {showImportTeamModal && (
+      {showImportTeamModal &&
+        (() => {
+          let parsedPreview = null;
+          try {
+            parsedPreview = parseTeamImportTextToForm(teamImportText);
+          } catch (error) {
+            console.error("Team import preview parse error:", error);
+          }
+          return (
         <div className="modal-overlay">
-          {(() => {
-            const parsedPreview = parseTeamImportTextToForm(teamImportText);
-            return (
           <form className="modal-box" style={{ maxWidth: "500px" }} onSubmit={(e) => {
             e.preventDefault();
             const parsedForm = parseTeamImportTextToForm(teamImportText);
@@ -6535,10 +6540,9 @@ function App() {
               </button>
             </div>
           </form>
-            );
-          })()}
         </div>
-      )}
+          );
+        })()}
 
       {showUserModal && (
         <div className="modal-overlay">
