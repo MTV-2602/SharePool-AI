@@ -474,7 +474,7 @@ const parseChatgptQuickImportRows = (raw = "") => {
   const seenKeys = new Set();
 
   cleanedRaw.split("\n").forEach((rawLine) => {
-    const line = rawLine.trim();
+    const line = rawLine.trim().replace(/[｜¦┃]/g, "|");
     if (!line || line.includes("邮箱")) return;
 
     if (line.includes("---")) {
@@ -492,13 +492,52 @@ const parseChatgptQuickImportRows = (raw = "") => {
     }
 
     if (!line.includes("|")) return;
-    const parts = line.split("|").map((part) => part.trim()).filter(Boolean);
+    const parts = line.split(/\s*\|\s*/).map((part) => part.trim()).filter(Boolean);
     if (parts.length < 2) return;
+    const normalizedParts = parts.map((part) => ({
+      raw: String(part || "").trim(),
+      key: toNonAccentVietnamese(String(part || "").split(":")[0] || "")
+        .replace(/\s+/g, " ")
+        .trim(),
+      value: String(part || "").includes(":")
+        ? String(part || "").slice(String(part || "").indexOf(":") + 1).trim()
+        : String(part || "").trim(),
+    }));
+    const hasLabeledFields = normalizedParts.some(({ raw }) => raw.includes(":"));
+    if (hasLabeledFields) {
+      const candidate = {};
+      normalizedParts.forEach(({ key, value }) => {
+        if (!value) return;
+        if (/^(tk|tai khoan|tai khoan dang nhap|username|email)$/.test(key)) {
+          candidate.username = value;
+        } else if (/^(mk|mat khau|password)$/.test(key)) {
+          candidate.password = value;
+        } else if (/^(ma 2fa|2fa|otp|ma otp)$/.test(key)) {
+          candidate.otpSecret = value;
+        } else if (/^(link|link mail|mail link|recovery|recovery link)$/.test(key)) {
+          candidate.link = value;
+        } else if (/^(2fa.live|2fa live)$/.test(key)) {
+          const otpFromUrl = value.match(/\/tok\/([^/?#]+)/i)?.[1];
+          if (!candidate.otpSecret && otpFromUrl) {
+            candidate.otpSecret = decodeURIComponent(otpFromUrl);
+          }
+        }
+      });
+      addParsedChatgptImportRecord(records, seenKeys, candidate);
+      return;
+    }
 
     const [username, password, ...rest] = parts;
     let link = "";
     let otpSecret = "";
     rest.forEach((part) => {
+      if (/^https?:\/\/2fa\.live\/tok\//i.test(part)) {
+        const otpFromUrl = part.match(/\/tok\/([^/?#]+)/i)?.[1];
+        if (!otpSecret && otpFromUrl) {
+          otpSecret = decodeURIComponent(otpFromUrl);
+        }
+        return;
+      }
       if (!link && /^https?:\/\//i.test(part)) {
         link = part;
       } else if (!otpSecret) {
