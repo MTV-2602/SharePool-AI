@@ -1445,23 +1445,11 @@ const formatShopminiDeliveryLineForDisplay = (line = "") => {
   }
   return segments.join(" | ") || raw;
 };
-const buildShopminiStrictSamplePayload = (lines = [], overrides = {}) => {
+const buildShopminiStrictSamplePayload = (lines = []) => {
   const safeLines = Array.isArray(lines) ? lines : [];
-  const displayLines = safeLines.map((line) =>
-    formatShopminiDeliveryLineForDisplay(line),
-  );
-  const transId = String(
-    overrides.trans_id ||
-      overrides.transId ||
-      `JF${Math.random().toString(16).slice(2, 10)}${Date.now()
-        .toString(16)
-        .slice(-8)}`,
-  ).trim();
   return {
     status: "success",
-    msg: String(overrides.msg || "Tạo đơn hàng thành công!"),
-    trans_id: transId,
-    data: displayLines,
+    data: safeLines.join("\n"),
   };
 };
 const getShopminiBuyQuantity = (req) =>
@@ -1942,19 +1930,7 @@ app.all(
   async (req, res) => {
     const action = resolveShopminiActionFromReq(req);
     if (action !== "buy") {
-      return res.json({
-        success: true,
-        status: true,
-        result: true,
-        test: true,
-        provider: "shopmini",
-        stock: TEST_MARKETPLACE_STOCK,
-        amount: TEST_MARKETPLACE_STOCK,
-        quantity: TEST_MARKETPLACE_STOCK,
-        sum: TEST_MARKETPLACE_STOCK,
-        price: TEST_MARKETPLACE_PRICE,
-        amount_money: TEST_MARKETPLACE_PRICE,
-      });
+      return res.json({ sum: TEST_MARKETPLACE_STOCK });
     }
 
     const quantity = getShopminiBuyQuantity(req);
@@ -1964,11 +1940,7 @@ app.all(
       quantity,
       provider: "shopmini",
     });
-    return res.json(
-      buildShopminiStrictSamplePayload(lines, {
-        trans_id: orderId,
-      }),
-    );
+    return res.json(buildShopminiStrictSamplePayload(lines));
   },
 );
 // ---------------------------
@@ -2148,21 +2120,7 @@ app.all(
       try {
         await reconcileChatgptMarketInventory();
         const stock = await Account.countDocuments(buildPackage2SaleFilter());
-        const mainPrice = Number(process.env.DATAMMO_PACKAGE2_MAIN_PRICE || 0);
-        const cheapPrice = Number(process.env.DATAMMO_PACKAGE2_CHEAP_PRICE || 0);
-        const selectedPrice = cheapPrice > 0 ? cheapPrice : mainPrice;
-        const payload = {
-          success: true,
-          status: true,
-          result: true,
-          stock,
-          amount: stock,
-          quantity: stock,
-          sum: stock,
-          price: Number.isFinite(selectedPrice) ? selectedPrice : 0,
-          amount_money: Number.isFinite(selectedPrice) ? selectedPrice : 0,
-        };
-        return res.json(payload);
+        return res.json({ sum: stock });
       } catch (error) {
         return res
           .status(500)
@@ -2185,10 +2143,7 @@ app.all(
 
     if (isPlaceholderLikeValue(orderId) || isPlaceholderLikeValue(rawQuantity)) {
       return res.json(
-        buildShopminiStrictSamplePayload(
-          ["preview_user|preview_pass|preview_link"],
-          { trans_id: orderId },
-        ),
+        buildShopminiStrictSamplePayload(["preview_user|preview_pass|preview_link"]),
       );
     }
 
@@ -2236,12 +2191,7 @@ app.all(
       bumpDataVersion();
       notifyClients();
 
-      return res.json(
-        buildShopminiStrictSamplePayload(
-          claimed.map((item) => item.delivery),
-          { trans_id: orderId },
-        ),
-      );
+      return res.json(buildShopminiStrictSamplePayload(claimed.map((item) => item.delivery)));
     } catch (error) {
       if (claimed.length > 0) {
         await rollbackClaimedPackage2Accounts(claimed);
@@ -2379,17 +2329,7 @@ app.all(
           });
         }
         const payload = await buildTeamMarketplaceStockPayload(saleMode);
-        return res.json({
-          success: true,
-          status: true,
-          result: true,
-          stock: payload.stock,
-          amount: payload.stock,
-          quantity: payload.stock,
-          sum: payload.stock,
-          price: 0,
-          amount_money: 0,
-        });
+        return res.json({ sum: payload.stock });
       } catch (error) {
         return res
           .status(500)
@@ -2412,10 +2352,7 @@ app.all(
 
     if (isPlaceholderLikeValue(orderId) || isPlaceholderLikeValue(rawQuantity)) {
       return res.json(
-        buildShopminiStrictSamplePayload(
-          ["preview_team|preview_pass|preview_link"],
-          { trans_id: orderId },
-        ),
+        buildShopminiStrictSamplePayload(["preview_team|preview_pass|preview_link"]),
       );
     }
 
@@ -2471,12 +2408,7 @@ app.all(
       bumpDataVersion();
       notifyClients();
 
-      return res.json(
-        buildShopminiStrictSamplePayload(
-          claimed.map((item) => item.delivery),
-          { trans_id: orderId },
-        ),
-      );
+      return res.json(buildShopminiStrictSamplePayload(claimed.map((item) => item.delivery)));
     } catch (error) {
       if (claimed.length > 0) {
         await rollbackClaimedTeamAccounts(claimed);
