@@ -1011,6 +1011,11 @@ const isChatgptMarketAccount = (acc = {}) =>
   supportsChatgptMarket(acc?.type) &&
   normalizePackage2Shelf(acc?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
     CHATGPT_MARKET_VALUE;
+const hasManagedChatgptMarketplaceCustomer = (acc = {}) => {
+  const users = Array.isArray(acc?.users) ? acc.users : [];
+  if (users.length !== 1) return false;
+  return isDatammoManagedUser(users[0]);
+};
 const hasAnyAssignedUsers = (users = []) =>
   Array.isArray(users) && users.length > 0;
 const isEligibleForChatgptMarketSale = (acc = {}) => {
@@ -1031,6 +1036,9 @@ const normalizeChatgptMarketAccountState = (acc = {}) => {
     acc?.package2Shelf,
     CHATGPT_TOTAL_VALUE,
   );
+  if (hasManagedChatgptMarketplaceCustomer(acc)) {
+    return CHATGPT_MARKET_VALUE;
+  }
   if (currentValue === CHATGPT_MANUAL_MARKET_VALUE) {
     return CHATGPT_MANUAL_MARKET_VALUE;
   }
@@ -2843,7 +2851,7 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
               ? "package2"
               : replacementAcc.type,
           users: sourceUsersForWarranty,
-          package2Shelf: CHATGPT_TOTAL_VALUE,
+          package2Shelf: CHATGPT_MARKET_VALUE,
           updatedAt: nowIso,
         },
       },
@@ -3067,7 +3075,7 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
       {
         $set: {
           slots: replacementSlots,
-          warehouse: TEAM_WAREHOUSE_TOTAL,
+          warehouse: TEAM_WAREHOUSE_MARKET,
           updatedAt: nowIso,
         },
       },
