@@ -624,18 +624,37 @@ const parseTeamImportTextToForm = (raw = "") => {
   const normalizedParts = parts.map((part) =>
     String(part || "").replace(/^(TK|TAI KHOAN|MAT KHAU|MK|2FA|LINK)\s*:\s*/i, "").trim(),
   );
-  const email = normalizedParts[0] || "";
-  const gptPass = normalizedParts[1] || "";
+  const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+  const urlRegex = /https?:\/\/\S+/i;
+  const otpRegex = /\b[A-Z2-7]{16,}\b/i;
+  const emailMatch = normalized.match(emailRegex);
+  const urlMatch = input.match(urlRegex);
+  const otpMatch = normalized.match(otpRegex);
+  const email = normalizedParts[0] || emailMatch?.[0] || "";
+  const gptPass =
+    normalizedParts[1] ||
+    normalized
+      .replace(emailRegex, " ")
+      .replace(urlRegex, " ")
+      .replace(otpRegex, " ")
+      .split(/[|]/)
+      .map((part) => String(part || "").trim())
+      .filter(Boolean)[0] ||
+    "";
   const thirdPart = normalizedParts[2] || "";
   const fourthPart = normalizedParts[3] || "";
   const fifthPart = normalizedParts[4] || "";
   const fallbackRecoveryMatch = input.match(/https?:\/\/\S+/i);
   const recoveryMatch = input.match(/\[接收验证码的地址\](.*)/);
-  const otpSecret = !/^https?:\/\//i.test(thirdPart) && thirdPart ? thirdPart : "";
+  const otpSecret =
+    (!/^https?:\/\//i.test(thirdPart) && thirdPart ? thirdPart : "") ||
+    otpMatch?.[0] ||
+    "";
   const recoveryUrl =
     fifthPart ||
     fourthPart ||
     (/^https?:\/\//i.test(thirdPart) ? thirdPart : "") ||
+    (urlMatch ? urlMatch[0].trim() : "") ||
     (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : "") ||
     (recoveryMatch ? recoveryMatch[1].trim() : "");
 
@@ -6439,6 +6458,9 @@ function App() {
       {/* IMPORT TEAM MODAL */}
       {showImportTeamModal && (
         <div className="modal-overlay">
+          {(() => {
+            const parsedPreview = parseTeamImportTextToForm(teamImportText);
+            return (
           <form className="modal-box" style={{ maxWidth: "500px" }} onSubmit={(e) => {
             e.preventDefault();
             const parsedForm = parseTeamImportTextToForm(teamImportText);
@@ -6465,6 +6487,20 @@ function App() {
                 onChange={e => setTeamImportText(e.target.value)}
                 autoFocus
               ></textarea>
+              <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-xs">
+                <div className="font-bold text-slate-200 mb-2">Preview parser</div>
+                {parsedPreview ? (
+                  <div className="space-y-1 text-slate-300">
+                    <div><span className="text-slate-500">Email:</span> {parsedPreview.username || "—"}</div>
+                    <div><span className="text-slate-500">Pass:</span> {parsedPreview.password || "—"}</div>
+                    <div><span className="text-slate-500">2FA:</span> {parsedPreview.otpSecret || "—"}</div>
+                    <div><span className="text-slate-500">Link:</span> {parsedPreview.recoveryUrl || "—"}</div>
+                    <div><span className="text-slate-500">Loai:</span> Business</div>
+                  </div>
+                ) : (
+                  <div className="text-amber-300">Chưa đọc được format từ nội dung hiện tại.</div>
+                )}
+              </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button type="button" onClick={() => setShowImportTeamModal(false)} className="btn-secondary">Hủy</button>
@@ -6499,6 +6535,8 @@ function App() {
               </button>
             </div>
           </form>
+            );
+          })()}
         </div>
       )}
 
