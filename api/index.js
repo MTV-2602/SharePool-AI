@@ -1166,10 +1166,13 @@ const findLatestMarketplaceOrderForAccount = async (
   if (scope) {
     filter.scope = String(scope || "").trim().toLowerCase();
   }
-  const latestOrder = await DatammoOrder.findOne(filter)
+  const candidateOrders = await DatammoOrder.find(filter)
     .sort({ createdAt: -1 })
+    .limit(50)
     .lean();
-  return latestOrder || null;
+  return (
+    candidateOrders.find((order) => !isPlaceholderMarketplaceOrder(order)) || null
+  );
 };
 const findActiveMarketplaceWarrantyCaseForAccount = async (
   accountId,
@@ -1481,6 +1484,12 @@ const isPlaceholderLikeValue = (value) => {
   const raw = String(value || "").trim();
   if (!raw) return false;
   return raw.includes("{") || raw.includes("}") || /^(test|preview)$/i.test(raw);
+};
+const isPlaceholderMarketplaceOrder = (order = {}) =>
+  isPlaceholderLikeValue(order?.orderId);
+const isPlaceholderMarketplaceManagedUser = (user) => {
+  const info = getMarketplaceOrderInfoFromUser(user);
+  return !!String(info?.orderId || "").trim() && isPlaceholderLikeValue(info.orderId);
 };
 const buildPackage2SaleFilter = () => {
   const minExpiredAt = new Date(
@@ -2047,13 +2056,21 @@ app.get(
   ["/api/datammo/buy", "/api/datammo/buy/:shelf"],
   verifyDatammoPartnerToken,
   async (req, res) => {
-    const quantity = getSafeBuyQuantity(req.query?.quantity);
+    const rawQuantity = req.query?.quantity;
+    const quantity = getSafeBuyQuantity(rawQuantity);
     const orderId = String(
       req.query?.order_id || req.query?.orderId || `dm_${Date.now()}`,
     );
 
     let claimed = [];
     try {
+      if (isPlaceholderLikeValue(orderId) || isPlaceholderLikeValue(rawQuantity)) {
+        return res.json({
+          success: true,
+          data: ["preview_user|preview_pass|preview_link"],
+          preview: true,
+        });
+      }
       await reconcileChatgptMarketInventory();
       const available = await Account.countDocuments(buildPackage2SaleFilter());
       if (available < quantity) {
@@ -2255,12 +2272,20 @@ app.get(
   ["/api/datammo/team/buy", "/api/datammo/team/buy/:mode"],
   verifyDatammoPartnerToken,
   async (req, res) => {
-    const quantity = getSafeBuyQuantity(req.query?.quantity);
+    const rawQuantity = req.query?.quantity;
+    const quantity = getSafeBuyQuantity(rawQuantity);
     const orderId = String(
       req.query?.order_id || req.query?.orderId || `dm_team_${Date.now()}`,
     ).trim();
     let claimed = [];
     try {
+      if (isPlaceholderLikeValue(orderId) || isPlaceholderLikeValue(rawQuantity)) {
+        return res.json({
+          success: true,
+          data: ["preview_team|preview_pass|preview_link"],
+          preview: true,
+        });
+      }
       await reconcileTeamMarketInventory();
       const saleMode = resolveTeamMarketplaceModeFromReq(req);
       if (!saleMode) {
@@ -3327,7 +3352,11 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     const destinationMarketplaceOrder =
       await findLatestMarketplaceOrderForAccount(toAccId, "", "chatgpt");
     const sourceUserToMove = fromAcc.users[userIndex];
-    if (isDatammoManagedUser(sourceUserToMove) || destinationMarketplaceOrder) {
+    if (
+      (isDatammoManagedUser(sourceUserToMove) &&
+        !isPlaceholderMarketplaceManagedUser(sourceUserToMove)) ||
+      destinationMarketplaceOrder
+    ) {
       return res.status(400).json({
         error:
           "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",

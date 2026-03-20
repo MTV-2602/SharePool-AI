@@ -144,6 +144,15 @@ const getMarketplaceProviderLabel = (value) =>
   normalizeMarketplaceProvider(value) === "shopmini" ? "Shopmini" : "Datammo";
 const getDatammoUserName = (user) =>
   typeof user === "string" ? user : String(user?.name || "");
+const isPlaceholderMarketplaceOrderId = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  return (
+    raw.includes("{") ||
+    raw.includes("}") ||
+    /^(test|preview)$/i.test(raw)
+  );
+};
 const isDatammoManagedUser = (user) => {
   const normalized = getDatammoUserName(user).trim().toLowerCase();
   return (
@@ -171,6 +180,15 @@ const getMarketplaceOrderInfoFromUser = (user) => {
   }
   return { provider: "", orderId: "" };
 };
+const isPlaceholderMarketplaceManagedUser = (user) => {
+  const info = getMarketplaceOrderInfoFromUser(user);
+  return (
+    !!String(info?.orderId || "").trim() &&
+    isPlaceholderMarketplaceOrderId(info.orderId)
+  );
+};
+const isActiveMarketplaceManagedUser = (user) =>
+  isDatammoManagedUser(user) && !isPlaceholderMarketplaceManagedUser(user);
 const getLegacyMarketplaceInfoFromNote = (note) => {
   const lines = String(note || "")
     .split(/\r?\n/)
@@ -287,7 +305,9 @@ const isAccountBusyInDatammoWarranty = (
   scope = "chatgpt",
 ) => !!getDatammoWarrantyInfoForAccount(accountId, cases, scope);
 const normalizeDatammoOrders = (orders = []) =>
-  [...(Array.isArray(orders) ? orders : [])].sort(
+  [...(Array.isArray(orders) ? orders : [])]
+    .filter((order) => !isPlaceholderMarketplaceOrderId(order?.orderId))
+    .sort(
     (a, b) =>
       new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime(),
   );
@@ -5097,9 +5117,9 @@ function App() {
                                   managedProvider,
                                 );
                                 const hasActualManagedMarketplaceUser =
-                                  !!u && isDatammoManagedUser(u);
+                                  !!u && isActiveMarketplaceManagedUser(u);
                                 const hasRegularVisibleUser =
-                                  !!u && !isDatammoManagedUser(u);
+                                  !!u && !isActiveMarketplaceManagedUser(u);
                                 const warrantyInfo = getDatammoWarrantyInfoForAccount(
                                   acc.id,
                                   datammoWarrantyCases,
@@ -5740,7 +5760,8 @@ function App() {
                                   trackedMarketplaceRole === "sold" ||
                                   trackedMarketplaceRole === "current";
                                 const hasActualManagedMarketplaceUser =
-                                  !!primaryUser && isDatammoManagedUser(primaryUser);
+                                  !!primaryUser &&
+                                  isActiveMarketplaceManagedUser(primaryUser);
                                 const managedOrderInfo =
                                   getMarketplaceOrderInfoFromUser(primaryUser);
                                 const latestMarketplaceOrder =
@@ -8043,7 +8064,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                 const canOpenTeamWarranty =
                   isBusinessMode &&
                   ((!!activeBusinessSlot &&
-                    isDatammoManagedUser({
+                    isActiveMarketplaceManagedUser({
                       name: activeBusinessSlot?.customerName || "",
                     }) &&
                     !!teamMarketplaceOrderId) ||
@@ -8054,7 +8075,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   isBusinessMode &&
                   (isTeamMarketWarehouse(acc) ||
                     (!!activeBusinessSlot &&
-                      isDatammoManagedUser({
+                      isActiveMarketplaceManagedUser({
                         name: activeBusinessSlot?.customerName || "",
                       })) ||
                     !!teamWarrantyCase);
@@ -8075,7 +8096,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                     ? "Dang bao hanh"
                     : "Lich su bao hanh"
                   : !!activeBusinessSlot &&
-                      isDatammoManagedUser({
+                      isActiveMarketplaceManagedUser({
                         name: activeBusinessSlot?.customerName || "",
                       })
                     ? "Da ban"
