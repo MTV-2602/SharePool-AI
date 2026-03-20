@@ -610,14 +610,18 @@ const parseTeamImportTextToForm = (raw = "") => {
   const lines = input.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   const sourceLine =
     lines.find((line) => line.includes("----")) ||
-    lines.find((line) => line.includes("|")) ||
+    lines.find((line) => /[|｜¦┃]/.test(line)) ||
     input;
-  const normalized = sourceLine.replace(/^team\s+/i, "").trim();
+  const normalized = sourceLine
+    .replace(/^team\s+/i, "")
+    .replace(/[｜¦┃]/g, "|")
+    .replace(/\t+/g, "|")
+    .trim();
   let parts = [];
   if (normalized.includes("----")) {
     parts = normalized.split(/-{4,}/).map((s) => s.trim()).filter(Boolean);
-  } else if (normalized.includes("|")) {
-    parts = normalized.split("|").map((s) => s.trim()).filter(Boolean);
+  } else if (/[|]/.test(normalized)) {
+    parts = normalized.split(/\s*\|\s*/).map((s) => s.trim()).filter(Boolean);
   } else {
     parts = normalized.split(/\s+/).map((s) => s.trim()).filter(Boolean);
   }
