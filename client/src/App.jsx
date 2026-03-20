@@ -608,9 +608,19 @@ const parseTeamImportTextToForm = (raw = "") => {
   const input = String(raw || "").trim();
   if (!input) return null;
   const lines = input.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-  const sourceLine = lines.find((line) => line.includes("----")) || input;
+  const sourceLine =
+    lines.find((line) => line.includes("----")) ||
+    lines.find((line) => line.includes("|")) ||
+    input;
   const normalized = sourceLine.replace(/^team\s+/i, "").trim();
-  const parts = normalized.split(/-{4,}/).map((s) => s.trim()).filter(Boolean);
+  let parts = [];
+  if (normalized.includes("----")) {
+    parts = normalized.split(/-{4,}/).map((s) => s.trim()).filter(Boolean);
+  } else if (normalized.includes("|")) {
+    parts = normalized.split("|").map((s) => s.trim()).filter(Boolean);
+  } else {
+    parts = normalized.split(/\s+/).map((s) => s.trim()).filter(Boolean);
+  }
   const email = parts[0] || "";
   const gptPass = parts[1] || "";
   const thirdPart = parts[2] || "";
@@ -6441,11 +6451,11 @@ function App() {
             </h2>
             <div className="form-group mb-4">
               <label className="text-slate-300 font-bold mb-1 block">Dán Raw Format tại đây:</label>
-              <p className="text-xs text-slate-400 mb-2">Format mới: team email@domain.com----gptpass----2FA_SECRET----https://generator.email/... (không cần pass email)</p>
+              <p className="text-xs text-slate-400 mb-2">Format mới: team email@domain.com----gptpass----2FA_SECRET----https://generator.email/... hoặc team email@domain.com | gptpass | 2FA_SECRET | https://generator.email/...</p>
               <p className="text-[11px] text-cyan-300/80 mb-2">Chỉ cần thêm chữ <code className="bg-slate-700 px-1 rounded">team</code> ở đầu dòng là có thể parse hoặc thêm nhanh.</p>
               <textarea
                 className="form-input w-full h-32 text-sm font-mono leading-tight bg-slate-800"
-                placeholder="team email@domain.com----gptpass----2FA_SECRET----https://generator.email/..."
+                placeholder="team email@domain.com | gptpass | 2FA_SECRET | https://generator.email/..."
                 value={teamImportText}
                 onChange={e => setTeamImportText(e.target.value)}
                 autoFocus
