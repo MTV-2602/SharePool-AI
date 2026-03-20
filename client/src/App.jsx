@@ -6456,15 +6456,7 @@ function App() {
       )}
 
       {/* IMPORT TEAM MODAL */}
-      {showImportTeamModal &&
-        (() => {
-          let parsedPreview = null;
-          try {
-            parsedPreview = parseTeamImportTextToForm(teamImportText);
-          } catch (error) {
-            console.error("Team import preview parse error:", error);
-          }
-          return (
+      {showImportTeamModal && (
         <div className="modal-overlay">
           <form className="modal-box" style={{ maxWidth: "500px" }} onSubmit={(e) => {
             e.preventDefault();
@@ -6492,20 +6484,6 @@ function App() {
                 onChange={e => setTeamImportText(e.target.value)}
                 autoFocus
               ></textarea>
-              <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-xs">
-                <div className="font-bold text-slate-200 mb-2">Preview parser</div>
-                {parsedPreview ? (
-                  <div className="space-y-1 text-slate-300">
-                    <div><span className="text-slate-500">Email:</span> {parsedPreview.username || "—"}</div>
-                    <div><span className="text-slate-500">Pass:</span> {parsedPreview.password || "—"}</div>
-                    <div><span className="text-slate-500">2FA:</span> {parsedPreview.otpSecret || "—"}</div>
-                    <div><span className="text-slate-500">Link:</span> {parsedPreview.recoveryUrl || "—"}</div>
-                    <div><span className="text-slate-500">Loai:</span> Business</div>
-                  </div>
-                ) : (
-                  <div className="text-amber-300">Chưa đọc được format từ nội dung hiện tại.</div>
-                )}
-              </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button type="button" onClick={() => setShowImportTeamModal(false)} className="btn-secondary">Hủy</button>
@@ -6541,8 +6519,7 @@ function App() {
             </div>
           </form>
         </div>
-          );
-        })()}
+      )}
 
       {showUserModal && (
         <div className="modal-overlay">
