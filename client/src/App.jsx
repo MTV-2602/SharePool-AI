@@ -755,6 +755,8 @@ const addDurationToDate = (dateInput, duration = "1M") => {
   if (!months) return new Date(dateInput);
   return addMonthsClamped(dateInput, months);
 };
+const getDefaultOneMonthDateInput = () =>
+  addDurationToDate(new Date(), "1M").toISOString().split("T")[0];
 const getDurationLabel = (duration = "1M") =>
   EXTEND_DURATION_OPTIONS.find((option) => option.value === duration)?.label || duration;
 const CUSTOMER_FILTER_OPTIONS = [
@@ -1329,9 +1331,6 @@ function App() {
 
   // Helper to safely get user name
   const getUserName = (u) => (typeof u === "object" && u !== null ? u.name : u);
-  const getDefaultOneMonthDateInput = () => {
-    return addDurationToDate(new Date(), "1M").toISOString().split("T")[0];
-  };
   const renderCustomerFilterButtons = (value, onChange) => (
     <div className="flex flex-wrap gap-2">
       {CUSTOMER_FILTER_OPTIONS.map((option) => (
