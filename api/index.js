@@ -1394,6 +1394,30 @@ const buildLabeledAccountDeliveryLine = ({
   }
   return parts.join(" | ");
 };
+const buildRawAccountDeliveryLine = ({
+  username = "",
+  password = "",
+  otpSecret = "",
+  link = "",
+  note = "",
+} = {}) => {
+  const normalizedUsername = String(username || "").trim();
+  const normalizedPassword = String(password || "").trim();
+  const normalizedOtpSecret = String(otpSecret || "").trim();
+  const normalizedLink = String(link || "").trim();
+  const normalizedNote = String(note || "").trim();
+  if (!normalizedUsername || !normalizedPassword) return "";
+  const parts = [normalizedUsername, normalizedPassword];
+  if (normalizedOtpSecret) {
+    parts.push(normalizedOtpSecret);
+  }
+  if (normalizedLink) {
+    parts.push(normalizedLink);
+  } else if (normalizedNote) {
+    parts.push(normalizedNote);
+  }
+  return parts.join("|");
+};
 const formatShopminiDeliveryLineForDisplay = (line = "") => {
   const raw = String(line || "").trim();
   if (!raw) return raw;
@@ -1472,7 +1496,7 @@ const buildPackage2SaleFilter = () => {
   };
 };
 const formatPackage2DeliveryLine = (acc = {}) =>
-  buildLabeledAccountDeliveryLine({
+  buildRawAccountDeliveryLine({
     username: acc.username,
     password: acc.password,
     otpSecret: acc.otpSecret,
@@ -1622,7 +1646,7 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
   return normalized;
 };
 const buildTeamBusinessDeliveryLine = (acc = {}) =>
-  buildLabeledAccountDeliveryLine({
+  buildRawAccountDeliveryLine({
     username: acc.username,
     password: acc.password,
     otpSecret: acc.otpSecret,
