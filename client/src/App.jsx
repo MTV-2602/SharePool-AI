@@ -5116,10 +5116,6 @@ function App() {
                                 const providerLabel = getMarketplaceProviderLabel(
                                   managedProvider,
                                 );
-                                const hasActualManagedMarketplaceUser =
-                                  !!u && isActiveMarketplaceManagedUser(u);
-                                const hasRegularVisibleUser =
-                                  !!u && !isActiveMarketplaceManagedUser(u);
                                 const warrantyInfo = getDatammoWarrantyInfoForAccount(
                                   acc.id,
                                   datammoWarrantyCases,
@@ -5131,6 +5127,18 @@ function App() {
                                   trackedMarketplaceRole === "sold" ||
                                   trackedMarketplaceRole === "current";
                                 const warrantyCase = warrantyInfo?.warrantyCase;
+                                const hasVerifiedMarketplaceTrace =
+                                  !!trackedMarketplaceEntry ||
+                                  !!latestMarketplaceOrder ||
+                                  !!warrantyCase;
+                                const hasActualManagedMarketplaceUser =
+                                  !!u &&
+                                  isActiveMarketplaceManagedUser(u) &&
+                                  hasVerifiedMarketplaceTrace;
+                                const hasRegularVisibleUser =
+                                  !!u &&
+                                  (!isActiveMarketplaceManagedUser(u) ||
+                                    !hasVerifiedMarketplaceTrace);
                                 const warrantyProviderLabel = getMarketplaceProviderLabel(
                                   warrantyCase?.provider || managedProvider,
                                 );
@@ -8053,6 +8061,16 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   trackedTeamMarketplaceRole === "sold" ||
                   trackedTeamMarketplaceRole === "current";
                 const teamWarrantyCase = teamWarrantyInfo?.warrantyCase;
+                const hasVerifiedTeamMarketplaceTrace =
+                  !!trackedTeamMarketplaceEntry ||
+                  !!latestTeamMarketplaceOrder ||
+                  !!teamWarrantyCase;
+                const hasActualTeamManagedCustomer =
+                  !!activeBusinessSlot &&
+                  isActiveMarketplaceManagedUser({
+                    name: activeBusinessSlot?.customerName || "",
+                  }) &&
+                  hasVerifiedTeamMarketplaceTrace;
                 const teamWarrantyRounds = Array.isArray(teamWarrantyCase?.rounds)
                   ? teamWarrantyCase.rounds
                   : [];
@@ -8063,21 +8081,14 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   "";
                 const canOpenTeamWarranty =
                   isBusinessMode &&
-                  ((!!activeBusinessSlot &&
-                    isActiveMarketplaceManagedUser({
-                      name: activeBusinessSlot?.customerName || "",
-                    }) &&
-                    !!teamMarketplaceOrderId) ||
+                  ((hasActualTeamManagedCustomer && !!teamMarketplaceOrderId) ||
                     (!!teamMarketplaceOrderId &&
                       hasActiveTeamMarketplaceTracking) ||
                     teamWarrantyInfo?.role === "current");
                 const showTeamMarketplaceManagementCard =
                   isBusinessMode &&
                   (isTeamMarketWarehouse(acc) ||
-                    (!!activeBusinessSlot &&
-                      isActiveMarketplaceManagedUser({
-                        name: activeBusinessSlot?.customerName || "",
-                      })) ||
+                    hasActualTeamManagedCustomer ||
                     !!teamWarrantyCase);
                 const teamMarketplaceCardClasses =
                   teamWarrantyInfo?.role === "current"
@@ -8095,10 +8106,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   ? teamWarrantyInfo?.role === "current"
                     ? "Dang bao hanh"
                     : "Lich su bao hanh"
-                  : !!activeBusinessSlot &&
-                      isActiveMarketplaceManagedUser({
-                        name: activeBusinessSlot?.customerName || "",
-                      })
+                  : hasActualTeamManagedCustomer
                     ? "Da ban"
                     : "Chua ban";
                 const teamMarketplaceCustomerName = String(
