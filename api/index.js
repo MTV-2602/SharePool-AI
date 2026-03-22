@@ -1096,8 +1096,18 @@ const normalizeMarketplaceProvider = (value, fallback = "datammo") => {
   if (raw === "datammo") return "datammo";
   return fallback;
 };
+const normalizeMarketplaceScope = (value, fallback = "chatgpt") => {
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (raw === "team") return "team";
+  if (raw === "chatgpt") return "chatgpt";
+  return fallback;
+};
 const getMarketplaceProviderLabel = (value) =>
   normalizeMarketplaceProvider(value) === "shopmini" ? "Shopmini" : "Datammo";
+const escapeRegex = (value = "") =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const getUserNameValue = (user) => {
   if (typeof user === "string") return user;
   if (user && typeof user === "object") return user.name || "";
@@ -1158,6 +1168,31 @@ const buildMarketplaceResourceKey = ({
 const getMarketplaceOrderInfoFromTeamSlot = (slot = {}) =>
   getMarketplaceOrderInfoFromUser({
     name: String(slot?.customerName || "").trim(),
+  });
+const isMatchingMarketplaceTrace = (provider, orderId, info = {}) =>
+  normalizeMarketplaceProvider(info?.provider, "") ===
+    normalizeMarketplaceProvider(provider, "") &&
+  String(info?.orderId || "").trim() === String(orderId || "").trim();
+const clearMarketplaceManagedUsersByOrder = (users = [], provider, orderId) =>
+  (Array.isArray(users) ? users : []).filter((user) => {
+    if (!isDatammoManagedUser(user)) return true;
+    return !isMatchingMarketplaceTrace(
+      provider,
+      orderId,
+      getMarketplaceOrderInfoFromUser(user),
+    );
+  });
+const clearMarketplaceManagedTeamSlotsByOrder = (slots = [], provider, orderId) =>
+  normalizeTeamSlots(slots).map((slot) => {
+    const customerName = String(slot?.customerName || "").trim();
+    if (!customerName) return slot;
+    return isMatchingMarketplaceTrace(
+      provider,
+      orderId,
+      getMarketplaceOrderInfoFromTeamSlot(slot),
+    )
+      ? buildEmptyTeamSlot()
+      : slot;
   });
 const findLatestMarketplaceOrderForAccount = async (
   accountId,
@@ -1671,6 +1706,24 @@ const restoreDocumentSnapshot = async (Model, id, snapshot) => {
   await Model.replaceOne({ id }, snapshot, { upsert: true });
   return Model.findOne({ id });
 };
+const restoreMarketplaceOrderSnapshots = async (orders = [], warrantyCases = []) => {
+  if (Array.isArray(orders) && orders.length > 0) {
+    await DatammoOrder.insertMany(
+      orders.map((item) =>
+        typeof item?.toObject === "function" ? item.toObject() : item,
+      ),
+      { ordered: false },
+    );
+  }
+  if (Array.isArray(warrantyCases) && warrantyCases.length > 0) {
+    await DatammoWarrantyCase.insertMany(
+      warrantyCases.map((item) =>
+        typeof item?.toObject === "function" ? item.toObject() : item,
+      ),
+      { ordered: false },
+    );
+  }
+};
 const getExpectedUpdatedAtValue = (value) => String(value || "").trim();
 const buildConcurrencyError = (label = "Dữ liệu") => {
   const error = new Error(
@@ -1981,6 +2034,190 @@ app.get("/api/data", verifyToken, async (req, res) => {
       datammoOrders,
       datammoWarrantyCases,
       version: latestDataVersion,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/marketplace-order", verifyToken, async (req, res) => {
+  const scope = normalizeMarketplaceScope(
+    req.body?.scope || req.query?.scope,
+    "chatgpt",
+  );
+  const provider = normalizeMarketplaceProvider(
+    req.body?.provider || req.query?.provider,
+    "",
+  );
+  const orderId = String(req.body?.orderId || req.query?.orderId || "").trim();
+
+  if (!provider) {
+    return res.status(400).json({ error: "Thieu provider don san" });
+  }
+  if (!orderId) {
+    return res.status(400).json({ error: "Thieu orderId don san" });
+  }
+
+  const traceRegex = new RegExp(
+    `^${escapeRegex(provider)}#${escapeRegex(orderId)}$`,
+    "i",
+  );
+  const nowIso = new Date().toISOString();
+
+  try {
+    const [orders, warrantyCases] = await Promise.all([
+      DatammoOrder.find({ scope, provider, orderId }).lean(),
+      DatammoWarrantyCase.find({ scope, provider, orderId }).lean(),
+    ]);
+
+    const accountIds = new Set();
+    (Array.isArray(orders) ? orders : []).forEach((order) => {
+      (Array.isArray(order?.accounts) ? order.accounts : []).forEach((item) => {
+        const accountId = String(item?.accountId || "").trim();
+        if (accountId) {
+          accountIds.add(accountId);
+        }
+      });
+    });
+    (Array.isArray(warrantyCases) ? warrantyCases : []).forEach((item) => {
+      [
+        item?.rootAccountId,
+        item?.currentAccountId,
+        ...(Array.isArray(item?.rounds)
+          ? item.rounds.flatMap((round) => [round?.fromAccountId, round?.toAccountId])
+          : []),
+      ]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .forEach((value) => accountIds.add(value));
+    });
+
+    const touchedSnapshots = [];
+    if (scope === "team") {
+      const relatedAccounts = await TeamAccount.find({
+        $or: [
+          { id: { $in: Array.from(accountIds) } },
+          { "slots.customerName": traceRegex },
+        ],
+      });
+
+      for (const account of relatedAccounts) {
+        const nextSlots = clearMarketplaceManagedTeamSlotsByOrder(
+          account.slots,
+          provider,
+          orderId,
+        );
+        const currentSlotsJson = JSON.stringify(normalizeTeamSlots(account.slots));
+        const nextSlotsJson = JSON.stringify(nextSlots);
+        const nextWarehouse = normalizeTeamWarehouseState({
+          ...snapshotDocument(account),
+          slots: nextSlots,
+        });
+        const currentWarehouse = normalizeTeamWarehouse(
+          account.warehouse,
+          TEAM_WAREHOUSE_TOTAL,
+        );
+
+        if (
+          currentSlotsJson === nextSlotsJson &&
+          currentWarehouse === nextWarehouse
+        ) {
+          continue;
+        }
+
+        touchedSnapshots.push({
+          model: TeamAccount,
+          id: account.id,
+          snapshot: snapshotDocument(account),
+        });
+        await TeamAccount.findOneAndUpdate(
+          { id: account.id },
+          {
+            $set: {
+              slots: nextSlots,
+              warehouse: nextWarehouse,
+              updatedAt: nowIso,
+            },
+          },
+        );
+      }
+    } else {
+      const relatedAccounts = await Account.find({
+        $or: [
+          { id: { $in: Array.from(accountIds) } },
+          { "users.name": traceRegex },
+        ],
+      });
+
+      for (const account of relatedAccounts) {
+        const nextUsers = clearMarketplaceManagedUsersByOrder(
+          account.users,
+          provider,
+          orderId,
+        );
+        const currentUsersJson = JSON.stringify(
+          Array.isArray(account.users) ? account.users : [],
+        );
+        const nextUsersJson = JSON.stringify(nextUsers);
+        const nextShelf = normalizeChatgptMarketAccountState({
+          ...snapshotDocument(account),
+          users: nextUsers,
+        });
+        const currentShelf = normalizePackage2Shelf(
+          account.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        );
+
+        if (currentUsersJson === nextUsersJson && currentShelf === nextShelf) {
+          continue;
+        }
+
+        touchedSnapshots.push({
+          model: Account,
+          id: account.id,
+          snapshot: snapshotDocument(account),
+        });
+        await Account.findOneAndUpdate(
+          { id: account.id },
+          {
+            $set: {
+              users: nextUsers,
+              package2Shelf: nextShelf,
+              updatedAt: nowIso,
+            },
+          },
+        );
+      }
+    }
+
+    if (
+      touchedSnapshots.length === 0 &&
+      orders.length === 0 &&
+      warrantyCases.length === 0
+    ) {
+      return res.status(404).json({
+        error: "Khong tim thay don san hoac seller trace de xoa",
+      });
+    }
+
+    try {
+      await Promise.all([
+        DatammoOrder.deleteMany({ scope, provider, orderId }),
+        DatammoWarrantyCase.deleteMany({ scope, provider, orderId }),
+      ]);
+    } catch (error) {
+      for (const item of touchedSnapshots.slice().reverse()) {
+        await restoreDocumentSnapshot(item.model, item.id, item.snapshot);
+      }
+      await restoreMarketplaceOrderSnapshots(orders, warrantyCases);
+      throw error;
+    }
+
+    res.json({
+      message: `Da xoa don ${getMarketplaceProviderLabel(provider)} ${orderId}`,
+      removedOrders: orders.length,
+      removedWarrantyCases: warrantyCases.length,
+      restoredAccounts: touchedSnapshots.length,
     });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });

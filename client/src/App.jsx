@@ -1030,6 +1030,7 @@ function App() {
     editAccount: false,
     deleteAccount: false,
     warranty: false,
+    deleteMarketplaceOrder: {},
     teamMode: {},
     changeTeamWarehouse: {},
     changeType: {},
@@ -2894,6 +2895,56 @@ function App() {
     openWarrantyModal(targetAcc, scope);
   };
 
+  const handleDeleteMarketplaceOrder = (order = {}) => {
+    const orderId = String(order?.orderId || "").trim();
+    const provider = normalizeMarketplaceProvider(order?.provider);
+    const scope = normalizeMarketplaceScope(order?.scope);
+    if (!orderId) {
+      showAlert("Thiếu dữ liệu", "Không đọc được orderId của đơn sàn.", "warning");
+      return;
+    }
+    const loadingKey = `${scope}:${provider}:${orderId}`;
+    showConfirm(
+      "Xóa đơn sàn",
+      `Xóa đơn ${getMarketplaceProviderLabel(provider)} ${orderId}? Hệ thống sẽ gỡ khách seller, xóa lịch sử bảo hành của đơn này và mở lại acc/team liên quan nếu đó là đơn test.`,
+      async () => {
+        setLoadingStates((prev) => ({
+          ...prev,
+          deleteMarketplaceOrder: {
+            ...(prev.deleteMarketplaceOrder || {}),
+            [loadingKey]: true,
+          },
+        }));
+        try {
+          await axios.delete("/api/marketplace-order", {
+            data: { orderId, provider, scope },
+          });
+          fetchData();
+          broadcastDataChange();
+          showAlert(
+            "Đã xóa",
+            `Đã xóa đơn ${getMarketplaceProviderLabel(provider)} ${orderId}.`,
+            "success",
+          );
+        } catch (error) {
+          showAlert(
+            "Lỗi",
+            getApiErrorMessage(error, "Không thể xóa đơn sàn"),
+            "error",
+          );
+        } finally {
+          setLoadingStates((prev) => ({
+            ...prev,
+            deleteMarketplaceOrder: {
+              ...(prev.deleteMarketplaceOrder || {}),
+              [loadingKey]: false,
+            },
+          }));
+        }
+      },
+    );
+  };
+
   const handleCreateDatammoWarranty = async (event) => {
     event.preventDefault();
     if (!warrantySourceAcc?.id || !warrantyReplacementId) {
@@ -4504,6 +4555,24 @@ function App() {
                               </div>
                               <div className="mt-1 text-xs text-slate-500">
                                 So luong: {order.quantity || order.accountSummaries.length || 0}
+                              </div>
+                              <div className="mt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMarketplaceOrder(order)}
+                                  disabled={
+                                    !!loadingStates.deleteMarketplaceOrder?.[
+                                      `${normalizeMarketplaceScope(order?.scope)}:${normalizeMarketplaceProvider(order?.provider)}:${String(order?.orderId || "").trim()}`
+                                    ]
+                                  }
+                                  className="rounded-lg bg-red-900/70 hover:bg-red-800 disabled:opacity-60 disabled:cursor-wait px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
+                                >
+                                  {loadingStates.deleteMarketplaceOrder?.[
+                                    `${normalizeMarketplaceScope(order?.scope)}:${normalizeMarketplaceProvider(order?.provider)}:${String(order?.orderId || "").trim()}`
+                                  ]
+                                    ? "Dang xoa..."
+                                    : "Xoa don"}
+                                </button>
                               </div>
                             </td>
                             <td className="px-4 py-3">
@@ -7870,6 +7939,24 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                 </div>
                                 <div className="mt-1 text-xs text-slate-500">
                                   So luong: {order.quantity || order.accountSummaries.length || 0}
+                                </div>
+                                <div className="mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteMarketplaceOrder(order)}
+                                    disabled={
+                                      !!loadingStates.deleteMarketplaceOrder?.[
+                                        `${normalizeMarketplaceScope(order?.scope)}:${normalizeMarketplaceProvider(order?.provider)}:${String(order?.orderId || "").trim()}`
+                                      ]
+                                    }
+                                    className="rounded-lg bg-red-900/70 hover:bg-red-800 disabled:opacity-60 disabled:cursor-wait px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
+                                  >
+                                    {loadingStates.deleteMarketplaceOrder?.[
+                                      `${normalizeMarketplaceScope(order?.scope)}:${normalizeMarketplaceProvider(order?.provider)}:${String(order?.orderId || "").trim()}`
+                                    ]
+                                      ? "Dang xoa..."
+                                      : "Xoa don"}
+                                  </button>
                                 </div>
                               </td>
                               <td className="px-4 py-3">
