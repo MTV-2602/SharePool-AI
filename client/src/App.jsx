@@ -3531,7 +3531,11 @@ function App() {
       return acc.type === chatgptTotalTypeTab;
     })
     .filter((acc) =>
-      matchesCustomerFilter(hasAssignedCustomer(acc), chatgptCustomerFilter),
+      matchesCustomerFilter(
+        hasAssignedCustomer(acc) ||
+          isMarketplaceSoldAccountForScope(acc?.id, "chatgpt"),
+        chatgptCustomerFilter,
+      ),
     )
     .filter((acc) =>
       matchesExpiryFilter(getAccountDaysRemaining(acc), chatgptExpiryFilter),
@@ -3648,7 +3652,8 @@ function App() {
     })
     .filter((acc) =>
       matchesCustomerFilter(
-        hasAssignedTeamCustomer(acc),
+        hasAssignedTeamCustomer(acc) ||
+          isMarketplaceSoldAccountForScope(acc?.id, "team"),
         teamCustomerFilter,
       ),
     )
