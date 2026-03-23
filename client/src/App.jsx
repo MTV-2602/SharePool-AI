@@ -794,6 +794,7 @@ const EXTEND_DURATION_OPTIONS = [
   { value: "6M", label: "6 Tháng" },
   { value: "1Y", label: "1 Năm" },
 ];
+const MARKETPLACE_ORDER_PAGE_SIZE = 5;
 const clampMonthDay = (year, monthIndex, dayOfMonth) => {
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
   return Math.min(dayOfMonth, lastDay);
@@ -1036,10 +1037,13 @@ function App() {
   const [marketplaceOrderQuery, setMarketplaceOrderQuery] = useState("");
   const [marketplaceOrderProviderFilter, setMarketplaceOrderProviderFilter] =
     useState("all");
+  const [chatgptMarketplaceOrderPage, setChatgptMarketplaceOrderPage] =
+    useState(1);
   const [teamMarketplaceOrderQuery, setTeamMarketplaceOrderQuery] =
     useState("");
   const [teamMarketplaceOrderProviderFilter, setTeamMarketplaceOrderProviderFilter] =
     useState("all");
+  const [teamMarketplaceOrderPage, setTeamMarketplaceOrderPage] = useState(1);
   const [teamCustomerFilter, setTeamCustomerFilter] = useState("all");
   const [teamExpiryFilter, setTeamExpiryFilter] = useState("all");
   const [teamExpiryMin, setTeamExpiryMin] = useState("");
@@ -1315,6 +1319,14 @@ function App() {
       prev.filter((id) => validIds.has(String(id || ""))),
     );
   }, [teamAccounts]);
+
+  useEffect(() => {
+    setChatgptMarketplaceOrderPage(1);
+  }, [marketplaceOrderQuery, marketplaceOrderProviderFilter]);
+
+  useEffect(() => {
+    setTeamMarketplaceOrderPage(1);
+  }, [teamMarketplaceOrderQuery, teamMarketplaceOrderProviderFilter]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -3651,6 +3663,58 @@ function App() {
       toNonAccentVietnamese(teamMarketplaceOrderQuery),
     );
   });
+  const chatgptMarketplaceOrderTotalPages = Math.max(
+    1,
+    Math.ceil(
+      filteredChatgptMarketplaceOrders.length / MARKETPLACE_ORDER_PAGE_SIZE,
+    ),
+  );
+  const teamMarketplaceOrderTotalPages = Math.max(
+    1,
+    Math.ceil(filteredTeamMarketplaceOrders.length / MARKETPLACE_ORDER_PAGE_SIZE),
+  );
+  const currentChatgptMarketplaceOrderPage = Math.min(
+    chatgptMarketplaceOrderPage,
+    chatgptMarketplaceOrderTotalPages,
+  );
+  const currentTeamMarketplaceOrderPage = Math.min(
+    teamMarketplaceOrderPage,
+    teamMarketplaceOrderTotalPages,
+  );
+  const paginatedChatgptMarketplaceOrders = filteredChatgptMarketplaceOrders.slice(
+    (currentChatgptMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE,
+    currentChatgptMarketplaceOrderPage * MARKETPLACE_ORDER_PAGE_SIZE,
+  );
+  const paginatedTeamMarketplaceOrders = filteredTeamMarketplaceOrders.slice(
+    (currentTeamMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE,
+    currentTeamMarketplaceOrderPage * MARKETPLACE_ORDER_PAGE_SIZE,
+  );
+  const chatgptMarketplaceVisibleStart =
+    filteredChatgptMarketplaceOrders.length > 0
+      ? (currentChatgptMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE + 1
+      : 0;
+  const chatgptMarketplaceVisibleEnd =
+    filteredChatgptMarketplaceOrders.length > 0
+      ? chatgptMarketplaceVisibleStart +
+        paginatedChatgptMarketplaceOrders.length -
+        1
+      : 0;
+  const teamMarketplaceVisibleStart =
+    filteredTeamMarketplaceOrders.length > 0
+      ? (currentTeamMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE + 1
+      : 0;
+  const teamMarketplaceVisibleEnd =
+    filteredTeamMarketplaceOrders.length > 0
+      ? teamMarketplaceVisibleStart + paginatedTeamMarketplaceOrders.length - 1
+      : 0;
+  const chatgptMarketplaceVisibleLabel =
+    filteredChatgptMarketplaceOrders.length > 0
+      ? `${chatgptMarketplaceVisibleStart}-${chatgptMarketplaceVisibleEnd}`
+      : "0";
+  const teamMarketplaceVisibleLabel =
+    filteredTeamMarketplaceOrders.length > 0
+      ? `${teamMarketplaceVisibleStart}-${teamMarketplaceVisibleEnd}`
+      : "0";
   const selectedChatgptIdSet = new Set(
     selectedChatgptIds.map((id) => String(id || "")),
   );
@@ -4523,9 +4587,9 @@ function App() {
                     <div className="text-xs text-slate-400">
                       Dang hien{" "}
                       <span className="font-bold text-white">
-                        {filteredChatgptMarketplaceOrders.length}
+                        {chatgptMarketplaceVisibleLabel}
                       </span>{" "}
-                      / {chatgptMarketplaceOrderSummaries.length} don gan nhat
+                      / {filteredChatgptMarketplaceOrders.length} don hop bo loc
                     </div>
                   </div>
                   <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -4576,8 +4640,8 @@ function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredChatgptMarketplaceOrders.length > 0 ? (
-                        filteredChatgptMarketplaceOrders.map((order) => (
+                      {paginatedChatgptMarketplaceOrders.length > 0 ? (
+                        paginatedChatgptMarketplaceOrders.map((order) => (
                           <tr
                             key={buildDatammoOrderKey(order)}
                             className="border-t border-slate-800/80 align-top"
@@ -4751,6 +4815,44 @@ function App() {
                       )}
                     </tbody>
                   </table>
+                </div>
+                <div className="flex flex-col gap-3 border-t border-slate-800/80 px-4 py-3 md:flex-row md:items-center md:justify-between">
+                  <div className="text-xs text-slate-400">
+                    Trang{" "}
+                    <span className="font-bold text-white">
+                      {currentChatgptMarketplaceOrderPage}
+                    </span>{" "}
+                    / {chatgptMarketplaceOrderTotalPages} · 5 don / trang
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setChatgptMarketplaceOrderPage((prev) =>
+                          Math.max(1, prev - 1),
+                        )
+                      }
+                      disabled={currentChatgptMarketplaceOrderPage <= 1}
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Truoc
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setChatgptMarketplaceOrderPage((prev) =>
+                          Math.min(chatgptMarketplaceOrderTotalPages, prev + 1),
+                        )
+                      }
+                      disabled={
+                        currentChatgptMarketplaceOrderPage >=
+                        chatgptMarketplaceOrderTotalPages
+                      }
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Sau
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -7907,9 +8009,9 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                       <div className="text-xs text-slate-400">
                         Dang hien{" "}
                         <span className="font-bold text-white">
-                          {filteredTeamMarketplaceOrders.length}
+                          {teamMarketplaceVisibleLabel}
                         </span>{" "}
-                        / {teamMarketplaceOrderSummaries.length} don gan nhat
+                        / {filteredTeamMarketplaceOrders.length} don hop bo loc
                       </div>
                     </div>
                     <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -7960,8 +8062,8 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredTeamMarketplaceOrders.length > 0 ? (
-                          filteredTeamMarketplaceOrders.map((order) => (
+                        {paginatedTeamMarketplaceOrders.length > 0 ? (
+                          paginatedTeamMarketplaceOrders.map((order) => (
                             <tr
                               key={`${buildDatammoOrderKey(order)}-team`}
                               className="border-t border-slate-800/80 align-top"
@@ -8118,6 +8220,44 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         )}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="flex flex-col gap-3 border-t border-slate-800/80 px-4 py-3 md:flex-row md:items-center md:justify-between">
+                    <div className="text-xs text-slate-400">
+                      Trang{" "}
+                      <span className="font-bold text-white">
+                        {currentTeamMarketplaceOrderPage}
+                      </span>{" "}
+                      / {teamMarketplaceOrderTotalPages} · 5 don / trang
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTeamMarketplaceOrderPage((prev) =>
+                            Math.max(1, prev - 1),
+                          )
+                        }
+                        disabled={currentTeamMarketplaceOrderPage <= 1}
+                        className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Truoc
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTeamMarketplaceOrderPage((prev) =>
+                            Math.min(teamMarketplaceOrderTotalPages, prev + 1),
+                          )
+                        }
+                        disabled={
+                          currentTeamMarketplaceOrderPage >=
+                          teamMarketplaceOrderTotalPages
+                        }
+                        className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Sau
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
