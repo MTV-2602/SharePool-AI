@@ -1821,15 +1821,10 @@ const claimTeamBusinessAccountsForOrder = async ({ quantity, orderId, provider }
   for (let i = 0; i < quantity; i += 1) {
     let reserved = null;
     for (let attempt = 0; attempt < 25; attempt += 1) {
-      const oldAcc = await TeamAccount.findOne({
-        saleMode: TEAM_SALE_MODE_BUSINESS,
-        warehouse: TEAM_WAREHOUSE_MARKET,
-      }).sort({ createdAt: 1, id: 1 }).lean();
+      const [oldAcc] = await buildTeamMarketplaceSellableAccounts(
+        TEAM_SALE_MODE_BUSINESS,
+      );
       if (!oldAcc) break;
-      if (!isEligibleForTeamMarketSale(oldAcc)) {
-        await syncTeamWarehouseStateIfNeeded(oldAcc);
-        continue;
-      }
       const teamSlots = normalizeTeamSlots(oldAcc.slots);
       const emptySlotIndex = getAvailableTeamSlotIndices(teamSlots)[0];
       if (!Number.isInteger(emptySlotIndex) || emptySlotIndex < 0) {
