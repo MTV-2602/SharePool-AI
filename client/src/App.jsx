@@ -1322,11 +1322,11 @@ function App() {
 
   useEffect(() => {
     setChatgptMarketplaceOrderPage(1);
-  }, [marketplaceOrderQuery, marketplaceOrderProviderFilter]);
+  }, [searchQuery, marketplaceOrderQuery, marketplaceOrderProviderFilter]);
 
   useEffect(() => {
     setTeamMarketplaceOrderPage(1);
-  }, [teamMarketplaceOrderQuery, teamMarketplaceOrderProviderFilter]);
+  }, [searchQuery, teamMarketplaceOrderQuery, teamMarketplaceOrderProviderFilter]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -3637,6 +3637,7 @@ function App() {
   const teamMarketplaceOrderSummaries = marketplaceOrderSummaries.filter(
     (order) => normalizeMarketplaceScope(order?.scope) === "team",
   );
+  const globalMarketplaceSearchQuery = toNonAccentVietnamese(searchQuery);
   const filteredChatgptMarketplaceOrders = chatgptMarketplaceOrderSummaries.filter((order) => {
     if (
       marketplaceOrderProviderFilter !== "all" &&
@@ -3645,10 +3646,15 @@ function App() {
     ) {
       return false;
     }
+    const searchIndex = String(order?.searchIndex || "");
+    if (
+      globalMarketplaceSearchQuery &&
+      !searchIndex.includes(globalMarketplaceSearchQuery)
+    ) {
+      return false;
+    }
     if (!marketplaceOrderQuery.trim()) return true;
-    return String(order?.searchIndex || "").includes(
-      toNonAccentVietnamese(marketplaceOrderQuery),
-    );
+    return searchIndex.includes(toNonAccentVietnamese(marketplaceOrderQuery));
   });
   const filteredTeamMarketplaceOrders = teamMarketplaceOrderSummaries.filter((order) => {
     if (
@@ -3658,10 +3664,15 @@ function App() {
     ) {
       return false;
     }
+    const searchIndex = String(order?.searchIndex || "");
+    if (
+      globalMarketplaceSearchQuery &&
+      !searchIndex.includes(globalMarketplaceSearchQuery)
+    ) {
+      return false;
+    }
     if (!teamMarketplaceOrderQuery.trim()) return true;
-    return String(order?.searchIndex || "").includes(
-      toNonAccentVietnamese(teamMarketplaceOrderQuery),
-    );
+    return searchIndex.includes(toNonAccentVietnamese(teamMarketplaceOrderQuery));
   });
   const chatgptMarketplaceOrderTotalPages = Math.max(
     1,
