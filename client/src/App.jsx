@@ -667,6 +667,45 @@ const parseTeamImportTextToForm = (raw = "") => {
   const input = String(raw || "").trim();
   if (!input) return null;
   const lines = input.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const labeledCandidate = {};
+  lines.forEach((line) => {
+    const separatorIndex = line.indexOf(":");
+    if (separatorIndex === -1) return;
+    const key = toNonAccentVietnamese(line.slice(0, separatorIndex))
+      .replace(/\s+/g, " ")
+      .trim();
+    const value = line.slice(separatorIndex + 1).trim();
+    if (!value) return;
+
+    if (/^(team|loai|loai acc|loai tai khoan)$/.test(key)) {
+      return;
+    }
+    if (/^(tai khoan|tai khoan dang nhap|username|email|tk)$/.test(key)) {
+      labeledCandidate.username = value;
+    } else if (/^(mat khau|password|mk|pass|gptpass)$/.test(key)) {
+      labeledCandidate.password = value;
+    } else if (/^(ma 2fa|2fa|otp|ma otp)$/.test(key)) {
+      labeledCandidate.otpSecret = value;
+    } else if (/^(2fa.live|2fa live)$/.test(key)) {
+      const otpFromUrl = value.match(/\/tok\/([^/?#]+)/i)?.[1];
+      if (!labeledCandidate.otpSecret && otpFromUrl) {
+        labeledCandidate.otpSecret = decodeURIComponent(otpFromUrl);
+      }
+    } else if (/^(link|link mail|mail link|recovery|recovery link|link lay ma)$/.test(key)) {
+      labeledCandidate.recoveryUrl = value;
+    }
+  });
+  if (labeledCandidate.username && labeledCandidate.password) {
+    return buildTeamFormState({
+      username: labeledCandidate.username,
+      password: labeledCandidate.password,
+      otpSecret: String(labeledCandidate.otpSecret || "").trim(),
+      recoveryUrl: String(labeledCandidate.recoveryUrl || "").trim(),
+      expiredAt: getDefaultOneMonthDateInput(),
+      saleMode: "business",
+      warehouse: "total",
+    });
+  }
   const sourceLine =
     lines.find((line) => line.includes("----")) ||
     lines.find((line) => /[|｜¦┃]/.test(line)) ||
@@ -6620,11 +6659,11 @@ function App() {
             </h2>
             <div className="form-group mb-4">
               <label className="text-slate-300 font-bold mb-1 block">Dán Raw Format tại đây:</label>
-              <p className="text-xs text-slate-400 mb-2">Format mới: team email@domain.com----gptpass----2FA_SECRET----https://generator.email/... hoặc team email@domain.com | gptpass | 2FA_SECRET | https://generator.email/...</p>
-              <p className="text-[11px] text-cyan-300/80 mb-2">Chỉ cần thêm chữ <code className="bg-slate-700 px-1 rounded">team</code> ở đầu dòng là có thể parse hoặc thêm nhanh.</p>
+              <p className="text-xs text-slate-400 mb-2">Format mới: email@domain.com----gptpass----2FA_SECRET----https://generator.email/... hoặc email@domain.com | gptpass | 2FA_SECRET | https://generator.email/...</p>
+              <p className="text-[11px] text-cyan-300/80 mb-2">Web không bắt buộc chữ <code className="bg-slate-700 px-1 rounded">team</code>. Có hoặc không có đều parse được; format Tele có chữ <code className="bg-slate-700 px-1 rounded">team</code> vẫn dùng bình thường.</p>
               <textarea
                 className="form-input w-full h-32 text-sm font-mono leading-tight bg-slate-800"
-                placeholder="team email@domain.com | gptpass | 2FA_SECRET | https://generator.email/..."
+                placeholder="email@domain.com | gptpass | 2FA_SECRET | https://generator.email/..."
                 value={teamImportText}
                 onChange={e => setTeamImportText(e.target.value)}
                 autoFocus
