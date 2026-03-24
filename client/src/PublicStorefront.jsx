@@ -163,12 +163,14 @@ function PublicStorefront() {
 
   const loadConfig = async () => {
     const data = await apiRequest("/api/store/config");
-    setConfig({
+    const normalizedConfig = {
       packages: Array.isArray(data?.packages) ? data.packages : [],
       googleClientId: String(data?.googleClientId || ""),
       contact: data?.contact || { zaloUrl: "", messengerUrl: "" },
       momoConfigured: !!data?.momoConfigured,
-    });
+    };
+    setConfig(normalizedConfig);
+    return normalizedConfig;
   };
 
   const loadSession = async (currentToken = token) => {
@@ -426,7 +428,7 @@ function PublicStorefront() {
 
   const handleCreatePayment = async (packageCode) => {
     if (!user) {
-      setError("Vui lòng đăng nhập trước khi mua");
+      setError("Vui lòng đăng nhập trước khi mua.");
       return;
     }
     try {
@@ -439,11 +441,14 @@ function PublicStorefront() {
       });
       const payUrl = String(data?.payUrl || "").trim();
       if (!payUrl) {
-        throw new Error("Hệ thống không trả về link thanh toán");
+        throw new Error("Hệ thống không trả về liên kết thanh toán.");
       }
       window.location.href = payUrl;
     } catch (paymentError) {
-      setError(paymentError.message || "Không tạo được đơn thanh toán");
+      try {
+        await loadConfig();
+      } catch {}
+      setError(paymentError.message || "Không tạo được đơn thanh toán.");
     } finally {
       setLoading(false);
     }
@@ -459,13 +464,13 @@ function PublicStorefront() {
     if (!config.momoConfigured) {
       return "Thanh toán MoMo chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.";
     }
-    if (!pkg?.purchasable) {
-      return "Gói này hiện chưa hỗ trợ mua tự động hoặc đang tạm hết hàng.";
+    if (!pkg?.purchasable || Number(pkg?.available || 0) <= 0) {
+      return "Kho hiện tại của gói này đã hết. Khi có nick mới trong kho, bạn sẽ mua được.";
     }
     return "Thanh toán MoMo xong, hệ thống sẽ tự cấp tài khoản ngay trên web.";
   };
 
-  const handlePurchaseButtonClick = (pkg) => {
+  const handlePurchaseButtonClick = async (pkg) => {
     if (sessionLoading || loading) return;
     if (!user) {
       setMessage("");
@@ -473,17 +478,21 @@ function PublicStorefront() {
       focusAuthCard("login");
       return;
     }
-    if (!config.momoConfigured) {
+    const latestConfig = await loadConfig();
+    const latestPackage = Array.isArray(latestConfig?.packages)
+      ? latestConfig.packages.find((item) => item.code === pkg?.code)
+      : null;
+    if (!latestConfig?.momoConfigured) {
       setMessage("");
       setError("Thanh toán MoMo chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.");
       return;
     }
-    if (!pkg?.purchasable) {
+    if (!latestPackage?.purchasable || Number(latestPackage?.available || 0) <= 0) {
       setMessage("");
-      setError("Gói này hiện chưa hỗ trợ mua tự động hoặc đang tạm hết hàng.");
+      setError("Kho hiện tại của gói này đã hết, nên hệ thống đã chặn không cho tạo thanh toán.");
       return;
     }
-    handleCreatePayment(pkg.code);
+    handleCreatePayment(latestPackage.code);
   };
 
   const handleGeneratePackage1Code = async (order) => {
