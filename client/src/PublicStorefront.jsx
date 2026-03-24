@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   Copy,
   KeyRound,
@@ -133,6 +135,7 @@ function PublicStorefront() {
     email: "",
     password: "",
   });
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [otpResults, setOtpResults] = useState({});
@@ -399,6 +402,7 @@ function PublicStorefront() {
       setMessage(
         data?.message || "Nếu email tồn tại, hệ thống đã gửi hướng dẫn",
       );
+      setShowForgotPassword(false);
     } catch (forgotError) {
       setError(forgotError.message || "Không gửi được email");
     } finally {
@@ -534,16 +538,37 @@ function PublicStorefront() {
 
   const authPanel = (
     <div ref={authCardRef} className="grid gap-6 lg:grid-cols-2">
-      <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
-        <div className="mb-4 flex gap-2">
+      <div className="rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.12),_transparent_35%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.94))] p-6">
+        <div className="mb-5">
+          <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">
+            {authMode === "login" ? "Đăng nhập" : "Đăng ký"}
+          </p>
+          <h2 className="mt-2 text-2xl font-bold text-white">
+            {authMode === "login"
+              ? "Tiếp tục để thanh toán và nhận nick"
+              : "Tạo tài khoản user để mua tự động"}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            {authMode === "login"
+              ? "Đăng nhập bằng email hoặc số điện thoại để tiếp tục thanh toán MoMo."
+              : "Điền thông tin một lần để theo dõi đơn hàng và nhận tài khoản ngay trên web."}
+          </p>
+        </div>
+
+        <div className="mb-5 flex gap-2">
           <button
-            onClick={() => setAuthMode("login")}
+            onClick={() => {
+              setAuthMode("login");
+            }}
             className={`rounded-full px-4 py-2 text-sm font-medium ${authMode === "login" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
           >
             Đăng nhập
           </button>
           <button
-            onClick={() => setAuthMode("register")}
+            onClick={() => {
+              setAuthMode("register");
+              setShowForgotPassword(false);
+            }}
             className={`rounded-full px-4 py-2 text-sm font-medium ${authMode === "register" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300"}`}
           >
             Đăng ký
@@ -562,6 +587,14 @@ function PublicStorefront() {
             </label>
             <button type="submit" disabled={loading} className="w-full rounded-2xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-500 disabled:opacity-60">
               Đăng nhập
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForgotPassword((prev) => !prev)}
+              className="inline-flex items-center gap-2 text-sm font-medium text-cyan-300 transition hover:text-cyan-200"
+            >
+              {showForgotPassword ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              {showForgotPassword ? "Ẩn quên mật khẩu" : "Quên mật khẩu?"}
             </button>
           </form>
         ) : (
@@ -583,15 +616,27 @@ function PublicStorefront() {
           </form>
         )}
 
-        <div className="mt-5 border-t border-slate-800 pt-5">
-          <p className="mb-3 text-sm text-slate-400">Quên mật khẩu</p>
-          <form onSubmit={handleForgotPassword} className="flex flex-col gap-3 sm:flex-row">
-            <input className="flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500" value={forgotEmail} onChange={(event) => setForgotEmail(event.target.value)} placeholder="Nhập email để nhận link đặt lại mật khẩu" />
-            <button type="submit" disabled={loading} className="rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500 disabled:opacity-60">
-              Gửi email
-            </button>
-          </form>
-        </div>
+        {authMode === "login" && showForgotPassword ? (
+          <div className="mt-5 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+            <div className="mb-3">
+              <p className="text-sm font-semibold text-white">Khôi phục mật khẩu</p>
+              <p className="mt-1 text-sm text-slate-400">
+                Nhập email để nhận liên kết đặt lại mật khẩu. Phần này chỉ hiện khi bạn cần dùng.
+              </p>
+            </div>
+            <form onSubmit={handleForgotPassword} className="flex flex-col gap-3 sm:flex-row">
+              <input
+                className="flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500"
+                value={forgotEmail}
+                onChange={(event) => setForgotEmail(event.target.value)}
+                placeholder="Nhập email để nhận link đặt lại mật khẩu"
+              />
+              <button type="submit" disabled={loading} className="rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500 disabled:opacity-60">
+                Gửi email
+              </button>
+            </form>
+          </div>
+        ) : null}
       </div>
 
       <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
