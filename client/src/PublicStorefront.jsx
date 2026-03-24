@@ -118,6 +118,11 @@ function PublicStorefront() {
   const [orders, setOrders] = useState([]);
   const [authMode, setAuthMode] = useState("login");
   const [loading, setLoading] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(
+    typeof window !== "undefined"
+      ? !!localStorage.getItem(STORE_TOKEN_KEY)
+      : false,
+  );
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
@@ -182,6 +187,30 @@ function PublicStorefront() {
       setSessionToken("");
       setError(sessionError.message || "Không tải được phiên đăng nhập");
     });
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!token) {
+      setSessionLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSessionLoading(true);
+    apiRequest("/api/store/auth/me", { token })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) {
+          setSessionLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   useEffect(() => {
@@ -537,6 +566,28 @@ function PublicStorefront() {
     </div>
   );
 
+  const sessionLoadingPanel = (
+    <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+      <div className="flex items-center gap-3">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-cyan-400/30 border-t-cyan-400" />
+        <div>
+          <h2 className="text-lg font-semibold text-white">
+            Đang kiểm tra phiên đăng nhập
+          </h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Vui lòng chờ một chút, hệ thống đang khôi phục tài khoản của bạn.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const guestOrdersPanel = (
+    <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/60 p-8 text-slate-400">
+      Đăng nhập để xem đơn hàng và nhận thông tin tài khoản.
+    </div>
+  );
+
   const packageCards = (
     <div className="grid gap-6 lg:grid-cols-3">
       {config.packages.map((pkg) => (
@@ -564,8 +615,16 @@ function PublicStorefront() {
               Liên hệ admin
             </a>
           ) : (
-            <button onClick={() => handleCreatePayment(pkg.code)} disabled={!user || !pkg.purchasable || loading || !config.momoConfigured} className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
-              {!user ? "Đăng nhập để mua" : !config.momoConfigured ? "Chưa cấu hình MoMo" : pkg.purchasable ? "Mua ngay" : "Tạm hết hàng"}
+            <button onClick={() => handleCreatePayment(pkg.code)} disabled={sessionLoading || !user || !pkg.purchasable || loading || !config.momoConfigured} className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+              {sessionLoading
+                ? "Đang kiểm tra..."
+                : !user
+                  ? "Đăng nhập để mua"
+                  : !config.momoConfigured
+                    ? "Chưa cấu hình MoMo"
+                    : pkg.purchasable
+                      ? "Mua ngay"
+                      : "Tạm hết hàng"}
             </button>
           )}
         </div>
@@ -702,7 +761,7 @@ function PublicStorefront() {
           </section>
         ) : (
           <>
-            {!user ? authPanel : null}
+            {sessionLoading ? sessionLoadingPanel : !user ? authPanel : null}
             <section className="mt-8">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -722,7 +781,7 @@ function PublicStorefront() {
                   <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">Đơn hàng</p>
                   <h2 className="mt-2 text-2xl font-bold text-white">Tài khoản đã mua</h2>
                 </div>
-                {user ? orderCards : <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/60 p-8 text-slate-400">Đăng nhập để xem đơn hàng và nhận thông tin tài khoản.</div>}
+                {user ? orderCards : sessionLoading ? sessionLoadingPanel : guestOrdersPanel}
                 {route.view === "payment-result" ? (
                   <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
                     <h3 className="text-lg font-semibold text-white">Kết quả thanh toán</h3>
