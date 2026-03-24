@@ -1541,12 +1541,39 @@ const cleanupOldStoreFailedOrders = async (extra = {}) => {
 const loadVisibleStoreOrdersForUser = async (userId) => {
   await expireStaleStoreOrders({ userId });
   await cleanupOldStoreFailedOrders({ userId });
-  return StoreOrder.find({
+  const orders = await StoreOrder.find({
     userId,
     status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
   })
     .sort({ createdAt: -1 })
     .lean();
+  const assignedAccountIds = Array.from(
+    new Set(
+      (orders || [])
+        .map((order) => String(order?.assignedAccountId || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (assignedAccountIds.length === 0) {
+    return orders;
+  }
+  const accounts = await Account.find({ id: { $in: assignedAccountIds } })
+    .select("id username password otpSecret link")
+    .lean();
+  const accountMap = new Map(
+    (accounts || []).map((acc) => [String(acc?.id || "").trim(), acc]),
+  );
+  return (orders || []).map((order) => {
+    const linkedAcc = accountMap.get(String(order?.assignedAccountId || "").trim());
+    if (!linkedAcc) return order;
+    return {
+      ...order,
+      assignedUsername: String(order?.assignedUsername || linkedAcc?.username || "").trim(),
+      assignedPassword: String(order?.assignedPassword || linkedAcc?.password || "").trim(),
+      assignedOtpSecret: String(order?.assignedOtpSecret || linkedAcc?.otpSecret || "").trim(),
+      assignedLink: String(order?.assignedLink || linkedAcc?.link || "").trim(),
+    };
+  });
 };
 const buildStoreReservationSnapshot = async ({ excludeOrderId = "" } = {}) => {
   const activeOrders = await StoreOrder.find(
@@ -1607,6 +1634,8 @@ const sanitizeStoreOrder = (order) => {
       package1UsedCount: Number(order.package1UsedCount || 0),
       package1UsageLeft: buildStorePackage1UsageLeft(order),
       assignedUsername: String(order.assignedUsername || ""),
+      assignedPassword: String(order.assignedPassword || ""),
+      assignedLink: String(order.assignedLink || ""),
     };
   }
   if (packageCode === "package2") {
@@ -3131,6 +3160,8 @@ const fulfillStoreOrder = async (order) => {
             status: "fulfilled",
             assignedAccountId: String(claim?.updatedAcc?.id || ""),
             assignedUsername: String(claim?.updatedAcc?.username || ""),
+            assignedPassword: String(claim?.updatedAcc?.password || ""),
+            assignedLink: String(claim?.updatedAcc?.link || ""),
             assignedType: String(claim?.updatedAcc?.type || ""),
             assignedWarehouse: CHATGPT_TOTAL_VALUE,
             package1AccessToken: String(claim?.package1AccessToken || ""),

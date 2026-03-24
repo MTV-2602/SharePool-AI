@@ -838,6 +838,26 @@ function PublicStorefront() {
     const otp = otpResults[order.id] || {};
     return (
       <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+        <div className="space-y-3">
+          {[
+            ["Tài khoản", order.assignedUsername],
+            ["Mật khẩu", order.assignedPassword],
+            ["Link", order.assignedLink],
+          ].map(([label, value]) => (
+            <div key={label} className="flex flex-wrap items-center gap-3">
+              <span className="min-w-24 text-sm text-slate-400">{label}</span>
+              <code className="flex-1 break-all rounded-xl bg-slate-900 px-3 py-2 text-sm text-white">{value || "--"}</code>
+              {value ? (
+                <button
+                  onClick={() => copyText(value, `Đã sao chép ${label}`)}
+                  className="rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-200"
+                >
+                  Sao chép
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-300">Mã bí mật</span>
           <code className="break-all rounded-xl bg-slate-900 px-3 py-2 text-sm text-white">{order.package1AccessToken}</code>
@@ -846,7 +866,7 @@ function PublicStorefront() {
             Sao chép
           </button>
         </div>
-        <p className="mt-3 text-sm text-slate-400">Còn {order.package1UsageLeft} / 3 lượt lấy mã OTP.</p>
+        <p className="mt-3 text-sm text-slate-400">Gói 1 chỉ hiển thị OTP 6 số để đăng nhập, không hiển thị mã 2FA gốc. Còn {order.package1UsageLeft} / 3 lượt lấy mã OTP.</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button onClick={() => handleGeneratePackage1Code(order)} disabled={loading || order.package1UsageLeft <= 0} className="rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500 disabled:opacity-50">
             {order.package1UsageLeft > 0 ? "Lấy mã" : "Đã hết lượt"}
