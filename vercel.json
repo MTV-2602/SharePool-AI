@@ -11,6 +11,10 @@
     {
       "source": "/api/(.*)",
       "destination": "/api/index.js"
+    },
+    {
+      "source": "/store",
+      "destination": "/index.html"
     }
   ]
 }

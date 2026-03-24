@@ -2,8 +2,13 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const axios = require("axios");
+const crypto = require("crypto");
 require("dotenv").config();
 const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
+const { OAuth2Client } = require("google-auth-library");
 
 const app = express();
 
@@ -482,6 +487,65 @@ const DatammoWarrantyCase =
     "marketplace_warranty_cases",
   );
 
+const storeUserSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  fullName: { type: String, required: true },
+  phone: { type: String, default: "" },
+  phoneNormalized: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true,
+  },
+  email: { type: String, required: true },
+  emailLower: { type: String, required: true, unique: true, index: true },
+  passwordHash: { type: String, default: "" },
+  googleId: { type: String, unique: true, sparse: true, index: true },
+  authProviders: { type: [String], default: ["password"] },
+  resetTokenHash: { type: String, default: "" },
+  resetTokenExpiresAt: { type: String, default: "" },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+const StoreUser =
+  mongoose.models.StoreUser ||
+  mongoose.model("StoreUser", storeUserSchema, "store_users");
+
+const storeOrderSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  userId: { type: String, required: true, index: true },
+  packageCode: { type: String, required: true, index: true },
+  packageName: { type: String, required: true },
+  amount: { type: Number, required: true },
+  status: { type: String, default: "pending", index: true },
+  paymentMethod: { type: String, default: "momo" },
+  momoOrderId: { type: String, default: "", index: true },
+  momoRequestId: { type: String, default: "" },
+  momoTransId: { type: String, default: "" },
+  momoResultCode: { type: Number, default: null },
+  momoMessage: { type: String, default: "" },
+  momoPayUrl: { type: String, default: "" },
+  assignedAccountId: { type: String, default: "" },
+  assignedUsername: { type: String, default: "" },
+  assignedPassword: { type: String, default: "" },
+  assignedOtpSecret: { type: String, default: "" },
+  assignedLink: { type: String, default: "" },
+  assignedType: { type: String, default: "" },
+  assignedWarehouse: { type: String, default: "" },
+  package1AccessToken: { type: String, default: "" },
+  package1MaxUsage: { type: Number, default: 3 },
+  package1UsedCount: { type: Number, default: 0 },
+  package1LastCodeAt: { type: String, default: "" },
+  package1LastCode: { type: String, default: "" },
+  fulfilledAt: { type: String, default: "" },
+  paidAt: { type: String, default: "" },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+const StoreOrder =
+  mongoose.models.StoreOrder ||
+  mongoose.model("StoreOrder", storeOrderSchema, "store_orders");
+
 // Middleware to ensure DB is connected before processing
 app.use(async (req, res, next) => {
   await connectDB();
@@ -590,6 +654,397 @@ app.get("/api/test", (req, res) => {
   });
 });
 
+app.get("/api/store/config", async (req, res) => {
+  try {
+    const packages = await buildStoreCatalog();
+    res.json({
+      packages,
+      googleClientId: GOOGLE_OAUTH_CLIENT_ID,
+      contact: {
+        zaloUrl: String(process.env.STORE_CONTACT_ZALO_URL || "").trim(),
+        messengerUrl: String(
+          process.env.STORE_CONTACT_MESSENGER_URL || "",
+        ).trim(),
+      },
+      momoConfigured:
+        !!String(process.env.MOMO_PARTNER_CODE || "").trim() &&
+        !!String(process.env.MOMO_ACCESS_KEY || "").trim() &&
+        !!String(process.env.MOMO_SECRET_KEY || "").trim(),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/store/auth/register", async (req, res) => {
+  try {
+    const fullName = String(req.body?.fullName || "").trim();
+    const phone = String(req.body?.phone || "").trim();
+    const phoneNormalized = normalizePhoneValue(phone);
+    const email = String(req.body?.email || "").trim();
+    const emailLower = normalizeEmailLower(email);
+    const password = String(req.body?.password || "");
+
+    if (!fullName || !phoneNormalized || !emailLower || password.length < 6) {
+      return res.status(400).json({
+        error:
+          "Vui long nhap day du ho ten, SDT, email va mat khau toi thieu 6 ky tu",
+      });
+    }
+
+    const [existingPhone, existingEmail] = await Promise.all([
+      StoreUser.findOne({ phoneNormalized }).lean(),
+      StoreUser.findOne({ emailLower }).lean(),
+    ]);
+    if (existingPhone) {
+      return res.status(409).json({ error: "SDT da ton tai" });
+    }
+    if (existingEmail) {
+      return res.status(409).json({ error: "Email da ton tai" });
+    }
+
+    const nowIso = new Date().toISOString();
+    const user = await StoreUser.create({
+      id: createStoreId("usr"),
+      fullName,
+      phone,
+      phoneNormalized,
+      email,
+      emailLower,
+      passwordHash: await bcrypt.hash(password, 10),
+      authProviders: ["password"],
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    return res.json({
+      success: true,
+      token: issueStoreUserJwt(user),
+      user: sanitizeStoreUser(user),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Dang ky that bai" });
+  }
+});
+
+app.post("/api/store/auth/login", async (req, res) => {
+  try {
+    const identifier = String(req.body?.identifier || "").trim();
+    const password = String(req.body?.password || "");
+    if (!identifier || !password) {
+      return res.status(400).json({ error: "Vui long nhap email/SDT va mat khau" });
+    }
+    const emailLower = normalizeEmailLower(identifier);
+    const phoneNormalized = normalizePhoneValue(identifier);
+    const user = await StoreUser.findOne({
+      $or: [
+        { emailLower },
+        ...(phoneNormalized ? [{ phoneNormalized }] : []),
+      ],
+    });
+    if (!user?.passwordHash) {
+      return res.status(401).json({ error: "Thong tin dang nhap khong dung" });
+    }
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({ error: "Thong tin dang nhap khong dung" });
+    }
+    return res.json({
+      success: true,
+      token: issueStoreUserJwt(user),
+      user: sanitizeStoreUser(user),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Dang nhap that bai" });
+  }
+});
+
+app.post("/api/store/auth/google", async (req, res) => {
+  try {
+    const credential = String(req.body?.credential || "").trim();
+    if (!credential) {
+      return res.status(400).json({ error: "Thieu token Google" });
+    }
+    if (!googleOAuthClient) {
+      return res.status(400).json({ error: "Google OAuth chua duoc cau hinh" });
+    }
+    const ticket = await googleOAuthClient.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_OAUTH_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const emailLower = normalizeEmailLower(payload?.email);
+    if (!emailLower || !payload?.email_verified) {
+      return res.status(400).json({ error: "Tai khoan Google khong hop le" });
+    }
+    const googleId = String(payload?.sub || "").trim();
+    let user =
+      (await StoreUser.findOne({ googleId })) ||
+      (await StoreUser.findOne({ emailLower }));
+
+    if (!user) {
+      user = await StoreUser.create({
+        id: createStoreId("usr"),
+        fullName: String(payload?.name || payload?.email || "Google User").trim(),
+        email: String(payload?.email || "").trim(),
+        emailLower,
+        googleId,
+        authProviders: ["google"],
+      });
+    } else {
+      user.googleId = googleId;
+      user.authProviders = upsertStringIntoList(user.authProviders, "google");
+      if (!String(user.fullName || "").trim()) {
+        user.fullName = String(payload?.name || payload?.email || "").trim();
+      }
+      await user.save();
+    }
+
+    return res.json({
+      success: true,
+      token: issueStoreUserJwt(user),
+      user: sanitizeStoreUser(user),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Dang nhap Google that bai" });
+  }
+});
+
+app.post("/api/store/auth/forgot-password", async (req, res) => {
+  try {
+    const emailLower = normalizeEmailLower(req.body?.email);
+    if (!emailLower) {
+      return res.json({
+        success: true,
+        message: "Neu email ton tai, he thong da gui huong dan dat lai mat khau",
+      });
+    }
+    const user = await StoreUser.findOne({ emailLower });
+    if (user) {
+      const resetToken = createRandomHexToken(20);
+      user.resetTokenHash = hashSha256(resetToken);
+      user.resetTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      user.updatedAt = new Date().toISOString();
+      await user.save();
+      await sendStoreResetPasswordEmail({ req, user, resetToken });
+    }
+    return res.json({
+      success: true,
+      message: "Neu email ton tai, he thong da gui huong dan dat lai mat khau",
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Khong gui duoc email" });
+  }
+});
+
+app.post("/api/store/auth/reset-password", async (req, res) => {
+  try {
+    const resetToken = String(req.body?.token || "").trim();
+    const newPassword = String(req.body?.newPassword || "");
+    if (!resetToken || newPassword.length < 6) {
+      return res.status(400).json({ error: "Token hoac mat khau moi khong hop le" });
+    }
+    const resetTokenHash = hashSha256(resetToken);
+    const user = await StoreUser.findOne({
+      resetTokenHash,
+      resetTokenExpiresAt: { $gt: new Date().toISOString() },
+    });
+    if (!user) {
+      return res.status(400).json({ error: "Lien ket dat lai mat khau da het han" });
+    }
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    user.resetTokenHash = "";
+    user.resetTokenExpiresAt = "";
+    user.authProviders = upsertStringIntoList(user.authProviders, "password");
+    user.updatedAt = new Date().toISOString();
+    await user.save();
+    return res.json({ success: true, message: "Da dat lai mat khau thanh cong" });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Khong dat lai duoc mat khau" });
+  }
+});
+
+app.get("/api/store/auth/me", verifyStoreUserToken, async (req, res) => {
+  try {
+    const orders = await StoreOrder.find({ userId: req.storeUser.id })
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json({
+      user: sanitizeStoreUser(req.storeUser),
+      orders: orders.map((order) => sanitizeStoreOrder(order)),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Khong tai duoc tai khoan" });
+  }
+});
+
+app.get("/api/store/orders", verifyStoreUserToken, async (req, res) => {
+  try {
+    const orders = await StoreOrder.find({ userId: req.storeUser.id })
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json({ orders: orders.map((order) => sanitizeStoreOrder(order)) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Khong tai duoc don hang" });
+  }
+});
+
+app.get("/api/store/orders/:id", verifyStoreUserToken, async (req, res) => {
+  try {
+    const order = await StoreOrder.findOne({
+      id: String(req.params?.id || "").trim(),
+      userId: req.storeUser.id,
+    }).lean();
+    if (!order) {
+      return res.status(404).json({ error: "Khong tim thay don hang" });
+    }
+    res.json({ order: sanitizeStoreOrder(order) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Khong tai duoc don hang" });
+  }
+});
+
+app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => {
+  try {
+    const packageCode = String(req.body?.packageCode || "").trim().toLowerCase();
+    const packageConfig = STORE_PACKAGE_MAP[packageCode];
+    if (!packageConfig || packageCode === "package3") {
+      return res.status(400).json({ error: "Goi nay chua ho tro mua tu dong" });
+    }
+    const stockSummary = await buildStoreCatalog();
+    const selectedStock = stockSummary.find((item) => item.code === packageCode);
+    if (!selectedStock?.purchasable) {
+      return res.status(409).json({ error: "Kho tong hien khong du stock cho goi nay" });
+    }
+
+    const order = await StoreOrder.create({
+      id: createStoreId("ord"),
+      userId: req.storeUser.id,
+      packageCode: packageConfig.code,
+      packageName: packageConfig.name,
+      amount: packageConfig.price,
+      status: "pending_payment",
+      momoOrderId: createStoreId("momo_order"),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    const payUrl = await createMomoPaymentForStoreOrder(req, order);
+    const freshOrder = await StoreOrder.findOneAndUpdate(
+      { id: order.id },
+      {
+        $set: {
+          status: "awaiting_payment",
+          momoPayUrl: payUrl,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { new: true },
+    ).lean();
+    res.json({
+      success: true,
+      payUrl,
+      order: sanitizeStoreOrder(freshOrder),
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tao duoc lien ket thanh toan",
+    });
+  }
+});
+
+app.post("/api/store/package1/code", async (req, res) => {
+  try {
+    const secretToken = String(req.body?.secretToken || "").trim();
+    if (!secretToken) {
+      return res.status(400).json({ error: "Thieu ma bi mat" });
+    }
+    const order = await StoreOrder.findOne({
+      packageCode: "package1",
+      package1AccessToken: secretToken,
+      status: "fulfilled",
+    });
+    if (!order) {
+      return res.status(404).json({ error: "Khong tim thay ma bi mat hop le" });
+    }
+    if (buildStorePackage1UsageLeft(order) <= 0) {
+      return res.status(400).json({ error: "Da het luot lay ma" });
+    }
+    const account = await Account.findOne({ id: String(order.assignedAccountId || "").trim() }).lean();
+    const otpSecret = String(account?.otpSecret || "").trim();
+    if (!otpSecret) {
+      return res.status(400).json({ error: "Tai khoan nay chua co ma 2FA" });
+    }
+    const otp = generateTotpCode(otpSecret);
+    const updatedOrder = await StoreOrder.findOneAndUpdate(
+      { id: order.id },
+      {
+        $set: {
+          package1UsedCount: Number(order.package1UsedCount || 0) + 1,
+          package1LastCode: otp.code,
+          package1LastCodeAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { new: true },
+    );
+    res.json({
+      success: true,
+      code: otp.code,
+      expiresIn: otp.expiresIn,
+      usageLeft: buildStorePackage1UsageLeft(updatedOrder),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Khong lay duoc ma 2FA" });
+  }
+});
+
+app.post("/api/store/totp/generate", async (req, res) => {
+  try {
+    const secret = String(req.body?.secret || "").trim();
+    if (!secret) {
+      return res.status(400).json({ error: "Thieu ma 2FA" });
+    }
+    const otp = generateTotpCode(secret);
+    res.json({ success: true, code: otp.code, expiresIn: otp.expiresIn });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Khong tao duoc ma OTP" });
+  }
+});
+
+app.post("/api/store/momo/ipn", async (req, res) => {
+  try {
+    if (!verifyMomoIpnSignature(req.body || {})) {
+      return res.status(400).json({ resultCode: 1, message: "invalid signature" });
+    }
+    const momoOrderId = String(req.body?.orderId || "").trim();
+    const order = await StoreOrder.findOne({ momoOrderId });
+    if (!order) {
+      return res.json({ resultCode: 0, message: "OK" });
+    }
+    const resultCode = Number(req.body?.resultCode ?? 1);
+    if (String(order.status || "").trim().toLowerCase() === "fulfilled") {
+      return res.json({ resultCode: 0, message: "OK" });
+    }
+    order.momoResultCode = resultCode;
+    order.momoTransId = String(req.body?.transId || "").trim();
+    order.momoMessage = String(req.body?.message || "").trim();
+    order.updatedAt = new Date().toISOString();
+    if (resultCode === 0) {
+      order.status = "paid";
+      order.paidAt = new Date().toISOString();
+      await order.save();
+      await fulfillStoreOrder(order);
+    } else {
+      order.status = "payment_failed";
+      await order.save();
+    }
+    return res.json({ resultCode: 0, message: "OK" });
+  } catch (error) {
+    console.error("Store MoMo IPN error:", error?.message || error);
+    return res.status(500).json({ resultCode: 1, message: "server error" });
+  }
+});
+
 // 1. GET ALL DATA (Protected - requires token)
 
 // --- DATAMMO INTEGRATION ---
@@ -678,6 +1133,301 @@ const normalizeLegacyExtDays = (value, fallback = "1M") => {
     default:
       return fallback;
   }
+};
+const STORE_USER_JWT_SECRET =
+  process.env.JWT_SECRET || "change-me-store-user-jwt-secret";
+const STORE_PACKAGE1_PRICE = Math.max(
+  0,
+  Number(process.env.STORE_PACKAGE1_PRICE || 30000),
+);
+const STORE_PACKAGE2_PRICE = Math.max(
+  0,
+  Number(process.env.STORE_PACKAGE2_PRICE || 60000),
+);
+const STORE_PACKAGE3_PRICE = Math.max(
+  0,
+  Number(process.env.STORE_PACKAGE3_PRICE || 110000),
+);
+const STORE_TOTAL_MIN_DAYS = Math.max(
+  1,
+  Number(process.env.STORE_TOTAL_MIN_DAYS || 20),
+);
+const STORE_PACKAGE1_MAX_OTP_USES = 3;
+const MOMO_ENDPOINT =
+  process.env.MOMO_ENDPOINT || "https://test-payment.momo.vn/v2/gateway/api/create";
+const MOMO_REQUEST_TYPE = process.env.MOMO_REQUEST_TYPE || "captureWallet";
+const GOOGLE_OAUTH_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
+const googleOAuthClient = GOOGLE_OAUTH_CLIENT_ID
+  ? new OAuth2Client(GOOGLE_OAUTH_CLIENT_ID)
+  : null;
+const STORE_PACKAGE_MAP = {
+  package1: {
+    code: "package1",
+    name: "Goi 1 - Chia se tiet kiem",
+    price: STORE_PACKAGE1_PRICE,
+    automated: true,
+  },
+  package2: {
+    code: "package2",
+    name: "Goi 2 - Tai khoan rieng tu",
+    price: STORE_PACKAGE2_PRICE,
+    automated: true,
+  },
+  package3: {
+    code: "package3",
+    name: "Goi 3 - Nang chinh chu Gmail",
+    price: STORE_PACKAGE3_PRICE,
+    automated: false,
+  },
+};
+const normalizeEmailLower = (value) => String(value || "").trim().toLowerCase();
+const normalizePhoneValue = (value) => {
+  const raw = String(value || "").trim();
+  const digits = raw.replace(/[^\d]/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("84")) return `0${digits.slice(2)}`;
+  return digits;
+};
+const createStoreId = (prefix) =>
+  `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const createRandomHexToken = (size = 24) =>
+  crypto.randomBytes(size).toString("hex");
+const hashSha256 = (value) =>
+  crypto.createHash("sha256").update(String(value || "")).digest("hex");
+const upsertStringIntoList = (list = [], value = "") => {
+  const normalized = String(value || "").trim();
+  const current = Array.isArray(list)
+    ? list.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (!normalized) return current;
+  return Array.from(new Set([...current, normalized]));
+};
+const sanitizeStoreUser = (user) => {
+  if (!user) return null;
+  return {
+    id: String(user.id || ""),
+    fullName: String(user.fullName || ""),
+    phone: String(user.phone || ""),
+    email: String(user.email || ""),
+    createdAt: String(user.createdAt || ""),
+  };
+};
+const buildStorePackage1UsageLeft = (order = {}) =>
+  Math.max(
+    0,
+    Number(order?.package1MaxUsage || STORE_PACKAGE1_MAX_OTP_USES) -
+      Number(order?.package1UsedCount || 0),
+  );
+const sanitizeStoreOrder = (order) => {
+  if (!order) return null;
+  const packageCode = String(order.packageCode || "");
+  const base = {
+    id: String(order.id || ""),
+    packageCode,
+    packageName:
+      String(order.packageName || STORE_PACKAGE_MAP[packageCode]?.name || ""),
+    amount: Number(order.amount || 0),
+    status: String(order.status || "pending"),
+    paymentMethod: String(order.paymentMethod || "momo"),
+    momoOrderId: String(order.momoOrderId || ""),
+    momoTransId: String(order.momoTransId || ""),
+    momoResultCode:
+      order.momoResultCode === null || order.momoResultCode === undefined
+        ? null
+        : Number(order.momoResultCode),
+    momoMessage: String(order.momoMessage || ""),
+    createdAt: String(order.createdAt || ""),
+    updatedAt: String(order.updatedAt || ""),
+    paidAt: String(order.paidAt || ""),
+    fulfilledAt: String(order.fulfilledAt || ""),
+  };
+  if (packageCode === "package1") {
+    return {
+      ...base,
+      package1AccessToken: String(order.package1AccessToken || ""),
+      package1UsedCount: Number(order.package1UsedCount || 0),
+      package1UsageLeft: buildStorePackage1UsageLeft(order),
+      assignedUsername: String(order.assignedUsername || ""),
+    };
+  }
+  if (packageCode === "package2") {
+    return {
+      ...base,
+      assignedUsername: String(order.assignedUsername || ""),
+      assignedPassword: String(order.assignedPassword || ""),
+      assignedOtpSecret: String(order.assignedOtpSecret || ""),
+      assignedLink: String(order.assignedLink || ""),
+      assignedType: String(order.assignedType || ""),
+    };
+  }
+  return base;
+};
+const issueStoreUserJwt = (user) =>
+  jwt.sign(
+    {
+      sub: String(user?.id || ""),
+      email: String(user?.emailLower || user?.email || "").trim().toLowerCase(),
+      type: "store-user",
+    },
+    STORE_USER_JWT_SECRET,
+    { expiresIn: "30d" },
+  );
+const getBearerToken = (req) => {
+  const header = String(req.headers.authorization || "").trim();
+  if (/^Bearer\s+/i.test(header)) {
+    return header.replace(/^Bearer\s+/i, "").trim();
+  }
+  return "";
+};
+const verifyStoreUserToken = async (req, res, next) => {
+  try {
+    const token = getBearerToken(req);
+    if (!token) {
+      return res.status(401).json({ error: "Chua dang nhap" });
+    }
+    const decoded = jwt.verify(token, STORE_USER_JWT_SECRET);
+    const user = await StoreUser.findOne({ id: String(decoded?.sub || "").trim() });
+    if (!user) {
+      return res.status(401).json({ error: "Nguoi dung khong ton tai" });
+    }
+    req.storeUser = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: "Phien dang nhap khong hop le" });
+  }
+};
+const getAppBaseUrl = (req) => {
+  const envBase = String(
+    process.env.APP_BASE_URL ||
+      process.env.PUBLIC_APP_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "",
+  ).trim();
+  if (envBase) return envBase.replace(/\/+$/, "");
+  const proto = String(
+    req.headers["x-forwarded-proto"] || req.protocol || "https",
+  ).trim();
+  const host = String(
+    req.headers["x-forwarded-host"] || req.get("host") || "",
+  ).trim();
+  if (!host) return "";
+  return `${proto}://${host}`.replace(/\/+$/, "");
+};
+const buildStoreResetPasswordLink = (req, token) => {
+  const baseUrl = getAppBaseUrl(req);
+  const url = new URL(`${baseUrl || ""}/store`);
+  url.searchParams.set("view", "reset-password");
+  url.searchParams.set("token", token);
+  return url.toString();
+};
+let gmailTransporter;
+const getGmailTransporter = () => {
+  if (gmailTransporter) return gmailTransporter;
+  const gmailUser = String(process.env.GMAIL_USER || "").trim();
+  const gmailPassword = String(process.env.GMAIL_APP_PASSWORD || "").trim();
+  if (!gmailUser || !gmailPassword) {
+    throw new Error("Gmail SMTP chua duoc cau hinh");
+  }
+  gmailTransporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: gmailUser,
+      pass: gmailPassword,
+    },
+  });
+  return gmailTransporter;
+};
+const sendStoreResetPasswordEmail = async ({ req, user, resetToken }) => {
+  const transporter = getGmailTransporter();
+  const gmailUser = String(process.env.GMAIL_USER || "").trim();
+  const resetLink = buildStoreResetPasswordLink(req, resetToken);
+  await transporter.sendMail({
+    from: gmailUser,
+    to: String(user.email || "").trim(),
+    subject: "Dat lai mat khau tai khoan",
+    text: [
+      `Xin chao ${String(user.fullName || "").trim() || "ban"},`,
+      "",
+      "Ban vua yeu cau dat lai mat khau.",
+      `Mo link sau de dat lai mat khau: ${resetLink}`,
+      "",
+      "Neu ban khong thuc hien yeu cau nay, hay bo qua email.",
+    ].join("\n"),
+  });
+};
+const safeCompareHex = (left, right) => {
+  const a = Buffer.from(String(left || ""), "utf8");
+  const b = Buffer.from(String(right || ""), "utf8");
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+};
+const buildMomoSignature = (fields = {}) => {
+  const raw = Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value ?? "")}`)
+    .join("&");
+  return crypto
+    .createHmac("sha256", String(process.env.MOMO_SECRET_KEY || "").trim())
+    .update(raw)
+    .digest("hex");
+};
+const verifyMomoIpnSignature = (payload = {}) => {
+  const signature = String(payload.signature || "").trim();
+  if (!signature) return false;
+  const expected = buildMomoSignature({
+    accessKey: String(process.env.MOMO_ACCESS_KEY || "").trim(),
+    amount: payload.amount ?? "",
+    extraData: payload.extraData ?? "",
+    message: payload.message ?? "",
+    orderId: payload.orderId ?? "",
+    orderInfo: payload.orderInfo ?? "",
+    orderType: payload.orderType ?? "",
+    partnerCode: payload.partnerCode ?? "",
+    payType: payload.payType ?? "",
+    requestId: payload.requestId ?? "",
+    responseTime: payload.responseTime ?? "",
+    resultCode: payload.resultCode ?? "",
+    transId: payload.transId ?? "",
+  });
+  return safeCompareHex(expected, signature);
+};
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+const decodeBase32 = (input = "") => {
+  const normalized = String(input || "")
+    .toUpperCase()
+    .replace(/=+$/g, "")
+    .replace(/[^A-Z2-7]/g, "");
+  let bits = "";
+  for (const char of normalized) {
+    const index = BASE32_ALPHABET.indexOf(char);
+    if (index < 0) continue;
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    bytes.push(Number.parseInt(bits.slice(i, i + 8), 2));
+  }
+  return Buffer.from(bytes);
+};
+const generateTotpCode = (secret, timeMs = Date.now()) => {
+  const key = decodeBase32(secret);
+  if (!key.length) {
+    throw new Error("Ma 2FA khong hop le");
+  }
+  const counter = Math.floor(timeMs / 30000);
+  const buffer = Buffer.alloc(8);
+  buffer.writeUInt32BE(Math.floor(counter / 0x100000000), 0);
+  buffer.writeUInt32BE(counter & 0xffffffff, 4);
+  const digest = crypto.createHmac("sha1", key).update(buffer).digest();
+  const offset = digest[digest.length - 1] & 0xf;
+  const binary =
+    ((digest[offset] & 0x7f) << 24) |
+    ((digest[offset + 1] & 0xff) << 16) |
+    ((digest[offset + 2] & 0xff) << 8) |
+    (digest[offset + 3] & 0xff);
+  return {
+    code: String(binary % 1000000).padStart(6, "0"),
+    expiresIn: 30 - Math.floor((timeMs / 1000) % 30),
+  };
 };
 const buildEmptyTeamSlot = () => ({
   status: "empty",
@@ -1612,6 +2362,340 @@ const rollbackClaimedPackage2Accounts = async (claimed = []) => {
       },
     );
   }
+};
+const buildStoreCustomerRecord = (user, joinedAt = new Date()) => {
+  const joinedDate = new Date(joinedAt);
+  const expiredAt = addDurationToDate(joinedDate, "1M");
+  return {
+    name: String(user?.fullName || user?.email || "Khach").trim(),
+    joinedAt: joinedDate.toISOString(),
+    expiredAt: expiredAt.toISOString(),
+  };
+};
+const buildStoreTotalMinExpiredAtIso = () =>
+  new Date(Date.now() + STORE_TOTAL_MIN_DAYS * 24 * 60 * 60 * 1000).toISOString();
+const buildStorePackage1ExistingFilter = (excludeIds = []) => ({
+  type: "package1",
+  package2Shelf: CHATGPT_TOTAL_VALUE,
+  expiredAt: { $gt: buildStoreTotalMinExpiredAtIso() },
+  ...(Array.isArray(excludeIds) && excludeIds.length > 0
+    ? { id: { $nin: excludeIds } }
+    : {}),
+  $expr: {
+    $lt: [{ $size: { $ifNull: ["$users", []] } }, 3],
+  },
+});
+const buildStorePackage1ConvertibleFilter = (excludeIds = []) => ({
+  type: "unassigned",
+  package2Shelf: CHATGPT_TOTAL_VALUE,
+  expiredAt: { $gt: buildStoreTotalMinExpiredAtIso() },
+  ...(Array.isArray(excludeIds) && excludeIds.length > 0
+    ? { id: { $nin: excludeIds } }
+    : {}),
+  $expr: {
+    $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
+  },
+});
+const buildStorePackage2ConvertibleFilter = (excludeIds = []) => ({
+  type: "unassigned",
+  package2Shelf: CHATGPT_TOTAL_VALUE,
+  expiredAt: { $gt: buildStoreTotalMinExpiredAtIso() },
+  ...(Array.isArray(excludeIds) && excludeIds.length > 0
+    ? { id: { $nin: excludeIds } }
+    : {}),
+  $expr: {
+    $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
+  },
+});
+const getBusyChatgptAccountIdsForStoreOrders = async () => {
+  const activeCases = await DatammoWarrantyCase.find({
+    scope: "chatgpt",
+    status: "active",
+  })
+    .select("rootAccountId currentAccountId")
+    .lean();
+  const ids = new Set();
+  activeCases.forEach((item) => {
+    const rootId = String(item?.rootAccountId || "").trim();
+    const currentId = String(item?.currentAccountId || "").trim();
+    if (rootId) ids.add(rootId);
+    if (currentId) ids.add(currentId);
+  });
+  return Array.from(ids);
+};
+const countStorePackage1Stock = async () => {
+  const excludeIds = await getBusyChatgptAccountIdsForStoreOrders();
+  const [sharedAccounts, convertibleCount] = await Promise.all([
+    Account.find(buildStorePackage1ExistingFilter(excludeIds))
+      .select("users")
+      .lean(),
+    Account.countDocuments(buildStorePackage1ConvertibleFilter(excludeIds)),
+  ]);
+  const freeSharedSlots = sharedAccounts.reduce((sum, acc) => {
+    const used = Array.isArray(acc?.users) ? acc.users.length : 0;
+    return sum + Math.max(0, 3 - used);
+  }, 0);
+  return freeSharedSlots + convertibleCount * 3;
+};
+const countStorePackage2Stock = async () => {
+  const excludeIds = await getBusyChatgptAccountIdsForStoreOrders();
+  return Account.countDocuments(buildStorePackage2ConvertibleFilter(excludeIds));
+};
+const buildStoreCatalog = async () => {
+  const [package1Stock, package2Stock] = await Promise.all([
+    countStorePackage1Stock(),
+    countStorePackage2Stock(),
+  ]);
+  return [
+    {
+      ...STORE_PACKAGE_MAP.package1,
+      available: package1Stock,
+      purchasable: package1Stock > 0,
+    },
+    {
+      ...STORE_PACKAGE_MAP.package2,
+      available: package2Stock,
+      purchasable: package2Stock > 0,
+    },
+    {
+      ...STORE_PACKAGE_MAP.package3,
+      available: null,
+      purchasable: false,
+    },
+  ];
+};
+const claimStorePackage1AccountForOrder = async ({ order, user }) => {
+  const excludeIds = await getBusyChatgptAccountIdsForStoreOrders();
+  const customer = buildStoreCustomerRecord(user);
+  let oldAcc = await Account.findOneAndUpdate(
+    buildStorePackage1ExistingFilter(excludeIds),
+    {
+      $push: { users: customer },
+      $set: { updatedAt: new Date().toISOString() },
+    },
+    {
+      sort: { createdAt: 1, id: 1 },
+      new: false,
+    },
+  );
+  let convertedFromUnassigned = false;
+  if (!oldAcc) {
+    oldAcc = await Account.findOneAndUpdate(
+      buildStorePackage1ConvertibleFilter(excludeIds),
+      {
+        $set: {
+          type: "package1",
+          users: [customer],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      {
+        sort: { createdAt: 1, id: 1 },
+        new: false,
+      },
+    );
+    convertedFromUnassigned = !!oldAcc;
+  }
+  if (!oldAcc) {
+    const error = new Error("Kho tong Goi 1 hien khong con acc/slot hop le");
+    error.statusCode = 409;
+    throw error;
+  }
+  const updatedAcc = await Account.findOne({ id: oldAcc.id }).lean();
+  return {
+    oldAcc,
+    updatedAcc,
+    delivery: "",
+    package1AccessToken: `PK1-${createRandomHexToken(10).toUpperCase()}`,
+    convertedFromUnassigned,
+  };
+};
+const claimStorePackage2AccountForOrder = async ({ order, user }) => {
+  const excludeIds = await getBusyChatgptAccountIdsForStoreOrders();
+  const customer = buildStoreCustomerRecord(user);
+  const oldAcc = await Account.findOneAndUpdate(
+    buildStorePackage2ConvertibleFilter(excludeIds),
+    {
+      $set: {
+        type: "package2",
+        users: [customer],
+        updatedAt: new Date().toISOString(),
+      },
+    },
+    {
+      sort: { createdAt: 1, id: 1 },
+      new: false,
+    },
+  );
+  if (!oldAcc) {
+    const error = new Error("Kho tong Goi 2 hien khong con nick moi hop le");
+    error.statusCode = 409;
+    throw error;
+  }
+  const updatedAcc = await Account.findOne({ id: oldAcc.id }).lean();
+  return {
+    oldAcc,
+    updatedAcc,
+    delivery: formatPackage2DeliveryLine(updatedAcc),
+  };
+};
+const rollbackStoreClaimedAccount = async (claim = null) => {
+  if (!claim?.oldAcc?.id) return;
+  await Account.findOneAndUpdate(
+    { id: claim.oldAcc.id },
+    {
+      $set: {
+        type: String(claim.oldAcc.type || "unassigned"),
+        users: Array.isArray(claim.oldAcc.users) ? claim.oldAcc.users : [],
+        updatedAt: claim.oldAcc.updatedAt || new Date().toISOString(),
+      },
+    },
+  );
+};
+const fulfillStoreOrder = async (order) => {
+  const safeOrder =
+    typeof order?.toObject === "function" ? order.toObject() : { ...(order || {}) };
+  if (!safeOrder?.id) {
+    throw new Error("Don hang khong hop le");
+  }
+  if (String(safeOrder.status || "").trim().toLowerCase() === "fulfilled") {
+    return StoreOrder.findOne({ id: safeOrder.id });
+  }
+  let claim = null;
+  try {
+    if (safeOrder.packageCode === "package1") {
+      claim = await claimStorePackage1AccountForOrder({
+        order: safeOrder,
+        user: await StoreUser.findOne({ id: safeOrder.userId }).lean(),
+      });
+      await StoreOrder.findOneAndUpdate(
+        { id: safeOrder.id },
+        {
+          $set: {
+            status: "fulfilled",
+            assignedAccountId: String(claim?.updatedAcc?.id || ""),
+            assignedUsername: String(claim?.updatedAcc?.username || ""),
+            assignedType: String(claim?.updatedAcc?.type || ""),
+            assignedWarehouse: CHATGPT_TOTAL_VALUE,
+            package1AccessToken: String(claim?.package1AccessToken || ""),
+            package1MaxUsage: STORE_PACKAGE1_MAX_OTP_USES,
+            package1UsedCount: 0,
+            fulfilledAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        { new: true },
+      );
+    }
+    if (safeOrder.packageCode === "package2") {
+      claim = await claimStorePackage2AccountForOrder({
+        order: safeOrder,
+        user: await StoreUser.findOne({ id: safeOrder.userId }).lean(),
+      });
+      await StoreOrder.findOneAndUpdate(
+        { id: safeOrder.id },
+        {
+          $set: {
+            status: "fulfilled",
+            assignedAccountId: String(claim?.updatedAcc?.id || ""),
+            assignedUsername: String(claim?.updatedAcc?.username || ""),
+            assignedPassword: String(claim?.updatedAcc?.password || ""),
+            assignedOtpSecret: String(claim?.updatedAcc?.otpSecret || ""),
+            assignedLink: String(claim?.updatedAcc?.link || ""),
+            assignedType: String(claim?.updatedAcc?.type || ""),
+            assignedWarehouse: CHATGPT_TOTAL_VALUE,
+            fulfilledAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        { new: true },
+      );
+    }
+    return StoreOrder.findOne({ id: safeOrder.id });
+  } catch (error) {
+    if (claim) {
+      await rollbackStoreClaimedAccount(claim);
+    }
+    await StoreOrder.findOneAndUpdate(
+      { id: safeOrder.id },
+      {
+        $set: {
+          status: "fulfillment_failed",
+          momoMessage: error.message || "Fulfillment error",
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
+    throw error;
+  }
+};
+const createMomoPaymentForStoreOrder = async (req, order) => {
+  const partnerCode = String(process.env.MOMO_PARTNER_CODE || "").trim();
+  const accessKey = String(process.env.MOMO_ACCESS_KEY || "").trim();
+  const secretKey = String(process.env.MOMO_SECRET_KEY || "").trim();
+  if (!partnerCode || !accessKey || !secretKey) {
+    throw new Error("MoMo chua duoc cau hinh day du");
+  }
+  const requestId = createStoreId("momo");
+  const amount = String(Math.round(Number(order?.amount || 0)));
+  const orderId = String(order?.momoOrderId || order?.id || "").trim();
+  const orderInfo = `${String(order?.packageName || "").trim()} - ${String(
+    order?.id || "",
+  ).trim()}`;
+  const extraData = "";
+  const baseUrl = getAppBaseUrl(req);
+  const redirectUrl = `${baseUrl}/store?view=payment-result&orderId=${encodeURIComponent(String(order?.id || "").trim())}`;
+  const ipnUrl = `${baseUrl}/api/store/momo/ipn`;
+  const signature = buildMomoSignature({
+    accessKey,
+    amount,
+    extraData,
+    ipnUrl,
+    orderId,
+    orderInfo,
+    partnerCode,
+    redirectUrl,
+    requestId,
+    requestType: MOMO_REQUEST_TYPE,
+  });
+  const payload = {
+    partnerCode,
+    accessKey,
+    requestId,
+    amount,
+    orderId,
+    orderInfo,
+    redirectUrl,
+    ipnUrl,
+    requestType: MOMO_REQUEST_TYPE,
+    extraData,
+    lang: "vi",
+    autoCapture: true,
+    signature,
+  };
+  const response = await axios.post(MOMO_ENDPOINT, payload, {
+    timeout: 20000,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  const data = response?.data || {};
+  if (Number(data?.resultCode || 0) !== 0 || !String(data?.payUrl || "").trim()) {
+    throw new Error(
+      String(data?.message || "Khong tao duoc lien ket thanh toan MoMo"),
+    );
+  }
+  await StoreOrder.findOneAndUpdate(
+    { id: String(order?.id || "").trim() },
+    {
+      $set: {
+        momoRequestId: requestId,
+        momoPayUrl: String(data.payUrl || "").trim(),
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  );
+  return String(data.payUrl || "").trim();
 };
 const getWarrantyRequiredExpiryTime = (source = {}, customer = null) => {
   const customerExpiry = String(customer?.expiredAt || "").trim();
