@@ -1712,6 +1712,15 @@ function App() {
     }
   };
 
+  const formatMoney = (value) => {
+    const amount = Number(value || 0);
+    return new Intl.NumberFormat("vi-VN", {
+      style: "currency",
+      currency: "VND",
+      maximumFractionDigits: 0,
+    }).format(Number.isFinite(amount) ? amount : 0);
+  };
+
   // Helper to check expiry warning
   const getExpiryStatus = (isoString) => {
     if (!isoString) return { text: "", color: "text-slate-500", isExpired: false, dateStr: "" };
@@ -4191,7 +4200,7 @@ function App() {
       ? user.authProviders.includes("google")
       : false,
   ).length;
-  const storeOrdersByUserId = useMemo(() => {
+  const storeOrdersByUserId = (() => {
     const grouped = new Map();
     (storeOrders || []).forEach((order) => {
       const userId = String(order?.userId || "").trim();
@@ -4207,7 +4216,7 @@ function App() {
       });
     });
     return grouped;
-  }, [storeOrders]);
+  })();
   const paginatedChatgptMarketplaceOrders = filteredChatgptMarketplaceOrders.slice(
     (currentChatgptMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE,
     currentChatgptMarketplaceOrderPage * MARKETPLACE_ORDER_PAGE_SIZE,
@@ -4616,7 +4625,7 @@ function App() {
                           <button
                             type="button"
                             onClick={() =>
-                              handleHighlightChatgptAccount(
+                              focusChatgptAccountFromMarketplace(
                                 order.assignedAccountId,
                                 order.assignedUsername || order.id,
                               )
