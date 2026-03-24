@@ -1153,7 +1153,9 @@ const STORE_USER_JWT_SECRET =
 const MOMO_PARTNER_CODE = String(
   process.env.MOMO_PARTNER_CODE || process.env.MOMO_PARTNER_CE || "",
 ).trim();
-const MOMO_ACCESS_KEY = String(process.env.MOMO_ACCESS_KEY || "").trim();
+const MOMO_ACCESS_KEY = String(
+  process.env.MOMO_ACCESS_KEY || process.env.MOMO_ACCESS_KE || "",
+).trim();
 const MOMO_SECRET_KEY = String(process.env.MOMO_SECRET_KEY || "").trim();
 const STORE_PACKAGE1_PRICE = Math.max(
   0,
