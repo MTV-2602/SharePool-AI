@@ -525,6 +525,10 @@ const storeOrderSchema = new mongoose.Schema({
   momoResultCode: { type: Number, default: null },
   momoMessage: { type: String, default: "" },
   momoPayUrl: { type: String, default: "" },
+  expiresAt: { type: String, default: "" },
+  reservedAccountId: { type: String, default: "" },
+  reservedAccountUsername: { type: String, default: "" },
+  reservationType: { type: String, default: "" },
   assignedAccountId: { type: String, default: "" },
   assignedUsername: { type: String, default: "" },
   assignedPassword: { type: String, default: "" },
@@ -878,9 +882,7 @@ app.post("/api/store/auth/reset-password", async (req, res) => {
 
 app.get("/api/store/auth/me", verifyStoreUserToken, async (req, res) => {
   try {
-    const orders = await StoreOrder.find({ userId: req.storeUser.id })
-      .sort({ createdAt: -1 })
-      .lean();
+    const orders = await loadVisibleStoreOrdersForUser(req.storeUser.id);
     res.json({
       user: sanitizeStoreUser(req.storeUser),
       orders: orders.map((order) => sanitizeStoreOrder(order)),
@@ -892,9 +894,7 @@ app.get("/api/store/auth/me", verifyStoreUserToken, async (req, res) => {
 
 app.get("/api/store/orders", verifyStoreUserToken, async (req, res) => {
   try {
-    const orders = await StoreOrder.find({ userId: req.storeUser.id })
-      .sort({ createdAt: -1 })
-      .lean();
+    const orders = await loadVisibleStoreOrdersForUser(req.storeUser.id);
     res.json({ orders: orders.map((order) => sanitizeStoreOrder(order)) });
   } catch (error) {
     res.status(500).json({ error: error.message || "Không tải được đơn hàng" });
@@ -903,16 +903,136 @@ app.get("/api/store/orders", verifyStoreUserToken, async (req, res) => {
 
 app.get("/api/store/orders/:id", verifyStoreUserToken, async (req, res) => {
   try {
+    await expireStaleStoreOrders({ userId: req.storeUser.id });
     const order = await StoreOrder.findOne({
       id: String(req.params?.id || "").trim(),
       userId: req.storeUser.id,
     }).lean();
-    if (!order) {
+    if (
+      !order ||
+      STORE_HIDDEN_ORDER_STATUSES.has(
+        String(order?.status || "").trim().toLowerCase(),
+      )
+    ) {
       return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
     }
     res.json({ order: sanitizeStoreOrder(order) });
   } catch (error) {
     res.status(500).json({ error: error.message || "Không tải được đơn hàng" });
+  }
+});
+
+app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, next) => {
+  try {
+    const packageCode = String(req.body?.packageCode || "").trim().toLowerCase();
+    const packageConfig = STORE_PACKAGE_MAP[packageCode];
+    if (!packageConfig || packageCode === "package3") {
+      return next();
+    }
+
+    const reusableOrder = await getStoreReusablePendingOrder({
+      userId: req.storeUser.id,
+      packageCode: packageConfig.code,
+    });
+    if (reusableOrder?.id) {
+      let payUrl = String(reusableOrder.momoPayUrl || "").trim();
+      let freshOrder = reusableOrder;
+      if (!payUrl) {
+        payUrl = await createMomoPaymentForStoreOrder(req, reusableOrder);
+        freshOrder = await StoreOrder.findOneAndUpdate(
+          { id: reusableOrder.id },
+          {
+            $set: {
+              status: "awaiting_payment",
+              momoPayUrl: payUrl,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+          { new: true },
+        ).lean();
+      }
+      return res.json({
+        success: true,
+        reused: true,
+        payUrl,
+        order: sanitizeStoreOrder(freshOrder),
+      });
+    }
+
+    const stockSummary = await buildStoreCatalog();
+    const selectedStock = stockSummary.find((item) => item.code === packageCode);
+    if (!selectedStock?.purchasable) {
+      return res
+        .status(409)
+        .json({ error: "Hiá»‡n khÃ´ng Ä‘á»§ tÃ i khoáº£n phÃ¹ há»£p cho gÃ³i nÃ y" });
+    }
+
+    const reservation =
+      packageConfig.code === "package1"
+        ? await selectStorePackage1ReservationTarget()
+        : await selectStorePackage2ReservationTarget();
+    if (!reservation?.reservedAccountId) {
+      return res
+        .status(409)
+        .json({ error: "Hiá»‡n khÃ´ng Ä‘á»§ tÃ i khoáº£n phÃ¹ há»£p cho gÃ³i nÃ y" });
+    }
+
+    const nowIso = new Date().toISOString();
+    const order = await StoreOrder.create({
+      id: createStoreId("ord"),
+      userId: req.storeUser.id,
+      packageCode: packageConfig.code,
+      packageName: packageConfig.name,
+      amount: packageConfig.price,
+      status: "pending_payment",
+      momoOrderId: createStoreId("momo_order"),
+      expiresAt: getStorePaymentExpiresAtIso(),
+      reservedAccountId: reservation.reservedAccountId,
+      reservedAccountUsername: reservation.reservedAccountUsername,
+      reservationType: reservation.reservationType,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    let payUrl = "";
+    let freshOrder = null;
+    try {
+      payUrl = await createMomoPaymentForStoreOrder(req, order);
+      freshOrder = await StoreOrder.findOneAndUpdate(
+        { id: order.id },
+        {
+          $set: {
+            status: "awaiting_payment",
+            momoPayUrl: payUrl,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        { new: true },
+      ).lean();
+    } catch (paymentError) {
+      await StoreOrder.findOneAndUpdate(
+        { id: order.id },
+        {
+          $set: {
+            status: "payment_failed",
+            momoMessage:
+              paymentError.message || "KhÃ´ng táº¡o Ä‘Æ°á»£c liÃªn káº¿t thanh toÃ¡n",
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      );
+      throw paymentError;
+    }
+
+    return res.json({
+      success: true,
+      payUrl,
+      order: sanitizeStoreOrder(freshOrder),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "KhÃ´ng táº¡o Ä‘Æ°á»£c liÃªn káº¿t thanh toÃ¡n",
+    });
   }
 });
 
@@ -1174,6 +1294,11 @@ const STORE_TOTAL_MIN_DAYS = Math.max(
   Number(process.env.STORE_TOTAL_MIN_DAYS || 20),
 );
 const STORE_PACKAGE1_MAX_OTP_USES = 3;
+const STORE_PAYMENT_HOLD_MINUTES = Math.max(
+  1,
+  Number(process.env.STORE_PAYMENT_HOLD_MINUTES || 5),
+);
+const STORE_PAYMENT_HOLD_MS = STORE_PAYMENT_HOLD_MINUTES * 60 * 1000;
 const MOMO_ENDPOINT =
   process.env.MOMO_ENDPOINT || "https://test-payment.momo.vn/v2/gateway/api/create";
 const MOMO_REQUEST_TYPE = process.env.MOMO_REQUEST_TYPE || "captureWallet";
@@ -1239,6 +1364,122 @@ const buildStorePackage1UsageLeft = (order = {}) =>
     Number(order?.package1MaxUsage || STORE_PACKAGE1_MAX_OTP_USES) -
       Number(order?.package1UsedCount || 0),
   );
+const STORE_PENDING_PAYMENT_STATUSES = ["pending_payment", "awaiting_payment"];
+const STORE_HIDDEN_ORDER_STATUSES = new Set(["payment_expired"]);
+const getStorePaymentExpiresAtIso = (baseDate = new Date()) =>
+  new Date(baseDate.getTime() + STORE_PAYMENT_HOLD_MS).toISOString();
+const getStorePendingCutoffIso = (baseDate = new Date()) =>
+  new Date(baseDate.getTime() - STORE_PAYMENT_HOLD_MS).toISOString();
+const parseStoreDateMs = (value) => {
+  const ts = new Date(String(value || "").trim()).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+};
+const isStorePendingPaymentStatus = (status = "") =>
+  STORE_PENDING_PAYMENT_STATUSES.includes(
+    String(status || "").trim().toLowerCase(),
+  );
+const isStoreOrderHoldActive = (order = {}, nowMs = Date.now()) => {
+  if (!isStorePendingPaymentStatus(order?.status)) return false;
+  const expiresAtMs = parseStoreDateMs(order?.expiresAt);
+  if (expiresAtMs > 0) {
+    return expiresAtMs > nowMs;
+  }
+  const createdAtMs = parseStoreDateMs(order?.createdAt);
+  return createdAtMs > 0 && createdAtMs > nowMs - STORE_PAYMENT_HOLD_MS;
+};
+const buildStoreExpiredPendingOrderQuery = (extra = {}) => {
+  const nowIso = new Date().toISOString();
+  const cutoffIso = getStorePendingCutoffIso();
+  return {
+    ...extra,
+    status: { $in: STORE_PENDING_PAYMENT_STATUSES },
+    $or: [
+      { expiresAt: { $lte: nowIso, $ne: "" } },
+      {
+        $and: [
+          {
+            $or: [
+              { expiresAt: "" },
+              { expiresAt: null },
+              { expiresAt: { $exists: false } },
+            ],
+          },
+          { createdAt: { $lte: cutoffIso } },
+        ],
+      },
+    ],
+  };
+};
+const buildStoreActivePendingOrderQuery = (extra = {}) => {
+  const nowIso = new Date().toISOString();
+  const cutoffIso = getStorePendingCutoffIso();
+  return {
+    ...extra,
+    status: { $in: STORE_PENDING_PAYMENT_STATUSES },
+    $or: [
+      { expiresAt: { $gt: nowIso } },
+      {
+        $and: [
+          {
+            $or: [
+              { expiresAt: "" },
+              { expiresAt: null },
+              { expiresAt: { $exists: false } },
+            ],
+          },
+          { createdAt: { $gt: cutoffIso } },
+        ],
+      },
+    ],
+  };
+};
+const expireStaleStoreOrders = async (extra = {}) => {
+  const nowIso = new Date().toISOString();
+  await StoreOrder.updateMany(buildStoreExpiredPendingOrderQuery(extra), {
+    $set: {
+      status: "payment_expired",
+      momoMessage: `Đã hết hạn thanh toán sau ${STORE_PAYMENT_HOLD_MINUTES} phút`,
+      momoPayUrl: "",
+      updatedAt: nowIso,
+    },
+  });
+};
+const loadVisibleStoreOrdersForUser = async (userId) => {
+  await expireStaleStoreOrders({ userId });
+  return StoreOrder.find({
+    userId,
+    status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+};
+const buildStoreReservationSnapshot = async ({ excludeOrderId = "" } = {}) => {
+  const activeOrders = await StoreOrder.find(
+    buildStoreActivePendingOrderQuery({
+      reservedAccountId: { $ne: "" },
+    }),
+  )
+    .select("id reservedAccountId reservationType")
+    .lean();
+  const reservedAccountIds = new Set();
+  const package1ExistingCounts = new Map();
+  activeOrders.forEach((order) => {
+    if (excludeOrderId && String(order?.id || "").trim() === excludeOrderId) return;
+    const reservedId = String(order?.reservedAccountId || "").trim();
+    if (!reservedId) return;
+    reservedAccountIds.add(reservedId);
+    if (String(order?.reservationType || "").trim() === "package1_existing") {
+      package1ExistingCounts.set(
+        reservedId,
+        Number(package1ExistingCounts.get(reservedId) || 0) + 1,
+      );
+    }
+  });
+  return {
+    reservedAccountIds,
+    package1ExistingCounts,
+  };
+};
 const sanitizeStoreOrder = (order) => {
   if (!order) return null;
   const packageCode = String(order.packageCode || "");
@@ -1257,6 +1498,8 @@ const sanitizeStoreOrder = (order) => {
         ? null
         : Number(order.momoResultCode),
     momoMessage: String(order.momoMessage || ""),
+    momoPayUrl: String(order.momoPayUrl || ""),
+    expiresAt: String(order.expiresAt || ""),
     createdAt: String(order.createdAt || ""),
     updatedAt: String(order.updatedAt || ""),
     paidAt: String(order.paidAt || ""),
@@ -2444,23 +2687,123 @@ const getBusyChatgptAccountIdsForStoreOrders = async () => {
   });
   return Array.from(ids);
 };
+const getStoreReusablePendingOrder = async ({ userId, packageCode }) => {
+  await expireStaleStoreOrders({ userId });
+  return StoreOrder.findOne(
+    buildStoreActivePendingOrderQuery({
+      userId,
+      packageCode,
+    }),
+  )
+    .sort({ createdAt: -1, id: -1 })
+    .lean();
+};
+const findStorePackage1ExistingTarget = async ({
+  excludeAccountIds = [],
+  reservationSnapshot = null,
+} = {}) => {
+  const accounts = await Account.find(
+    buildStorePackage1ExistingFilter(excludeAccountIds),
+  )
+    .sort({ createdAt: 1, id: 1 })
+    .select("id username users createdAt")
+    .lean();
+  const reservedCounts = reservationSnapshot?.package1ExistingCounts || new Map();
+  for (const account of accounts) {
+    const usedSlots = Array.isArray(account?.users) ? account.users.length : 0;
+    const reservedSlots = Number(reservedCounts.get(String(account?.id || "").trim()) || 0);
+    if (Math.max(0, 3 - usedSlots - reservedSlots) > 0) {
+      return account;
+    }
+  }
+  return null;
+};
+const findStoreConvertibleTarget = async ({ excludeAccountIds = [] } = {}) =>
+  Account.findOne(
+    buildStorePackage2ConvertibleFilter(excludeAccountIds),
+  )
+    .sort({ createdAt: 1, id: 1 })
+    .select("id username createdAt")
+    .lean();
+const selectStorePackage1ReservationTarget = async ({ excludeOrderId = "" } = {}) => {
+  const [busyIds, reservationSnapshot] = await Promise.all([
+    getBusyChatgptAccountIdsForStoreOrders(),
+    buildStoreReservationSnapshot({ excludeOrderId }),
+  ]);
+  const existingTarget = await findStorePackage1ExistingTarget({
+    excludeAccountIds: busyIds,
+    reservationSnapshot,
+  });
+  if (existingTarget?.id) {
+    return {
+      reservationType: "package1_existing",
+      reservedAccountId: String(existingTarget.id || "").trim(),
+      reservedAccountUsername: String(existingTarget.username || "").trim(),
+    };
+  }
+  const convertibleTarget = await findStoreConvertibleTarget({
+    excludeAccountIds: [...new Set([...busyIds, ...Array.from(reservationSnapshot.reservedAccountIds)])],
+  });
+  if (convertibleTarget?.id) {
+    return {
+      reservationType: "package1_convertible",
+      reservedAccountId: String(convertibleTarget.id || "").trim(),
+      reservedAccountUsername: String(convertibleTarget.username || "").trim(),
+    };
+  }
+  return null;
+};
+const selectStorePackage2ReservationTarget = async ({ excludeOrderId = "" } = {}) => {
+  const [busyIds, reservationSnapshot] = await Promise.all([
+    getBusyChatgptAccountIdsForStoreOrders(),
+    buildStoreReservationSnapshot({ excludeOrderId }),
+  ]);
+  const convertibleTarget = await findStoreConvertibleTarget({
+    excludeAccountIds: [...new Set([...busyIds, ...Array.from(reservationSnapshot.reservedAccountIds)])],
+  });
+  if (!convertibleTarget?.id) return null;
+  return {
+    reservationType: "package2_convertible",
+    reservedAccountId: String(convertibleTarget.id || "").trim(),
+    reservedAccountUsername: String(convertibleTarget.username || "").trim(),
+  };
+};
 const countStorePackage1Stock = async () => {
-  const excludeIds = await getBusyChatgptAccountIdsForStoreOrders();
+  const [excludeIds, reservationSnapshot] = await Promise.all([
+    getBusyChatgptAccountIdsForStoreOrders(),
+    buildStoreReservationSnapshot(),
+  ]);
   const [sharedAccounts, convertibleCount] = await Promise.all([
     Account.find(buildStorePackage1ExistingFilter(excludeIds))
-      .select("users")
+      .select("id users")
       .lean(),
-    Account.countDocuments(buildStorePackage1ConvertibleFilter(excludeIds)),
+    Account.countDocuments(
+      buildStorePackage1ConvertibleFilter([
+        ...new Set([...excludeIds, ...Array.from(reservationSnapshot.reservedAccountIds)]),
+      ]),
+    ),
   ]);
   const freeSharedSlots = sharedAccounts.reduce((sum, acc) => {
     const used = Array.isArray(acc?.users) ? acc.users.length : 0;
-    return sum + Math.max(0, 3 - used);
+    const reserved = Number(
+      reservationSnapshot.package1ExistingCounts.get(
+        String(acc?.id || "").trim(),
+      ) || 0,
+    );
+    return sum + Math.max(0, 3 - used - reserved);
   }, 0);
   return freeSharedSlots + convertibleCount * 3;
 };
 const countStorePackage2Stock = async () => {
-  const excludeIds = await getBusyChatgptAccountIdsForStoreOrders();
-  return Account.countDocuments(buildStorePackage2ConvertibleFilter(excludeIds));
+  const [excludeIds, reservationSnapshot] = await Promise.all([
+    getBusyChatgptAccountIdsForStoreOrders(),
+    buildStoreReservationSnapshot(),
+  ]);
+  return Account.countDocuments(
+    buildStorePackage2ConvertibleFilter([
+      ...new Set([...excludeIds, ...Array.from(reservationSnapshot.reservedAccountIds)]),
+    ]),
+  );
 };
 const buildStoreCatalog = async () => {
   const [package1Stock, package2Stock] = await Promise.all([
@@ -2486,23 +2829,24 @@ const buildStoreCatalog = async () => {
   ];
 };
 const claimStorePackage1AccountForOrder = async ({ order, user }) => {
-  const excludeIds = await getBusyChatgptAccountIdsForStoreOrders();
   const customer = buildStoreCustomerRecord(user);
-  let oldAcc = await Account.findOneAndUpdate(
-    buildStorePackage1ExistingFilter(excludeIds),
-    {
-      $push: { users: customer },
-      $set: { updatedAt: new Date().toISOString() },
-    },
-    {
-      sort: { createdAt: 1, id: 1 },
-      new: false,
-    },
-  );
+  const reservedAccountId = String(order?.reservedAccountId || "").trim();
+  const reservationType = String(order?.reservationType || "").trim();
+  let oldAcc = null;
   let convertedFromUnassigned = false;
-  if (!oldAcc) {
+  if (reservedAccountId && reservationType === "package1_existing") {
     oldAcc = await Account.findOneAndUpdate(
-      buildStorePackage1ConvertibleFilter(excludeIds),
+      { id: reservedAccountId, ...buildStorePackage1ExistingFilter() },
+      {
+        $push: { users: customer },
+        $set: { updatedAt: new Date().toISOString() },
+      },
+      { new: false },
+    );
+  }
+  if (reservedAccountId && reservationType === "package1_convertible" && !oldAcc) {
+    oldAcc = await Account.findOneAndUpdate(
+      { id: reservedAccountId, ...buildStorePackage1ConvertibleFilter() },
       {
         $set: {
           type: "package1",
@@ -2510,12 +2854,45 @@ const claimStorePackage1AccountForOrder = async ({ order, user }) => {
           updatedAt: new Date().toISOString(),
         },
       },
-      {
-        sort: { createdAt: 1, id: 1 },
-        new: false,
-      },
+      { new: false },
     );
     convertedFromUnassigned = !!oldAcc;
+  }
+  if (!oldAcc) {
+    const fallbackTarget = await selectStorePackage1ReservationTarget({
+      excludeOrderId: String(order?.id || "").trim(),
+    });
+    if (
+      fallbackTarget?.reservedAccountId &&
+      fallbackTarget.reservationType === "package1_existing"
+    ) {
+      oldAcc = await Account.findOneAndUpdate(
+        { id: fallbackTarget.reservedAccountId, ...buildStorePackage1ExistingFilter() },
+        {
+          $push: { users: customer },
+          $set: { updatedAt: new Date().toISOString() },
+        },
+        { new: false },
+      );
+    }
+    if (
+      fallbackTarget?.reservedAccountId &&
+      fallbackTarget.reservationType === "package1_convertible" &&
+      !oldAcc
+    ) {
+      oldAcc = await Account.findOneAndUpdate(
+        { id: fallbackTarget.reservedAccountId, ...buildStorePackage1ConvertibleFilter() },
+        {
+          $set: {
+            type: "package1",
+            users: [customer],
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        { new: false },
+      );
+      convertedFromUnassigned = !!oldAcc;
+    }
   }
   if (!oldAcc) {
     const error = new Error(
@@ -2534,22 +2911,40 @@ const claimStorePackage1AccountForOrder = async ({ order, user }) => {
   };
 };
 const claimStorePackage2AccountForOrder = async ({ order, user }) => {
-  const excludeIds = await getBusyChatgptAccountIdsForStoreOrders();
   const customer = buildStoreCustomerRecord(user);
-  const oldAcc = await Account.findOneAndUpdate(
-    buildStorePackage2ConvertibleFilter(excludeIds),
-    {
-      $set: {
-        type: "package2",
-        users: [customer],
-        updatedAt: new Date().toISOString(),
+  const reservedAccountId = String(order?.reservedAccountId || "").trim();
+  let oldAcc = null;
+  if (reservedAccountId) {
+    oldAcc = await Account.findOneAndUpdate(
+      { id: reservedAccountId, ...buildStorePackage2ConvertibleFilter() },
+      {
+        $set: {
+          type: "package2",
+          users: [customer],
+          updatedAt: new Date().toISOString(),
+        },
       },
-    },
-    {
-      sort: { createdAt: 1, id: 1 },
-      new: false,
-    },
-  );
+      { new: false },
+    );
+  }
+  if (!oldAcc) {
+    const fallbackTarget = await selectStorePackage2ReservationTarget({
+      excludeOrderId: String(order?.id || "").trim(),
+    });
+    if (fallbackTarget?.reservedAccountId) {
+      oldAcc = await Account.findOneAndUpdate(
+        { id: fallbackTarget.reservedAccountId, ...buildStorePackage2ConvertibleFilter() },
+        {
+          $set: {
+            type: "package2",
+            users: [customer],
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        { new: false },
+      );
+    }
+  }
   if (!oldAcc) {
     const error = new Error("Kho tổng Gói 2 hiện không còn nick mới phù hợp");
     error.statusCode = 409;

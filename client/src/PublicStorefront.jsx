@@ -78,10 +78,15 @@ const formatStatusLabel = (status) => {
   if (normalized === "paid") return "Đã thanh toán";
   if (normalized === "awaiting_payment") return "Chờ thanh toán";
   if (normalized === "payment_failed") return "Thanh toán thất bại";
+  if (normalized === "payment_expired") return "Hết hạn thanh toán";
   if (normalized === "fulfillment_failed") return "Cần xử lý thủ công";
   if (normalized === "pending_payment") return "Đang tạo thanh toán";
   return normalized || "Mới";
 };
+const isPendingStorePayment = (status) =>
+  ["pending_payment", "awaiting_payment"].includes(
+    String(status || "").trim().toLowerCase(),
+  );
 
 const packageFeatureMap = {
   package1: [
@@ -742,11 +747,27 @@ function PublicStorefront() {
               </div>
               <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-100">{formatStatusLabel(order.status)}</span>
             </div>
-            <div className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-3">
+            <div className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-4">
               <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">Giá tiền</p><p className="mt-1 font-semibold text-white">{formatMoney(order.amount)}</p></div>
               <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">MoMo order</p><p className="mt-1 font-semibold text-white">{order.momoOrderId || "--"}</p></div>
               <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">Trạng thái MoMo</p><p className="mt-1 font-semibold text-white">{order.momoMessage || "--"}</p></div>
+              <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">Hạn thanh toán</p><p className="mt-1 font-semibold text-white">{order.expiresAt ? formatDateTime(order.expiresAt) : "--"}</p></div>
             </div>
+            {isPendingStorePayment(order.status) ? (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <p className="text-sm text-amber-200">
+                  Nick đang được giữ riêng cho đơn này đến {order.expiresAt ? formatDateTime(order.expiresAt) : "--"}.
+                </p>
+                {order.momoPayUrl ? (
+                  <a
+                    href={order.momoPayUrl}
+                    className="inline-flex items-center rounded-2xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    Tiếp tục thanh toán
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
             {order.packageCode === "package1" && order.status === "fulfilled" ? renderPackage1Order(order) : null}
             {order.packageCode === "package2" && order.status === "fulfilled" ? renderPackage2Order(order) : null}
           </div>
