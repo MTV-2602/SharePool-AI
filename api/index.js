@@ -1713,6 +1713,7 @@ const sanitizeStoreOrderForAdmin = (order, user = null) => {
 const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
   const map = new Map();
   const safeOrders = Array.isArray(orders) ? orders : [];
+  const safeUserMap = userMap instanceof Map ? userMap : new Map();
   const sortedOrders = [...safeOrders].sort((a, b) => {
     const leftTs = parseStoreDateMs(
       a?.updatedAt || a?.fulfilledAt || a?.paidAt || a?.createdAt,
@@ -1747,7 +1748,7 @@ const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
   };
 
   sortedOrders.forEach((order) => {
-    const user = userMap.get(String(order?.userId || "").trim()) || null;
+    const user = safeUserMap.get(String(order?.userId || "").trim()) || null;
     const status = normalizeStoreOrderStatusValue(order?.status);
     const packageCode = String(order?.packageCode || "").trim();
     const packageName = String(
@@ -4179,7 +4180,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
       datammoOrders,
       datammoWarrantyCases,
       rawStoreOrders,
-      allStoreOrders,
+      traceableStoreOrders,
       storeUsers,
       storeUserOrderStats,
     ] = await Promise.all([
@@ -4196,7 +4197,21 @@ app.get("/api/data", verifyToken, async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(100)
         .lean(),
-      StoreOrder.find({}).sort({ updatedAt: -1, createdAt: -1 }).lean(),
+      // Only pull store orders that are still attached to an account for admin
+      // diagnostics so trace rendering cannot overload /api/data.
+      StoreOrder.find({
+        status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+        $or: [
+          { assignedAccountId: { $exists: true, $nin: ["", null] } },
+          { reservedAccountId: { $exists: true, $nin: ["", null] } },
+        ],
+      })
+        .select(
+          "id status packageCode packageName userId momoOrderId createdAt paidAt fulfilledAt expiresAt assignedAccountId reservedAccountId updatedAt",
+        )
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .limit(500)
+        .lean(),
       StoreUser.find({})
         .select("id fullName email phone authProviders googleId passwordHash createdAt updatedAt")
         .lean(),
@@ -4240,14 +4255,20 @@ app.get("/api/data", verifyToken, async (req, res) => {
         },
       ]),
     );
-    const storeAccountTraceMap = buildStoreAccountTraceMap(
-      allStoreOrders,
-      storeUserMap,
-    );
-    const marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
-      datammoOrders,
-      datammoWarrantyCases,
-    );
+    let storeAccountTraceMap = new Map();
+    let marketplaceAccountTraceMap = new Map();
+    try {
+      storeAccountTraceMap = buildStoreAccountTraceMap(
+        traceableStoreOrders,
+        storeUserMap,
+      );
+      marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
+        datammoOrders,
+        datammoWarrantyCases,
+      );
+    } catch (traceError) {
+      console.error("Trace diagnostic build failed:", traceError);
+    }
     res.json({
       chatgpt: accounts.map((acc) => ({
         ...acc,
