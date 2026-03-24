@@ -3380,12 +3380,18 @@ function App() {
                     <LogIn size={16} /> Đăng Nhập
                   </button>
                 </form>
+                <a
+                  href="/store"
+                  className="mt-3 block w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-center text-sm font-bold text-white transition-colors hover:bg-emerald-500"
+                >
+                  Đăng ký user / Mua nick
+                </a>
                 {alertInfo.show && (
                   <div className={`mt-3 p-2 rounded text-center text-xs font-bold ${alertInfo.type === "error" ? "bg-red-900/50 text-red-400" : "bg-green-900/50 text-green-400"}`}>
                     {alertInfo.message}
                   </div>
                 )}
-                <p className="text-center text-slate-600 text-xs mt-4">Admin vào quản trị, user sẽ tự chuyển sang trang mua nick</p>
+                <p className="text-center text-slate-600 text-xs mt-4">Chưa có tài khoản user thì bấm nút xanh để sang trang đăng ký và mua nick</p>
               </div>
             </div>
           </div>
