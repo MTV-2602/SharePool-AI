@@ -511,6 +511,21 @@ const StoreUser =
   mongoose.models.StoreUser ||
   mongoose.model("StoreUser", storeUserSchema, "store_users");
 
+const storeWarrantyRoundSchema = new mongoose.Schema(
+  {
+    sequence: { type: Number, default: 1 },
+    fromAccountId: { type: String, default: "" },
+    fromUsername: { type: String, default: "" },
+    fromType: { type: String, default: "" },
+    toAccountId: { type: String, default: "" },
+    toUsername: { type: String, default: "" },
+    toType: { type: String, default: "" },
+    reason: { type: String, default: "" },
+    createdAt: { type: String, default: () => new Date().toISOString() },
+  },
+  { _id: false },
+);
+
 const storeOrderSchema = new mongoose.Schema({
   id: { type: String, unique: true },
   userId: { type: String, required: true, index: true },
@@ -539,6 +554,9 @@ const storeOrderSchema = new mongoose.Schema({
   assignedCustomerName: { type: String, default: "" },
   assignedCustomerJoinedAt: { type: String, default: "" },
   assignedCustomerExpiredAt: { type: String, default: "" },
+  rootAssignedAccountId: { type: String, default: "" },
+  rootAssignedUsername: { type: String, default: "" },
+  warrantyRounds: { type: [storeWarrantyRoundSchema], default: [] },
   package1AccessToken: { type: String, default: "" },
   package1MaxUsage: { type: Number, default: 3 },
   package1UsedCount: { type: Number, default: 0 },
@@ -1442,6 +1460,8 @@ const STORE_IMMEDIATE_DELETE_ORDER_STATUSES = [
 ];
 const STORE_PRUNABLE_ORDER_STATUSES = ["fulfillment_failed"];
 const STORE_FAILED_ORDER_RETENTION_MS = 24 * 60 * 60 * 1000;
+const STORE_WARRANTY_HOLD_NOTE_PREFIX = "[StoreWarrantyHold";
+const STORE_WARRANTY_HOLD_NOTE_REGEX = /\[StoreWarrantyHold\b/i;
 const normalizeStoreOrderStatusValue = (value = "") =>
   String(value || "").trim().toLowerCase();
 const isStoreFailedLikeStatus = (status = "") => {
@@ -1457,6 +1477,43 @@ const getStorePendingCutoffIso = (baseDate = new Date()) =>
   new Date(baseDate.getTime() - STORE_PAYMENT_HOLD_MS).toISOString();
 const getStoreFailedOrderCleanupCutoffIso = (baseDate = new Date()) =>
   new Date(baseDate.getTime() - STORE_FAILED_ORDER_RETENTION_MS).toISOString();
+const hasStoreWarrantyHoldNote = (note = "") =>
+  STORE_WARRANTY_HOLD_NOTE_REGEX.test(String(note || "").trim());
+const appendStoreWarrantyHoldNote = (
+  note = "",
+  orderId = "",
+  createdAt = new Date().toISOString(),
+) => {
+  const currentNote = String(note || "").trim();
+  const normalizedOrderId = String(orderId || "").trim();
+  if (!normalizedOrderId) return currentNote;
+  if (
+    currentNote.includes(STORE_WARRANTY_HOLD_NOTE_PREFIX) &&
+    currentNote.includes(`order=${normalizedOrderId}`)
+  ) {
+    return currentNote;
+  }
+  const marker = `${STORE_WARRANTY_HOLD_NOTE_PREFIX} order=${normalizedOrderId} at=${String(
+    createdAt || new Date().toISOString(),
+  ).trim()}]`;
+  return currentNote ? `${currentNote}\n${marker}` : marker;
+};
+const removeStoreWarrantyHoldNote = (note = "", orderId = "") => {
+  const currentNote = String(note || "").trim();
+  if (!currentNote) return "";
+  const normalizedOrderId = String(orderId || "").trim();
+  return currentNote
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => {
+      if (!STORE_WARRANTY_HOLD_NOTE_REGEX.test(line)) return true;
+      if (!normalizedOrderId) return false;
+      return !line.includes(`order=${normalizedOrderId}`);
+    })
+    .join("\n")
+    .trim();
+};
 const parseStoreDateMs = (value) => {
   const ts = new Date(String(value || "").trim()).getTime();
   return Number.isFinite(ts) ? ts : 0;
@@ -1627,6 +1684,17 @@ const buildStoreReservationSnapshot = async ({ excludeOrderId = "" } = {}) => {
 const sanitizeStoreOrder = (order) => {
   if (!order) return null;
   const packageCode = String(order.packageCode || "");
+  const warrantyRounds = Array.isArray(order?.warrantyRounds)
+    ? order.warrantyRounds
+        .map((round) => ({
+          sequence: Number(round?.sequence || 0),
+          fromUsername: String(round?.fromUsername || "").trim(),
+          toUsername: String(round?.toUsername || "").trim(),
+          reason: String(round?.reason || "").trim(),
+          createdAt: String(round?.createdAt || "").trim(),
+        }))
+        .filter((round) => round.sequence > 0)
+    : [];
   const base = {
     id: String(order.id || ""),
     packageCode,
@@ -1648,6 +1716,8 @@ const sanitizeStoreOrder = (order) => {
     updatedAt: String(order.updatedAt || ""),
     paidAt: String(order.paidAt || ""),
     fulfilledAt: String(order.fulfilledAt || ""),
+    warrantyCount: warrantyRounds.length,
+    warrantyRounds,
   };
   if (packageCode === "package1") {
     return {
@@ -1681,6 +1751,21 @@ const sanitizeStoreOrder = (order) => {
 const sanitizeStoreOrderForAdmin = (order, user = null) => {
   if (!order) return null;
   const packageCode = String(order.packageCode || "").trim();
+  const warrantyRounds = Array.isArray(order?.warrantyRounds)
+    ? order.warrantyRounds
+        .map((round) => ({
+          sequence: Number(round?.sequence || 0),
+          fromAccountId: String(round?.fromAccountId || "").trim(),
+          fromUsername: String(round?.fromUsername || "").trim(),
+          fromType: String(round?.fromType || "").trim(),
+          toAccountId: String(round?.toAccountId || "").trim(),
+          toUsername: String(round?.toUsername || "").trim(),
+          toType: String(round?.toType || "").trim(),
+          reason: String(round?.reason || "").trim(),
+          createdAt: String(round?.createdAt || "").trim(),
+        }))
+        .filter((round) => round.sequence > 0)
+    : [];
   return {
     id: String(order.id || "").trim(),
     userId: String(order.userId || "").trim(),
@@ -1708,6 +1793,10 @@ const sanitizeStoreOrderForAdmin = (order, user = null) => {
     assignedCustomerName: String(order.assignedCustomerName || "").trim(),
     assignedCustomerJoinedAt: String(order.assignedCustomerJoinedAt || "").trim(),
     assignedCustomerExpiredAt: String(order.assignedCustomerExpiredAt || "").trim(),
+    rootAssignedAccountId: String(order.rootAssignedAccountId || "").trim(),
+    rootAssignedUsername: String(order.rootAssignedUsername || "").trim(),
+    warrantyRounds,
+    warrantyCount: warrantyRounds.length,
     package1AccessToken: String(order.package1AccessToken || "").trim(),
     package1MaxUsage: Number(order.package1MaxUsage || STORE_PACKAGE1_MAX_OTP_USES),
     package1UsedCount: Number(order.package1UsedCount || 0),
@@ -1739,6 +1828,7 @@ const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
         totalOrders: 0,
         assignedOrders: 0,
         reservedOrders: 0,
+        warrantyOrders: 0,
         pendingOrders: 0,
         fulfilledOrders: 0,
         failedOrders: 0,
@@ -1776,6 +1866,7 @@ const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
     };
     const assignedAccountId = String(order?.assignedAccountId || "").trim();
     const reservedAccountId = String(order?.reservedAccountId || "").trim();
+    const rootAccountId = String(order?.rootAssignedAccountId || "").trim();
     const targets = [];
     if (assignedAccountId) {
       targets.push({ accountId: assignedAccountId, role: "assigned" });
@@ -1783,6 +1874,29 @@ const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
     if (reservedAccountId && reservedAccountId !== assignedAccountId) {
       targets.push({ accountId: reservedAccountId, role: "reserved" });
     }
+    if (
+      rootAccountId &&
+      rootAccountId !== assignedAccountId &&
+      rootAccountId !== reservedAccountId
+    ) {
+      targets.push({ accountId: rootAccountId, role: "root" });
+    }
+    (Array.isArray(order?.warrantyRounds) ? order.warrantyRounds : []).forEach((round) => {
+      const fromId = String(round?.fromAccountId || "").trim();
+      const toId = String(round?.toAccountId || "").trim();
+      if (
+        fromId &&
+        !targets.some((target) => target.accountId === fromId && target.role === "warranty_from")
+      ) {
+        targets.push({ accountId: fromId, role: "warranty_from" });
+      }
+      if (
+        toId &&
+        !targets.some((target) => target.accountId === toId && target.role === "warranty_to")
+      ) {
+        targets.push({ accountId: toId, role: "warranty_to" });
+      }
+    });
 
     targets.forEach((target) => {
       const summary = touchSummary(target.accountId);
@@ -1790,8 +1904,10 @@ const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
       summary.totalOrders += 1;
       if (target.role === "assigned") {
         summary.assignedOrders += 1;
-      } else {
+      } else if (target.role === "reserved") {
         summary.reservedOrders += 1;
+      } else {
+        summary.warrantyOrders += 1;
       }
       if (status === "fulfilled") {
         summary.fulfilledOrders += 1;
@@ -1904,7 +2020,13 @@ const buildChatgptAccountAdminDiagnostics = async (accountId = "") => {
     await Promise.all([
       Account.findOne({ id: normalizedId }).lean(),
       StoreOrder.find({
-        $or: [{ assignedAccountId: normalizedId }, { reservedAccountId: normalizedId }],
+        $or: [
+          { assignedAccountId: normalizedId },
+          { reservedAccountId: normalizedId },
+          { rootAssignedAccountId: normalizedId },
+          { "warrantyRounds.fromAccountId": normalizedId },
+          { "warrantyRounds.toAccountId": normalizedId },
+        ],
       })
         .sort({ updatedAt: -1, createdAt: -1 })
         .lean(),
@@ -1947,6 +2069,10 @@ const buildChatgptAccountAdminDiagnostics = async (accountId = "") => {
       reservationType: String(order?.reservationType || "").trim(),
       reservedAccountId: String(order?.reservedAccountId || "").trim(),
       assignedAccountId: String(order?.assignedAccountId || "").trim(),
+      rootAssignedAccountId: String(order?.rootAssignedAccountId || "").trim(),
+      warrantyCount: Array.isArray(order?.warrantyRounds)
+        ? order.warrantyRounds.length
+        : 0,
     })),
     marketplaceOrders: (Array.isArray(marketplaceOrders) ? marketplaceOrders : []).map(
       (order) => ({
@@ -3073,11 +3199,47 @@ const buildStoreCustomerRecord = (user, joinedAt = new Date()) => {
     expiredAt: expiredAt.toISOString(),
   };
 };
+const buildStoreCustomerRecordFromOrder = (order = {}, storeUser = null) => {
+  const joinedAtRaw = String(
+    order?.assignedCustomerJoinedAt ||
+      order?.fulfilledAt ||
+      order?.paidAt ||
+      order?.createdAt ||
+      new Date().toISOString(),
+  ).trim();
+  const joinedDate = new Date(joinedAtRaw || new Date());
+  const expiredAtRaw = String(order?.assignedCustomerExpiredAt || "").trim();
+  const expiredDate = expiredAtRaw
+    ? new Date(expiredAtRaw)
+    : addDurationToDate(joinedDate, "1M");
+  return {
+    name: String(
+      order?.assignedCustomerName ||
+        storeUser?.fullName ||
+        storeUser?.email ||
+        "Khách",
+    ).trim(),
+    joinedAt: joinedDate.toISOString(),
+    expiredAt: expiredDate.toISOString(),
+  };
+};
+const getStoreWarrantyRelatedAccountIds = (order = {}) => {
+  const ids = new Set();
+  ids.add(String(order?.reservedAccountId || "").trim());
+  ids.add(String(order?.assignedAccountId || "").trim());
+  ids.add(String(order?.rootAssignedAccountId || "").trim());
+  (Array.isArray(order?.warrantyRounds) ? order.warrantyRounds : []).forEach((round) => {
+    ids.add(String(round?.fromAccountId || "").trim());
+    ids.add(String(round?.toAccountId || "").trim());
+  });
+  return Array.from(ids).filter(Boolean);
+};
 const buildStoreTotalMinExpiredAtIso = () =>
   new Date(Date.now() + STORE_TOTAL_MIN_DAYS * 24 * 60 * 60 * 1000).toISOString();
 const buildStorePackage1ExistingFilter = (excludeIds = []) => ({
   type: "package1",
   package2Shelf: CHATGPT_TOTAL_VALUE,
+  note: { $not: STORE_WARRANTY_HOLD_NOTE_REGEX },
   expiredAt: { $gt: buildStoreTotalMinExpiredAtIso() },
   ...(Array.isArray(excludeIds) && excludeIds.length > 0
     ? { id: { $nin: excludeIds } }
@@ -3089,6 +3251,7 @@ const buildStorePackage1ExistingFilter = (excludeIds = []) => ({
 const buildStorePackage1ConvertibleFilter = (excludeIds = []) => ({
   type: "unassigned",
   package2Shelf: CHATGPT_TOTAL_VALUE,
+  note: { $not: STORE_WARRANTY_HOLD_NOTE_REGEX },
   expiredAt: { $gt: buildStoreTotalMinExpiredAtIso() },
   ...(Array.isArray(excludeIds) && excludeIds.length > 0
     ? { id: { $nin: excludeIds } }
@@ -3100,6 +3263,19 @@ const buildStorePackage1ConvertibleFilter = (excludeIds = []) => ({
 const buildStorePackage2ConvertibleFilter = (excludeIds = []) => ({
   type: "unassigned",
   package2Shelf: CHATGPT_TOTAL_VALUE,
+  note: { $not: STORE_WARRANTY_HOLD_NOTE_REGEX },
+  expiredAt: { $gt: buildStoreTotalMinExpiredAtIso() },
+  ...(Array.isArray(excludeIds) && excludeIds.length > 0
+    ? { id: { $nin: excludeIds } }
+    : {}),
+  $expr: {
+    $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
+  },
+});
+const buildStorePackage2ExistingReplacementFilter = (excludeIds = []) => ({
+  type: "package2",
+  package2Shelf: CHATGPT_TOTAL_VALUE,
+  note: { $not: STORE_WARRANTY_HOLD_NOTE_REGEX },
   expiredAt: { $gt: buildStoreTotalMinExpiredAtIso() },
   ...(Array.isArray(excludeIds) && excludeIds.length > 0
     ? { id: { $nin: excludeIds } }
@@ -4187,7 +4363,6 @@ app.get("/api/data", verifyToken, async (req, res) => {
       datammoOrders,
       datammoWarrantyCases,
       rawStoreOrders,
-      traceableStoreOrders,
       storeUsers,
       storeUserOrderStats,
     ] = await Promise.all([
@@ -4203,21 +4378,6 @@ app.get("/api/data", verifyToken, async (req, res) => {
       })
         .sort({ createdAt: -1 })
         .limit(100)
-        .lean(),
-      // Only pull store orders that are still attached to an account for admin
-      // diagnostics so trace rendering cannot overload /api/data.
-      StoreOrder.find({
-        status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
-        $or: [
-          { assignedAccountId: { $exists: true, $nin: ["", null] } },
-          { reservedAccountId: { $exists: true, $nin: ["", null] } },
-        ],
-      })
-        .select(
-          "id status packageCode packageName userId momoOrderId createdAt paidAt fulfilledAt expiresAt assignedAccountId reservedAccountId updatedAt",
-        )
-        .sort({ updatedAt: -1, createdAt: -1 })
-        .limit(500)
         .lean(),
       StoreUser.find({})
         .select("id fullName email phone authProviders googleId passwordHash createdAt updatedAt")
@@ -4262,13 +4422,8 @@ app.get("/api/data", verifyToken, async (req, res) => {
         },
       ]),
     );
-    let storeAccountTraceMap = new Map();
     let marketplaceAccountTraceMap = new Map();
     try {
-      storeAccountTraceMap = buildStoreAccountTraceMap(
-        traceableStoreOrders,
-        storeUserMap,
-      );
       marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
         datammoOrders,
         datammoWarrantyCases,
@@ -4283,8 +4438,6 @@ app.get("/api/data", verifyToken, async (req, res) => {
           acc?.package2Shelf,
           CHATGPT_TOTAL_VALUE,
         ),
-        storeTraceSummary:
-          storeAccountTraceMap.get(String(acc?.id || "").trim()) || null,
         marketplaceTraceSummary:
           marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) || null,
       })),
