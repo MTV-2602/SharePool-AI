@@ -74,29 +74,33 @@ const formatDateTime = (value) => {
 
 const formatStatusLabel = (status) => {
   const normalized = String(status || "").trim().toLowerCase();
-  if (normalized === "fulfilled") return "Da giao";
-  if (normalized === "paid") return "Da thanh toan";
-  if (normalized === "awaiting_payment") return "Cho thanh toan";
-  if (normalized === "payment_failed") return "Thanh toan that bai";
-  if (normalized === "fulfillment_failed") return "Can xu ly thu cong";
-  if (normalized === "pending_payment") return "Dang tao thanh toan";
-  return normalized || "Moi";
+  if (normalized === "fulfilled") return "Đã giao";
+  if (normalized === "paid") return "Đã thanh toán";
+  if (normalized === "awaiting_payment") return "Chờ thanh toán";
+  if (normalized === "payment_failed") return "Thanh toán thất bại";
+  if (normalized === "fulfillment_failed") return "Cần xử lý thủ công";
+  if (normalized === "pending_payment") return "Đang tạo thanh toán";
+  return normalized || "Mới";
 };
 
 const packageFeatureMap = {
   package1: [
-    "Nhan ma bi mat rieng",
-    "Lay OTP toi da 3 lan",
-    "Khong hien TOTP secret goc",
-    "Nick cap tu kho tong",
+    "Nhận mã bí mật riêng",
+    "Lấy OTP tối đa 3 lần",
+    "Không hiển thị TOTP secret gốc",
+    "Nick cấp từ kho tổng",
   ],
   package2: [
-    "Nhan day du TK / MK / 2FA",
-    "Co cong cu lay OTP tren web",
-    "Nick moi tu kho tong",
-    "Huong dan dang nhap chi tiet",
+    "Nhận đầy đủ TK / MK / 2FA",
+    "Có công cụ lấy OTP trên web",
+    "Nick mới từ kho tổng",
+    "Hướng dẫn đăng nhập chi tiết",
   ],
-  package3: ["Chua mua tu dong", "Chuyen sang lien he admin", "Zalo / Messenger"],
+  package3: [
+    "Chưa mua tự động",
+    "Chuyển sang liên hệ admin",
+    "Liên hệ qua Zalo",
+  ],
 };
 
 function PublicStorefront() {
@@ -168,7 +172,7 @@ function PublicStorefront() {
 
   useEffect(() => {
     loadConfig().catch((configError) => {
-      setError(configError.message || "Khong tai duoc cau hinh web");
+      setError(configError.message || "Không tải được cấu hình web");
     });
   }, []);
 
@@ -176,7 +180,7 @@ function PublicStorefront() {
     if (!token) return;
     loadSession(token).catch((sessionError) => {
       setSessionToken("");
-      setError(sessionError.message || "Khong tai duoc phien dang nhap");
+      setError(sessionError.message || "Không tải được phiên đăng nhập");
     });
   }, [token]);
 
@@ -203,10 +207,10 @@ function PublicStorefront() {
             setSessionToken(data?.token || "");
             setUser(data?.user || null);
             setOrders([]);
-            setMessage("Dang nhap Google thanh cong");
+            setMessage("Đăng nhập Google thành công");
             await loadSession(data?.token || "");
           } catch (googleError) {
-            setError(googleError.message || "Dang nhap Google that bai");
+            setError(googleError.message || "Đăng nhập Google thất bại");
           }
         },
       });
@@ -316,10 +320,10 @@ function PublicStorefront() {
       setSessionToken(data?.token || "");
       setUser(data?.user || null);
       setLoginForm({ identifier: "", password: "" });
-      setMessage("Dang nhap thanh cong");
+      setMessage("Đăng nhập thành công");
       await loadSession(data?.token || "");
     } catch (loginError) {
-      setError(loginError.message || "Dang nhap that bai");
+      setError(loginError.message || "Đăng nhập thất bại");
     } finally {
       setLoading(false);
     }
@@ -338,10 +342,10 @@ function PublicStorefront() {
       setSessionToken(data?.token || "");
       setUser(data?.user || null);
       setRegisterForm({ fullName: "", phone: "", email: "", password: "" });
-      setMessage("Dang ky thanh cong");
+      setMessage("Đăng ký thành công");
       await loadSession(data?.token || "");
     } catch (registerError) {
-      setError(registerError.message || "Dang ky that bai");
+      setError(registerError.message || "Đăng ký thất bại");
     } finally {
       setLoading(false);
     }
@@ -357,9 +361,11 @@ function PublicStorefront() {
         body: { email: forgotEmail },
       });
       setForgotEmail("");
-      setMessage(data?.message || "Neu email ton tai, he thong da gui huong dan");
+      setMessage(
+        data?.message || "Nếu email tồn tại, hệ thống đã gửi hướng dẫn",
+      );
     } catch (forgotError) {
-      setError(forgotError.message || "Khong gui duoc email");
+      setError(forgotError.message || "Không gửi được email");
     } finally {
       setLoading(false);
     }
@@ -374,12 +380,12 @@ function PublicStorefront() {
         method: "POST",
         body: { token: route.token, newPassword: resetPassword },
       });
-      setMessage(data?.message || "Da dat lai mat khau");
+      setMessage(data?.message || "Đã đặt lại mật khẩu");
       setResetPassword("");
       setStoreRoute({ view: "home" });
       refreshRouteState();
     } catch (resetError) {
-      setError(resetError.message || "Khong dat lai duoc mat khau");
+      setError(resetError.message || "Không đặt lại được mật khẩu");
     } finally {
       setLoading(false);
     }
@@ -387,7 +393,7 @@ function PublicStorefront() {
 
   const handleCreatePayment = async (packageCode) => {
     if (!user) {
-      setError("Vui long dang nhap truoc khi mua");
+      setError("Vui lòng đăng nhập trước khi mua");
       return;
     }
     try {
@@ -400,11 +406,11 @@ function PublicStorefront() {
       });
       const payUrl = String(data?.payUrl || "").trim();
       if (!payUrl) {
-        throw new Error("He thong khong tra ve link thanh toan");
+        throw new Error("Hệ thống không trả về link thanh toán");
       }
       window.location.href = payUrl;
     } catch (paymentError) {
-      setError(paymentError.message || "Khong tao duoc don thanh toan");
+      setError(paymentError.message || "Không tạo được đơn thanh toán");
     } finally {
       setLoading(false);
     }
@@ -427,16 +433,16 @@ function PublicStorefront() {
       }));
       await loadSession(token);
     } catch (otpError) {
-      setError(otpError.message || "Khong lay duoc ma 2FA");
+      setError(otpError.message || "Không lấy được mã 2FA");
     }
   };
 
   const copyText = async (value, successMessage) => {
     try {
       await navigator.clipboard.writeText(String(value || ""));
-      setMessage(successMessage || "Da copy");
+      setMessage(successMessage || "Đã sao chép");
     } catch {
-      setError("Khong copy duoc");
+      setError("Không sao chép được");
     }
   };
 
@@ -444,7 +450,7 @@ function PublicStorefront() {
     setSessionToken("");
     setUser(null);
     setOrders([]);
-    setMessage("Da dang xuat");
+    setMessage("Đã đăng xuất");
   };
 
   const authPanel = (
@@ -455,37 +461,37 @@ function PublicStorefront() {
             onClick={() => setAuthMode("login")}
             className={`rounded-full px-4 py-2 text-sm font-medium ${authMode === "login" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
           >
-            Dang nhap
+            Đăng nhập
           </button>
           <button
             onClick={() => setAuthMode("register")}
             className={`rounded-full px-4 py-2 text-sm font-medium ${authMode === "register" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300"}`}
           >
-            Dang ky
+            Đăng ký
           </button>
         </div>
 
         {authMode === "login" ? (
           <form onSubmit={handleLogin} className="space-y-4">
             <label className="block">
-              <span className="mb-1 block text-sm text-slate-300">Email hoac SDT</span>
-              <input className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500" value={loginForm.identifier} onChange={(event) => setLoginForm((prev) => ({ ...prev, identifier: event.target.value }))} placeholder="Email hoac SDT" />
+              <span className="mb-1 block text-sm text-slate-300">Email hoặc SĐT</span>
+              <input className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500" value={loginForm.identifier} onChange={(event) => setLoginForm((prev) => ({ ...prev, identifier: event.target.value }))} placeholder="Email hoặc SĐT" />
             </label>
             <label className="block">
-              <span className="mb-1 block text-sm text-slate-300">Mat khau</span>
-              <input type="password" className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500" value={loginForm.password} onChange={(event) => setLoginForm((prev) => ({ ...prev, password: event.target.value }))} placeholder="Mat khau" />
+              <span className="mb-1 block text-sm text-slate-300">Mật khẩu</span>
+              <input type="password" className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500" value={loginForm.password} onChange={(event) => setLoginForm((prev) => ({ ...prev, password: event.target.value }))} placeholder="Mật khẩu" />
             </label>
             <button type="submit" disabled={loading} className="w-full rounded-2xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-500 disabled:opacity-60">
-              Dang nhap
+              Đăng nhập
             </button>
           </form>
         ) : (
           <form onSubmit={handleRegister} className="space-y-4">
             {[
-              ["fullName", "Ho ten"],
-              ["phone", "So dien thoai (Zalo)"],
+              ["fullName", "Họ tên"],
+              ["phone", "Số điện thoại (Zalo)"],
               ["email", "Email"],
-              ["password", "Mat khau"],
+              ["password", "Mật khẩu"],
             ].map(([key, label]) => (
               <label key={key} className="block">
                 <span className="mb-1 block text-sm text-slate-300">{label}</span>
@@ -493,17 +499,17 @@ function PublicStorefront() {
               </label>
             ))}
             <button type="submit" disabled={loading} className="w-full rounded-2xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-60">
-              Dang ky
+              Đăng ký
             </button>
           </form>
         )}
 
         <div className="mt-5 border-t border-slate-800 pt-5">
-          <p className="mb-3 text-sm text-slate-400">Quen mat khau</p>
+          <p className="mb-3 text-sm text-slate-400">Quên mật khẩu</p>
           <form onSubmit={handleForgotPassword} className="flex flex-col gap-3 sm:flex-row">
-            <input className="flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500" value={forgotEmail} onChange={(event) => setForgotEmail(event.target.value)} placeholder="Nhap email de nhan link dat lai mat khau" />
+            <input className="flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500" value={forgotEmail} onChange={(event) => setForgotEmail(event.target.value)} placeholder="Nhập email để nhận link đặt lại mật khẩu" />
             <button type="submit" disabled={loading} className="rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500 disabled:opacity-60">
-              Gui email
+              Gửi email
             </button>
           </form>
         </div>
@@ -512,19 +518,19 @@ function PublicStorefront() {
       <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
         <div className="mb-3 flex items-center gap-2 text-white">
           <ShieldCheck size={18} />
-          <h2 className="text-lg font-semibold">Bao mat & OTP</h2>
+          <h2 className="text-lg font-semibold">Bảo mật & OTP</h2>
         </div>
         <ul className="space-y-3 text-sm leading-6 text-slate-300">
-          <li>Goi 1: he thong cap mot ma bi mat rieng va chi hien OTP 6 so.</li>
-          <li>Goi 2: hien day du TK, MK, 2FA secret va cong cu lay ma 30s.</li>
-          <li>Thong tin nhay cam duoc luu o .env, khong commit len Git.</li>
-          <li>Mua tren web nay chi lay nick tu kho tong, khong dung vao kho market.</li>
+          <li>Gói 1: hệ thống cấp một mã bí mật riêng và chỉ hiển thị OTP 6 số.</li>
+          <li>Gói 2: hiển thị đầy đủ tài khoản, mật khẩu, 2FA và công cụ lấy mã 30 giây.</li>
+          <li>Thông tin nhạy cảm được lưu trong file `.env`, không đẩy lên Git.</li>
+          <li>Tất cả nick bán cho user trên web này chỉ lấy từ kho tổng, không dùng kho market.</li>
         </ul>
         <div className="mt-6">
-          <p className="mb-3 text-sm text-slate-400">Dang nhap nhanh bang Google</p>
+          <p className="mb-3 text-sm text-slate-400">Đăng nhập nhanh bằng Google</p>
           <div ref={googleButtonRef} />
           {!config.googleClientId ? (
-            <p className="mt-2 text-xs text-slate-500">Chua cau hinh GOOGLE_CLIENT_ID.</p>
+            <p className="mt-2 text-xs text-slate-500">Chưa cấu hình GOOGLE_CLIENT_ID.</p>
           ) : null}
         </div>
       </div>
@@ -541,7 +547,7 @@ function PublicStorefront() {
               <h3 className="mt-2 text-xl font-semibold text-white">{pkg.name}</h3>
             </div>
             <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
-              {pkg.available === null ? "Lien he" : `Con ${pkg.available}`}
+              {pkg.available === null ? "Liên hệ" : `Còn ${pkg.available}`}
             </span>
           </div>
           <p className="mb-4 text-3xl font-bold text-white">{formatMoney(pkg.price)}</p>
@@ -554,12 +560,12 @@ function PublicStorefront() {
             ))}
           </ul>
           {pkg.code === "package3" ? (
-            <a href={config.contact?.zaloUrl || config.contact?.messengerUrl || "#"} target="_blank" rel="noreferrer" className="block rounded-2xl bg-amber-500 px-4 py-3 text-center font-semibold text-slate-950">
-              Lien he admin
+            <a href={config.contact?.zaloUrl || "#"} target="_blank" rel="noreferrer" className="block rounded-2xl bg-amber-500 px-4 py-3 text-center font-semibold text-slate-950">
+              Liên hệ admin
             </a>
           ) : (
             <button onClick={() => handleCreatePayment(pkg.code)} disabled={!user || !pkg.purchasable || loading || !config.momoConfigured} className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
-              {!user ? "Dang nhap de mua" : !config.momoConfigured ? "Chua cau hinh MoMo" : pkg.purchasable ? "Mua ngay" : "Tam het hang"}
+              {!user ? "Đăng nhập để mua" : !config.momoConfigured ? "Chưa cấu hình MoMo" : pkg.purchasable ? "Mua ngay" : "Tạm hết hàng"}
             </button>
           )}
         </div>
@@ -572,20 +578,20 @@ function PublicStorefront() {
     return (
       <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-300">Ma bi mat</span>
+          <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-300">Mã bí mật</span>
           <code className="break-all rounded-xl bg-slate-900 px-3 py-2 text-sm text-white">{order.package1AccessToken}</code>
-          <button onClick={() => copyText(order.package1AccessToken, "Da copy ma bi mat Goi 1")} className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-200">
+          <button onClick={() => copyText(order.package1AccessToken, "Đã sao chép mã bí mật Gói 1")} className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-200">
             <Copy size={14} />
-            Copy
+            Sao chép
           </button>
         </div>
-        <p className="mt-3 text-sm text-slate-400">Con {order.package1UsageLeft} / 3 luot lay ma OTP.</p>
+        <p className="mt-3 text-sm text-slate-400">Còn {order.package1UsageLeft} / 3 lượt lấy mã OTP.</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button onClick={() => handleGeneratePackage1Code(order)} disabled={loading || order.package1UsageLeft <= 0} className="rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500 disabled:opacity-50">
-            {order.package1UsageLeft > 0 ? "Lay ma" : "Da het luot"}
+            {order.package1UsageLeft > 0 ? "Lấy mã" : "Đã hết lượt"}
           </button>
           <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-2xl font-bold tracking-[0.3em] text-emerald-300">{otp.code || "------"}</div>
-          <span className="text-sm text-slate-400">{otp.expiresIn ? `Het han sau ${otp.expiresIn}s` : "OTP hien 6 so"}</span>
+          <span className="text-sm text-slate-400">{otp.expiresIn ? `Hết hạn sau ${otp.expiresIn}s` : "OTP hiển thị 6 số"}</span>
         </div>
       </div>
     );
@@ -596,26 +602,26 @@ function PublicStorefront() {
     return (
       <div className="mt-4 space-y-3 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
         {[
-          ["Tai khoan", order.assignedUsername],
-          ["Mat khau", order.assignedPassword],
-          ["Ma 2FA", order.assignedOtpSecret],
+          ["Tài khoản", order.assignedUsername],
+          ["Mật khẩu", order.assignedPassword],
+          ["Mã 2FA", order.assignedOtpSecret],
           ["Link", order.assignedLink],
         ].map(([label, value]) => (
           <div key={label} className="flex flex-wrap items-center gap-3">
             <span className="min-w-24 text-sm text-slate-400">{label}</span>
             <code className="flex-1 break-all rounded-xl bg-slate-900 px-3 py-2 text-sm text-white">{value || "--"}</code>
             {value ? (
-              <button onClick={() => copyText(value, `Da copy ${label}`)} className="rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-200">
-                Copy
+              <button onClick={() => copyText(value, `Đã sao chép ${label}`)} className="rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-200">
+                Sao chép
               </button>
             ) : null}
           </div>
         ))}
         <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4">
-          <p className="text-sm text-slate-300">Cong cu lay ma 2FA tu secret nay, tu dong refresh moi 30 giay.</p>
+          <p className="text-sm text-slate-300">Công cụ lấy mã 2FA từ secret này, tự động làm mới mỗi 30 giây.</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <div className="rounded-2xl bg-slate-900 px-4 py-3 text-2xl font-bold tracking-[0.3em] text-cyan-300">{otp.code || "------"}</div>
-            <span className="text-sm text-slate-400">{otp.expiresIn ? `Het han sau ${otp.expiresIn}s` : "Dang doi ma"}</span>
+            <span className="text-sm text-slate-400">{otp.expiresIn ? `Hết hạn sau ${otp.expiresIn}s` : "Đang đợi mã"}</span>
           </div>
         </div>
       </div>
@@ -625,7 +631,7 @@ function PublicStorefront() {
   const orderCards = (
     <div className="space-y-5">
       {orders.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/60 p-8 text-center text-slate-400">Chua co don hang nao.</div>
+        <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/60 p-8 text-center text-slate-400">Chưa có đơn hàng nào.</div>
       ) : (
         orders.map((order) => (
           <div key={order.id} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
@@ -656,24 +662,23 @@ function PublicStorefront() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
               <p className="text-xs uppercase tracking-[0.4em] text-cyan-400">ChatGPT Store</p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Mua nick tu dong tu kho tong</h1>
+              <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Mua nick tự động từ kho tổng</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                He thong user rieng cho Goi 1 / Goi 2. Nick ban ra chi lay tu kho tong, khong dung vao kho market.
+                Đăng ký hoặc đăng nhập để thanh toán MoMo và nhận nick tự động. Tất cả tài khoản giao cho user đều lấy từ kho tổng, không đụng vào kho market.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <a href="/" className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200">Ve admin</a>
               {user ? (
                 <button onClick={handleLogout} className="inline-flex items-center gap-2 rounded-full bg-slate-800 px-4 py-2 text-sm text-slate-100">
                   <LogOut size={16} />
-                  Dang xuat
+                  Đăng xuất
                 </button>
               ) : null}
             </div>
           </div>
           {user ? (
             <div className="mt-6 grid gap-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4 sm:grid-cols-3">
-              <div className="flex items-center gap-3"><User className="text-cyan-400" size={18} /><div><p className="text-xs text-slate-500">Nguoi dung</p><p className="font-semibold text-white">{user.fullName}</p></div></div>
+              <div className="flex items-center gap-3"><User className="text-cyan-400" size={18} /><div><p className="text-xs text-slate-500">Người dùng</p><p className="font-semibold text-white">{user.fullName}</p></div></div>
               <div className="flex items-center gap-3"><Phone className="text-cyan-400" size={18} /><div><p className="text-xs text-slate-500">Zalo / SDT</p><p className="font-semibold text-white">{user.phone || "--"}</p></div></div>
               <div className="flex items-center gap-3"><Mail className="text-cyan-400" size={18} /><div><p className="text-xs text-slate-500">Email</p><p className="font-semibold text-white">{user.email}</p></div></div>
             </div>
@@ -685,13 +690,13 @@ function PublicStorefront() {
 
         {route.view === "reset-password" ? (
           <section className="mx-auto max-w-xl rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
-            <h2 className="text-2xl font-semibold text-white">Dat lai mat khau</h2>
-            <p className="mt-2 text-sm text-slate-400">Nhap mat khau moi cho tai khoan cua ban.</p>
+            <h2 className="text-2xl font-semibold text-white">Đặt lại mật khẩu</h2>
+            <p className="mt-2 text-sm text-slate-400">Nhập mật khẩu mới cho tài khoản của bạn.</p>
             <form onSubmit={handleResetPassword} className="mt-6 space-y-4">
-              <input type="password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} placeholder="Mat khau moi" className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500" />
+              <input type="password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} placeholder="Mật khẩu mới" className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500" />
               <div className="flex gap-3">
-                <button type="button" onClick={() => { setStoreRoute({ view: "home" }); refreshRouteState(); }} className="flex-1 rounded-2xl bg-slate-800 px-4 py-3 text-slate-200">Quay lai</button>
-                <button type="submit" disabled={loading} className="flex-1 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white disabled:opacity-60">Dat lai mat khau</button>
+                <button type="button" onClick={() => { setStoreRoute({ view: "home" }); refreshRouteState(); }} className="flex-1 rounded-2xl bg-slate-800 px-4 py-3 text-slate-200">Quay lại</button>
+                <button type="submit" disabled={loading} className="flex-1 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white disabled:opacity-60">Đặt lại mật khẩu</button>
               </div>
             </form>
           </section>
@@ -701,11 +706,11 @@ function PublicStorefront() {
             <section className="mt-8">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">Goi dich vu</p>
-                  <h2 className="mt-2 text-2xl font-bold text-white">Goi 1 / Goi 2 tu dong, Goi 3 lien he admin</h2>
+                  <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">Gói dịch vụ</p>
+                  <h2 className="mt-2 text-2xl font-bold text-white">Gói 1 / Gói 2 mua tự động, Gói 3 liên hệ admin</h2>
                 </div>
                 {route.view === "payment-result" ? (
-                  <button onClick={() => { setStoreRoute({ view: "home" }); refreshRouteState(); }} className="rounded-2xl bg-slate-800 px-4 py-3 text-sm text-slate-100">Ve trang mua hang</button>
+                  <button onClick={() => { setStoreRoute({ view: "home" }); refreshRouteState(); }} className="rounded-2xl bg-slate-800 px-4 py-3 text-sm text-slate-100">Về trang mua hàng</button>
                 ) : null}
               </div>
               {packageCards}
@@ -714,15 +719,15 @@ function PublicStorefront() {
             <section className="mt-10 grid gap-8 xl:grid-cols-[1.4fr,0.8fr]">
               <div>
                 <div className="mb-4">
-                  <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">Don hang</p>
-                  <h2 className="mt-2 text-2xl font-bold text-white">Tai khoan da mua</h2>
+                  <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">Đơn hàng</p>
+                  <h2 className="mt-2 text-2xl font-bold text-white">Tài khoản đã mua</h2>
                 </div>
-                {user ? orderCards : <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/60 p-8 text-slate-400">Dang nhap de xem don hang va nhan thong tin tai khoan.</div>}
+                {user ? orderCards : <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/60 p-8 text-slate-400">Đăng nhập để xem đơn hàng và nhận thông tin tài khoản.</div>}
                 {route.view === "payment-result" ? (
                   <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
-                    <h3 className="text-lg font-semibold text-white">Ket qua thanh toan</h3>
+                    <h3 className="text-lg font-semibold text-white">Kết quả thanh toán</h3>
                     <p className="mt-2 text-sm text-slate-400">
-                      {currentPaymentOrder ? `Don #${currentPaymentOrder.id} dang o trang thai: ${formatStatusLabel(currentPaymentOrder.status)}` : "Dang tai thong tin don hang..."}
+                      {currentPaymentOrder ? `Đơn #${currentPaymentOrder.id} đang ở trạng thái: ${formatStatusLabel(currentPaymentOrder.status)}` : "Đang tải thông tin đơn hàng..."}
                     </p>
                   </div>
                 ) : null}
@@ -730,27 +735,28 @@ function PublicStorefront() {
 
               <div className="space-y-6">
                 <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
-                  <div className="mb-3 flex items-center gap-2 text-white"><KeyRound size={18} className="text-cyan-400" /><h3 className="text-lg font-semibold">Cong cu OTP</h3></div>
-                  <p className="text-sm leading-6 text-slate-400">Dan TOTP secret de lay ma dang nhap. Goi 2 se tu dong refresh 30s, con o day ban co the test secret thu cong.</p>
+                  <div className="mb-3 flex items-center gap-2 text-white"><KeyRound size={18} className="text-cyan-400" /><h3 className="text-lg font-semibold">Công cụ OTP</h3></div>
+                  <p className="text-sm leading-6 text-slate-400">Dán TOTP secret để lấy mã đăng nhập. Gói 2 sẽ tự động làm mới mỗi 30 giây, còn ô này dùng để kiểm tra thủ công khi cần.</p>
                   <div className="mt-4 space-y-3">
-                    <textarea value={manualSecret} onChange={(event) => setManualSecret(event.target.value)} placeholder="Dan ma 2FA secret vao day" className="min-h-24 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500" />
+                    <textarea value={manualSecret} onChange={(event) => setManualSecret(event.target.value)} placeholder="Dán mã 2FA secret vào đây" className="min-h-24 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500" />
                     <div className="flex items-center gap-3">
                       <div className="rounded-2xl bg-slate-950 px-4 py-3 text-2xl font-bold tracking-[0.35em] text-cyan-300">{manualOtp.code || "------"}</div>
-                      <button onClick={async () => { try { const data = await apiRequest("/api/store/totp/generate", { method: "POST", body: { secret: manualSecret } }); setManualOtp({ code: String(data?.code || ""), expiresIn: Number(data?.expiresIn || 0) }); } catch (manualError) { setError(manualError.message || "Khong lay duoc OTP"); } }} className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white">
+                      <button onClick={async () => { try { const data = await apiRequest("/api/store/totp/generate", { method: "POST", body: { secret: manualSecret } }); setManualOtp({ code: String(data?.code || ""), expiresIn: Number(data?.expiresIn || 0) }); } catch (manualError) { setError(manualError.message || "Không lấy được OTP"); } }} className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white">
                         <RefreshCw size={16} />
-                        Lay ma
+                        Lấy mã
                       </button>
                     </div>
                   </div>
                 </div>
 
                 <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
-                  <h3 className="text-lg font-semibold text-white">Huong dan dang nhap Goi 2</h3>
+                  <h3 className="text-lg font-semibold text-white">Quy trình nhận nick sau khi thanh toán</h3>
                   <ol className="mt-4 space-y-2 text-sm leading-6 text-slate-300">
-                    <li>1. Mo ChatGPT va dang nhap bang TK / MK duoc cap.</li>
-                    <li>2. Neu he thong yeu cau 2FA, copy TOTP secret va lay ma 6 so tren web.</li>
-                    <li>3. Khong doi mat khau khi chua duoc huong dan bo sung.</li>
-                    <li>4. Goi 1 chi nhan OTP 6 so, khong hien secret goc.</li>
+                    <li>1. Đăng ký hoặc đăng nhập tài khoản user bằng email hoặc số điện thoại.</li>
+                    <li>2. Chọn gói phù hợp rồi thanh toán qua MoMo.</li>
+                    <li>3. Sau khi thanh toán thành công, hệ thống tự cấp nick từ kho tổng.</li>
+                    <li>4. Gói 1 chỉ nhận OTP 6 số qua mã bí mật, tối đa 3 lượt.</li>
+                    <li>5. Gói 2 nhận đầy đủ tài khoản, mật khẩu, mã 2FA và công cụ lấy mã trên web.</li>
                   </ol>
                 </div>
               </div>
