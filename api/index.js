@@ -922,6 +922,36 @@ app.get("/api/store/orders/:id", verifyStoreUserToken, async (req, res) => {
   }
 });
 
+app.post("/api/store/orders/:id/reconcile", verifyStoreUserToken, async (req, res) => {
+  try {
+    await expireStaleStoreOrders({ userId: req.storeUser.id });
+    let order = await StoreOrder.findOne({
+      id: String(req.params?.id || "").trim(),
+      userId: req.storeUser.id,
+    });
+    if (!order) {
+      return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+    }
+    order = await reconcileStoreOrderPaymentStatus(order);
+    if (!order) {
+      return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+    }
+    const normalizedStatus = String(order?.status || "").trim().toLowerCase();
+    if (STORE_HIDDEN_ORDER_STATUSES.has(normalizedStatus)) {
+      return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+    }
+    res.json({
+      order: sanitizeStoreOrder(
+        typeof order?.toObject === "function" ? order.toObject() : order,
+      ),
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      error: error.message || "Không thể kiểm tra trạng thái thanh toán",
+    });
+  }
+});
+
 app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, next) => {
   try {
     const packageCode = String(req.body?.packageCode || "").trim().toLowerCase();
@@ -1012,6 +1042,8 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, nex
         { new: true },
       ).lean();
     } catch (paymentError) {
+      await StoreOrder.deleteOne({ id: order.id });
+      throw paymentError;
       await StoreOrder.findOneAndUpdate(
         { id: order.id },
         {
@@ -1171,8 +1203,7 @@ app.post("/api/store/momo/ipn", async (req, res) => {
       await order.save();
       await fulfillStoreOrder(order);
     } else {
-      order.status = "payment_failed";
-      await order.save();
+      await StoreOrder.deleteOne({ id: order.id });
     }
     return res.json({ resultCode: 0, message: "OK" });
   } catch (error) {
@@ -1303,6 +1334,9 @@ const STORE_PAYMENT_HOLD_MINUTES = Math.max(
 const STORE_PAYMENT_HOLD_MS = STORE_PAYMENT_HOLD_MINUTES * 60 * 1000;
 const MOMO_ENDPOINT =
   process.env.MOMO_ENDPOINT || "https://test-payment.momo.vn/v2/gateway/api/create";
+const MOMO_QUERY_ENDPOINT =
+  process.env.MOMO_QUERY_ENDPOINT ||
+  MOMO_ENDPOINT.replace(/\/create(?:\?.*)?$/i, "/query");
 const MOMO_REQUEST_TYPE = process.env.MOMO_REQUEST_TYPE || "captureWallet";
 const GOOGLE_OAUTH_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
 const googleOAuthClient = GOOGLE_OAUTH_CLIENT_ID
@@ -1367,12 +1401,12 @@ const buildStorePackage1UsageLeft = (order = {}) =>
       Number(order?.package1UsedCount || 0),
   );
 const STORE_PENDING_PAYMENT_STATUSES = ["pending_payment", "awaiting_payment"];
-const STORE_HIDDEN_ORDER_STATUSES = new Set(["payment_expired"]);
-const STORE_PRUNABLE_ORDER_STATUSES = [
+const STORE_HIDDEN_ORDER_STATUSES = new Set(["payment_failed", "payment_expired"]);
+const STORE_IMMEDIATE_DELETE_ORDER_STATUSES = [
   "payment_failed",
   "payment_expired",
-  "fulfillment_failed",
 ];
+const STORE_PRUNABLE_ORDER_STATUSES = ["fulfillment_failed"];
 const STORE_FAILED_ORDER_RETENTION_MS = 24 * 60 * 60 * 1000;
 const getStorePaymentExpiresAtIso = (baseDate = new Date()) =>
   new Date(baseDate.getTime() + STORE_PAYMENT_HOLD_MS).toISOString();
@@ -1444,6 +1478,8 @@ const buildStoreActivePendingOrderQuery = (extra = {}) => {
   };
 };
 const expireStaleStoreOrders = async (extra = {}) => {
+  await StoreOrder.deleteMany(buildStoreExpiredPendingOrderQuery(extra));
+  return;
   const nowIso = new Date().toISOString();
   await StoreOrder.updateMany(buildStoreExpiredPendingOrderQuery(extra), {
     $set: {
@@ -1455,6 +1491,11 @@ const expireStaleStoreOrders = async (extra = {}) => {
   });
 };
 const cleanupOldStoreFailedOrders = async (extra = {}) => {
+  await StoreOrder.deleteMany({
+    ...extra,
+    status: { $in: STORE_IMMEDIATE_DELETE_ORDER_STATUSES },
+  });
+  return;
   const cutoffIso = getStoreFailedOrderCleanupCutoffIso();
   await StoreOrder.deleteMany({
     ...extra,
@@ -3190,6 +3231,85 @@ const createMomoPaymentForStoreOrder = async (req, order) => {
     },
   );
   return String(data.payUrl || "").trim();
+};
+const queryMomoPaymentStatusForStoreOrder = async (order = {}) => {
+  const partnerCode = MOMO_PARTNER_CODE;
+  const accessKey = MOMO_ACCESS_KEY;
+  const secretKey = MOMO_SECRET_KEY;
+  if (!partnerCode || !accessKey || !secretKey) {
+    throw new Error("MoMo chưa được cấu hình đầy đủ");
+  }
+  const orderId = String(order?.momoOrderId || order?.id || "").trim();
+  if (!orderId) {
+    throw new Error("Đơn hàng chưa có mã MoMo để đối soát");
+  }
+  const requestId = createStoreId("momo_query");
+  const signature = buildMomoSignature({
+    accessKey,
+    orderId,
+    partnerCode,
+    requestId,
+  });
+  const payload = {
+    partnerCode,
+    accessKey,
+    requestId,
+    orderId,
+    lang: "vi",
+    signature,
+  };
+  const response = await axios.post(MOMO_QUERY_ENDPOINT, payload, {
+    timeout: 20000,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  return response?.data || {};
+};
+const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
+  const order =
+    orderInput && typeof orderInput.save === "function"
+      ? orderInput
+      : await StoreOrder.findOne({ id: String(orderInput?.id || orderInput || "").trim() });
+  if (!order) return null;
+  const normalizedStatus = String(order.status || "").trim().toLowerCase();
+  if (!isStorePendingPaymentStatus(normalizedStatus) && normalizedStatus !== "paid") {
+    return order;
+  }
+  const data = await queryMomoPaymentStatusForStoreOrder(order);
+  const resultCode = Number(data?.resultCode ?? Number.NaN);
+  const message = String(data?.message || "").trim();
+  const transId = String(data?.transId || "").trim();
+  const payType = String(data?.payType || "").trim();
+  const nowIso = new Date().toISOString();
+  if (!Number.isNaN(resultCode)) {
+    order.momoResultCode = resultCode;
+  }
+  if (message) {
+    order.momoMessage = message;
+  }
+  if (transId) {
+    order.momoTransId = transId;
+  }
+  if (payType) {
+    order.paymentMethod = payType;
+  }
+  order.updatedAt = nowIso;
+  if (resultCode === 0) {
+    if (!String(order.paidAt || "").trim()) {
+      order.paidAt = nowIso;
+    }
+    order.status = "paid";
+    await order.save();
+    try {
+      await fulfillStoreOrder(order);
+    } catch (error) {
+      return StoreOrder.findOne({ id: order.id });
+    }
+    return StoreOrder.findOne({ id: order.id });
+  }
+  await order.save();
+  return order;
 };
 const getWarrantyRequiredExpiryTime = (source = {}, customer = null) => {
   const customerExpiry = String(customer?.expiredAt || "").trim();

@@ -224,7 +224,21 @@ function PublicStorefront() {
 
   useEffect(() => {
     if (route.view !== "payment-result" || !route.orderId || !token) return;
-    loadSession(token).catch(() => {});
+    let cancelled = false;
+    (async () => {
+      try {
+        await apiRequest(`/api/store/orders/${encodeURIComponent(route.orderId)}/reconcile`, {
+          method: "POST",
+          token,
+        });
+      } catch {}
+      if (!cancelled) {
+        loadSession(token).catch(() => {});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [route.view, route.orderId, token]);
 
   useEffect(() => {
@@ -451,6 +465,7 @@ function PublicStorefront() {
     } catch (paymentError) {
       try {
         await loadConfig();
+        await loadSession(token);
       } catch {}
       setError(paymentError.message || "Không tạo được đơn thanh toán.");
     } finally {
@@ -517,6 +532,24 @@ function PublicStorefront() {
       await loadSession(token);
     } catch (otpError) {
       setError(otpError.message || "Không lấy được mã 2FA");
+    }
+  };
+
+  const handleReconcileOrderPayment = async (orderId) => {
+    try {
+      setLoading(true);
+      setError("");
+      setMessage("");
+      await apiRequest(`/api/store/orders/${encodeURIComponent(orderId)}/reconcile`, {
+        method: "POST",
+        token,
+      });
+      await loadSession(token);
+      setMessage("Đã kiểm tra lại trạng thái thanh toán MoMo.");
+    } catch (reconcileError) {
+      setError(reconcileError.message || "Không thể kiểm tra trạng thái thanh toán.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -812,6 +845,13 @@ function PublicStorefront() {
                 <p className="text-sm text-amber-200">
                   Nick đang được giữ riêng cho đơn này đến {order.expiresAt ? formatDateTime(order.expiresAt) : "--"}.
                 </p>
+                <button
+                  onClick={() => handleReconcileOrderPayment(order.id)}
+                  disabled={loading}
+                  className="inline-flex items-center rounded-2xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Kiểm tra thanh toán
+                </button>
                 {order.momoPayUrl ? (
                   <a
                     href={order.momoPayUrl}
