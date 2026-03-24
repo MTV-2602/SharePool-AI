@@ -1394,6 +1394,27 @@ const sanitizeStoreUser = (user) => {
     createdAt: String(user.createdAt || ""),
   };
 };
+const sanitizeStoreUserForAdmin = (user, stats = {}) => {
+  if (!user) return null;
+  const authProviders = Array.isArray(user?.authProviders)
+    ? user.authProviders
+        .map((provider) => String(provider || "").trim())
+        .filter(Boolean)
+    : [];
+  return {
+    id: String(user.id || "").trim(),
+    fullName: String(user.fullName || "").trim(),
+    phone: String(user.phone || "").trim(),
+    email: String(user.email || "").trim(),
+    authProviders,
+    createdAt: String(user.createdAt || "").trim(),
+    updatedAt: String(user.updatedAt || "").trim(),
+    totalOrders: Number(stats?.totalOrders || 0),
+    fulfilledOrders: Number(stats?.fulfilledOrders || 0),
+    pendingOrders: Number(stats?.pendingOrders || 0),
+    latestOrderAt: String(stats?.latestOrderAt || "").trim(),
+  };
+};
 const buildStorePackage1UsageLeft = (order = {}) =>
   Math.max(
     0,
@@ -3702,6 +3723,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
       datammoWarrantyCases,
       rawStoreOrders,
       storeUsers,
+      storeUserOrderStats,
     ] = await Promise.all([
       Account.find({}).lean(),
       Netflix.find({}).lean(),
@@ -3717,11 +3739,47 @@ app.get("/api/data", verifyToken, async (req, res) => {
         .limit(100)
         .lean(),
       StoreUser.find({})
-        .select("id fullName email phone")
+        .select("id fullName email phone authProviders createdAt updatedAt")
         .lean(),
+      StoreOrder.aggregate([
+        {
+          $group: {
+            _id: "$userId",
+            totalOrders: { $sum: 1 },
+            fulfilledOrders: {
+              $sum: {
+                $cond: [{ $eq: ["$status", "fulfilled"] }, 1, 0],
+              },
+            },
+            pendingOrders: {
+              $sum: {
+                $cond: [
+                  {
+                    $in: ["$status", ["pending_payment", "awaiting_payment", "paid"]],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            latestOrderAt: { $max: "$createdAt" },
+          },
+        },
+      ]),
     ]);
     const storeUserMap = new Map(
       (storeUsers || []).map((user) => [String(user?.id || "").trim(), user]),
+    );
+    const storeUserStatsMap = new Map(
+      (storeUserOrderStats || []).map((item) => [
+        String(item?._id || "").trim(),
+        {
+          totalOrders: Number(item?.totalOrders || 0),
+          fulfilledOrders: Number(item?.fulfilledOrders || 0),
+          pendingOrders: Number(item?.pendingOrders || 0),
+          latestOrderAt: String(item?.latestOrderAt || "").trim(),
+        },
+      ]),
     );
     res.json({
       chatgpt: accounts.map((acc) => ({
@@ -3745,10 +3803,109 @@ app.get("/api/data", verifyToken, async (req, res) => {
           ),
         )
         .filter(Boolean),
+      storeUsers: (storeUsers || [])
+        .map((user) =>
+          sanitizeStoreUserForAdmin(
+            user,
+            storeUserStatsMap.get(String(user?.id || "").trim()) || null,
+          ),
+        )
+        .filter(Boolean),
       version: latestDataVersion,
     });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.put("/api/store-users/:id", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiếu ID user." });
+    }
+    const fullName = String(req.body?.fullName || "").trim();
+    const phone = String(req.body?.phone || "").trim();
+    const email = String(req.body?.email || "").trim();
+    const phoneNormalized = normalizePhoneValue(phone);
+    const emailLower = normalizeEmailLower(email);
+
+    if (!fullName) {
+      return res.status(400).json({ error: "Họ tên không được để trống." });
+    }
+    if (!phoneNormalized) {
+      return res.status(400).json({ error: "Số điện thoại không hợp lệ." });
+    }
+    if (!emailLower) {
+      return res.status(400).json({ error: "Email không hợp lệ." });
+    }
+
+    const user = await StoreUser.findOne({ id });
+    if (!user) {
+      return res.status(404).json({ error: "Không tìm thấy user web." });
+    }
+
+    const [existingPhone, existingEmail] = await Promise.all([
+      StoreUser.findOne({ phoneNormalized, id: { $ne: id } }).lean(),
+      StoreUser.findOne({ emailLower, id: { $ne: id } }).lean(),
+    ]);
+
+    if (existingPhone) {
+      return res
+        .status(409)
+        .json({ error: "Số điện thoại này đã được user khác sử dụng." });
+    }
+    if (existingEmail) {
+      return res
+        .status(409)
+        .json({ error: "Email này đã được user khác sử dụng." });
+    }
+
+    user.fullName = fullName;
+    user.phone = phone;
+    user.phoneNormalized = phoneNormalized;
+    user.email = email;
+    user.emailLower = emailLower;
+    user.updatedAt = new Date().toISOString();
+    await user.save();
+
+    return res.json({
+      success: true,
+      user: sanitizeStoreUserForAdmin(user),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Không thể cập nhật user web." });
+  }
+});
+
+app.post("/api/store-users/:id/reset-password", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    const password = String(req.body?.password || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiếu ID user." });
+    }
+    if (password.length < 6) {
+      return res
+        .status(400)
+        .json({ error: "Mật khẩu mới phải có ít nhất 6 ký tự." });
+    }
+
+    const user = await StoreUser.findOne({ id });
+    if (!user) {
+      return res.status(404).json({ error: "Không tìm thấy user web." });
+    }
+
+    user.passwordHash = await bcrypt.hash(password, 10);
+    user.authProviders = upsertStringIntoList(user.authProviders, "password");
+    user.resetTokenHash = "";
+    user.resetTokenExpiresAt = "";
+    user.updatedAt = new Date().toISOString();
+    await user.save();
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: "Không thể đặt lại mật khẩu user." });
   }
 });
 

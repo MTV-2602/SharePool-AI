@@ -1048,6 +1048,7 @@ function App() {
   const [canvaAccounts, setCanvaAccounts] = useState([]);
   const [capcutAccounts, setCapcutAccounts] = useState([]);
   const [teamAccounts, setTeamAccounts] = useState([]);
+  const [storeUsers, setStoreUsers] = useState([]);
   const [datammoWarrantyCases, setDatammoWarrantyCases] = useState([]);
   const [datammoOrderHistory, setDatammoOrderHistory] = useState([]);
   const [showTeamAddModal, setShowTeamAddModal] = useState(false);
@@ -1098,6 +1099,7 @@ function App() {
     useState("all");
   const [chatgptMarketplaceOrderPage, setChatgptMarketplaceOrderPage] =
     useState(1);
+  const [storeUserQuery, setStoreUserQuery] = useState("");
   const [teamMarketplaceOrderQuery, setTeamMarketplaceOrderQuery] =
     useState("");
   const [teamMarketplaceOrderProviderFilter, setTeamMarketplaceOrderProviderFilter] =
@@ -1132,6 +1134,8 @@ function App() {
     editAccount: false,
     deleteAccount: false,
     warranty: false,
+    saveStoreUser: false,
+    resetStoreUserPassword: false,
     deleteMarketplaceOrder: {},
     teamMode: {},
     changeTeamWarehouse: {},
@@ -1155,6 +1159,21 @@ function App() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showImportGPTModal, setShowImportGPTModal] = useState(false);
+  const [showStoreUserEditModal, setShowStoreUserEditModal] = useState(false);
+  const [showStoreUserPasswordModal, setShowStoreUserPasswordModal] =
+    useState(false);
+  const [storeUserEditForm, setStoreUserEditForm] = useState({
+    id: "",
+    fullName: "",
+    phone: "",
+    email: "",
+  });
+  const [storeUserPasswordForm, setStoreUserPasswordForm] = useState({
+    id: "",
+    fullName: "",
+    password: "",
+    confirmPassword: "",
+  });
   const [showWarrantyModal, setShowWarrantyModal] = useState(false);
   const [warrantySourceAcc, setWarrantySourceAcc] = useState(null);
   const [warrantySourceScope, setWarrantySourceScope] = useState("chatgpt");
@@ -1811,6 +1830,13 @@ function App() {
         setTeamAccounts(
           sortA(res.data?.team).map((acc) => normalizeTeamAccountForUi(acc)),
         );
+        setStoreUsers(
+          [...(res.data?.storeUsers || [])].sort((a, b) => {
+            const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
+            const bTime = new Date(b?.latestOrderAt || b?.createdAt || 0).getTime();
+            return bTime - aTime;
+          }),
+        );
         setDatammoOrderHistory(
           normalizeDatammoOrders(res.data?.datammoOrders),
         );
@@ -1830,6 +1856,95 @@ function App() {
     })();
     fetchDataPromiseRef.current = runFetch;
     return runFetch;
+  };
+
+  const openStoreUserEdit = (user) => {
+    setStoreUserEditForm({
+      id: String(user?.id || ""),
+      fullName: String(user?.fullName || ""),
+      phone: String(user?.phone || ""),
+      email: String(user?.email || ""),
+    });
+    setShowStoreUserEditModal(true);
+  };
+
+  const openStoreUserPasswordReset = (user) => {
+    setStoreUserPasswordForm({
+      id: String(user?.id || ""),
+      fullName: String(user?.fullName || ""),
+      password: "",
+      confirmPassword: "",
+    });
+    setShowStoreUserPasswordModal(true);
+  };
+
+  const handleSaveStoreUser = async (e) => {
+    e.preventDefault();
+    const id = String(storeUserEditForm.id || "").trim();
+    if (!id) {
+      showAlert("Lỗi", "Thiếu ID user web.", "error");
+      return;
+    }
+    setLoadingStates((prev) => ({ ...prev, saveStoreUser: true }));
+    try {
+      await axios.put(`/api/store-users/${id}`, {
+        fullName: storeUserEditForm.fullName,
+        phone: storeUserEditForm.phone,
+        email: storeUserEditForm.email,
+      });
+      setShowStoreUserEditModal(false);
+      await fetchData();
+      broadcastDataChange();
+      showAlert("Thành công", "Đã cập nhật user web.", "success");
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể cập nhật user web."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, saveStoreUser: false }));
+    }
+  };
+
+  const handleResetStoreUserPassword = async (e) => {
+    e.preventDefault();
+    const id = String(storeUserPasswordForm.id || "").trim();
+    if (!id) {
+      showAlert("Lỗi", "Thiếu ID user web.", "error");
+      return;
+    }
+    if (storeUserPasswordForm.password.length < 6) {
+      showAlert("Thiếu dữ liệu", "Mật khẩu mới phải có ít nhất 6 ký tự.", "warning");
+      return;
+    }
+    if (storeUserPasswordForm.password !== storeUserPasswordForm.confirmPassword) {
+      showAlert("Sai xác nhận", "Mật khẩu xác nhận không khớp.", "warning");
+      return;
+    }
+    setLoadingStates((prev) => ({ ...prev, resetStoreUserPassword: true }));
+    try {
+      await axios.post(`/api/store-users/${id}/reset-password`, {
+        password: storeUserPasswordForm.password,
+      });
+      setShowStoreUserPasswordModal(false);
+      setStoreUserPasswordForm({
+        id: "",
+        fullName: "",
+        password: "",
+        confirmPassword: "",
+      });
+      await fetchData();
+      showAlert("Thành công", "Đã đặt lại mật khẩu user web.", "success");
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể đặt lại mật khẩu user."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, resetStoreUserPassword: false }));
+    }
   };
 
   const handleAddAccount = async (e) => {
@@ -3826,6 +3941,41 @@ function App() {
     teamMarketplaceOrderPage,
     teamMarketplaceOrderTotalPages,
   );
+  const filteredStoreUsers = storeUsers
+    .filter((user) => {
+      if (!storeUserQuery.trim()) return true;
+      const queryNormalized = toNonAccentVietnamese(storeUserQuery);
+      const searchIndex = toNonAccentVietnamese(
+        [
+          user?.fullName,
+          user?.phone,
+          user?.email,
+          Array.isArray(user?.authProviders) ? user.authProviders.join(" ") : "",
+          user?.latestOrderAt,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+      return searchIndex.includes(queryNormalized);
+    })
+    .sort((a, b) => {
+      const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
+      const bTime = new Date(b?.latestOrderAt || b?.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+  const storeUsersWithOrdersCount = filteredStoreUsers.filter(
+    (user) => Number(user?.totalOrders || 0) > 0,
+  ).length;
+  const storeUsersPasswordCount = filteredStoreUsers.filter((user) =>
+    Array.isArray(user?.authProviders)
+      ? user.authProviders.includes("password")
+      : false,
+  ).length;
+  const storeUsersGoogleCount = filteredStoreUsers.filter((user) =>
+    Array.isArray(user?.authProviders)
+      ? user.authProviders.includes("google")
+      : false,
+  ).length;
   const paginatedChatgptMarketplaceOrders = filteredChatgptMarketplaceOrders.slice(
     (currentChatgptMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE,
     currentChatgptMarketplaceOrderPage * MARKETPLACE_ORDER_PAGE_SIZE,
@@ -4012,6 +4162,12 @@ function App() {
               ChatGPT
             </button>
             <button
+              onClick={() => setActiveTab("store-users")}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "store-users" ? "bg-cyan-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+            >
+              User web
+            </button>
+            <button
               onClick={() => setActiveTab("netflix")}
               className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "netflix" ? "bg-red-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
@@ -4177,6 +4333,206 @@ function App() {
               >
                 <X size={16} />
               </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "store-users" && (
+          <div className="space-y-6">
+            <div className="rounded-2xl border border-cyan-500/20 bg-slate-900/80 shadow-2xl overflow-hidden">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 p-5 border-b border-slate-800">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-[0.3em] text-cyan-300">
+                    User Web
+                  </div>
+                  <h2 className="text-2xl font-black text-white mt-2">
+                    Quản lí user mua hàng trên web
+                  </h2>
+                  <p className="text-sm text-slate-400 mt-2 max-w-3xl">
+                    Theo dõi user đăng ký, số đơn đã mua, trạng thái hoạt động và thao tác
+                    sửa thông tin hoặc đặt lại mật khẩu ngay trong admin.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
+                  {[
+                    {
+                      label: "Tổng user",
+                      value: filteredStoreUsers.length,
+                      tone: "bg-cyan-500/15 border-cyan-500/30 text-cyan-200",
+                    },
+                    {
+                      label: "Có đơn",
+                      value: storeUsersWithOrdersCount,
+                      tone: "bg-emerald-500/15 border-emerald-500/30 text-emerald-200",
+                    },
+                    {
+                      label: "Có mật khẩu",
+                      value: storeUsersPasswordCount,
+                      tone: "bg-blue-500/15 border-blue-500/30 text-blue-200",
+                    },
+                    {
+                      label: "Google",
+                      value: storeUsersGoogleCount,
+                      tone: "bg-violet-500/15 border-violet-500/30 text-violet-200",
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className={`rounded-xl border px-4 py-3 ${item.tone}`}
+                    >
+                      <div className="text-[11px] uppercase tracking-[0.25em] opacity-80">
+                        {item.label}
+                      </div>
+                      <div className="text-2xl font-black mt-1">{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-5 border-b border-slate-800">
+                <input
+                  value={storeUserQuery}
+                  onChange={(e) => setStoreUserQuery(e.target.value)}
+                  placeholder="Tìm theo tên user, SĐT, email, provider..."
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 outline-none transition-all"
+                />
+              </div>
+
+              <div className="p-5">
+                {filteredStoreUsers.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 px-6 py-12 text-center text-slate-400">
+                    Chưa có user web nào khớp bộ lọc hiện tại.
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {filteredStoreUsers.map((user) => {
+                      const authProviders = Array.isArray(user?.authProviders)
+                        ? user.authProviders
+                        : [];
+                      return (
+                        <div
+                          key={user.id}
+                          className="rounded-2xl border border-slate-800 bg-slate-950/40 p-5 shadow-lg"
+                        >
+                          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+                            <div className="min-w-0 flex-1 space-y-4">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="text-xl font-black text-white break-all">
+                                  {user.fullName || "User chưa có tên"}
+                                </div>
+                                {authProviders.map((provider) => (
+                                  <span
+                                    key={`${user.id}-${provider}`}
+                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.18em] ${
+                                      provider === "google"
+                                        ? "bg-violet-500/15 text-violet-200 border border-violet-500/25"
+                                        : "bg-blue-500/15 text-blue-200 border border-blue-500/25"
+                                    }`}
+                                  >
+                                    {provider}
+                                  </span>
+                                ))}
+                              </div>
+
+                              <div className="grid md:grid-cols-3 gap-3 text-sm">
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
+                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
+                                    Zalo / SĐT
+                                  </div>
+                                  <div className="text-white font-semibold mt-1 break-all">
+                                    {user.phone || "Chưa có"}
+                                  </div>
+                                </div>
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3 md:col-span-2">
+                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
+                                    Email
+                                  </div>
+                                  <div className="text-white font-semibold mt-1 break-all">
+                                    {user.email || "Chưa có"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
+                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
+                                    Tổng đơn
+                                  </div>
+                                  <div className="text-white text-lg font-black mt-1">
+                                    {Number(user.totalOrders || 0)}
+                                  </div>
+                                </div>
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
+                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
+                                    Đã giao
+                                  </div>
+                                  <div className="text-emerald-300 text-lg font-black mt-1">
+                                    {Number(user.fulfilledOrders || 0)}
+                                  </div>
+                                </div>
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
+                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
+                                    Đang chờ
+                                  </div>
+                                  <div className="text-amber-300 text-lg font-black mt-1">
+                                    {Number(user.pendingOrders || 0)}
+                                  </div>
+                                </div>
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
+                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
+                                    Đơn mới nhất
+                                  </div>
+                                  <div className="text-white font-semibold mt-1">
+                                    {user.latestOrderAt ? formatDate(user.latestOrderAt) : "Chưa có đơn"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid sm:grid-cols-2 gap-3 text-xs text-slate-400">
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3">
+                                  <span className="uppercase tracking-[0.22em] text-slate-500">
+                                    Tạo lúc
+                                  </span>
+                                  <div className="text-slate-200 mt-1">
+                                    {user.createdAt ? formatDate(user.createdAt) : "Chưa có"}
+                                  </div>
+                                </div>
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3">
+                                  <span className="uppercase tracking-[0.22em] text-slate-500">
+                                    Cập nhật
+                                  </span>
+                                  <div className="text-slate-200 mt-1">
+                                    {user.updatedAt ? formatDate(user.updatedAt) : "Chưa có"}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="xl:w-56 shrink-0 flex xl:flex-col gap-3">
+                              <button
+                                type="button"
+                                onClick={() => openStoreUserEdit(user)}
+                                className="flex-1 xl:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-4 py-3 text-white font-bold transition-colors"
+                              >
+                                <Pencil size={16} />
+                                Sửa user
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openStoreUserPasswordReset(user)}
+                                className="flex-1 xl:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-500 px-4 py-3 text-white font-bold transition-colors"
+                              >
+                                <Lock size={16} />
+                                Đặt lại mật khẩu
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -9324,6 +9680,180 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         );
       })()}
 
+
+      {showStoreUserEditModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <form
+            onSubmit={handleSaveStoreUser}
+            className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full shadow-2xl"
+            style={{ maxWidth: "520px" }}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white flex gap-2 items-center">
+                <Pencil size={20} className="text-cyan-400" />
+                Sửa user web
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowStoreUserEditModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-slate-400 text-sm block mb-1">Họ tên *</label>
+                <input
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  value={storeUserEditForm.fullName}
+                  onChange={(e) =>
+                    setStoreUserEditForm((prev) => ({
+                      ...prev,
+                      fullName: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm block mb-1">SĐT / Zalo *</label>
+                <input
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  value={storeUserEditForm.phone}
+                  onChange={(e) =>
+                    setStoreUserEditForm((prev) => ({
+                      ...prev,
+                      phone: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm block mb-1">Email *</label>
+                <input
+                  type="email"
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  value={storeUserEditForm.email}
+                  onChange={(e) =>
+                    setStoreUserEditForm((prev) => ({
+                      ...prev,
+                      email: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                type="button"
+                onClick={() => setShowStoreUserEditModal(false)}
+                className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={loadingStates.saveStoreUser}
+                className="flex-1 p-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition-colors disabled:opacity-60"
+              >
+                {loadingStates.saveStoreUser ? "Đang lưu..." : "Lưu cập nhật"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showStoreUserPasswordModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <form
+            onSubmit={handleResetStoreUserPassword}
+            className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full shadow-2xl"
+            style={{ maxWidth: "520px" }}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white flex gap-2 items-center">
+                <Lock size={20} className="text-violet-400" />
+                Đặt lại mật khẩu user
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowStoreUserPasswordModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700/50 mb-4">
+              <div className="text-sm text-slate-400">User đang chọn:</div>
+              <div className="text-white font-bold mt-1">
+                {storeUserPasswordForm.fullName || "User web"}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-slate-400 text-sm block mb-1">
+                  Mật khẩu mới *
+                </label>
+                <input
+                  type="password"
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  value={storeUserPasswordForm.password}
+                  onChange={(e) =>
+                    setStoreUserPasswordForm((prev) => ({
+                      ...prev,
+                      password: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm block mb-1">
+                  Nhập lại mật khẩu *
+                </label>
+                <input
+                  type="password"
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  value={storeUserPasswordForm.confirmPassword}
+                  onChange={(e) =>
+                    setStoreUserPasswordForm((prev) => ({
+                      ...prev,
+                      confirmPassword: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                type="button"
+                onClick={() => setShowStoreUserPasswordModal(false)}
+                className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={loadingStates.resetStoreUserPassword}
+                className="flex-1 p-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-bold transition-colors disabled:opacity-60"
+              >
+                {loadingStates.resetStoreUserPassword
+                  ? "Đang cập nhật..."
+                  : "Đặt lại mật khẩu"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* ========================================================= */}
       {showWarrantyModal && warrantySourceAcc && (() => {
