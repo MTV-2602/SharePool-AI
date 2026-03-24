@@ -104,6 +104,8 @@ const packageFeatureMap = {
 };
 
 function PublicStorefront() {
+  const initialStoreToken =
+    typeof window !== "undefined" ? localStorage.getItem(STORE_TOKEN_KEY) || "" : "";
   const [route, setRouteState] = useState(readStoreRoute());
   const [config, setConfig] = useState({
     packages: [],
@@ -111,18 +113,12 @@ function PublicStorefront() {
     contact: { zaloUrl: "", messengerUrl: "" },
     momoConfigured: false,
   });
-  const [token, setToken] = useState(
-    typeof window !== "undefined" ? localStorage.getItem(STORE_TOKEN_KEY) || "" : "",
-  );
+  const [token, setToken] = useState(initialStoreToken);
   const [user, setUser] = useState(null);
   const [orders, setOrders] = useState([]);
   const [authMode, setAuthMode] = useState("login");
   const [loading, setLoading] = useState(false);
-  const [sessionLoading, setSessionLoading] = useState(
-    typeof window !== "undefined"
-      ? !!localStorage.getItem(STORE_TOKEN_KEY)
-      : false,
-  );
+  const [sessionLoading, setSessionLoading] = useState(Boolean(initialStoreToken));
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
@@ -176,42 +172,33 @@ function PublicStorefront() {
   }, []);
 
   useEffect(() => {
-    loadConfig().catch((configError) => {
-      setError(configError.message || "Không tải được cấu hình web");
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!token) return;
-    loadSession(token).catch((sessionError) => {
-      setSessionToken("");
-      setError(sessionError.message || "Không tải được phiên đăng nhập");
-    });
-  }, [token]);
-
-  useEffect(() => {
     let cancelled = false;
-
-    if (!token) {
-      setSessionLoading(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setSessionLoading(true);
-    apiRequest("/api/store/auth/me", { token })
-      .catch(() => {})
-      .finally(() => {
+    const bootstrapStore = async () => {
+      try {
+        await loadConfig();
+        if (initialStoreToken) {
+          await loadSession(initialStoreToken);
+        }
+      } catch (bootstrapError) {
+        if (initialStoreToken) {
+          setSessionToken("");
+        }
+        if (!cancelled) {
+          setError(bootstrapError.message || "Không tải được dữ liệu cửa hàng");
+        }
+      } finally {
         if (!cancelled) {
           setSessionLoading(false);
         }
-      });
+      }
+    };
+
+    bootstrapStore();
 
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     if (route.view !== "payment-result" || !route.orderId || !token) return;
@@ -697,14 +684,14 @@ function PublicStorefront() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-white">{order.packageName}</h3>
-                <p className="mt-1 text-sm text-slate-400">Don #{order.id} • {formatDateTime(order.createdAt)}</p>
+                <p className="mt-1 text-sm text-slate-400">Đơn #{order.id} • {formatDateTime(order.createdAt)}</p>
               </div>
               <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-100">{formatStatusLabel(order.status)}</span>
             </div>
             <div className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-3">
-              <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">Gia tien</p><p className="mt-1 font-semibold text-white">{formatMoney(order.amount)}</p></div>
+              <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">Giá tiền</p><p className="mt-1 font-semibold text-white">{formatMoney(order.amount)}</p></div>
               <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">MoMo order</p><p className="mt-1 font-semibold text-white">{order.momoOrderId || "--"}</p></div>
-              <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">Trang thai MoMo</p><p className="mt-1 font-semibold text-white">{order.momoMessage || "--"}</p></div>
+              <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">Trạng thái MoMo</p><p className="mt-1 font-semibold text-white">{order.momoMessage || "--"}</p></div>
             </div>
             {order.packageCode === "package1" && order.status === "fulfilled" ? renderPackage1Order(order) : null}
             {order.packageCode === "package2" && order.status === "fulfilled" ? renderPackage2Order(order) : null}

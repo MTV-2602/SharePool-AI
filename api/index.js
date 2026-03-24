@@ -671,9 +671,7 @@ app.get("/api/store/config", async (req, res) => {
         ).trim(),
       },
       momoConfigured:
-        !!String(process.env.MOMO_PARTNER_CODE || "").trim() &&
-        !!String(process.env.MOMO_ACCESS_KEY || "").trim() &&
-        !!String(process.env.MOMO_SECRET_KEY || "").trim(),
+        !!MOMO_PARTNER_CODE && !!MOMO_ACCESS_KEY && !!MOMO_SECRET_KEY,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -692,7 +690,7 @@ app.post("/api/store/auth/register", async (req, res) => {
     if (!fullName || !phoneNormalized || !emailLower || password.length < 6) {
       return res.status(400).json({
         error:
-          "Vui long nhap day du ho ten, SDT, email va mat khau toi thieu 6 ky tu",
+          "Vui lòng nhập đầy đủ họ tên, SĐT, email và mật khẩu tối thiểu 6 ký tự",
       });
     }
 
@@ -701,10 +699,10 @@ app.post("/api/store/auth/register", async (req, res) => {
       StoreUser.findOne({ emailLower }).lean(),
     ]);
     if (existingPhone) {
-      return res.status(409).json({ error: "SDT da ton tai" });
+      return res.status(409).json({ error: "Số điện thoại đã tồn tại" });
     }
     if (existingEmail) {
-      return res.status(409).json({ error: "Email da ton tai" });
+      return res.status(409).json({ error: "Email đã tồn tại" });
     }
 
     const nowIso = new Date().toISOString();
@@ -727,7 +725,7 @@ app.post("/api/store/auth/register", async (req, res) => {
       user: sanitizeStoreUser(user),
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Dang ky that bai" });
+    res.status(500).json({ error: error.message || "Đăng ký thất bại" });
   }
 });
 
@@ -736,7 +734,9 @@ app.post("/api/store/auth/login", async (req, res) => {
     const identifier = String(req.body?.identifier || "").trim();
     const password = String(req.body?.password || "");
     if (!identifier || !password) {
-      return res.status(400).json({ error: "Vui long nhap email/SDT va mat khau" });
+      return res
+        .status(400)
+        .json({ error: "Vui lòng nhập email hoặc SĐT và mật khẩu" });
     }
     const emailLower = normalizeEmailLower(identifier);
     const phoneNormalized = normalizePhoneValue(identifier);
@@ -747,11 +747,11 @@ app.post("/api/store/auth/login", async (req, res) => {
       ],
     });
     if (!user?.passwordHash) {
-      return res.status(401).json({ error: "Thong tin dang nhap khong dung" });
+      return res.status(401).json({ error: "Thông tin đăng nhập không đúng" });
     }
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
-      return res.status(401).json({ error: "Thong tin dang nhap khong dung" });
+      return res.status(401).json({ error: "Thông tin đăng nhập không đúng" });
     }
     return res.json({
       success: true,
@@ -759,7 +759,7 @@ app.post("/api/store/auth/login", async (req, res) => {
       user: sanitizeStoreUser(user),
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Dang nhap that bai" });
+    res.status(500).json({ error: error.message || "Đăng nhập thất bại" });
   }
 });
 
@@ -767,10 +767,10 @@ app.post("/api/store/auth/google", async (req, res) => {
   try {
     const credential = String(req.body?.credential || "").trim();
     if (!credential) {
-      return res.status(400).json({ error: "Thieu token Google" });
+      return res.status(400).json({ error: "Thiếu token Google" });
     }
     if (!googleOAuthClient) {
-      return res.status(400).json({ error: "Google OAuth chua duoc cau hinh" });
+      return res.status(400).json({ error: "Google OAuth chưa được cấu hình" });
     }
     const ticket = await googleOAuthClient.verifyIdToken({
       idToken: credential,
@@ -779,7 +779,7 @@ app.post("/api/store/auth/google", async (req, res) => {
     const payload = ticket.getPayload();
     const emailLower = normalizeEmailLower(payload?.email);
     if (!emailLower || !payload?.email_verified) {
-      return res.status(400).json({ error: "Tai khoan Google khong hop le" });
+      return res.status(400).json({ error: "Tài khoản Google không hợp lệ" });
     }
     const googleId = String(payload?.sub || "").trim();
     let user =
@@ -810,7 +810,7 @@ app.post("/api/store/auth/google", async (req, res) => {
       user: sanitizeStoreUser(user),
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Dang nhap Google that bai" });
+    res.status(500).json({ error: error.message || "Đăng nhập Google thất bại" });
   }
 });
 
@@ -820,7 +820,8 @@ app.post("/api/store/auth/forgot-password", async (req, res) => {
     if (!emailLower) {
       return res.json({
         success: true,
-        message: "Neu email ton tai, he thong da gui huong dan dat lai mat khau",
+        message:
+          "Nếu email tồn tại, hệ thống đã gửi hướng dẫn đặt lại mật khẩu",
       });
     }
     const user = await StoreUser.findOne({ emailLower });
@@ -834,10 +835,11 @@ app.post("/api/store/auth/forgot-password", async (req, res) => {
     }
     return res.json({
       success: true,
-      message: "Neu email ton tai, he thong da gui huong dan dat lai mat khau",
+      message:
+        "Nếu email tồn tại, hệ thống đã gửi hướng dẫn đặt lại mật khẩu",
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Khong gui duoc email" });
+    res.status(500).json({ error: error.message || "Không gửi được email" });
   }
 });
 
@@ -846,7 +848,9 @@ app.post("/api/store/auth/reset-password", async (req, res) => {
     const resetToken = String(req.body?.token || "").trim();
     const newPassword = String(req.body?.newPassword || "");
     if (!resetToken || newPassword.length < 6) {
-      return res.status(400).json({ error: "Token hoac mat khau moi khong hop le" });
+      return res
+        .status(400)
+        .json({ error: "Token hoặc mật khẩu mới không hợp lệ" });
     }
     const resetTokenHash = hashSha256(resetToken);
     const user = await StoreUser.findOne({
@@ -854,7 +858,9 @@ app.post("/api/store/auth/reset-password", async (req, res) => {
       resetTokenExpiresAt: { $gt: new Date().toISOString() },
     });
     if (!user) {
-      return res.status(400).json({ error: "Lien ket dat lai mat khau da het han" });
+      return res
+        .status(400)
+        .json({ error: "Liên kết đặt lại mật khẩu đã hết hạn" });
     }
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     user.resetTokenHash = "";
@@ -862,9 +868,11 @@ app.post("/api/store/auth/reset-password", async (req, res) => {
     user.authProviders = upsertStringIntoList(user.authProviders, "password");
     user.updatedAt = new Date().toISOString();
     await user.save();
-    return res.json({ success: true, message: "Da dat lai mat khau thanh cong" });
+    return res.json({ success: true, message: "Đã đặt lại mật khẩu thành công" });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Khong dat lai duoc mat khau" });
+    res
+      .status(500)
+      .json({ error: error.message || "Không đặt lại được mật khẩu" });
   }
 });
 
@@ -878,7 +886,7 @@ app.get("/api/store/auth/me", verifyStoreUserToken, async (req, res) => {
       orders: orders.map((order) => sanitizeStoreOrder(order)),
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Khong tai duoc tai khoan" });
+    res.status(500).json({ error: error.message || "Không tải được tài khoản" });
   }
 });
 
@@ -889,7 +897,7 @@ app.get("/api/store/orders", verifyStoreUserToken, async (req, res) => {
       .lean();
     res.json({ orders: orders.map((order) => sanitizeStoreOrder(order)) });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Khong tai duoc don hang" });
+    res.status(500).json({ error: error.message || "Không tải được đơn hàng" });
   }
 });
 
@@ -900,11 +908,11 @@ app.get("/api/store/orders/:id", verifyStoreUserToken, async (req, res) => {
       userId: req.storeUser.id,
     }).lean();
     if (!order) {
-      return res.status(404).json({ error: "Khong tim thay don hang" });
+      return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
     }
     res.json({ order: sanitizeStoreOrder(order) });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Khong tai duoc don hang" });
+    res.status(500).json({ error: error.message || "Không tải được đơn hàng" });
   }
 });
 
@@ -913,12 +921,14 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => 
     const packageCode = String(req.body?.packageCode || "").trim().toLowerCase();
     const packageConfig = STORE_PACKAGE_MAP[packageCode];
     if (!packageConfig || packageCode === "package3") {
-      return res.status(400).json({ error: "Goi nay chua ho tro mua tu dong" });
+      return res.status(400).json({ error: "Gói này chưa hỗ trợ mua tự động" });
     }
     const stockSummary = await buildStoreCatalog();
     const selectedStock = stockSummary.find((item) => item.code === packageCode);
     if (!selectedStock?.purchasable) {
-      return res.status(409).json({ error: "Kho tong hien khong du stock cho goi nay" });
+      return res
+        .status(409)
+        .json({ error: "Hiện không đủ tài khoản phù hợp cho gói này" });
     }
 
     const order = await StoreOrder.create({
@@ -951,7 +961,7 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => 
     });
   } catch (error) {
     res.status(error.statusCode || 500).json({
-      error: error.message || "Khong tao duoc lien ket thanh toan",
+      error: error.message || "Không tạo được liên kết thanh toán",
     });
   }
 });
@@ -960,7 +970,7 @@ app.post("/api/store/package1/code", async (req, res) => {
   try {
     const secretToken = String(req.body?.secretToken || "").trim();
     if (!secretToken) {
-      return res.status(400).json({ error: "Thieu ma bi mat" });
+      return res.status(400).json({ error: "Thiếu mã bí mật" });
     }
     const order = await StoreOrder.findOne({
       packageCode: "package1",
@@ -968,15 +978,15 @@ app.post("/api/store/package1/code", async (req, res) => {
       status: "fulfilled",
     });
     if (!order) {
-      return res.status(404).json({ error: "Khong tim thay ma bi mat hop le" });
+      return res.status(404).json({ error: "Không tìm thấy mã bí mật hợp lệ" });
     }
     if (buildStorePackage1UsageLeft(order) <= 0) {
-      return res.status(400).json({ error: "Da het luot lay ma" });
+      return res.status(400).json({ error: "Đã hết lượt lấy mã" });
     }
     const account = await Account.findOne({ id: String(order.assignedAccountId || "").trim() }).lean();
     const otpSecret = String(account?.otpSecret || "").trim();
     if (!otpSecret) {
-      return res.status(400).json({ error: "Tai khoan nay chua co ma 2FA" });
+      return res.status(400).json({ error: "Tài khoản này chưa có mã 2FA" });
     }
     const otp = generateTotpCode(otpSecret);
     const updatedOrder = await StoreOrder.findOneAndUpdate(
@@ -998,7 +1008,7 @@ app.post("/api/store/package1/code", async (req, res) => {
       usageLeft: buildStorePackage1UsageLeft(updatedOrder),
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Khong lay duoc ma 2FA" });
+    res.status(500).json({ error: error.message || "Không lấy được mã 2FA" });
   }
 });
 
@@ -1006,12 +1016,12 @@ app.post("/api/store/totp/generate", async (req, res) => {
   try {
     const secret = String(req.body?.secret || "").trim();
     if (!secret) {
-      return res.status(400).json({ error: "Thieu ma 2FA" });
+      return res.status(400).json({ error: "Thiếu mã 2FA" });
     }
     const otp = generateTotpCode(secret);
     res.json({ success: true, code: otp.code, expiresIn: otp.expiresIn });
   } catch (error) {
-    res.status(400).json({ error: error.message || "Khong tao duoc ma OTP" });
+    res.status(400).json({ error: error.message || "Không tạo được mã OTP" });
   }
 });
 
@@ -1140,6 +1150,11 @@ const normalizeLegacyExtDays = (value, fallback = "1M") => {
 };
 const STORE_USER_JWT_SECRET =
   process.env.JWT_SECRET || "change-me-store-user-jwt-secret";
+const MOMO_PARTNER_CODE = String(
+  process.env.MOMO_PARTNER_CODE || process.env.MOMO_PARTNER_CE || "",
+).trim();
+const MOMO_ACCESS_KEY = String(process.env.MOMO_ACCESS_KEY || "").trim();
+const MOMO_SECRET_KEY = String(process.env.MOMO_SECRET_KEY || "").trim();
 const STORE_PACKAGE1_PRICE = Math.max(
   0,
   Number(process.env.STORE_PACKAGE1_PRICE || 30000),
@@ -1167,19 +1182,19 @@ const googleOAuthClient = GOOGLE_OAUTH_CLIENT_ID
 const STORE_PACKAGE_MAP = {
   package1: {
     code: "package1",
-    name: "Goi 1 - Chia se tiet kiem",
+    name: "Gói 1 - Chia sẻ tiết kiệm",
     price: STORE_PACKAGE1_PRICE,
     automated: true,
   },
   package2: {
     code: "package2",
-    name: "Goi 2 - Tai khoan rieng tu",
+    name: "Gói 2 - Tài khoản riêng tư",
     price: STORE_PACKAGE2_PRICE,
     automated: true,
   },
   package3: {
     code: "package3",
-    name: "Goi 3 - Nang chinh chu Gmail",
+    name: "Gói 3 - Nâng chính chủ Gmail",
     price: STORE_PACKAGE3_PRICE,
     automated: false,
   },
@@ -1330,7 +1345,7 @@ const getGmailTransporter = () => {
   const gmailUser = String(process.env.GMAIL_USER || "").trim();
   const gmailPassword = String(process.env.GMAIL_APP_PASSWORD || "").trim();
   if (!gmailUser || !gmailPassword) {
-    throw new Error("Gmail SMTP chua duoc cau hinh");
+    throw new Error("Gmail SMTP chưa được cấu hình");
   }
   gmailTransporter = nodemailer.createTransport({
     service: "gmail",
@@ -1348,14 +1363,14 @@ const sendStoreResetPasswordEmail = async ({ req, user, resetToken }) => {
   await transporter.sendMail({
     from: gmailUser,
     to: String(user.email || "").trim(),
-    subject: "Dat lai mat khau tai khoan",
+    subject: "Đặt lại mật khẩu tài khoản",
     text: [
-      `Xin chao ${String(user.fullName || "").trim() || "ban"},`,
+      `Xin chào ${String(user.fullName || "").trim() || "bạn"},`,
       "",
-      "Ban vua yeu cau dat lai mat khau.",
-      `Mo link sau de dat lai mat khau: ${resetLink}`,
+      "Bạn vừa yêu cầu đặt lại mật khẩu.",
+      `Mở link sau để đặt lại mật khẩu: ${resetLink}`,
       "",
-      "Neu ban khong thuc hien yeu cau nay, hay bo qua email.",
+      "Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email.",
     ].join("\n"),
   });
 };
@@ -1370,7 +1385,7 @@ const buildMomoSignature = (fields = {}) => {
     .map(([key, value]) => `${key}=${String(value ?? "")}`)
     .join("&");
   return crypto
-    .createHmac("sha256", String(process.env.MOMO_SECRET_KEY || "").trim())
+    .createHmac("sha256", MOMO_SECRET_KEY)
     .update(raw)
     .digest("hex");
 };
@@ -1378,7 +1393,7 @@ const verifyMomoIpnSignature = (payload = {}) => {
   const signature = String(payload.signature || "").trim();
   if (!signature) return false;
   const expected = buildMomoSignature({
-    accessKey: String(process.env.MOMO_ACCESS_KEY || "").trim(),
+    accessKey: MOMO_ACCESS_KEY,
     amount: payload.amount ?? "",
     extraData: payload.extraData ?? "",
     message: payload.message ?? "",
@@ -1415,7 +1430,7 @@ const decodeBase32 = (input = "") => {
 const generateTotpCode = (secret, timeMs = Date.now()) => {
   const key = decodeBase32(secret);
   if (!key.length) {
-    throw new Error("Ma 2FA khong hop le");
+    throw new Error("Mã 2FA không hợp lệ");
   }
   const counter = Math.floor(timeMs / 30000);
   const buffer = Buffer.alloc(8);
@@ -2371,7 +2386,7 @@ const buildStoreCustomerRecord = (user, joinedAt = new Date()) => {
   const joinedDate = new Date(joinedAt);
   const expiredAt = addDurationToDate(joinedDate, "1M");
   return {
-    name: String(user?.fullName || user?.email || "Khach").trim(),
+    name: String(user?.fullName || user?.email || "Khách").trim(),
     joinedAt: joinedDate.toISOString(),
     expiredAt: expiredAt.toISOString(),
   };
@@ -2501,7 +2516,9 @@ const claimStorePackage1AccountForOrder = async ({ order, user }) => {
     convertedFromUnassigned = !!oldAcc;
   }
   if (!oldAcc) {
-    const error = new Error("Kho tong Goi 1 hien khong con acc/slot hop le");
+    const error = new Error(
+      "Kho tổng Gói 1 hiện không còn tài khoản hoặc slot phù hợp",
+    );
     error.statusCode = 409;
     throw error;
   }
@@ -2532,7 +2549,7 @@ const claimStorePackage2AccountForOrder = async ({ order, user }) => {
     },
   );
   if (!oldAcc) {
-    const error = new Error("Kho tong Goi 2 hien khong con nick moi hop le");
+    const error = new Error("Kho tổng Gói 2 hiện không còn nick mới phù hợp");
     error.statusCode = 409;
     throw error;
   }
@@ -2560,7 +2577,7 @@ const fulfillStoreOrder = async (order) => {
   const safeOrder =
     typeof order?.toObject === "function" ? order.toObject() : { ...(order || {}) };
   if (!safeOrder?.id) {
-    throw new Error("Don hang khong hop le");
+    throw new Error("Đơn hàng không hợp lệ");
   }
   if (String(safeOrder.status || "").trim().toLowerCase() === "fulfilled") {
     return StoreOrder.findOne({ id: safeOrder.id });
@@ -2634,11 +2651,11 @@ const fulfillStoreOrder = async (order) => {
   }
 };
 const createMomoPaymentForStoreOrder = async (req, order) => {
-  const partnerCode = String(process.env.MOMO_PARTNER_CODE || "").trim();
-  const accessKey = String(process.env.MOMO_ACCESS_KEY || "").trim();
-  const secretKey = String(process.env.MOMO_SECRET_KEY || "").trim();
+  const partnerCode = MOMO_PARTNER_CODE;
+  const accessKey = MOMO_ACCESS_KEY;
+  const secretKey = MOMO_SECRET_KEY;
   if (!partnerCode || !accessKey || !secretKey) {
-    throw new Error("MoMo chua duoc cau hinh day du");
+    throw new Error("MoMo chưa được cấu hình đầy đủ");
   }
   const requestId = createStoreId("momo");
   const amount = String(Math.round(Number(order?.amount || 0)));
@@ -2686,7 +2703,7 @@ const createMomoPaymentForStoreOrder = async (req, order) => {
   const data = response?.data || {};
   if (Number(data?.resultCode || 0) !== 0 || !String(data?.payUrl || "").trim()) {
     throw new Error(
-      String(data?.message || "Khong tao duoc lien ket thanh toan MoMo"),
+      String(data?.message || "Không tạo được liên kết thanh toán MoMo"),
     );
   }
   await StoreOrder.findOneAndUpdate(
