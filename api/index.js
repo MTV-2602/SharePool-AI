@@ -654,6 +654,8 @@ app.get("/api/test", (req, res) => {
   });
 });
 
+const DEFAULT_STORE_CONTACT_ZALO_URL = "https://zalo.me/0345440153";
+
 app.get("/api/store/config", async (req, res) => {
   try {
     const packages = await buildStoreCatalog();
@@ -661,7 +663,9 @@ app.get("/api/store/config", async (req, res) => {
       packages,
       googleClientId: GOOGLE_OAUTH_CLIENT_ID,
       contact: {
-        zaloUrl: String(process.env.STORE_CONTACT_ZALO_URL || "").trim(),
+        zaloUrl: String(
+          process.env.STORE_CONTACT_ZALO_URL || DEFAULT_STORE_CONTACT_ZALO_URL,
+        ).trim(),
         messengerUrl: String(
           process.env.STORE_CONTACT_MESSENGER_URL || "",
         ).trim(),
