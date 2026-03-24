@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Copy,
   KeyRound,
+  Loader2,
   LogOut,
   Mail,
   Phone,
@@ -126,6 +127,8 @@ function PublicStorefront() {
   const [authMode, setAuthMode] = useState("login");
   const [loading, setLoading] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(Boolean(initialStoreToken));
+  const [purchaseLoadingCode, setPurchaseLoadingCode] = useState("");
+  const [reconcileLoadingOrderId, setReconcileLoadingOrderId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
@@ -144,6 +147,7 @@ function PublicStorefront() {
   const googleButtonRef = useRef(null);
   const authCardRef = useRef(null);
   const pendingReconcileRef = useRef(false);
+  const purchaseLockRef = useRef(false);
 
   const refreshRouteState = () => setRouteState(readStoreRoute());
 
@@ -541,13 +545,16 @@ function PublicStorefront() {
   };
 
   const handlePurchaseButtonClick = async (pkg) => {
-    if (sessionLoading || loading) return;
+    if (sessionLoading || loading || purchaseLockRef.current || purchaseLoadingCode) return;
     if (!user) {
       setMessage("");
       setError("Bạn chưa đăng nhập tài khoản user. Vui lòng đăng nhập hoặc đăng ký rồi thử lại.");
       focusAuthCard("login");
       return;
     }
+    purchaseLockRef.current = true;
+    setPurchaseLoadingCode(String(pkg?.code || ""));
+    try {
     const latestConfig = await loadConfig();
     const latestPackage = Array.isArray(latestConfig?.packages)
       ? latestConfig.packages.find((item) => item.code === pkg?.code)
@@ -562,7 +569,11 @@ function PublicStorefront() {
       setError("Kho hiện tại của gói này đã hết, nên hệ thống đã chặn không cho tạo thanh toán.");
       return;
     }
-    handleCreatePayment(latestPackage.code);
+      await handleCreatePayment(latestPackage.code);
+    } finally {
+      purchaseLockRef.current = false;
+      setPurchaseLoadingCode("");
+    }
   };
 
   const handleGeneratePackage1Code = async (order) => {
@@ -589,6 +600,7 @@ function PublicStorefront() {
   const handleReconcileOrderPayment = async (orderId) => {
     try {
       setLoading(true);
+      setReconcileLoadingOrderId(String(orderId || ""));
       setError("");
       setMessage("");
       await apiRequest(`/api/store/orders/${encodeURIComponent(orderId)}/reconcile`, {
@@ -600,6 +612,7 @@ function PublicStorefront() {
     } catch (reconcileError) {
       setError(reconcileError.message || "Không thể kiểm tra trạng thái thanh toán.");
     } finally {
+      setReconcileLoadingOrderId("");
       setLoading(false);
     }
   };
@@ -795,8 +808,13 @@ function PublicStorefront() {
             </a>
           ) : (
             <>
-            <button onClick={() => handlePurchaseButtonClick(pkg)} disabled={sessionLoading || loading} className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
-              {sessionLoading
+            <button onClick={() => handlePurchaseButtonClick(pkg)} disabled={sessionLoading || loading || !!purchaseLoadingCode} className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+              {purchaseLoadingCode === pkg.code ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Loader2 size={16} className="animate-spin" />
+                  Đang tạo thanh toán...
+                </span>
+              ) : sessionLoading
                 ? "Đang kiểm tra..."
                 : !user
                   ? "Đăng nhập để mua"
@@ -901,7 +919,14 @@ function PublicStorefront() {
                   disabled={loading}
                   className="inline-flex items-center rounded-2xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Kiểm tra thanh toán
+                  {reconcileLoadingOrderId === order.id ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 size={14} className="animate-spin" />
+                      Đang kiểm tra...
+                    </span>
+                  ) : (
+                    "Kiểm tra thanh toán"
+                  )}
                 </button>
                 {order.momoPayUrl ? (
                   <a
