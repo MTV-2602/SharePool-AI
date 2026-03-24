@@ -5175,36 +5175,64 @@ app.post("/api/proxy-sheet", async (req, res) => {
 // 6. LOGIN ENDPOINT (Secure authentication with 7-day expiry)
 app.post("/api/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const identifier = String(
+      req.body?.identifier || req.body?.email || req.body?.phone || "",
+    ).trim();
+    const password = String(req.body?.password || "");
 
     // Get credentials from environment variables
     const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@example.com";
     const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "changeme";
 
     console.log("Login attempt:", {
-      email,
+      identifier,
       hasPassword: !!password,
       envEmail: ADMIN_EMAIL,
     });
 
-    if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+    if (identifier === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
       // Generate token with 7-day expiry
       const now = Date.now();
       const expiryTime = now + 7 * 24 * 60 * 60 * 1000; // 7 days
-      const token = Buffer.from(`${now}_${expiryTime}_${email}`).toString(
+      const token = Buffer.from(`${now}_${expiryTime}_${identifier}`).toString(
         "base64",
       );
 
       res.json({
         success: true,
+        role: "admin",
         token,
         expiresAt: new Date(expiryTime).toISOString(),
         message: "Login successful. Token expires in 7 days.",
       });
-    } else {
-      console.log("Login failed: Invalid credentials");
-      res.status(401).json({ success: false, message: "Invalid credentials" });
+      return;
     }
+
+    const emailLower = normalizeEmailLower(identifier);
+    const phoneNormalized = normalizePhoneValue(identifier);
+    const storeUser = await StoreUser.findOne({
+      $or: [{ emailLower }, ...(phoneNormalized ? [{ phoneNormalized }] : [])],
+    });
+
+    if (storeUser?.passwordHash) {
+      const isMatch = await bcrypt.compare(password, storeUser.passwordHash);
+      if (isMatch) {
+        return res.json({
+          success: true,
+          role: "user",
+          token: issueStoreUserJwt(storeUser),
+          user: sanitizeStoreUser(storeUser),
+          redirectTo: "/store",
+          message: "Đăng nhập user thành công",
+        });
+      }
+    }
+
+    console.log("Login failed: Invalid credentials");
+    res.status(401).json({
+      success: false,
+      message: "Email/SĐT hoặc mật khẩu không đúng",
+    });
   } catch (error) {
     console.error("Login error:", error);
     res

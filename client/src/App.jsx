@@ -982,7 +982,7 @@ const getApiErrorMessage = (error, fallback) =>
 function App() {
   // LOGIN STATE
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
 
   const [accounts, setAccounts] = useState([]);
   const [netflixAccounts, setNetflixAccounts] = useState([]);
@@ -1336,13 +1336,18 @@ function App() {
       const response = await axios.post(
         "/api/login",
         {
-          email: loginForm.email.toLowerCase(),
+          identifier: loginForm.identifier.trim(),
           password: loginForm.password,
         },
         { requestLabel: "Đang đăng nhập" },
       );
 
       if (response.data.success) {
+        if (response.data.role === "user") {
+          localStorage.setItem("store_user_token", response.data.token || "");
+          window.location.href = response.data.redirectTo || "/store";
+          return;
+        }
         localStorage.setItem("admin_token", response.data.token);
         localStorage.setItem("token_expires_at", response.data.expiresAt);
         setIsAuthenticated(true);
@@ -1353,13 +1358,13 @@ function App() {
           "success",
         );
       } else {
-        showAlert("Lỗi", "Sai email hoặc mật khẩu!", "error");
+        showAlert("Lỗi", "Sai email/SĐT hoặc mật khẩu!", "error");
       }
     } catch (error) {
       if (error.response?.status === 401) {
         showAlert(
           "Lỗi",
-          error.response?.data?.message || "Sai email hoặc mật khẩu!",
+          error.response?.data?.message || "Sai email/SĐT hoặc mật khẩu!",
           "error",
         );
       } else {
@@ -1371,7 +1376,7 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem("admin_token");
     setIsAuthenticated(false);
-    setLoginForm({ email: "", password: "" });
+    setLoginForm({ identifier: "", password: "" });
     setRecentDatammoOrders([]);
     seenDatammoOrderKeysRef.current = null;
     hasInitializedDatammoOrdersRef.current = false;
@@ -3341,7 +3346,7 @@ function App() {
               </div>
             </div>
 
-            {/* RIGHT — Admin Login */}
+            {/* RIGHT — Unified Login */}
             <div className="w-full lg:w-80 shrink-0">
               <div className="rounded-2xl p-6 border border-slate-700 shadow-xl bg-slate-900 sticky top-6">
                 <div className="flex justify-center mb-4 text-blue-400">
@@ -3349,16 +3354,16 @@ function App() {
                     <Lock size={28} />
                   </div>
                 </div>
-                <h2 className="text-lg font-bold text-center text-slate-400 mb-5">🔐 Đăng Nhập Admin</h2>
+                <h2 className="text-lg font-bold text-center text-slate-400 mb-5">🔐 Đăng Nhập</h2>
                 <form onSubmit={handleLogin} className="space-y-3">
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1">Email</label>
+                    <label className="block text-xs text-slate-500 mb-1">Email hoặc SĐT</label>
                     <input
                       type="text"
                       className="form-input w-full text-sm"
-                      placeholder="admin@example.com"
-                      value={loginForm.email}
-                      onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                      placeholder="Nhập email admin hoặc email/SĐT user"
+                      value={loginForm.identifier}
+                      onChange={(e) => setLoginForm({ ...loginForm, identifier: e.target.value })}
                     />
                   </div>
                   <div>
@@ -3380,7 +3385,7 @@ function App() {
                     {alertInfo.message}
                   </div>
                 )}
-                <p className="text-center text-slate-600 text-xs mt-4">Dành riêng cho Admin hệ thống</p>
+                <p className="text-center text-slate-600 text-xs mt-4">Admin vào quản trị, user sẽ tự chuyển sang trang mua nick</p>
               </div>
             </div>
           </div>
