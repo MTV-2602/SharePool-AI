@@ -1196,6 +1196,7 @@ function App() {
   const [toastMessage, setToastMessage] = useState("");
   const [recentDatammoOrders, setRecentDatammoOrders] = useState([]);
   const [recentStoreOrders, setRecentStoreOrders] = useState([]);
+  const [storeOrders, setStoreOrders] = useState([]);
 
   // User Input Modal
   const [showUserModal, setShowUserModal] = useState(false);
@@ -1460,6 +1461,7 @@ function App() {
     setLoginForm({ identifier: "", password: "" });
     setRecentDatammoOrders([]);
     setRecentStoreOrders([]);
+    setStoreOrders([]);
     seenDatammoOrderKeysRef.current = null;
     seenStoreOrderKeysRef.current = null;
     hasInitializedDatammoOrdersRef.current = false;
@@ -1804,6 +1806,7 @@ function App() {
         }
         syncDatammoOrderBanner(res.data?.datammoOrders);
         syncStoreOrderBanner(res.data?.storeOrders);
+        setStoreOrders(normalizeStoreAdminOrders(res.data?.storeOrders));
         if (res.data && res.data.chatgpt) {
           const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
           const sortedGPT = [...res.data.chatgpt]
@@ -3782,6 +3785,30 @@ function App() {
       })
       .join(" ");
   };
+  const getStoreOrderSearchTextForAccount = (accountId) => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return "";
+    return (storeOrders || [])
+      .filter((order) => String(order?.assignedAccountId || "").trim() === normalizedId)
+      .map((order) =>
+        [
+          "web",
+          "store",
+          order?.id,
+          order?.packageName,
+          order?.packageCode,
+          order?.customerName,
+          order?.customerEmail,
+          order?.customerPhone,
+          order?.assignedUsername,
+          order?.momoOrderId,
+          getStoreOrderStatusLabel(order?.status),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      )
+      .join(" ");
+  };
   const filteredChatgptAccounts = accounts
     .filter((acc) => {
       if (gptSubTab === "total") {
@@ -3875,6 +3902,13 @@ function App() {
       ) {
         return true;
       }
+      const storeOrderSearchText = getStoreOrderSearchTextForAccount(acc?.id);
+      if (
+        storeOrderSearchText &&
+        toNonAccentVietnamese(storeOrderSearchText).includes(queryNormalized)
+      ) {
+        return true;
+      }
       return false;
     });
   const filteredChatgptIds = filteredChatgptAccounts.map((acc) =>
@@ -3887,6 +3921,27 @@ function App() {
     (order) => normalizeMarketplaceScope(order?.scope) === "team",
   );
   const globalMarketplaceSearchQuery = toNonAccentVietnamese(searchQuery);
+  const filteredStoreOrderResults = (storeOrders || []).filter((order) => {
+    if (!searchQuery.trim()) return false;
+    const searchIndex = toNonAccentVietnamese(
+      [
+        "web",
+        "store",
+        order?.id,
+        order?.packageName,
+        order?.packageCode,
+        order?.customerName,
+        order?.customerEmail,
+        order?.customerPhone,
+        order?.assignedUsername,
+        order?.momoOrderId,
+        getStoreOrderStatusLabel(order?.status),
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    return searchIndex.includes(globalMarketplaceSearchQuery);
+  });
   const filteredChatgptMarketplaceOrders = chatgptMarketplaceOrderSummaries.filter((order) => {
     if (
       marketplaceOrderProviderFilter !== "all" &&
@@ -4333,6 +4388,77 @@ function App() {
               >
                 <X size={16} />
               </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "chatgpt" && searchQuery.trim() && filteredStoreOrderResults.length > 0 && (
+          <div className="mb-6 rounded-2xl border border-sky-500/30 bg-sky-950/15 shadow-2xl overflow-hidden">
+            <div className="p-4 md:p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] font-black text-sky-300">
+                    Đơn web khớp tìm kiếm
+                  </div>
+                  <div className="mt-1 text-lg md:text-xl font-black text-white">
+                    Tìm thấy {filteredStoreOrderResults.length} đơn web theo từ khóa hiện tại
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 space-y-3">
+                {filteredStoreOrderResults.slice(0, 5).map((order) => {
+                  const customerLabel =
+                    order.customerName ||
+                    order.customerEmail ||
+                    order.customerPhone ||
+                    "Khách web";
+                  const accountLabel = order.assignedUsername || "Đang chờ cấp nick";
+                  return (
+                    <div
+                      key={`store-search-${buildStoreOrderKey(order)}`}
+                      className="rounded-xl border border-sky-400/15 bg-black/15 px-4 py-3"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="min-w-0 space-y-1">
+                          <div className="inline-flex items-center rounded-full border border-sky-400/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.15em] text-sky-200">
+                            {order.packageName || order.packageCode || "Đơn web"}
+                          </div>
+                          <div className="font-semibold text-white break-all">
+                            {customerLabel} · {order.id || "N/A"}
+                          </div>
+                          <div className="text-sm text-sky-100/90 break-all">
+                            Trạng thái: {getStoreOrderStatusLabel(order.status)} · Nick: {accountLabel}
+                          </div>
+                          {order.momoOrderId ? (
+                            <div className="text-xs text-sky-100/75 break-all">
+                              MoMo: {order.momoOrderId}
+                            </div>
+                          ) : null}
+                        </div>
+                        {order.assignedAccountId ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleHighlightChatgptAccount(
+                                order.assignedAccountId,
+                                order.assignedUsername || order.id,
+                              )
+                            }
+                            className="shrink-0 rounded-xl bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-500 transition"
+                          >
+                            Tới acc
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+                {filteredStoreOrderResults.length > 5 && (
+                  <div className="text-xs text-sky-100/80">
+                    +{filteredStoreOrderResults.length - 5} đơn web nữa khớp với từ khóa này.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
