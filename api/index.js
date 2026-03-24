@@ -985,12 +985,7 @@ const TEST_MARKETPLACE_STOCK = Math.max(
 );
 const TEST_MARKETPLACE_PRICE = Math.max(
   1,
-  Number(
-    process.env.TEST_MARKETPLACE_PRICE ||
-      process.env.DATAMMO_PACKAGE2_CHEAP_PRICE ||
-      process.env.DATAMMO_PACKAGE2_MAIN_PRICE ||
-      1000,
-  ),
+  Number(process.env.TEST_MARKETPLACE_PRICE || 100000),
 );
 
 const normalizePackage2Shelf = (shelf, fallback = CHATGPT_TOTAL_VALUE) => {
