@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
-  Copy,
   Loader2,
   LogOut,
   Mail,
@@ -107,7 +106,7 @@ const isPendingStorePayment = (status) =>
 
 const packageFeatureMap = {
   package1: [
-    "Nhận mã bí mật riêng",
+    "Nhấn nút để lấy OTP đăng nhập",
     "Lấy OTP tối đa 3 lần",
     "Không hiển thị TOTP secret gốc",
     "Nhận mã ngay sau thanh toán",
@@ -875,15 +874,7 @@ function PublicStorefront() {
             </div>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-300">Mã bí mật</span>
-          <code className="break-all rounded-xl bg-slate-900 px-3 py-2 text-sm text-white">{order.package1AccessToken}</code>
-          <button onClick={() => copyText(order.package1AccessToken, "Đã sao chép mã bí mật Gói 1")} className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-200">
-            <Copy size={14} />
-            Sao chép
-          </button>
-        </div>
-        <p className="mt-3 text-sm text-slate-400">Gói 1 chỉ hiển thị OTP 6 số để đăng nhập, không hiển thị mã 2FA gốc. Còn {order.package1UsageLeft} / 3 lượt lấy mã OTP.</p>
+        <p className="mt-3 text-sm text-slate-400">Gói 1 chỉ hiển thị OTP 6 số để đăng nhập, không hiển thị mã 2FA gốc. Bấm nút Lấy mã khi cần đăng nhập. Còn {order.package1UsageLeft} / 3 lượt lấy mã OTP.</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button onClick={() => handleGeneratePackage1Code(order)} disabled={loading || order.package1UsageLeft <= 0} className="rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500 disabled:opacity-50">
             {order.package1UsageLeft > 0 ? "Lấy mã" : "Đã hết lượt"}
@@ -1069,7 +1060,7 @@ function PublicStorefront() {
                     <li>1. Đăng ký hoặc đăng nhập tài khoản user bằng email hoặc số điện thoại.</li>
                     <li>2. Chọn gói phù hợp rồi thanh toán qua MoMo.</li>
                     <li>3. Sau khi thanh toán thành công, hệ thống tự cấp tài khoản tương ứng.</li>
-                    <li>4. Gói 1 chỉ nhận OTP 6 số qua mã bí mật, tối đa 3 lượt.</li>
+                    <li>4. Gói 1 bấm nút Lấy mã để nhận OTP 6 số, tối đa 3 lượt.</li>
                     <li>5. Gói 2 nhận đầy đủ tài khoản, mật khẩu, mã 2FA và công cụ lấy mã trên web.</li>
                   </ol>
                 </div>
