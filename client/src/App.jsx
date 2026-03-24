@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
+import { useMemo } from "react";
 import {
   Trash2,
   UserPlus,
@@ -1136,6 +1137,7 @@ function App() {
     warranty: false,
     saveStoreUser: false,
     resetStoreUserPassword: false,
+    deleteStoreUser: "",
     deleteMarketplaceOrder: {},
     teamMode: {},
     changeTeamWarehouse: {},
@@ -1174,6 +1176,7 @@ function App() {
     password: "",
     confirmPassword: "",
   });
+  const [expandedStoreUserId, setExpandedStoreUserId] = useState("");
   const [showWarrantyModal, setShowWarrantyModal] = useState(false);
   const [warrantySourceAcc, setWarrantySourceAcc] = useState(null);
   const [warrantySourceScope, setWarrantySourceScope] = useState("chatgpt");
@@ -1640,6 +1643,15 @@ function App() {
     }
   };
 
+  const formatDateTime = (isoString) => {
+    if (!isoString) return "";
+    try {
+      return new Date(isoString).toLocaleString("vi-VN");
+    } catch (e) {
+      return "";
+    }
+  };
+
   // Helper to check expiry warning
   const getExpiryStatus = (isoString) => {
     if (!isoString) return { text: "", color: "text-slate-500", isExpired: false, dateStr: "" };
@@ -1948,6 +1960,41 @@ function App() {
     } finally {
       setLoadingStates((prev) => ({ ...prev, resetStoreUserPassword: false }));
     }
+  };
+
+  const handleDeleteStoreUser = (user) => {
+    const userId = String(user?.id || "").trim();
+    if (!userId) {
+      showAlert("Lỗi", "Thiếu ID user web.", "error");
+      return;
+    }
+    const totalOrders = Number(user?.totalOrders || 0);
+    showConfirm(
+      "Xóa user web",
+      totalOrders > 0
+        ? `User ${user?.fullName || userId} hiện vẫn còn ${totalOrders} đơn web. Hệ thống sẽ chặn xóa nếu đơn chưa được xử lý hết. Bạn vẫn muốn thử xóa chứ?`
+        : `Bạn có chắc muốn xóa user web ${user?.fullName || userId}?`,
+      async () => {
+        setLoadingStates((prev) => ({ ...prev, deleteStoreUser: userId }));
+        try {
+          await axios.delete(`/api/store-users/${userId}`);
+          if (expandedStoreUserId === userId) {
+            setExpandedStoreUserId("");
+          }
+          await fetchData();
+          broadcastDataChange();
+          showAlert("Thành công", "Đã xóa user web.", "success");
+        } catch (error) {
+          showAlert(
+            "Lỗi",
+            getApiErrorMessage(error, "Không thể xóa user web."),
+            "error",
+          );
+        } finally {
+          setLoadingStates((prev) => ({ ...prev, deleteStoreUser: "" }));
+        }
+      },
+    );
   };
 
   const handleAddAccount = async (e) => {
@@ -4031,6 +4078,23 @@ function App() {
       ? user.authProviders.includes("google")
       : false,
   ).length;
+  const storeOrdersByUserId = useMemo(() => {
+    const grouped = new Map();
+    (storeOrders || []).forEach((order) => {
+      const userId = String(order?.userId || "").trim();
+      if (!userId) return;
+      if (!grouped.has(userId)) grouped.set(userId, []);
+      grouped.get(userId).push(order);
+    });
+    grouped.forEach((orders) => {
+      orders.sort((a, b) => {
+        const aTime = new Date(a?.createdAt || 0).getTime();
+        const bTime = new Date(b?.createdAt || 0).getTime();
+        return bTime - aTime;
+      });
+    });
+    return grouped;
+  }, [storeOrders]);
   const paginatedChatgptMarketplaceOrders = filteredChatgptMarketplaceOrders.slice(
     (currentChatgptMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE,
     currentChatgptMarketplaceOrderPage * MARKETPLACE_ORDER_PAGE_SIZE,
@@ -4535,6 +4599,8 @@ function App() {
                       const authProviders = Array.isArray(user?.authProviders)
                         ? user.authProviders
                         : [];
+                      const userOrders = storeOrdersByUserId.get(String(user?.id || "").trim()) || [];
+                      const isExpanded = expandedStoreUserId === String(user?.id || "").trim();
                       return (
                         <div
                           key={user.id}
@@ -4637,6 +4703,22 @@ function App() {
                             <div className="xl:w-56 shrink-0 flex xl:flex-col gap-3">
                               <button
                                 type="button"
+                                onClick={() =>
+                                  setExpandedStoreUserId((prev) =>
+                                    prev === String(user?.id || "").trim()
+                                      ? ""
+                                      : String(user?.id || "").trim(),
+                                  )
+                                }
+                                className="flex-1 xl:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-3 text-white font-bold transition-colors"
+                              >
+                                <FileSpreadsheet size={16} />
+                                {isExpanded
+                                  ? `Ẩn đơn (${userOrders.length})`
+                                  : `Xem đơn (${userOrders.length})`}
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => openStoreUserEdit(user)}
                                 className="flex-1 xl:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-4 py-3 text-white font-bold transition-colors"
                               >
@@ -4651,8 +4733,108 @@ function App() {
                                 <Lock size={16} />
                                 Đặt lại mật khẩu
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteStoreUser(user)}
+                                disabled={loadingStates.deleteStoreUser === String(user?.id || "").trim()}
+                                className="flex-1 xl:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-red-700 hover:bg-red-600 px-4 py-3 text-white font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <Trash2 size={16} />
+                                {loadingStates.deleteStoreUser === String(user?.id || "").trim()
+                                  ? "Đang xóa..."
+                                  : "Xóa user"}
+                              </button>
                             </div>
                           </div>
+
+                          {isExpanded && (
+                            <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <div className="text-xs font-black uppercase tracking-[0.22em] text-emerald-300">
+                                    Đơn web của user
+                                  </div>
+                                  <div className="mt-1 text-sm text-slate-400">
+                                    Đang hiển thị {userOrders.length} đơn gắn với user này.
+                                  </div>
+                                </div>
+                              </div>
+
+                              {userOrders.length === 0 ? (
+                                <div className="mt-4 rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-4 py-6 text-center text-sm text-slate-400">
+                                  User này chưa có đơn web nào.
+                                </div>
+                              ) : (
+                                <div className="mt-4 space-y-3">
+                                  {userOrders.map((order) => (
+                                    <div
+                                      key={buildStoreOrderKey(order)}
+                                      className="rounded-xl border border-slate-800 bg-slate-950/70 p-4"
+                                    >
+                                      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                                        <div className="min-w-0">
+                                          <div className="text-white font-bold break-all">
+                                            {order.packageName || order.packageCode || "Đơn web"}
+                                          </div>
+                                          <div className="mt-1 text-sm text-slate-400 break-all">
+                                            Đơn #{order.id}
+                                          </div>
+                                          {order.momoOrderId ? (
+                                            <div className="mt-1 text-xs text-slate-500 break-all">
+                                              MoMo: {order.momoOrderId}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-bold text-slate-100">
+                                            {getStoreOrderStatusLabel(order?.status)}
+                                          </span>
+                                          <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1 text-xs font-bold text-cyan-200">
+                                            {formatMoney(order?.amount)}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4 text-sm">
+                                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                            Tạo lúc
+                                          </div>
+                                          <div className="mt-1 text-slate-200">
+                                            {formatDateTime(order?.createdAt) || "--"}
+                                          </div>
+                                        </div>
+                                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                            Thanh toán
+                                          </div>
+                                          <div className="mt-1 text-slate-200">
+                                            {formatDateTime(order?.paidAt) || order?.momoMessage || "--"}
+                                          </div>
+                                        </div>
+                                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                            Nick đã cấp
+                                          </div>
+                                          <div className="mt-1 text-slate-200 break-all">
+                                            {order?.assignedUsername || "--"}
+                                          </div>
+                                        </div>
+                                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                            Cập nhật
+                                          </div>
+                                          <div className="mt-1 text-slate-200">
+                                            {formatDateTime(order?.updatedAt) || "--"}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

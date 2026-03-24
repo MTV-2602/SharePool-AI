@@ -3940,6 +3940,36 @@ app.post("/api/store-users/:id/reset-password", verifyToken, async (req, res) =>
   }
 });
 
+app.delete("/api/store-users/:id", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiáº¿u ID user." });
+    }
+
+    const user = await StoreUser.findOne({ id });
+    if (!user) {
+      return res.status(404).json({ error: "KhÃ´ng tÃ¬m tháº¥y user web." });
+    }
+
+    await expireStaleStoreOrders({ userId: id });
+    await cleanupOldStoreFailedOrders({ userId: id });
+
+    const remainingOrdersCount = await StoreOrder.countDocuments({ userId: id });
+    if (remainingOrdersCount > 0) {
+      return res.status(409).json({
+        error: `User web nÃ y váº«n cÃ²n ${remainingOrdersCount} Ä‘Æ¡n. HÃ£y xem hoáº·c xá»­ lÃ½ Ä‘Æ¡n trÆ°á»›c khi xÃ³a user.`,
+      });
+    }
+
+    await StoreUser.deleteOne({ id });
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: "KhÃ´ng thá»ƒ xÃ³a user web." });
+  }
+});
+
 app.delete("/api/marketplace-order", verifyToken, async (req, res) => {
   const scope = normalizeMarketplaceScope(
     req.body?.scope || req.query?.scope,
