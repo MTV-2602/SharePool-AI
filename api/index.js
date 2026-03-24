@@ -1559,6 +1559,32 @@ const sanitizeStoreOrder = (order) => {
   }
   return base;
 };
+const sanitizeStoreOrderForAdmin = (order, user = null) => {
+  if (!order) return null;
+  const packageCode = String(order.packageCode || "").trim();
+  return {
+    id: String(order.id || "").trim(),
+    userId: String(order.userId || "").trim(),
+    packageCode,
+    packageName: String(
+      order.packageName || STORE_PACKAGE_MAP[packageCode]?.name || "",
+    ).trim(),
+    amount: Number(order.amount || 0),
+    status: String(order.status || "").trim(),
+    paymentMethod: String(order.paymentMethod || "momo").trim(),
+    momoOrderId: String(order.momoOrderId || "").trim(),
+    createdAt: String(order.createdAt || "").trim(),
+    updatedAt: String(order.updatedAt || "").trim(),
+    paidAt: String(order.paidAt || "").trim(),
+    fulfilledAt: String(order.fulfilledAt || "").trim(),
+    expiresAt: String(order.expiresAt || "").trim(),
+    assignedUsername: String(order.assignedUsername || "").trim(),
+    assignedType: String(order.assignedType || "").trim(),
+    customerName: String(user?.fullName || "").trim(),
+    customerEmail: String(user?.email || "").trim(),
+    customerPhone: String(user?.phone || "").trim(),
+  };
+};
 const issueStoreUserJwt = (user) =>
   jwt.sign(
     {
@@ -3544,6 +3570,8 @@ app.get("/api/data", verifyToken, async (req, res) => {
   try {
     await reconcileChatgptMarketInventory();
     await reconcileTeamMarketInventory();
+    await expireStaleStoreOrders();
+    await cleanupOldStoreFailedOrders();
     const [
       accounts,
       netflixAccs,
@@ -3552,6 +3580,8 @@ app.get("/api/data", verifyToken, async (req, res) => {
       teamAccs,
       datammoOrders,
       datammoWarrantyCases,
+      rawStoreOrders,
+      storeUsers,
     ] = await Promise.all([
       Account.find({}).lean(),
       Netflix.find({}).lean(),
@@ -3560,7 +3590,19 @@ app.get("/api/data", verifyToken, async (req, res) => {
       TeamAccount.find({}).lean(),
       DatammoOrder.find({}).sort({ createdAt: -1 }).limit(100).lean(),
       DatammoWarrantyCase.find({}).sort({ updatedAt: -1 }).limit(100).lean(),
+      StoreOrder.find({
+        status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+      })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .lean(),
+      StoreUser.find({})
+        .select("id fullName email phone")
+        .lean(),
     ]);
+    const storeUserMap = new Map(
+      (storeUsers || []).map((user) => [String(user?.id || "").trim(), user]),
+    );
     res.json({
       chatgpt: accounts.map((acc) => ({
         ...acc,
@@ -3575,6 +3617,14 @@ app.get("/api/data", verifyToken, async (req, res) => {
       team: teamAccs.map((teamAcc) => sanitizeTeamAccount(teamAcc)),
       datammoOrders,
       datammoWarrantyCases,
+      storeOrders: rawStoreOrders
+        .map((order) =>
+          sanitizeStoreOrderForAdmin(
+            order,
+            storeUserMap.get(String(order?.userId || "").trim()) || null,
+          ),
+        )
+        .filter(Boolean),
       version: latestDataVersion,
     });
   } catch (error) {

@@ -127,6 +127,7 @@ const getTeamSaleModeLabel = (value) =>
     ? "Business account (1 acc)"
     : "Slot team";
 const DATAMMO_SEEN_ORDER_KEYS_STORAGE_KEY = "datammo_seen_order_keys";
+const STORE_SEEN_ORDER_KEYS_STORAGE_KEY = "store_seen_order_keys";
 const DATAMMO_RECENT_ORDER_WINDOW_MS = 15 * 60 * 1000;
 const buildDatammoOrderKey = (order = {}) =>
   String(
@@ -134,6 +135,8 @@ const buildDatammoOrderKey = (order = {}) =>
       order.id ||
       `${order.provider || "datammo"}|${order.orderId || "order"}|${order.createdAt || ""}`,
   );
+const buildStoreOrderKey = (order = {}) =>
+  String(order.id || `${order.userId || "user"}|${order.packageCode || "package"}|${order.createdAt || ""}`);
 const normalizeMarketplaceProvider = (value, fallback = "datammo") => {
   const raw = String(value || "").trim().toLowerCase();
   if (raw === "shopmini") return "shopmini";
@@ -142,6 +145,32 @@ const normalizeMarketplaceProvider = (value, fallback = "datammo") => {
 };
 const getMarketplaceProviderLabel = (value) =>
   normalizeMarketplaceProvider(value) === "shopmini" ? "Shopmini" : "Datammo";
+const normalizeStoreOrderStatus = (value) =>
+  String(value || "").trim().toLowerCase();
+const getStoreOrderStatusLabel = (value) => {
+  const normalized = normalizeStoreOrderStatus(value);
+  if (normalized === "fulfilled") return "Đã giao nick";
+  if (normalized === "paid") return "Đã thanh toán";
+  if (normalized === "awaiting_payment" || normalized === "pending_payment") {
+    return "Đang chờ thanh toán";
+  }
+  if (normalized === "payment_failed") return "Thanh toán thất bại";
+  return String(value || "Không rõ");
+};
+const normalizeStoreAdminOrders = (orders = []) =>
+  [...(Array.isArray(orders) ? orders : [])]
+    .map((order) => ({
+      ...order,
+      createdAt: String(order?.createdAt || ""),
+      paidAt: String(order?.paidAt || ""),
+      fulfilledAt: String(order?.fulfilledAt || ""),
+      packageName: String(order?.packageName || ""),
+      customerName: String(order?.customerName || ""),
+      customerEmail: String(order?.customerEmail || ""),
+      customerPhone: String(order?.customerPhone || ""),
+      assignedUsername: String(order?.assignedUsername || ""),
+    }))
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 const getDatammoUserName = (user) =>
   typeof user === "string" ? user : String(user?.name || "");
 const isPlaceholderMarketplaceOrderId = (value) => {
@@ -394,6 +423,18 @@ const loadSeenDatammoOrderKeys = () => {
     return new Set();
   }
 };
+const loadSeenStoreOrderKeys = () => {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(STORE_SEEN_ORDER_KEYS_STORAGE_KEY) || "[]",
+    );
+    if (!Array.isArray(raw)) return new Set();
+    return new Set(raw.map((item) => String(item || "")).filter(Boolean));
+  } catch (error) {
+    return new Set();
+  }
+};
 const persistSeenDatammoOrderKeys = (keys = []) => {
   if (typeof window === "undefined") return;
   try {
@@ -402,6 +443,24 @@ const persistSeenDatammoOrderKeys = (keys = []) => {
     ).slice(-100);
     localStorage.setItem(
       DATAMMO_SEEN_ORDER_KEYS_STORAGE_KEY,
+      JSON.stringify(normalized),
+    );
+  } catch (error) {
+    // Ignore localStorage write issues.
+  }
+};
+const persistSeenStoreOrderKeys = (keys = []) => {
+  if (typeof window === "undefined") return;
+  try {
+    const normalized = Array.from(
+      new Set(
+        (Array.isArray(keys) ? keys : Array.from(keys || []))
+          .map((item) => String(item || ""))
+          .filter(Boolean),
+      ),
+    ).slice(-100);
+    localStorage.setItem(
+      STORE_SEEN_ORDER_KEYS_STORAGE_KEY,
       JSON.stringify(normalized),
     );
   } catch (error) {
@@ -1086,7 +1145,9 @@ function App() {
   const isFetchingDataRef = useRef(false);
   const fetchDataPromiseRef = useRef(null);
   const seenDatammoOrderKeysRef = useRef(null);
+  const seenStoreOrderKeysRef = useRef(null);
   const hasInitializedDatammoOrdersRef = useRef(false);
+  const hasInitializedStoreOrdersRef = useRef(false);
   const apiRequestsRef = useRef(new Map());
 
   // Modal States
@@ -1115,6 +1176,7 @@ function App() {
   // TOAST MSG
   const [toastMessage, setToastMessage] = useState("");
   const [recentDatammoOrders, setRecentDatammoOrders] = useState([]);
+  const [recentStoreOrders, setRecentStoreOrders] = useState([]);
 
   // User Input Modal
   const [showUserModal, setShowUserModal] = useState(false);
@@ -1378,8 +1440,11 @@ function App() {
     setIsAuthenticated(false);
     setLoginForm({ identifier: "", password: "" });
     setRecentDatammoOrders([]);
+    setRecentStoreOrders([]);
     seenDatammoOrderKeysRef.current = null;
+    seenStoreOrderKeysRef.current = null;
     hasInitializedDatammoOrdersRef.current = false;
+    hasInitializedStoreOrdersRef.current = false;
   };
 
   // HELPER SHOW ALERT / CONFIRM
@@ -1642,6 +1707,63 @@ function App() {
       return normalizeDatammoOrders(Array.from(merged.values())).slice(0, 5);
     });
   };
+  const syncStoreOrderBanner = (orders = []) => {
+    const normalizedOrders = normalizeStoreAdminOrders(orders).filter((order) => {
+      const status = normalizeStoreOrderStatus(order?.status);
+      return (
+        status === "awaiting_payment" ||
+        status === "pending_payment" ||
+        status === "paid" ||
+        status === "fulfilled"
+      );
+    });
+    if (!seenStoreOrderKeysRef.current) {
+      seenStoreOrderKeysRef.current = loadSeenStoreOrderKeys();
+    }
+
+    const seenKeys = seenStoreOrderKeysRef.current;
+    const allKeys = normalizedOrders.map((order) => buildStoreOrderKey(order));
+    const recentUnseenOrders = normalizedOrders.filter((order) => {
+      const orderKey = buildStoreOrderKey(order);
+      const createdAtMs = new Date(order?.createdAt || 0).getTime();
+      if (seenKeys.has(orderKey)) return false;
+      if (!Number.isFinite(createdAtMs) || createdAtMs <= 0) return false;
+      return Date.now() - createdAtMs <= DATAMMO_RECENT_ORDER_WINDOW_MS;
+    });
+
+    if (!hasInitializedStoreOrdersRef.current) {
+      if (recentUnseenOrders.length > 0) {
+        setRecentStoreOrders(recentUnseenOrders.slice(0, 5));
+      }
+      if (seenKeys.size === 0 && allKeys.length > 0) {
+        allKeys.forEach((key) => seenKeys.add(key));
+        persistSeenStoreOrderKeys(seenKeys);
+      } else if (recentUnseenOrders.length > 0) {
+        recentUnseenOrders.forEach((order) =>
+          seenKeys.add(buildStoreOrderKey(order)),
+        );
+        persistSeenStoreOrderKeys(seenKeys);
+      }
+      hasInitializedStoreOrdersRef.current = true;
+      return;
+    }
+
+    const freshOrders = normalizedOrders.filter(
+      (order) => !seenKeys.has(buildStoreOrderKey(order)),
+    );
+
+    if (freshOrders.length === 0) return;
+
+    freshOrders.forEach((order) => seenKeys.add(buildStoreOrderKey(order)));
+    persistSeenStoreOrderKeys(seenKeys);
+    setRecentStoreOrders((prev) => {
+      const merged = new Map();
+      [...freshOrders, ...prev].forEach((order) => {
+        merged.set(buildStoreOrderKey(order), order);
+      });
+      return normalizeStoreAdminOrders(Array.from(merged.values())).slice(0, 5);
+    });
+  };
 
   const fetchData = async (showLoader = false) => {
     if (isFetchingDataRef.current && fetchDataPromiseRef.current) {
@@ -1662,6 +1784,7 @@ function App() {
           dataVersionRef.current = nextVersion;
         }
         syncDatammoOrderBanner(res.data?.datammoOrders);
+        syncStoreOrderBanner(res.data?.storeOrders);
         if (res.data && res.data.chatgpt) {
           const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
           const sortedGPT = [...res.data.chatgpt]
@@ -3983,6 +4106,74 @@ function App() {
                 onClick={() => setRecentDatammoOrders([])}
                 className="shrink-0 rounded-full p-2 text-emerald-200 hover:bg-white/10 hover:text-white transition-colors"
                 title="Ẩn banner đơn mới"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {recentStoreOrders.length > 0 && (
+          <div className="mb-6 rounded-2xl border border-cyan-500/40 bg-cyan-950/20 shadow-2xl overflow-hidden">
+            <div className="flex items-start justify-between gap-4 p-4 md:p-5">
+              <div className="min-w-0 flex items-start gap-3">
+                <div className="shrink-0 rounded-full p-2 bg-cyan-500/20 text-cyan-300 border border-cyan-400/20">
+                  <Globe size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase tracking-[0.18em] font-black text-cyan-300">
+                    Web Order Alert
+                  </div>
+                  <div className="text-lg md:text-xl font-black text-white">
+                    Vừa có đơn mới từ web
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {recentStoreOrders.slice(0, 3).map((order) => {
+                      const customerLabel =
+                        order.customerName ||
+                        order.customerEmail ||
+                        order.customerPhone ||
+                        "Khách web";
+                      const accountLabel =
+                        order.assignedUsername || "Đang chờ cấp nick";
+                      return (
+                        <div
+                          key={buildStoreOrderKey(order)}
+                          className="rounded-xl border border-cyan-400/15 bg-black/15 px-3 py-2"
+                        >
+                          <div className="space-y-1">
+                            <div className="inline-flex items-center rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.15em] text-cyan-200">
+                              {order.packageName || order.packageCode || "Đơn web"}
+                            </div>
+                            <div className="font-semibold text-white break-all">
+                              {customerLabel} vừa tạo đơn {order.id || "N/A"}
+                            </div>
+                            <div className="text-sm text-cyan-100/90 break-all">
+                              Trạng thái: {getStoreOrderStatusLabel(order.status)}
+                              {accountLabel ? ` · Nick: ${accountLabel}` : ""}
+                            </div>
+                          </div>
+                          {order.createdAt && (
+                            <div className="mt-1 text-xs text-cyan-100/75">
+                              {new Date(order.createdAt).toLocaleString("vi-VN")}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {recentStoreOrders.length > 3 && (
+                      <div className="text-xs text-cyan-100/80">
+                        +{recentStoreOrders.length - 3} đơn web nữa đang chờ bạn xem.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRecentStoreOrders([])}
+                className="shrink-0 rounded-full p-2 text-cyan-200 hover:bg-white/10 hover:text-white transition-colors"
+                title="Ẩn banner đơn web mới"
               >
                 <X size={16} />
               </button>
