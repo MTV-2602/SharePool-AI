@@ -1189,6 +1189,7 @@ function App() {
     deleteAccount: false,
     warranty: false,
     saveStoreUser: false,
+    saveStoreOrder: false,
     resetStoreUserPassword: false,
     deleteStoreUser: "",
     deleteStoreOrder: "",
@@ -1216,6 +1217,7 @@ function App() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showImportGPTModal, setShowImportGPTModal] = useState(false);
   const [showStoreUserEditModal, setShowStoreUserEditModal] = useState(false);
+  const [showStoreOrderEditModal, setShowStoreOrderEditModal] = useState(false);
   const [showStoreUserPasswordModal, setShowStoreUserPasswordModal] =
     useState(false);
   const [storeUserEditForm, setStoreUserEditForm] = useState({
@@ -1235,6 +1237,15 @@ function App() {
     fullName: "",
     password: "",
     confirmPassword: "",
+  });
+  const [storeOrderEditForm, setStoreOrderEditForm] = useState({
+    id: "",
+    packageCode: "",
+    packageName: "",
+    customerName: "",
+    assignedUsername: "",
+    package1MaxUsage: 3,
+    package1UsedCount: 0,
   });
   const [expandedStoreUserId, setExpandedStoreUserId] = useState("");
   const [showWarrantyModal, setShowWarrantyModal] = useState(false);
@@ -1968,6 +1979,21 @@ function App() {
     setShowStoreUserPasswordModal(true);
   };
 
+  const openStoreOrderEdit = (order = {}) => {
+    setStoreOrderEditForm({
+      id: String(order?.id || ""),
+      packageCode: String(order?.packageCode || ""),
+      packageName: String(order?.packageName || order?.packageCode || "Đơn web"),
+      customerName: String(
+        order?.customerName || order?.customerEmail || order?.customerPhone || "",
+      ),
+      assignedUsername: String(order?.assignedUsername || ""),
+      package1MaxUsage: Number(order?.package1MaxUsage || 3),
+      package1UsedCount: Number(order?.package1UsedCount || 0),
+    });
+    setShowStoreOrderEditModal(true);
+  };
+
   const handleSaveStoreUser = async (e) => {
     e.preventDefault();
     const id = String(storeUserEditForm.id || "").trim();
@@ -2043,6 +2069,46 @@ function App() {
       );
     } finally {
       setLoadingStates((prev) => ({ ...prev, resetStoreUserPassword: false }));
+    }
+  };
+
+  const handleSaveStoreOrder = async (e) => {
+    e.preventDefault();
+    const id = String(storeOrderEditForm.id || "").trim();
+    if (!id) {
+      showAlert("Lỗi", "Thiếu ID đơn web.", "error");
+      return;
+    }
+
+    const package1MaxUsage = Number(storeOrderEditForm.package1MaxUsage);
+    const package1UsedCount = Number(storeOrderEditForm.package1UsedCount);
+    if (!Number.isFinite(package1MaxUsage) || package1MaxUsage < 0) {
+      showAlert("Thiếu dữ liệu", "Số lượt tối đa phải là số không âm.", "warning");
+      return;
+    }
+    if (!Number.isFinite(package1UsedCount) || package1UsedCount < 0) {
+      showAlert("Thiếu dữ liệu", "Số lượt đã dùng phải là số không âm.", "warning");
+      return;
+    }
+
+    setLoadingStates((prev) => ({ ...prev, saveStoreOrder: true }));
+    try {
+      await axios.put(`/api/store-orders/${id}`, {
+        package1MaxUsage,
+        package1UsedCount,
+      });
+      setShowStoreOrderEditModal(false);
+      await fetchData();
+      broadcastDataChange();
+      showAlert("Thành công", "Đã cập nhật lượt lấy mã của đơn Gói 1.", "success");
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể cập nhật đơn web."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, saveStoreOrder: false }));
     }
   };
 
@@ -4914,6 +4980,16 @@ function App() {
                                           <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1 text-xs font-bold text-cyan-200">
                                             {formatMoney(order?.amount)}
                                           </span>
+                                          {String(order?.packageCode || "").trim() === "package1" && (
+                                            <button
+                                              type="button"
+                                              onClick={() => openStoreOrderEdit(order)}
+                                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 hover:bg-amber-500 px-3 py-2 text-xs font-bold text-white transition-colors"
+                                            >
+                                              <Pencil size={14} />
+                                              Sửa lượt OTP
+                                            </button>
+                                          )}
                                           <button
                                             type="button"
                                             onClick={() => handleDeleteStoreOrder(order)}
@@ -4953,6 +5029,19 @@ function App() {
                                             {order?.assignedUsername || "--"}
                                           </div>
                                         </div>
+                                        {String(order?.packageCode || "").trim() === "package1" && (
+                                          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                                            <div className="text-[11px] uppercase tracking-[0.18em] text-amber-300">
+                                              Lượt OTP
+                                            </div>
+                                            <div className="mt-1 text-amber-100">
+                                              Đã dùng {Number(order?.package1UsedCount || 0)} / {Number(order?.package1MaxUsage || 0)}
+                                            </div>
+                                            <div className="text-xs text-amber-200/80 mt-1">
+                                              Còn {Math.max(0, Number(order?.package1UsageLeft || 0))} lượt
+                                            </div>
+                                          </div>
+                                        )}
                                         <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
                                           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
                                             Cập nhật
@@ -10209,6 +10298,108 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         );
       })()}
 
+
+      {showStoreOrderEditModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <form
+            onSubmit={handleSaveStoreOrder}
+            className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full shadow-2xl"
+            style={{ maxWidth: "520px" }}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white flex gap-2 items-center">
+                <Pencil size={20} className="text-amber-400" />
+                Sửa lượt OTP đơn web
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowStoreOrderEditModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3">
+                <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                  Đơn web
+                </div>
+                <div className="mt-1 text-sm font-semibold text-white break-all">
+                  {storeOrderEditForm.packageName || "--"} · {storeOrderEditForm.id || "--"}
+                </div>
+                <div className="mt-2 text-xs text-slate-400 break-all">
+                  Khách: {storeOrderEditForm.customerName || "Khách web"} · Nick: {storeOrderEditForm.assignedUsername || "Chưa cấp"}
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">Số lượt tối đa</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                    value={storeOrderEditForm.package1MaxUsage}
+                    onChange={(e) =>
+                      setStoreOrderEditForm((prev) => ({
+                        ...prev,
+                        package1MaxUsage: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">Số lượt đã dùng</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                    value={storeOrderEditForm.package1UsedCount}
+                    onChange={(e) =>
+                      setStoreOrderEditForm((prev) => ({
+                        ...prev,
+                        package1UsedCount: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm">
+                <div className="text-amber-300 font-bold uppercase tracking-[0.18em] text-[11px]">
+                  Còn lại sau khi lưu
+                </div>
+                <div className="mt-1 text-amber-100">
+                  {Math.max(
+                    0,
+                    Number(storeOrderEditForm.package1MaxUsage || 0) -
+                      Number(storeOrderEditForm.package1UsedCount || 0),
+                  )}{" "}
+                  lượt
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                type="button"
+                onClick={() => setShowStoreOrderEditModal(false)}
+                className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={loadingStates.saveStoreOrder}
+                className="flex-1 p-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold disabled:opacity-60"
+              >
+                {loadingStates.saveStoreOrder ? "Đang lưu..." : "Lưu lượt OTP"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {showStoreUserEditModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">

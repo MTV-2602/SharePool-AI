@@ -1701,10 +1701,17 @@ const sanitizeStoreOrderForAdmin = (order, user = null) => {
     reservedAccountId: String(order.reservedAccountId || "").trim(),
     assignedAccountId: String(order.assignedAccountId || "").trim(),
     assignedUsername: String(order.assignedUsername || "").trim(),
+    assignedPassword: String(order.assignedPassword || "").trim(),
+    assignedOtpSecret: String(order.assignedOtpSecret || "").trim(),
+    assignedLink: String(order.assignedLink || "").trim(),
     assignedType: String(order.assignedType || "").trim(),
     assignedCustomerName: String(order.assignedCustomerName || "").trim(),
     assignedCustomerJoinedAt: String(order.assignedCustomerJoinedAt || "").trim(),
     assignedCustomerExpiredAt: String(order.assignedCustomerExpiredAt || "").trim(),
+    package1AccessToken: String(order.package1AccessToken || "").trim(),
+    package1MaxUsage: Number(order.package1MaxUsage || STORE_PACKAGE1_MAX_OTP_USES),
+    package1UsedCount: Number(order.package1UsedCount || 0),
+    package1UsageLeft: buildStorePackage1UsageLeft(order),
     customerName: String(user?.fullName || "").trim(),
     customerEmail: String(user?.email || "").trim(),
     customerPhone: String(user?.phone || "").trim(),
@@ -4332,6 +4339,59 @@ app.delete("/api/store-orders/:id", verifyToken, async (req, res) => {
     return res.json({ success: true, diagnostics });
   } catch (error) {
     return res.status(500).json({ error: "Không thể xóa đơn web." });
+  }
+});
+
+app.put("/api/store-orders/:id", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiếu ID đơn web." });
+    }
+
+    const order = await StoreOrder.findOne({ id });
+    if (!order) {
+      return res.status(404).json({ error: "Không tìm thấy đơn web." });
+    }
+
+    const packageCode = String(order?.packageCode || "").trim().toLowerCase();
+    if (packageCode !== "package1") {
+      return res.status(400).json({
+        error: "Hiện admin chỉ được sửa số lượt OTP của đơn Gói 1.",
+      });
+    }
+
+    const rawMaxUsage = Number(req.body?.package1MaxUsage);
+    const rawUsedCount = Number(req.body?.package1UsedCount);
+    if (!Number.isFinite(rawMaxUsage) || rawMaxUsage < 0) {
+      return res.status(400).json({
+        error: "Số lượt tối đa phải là số không âm.",
+      });
+    }
+    if (!Number.isFinite(rawUsedCount) || rawUsedCount < 0) {
+      return res.status(400).json({
+        error: "Số lượt đã dùng phải là số không âm.",
+      });
+    }
+
+    const package1MaxUsage = Math.max(0, Math.floor(rawMaxUsage));
+    const package1UsedCount = Math.max(0, Math.floor(rawUsedCount));
+
+    order.package1MaxUsage = package1MaxUsage;
+    order.package1UsedCount = package1UsedCount;
+    order.updatedAt = new Date().toISOString();
+    await order.save();
+
+    const storeUser = order?.userId
+      ? await StoreUser.findOne({ id: String(order.userId || "").trim() }).lean()
+      : null;
+
+    return res.json({
+      success: true,
+      order: sanitizeStoreOrderForAdmin(order, storeUser),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Không thể cập nhật đơn web." });
   }
 });
 
