@@ -1279,7 +1279,7 @@ const getBearerToken = (req) => {
   }
   return "";
 };
-const verifyStoreUserToken = async (req, res, next) => {
+async function verifyStoreUserToken(req, res, next) {
   try {
     const token = getBearerToken(req);
     if (!token) {
@@ -1295,7 +1295,7 @@ const verifyStoreUserToken = async (req, res, next) => {
   } catch (error) {
     return res.status(401).json({ error: "Phien dang nhap khong hop le" });
   }
-};
+}
 const getAppBaseUrl = (req) => {
   const envBase = String(
     process.env.APP_BASE_URL ||
