@@ -2705,18 +2705,35 @@ const buildStorePackage2ConvertibleFilter = (excludeIds = []) => ({
   },
 });
 const getBusyChatgptAccountIdsForStoreOrders = async () => {
-  const activeCases = await DatammoWarrantyCase.find({
-    scope: "chatgpt",
-    status: "active",
-  })
-    .select("rootAccountId currentAccountId")
-    .lean();
+  const [marketplaceOrders, activeCases] = await Promise.all([
+    DatammoOrder.find({ scope: "chatgpt" })
+      .select("accounts.accountId")
+      .lean(),
+    DatammoWarrantyCase.find({
+      scope: "chatgpt",
+      status: "active",
+    })
+      .select("rootAccountId currentAccountId rounds.fromAccountId rounds.toAccountId")
+      .lean(),
+  ]);
   const ids = new Set();
-  activeCases.forEach((item) => {
+  (Array.isArray(marketplaceOrders) ? marketplaceOrders : []).forEach((order) => {
+    (Array.isArray(order?.accounts) ? order.accounts : []).forEach((item) => {
+      const accountId = String(item?.accountId || "").trim();
+      if (accountId) ids.add(accountId);
+    });
+  });
+  (Array.isArray(activeCases) ? activeCases : []).forEach((item) => {
     const rootId = String(item?.rootAccountId || "").trim();
     const currentId = String(item?.currentAccountId || "").trim();
     if (rootId) ids.add(rootId);
     if (currentId) ids.add(currentId);
+    (Array.isArray(item?.rounds) ? item.rounds : []).forEach((round) => {
+      const fromId = String(round?.fromAccountId || "").trim();
+      const toId = String(round?.toAccountId || "").trim();
+      if (fromId) ids.add(fromId);
+      if (toId) ids.add(toId);
+    });
   });
   return Array.from(ids);
 };
