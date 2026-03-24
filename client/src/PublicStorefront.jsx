@@ -88,12 +88,12 @@ const packageFeatureMap = {
     "Nhận mã bí mật riêng",
     "Lấy OTP tối đa 3 lần",
     "Không hiển thị TOTP secret gốc",
-    "Nick cấp từ kho tổng",
+    "Nhận mã ngay sau thanh toán",
   ],
   package2: [
     "Nhận đầy đủ TK / MK / 2FA",
     "Có công cụ lấy OTP trên web",
-    "Nick mới từ kho tổng",
+    "Nhận tài khoản ngay sau thanh toán",
     "Hướng dẫn đăng nhập chi tiết",
   ],
   package3: [
@@ -550,10 +550,10 @@ function PublicStorefront() {
           <h2 className="text-lg font-semibold">Bảo mật & OTP</h2>
         </div>
         <ul className="space-y-3 text-sm leading-6 text-slate-300">
-          <li>Gói 1: hệ thống cấp một mã bí mật riêng và chỉ hiển thị OTP 6 số.</li>
-          <li>Gói 2: hiển thị đầy đủ tài khoản, mật khẩu, 2FA và công cụ lấy mã 30 giây.</li>
-          <li>Thông tin nhạy cảm được lưu trong file `.env`, không đẩy lên Git.</li>
-          <li>Tất cả nick bán cho user trên web này chỉ lấy từ kho tổng, không dùng kho market.</li>
+          <li>Gói 1: nhận mã bí mật riêng và chỉ hiển thị OTP 6 số khi cần đăng nhập.</li>
+          <li>Gói 2: nhận đầy đủ tài khoản, mật khẩu, 2FA và công cụ lấy mã 30 giây.</li>
+          <li>Thanh toán xong là có thể xem thông tin tài khoản ngay trên web.</li>
+          <li>Nếu cần hỗ trợ thêm, bạn có thể liên hệ admin qua Zalo.</li>
         </ul>
         <div className="mt-6">
           <p className="mb-3 text-sm text-slate-400">Đăng nhập nhanh bằng Google</p>
@@ -721,9 +721,9 @@ function PublicStorefront() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
               <p className="text-xs uppercase tracking-[0.4em] text-cyan-400">ChatGPT Store</p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Mua nick tự động từ kho tổng</h1>
+              <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Mua ChatGPT tự động</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                Đăng ký hoặc đăng nhập để thanh toán MoMo và nhận nick tự động. Tất cả tài khoản giao cho user đều lấy từ kho tổng, không đụng vào kho market.
+                Đăng ký hoặc đăng nhập để thanh toán MoMo và nhận tài khoản ngay trên web.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -813,7 +813,7 @@ function PublicStorefront() {
                   <ol className="mt-4 space-y-2 text-sm leading-6 text-slate-300">
                     <li>1. Đăng ký hoặc đăng nhập tài khoản user bằng email hoặc số điện thoại.</li>
                     <li>2. Chọn gói phù hợp rồi thanh toán qua MoMo.</li>
-                    <li>3. Sau khi thanh toán thành công, hệ thống tự cấp nick từ kho tổng.</li>
+                    <li>3. Sau khi thanh toán thành công, hệ thống tự cấp tài khoản tương ứng.</li>
                     <li>4. Gói 1 chỉ nhận OTP 6 số qua mã bí mật, tối đa 3 lượt.</li>
                     <li>5. Gói 2 nhận đầy đủ tài khoản, mật khẩu, mã 2FA và công cụ lấy mã trên web.</li>
                   </ol>
