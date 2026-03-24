@@ -134,8 +134,20 @@ function PublicStorefront() {
   const [manualSecret, setManualSecret] = useState("");
   const [manualOtp, setManualOtp] = useState({ code: "", expiresIn: 0 });
   const googleButtonRef = useRef(null);
+  const authCardRef = useRef(null);
 
   const refreshRouteState = () => setRouteState(readStoreRoute());
+
+  const focusAuthCard = (mode = "login") => {
+    setAuthMode(mode);
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      authCardRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+  };
 
   const setSessionToken = (nextToken) => {
     setToken(nextToken || "");
@@ -432,6 +444,43 @@ function PublicStorefront() {
     }
   };
 
+  const getPurchaseBlockedReason = (pkg) => {
+    if (sessionLoading) {
+      return "Hệ thống đang kiểm tra phiên đăng nhập của bạn.";
+    }
+    if (!user) {
+      return "Bạn cần đăng nhập hoặc đăng ký tài khoản user trước khi thanh toán.";
+    }
+    if (!config.momoConfigured) {
+      return "Thanh toán MoMo chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.";
+    }
+    if (!pkg?.purchasable) {
+      return "Gói này hiện chưa hỗ trợ mua tự động hoặc đang tạm hết hàng.";
+    }
+    return "Thanh toán MoMo xong, hệ thống sẽ tự cấp tài khoản ngay trên web.";
+  };
+
+  const handlePurchaseButtonClick = (pkg) => {
+    if (sessionLoading || loading) return;
+    if (!user) {
+      setMessage("");
+      setError("Bạn chưa đăng nhập tài khoản user. Vui lòng đăng nhập hoặc đăng ký rồi thử lại.");
+      focusAuthCard("login");
+      return;
+    }
+    if (!config.momoConfigured) {
+      setMessage("");
+      setError("Thanh toán MoMo chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.");
+      return;
+    }
+    if (!pkg?.purchasable) {
+      setMessage("");
+      setError("Gói này hiện chưa hỗ trợ mua tự động hoặc đang tạm hết hàng.");
+      return;
+    }
+    handleCreatePayment(pkg.code);
+  };
+
   const handleGeneratePackage1Code = async (order) => {
     try {
       setError("");
@@ -470,7 +519,7 @@ function PublicStorefront() {
   };
 
   const authPanel = (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div ref={authCardRef} className="grid gap-6 lg:grid-cols-2">
       <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
         <div className="mb-4 flex gap-2">
           <button
@@ -602,7 +651,8 @@ function PublicStorefront() {
               Liên hệ admin
             </a>
           ) : (
-            <button onClick={() => handleCreatePayment(pkg.code)} disabled={sessionLoading || !user || !pkg.purchasable || loading || !config.momoConfigured} className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+            <>
+            <button onClick={() => handlePurchaseButtonClick(pkg)} disabled={sessionLoading || loading} className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
               {sessionLoading
                 ? "Đang kiểm tra..."
                 : !user
@@ -613,6 +663,10 @@ function PublicStorefront() {
                       ? "Mua ngay"
                       : "Tạm hết hàng"}
             </button>
+            <p className="mt-3 min-h-[40px] text-sm leading-5 text-slate-400">
+              {getPurchaseBlockedReason(pkg)}
+            </p>
+            </>
           )}
         </div>
       ))}
