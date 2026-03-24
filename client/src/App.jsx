@@ -169,7 +169,13 @@ const normalizeStoreAdminOrders = (orders = []) =>
       customerName: String(order?.customerName || ""),
       customerEmail: String(order?.customerEmail || ""),
       customerPhone: String(order?.customerPhone || ""),
+      reservationType: String(order?.reservationType || ""),
+      reservedAccountId: String(order?.reservedAccountId || ""),
+      assignedAccountId: String(order?.assignedAccountId || ""),
       assignedUsername: String(order?.assignedUsername || ""),
+      assignedCustomerName: String(order?.assignedCustomerName || ""),
+      assignedCustomerJoinedAt: String(order?.assignedCustomerJoinedAt || ""),
+      assignedCustomerExpiredAt: String(order?.assignedCustomerExpiredAt || ""),
     }))
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 const getDatammoUserName = (user) =>
@@ -1138,6 +1144,7 @@ function App() {
     saveStoreUser: false,
     resetStoreUserPassword: false,
     deleteStoreUser: "",
+    deleteStoreOrder: "",
     deleteMarketplaceOrder: {},
     teamMode: {},
     changeTeamWarehouse: {},
@@ -1169,6 +1176,12 @@ function App() {
     fullName: "",
     phone: "",
     email: "",
+    authProviders: [],
+    googleId: "",
+    hasPassword: false,
+    password: "",
+    confirmPassword: "",
+    unlinkGoogle: false,
   });
   const [storeUserPasswordForm, setStoreUserPasswordForm] = useState({
     id: "",
@@ -1879,6 +1892,12 @@ function App() {
       fullName: String(user?.fullName || ""),
       phone: String(user?.phone || ""),
       email: String(user?.email || ""),
+      authProviders: Array.isArray(user?.authProviders) ? user.authProviders : [],
+      googleId: String(user?.googleId || ""),
+      hasPassword: !!user?.hasPassword,
+      password: "",
+      confirmPassword: "",
+      unlinkGoogle: false,
     });
     setShowStoreUserEditModal(true);
   };
@@ -1900,12 +1919,21 @@ function App() {
       showAlert("Lỗi", "Thiếu ID user web.", "error");
       return;
     }
+    if (
+      storeUserEditForm.password &&
+      storeUserEditForm.password !== storeUserEditForm.confirmPassword
+    ) {
+      showAlert("Sai xác nhận", "Mật khẩu xác nhận không khớp.", "warning");
+      return;
+    }
     setLoadingStates((prev) => ({ ...prev, saveStoreUser: true }));
     try {
       await axios.put(`/api/store-users/${id}`, {
         fullName: storeUserEditForm.fullName,
         phone: storeUserEditForm.phone,
         email: storeUserEditForm.email,
+        password: storeUserEditForm.password,
+        unlinkGoogle: storeUserEditForm.unlinkGoogle,
       });
       setShowStoreUserEditModal(false);
       await fetchData();
@@ -1992,6 +2020,35 @@ function App() {
           );
         } finally {
           setLoadingStates((prev) => ({ ...prev, deleteStoreUser: "" }));
+        }
+      },
+    );
+  };
+
+  const handleDeleteStoreOrder = (order = {}) => {
+    const orderId = String(order?.id || "").trim();
+    if (!orderId) {
+      showAlert("Lỗi", "Thiếu ID đơn web.", "error");
+      return;
+    }
+    showConfirm(
+      "Xóa đơn web",
+      `Xóa đơn web ${orderId}? Hệ thống sẽ gỡ luôn trace đơn khỏi acc đã cấp để admin dùng lại sạch như cũ.`,
+      async () => {
+        setLoadingStates((prev) => ({ ...prev, deleteStoreOrder: orderId }));
+        try {
+          await axios.delete(`/api/store-orders/${orderId}`);
+          await fetchData();
+          broadcastDataChange();
+          showAlert("Thành công", `Đã xóa đơn web ${orderId}.`, "success");
+        } catch (error) {
+          showAlert(
+            "Lỗi",
+            getApiErrorMessage(error, "Không thể xóa đơn web."),
+            "error",
+          );
+        } finally {
+          setLoadingStates((prev) => ({ ...prev, deleteStoreOrder: "" }));
         }
       },
     );
@@ -4792,6 +4849,17 @@ function App() {
                                           <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1 text-xs font-bold text-cyan-200">
                                             {formatMoney(order?.amount)}
                                           </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteStoreOrder(order)}
+                                            disabled={loadingStates.deleteStoreOrder === order.id}
+                                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-700 hover:bg-red-600 px-3 py-2 text-xs font-bold text-white transition-colors disabled:opacity-60"
+                                          >
+                                            <Trash2 size={14} />
+                                            {loadingStates.deleteStoreOrder === order.id
+                                              ? "Đang xóa..."
+                                              : "Xóa đơn"}
+                                          </button>
                                         </div>
                                       </div>
 
@@ -10011,6 +10079,14 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
             </div>
 
             <div className="space-y-3">
+              <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3">
+                <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                  ID user
+                </div>
+                <div className="mt-1 text-sm font-semibold text-white break-all">
+                  {storeUserEditForm.id || "--"}
+                </div>
+              </div>
               <div>
                 <label className="text-slate-400 text-sm block mb-1">Họ tên *</label>
                 <input
@@ -10053,6 +10129,104 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                     }))
                   }
                 />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3">
+                  <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                    Cách đăng nhập
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(storeUserEditForm.authProviders || []).length === 0 ? (
+                      <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-bold text-slate-300">
+                        Chưa có
+                      </span>
+                    ) : (
+                      (storeUserEditForm.authProviders || []).map((provider) => (
+                        <span
+                          key={`store-user-provider-${provider}`}
+                          className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.14em] ${
+                            provider === "google"
+                              ? "border border-violet-500/30 bg-violet-500/15 text-violet-200"
+                              : "border border-cyan-500/30 bg-cyan-500/15 text-cyan-200"
+                          }`}
+                        >
+                          {provider}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3">
+                  <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                    Google hiện tại
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-white break-all">
+                    {storeUserEditForm.googleId || "Chưa liên kết"}
+                  </div>
+                  {storeUserEditForm.googleId ? (
+                    <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={!!storeUserEditForm.unlinkGoogle}
+                        onChange={(e) =>
+                          setStoreUserEditForm((prev) => ({
+                            ...prev,
+                            unlinkGoogle: e.target.checked,
+                          }))
+                        }
+                      />
+                      Gỡ liên kết Google khi lưu
+                    </label>
+                  ) : (
+                    <div className="mt-3 text-xs text-slate-500">
+                      User này chưa có Google để gỡ.
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">
+                    Mật khẩu mới
+                  </label>
+                  <input
+                    type="password"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                    value={storeUserEditForm.password}
+                    onChange={(e) =>
+                      setStoreUserEditForm((prev) => ({
+                        ...prev,
+                        password: e.target.value,
+                      }))
+                    }
+                    placeholder={
+                      storeUserEditForm.hasPassword
+                        ? "Để trống nếu không đổi"
+                        : "Tạo mật khẩu đăng nhập mới"
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-sm block mb-1">
+                    Xác nhận mật khẩu mới
+                  </label>
+                  <input
+                    type="password"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                    value={storeUserEditForm.confirmPassword}
+                    onChange={(e) =>
+                      setStoreUserEditForm((prev) => ({
+                        ...prev,
+                        confirmPassword: e.target.value,
+                      }))
+                    }
+                    placeholder="Nhập lại mật khẩu mới"
+                  />
+                </div>
+              </div>
+              <div className="text-xs text-slate-500 leading-relaxed">
+                Admin có thể đổi toàn bộ thông tin user tại đây. Nếu user chỉ đang đăng nhập
+                bằng Google, hãy đặt mật khẩu mới trước khi gỡ Google.
               </div>
             </div>
 

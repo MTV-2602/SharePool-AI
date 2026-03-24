@@ -536,6 +536,9 @@ const storeOrderSchema = new mongoose.Schema({
   assignedLink: { type: String, default: "" },
   assignedType: { type: String, default: "" },
   assignedWarehouse: { type: String, default: "" },
+  assignedCustomerName: { type: String, default: "" },
+  assignedCustomerJoinedAt: { type: String, default: "" },
+  assignedCustomerExpiredAt: { type: String, default: "" },
   package1AccessToken: { type: String, default: "" },
   package1MaxUsage: { type: Number, default: 3 },
   package1UsedCount: { type: Number, default: 0 },
@@ -1384,6 +1387,14 @@ const upsertStringIntoList = (list = [], value = "") => {
   if (!normalized) return current;
   return Array.from(new Set([...current, normalized]));
 };
+const removeStringFromList = (list = [], value = "") => {
+  const normalized = String(value || "").trim();
+  const current = Array.isArray(list)
+    ? list.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (!normalized) return current;
+  return current.filter((item) => item !== normalized);
+};
 const sanitizeStoreUser = (user) => {
   if (!user) return null;
   return {
@@ -1406,6 +1417,8 @@ const sanitizeStoreUserForAdmin = (user, stats = {}) => {
     fullName: String(user.fullName || "").trim(),
     phone: String(user.phone || "").trim(),
     email: String(user.email || "").trim(),
+    googleId: String(user.googleId || "").trim(),
+    hasPassword: !!String(user.passwordHash || "").trim(),
     authProviders,
     createdAt: String(user.createdAt || "").trim(),
     updatedAt: String(user.updatedAt || "").trim(),
@@ -1636,6 +1649,9 @@ const sanitizeStoreOrder = (order) => {
       assignedUsername: String(order.assignedUsername || ""),
       assignedPassword: String(order.assignedPassword || ""),
       assignedLink: String(order.assignedLink || ""),
+      assignedCustomerName: String(order.assignedCustomerName || ""),
+      assignedCustomerJoinedAt: String(order.assignedCustomerJoinedAt || ""),
+      assignedCustomerExpiredAt: String(order.assignedCustomerExpiredAt || ""),
     };
   }
   if (packageCode === "package2") {
@@ -1646,6 +1662,9 @@ const sanitizeStoreOrder = (order) => {
       assignedOtpSecret: String(order.assignedOtpSecret || ""),
       assignedLink: String(order.assignedLink || ""),
       assignedType: String(order.assignedType || ""),
+      assignedCustomerName: String(order.assignedCustomerName || ""),
+      assignedCustomerJoinedAt: String(order.assignedCustomerJoinedAt || ""),
+      assignedCustomerExpiredAt: String(order.assignedCustomerExpiredAt || ""),
     };
   }
   return base;
@@ -1669,8 +1688,14 @@ const sanitizeStoreOrderForAdmin = (order, user = null) => {
     paidAt: String(order.paidAt || "").trim(),
     fulfilledAt: String(order.fulfilledAt || "").trim(),
     expiresAt: String(order.expiresAt || "").trim(),
+    reservationType: String(order.reservationType || "").trim(),
+    reservedAccountId: String(order.reservedAccountId || "").trim(),
+    assignedAccountId: String(order.assignedAccountId || "").trim(),
     assignedUsername: String(order.assignedUsername || "").trim(),
     assignedType: String(order.assignedType || "").trim(),
+    assignedCustomerName: String(order.assignedCustomerName || "").trim(),
+    assignedCustomerJoinedAt: String(order.assignedCustomerJoinedAt || "").trim(),
+    assignedCustomerExpiredAt: String(order.assignedCustomerExpiredAt || "").trim(),
     customerName: String(user?.fullName || "").trim(),
     customerEmail: String(user?.email || "").trim(),
     customerPhone: String(user?.phone || "").trim(),
@@ -3075,6 +3100,7 @@ const claimStorePackage1AccountForOrder = async ({ order, user }) => {
     delivery: "",
     package1AccessToken: `PK1-${createRandomHexToken(10).toUpperCase()}`,
     convertedFromUnassigned,
+    customer,
   };
 };
 const claimStorePackage2AccountForOrder = async ({ order, user }) => {
@@ -3122,6 +3148,7 @@ const claimStorePackage2AccountForOrder = async ({ order, user }) => {
     oldAcc,
     updatedAcc,
     delivery: formatPackage2DeliveryLine(updatedAcc),
+    customer,
   };
 };
 const rollbackStoreClaimedAccount = async (claim = null) => {
@@ -3136,6 +3163,129 @@ const rollbackStoreClaimedAccount = async (claim = null) => {
       },
     },
   );
+};
+const normalizeStoreCleanupNames = (values = []) =>
+  Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [values])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+const findStoreAssignedUserRemovalIndex = ({
+  users = [],
+  order = {},
+  storeUser = null,
+  account = null,
+} = {}) => {
+  if (!Array.isArray(users) || users.length === 0) return -1;
+  const candidateNames = normalizeStoreCleanupNames([
+    order?.assignedCustomerName,
+    storeUser?.fullName,
+    storeUser?.email,
+    order?.customerName,
+  ]);
+  const candidateJoinedAt = String(
+    order?.assignedCustomerJoinedAt || order?.fulfilledAt || order?.createdAt || "",
+  ).trim();
+
+  let matchedIndex = users.findIndex((slot) => {
+    const slotName = String(slot?.name || "").trim();
+    const slotJoinedAt = String(slot?.joinedAt || "").trim();
+    return (
+      !!slotName &&
+      !!slotJoinedAt &&
+      candidateNames.includes(slotName) &&
+      candidateJoinedAt &&
+      slotJoinedAt === candidateJoinedAt
+    );
+  });
+  if (matchedIndex >= 0) return matchedIndex;
+
+  matchedIndex = users.findIndex((slot) => {
+    const slotJoinedAt = String(slot?.joinedAt || "").trim();
+    return !!slotJoinedAt && !!candidateJoinedAt && slotJoinedAt === candidateJoinedAt;
+  });
+  if (matchedIndex >= 0) return matchedIndex;
+
+  matchedIndex = users.findIndex((slot) => {
+    const slotName = String(slot?.name || "").trim();
+    return !!slotName && candidateNames.includes(slotName);
+  });
+  if (matchedIndex >= 0) return matchedIndex;
+
+  if (
+    users.length === 1 &&
+    String(order?.assignedUsername || "").trim() &&
+    String(account?.username || "").trim() === String(order?.assignedUsername || "").trim()
+  ) {
+    return 0;
+  }
+  if (users.length === 1 && String(order?.packageCode || "").trim() === "package2") {
+    return 0;
+  }
+  return -1;
+};
+const cleanupStoreAssignedAccountForOrder = async (order = {}) => {
+  const accountId = String(order?.assignedAccountId || "").trim();
+  if (!accountId) return;
+
+  const [account, storeUser] = await Promise.all([
+    Account.findOne({ id: accountId }).lean(),
+    order?.userId ? StoreUser.findOne({ id: String(order.userId || "").trim() }).lean() : null,
+  ]);
+  if (!account) return;
+
+  const currentUsers = Array.isArray(account?.users) ? account.users : [];
+  const removalIndex = findStoreAssignedUserRemovalIndex({
+    users: currentUsers,
+    order,
+    storeUser,
+    account,
+  });
+  const nextUsers =
+    removalIndex >= 0
+      ? currentUsers.filter((_, index) => index !== removalIndex)
+      : currentUsers;
+
+  const nextType = (() => {
+    const packageCode = String(order?.packageCode || "").trim();
+    const reservationType = String(order?.reservationType || "").trim();
+    if (
+      nextUsers.length === 0 &&
+      (packageCode === "package2" || reservationType === "package1_convertible")
+    ) {
+      return "unassigned";
+    }
+    return String(account?.type || "unassigned").trim() || "unassigned";
+  })();
+
+  await Account.findOneAndUpdate(
+    { id: accountId },
+    {
+      $set: {
+        type: nextType,
+        users: nextUsers,
+        package2Shelf: normalizePackage2Shelf(
+          account?.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        ),
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  );
+};
+const deleteStoreOrderForAdmin = async (orderInput = null) => {
+  const order =
+    typeof orderInput?.toObject === "function"
+      ? orderInput.toObject()
+      : { ...(orderInput || {}) };
+  const orderId = String(order?.id || "").trim();
+  if (!orderId) return false;
+
+  await cleanupStoreAssignedAccountForOrder(order);
+  await StoreOrder.deleteOne({ id: orderId });
+  return true;
 };
 const fulfillStoreOrder = async (order) => {
   const safeOrder =
@@ -3164,6 +3314,9 @@ const fulfillStoreOrder = async (order) => {
             assignedLink: String(claim?.updatedAcc?.link || ""),
             assignedType: String(claim?.updatedAcc?.type || ""),
             assignedWarehouse: CHATGPT_TOTAL_VALUE,
+            assignedCustomerName: String(claim?.customer?.name || ""),
+            assignedCustomerJoinedAt: String(claim?.customer?.joinedAt || ""),
+            assignedCustomerExpiredAt: String(claim?.customer?.expiredAt || ""),
             package1AccessToken: String(claim?.package1AccessToken || ""),
             package1MaxUsage: STORE_PACKAGE1_MAX_OTP_USES,
             package1UsedCount: 0,
@@ -3191,6 +3344,9 @@ const fulfillStoreOrder = async (order) => {
             assignedLink: String(claim?.updatedAcc?.link || ""),
             assignedType: String(claim?.updatedAcc?.type || ""),
             assignedWarehouse: CHATGPT_TOTAL_VALUE,
+            assignedCustomerName: String(claim?.customer?.name || ""),
+            assignedCustomerJoinedAt: String(claim?.customer?.joinedAt || ""),
+            assignedCustomerExpiredAt: String(claim?.customer?.expiredAt || ""),
             fulfilledAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           },
@@ -3770,7 +3926,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
         .limit(100)
         .lean(),
       StoreUser.find({})
-        .select("id fullName email phone authProviders createdAt updatedAt")
+        .select("id fullName email phone authProviders googleId passwordHash createdAt updatedAt")
         .lean(),
       StoreOrder.aggregate([
         {
@@ -3849,6 +4005,25 @@ app.get("/api/data", verifyToken, async (req, res) => {
   }
 });
 
+app.delete("/api/store-orders/:id", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiếu ID đơn web." });
+    }
+
+    const order = await StoreOrder.findOne({ id });
+    if (!order) {
+      return res.status(404).json({ error: "Không tìm thấy đơn web." });
+    }
+
+    await deleteStoreOrderForAdmin(order);
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: "Không thể xóa đơn web." });
+  }
+});
+
 app.put("/api/store-users/:id", verifyToken, async (req, res) => {
   try {
     const id = String(req.params?.id || "").trim();
@@ -3858,6 +4033,8 @@ app.put("/api/store-users/:id", verifyToken, async (req, res) => {
     const fullName = String(req.body?.fullName || "").trim();
     const phone = String(req.body?.phone || "").trim();
     const email = String(req.body?.email || "").trim();
+    const password = String(req.body?.password || "").trim();
+    const unlinkGoogle = !!req.body?.unlinkGoogle;
     const phoneNormalized = normalizePhoneValue(phone);
     const emailLower = normalizeEmailLower(email);
 
@@ -3871,10 +4048,16 @@ app.put("/api/store-users/:id", verifyToken, async (req, res) => {
       return res.status(400).json({ error: "Email không hợp lệ." });
     }
 
+    if (password && password.length < 6) {
+      return res.status(400).json({ error: "Mật khẩu mới phải có ít nhất 6 ký tự." });
+    }
+
     const user = await StoreUser.findOne({ id });
     if (!user) {
       return res.status(404).json({ error: "Không tìm thấy user web." });
     }
+    const hadPassword = !!String(user.passwordHash || "").trim();
+    const hadGoogle = !!String(user.googleId || "").trim();
 
     const [existingPhone, existingEmail] = await Promise.all([
       StoreUser.findOne({ phoneNormalized, id: { $ne: id } }).lean(),
@@ -3891,12 +4074,26 @@ app.put("/api/store-users/:id", verifyToken, async (req, res) => {
         .status(409)
         .json({ error: "Email này đã được user khác sử dụng." });
     }
+    if (unlinkGoogle && hadGoogle && !hadPassword && !password) {
+      return res.status(400).json({
+        error:
+          "User này hiện chỉ đăng nhập bằng Google. Hãy đặt mật khẩu mới trước khi gỡ Google.",
+      });
+    }
 
     user.fullName = fullName;
     user.phone = phone;
     user.phoneNormalized = phoneNormalized;
     user.email = email;
     user.emailLower = emailLower;
+    if (password) {
+      user.passwordHash = await bcrypt.hash(password, 10);
+      user.authProviders = upsertStringIntoList(user.authProviders, "password");
+    }
+    if (unlinkGoogle && hadGoogle) {
+      user.googleId = "";
+      user.authProviders = removeStringFromList(user.authProviders, "google");
+    }
     user.updatedAt = new Date().toISOString();
     await user.save();
 
