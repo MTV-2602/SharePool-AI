@@ -158,6 +158,53 @@ const getStoreOrderStatusLabel = (value) => {
   if (normalized === "payment_failed") return "Thanh toán thất bại";
   return String(value || "Không rõ");
 };
+const buildAccountTraceAlertMessage = (diagnostics = {}) => {
+  if (!diagnostics || typeof diagnostics !== "object") return "";
+  const parts = [];
+  const storeOrders = Array.isArray(diagnostics.storeOrders)
+    ? diagnostics.storeOrders
+    : [];
+  const marketplaceOrders = Array.isArray(diagnostics.marketplaceOrders)
+    ? diagnostics.marketplaceOrders
+    : [];
+  const warrantyCases = Array.isArray(diagnostics.marketplaceWarrantyCases)
+    ? diagnostics.marketplaceWarrantyCases
+    : [];
+  const users = Array.isArray(diagnostics.users) ? diagnostics.users : [];
+  if (storeOrders.length > 0) {
+    parts.push(
+      `Đơn web còn ${storeOrders.length}: ${storeOrders
+        .slice(0, 3)
+        .map((item) => `${item.id} (${getStoreOrderStatusLabel(item.status)})`)
+        .join(", ")}`,
+    );
+  }
+  if (marketplaceOrders.length > 0) {
+    parts.push(
+      `Đơn sàn còn ${marketplaceOrders.length}: ${marketplaceOrders
+        .slice(0, 3)
+        .map((item) => `${getMarketplaceProviderLabel(item.provider)} ${item.orderId}`)
+        .join(", ")}`,
+    );
+  }
+  if (warrantyCases.length > 0) {
+    parts.push(
+      `Bảo hành còn ${warrantyCases.length}: ${warrantyCases
+        .slice(0, 3)
+        .map((item) => `${getMarketplaceProviderLabel(item.provider)} ${item.orderId}`)
+        .join(", ")}`,
+    );
+  }
+  if (users.length > 0) {
+    parts.push(
+      `Khách còn trên nick: ${users
+        .slice(0, 3)
+        .map((item) => String(item?.name || "--"))
+        .join(", ")}`,
+    );
+  }
+  return parts.join(" | ");
+};
 const normalizeStoreAdminOrders = (orders = []) =>
   [...(Array.isArray(orders) ? orders : [])]
     .map((order) => ({
@@ -2037,10 +2084,19 @@ function App() {
       async () => {
         setLoadingStates((prev) => ({ ...prev, deleteStoreOrder: orderId }));
         try {
-          await axios.delete(`/api/store-orders/${orderId}`);
+          const response = await axios.delete(`/api/store-orders/${orderId}`);
           await fetchData();
           broadcastDataChange();
-          showAlert("Thành công", `Đã xóa đơn web ${orderId}.`, "success");
+          const diagnosticsMessage = buildAccountTraceAlertMessage(
+            response?.data?.diagnostics,
+          );
+          showAlert(
+            diagnosticsMessage ? "Đã xóa nhưng nick còn trace" : "Thành công",
+            diagnosticsMessage
+              ? `Đã xóa đơn web ${orderId}. Nick này vẫn còn dính trace khác: ${diagnosticsMessage}`
+              : `Đã xóa đơn web ${orderId} và làm sạch trace của nick đã cấp.`,
+            diagnosticsMessage ? "warning" : "success",
+          );
         } catch (error) {
           showAlert(
             "Lỗi",
@@ -6250,6 +6306,9 @@ function App() {
                                   marketplaceTrackedAccountMap.get(String(acc?.id || ""));
                                 const trackedMarketplaceSummary =
                                   trackedMarketplaceEntry?.summary || null;
+                                const storeTraceSummary = acc?.storeTraceSummary || null;
+                                const marketplaceTraceSummary =
+                                  acc?.marketplaceTraceSummary || null;
                                 const isInMarketWarehouse = package2Shelf === "cheap";
                                 const isOnDatammoShelf = isInMarketWarehouse;
                                 const legacyMarketplaceInfo =
@@ -6476,6 +6535,90 @@ function App() {
                                     </div>
                                   );
                                 };
+                                const showAdminTraceSummary =
+                                  Number(storeTraceSummary?.totalOrders || 0) > 0 ||
+                                  Number(marketplaceTraceSummary?.orderCount || 0) > 0 ||
+                                  Number(marketplaceTraceSummary?.warrantyCount || 0) > 0;
+                                const renderAdminTraceSummary = () => {
+                                  if (!showAdminTraceSummary) return null;
+                                  const latestStoreTrace =
+                                    Array.isArray(storeTraceSummary?.traces) &&
+                                    storeTraceSummary.traces.length > 0
+                                      ? storeTraceSummary.traces[0]
+                                      : null;
+                                  return (
+                                    <div className="mb-2 rounded-xl border border-fuchsia-700/40 bg-fuchsia-950/15 px-3 py-3 text-fuchsia-100 shadow-sm">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="inline-flex items-center rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-fuchsia-200">
+                                          Trace dang gan voi nick
+                                        </span>
+                                        {Number(storeTraceSummary?.totalOrders || 0) > 0 && (
+                                          <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                            Web {storeTraceSummary.totalOrders}
+                                          </span>
+                                        )}
+                                        {Number(marketplaceTraceSummary?.orderCount || 0) > 0 && (
+                                          <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-200">
+                                            San {marketplaceTraceSummary.orderCount}
+                                          </span>
+                                        )}
+                                        {Number(marketplaceTraceSummary?.warrantyCount || 0) > 0 && (
+                                          <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-amber-200">
+                                            Bao hanh {marketplaceTraceSummary.warrantyCount}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="mt-2 space-y-1 text-[11px] leading-relaxed text-slate-200">
+                                        {latestStoreTrace ? (
+                                          <div>
+                                            <span className="text-slate-400">Đơn web mới nhất:</span>{" "}
+                                            <span className="font-semibold text-white">
+                                              {latestStoreTrace.orderId}
+                                            </span>{" "}
+                                            · {getStoreOrderStatusLabel(latestStoreTrace.status)}
+                                            {latestStoreTrace.customerName ||
+                                            latestStoreTrace.customerEmail ? (
+                                              <>
+                                                {" "}
+                                                ·{" "}
+                                                <span className="text-fuchsia-200">
+                                                  {latestStoreTrace.customerName ||
+                                                    latestStoreTrace.customerEmail}
+                                                </span>
+                                              </>
+                                            ) : null}
+                                          </div>
+                                        ) : null}
+                                        {Number(marketplaceTraceSummary?.orderCount || 0) > 0 ? (
+                                          <div>
+                                            <span className="text-slate-400">Đơn sàn gần nhất:</span>{" "}
+                                            <span className="font-semibold text-white">
+                                              {getMarketplaceProviderLabel(
+                                                marketplaceTraceSummary?.latestProvider,
+                                              )}{" "}
+                                              {marketplaceTraceSummary?.latestOrderId || "--"}
+                                            </span>
+                                          </div>
+                                        ) : null}
+                                        {Number(marketplaceTraceSummary?.warrantyCount || 0) > 0 ? (
+                                          <div>
+                                            <span className="text-slate-400">
+                                              Đơn bảo hành gần nhất:
+                                            </span>{" "}
+                                            <span className="font-semibold text-white">
+                                              {marketplaceTraceSummary?.latestWarrantyOrderId ||
+                                                "--"}
+                                            </span>
+                                          </div>
+                                        ) : null}
+                                        <div className="text-[10px] text-slate-400">
+                                          Nếu đã xóa đơn mà khung này vẫn còn, nick này đang còn
+                                          dính trace ở collection khác.
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                };
                                 const daysRemaining = displayMarketplaceUser
                                   ? getDaysRemaining(displayMarketplaceUser)
                                   : null;
@@ -6502,6 +6645,7 @@ function App() {
 
                                 return (
                                   <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
+                                    {renderAdminTraceSummary()}
                                     {displayMarketplaceUser ? (
                                       showMarketplaceManagementCard ? (
                                         <div

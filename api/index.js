@@ -1442,6 +1442,15 @@ const STORE_IMMEDIATE_DELETE_ORDER_STATUSES = [
 ];
 const STORE_PRUNABLE_ORDER_STATUSES = ["fulfillment_failed"];
 const STORE_FAILED_ORDER_RETENTION_MS = 24 * 60 * 60 * 1000;
+const normalizeStoreOrderStatusValue = (value = "") =>
+  String(value || "").trim().toLowerCase();
+const isStoreFailedLikeStatus = (status = "") => {
+  const normalized = normalizeStoreOrderStatusValue(status);
+  return (
+    STORE_IMMEDIATE_DELETE_ORDER_STATUSES.includes(normalized) ||
+    STORE_PRUNABLE_ORDER_STATUSES.includes(normalized)
+  );
+};
 const getStorePaymentExpiresAtIso = (baseDate = new Date()) =>
   new Date(baseDate.getTime() + STORE_PAYMENT_HOLD_MS).toISOString();
 const getStorePendingCutoffIso = (baseDate = new Date()) =>
@@ -1699,6 +1708,251 @@ const sanitizeStoreOrderForAdmin = (order, user = null) => {
     customerName: String(user?.fullName || "").trim(),
     customerEmail: String(user?.email || "").trim(),
     customerPhone: String(user?.phone || "").trim(),
+  };
+};
+const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
+  const map = new Map();
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const sortedOrders = [...safeOrders].sort((a, b) => {
+    const leftTs = parseStoreDateMs(
+      a?.updatedAt || a?.fulfilledAt || a?.paidAt || a?.createdAt,
+    );
+    const rightTs = parseStoreDateMs(
+      b?.updatedAt || b?.fulfilledAt || b?.paidAt || b?.createdAt,
+    );
+    return rightTs - leftTs;
+  });
+
+  const touchSummary = (accountId) => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return null;
+    if (!map.has(normalizedId)) {
+      map.set(normalizedId, {
+        totalOrders: 0,
+        assignedOrders: 0,
+        reservedOrders: 0,
+        pendingOrders: 0,
+        fulfilledOrders: 0,
+        failedOrders: 0,
+        hiddenOrders: 0,
+        latestOrderId: "",
+        latestStatus: "",
+        latestPackageName: "",
+        latestCustomerName: "",
+        latestCustomerEmail: "",
+        traces: [],
+      });
+    }
+    return map.get(normalizedId);
+  };
+
+  sortedOrders.forEach((order) => {
+    const user = userMap.get(String(order?.userId || "").trim()) || null;
+    const status = normalizeStoreOrderStatusValue(order?.status);
+    const packageCode = String(order?.packageCode || "").trim();
+    const packageName = String(
+      order?.packageName || STORE_PACKAGE_MAP[packageCode]?.name || packageCode,
+    ).trim();
+    const traceBase = {
+      orderId: String(order?.id || "").trim(),
+      status,
+      packageCode,
+      packageName,
+      customerName: String(user?.fullName || "").trim(),
+      customerEmail: String(user?.email || "").trim(),
+      momoOrderId: String(order?.momoOrderId || "").trim(),
+      createdAt: String(order?.createdAt || "").trim(),
+      paidAt: String(order?.paidAt || "").trim(),
+      fulfilledAt: String(order?.fulfilledAt || "").trim(),
+      expiresAt: String(order?.expiresAt || "").trim(),
+    };
+    const assignedAccountId = String(order?.assignedAccountId || "").trim();
+    const reservedAccountId = String(order?.reservedAccountId || "").trim();
+    const targets = [];
+    if (assignedAccountId) {
+      targets.push({ accountId: assignedAccountId, role: "assigned" });
+    }
+    if (reservedAccountId && reservedAccountId !== assignedAccountId) {
+      targets.push({ accountId: reservedAccountId, role: "reserved" });
+    }
+
+    targets.forEach((target) => {
+      const summary = touchSummary(target.accountId);
+      if (!summary) return;
+      summary.totalOrders += 1;
+      if (target.role === "assigned") {
+        summary.assignedOrders += 1;
+      } else {
+        summary.reservedOrders += 1;
+      }
+      if (status === "fulfilled") {
+        summary.fulfilledOrders += 1;
+      }
+      if (isStorePendingPaymentStatus(status) || status === "paid") {
+        summary.pendingOrders += 1;
+      }
+      if (STORE_HIDDEN_ORDER_STATUSES.has(status)) {
+        summary.hiddenOrders += 1;
+      }
+      if (isStoreFailedLikeStatus(status)) {
+        summary.failedOrders += 1;
+      }
+      if (!summary.latestOrderId) {
+        summary.latestOrderId = traceBase.orderId;
+        summary.latestStatus = traceBase.status;
+        summary.latestPackageName = traceBase.packageName;
+        summary.latestCustomerName = traceBase.customerName;
+        summary.latestCustomerEmail = traceBase.customerEmail;
+      }
+      if (summary.traces.length < 5) {
+        summary.traces.push({
+          ...traceBase,
+          role: target.role,
+        });
+      }
+    });
+  });
+
+  return map;
+};
+const buildMarketplaceAccountTraceMap = (
+  orders = [],
+  warrantyCases = [],
+) => {
+  const map = new Map();
+  const normalizeProvider = (value = "") =>
+    String(value || "").trim().toLowerCase() === "shopmini"
+      ? "shopmini"
+      : "datammo";
+  const touchSummary = (accountId) => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return null;
+    if (!map.has(normalizedId)) {
+      map.set(normalizedId, {
+        orderCount: 0,
+        warrantyCount: 0,
+        providers: [],
+        latestOrderId: "",
+        latestProvider: "",
+        latestWarrantyOrderId: "",
+      });
+    }
+    return map.get(normalizedId);
+  };
+  const pushProvider = (summary, provider) => {
+    const normalizedProvider = normalizeProvider(provider);
+    if (!normalizedProvider) return;
+    if (!summary.providers.includes(normalizedProvider)) {
+      summary.providers.push(normalizedProvider);
+    }
+  };
+
+  (Array.isArray(orders) ? orders : []).forEach((order) => {
+    const provider = normalizeProvider(order?.provider);
+    const orderId = String(order?.orderId || "").trim();
+    (Array.isArray(order?.accounts) ? order.accounts : []).forEach((item) => {
+      const summary = touchSummary(item?.accountId);
+      if (!summary) return;
+      summary.orderCount += 1;
+      pushProvider(summary, provider);
+      if (!summary.latestOrderId) {
+        summary.latestOrderId = orderId;
+        summary.latestProvider = provider;
+      }
+    });
+  });
+
+  (Array.isArray(warrantyCases) ? warrantyCases : []).forEach((item) => {
+    const provider = normalizeProvider(item?.provider);
+    const orderId = String(item?.orderId || "").trim();
+    const relatedIds = new Set();
+    relatedIds.add(String(item?.rootAccountId || "").trim());
+    relatedIds.add(String(item?.currentAccountId || "").trim());
+    (Array.isArray(item?.rounds) ? item.rounds : []).forEach((round) => {
+      relatedIds.add(String(round?.fromAccountId || "").trim());
+      relatedIds.add(String(round?.toAccountId || "").trim());
+    });
+    relatedIds.forEach((accountId) => {
+      const summary = touchSummary(accountId);
+      if (!summary) return;
+      summary.warrantyCount += 1;
+      pushProvider(summary, provider);
+      if (!summary.latestWarrantyOrderId) {
+        summary.latestWarrantyOrderId = orderId;
+      }
+    });
+  });
+
+  return map;
+};
+const buildChatgptAccountAdminDiagnostics = async (accountId = "") => {
+  const normalizedId = String(accountId || "").trim();
+  if (!normalizedId) return null;
+  const normalizeProvider = (value = "") =>
+    String(value || "").trim().toLowerCase() === "shopmini"
+      ? "shopmini"
+      : "datammo";
+  const [account, storeOrders, marketplaceOrders, warrantyCases] =
+    await Promise.all([
+      Account.findOne({ id: normalizedId }).lean(),
+      StoreOrder.find({
+        $or: [{ assignedAccountId: normalizedId }, { reservedAccountId: normalizedId }],
+      })
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .lean(),
+      DatammoOrder.find({
+        scope: "chatgpt",
+        "accounts.accountId": normalizedId,
+      })
+        .sort({ createdAt: -1 })
+        .lean(),
+      DatammoWarrantyCase.find({
+        scope: "chatgpt",
+        $or: [
+          { rootAccountId: normalizedId },
+          { currentAccountId: normalizedId },
+          { "rounds.fromAccountId": normalizedId },
+          { "rounds.toAccountId": normalizedId },
+        ],
+      })
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .lean(),
+    ]);
+
+  return {
+    accountId: normalizedId,
+    username: String(account?.username || "").trim(),
+    type: String(account?.type || "").trim(),
+    package2Shelf: normalizePackage2Shelf(
+      account?.package2Shelf,
+      CHATGPT_TOTAL_VALUE,
+    ),
+    users: (Array.isArray(account?.users) ? account.users : []).map((user) => ({
+      name: String(user?.name || "").trim(),
+      joinedAt: String(user?.joinedAt || "").trim(),
+      expiredAt: String(user?.expiredAt || "").trim(),
+    })),
+    storeOrders: (Array.isArray(storeOrders) ? storeOrders : []).map((order) => ({
+      id: String(order?.id || "").trim(),
+      status: normalizeStoreOrderStatusValue(order?.status),
+      packageCode: String(order?.packageCode || "").trim(),
+      reservationType: String(order?.reservationType || "").trim(),
+      reservedAccountId: String(order?.reservedAccountId || "").trim(),
+      assignedAccountId: String(order?.assignedAccountId || "").trim(),
+    })),
+    marketplaceOrders: (Array.isArray(marketplaceOrders) ? marketplaceOrders : []).map(
+      (order) => ({
+        orderId: String(order?.orderId || "").trim(),
+        provider: normalizeProvider(order?.provider),
+      }),
+    ),
+    marketplaceWarrantyCases: (
+      Array.isArray(warrantyCases) ? warrantyCases : []
+    ).map((item) => ({
+      orderId: String(item?.orderId || "").trim(),
+      provider: normalizeProvider(item?.provider),
+      status: String(item?.status || "").trim(),
+    })),
   };
 };
 const issueStoreUserJwt = (user) =>
@@ -3226,13 +3480,20 @@ const findStoreAssignedUserRemovalIndex = ({
   }
   return -1;
 };
-const cleanupStoreAssignedAccountForOrder = async (order = {}) => {
+const cleanupStoreAssignedAccountForOrder = async (
+  order = {},
+  { forceClearIfNoRemainingStoreTrace = false } = {},
+) => {
   const accountId = String(order?.assignedAccountId || "").trim();
   if (!accountId) return;
 
-  const [account, storeUser] = await Promise.all([
+  const [account, storeUser, remainingStoreOrders] = await Promise.all([
     Account.findOne({ id: accountId }).lean(),
     order?.userId ? StoreUser.findOne({ id: String(order.userId || "").trim() }).lean() : null,
+    StoreOrder.find({
+      id: { $ne: String(order?.id || "").trim() },
+      $or: [{ assignedAccountId: accountId }, { reservedAccountId: accountId }],
+    }).lean(),
   ]);
   if (!account) return;
 
@@ -3247,12 +3508,19 @@ const cleanupStoreAssignedAccountForOrder = async (order = {}) => {
     removalIndex >= 0
       ? currentUsers.filter((_, index) => index !== removalIndex)
       : currentUsers;
+  const hasRemainingStoreTrace =
+    Array.isArray(remainingStoreOrders) && remainingStoreOrders.length > 0;
+  const canForceClearResidualUser =
+    forceClearIfNoRemainingStoreTrace &&
+    !hasRemainingStoreTrace &&
+    currentUsers.length <= 1;
+  const finalUsers = canForceClearResidualUser ? [] : nextUsers;
 
   const nextType = (() => {
     const packageCode = String(order?.packageCode || "").trim();
     const reservationType = String(order?.reservationType || "").trim();
     if (
-      nextUsers.length === 0 &&
+      finalUsers.length === 0 &&
       (packageCode === "package2" || reservationType === "package1_convertible")
     ) {
       return "unassigned";
@@ -3265,7 +3533,7 @@ const cleanupStoreAssignedAccountForOrder = async (order = {}) => {
     {
       $set: {
         type: nextType,
-        users: nextUsers,
+        users: finalUsers,
         package2Shelf: normalizePackage2Shelf(
           account?.package2Shelf,
           CHATGPT_TOTAL_VALUE,
@@ -3283,7 +3551,9 @@ const deleteStoreOrderForAdmin = async (orderInput = null) => {
   const orderId = String(order?.id || "").trim();
   if (!orderId) return false;
 
-  await cleanupStoreAssignedAccountForOrder(order);
+  await cleanupStoreAssignedAccountForOrder(order, {
+    forceClearIfNoRemainingStoreTrace: true,
+  });
   await StoreOrder.deleteOne({ id: orderId });
   return true;
 };
@@ -3909,6 +4179,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
       datammoOrders,
       datammoWarrantyCases,
       rawStoreOrders,
+      allStoreOrders,
       storeUsers,
       storeUserOrderStats,
     ] = await Promise.all([
@@ -3925,6 +4196,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(100)
         .lean(),
+      StoreOrder.find({}).sort({ updatedAt: -1, createdAt: -1 }).lean(),
       StoreUser.find({})
         .select("id fullName email phone authProviders googleId passwordHash createdAt updatedAt")
         .lean(),
@@ -3968,6 +4240,14 @@ app.get("/api/data", verifyToken, async (req, res) => {
         },
       ]),
     );
+    const storeAccountTraceMap = buildStoreAccountTraceMap(
+      allStoreOrders,
+      storeUserMap,
+    );
+    const marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
+      datammoOrders,
+      datammoWarrantyCases,
+    );
     res.json({
       chatgpt: accounts.map((acc) => ({
         ...acc,
@@ -3975,6 +4255,10 @@ app.get("/api/data", verifyToken, async (req, res) => {
           acc?.package2Shelf,
           CHATGPT_TOTAL_VALUE,
         ),
+        storeTraceSummary:
+          storeAccountTraceMap.get(String(acc?.id || "").trim()) || null,
+        marketplaceTraceSummary:
+          marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) || null,
       })),
       netflix: netflixAccs,
       canva: canvaAccs,
@@ -4017,8 +4301,14 @@ app.delete("/api/store-orders/:id", verifyToken, async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy đơn web." });
     }
 
+    const accountId = String(
+      order?.assignedAccountId || order?.reservedAccountId || "",
+    ).trim();
     await deleteStoreOrderForAdmin(order);
-    return res.json({ success: true });
+    const diagnostics = accountId
+      ? await buildChatgptAccountAdminDiagnostics(accountId)
+      : null;
+    return res.json({ success: true, diagnostics });
   } catch (error) {
     return res.status(500).json({ error: "Không thể xóa đơn web." });
   }
