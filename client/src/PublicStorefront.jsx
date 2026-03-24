@@ -143,6 +143,7 @@ function PublicStorefront() {
   const [manualOtp, setManualOtp] = useState({ code: "", expiresIn: 0 });
   const googleButtonRef = useRef(null);
   const authCardRef = useRef(null);
+  const pendingReconcileRef = useRef(false);
 
   const refreshRouteState = () => setRouteState(readStoreRoute());
 
@@ -240,6 +241,56 @@ function PublicStorefront() {
       cancelled = true;
     };
   }, [route.view, route.orderId, token]);
+
+  useEffect(() => {
+    if (!token || !user) return undefined;
+    const pendingOrders = orders.filter(
+      (order) =>
+        isPendingStorePayment(order.status) &&
+        String(order.momoOrderId || "").trim(),
+    );
+    if (pendingOrders.length === 0) return undefined;
+
+    let cancelled = false;
+    const runReconcile = async () => {
+      if (pendingReconcileRef.current) return;
+      pendingReconcileRef.current = true;
+      try {
+        let shouldReload = false;
+        for (const order of pendingOrders) {
+          try {
+            await apiRequest(
+              `/api/store/orders/${encodeURIComponent(order.id)}/reconcile`,
+              {
+                method: "POST",
+                token,
+              },
+            );
+            shouldReload = true;
+          } catch {}
+        }
+        if (!cancelled && shouldReload) {
+          await loadSession(token);
+        }
+      } finally {
+        pendingReconcileRef.current = false;
+      }
+    };
+
+    const initialDelayMs = route.view === "payment-result" ? 1500 : 5000;
+    const intervalMs = route.view === "payment-result" ? 8000 : 15000;
+    const timeoutId = window.setTimeout(() => {
+      runReconcile().catch(() => {});
+    }, initialDelayMs);
+    const intervalId = window.setInterval(() => {
+      runReconcile().catch(() => {});
+    }, intervalMs);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [orders, route.view, token, user]);
 
   useEffect(() => {
     if (!config.googleClientId || !googleButtonRef.current) return;
