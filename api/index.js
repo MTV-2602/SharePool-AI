@@ -930,6 +930,8 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, nex
       return next();
     }
 
+    await cleanupOldStoreFailedOrders({ userId: req.storeUser.id });
+
     const reusableOrder = await getStoreReusablePendingOrder({
       userId: req.storeUser.id,
       packageCode: packageConfig.code,
@@ -1366,10 +1368,18 @@ const buildStorePackage1UsageLeft = (order = {}) =>
   );
 const STORE_PENDING_PAYMENT_STATUSES = ["pending_payment", "awaiting_payment"];
 const STORE_HIDDEN_ORDER_STATUSES = new Set(["payment_expired"]);
+const STORE_PRUNABLE_ORDER_STATUSES = [
+  "payment_failed",
+  "payment_expired",
+  "fulfillment_failed",
+];
+const STORE_FAILED_ORDER_RETENTION_MS = 24 * 60 * 60 * 1000;
 const getStorePaymentExpiresAtIso = (baseDate = new Date()) =>
   new Date(baseDate.getTime() + STORE_PAYMENT_HOLD_MS).toISOString();
 const getStorePendingCutoffIso = (baseDate = new Date()) =>
   new Date(baseDate.getTime() - STORE_PAYMENT_HOLD_MS).toISOString();
+const getStoreFailedOrderCleanupCutoffIso = (baseDate = new Date()) =>
+  new Date(baseDate.getTime() - STORE_FAILED_ORDER_RETENTION_MS).toISOString();
 const parseStoreDateMs = (value) => {
   const ts = new Date(String(value || "").trim()).getTime();
   return Number.isFinite(ts) ? ts : 0;
@@ -1444,8 +1454,31 @@ const expireStaleStoreOrders = async (extra = {}) => {
     },
   });
 };
+const cleanupOldStoreFailedOrders = async (extra = {}) => {
+  const cutoffIso = getStoreFailedOrderCleanupCutoffIso();
+  await StoreOrder.deleteMany({
+    ...extra,
+    status: { $in: STORE_PRUNABLE_ORDER_STATUSES },
+    $or: [
+      { updatedAt: { $lte: cutoffIso, $ne: "" } },
+      {
+        $and: [
+          {
+            $or: [
+              { updatedAt: "" },
+              { updatedAt: null },
+              { updatedAt: { $exists: false } },
+            ],
+          },
+          { createdAt: { $lte: cutoffIso } },
+        ],
+      },
+    ],
+  });
+};
 const loadVisibleStoreOrdersForUser = async (userId) => {
   await expireStaleStoreOrders({ userId });
+  await cleanupOldStoreFailedOrders({ userId });
   return StoreOrder.find({
     userId,
     status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
