@@ -4,12 +4,10 @@ import {
   ChevronUp,
   CheckCircle2,
   Copy,
-  KeyRound,
   Loader2,
   LogOut,
   Mail,
   Phone,
-  RefreshCw,
   ShieldCheck,
   User,
 } from "lucide-react";
@@ -158,8 +156,6 @@ function PublicStorefront() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [otpResults, setOtpResults] = useState({});
-  const [manualSecret, setManualSecret] = useState("");
-  const [manualOtp, setManualOtp] = useState({ code: "", expiresAtMs: 0 });
   const [otpNowMs, setOtpNowMs] = useState(() => Date.now());
   const googleButtonRef = useRef(null);
   const authCardRef = useRef(null);
@@ -381,7 +377,7 @@ function PublicStorefront() {
         order.status === "fulfilled" &&
         String(order.assignedOtpSecret || "").trim(),
     );
-    if (package2Orders.length === 0 && !manualSecret.trim()) {
+    if (package2Orders.length === 0) {
       setOtpResults({});
       return undefined;
     }
@@ -412,30 +408,6 @@ function PublicStorefront() {
       if (!cancelled) {
         setOtpResults((prev) => ({ ...prev, ...entries }));
       }
-      if (manualSecret.trim()) {
-        try {
-          const data = await apiRequest("/api/store/totp/generate", {
-            method: "POST",
-            body: { secret: manualSecret.trim() },
-          });
-          const expiresIn = Number(data?.expiresIn || 0);
-          if (expiresIn > 0) {
-            nextRefreshIn = Math.min(nextRefreshIn, expiresIn);
-          }
-          if (!cancelled) {
-            setManualOtp(
-              buildOtpDisplayState({
-                code: data?.code,
-                expiresIn,
-              }),
-            );
-          }
-        } catch {
-          if (!cancelled) {
-            setManualOtp(buildOtpDisplayState({ code: "------", expiresIn: 0 }));
-          }
-        }
-      }
       if (!cancelled) {
         timeoutId = window.setTimeout(
           refreshCodes,
@@ -449,7 +421,7 @@ function PublicStorefront() {
       cancelled = true;
       if (timeoutId) window.clearTimeout(timeoutId);
     };
-  }, [orders, manualSecret]);
+  }, [orders]);
 
   const currentPaymentOrder = useMemo(
     () => orders.find((order) => order.id === route.orderId) || null,
@@ -1091,26 +1063,6 @@ function PublicStorefront() {
               </div>
 
               <div className="space-y-6">
-                <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
-                  <div className="mb-3 flex items-center gap-2 text-white"><KeyRound size={18} className="text-cyan-400" /><h3 className="text-lg font-semibold">Công cụ OTP</h3></div>
-                  <p className="text-sm leading-6 text-slate-400">Dán TOTP secret để lấy mã đăng nhập. Gói 2 sẽ tự động làm mới mỗi 30 giây, còn ô này dùng để kiểm tra thủ công khi cần.</p>
-                  <div className="mt-4 space-y-3">
-                    <textarea value={manualSecret} onChange={(event) => setManualSecret(event.target.value)} placeholder="Dán mã 2FA secret vào đây" className="min-h-24 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500" />
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-2xl bg-slate-950 px-4 py-3 text-2xl font-bold tracking-[0.35em] text-cyan-300">{manualOtp.code || "------"}</div>
-                      <button onClick={async () => { try { const data = await apiRequest("/api/store/totp/generate", { method: "POST", body: { secret: manualSecret } }); setManualOtp(buildOtpDisplayState({ code: data?.code, expiresIn: Number(data?.expiresIn || 0) })); } catch (manualError) { setError(manualError.message || "Không lấy được OTP"); } }} className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white">
-                        <RefreshCw size={16} />
-                        Lấy mã
-                      </button>
-                    </div>
-                    <div className="text-sm text-slate-400">
-                      {getOtpSecondsRemaining(manualOtp, otpNowMs) > 0
-                        ? `Hết hạn sau ${getOtpSecondsRemaining(manualOtp, otpNowMs)}s`
-                        : "OTP sẽ tự đổi theo chu kỳ 30 giây"}
-                    </div>
-                  </div>
-                </div>
-
                 <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
                   <h3 className="text-lg font-semibold text-white">Quy trình nhận nick sau khi thanh toán</h3>
                   <ol className="mt-4 space-y-2 text-sm leading-6 text-slate-300">
