@@ -41,6 +41,22 @@ const setStoreRoute = (next = {}) => {
   window.history.replaceState({}, "", `${url.pathname}${url.search}`);
 };
 
+const buildOtpDisplayState = ({ code = "", expiresIn = 0, extra = {} } = {}) => {
+  const normalizedExpiresIn = Number(expiresIn || 0);
+  return {
+    code: String(code || ""),
+    expiresAtMs:
+      normalizedExpiresIn > 0 ? Date.now() + normalizedExpiresIn * 1000 : 0,
+    ...extra,
+  };
+};
+
+const getOtpSecondsRemaining = (otp = {}, nowMs = Date.now()) => {
+  const expiresAtMs = Number(otp?.expiresAtMs || 0);
+  if (!expiresAtMs) return 0;
+  return Math.max(0, Math.ceil((expiresAtMs - nowMs) / 1000));
+};
+
 const apiRequest = async (path, { method = "GET", token = "", body } = {}) => {
   const response = await fetch(path, {
     method,
@@ -143,7 +159,8 @@ function PublicStorefront() {
   const [resetPassword, setResetPassword] = useState("");
   const [otpResults, setOtpResults] = useState({});
   const [manualSecret, setManualSecret] = useState("");
-  const [manualOtp, setManualOtp] = useState({ code: "", expiresIn: 0 });
+  const [manualOtp, setManualOtp] = useState({ code: "", expiresAtMs: 0 });
+  const [otpNowMs, setOtpNowMs] = useState(() => Date.now());
   const googleButtonRef = useRef(null);
   const authCardRef = useRef(null);
   const pendingReconcileRef = useRef(false);
@@ -196,6 +213,14 @@ function PublicStorefront() {
     const onPopState = () => refreshRouteState();
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const interval = window.setInterval(() => {
+      setOtpNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -362,20 +387,26 @@ function PublicStorefront() {
     }
 
     let cancelled = false;
+    let timeoutId = null;
     const refreshCodes = async () => {
       const entries = {};
+      let nextRefreshIn = 30;
       for (const order of package2Orders) {
         try {
           const data = await apiRequest("/api/store/totp/generate", {
             method: "POST",
             body: { secret: order.assignedOtpSecret },
           });
-          entries[order.id] = {
-            code: String(data?.code || ""),
-            expiresIn: Number(data?.expiresIn || 0),
-          };
+          const expiresIn = Number(data?.expiresIn || 0);
+          if (expiresIn > 0) {
+            nextRefreshIn = Math.min(nextRefreshIn, expiresIn);
+          }
+          entries[order.id] = buildOtpDisplayState({
+            code: data?.code,
+            expiresIn,
+          });
         } catch {
-          entries[order.id] = { code: "------", expiresIn: 0 };
+          entries[order.id] = buildOtpDisplayState({ code: "------", expiresIn: 0 });
         }
       }
       if (!cancelled) {
@@ -387,25 +418,36 @@ function PublicStorefront() {
             method: "POST",
             body: { secret: manualSecret.trim() },
           });
+          const expiresIn = Number(data?.expiresIn || 0);
+          if (expiresIn > 0) {
+            nextRefreshIn = Math.min(nextRefreshIn, expiresIn);
+          }
           if (!cancelled) {
-            setManualOtp({
-              code: String(data?.code || ""),
-              expiresIn: Number(data?.expiresIn || 0),
-            });
+            setManualOtp(
+              buildOtpDisplayState({
+                code: data?.code,
+                expiresIn,
+              }),
+            );
           }
         } catch {
           if (!cancelled) {
-            setManualOtp({ code: "------", expiresIn: 0 });
+            setManualOtp(buildOtpDisplayState({ code: "------", expiresIn: 0 }));
           }
         }
+      }
+      if (!cancelled) {
+        timeoutId = window.setTimeout(
+          refreshCodes,
+          Math.max(1000, Math.min(nextRefreshIn, 30) * 1000 + 250),
+        );
       }
     };
 
     refreshCodes();
-    const interval = window.setInterval(refreshCodes, 30000);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      if (timeoutId) window.clearTimeout(timeoutId);
     };
   }, [orders, manualSecret]);
 
@@ -586,8 +628,10 @@ function PublicStorefront() {
       setOtpResults((prev) => ({
         ...prev,
         [order.id]: {
-          code: String(data?.code || ""),
-          expiresIn: Number(data?.expiresIn || 0),
+          ...buildOtpDisplayState({
+            code: data?.code,
+            expiresIn: Number(data?.expiresIn || 0),
+          }),
           usageLeft: Number(data?.usageLeft || 0),
         },
       }));
@@ -836,6 +880,7 @@ function PublicStorefront() {
 
   const renderPackage1Order = (order) => {
     const otp = otpResults[order.id] || {};
+    const otpSecondsLeft = getOtpSecondsRemaining(otp, otpNowMs);
     return (
       <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
         <div className="space-y-3">
@@ -872,7 +917,7 @@ function PublicStorefront() {
             {order.package1UsageLeft > 0 ? "Lấy mã" : "Đã hết lượt"}
           </button>
           <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-2xl font-bold tracking-[0.3em] text-emerald-300">{otp.code || "------"}</div>
-          <span className="text-sm text-slate-400">{otp.expiresIn ? `Hết hạn sau ${otp.expiresIn}s` : "OTP hiển thị 6 số"}</span>
+          <span className="text-sm text-slate-400">{otpSecondsLeft > 0 ? `Hết hạn sau ${otpSecondsLeft}s` : "OTP hiển thị 6 số"}</span>
         </div>
       </div>
     );
@@ -880,6 +925,7 @@ function PublicStorefront() {
 
   const renderPackage2Order = (order) => {
     const otp = otpResults[order.id] || { code: "------", expiresIn: 0 };
+    const otpSecondsLeft = getOtpSecondsRemaining(otp, otpNowMs);
     return (
       <div className="mt-4 space-y-3 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
         {[
@@ -902,7 +948,7 @@ function PublicStorefront() {
           <p className="text-sm text-slate-300">Công cụ lấy mã 2FA từ secret này, tự động làm mới mỗi 30 giây.</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <div className="rounded-2xl bg-slate-900 px-4 py-3 text-2xl font-bold tracking-[0.3em] text-cyan-300">{otp.code || "------"}</div>
-            <span className="text-sm text-slate-400">{otp.expiresIn ? `Hết hạn sau ${otp.expiresIn}s` : "Đang đợi mã"}</span>
+            <span className="text-sm text-slate-400">{otpSecondsLeft > 0 ? `Hết hạn sau ${otpSecondsLeft}s` : "Đang đợi mã"}</span>
           </div>
         </div>
       </div>
@@ -1052,10 +1098,15 @@ function PublicStorefront() {
                     <textarea value={manualSecret} onChange={(event) => setManualSecret(event.target.value)} placeholder="Dán mã 2FA secret vào đây" className="min-h-24 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500" />
                     <div className="flex items-center gap-3">
                       <div className="rounded-2xl bg-slate-950 px-4 py-3 text-2xl font-bold tracking-[0.35em] text-cyan-300">{manualOtp.code || "------"}</div>
-                      <button onClick={async () => { try { const data = await apiRequest("/api/store/totp/generate", { method: "POST", body: { secret: manualSecret } }); setManualOtp({ code: String(data?.code || ""), expiresIn: Number(data?.expiresIn || 0) }); } catch (manualError) { setError(manualError.message || "Không lấy được OTP"); } }} className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white">
+                      <button onClick={async () => { try { const data = await apiRequest("/api/store/totp/generate", { method: "POST", body: { secret: manualSecret } }); setManualOtp(buildOtpDisplayState({ code: data?.code, expiresIn: Number(data?.expiresIn || 0) })); } catch (manualError) { setError(manualError.message || "Không lấy được OTP"); } }} className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white">
                         <RefreshCw size={16} />
                         Lấy mã
                       </button>
+                    </div>
+                    <div className="text-sm text-slate-400">
+                      {getOtpSecondsRemaining(manualOtp, otpNowMs) > 0
+                        ? `Hết hạn sau ${getOtpSecondsRemaining(manualOtp, otpNowMs)}s`
+                        : "OTP sẽ tự đổi theo chu kỳ 30 giây"}
                     </div>
                   </div>
                 </div>
