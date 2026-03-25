@@ -1413,7 +1413,7 @@ function PublicStorefront() {
                       </div>
                       <div className="w-full min-w-0 flex-1 space-y-3 text-center sm:min-w-[220px] sm:text-left">
                         <div>
-                          <p className="text-sm font-semibold text-cyan-300">Mã QR thanh toán</p>
+                          <p className="text-sm font-semibold text-cyan-300">Quét QR thanh toán</p>
                           <p className="mt-1 text-sm text-slate-300">
                             Quét mã bằng app ngân hàng để thanh toán.
                           </p>
@@ -1555,7 +1555,7 @@ function PublicStorefront() {
                 <h3 className="mt-2 text-2xl font-bold text-white">
                   {paymentPickerPackage.name}
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-400">Chọn phương thức thanh toán phù hợp.</p>
+                <p className="mt-2 text-sm leading-6 text-slate-400">Chọn MoMo hoặc Ngân hàng.</p>
               </div>
               <button
                 type="button"
@@ -1708,7 +1708,7 @@ function PublicStorefront() {
                     ) : null}
                     <div className="w-full min-w-0 flex-1 space-y-3 text-center sm:min-w-[220px] sm:text-left">
                       <div>
-                        <p className="text-sm font-semibold text-cyan-300">Mã QR thanh toán</p>
+                        <p className="text-sm font-semibold text-cyan-300">Quét QR thanh toán</p>
                         <p className="mt-1 text-sm text-slate-300">
                           Quét mã ngân hàng để thanh toán.
                         </p>
