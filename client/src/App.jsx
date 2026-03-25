@@ -4808,14 +4808,11 @@ function App() {
   const storeManualOrderWarehouseHint =
     String(storeManualOrderForm?.packageCode || "").trim() === "package2"
       ? {
-          title: "Gói 2 lấy từ kho tổng",
-          description:
-            "Chỉ cấp nick chưa chọn ở kho tổng, còn hơn 20 ngày và không dính đơn web / đơn sàn / bảo hành.",
-          meta: `Còn ${storeManualOrderSourceSummary.estimatedPackage2Supply} nick có thể cấp ngay từ kho tổng.`,
-          detailLines: [
-            `Nick chưa chọn có thể cấp: ${storeManualOrderSourceSummary.eligibleConvertibleAccounts}`,
-            `Tổng acc đang nằm ở kho tổng: ${storeManualOrderSourceSummary.totalWarehouseAccounts}`,
-            "Kho market không tham gia luồng này.",
+          title: "Kho tổng",
+          summary: `${storeManualOrderSourceSummary.estimatedPackage2Supply} nick cấp ngay`,
+          chips: [
+            `Chưa chọn: ${storeManualOrderSourceSummary.eligibleConvertibleAccounts}`,
+            `Tổng acc: ${storeManualOrderSourceSummary.totalWarehouseAccounts}`,
           ],
           toneClass:
             storeManualOrderSourceSummary.estimatedPackage2Supply > 0
@@ -4823,15 +4820,12 @@ function App() {
               : "border-red-500/30 bg-red-500/10 text-red-100",
         }
       : {
-          title: "Gói 1 lấy từ kho tổng",
-          description:
-            "Ưu tiên nick chia sẻ ở kho tổng còn slot và còn hơn 20 ngày. Nếu hết, hệ thống tự lấy nick chưa chọn ở kho tổng để đổi thành nick share.",
-          meta: `Còn ${storeManualOrderSourceSummary.estimatedPackage1Supply} slot có thể cấp ngay từ kho tổng.`,
-          detailLines: [
-            `Nick chia sẻ đang dùng được: ${storeManualOrderSourceSummary.eligibleSharedAccounts}`,
-            `Slot trống đang có sẵn: ${storeManualOrderSourceSummary.eligibleSharedSlots}`,
-            `Nick chưa chọn có thể chuyển sang share: ${storeManualOrderSourceSummary.eligibleConvertibleAccounts}`,
-            "Kho market không tham gia luồng này.",
+          title: "Kho tổng",
+          summary: `${storeManualOrderSourceSummary.estimatedPackage1Supply} slot cấp ngay`,
+          chips: [
+            `Slot trống: ${storeManualOrderSourceSummary.eligibleSharedSlots}`,
+            `Nick share: ${storeManualOrderSourceSummary.eligibleSharedAccounts}`,
+            `Chưa chọn: ${storeManualOrderSourceSummary.eligibleConvertibleAccounts}`,
           ],
           toneClass:
             storeManualOrderSourceSummary.estimatedPackage1Supply > 0
@@ -11482,18 +11476,22 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                 <div
                   className={`mt-3 rounded-xl border px-4 py-3 text-sm ${storeManualOrderWarehouseHint.toneClass}`}
                 >
-                  <div className="font-semibold text-white mb-1">
-                    {storeManualOrderWarehouseHint.title}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-slate-950/30 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/90">
+                      {storeManualOrderWarehouseHint.title}
+                    </span>
+                    <span className="text-sm font-semibold text-white">
+                      {storeManualOrderWarehouseHint.summary}
+                    </span>
                   </div>
-                  <p className="leading-relaxed">
-                    {storeManualOrderWarehouseHint.description}
-                  </p>
-                  <p className="mt-2 text-xs font-medium opacity-90">
-                    {storeManualOrderWarehouseHint.meta}
-                  </p>
-                  <div className="mt-3 space-y-1 text-xs leading-5 opacity-90">
-                    {(storeManualOrderWarehouseHint.detailLines || []).map((line) => (
-                      <div key={line}>• {line}</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(storeManualOrderWarehouseHint.chips || []).map((line) => (
+                      <span
+                        key={line}
+                        className="rounded-full border border-white/10 bg-slate-950/20 px-3 py-1 text-xs font-medium text-white/90"
+                      >
+                        {line}
+                      </span>
                     ))}
                   </div>
                 </div>
