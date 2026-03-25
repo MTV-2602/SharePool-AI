@@ -1343,7 +1343,7 @@ function PublicStorefront() {
         <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/60 p-8 text-center text-slate-400">Chưa có đơn hàng nào.</div>
       ) : (
         orders.map((order) => (
-          <div key={order.id} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
+          <div key={order.id} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-white">{order.packageName}</h3>
@@ -1353,7 +1353,7 @@ function PublicStorefront() {
               </div>
               <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-100">{formatStatusLabel(order.status)}</span>
             </div>
-            <div className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-4">
+            <div className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2 xl:grid-cols-4">
               <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
                 <p className="text-slate-500">Giá tiền</p>
                 <p className="mt-1 break-words font-semibold text-white">{formatMoney(order.amount)}</p>
@@ -1373,14 +1373,14 @@ function PublicStorefront() {
             </div>
             {isPendingStorePayment(order.status) ? (
               <div className="mt-4 space-y-4">
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                   <p className="text-sm text-amber-200">
                     Nick đang được giữ riêng cho đơn này đến {order.expiresAt ? formatDateTime(order.expiresAt) : "--"}.
                   </p>
                   <button
                     onClick={() => handleReconcileOrderPayment(order.id)}
                     disabled={loading}
-                    className="inline-flex items-center rounded-2xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex items-center justify-center rounded-2xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {reconcileLoadingOrderId === order.id ? (
                       <span className="inline-flex items-center gap-2">
@@ -1394,7 +1394,7 @@ function PublicStorefront() {
                   {order.paymentUrl ? (
                     <a
                       href={order.paymentUrl}
-                      className="inline-flex items-center rounded-2xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white"
+                      className="inline-flex items-center justify-center rounded-2xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white"
                     >
                       Tiếp tục thanh toán
                     </a>
@@ -1402,20 +1402,20 @@ function PublicStorefront() {
                 </div>
                 {String(order.paymentMethod || "").trim().toLowerCase() === STORE_PAYMENT_METHOD_PAYOS &&
                 String(order.paymentQrCode || "").trim() ? (
-                  <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
-                    <div className="flex flex-wrap items-start gap-5">
+                  <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4 sm:p-5">
+                    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-5">
                       <div className="rounded-2xl bg-white p-3 shadow-lg shadow-slate-950/20">
                         <img
                           src={buildQrImageUrl(order.paymentQrCode, 260)}
                           alt={`QR thanh toán ${order.id}`}
-                          className="h-56 w-56 rounded-xl object-contain"
+                          className="h-40 w-40 rounded-xl object-contain sm:h-56 sm:w-56"
                         />
                       </div>
-                      <div className="min-w-[220px] flex-1 space-y-3">
+                      <div className="w-full min-w-0 flex-1 space-y-3 text-center sm:min-w-[220px] sm:text-left">
                         <div>
                           <p className="text-sm font-semibold text-cyan-300">Mã QR thanh toán</p>
                           <p className="mt-1 text-sm text-slate-300">
-                            Quét mã bằng app ngân hàng để thanh toán.
+                            Quét mã bằng app ngân hàng để thanh toán hoặc chụp màn hình để dùng nhanh.
                           </p>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -1436,7 +1436,9 @@ function PublicStorefront() {
                             </a>
                           ) : null}
                         </div>
-                        <p className="text-xs leading-5 text-slate-400">Nếu cần, bạn có thể sao chép mã QR để dùng tiếp.</p>
+                        <p className="text-xs leading-5 text-slate-400">
+                          Nếu app ngân hàng không quét trực tiếp, bạn có thể sao chép mã QR hoặc mở trang thanh toán.
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1548,8 +1550,9 @@ function PublicStorefront() {
         )}
       </div>
       {paymentPickerPackage ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-[2rem] border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-slate-950/40">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 px-3 py-4 backdrop-blur-sm sm:px-4">
+          <div className="flex min-h-full items-start justify-center sm:items-center">
+          <div className="w-full max-w-lg rounded-[2rem] border border-slate-800 bg-slate-900 p-4 shadow-2xl shadow-slate-950/40 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">
@@ -1569,7 +1572,7 @@ function PublicStorefront() {
               </button>
             </div>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
               {[STORE_PAYMENT_METHOD_MOMO, STORE_PAYMENT_METHOD_PAYOS].map(
                 (paymentMethod) => {
                   const methodKey = `${paymentPickerPackage.code}:${paymentMethod}`;
@@ -1581,7 +1584,7 @@ function PublicStorefront() {
                   return (
                     <div
                       key={paymentMethod}
-                      className={`rounded-3xl border p-5 ${
+                      className={`rounded-3xl border p-4 sm:p-5 ${
                         configured
                           ? "border-slate-700 bg-slate-950/70"
                           : "border-amber-500/20 bg-amber-500/5"
@@ -1599,8 +1602,8 @@ function PublicStorefront() {
                       </div>
                       <p className="mt-3 text-sm leading-6 text-slate-300">
                         {paymentMethod === STORE_PAYMENT_METHOD_PAYOS
-                          ? "Quét mã ngân hàng để thanh toán."
-                          : "Thanh toán qua ví MoMo."}
+                          ? "Thanh toán bằng ngân hàng."
+                          : "Thanh toán bằng MoMo."}
                       </p>
                       <button
                         type="button"
@@ -1643,7 +1646,7 @@ function PublicStorefront() {
             </div>
 
             {paymentPreviewOrder ? (
-              <div className="mt-6 rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-5">
+              <div className="mt-6 rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-[0.3em] text-cyan-400">
@@ -1699,21 +1702,21 @@ function PublicStorefront() {
                 {isPendingStorePayment(paymentPreviewOrder.status) &&
                 String(paymentPreviewOrder.paymentMethod || "").trim().toLowerCase() ===
                   STORE_PAYMENT_METHOD_PAYOS ? (
-                  <div className="mt-4 flex flex-wrap items-start gap-5">
+                  <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-5">
                     {String(paymentPreviewOrder.paymentQrCode || "").trim() ? (
                       <div className="rounded-2xl bg-white p-3 shadow-lg shadow-slate-950/20">
                         <img
                           src={buildQrImageUrl(paymentPreviewOrder.paymentQrCode, 240)}
                           alt={`QR thanh toán ${paymentPreviewOrder.id}`}
-                          className="h-52 w-52 rounded-xl object-contain"
+                          className="h-40 w-40 rounded-xl object-contain sm:h-52 sm:w-52"
                         />
                       </div>
                     ) : null}
-                    <div className="min-w-[220px] flex-1 space-y-3">
+                    <div className="w-full min-w-0 flex-1 space-y-3 text-center sm:min-w-[220px] sm:text-left">
                       <div>
                         <p className="text-sm font-semibold text-cyan-300">Mã QR thanh toán</p>
                         <p className="mt-1 text-sm text-slate-300">
-                          Quét mã bằng app ngân hàng để thanh toán.
+                          Quét mã ngân hàng để thanh toán ngay trên điện thoại.
                         </p>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
@@ -1744,17 +1747,17 @@ function PublicStorefront() {
                     </div>
                   </div>
                 ) : isPendingStorePayment(paymentPreviewOrder.status) ? (
-                  <div className="mt-4 flex flex-wrap items-start gap-5">
+                  <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-5">
                     {String(paymentPreviewOrder.momoQrCodeUrl || "").trim() ? (
                       <div className="rounded-2xl bg-white p-3 shadow-lg shadow-slate-950/20">
                         <img
                           src={paymentPreviewOrder.momoQrCodeUrl}
                           alt={`QR MoMo ${paymentPreviewOrder.id}`}
-                          className="h-52 w-52 rounded-xl object-contain"
+                          className="h-40 w-40 rounded-xl object-contain sm:h-52 sm:w-52"
                         />
                       </div>
                     ) : null}
-                    <div className="min-w-[220px] flex-1 space-y-3">
+                    <div className="w-full min-w-0 flex-1 space-y-3 text-center sm:min-w-[220px] sm:text-left">
                       <div>
                         <p className="text-sm font-semibold text-cyan-300">Thanh toán MoMo</p>
                         <p className="mt-1 text-sm text-slate-300">
@@ -1792,6 +1795,7 @@ function PublicStorefront() {
                 )}
               </div>
             ) : null}
+          </div>
           </div>
         </div>
       ) : null}
