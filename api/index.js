@@ -1017,7 +1017,7 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, nex
     if (!selectedStock?.purchasable) {
       return res
         .status(409)
-        .json({ error: "Hiá»‡n khÃ´ng Ä‘á»§ tÃ i khoáº£n phÃ¹ há»£p cho gÃ³i nÃ y" });
+        .json({ error: "Hiện không đủ tài khoản phù hợp cho gói này." });
     }
 
     const reservation =
@@ -1027,7 +1027,7 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, nex
     if (!reservation?.reservedAccountId) {
       return res
         .status(409)
-        .json({ error: "Hiá»‡n khÃ´ng Ä‘á»§ tÃ i khoáº£n phÃ¹ há»£p cho gÃ³i nÃ y" });
+        .json({ error: "Hiện không đủ tài khoản phù hợp cho gói này." });
     }
 
     const nowIso = new Date().toISOString();
@@ -1071,7 +1071,7 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, nex
           $set: {
             status: "payment_failed",
             momoMessage:
-              paymentError.message || "KhÃ´ng táº¡o Ä‘Æ°á»£c liÃªn káº¿t thanh toÃ¡n",
+              paymentError.message || "Không tạo được liên kết thanh toán.",
             updatedAt: new Date().toISOString(),
           },
         },
@@ -1086,7 +1086,7 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, nex
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
-      error: error.message || "KhÃ´ng táº¡o Ä‘Æ°á»£c liÃªn káº¿t thanh toÃ¡n",
+      error: error.message || "Không tạo được liên kết thanh toán.",
     });
   }
 });
@@ -3267,6 +3267,18 @@ const buildStorePackage1ExistingFilter = (excludeIds = []) => ({
     $lt: [{ $size: { $ifNull: ["$users", []] } }, 3],
   },
 });
+const buildStorePackage1ExistingReplacementFilter = (excludeIds = []) => ({
+  type: "package1",
+  package2Shelf: CHATGPT_TOTAL_VALUE,
+  note: { $not: STORE_WARRANTY_HOLD_NOTE_REGEX },
+  expiredAt: { $gt: buildStoreTotalMinExpiredAtIso() },
+  ...(Array.isArray(excludeIds) && excludeIds.length > 0
+    ? { id: { $nin: excludeIds } }
+    : {}),
+  $expr: {
+    $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
+  },
+});
 const buildStorePackage1ConvertibleFilter = (excludeIds = []) => ({
   type: "unassigned",
   package2Shelf: CHATGPT_TOTAL_VALUE,
@@ -3303,6 +3315,17 @@ const buildStorePackage2ExistingReplacementFilter = (excludeIds = []) => ({
     $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
   },
 });
+const sanitizeStoreWarrantyCandidate = (account = {}) => ({
+  id: String(account?.id || "").trim(),
+  username: String(account?.username || "").trim(),
+  type: String(account?.type || "").trim(),
+  package2Shelf: normalizePackage2Shelf(
+    account?.package2Shelf,
+    CHATGPT_TOTAL_VALUE,
+  ),
+  expiredAt: String(account?.expiredAt || "").trim(),
+  createdAt: String(account?.createdAt || "").trim(),
+});
 const getBusyChatgptAccountIdsForStoreOrders = async () => {
   const [marketplaceOrders, activeCases] = await Promise.all([
     DatammoOrder.find({ scope: "chatgpt" })
@@ -3335,6 +3358,79 @@ const getBusyChatgptAccountIdsForStoreOrders = async () => {
     });
   });
   return Array.from(ids);
+};
+const getBusyChatgptAccountIdsForStoreWarranty = async ({
+  excludeOrderId = "",
+} = {}) => {
+  const [marketplaceBusyIds, storeOrders] = await Promise.all([
+    getBusyChatgptAccountIdsForStoreOrders(),
+    StoreOrder.find({
+      ...(excludeOrderId ? { id: { $ne: excludeOrderId } } : {}),
+      status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+    })
+      .select(
+        "reservedAccountId assignedAccountId rootAssignedAccountId warrantyRounds.fromAccountId warrantyRounds.toAccountId",
+      )
+      .lean(),
+  ]);
+  const ids = new Set(Array.isArray(marketplaceBusyIds) ? marketplaceBusyIds : []);
+  (Array.isArray(storeOrders) ? storeOrders : []).forEach((order) => {
+    ids.add(String(order?.reservedAccountId || "").trim());
+    ids.add(String(order?.assignedAccountId || "").trim());
+    ids.add(String(order?.rootAssignedAccountId || "").trim());
+    (Array.isArray(order?.warrantyRounds) ? order.warrantyRounds : []).forEach(
+      (round) => {
+        ids.add(String(round?.fromAccountId || "").trim());
+        ids.add(String(round?.toAccountId || "").trim());
+      },
+    );
+  });
+  return Array.from(ids).filter(Boolean);
+};
+const getStoreWarrantyCandidateExcludeIds = async (order = {}) => {
+  const orderId = String(order?.id || "").trim();
+  const [busyIds] = await Promise.all([
+    getBusyChatgptAccountIdsForStoreWarranty({ excludeOrderId: orderId }),
+  ]);
+  return Array.from(
+    new Set([
+      ...(Array.isArray(busyIds) ? busyIds : []),
+      ...getStoreWarrantyRelatedAccountIds(order),
+    ]),
+  ).filter(Boolean);
+};
+const listStoreWarrantyCandidates = async (order = {}) => {
+  const packageCode = String(order?.packageCode || "").trim();
+  if (!["package1", "package2"].includes(packageCode)) return [];
+  const excludeIds = await getStoreWarrantyCandidateExcludeIds(order);
+  if (packageCode === "package1") {
+    const [existingAccounts, convertibleAccounts] = await Promise.all([
+      Account.find(buildStorePackage1ExistingReplacementFilter(excludeIds))
+        .sort({ createdAt: 1, id: 1 })
+        .select("id username type package2Shelf expiredAt createdAt")
+        .lean(),
+      Account.find(buildStorePackage1ConvertibleFilter(excludeIds))
+        .sort({ createdAt: 1, id: 1 })
+        .select("id username type package2Shelf expiredAt createdAt")
+        .lean(),
+    ]);
+    return [...existingAccounts, ...convertibleAccounts].map(
+      sanitizeStoreWarrantyCandidate,
+    );
+  }
+  const [existingAccounts, convertibleAccounts] = await Promise.all([
+    Account.find(buildStorePackage2ExistingReplacementFilter(excludeIds))
+      .sort({ createdAt: 1, id: 1 })
+      .select("id username type package2Shelf expiredAt createdAt")
+      .lean(),
+    Account.find(buildStorePackage2ConvertibleFilter(excludeIds))
+      .sort({ createdAt: 1, id: 1 })
+      .select("id username type package2Shelf expiredAt createdAt")
+      .lean(),
+  ]);
+  return [...existingAccounts, ...convertibleAccounts].map(
+    sanitizeStoreWarrantyCandidate,
+  );
 };
 const getStoreReusablePendingOrder = async ({ userId, packageCode }) => {
   await expireStaleStoreOrders({ userId });
@@ -3608,6 +3704,144 @@ const claimStorePackage2AccountForOrder = async ({ order, user }) => {
     customer,
   };
 };
+const claimStorePackage1WarrantyReplacement = async ({
+  order,
+  storeUser,
+  replacementAccountId = "",
+}) => {
+  const customer = buildStoreCustomerRecordFromOrder(order, storeUser);
+  const targetId = String(replacementAccountId || "").trim();
+  const excludeIds = await getStoreWarrantyCandidateExcludeIds(order);
+  let oldAcc = null;
+  if (targetId) {
+    if (excludeIds.includes(targetId)) {
+      const error = new Error("Acc thay thế này không còn hợp lệ để bảo hành.");
+      error.statusCode = 409;
+      throw error;
+    }
+    oldAcc = await Account.findOneAndUpdate(
+      { id: targetId, ...buildStorePackage1ExistingReplacementFilter() },
+      {
+        $push: { users: customer },
+        $set: { updatedAt: new Date().toISOString() },
+      },
+      { new: false },
+    );
+    if (!oldAcc) {
+      oldAcc = await Account.findOneAndUpdate(
+        { id: targetId, ...buildStorePackage1ConvertibleFilter() },
+        {
+          $set: {
+            type: "package1",
+            users: [customer],
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        { new: false },
+      );
+    }
+  } else {
+    oldAcc = await Account.findOneAndUpdate(
+      buildStorePackage1ExistingReplacementFilter(excludeIds),
+      {
+        $push: { users: customer },
+        $set: { updatedAt: new Date().toISOString() },
+      },
+      { sort: { createdAt: 1, id: 1 }, new: false },
+    );
+    if (!oldAcc) {
+      oldAcc = await Account.findOneAndUpdate(
+        buildStorePackage1ConvertibleFilter(excludeIds),
+        {
+          $set: {
+            type: "package1",
+            users: [customer],
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        { sort: { createdAt: 1, id: 1 }, new: false },
+      );
+    }
+  }
+  if (!oldAcc) {
+    const error = new Error("Kho tổng hiện không còn acc sạch phù hợp để bảo hành Gói 1.");
+    error.statusCode = 409;
+    throw error;
+  }
+  const updatedAcc = await Account.findOne({ id: oldAcc.id }).lean();
+  return { oldAcc, updatedAcc, customer };
+};
+const claimStorePackage2WarrantyReplacement = async ({
+  order,
+  storeUser,
+  replacementAccountId = "",
+}) => {
+  const customer = buildStoreCustomerRecordFromOrder(order, storeUser);
+  const targetId = String(replacementAccountId || "").trim();
+  const excludeIds = await getStoreWarrantyCandidateExcludeIds(order);
+  let oldAcc = null;
+  if (targetId) {
+    if (excludeIds.includes(targetId)) {
+      const error = new Error("Acc thay thế này không còn hợp lệ để bảo hành.");
+      error.statusCode = 409;
+      throw error;
+    }
+    oldAcc = await Account.findOneAndUpdate(
+      { id: targetId, ...buildStorePackage2ExistingReplacementFilter() },
+      {
+        $set: {
+          users: [customer],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { new: false },
+    );
+    if (!oldAcc) {
+      oldAcc = await Account.findOneAndUpdate(
+        { id: targetId, ...buildStorePackage2ConvertibleFilter() },
+        {
+          $set: {
+            type: "package2",
+            users: [customer],
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        { new: false },
+      );
+    }
+  } else {
+    oldAcc = await Account.findOneAndUpdate(
+      buildStorePackage2ExistingReplacementFilter(excludeIds),
+      {
+        $set: {
+          users: [customer],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { sort: { createdAt: 1, id: 1 }, new: false },
+    );
+    if (!oldAcc) {
+      oldAcc = await Account.findOneAndUpdate(
+        buildStorePackage2ConvertibleFilter(excludeIds),
+        {
+          $set: {
+            type: "package2",
+            users: [customer],
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        { sort: { createdAt: 1, id: 1 }, new: false },
+      );
+    }
+  }
+  if (!oldAcc) {
+    const error = new Error("Kho tổng hiện không còn acc sạch phù hợp để bảo hành Gói 2.");
+    error.statusCode = 409;
+    throw error;
+  }
+  const updatedAcc = await Account.findOne({ id: oldAcc.id }).lean();
+  return { oldAcc, updatedAcc, customer };
+};
 const rollbackStoreClaimedAccount = async (claim = null) => {
   if (!claim?.oldAcc?.id) return;
   await Account.findOneAndUpdate(
@@ -3617,6 +3851,24 @@ const rollbackStoreClaimedAccount = async (claim = null) => {
         type: String(claim.oldAcc.type || "unassigned"),
         users: Array.isArray(claim.oldAcc.users) ? claim.oldAcc.users : [],
         updatedAt: claim.oldAcc.updatedAt || new Date().toISOString(),
+      },
+    },
+  );
+};
+const restoreStoreAccountSnapshot = async (account = null) => {
+  if (!account?.id) return;
+  await Account.findOneAndUpdate(
+    { id: String(account.id || "").trim() },
+    {
+      $set: {
+        type: String(account.type || "unassigned").trim() || "unassigned",
+        users: Array.isArray(account.users) ? account.users : [],
+        note: String(account.note || "").trim(),
+        package2Shelf: normalizePackage2Shelf(
+          account.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        ),
+        updatedAt: account.updatedAt || new Date().toISOString(),
       },
     },
   );
@@ -3754,11 +4006,181 @@ const deleteStoreOrderForAdmin = async (orderInput = null) => {
   const orderId = String(order?.id || "").trim();
   if (!orderId) return false;
 
+  const relatedAccountIds = getStoreWarrantyRelatedAccountIds(order);
   await cleanupStoreAssignedAccountForOrder(order, {
     forceClearIfNoRemainingStoreTrace: true,
   });
+  await Promise.all(
+    relatedAccountIds.map(async (accountId) => {
+      const normalizedAccountId = String(accountId || "").trim();
+      if (!normalizedAccountId) return;
+      const account = await Account.findOne({ id: normalizedAccountId }).lean();
+      if (!account) return;
+      const nextNote = removeStoreWarrantyHoldNote(account?.note, orderId);
+      if (nextNote === String(account?.note || "").trim()) return;
+      await Account.findOneAndUpdate(
+        { id: normalizedAccountId },
+        {
+          $set: {
+            note: nextNote,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      );
+    }),
+  );
   await StoreOrder.deleteOne({ id: orderId });
   return true;
+};
+const warrantyStoreOrderForAdmin = async (
+  orderInput = null,
+  { replacementAccountId = "", reason = "" } = {},
+) => {
+  const order =
+    typeof orderInput?.toObject === "function"
+      ? orderInput.toObject()
+      : { ...(orderInput || {}) };
+  const orderId = String(order?.id || "").trim();
+  const packageCode = String(order?.packageCode || "").trim();
+  if (!orderId) {
+    const error = new Error("Thiếu ID đơn web.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!["package1", "package2"].includes(packageCode)) {
+    const error = new Error("Chỉ hỗ trợ bảo hành đơn web Gói 1 hoặc Gói 2.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (normalizeStoreOrderStatusValue(order?.status) !== "fulfilled") {
+    const error = new Error("Đơn web này chưa ở trạng thái đã giao nick.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const currentAssignedId = String(order?.assignedAccountId || "").trim();
+  if (!currentAssignedId) {
+    const error = new Error("Đơn web này chưa có acc hiện tại để bảo hành.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const [storeUser, currentAssignedSnapshot] = await Promise.all([
+    order?.userId
+      ? StoreUser.findOne({ id: String(order.userId || "").trim() }).lean()
+      : null,
+    Account.findOne({ id: currentAssignedId }).lean(),
+  ]);
+  if (!currentAssignedSnapshot) {
+    const error = new Error("Không tìm thấy acc hiện tại của đơn web.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  let claim = null;
+  try {
+    if (packageCode === "package1") {
+      claim = await claimStorePackage1WarrantyReplacement({
+        order,
+        storeUser,
+        replacementAccountId,
+      });
+    } else {
+      claim = await claimStorePackage2WarrantyReplacement({
+        order,
+        storeUser,
+        replacementAccountId,
+      });
+    }
+    const nextAssignedId = String(claim?.updatedAcc?.id || "").trim();
+    if (!nextAssignedId || nextAssignedId === currentAssignedId) {
+      const error = new Error("Acc thay thế không hợp lệ.");
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await cleanupStoreAssignedAccountForOrder(order, {
+      forceClearIfNoRemainingStoreTrace: true,
+    });
+    await Account.findOneAndUpdate(
+      { id: currentAssignedId },
+      {
+        $set: {
+          note: appendStoreWarrantyHoldNote(
+            currentAssignedSnapshot?.note,
+            orderId,
+            new Date().toISOString(),
+          ),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
+
+    const nextRounds = [
+      ...(Array.isArray(order?.warrantyRounds) ? order.warrantyRounds : []),
+      {
+        sequence:
+          (Array.isArray(order?.warrantyRounds) ? order.warrantyRounds.length : 0) +
+          1,
+        fromAccountId: currentAssignedId,
+        fromUsername: String(
+          order?.assignedUsername || currentAssignedSnapshot?.username || "",
+        ).trim(),
+        fromType: String(
+          order?.assignedType || currentAssignedSnapshot?.type || "",
+        ).trim(),
+        toAccountId: nextAssignedId,
+        toUsername: String(claim?.updatedAcc?.username || "").trim(),
+        toType: String(claim?.updatedAcc?.type || "").trim(),
+        reason: String(reason || "").trim(),
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    await StoreOrder.findOneAndUpdate(
+      { id: orderId },
+      {
+        $set: {
+          assignedAccountId: nextAssignedId,
+          assignedUsername: String(claim?.updatedAcc?.username || "").trim(),
+          assignedPassword: String(claim?.updatedAcc?.password || "").trim(),
+          assignedOtpSecret:
+            packageCode === "package2"
+              ? String(claim?.updatedAcc?.otpSecret || "").trim()
+              : "",
+          assignedLink: String(claim?.updatedAcc?.link || "").trim(),
+          assignedType: String(claim?.updatedAcc?.type || "").trim(),
+          assignedWarehouse: normalizePackage2Shelf(
+            claim?.updatedAcc?.package2Shelf,
+            CHATGPT_TOTAL_VALUE,
+          ),
+          assignedCustomerName: String(claim?.customer?.name || "").trim(),
+          assignedCustomerJoinedAt: String(claim?.customer?.joinedAt || "").trim(),
+          assignedCustomerExpiredAt: String(
+            claim?.customer?.expiredAt || "",
+          ).trim(),
+          rootAssignedAccountId: String(
+            order?.rootAssignedAccountId || currentAssignedId,
+          ).trim(),
+          rootAssignedUsername: String(
+            order?.rootAssignedUsername ||
+              order?.assignedUsername ||
+              currentAssignedSnapshot?.username ||
+              "",
+          ).trim(),
+          warrantyRounds: nextRounds,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    );
+
+    return StoreOrder.findOne({ id: orderId });
+  } catch (error) {
+    if (claim) {
+      await rollbackStoreClaimedAccount(claim);
+    }
+    await restoreStoreAccountSnapshot(currentAssignedSnapshot);
+    throw error;
+  }
 };
 const fulfillStoreOrder = async (order) => {
   const safeOrder =
@@ -4611,6 +5033,68 @@ app.post("/api/store-orders/:id/otp", verifyToken, async (req, res) => {
   }
 });
 
+app.get("/api/store-orders/:id/warranty-candidates", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiếu ID đơn web." });
+    }
+
+    const order = await StoreOrder.findOne({ id }).lean();
+    if (!order) {
+      return res.status(404).json({ error: "Không tìm thấy đơn web." });
+    }
+
+    const storeUser = order?.userId
+      ? await StoreUser.findOne({ id: String(order.userId || "").trim() }).lean()
+      : null;
+    const candidates = await listStoreWarrantyCandidates(order);
+
+    return res.json({
+      success: true,
+      order: sanitizeStoreOrderForAdmin(order, storeUser),
+      candidates,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Không thể tải acc thay thế để bảo hành đơn web.",
+    });
+  }
+});
+
+app.post("/api/store-orders/:id/warranty", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiếu ID đơn web." });
+    }
+
+    const order = await StoreOrder.findOne({ id });
+    if (!order) {
+      return res.status(404).json({ error: "Không tìm thấy đơn web." });
+    }
+
+    const updatedOrder = await warrantyStoreOrderForAdmin(order, {
+      replacementAccountId: req.body?.replacementAccountId,
+      reason: req.body?.reason,
+    });
+    const storeUser = updatedOrder?.userId
+      ? await StoreUser.findOne({
+          id: String(updatedOrder.userId || "").trim(),
+        }).lean()
+      : null;
+
+    return res.json({
+      success: true,
+      order: sanitizeStoreOrderForAdmin(updatedOrder, storeUser),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Không thể bảo hành đơn web.",
+    });
+  }
+});
+
 app.post("/api/store-orders/admin", verifyToken, async (req, res) => {
   try {
     const packageCode = String(req.body?.packageCode || "").trim();
@@ -4846,12 +5330,12 @@ app.delete("/api/store-users/:id", verifyToken, async (req, res) => {
   try {
     const id = String(req.params?.id || "").trim();
     if (!id) {
-      return res.status(400).json({ error: "Thiáº¿u ID user." });
+      return res.status(400).json({ error: "Thiếu ID user." });
     }
 
     const user = await StoreUser.findOne({ id });
     if (!user) {
-      return res.status(404).json({ error: "KhÃ´ng tÃ¬m tháº¥y user web." });
+      return res.status(404).json({ error: "Không tìm thấy user web." });
     }
 
     await expireStaleStoreOrders({ userId: id });
@@ -4868,7 +5352,7 @@ app.delete("/api/store-users/:id", verifyToken, async (req, res) => {
 
     return res.json({ success: true });
   } catch (error) {
-    return res.status(500).json({ error: "KhÃ´ng thá»ƒ xÃ³a user web." });
+    return res.status(500).json({ error: "Không thể xóa user web." });
   }
 });
 

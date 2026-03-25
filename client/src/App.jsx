@@ -1235,6 +1235,8 @@ function App() {
     saveStoreUser: false,
     saveStoreOrder: false,
     createStoreManualOrder: false,
+    fetchStoreWarrantyCandidates: "",
+    saveStoreWarranty: false,
     deleteStoreUser: "",
     deleteStoreOrder: "",
     fetchStoreOrderOtp: "",
@@ -1265,6 +1267,7 @@ function App() {
   const [showStoreOrderEditModal, setShowStoreOrderEditModal] = useState(false);
   const [showStoreManualOrderModal, setShowStoreManualOrderModal] =
     useState(false);
+  const [showStoreWarrantyModal, setShowStoreWarrantyModal] = useState(false);
   const [storeUserEditForm, setStoreUserEditForm] = useState({
     id: "",
     fullName: "",
@@ -1293,6 +1296,12 @@ function App() {
     package1MaxUsage: 3,
     package1UsedCount: 0,
   });
+  const [storeWarrantyOrder, setStoreWarrantyOrder] = useState(null);
+  const [storeWarrantyCandidates, setStoreWarrantyCandidates] = useState([]);
+  const [storeWarrantyReplacementId, setStoreWarrantyReplacementId] =
+    useState("");
+  const [storeWarrantyReason, setStoreWarrantyReason] = useState("");
+  const [storeWarrantySearch, setStoreWarrantySearch] = useState("");
   const [expandedStoreUserId, setExpandedStoreUserId] = useState("");
   const [showWarrantyModal, setShowWarrantyModal] = useState(false);
   const [warrantySourceAcc, setWarrantySourceAcc] = useState(null);
@@ -2084,6 +2093,86 @@ function App() {
     setShowStoreOrderEditModal(true);
   };
 
+  const closeStoreWarrantyModal = () => {
+    setShowStoreWarrantyModal(false);
+    setStoreWarrantyOrder(null);
+    setStoreWarrantyCandidates([]);
+    setStoreWarrantyReplacementId("");
+    setStoreWarrantyReason("");
+    setStoreWarrantySearch("");
+  };
+
+  const openStoreWarranty = async (order = {}) => {
+    const orderId = String(order?.id || "").trim();
+    if (!orderId) {
+      showAlert("Lỗi", "Thiếu ID đơn web.", "error");
+      return;
+    }
+    setStoreWarrantyOrder(order);
+    setStoreWarrantyCandidates([]);
+    setStoreWarrantyReplacementId("");
+    setStoreWarrantyReason("");
+    setStoreWarrantySearch("");
+    setShowStoreWarrantyModal(true);
+    setLoadingStates((prev) => ({
+      ...prev,
+      fetchStoreWarrantyCandidates: orderId,
+    }));
+    try {
+      const response = await axios.get(
+        `/api/store-orders/${orderId}/warranty-candidates`,
+      );
+      setStoreWarrantyOrder(response?.data?.order || order);
+      setStoreWarrantyCandidates(
+        Array.isArray(response?.data?.candidates) ? response.data.candidates : [],
+      );
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể tải acc thay thế cho đơn web."),
+        "error",
+      );
+      closeStoreWarrantyModal();
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        fetchStoreWarrantyCandidates: "",
+      }));
+    }
+  };
+
+  const handleCreateStoreWarranty = async (e) => {
+    e.preventDefault();
+    const orderId = String(storeWarrantyOrder?.id || "").trim();
+    if (!orderId) {
+      showAlert("Lỗi", "Thiếu ID đơn web.", "error");
+      return;
+    }
+    if (!String(storeWarrantyReplacementId || "").trim()) {
+      showAlert("Thiếu dữ liệu", "Vui lòng chọn acc thay thế từ kho tổng.", "warning");
+      return;
+    }
+    setLoadingStates((prev) => ({ ...prev, saveStoreWarranty: true }));
+    try {
+      await axios.post(`/api/store-orders/${orderId}/warranty`, {
+        replacementAccountId: storeWarrantyReplacementId,
+        reason: storeWarrantyReason,
+      });
+      closeStoreWarrantyModal();
+      await fetchData();
+      broadcastDataChange();
+      showAlert("Thành công", "Đã bảo hành đơn web và chuyển sang acc mới.", "success");
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể bảo hành đơn web."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, saveStoreWarranty: false }));
+    }
+  };
+
   const handleSaveStoreUser = async (e) => {
     e.preventDefault();
     const id = String(storeUserEditForm.id || "").trim();
@@ -2162,8 +2251,9 @@ function App() {
     }
   };
 
-  const handleFetchStoreOrderOtp = async (order = {}) => {
+  const handleFetchStoreOrderOtp = async (order = {}, options = {}) => {
     const orderId = String(order?.id || "").trim();
+    const silent = !!options?.silent;
     if (!orderId) {
       showAlert("Lỗi", "Thiếu ID đơn web.", "error");
       return;
@@ -2179,8 +2269,10 @@ function App() {
           expiresIn: Number(data?.expiresIn || 0),
         }),
       }));
-      setToastMessage("Đã lấy mã 2FA nhanh");
-      setTimeout(() => setToastMessage(""), 2000);
+      if (!silent) {
+        setToastMessage("Đã lấy mã 2FA nhanh");
+        setTimeout(() => setToastMessage(""), 2000);
+      }
     } catch (error) {
       showAlert(
         "Lỗi",
@@ -4576,7 +4668,7 @@ function App() {
       );
       if (otpSecondsLeft > 0) return;
       if (loadingStates.fetchStoreOrderOtp === orderId) return;
-      handleFetchStoreOrderOtp(order);
+      handleFetchStoreOrderOtp(order, { silent: true });
     });
   }, [
     activeTab,
@@ -5230,6 +5322,10 @@ function App() {
                                     const orderId = String(order?.id || "").trim();
                                     const isPackage1 =
                                       String(order?.packageCode || "").trim() === "package1";
+                                    const isPackage2 =
+                                      String(order?.packageCode || "").trim() === "package2";
+                                    const isFulfilledStoreOrder =
+                                      String(order?.status || "").trim() === "fulfilled";
                                     const orderOtp = storeOrderOtpResults[orderId] || {};
                                     const otpSecondsLeft = getStoreOrderOtpSecondsRemaining(
                                       orderOtp,
@@ -5247,6 +5343,18 @@ function App() {
                                           : loadingStates.fetchStoreOrderOtp === orderId
                                             ? "Đang làm mới mã 2FA..."
                                             : "Mã 2FA sẽ tự hiện khi tải xong";
+                                    const warrantyRounds = Array.isArray(order?.warrantyRounds)
+                                      ? order.warrantyRounds
+                                      : [];
+                                    const rootAccountDisplay =
+                                      order?.rootAssignedUsername ||
+                                      order?.assignedUsername ||
+                                      "--";
+                                    const currentAccountDisplay =
+                                      order?.assignedUsername || "--";
+                                    const showPackage1FetchButton =
+                                      isPackage1 &&
+                                      (!Boolean(orderOtp?.code) || otpSecondsLeft <= 0);
                                     return (
                                     <div
                                       key={buildStoreOrderKey(order)}
@@ -5288,6 +5396,16 @@ function App() {
                                               Tới acc
                                             </button>
                                           ) : null}
+                                          {isFulfilledStoreOrder && order?.assignedAccountId ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => openStoreWarranty(order)}
+                                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 px-3 py-2 text-xs font-bold text-white transition-colors"
+                                            >
+                                              <Shield size={14} />
+                                              Bảo hành
+                                            </button>
+                                          ) : null}
                                           {String(order?.packageCode || "").trim() === "package1" && (
                                             <button
                                               type="button"
@@ -5312,7 +5430,7 @@ function App() {
                                         </div>
                                       </div>
 
-                                      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4 text-sm">
+                                      <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-6 text-sm">
                                         <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
                                           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
                                             Tạo lúc
@@ -5331,25 +5449,43 @@ function App() {
                                         </div>
                                         <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
                                           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                                            Nick đã cấp
+                                            Acc gốc
                                           </div>
                                           <div className="mt-1 text-slate-200 break-all">
-                                            {order?.assignedUsername || "--"}
+                                            {rootAccountDisplay}
                                           </div>
                                         </div>
-                                        {String(order?.packageCode || "").trim() === "package1" && (
-                                          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-                                            <div className="text-[11px] uppercase tracking-[0.18em] text-amber-300">
-                                              Lượt OTP
-                                            </div>
-                                            <div className="mt-1 text-amber-100">
-                                              Đã dùng {Number(order?.package1UsedCount || 0)} / {Number(order?.package1MaxUsage || 0)}
-                                            </div>
-                                            <div className="text-xs text-amber-200/80 mt-1">
-                                              Còn {Math.max(0, Number(order?.package1UsageLeft || 0))} lượt
-                                            </div>
+                                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                            Acc hiện tại
                                           </div>
-                                        )}
+                                          <div className="mt-1 text-slate-200 break-all">
+                                            {currentAccountDisplay}
+                                          </div>
+                                        </div>
+                                        <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-violet-300">
+                                            Bảo hành
+                                          </div>
+                                          <div className="mt-1 text-violet-100">
+                                            {Number(order?.warrantyCount || 0)} lần
+                                          </div>
+                                          {isPackage1 ? (
+                                            <div className="text-xs text-violet-200/80 mt-1">
+                                              Còn {Math.max(0, Number(order?.package1UsageLeft || 0))} lượt OTP
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                            Kho hiện tại
+                                          </div>
+                                          <div className="mt-1 text-slate-200">
+                                            {order?.assignedWarehouse
+                                              ? getPackage2ShelfLabel(order.assignedWarehouse)
+                                              : "--"}
+                                          </div>
+                                        </div>
                                         <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
                                           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
                                             Cập nhật
@@ -5360,6 +5496,40 @@ function App() {
                                         </div>
                                       </div>
 
+                                      {warrantyRounds.length > 0 ? (
+                                        <div className="mt-3 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-3">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-violet-300">
+                                            Lịch sử bảo hành
+                                          </div>
+                                          <div className="mt-2 space-y-2 text-xs text-violet-100">
+                                            {warrantyRounds.map((round) => (
+                                              <div
+                                                key={`${orderId}-round-${round.sequence}`}
+                                                className="rounded-lg border border-violet-500/15 bg-slate-950/60 px-3 py-2"
+                                              >
+                                                <span className="font-bold">Lần {round.sequence}</span>
+                                                {" · "}
+                                                <span>{round.fromUsername || round.fromAccountId || "--"}</span>
+                                                {" -> "}
+                                                <span>{round.toUsername || round.toAccountId || "--"}</span>
+                                                {round?.createdAt ? (
+                                                  <>
+                                                    {" · "}
+                                                    <span>{formatDateTime(round.createdAt)}</span>
+                                                  </>
+                                                ) : null}
+                                                {round?.reason ? (
+                                                  <>
+                                                    {" · "}
+                                                    <span>Lý do: {round.reason}</span>
+                                                  </>
+                                                ) : null}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ) : null}
+
                                       <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(300px,1fr)_minmax(320px,1fr)]">
                                         <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-3">
                                           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
@@ -5369,7 +5539,9 @@ function App() {
                                             {[
                                               ["Tài khoản", order?.assignedUsername || "--"],
                                               ["Mật khẩu", order?.assignedPassword || "--"],
-                                              ["Link", order?.assignedLink || "--"],
+                                              ...(isPackage2
+                                                ? [["Mã 2FA", order?.assignedOtpSecret || "--"]]
+                                                : []),
                                             ].map(([label, value]) => (
                                               <div
                                                 key={`${buildStoreOrderKey(order)}-delivery-${label}`}
@@ -5400,15 +5572,15 @@ function App() {
 
                                         <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-3">
                                           <div className="text-[11px] uppercase tracking-[0.18em] text-cyan-300">
-                                            {isPackage1 ? "Lấy mã OTP nhanh" : "Mã 2FA tự làm mới"}
+                                            {isPackage1 ? "Mã đăng nhập nhanh" : "Mã 2FA hiện tại"}
                                           </div>
                                           <div className="mt-2 text-sm text-slate-300">
                                             {isPackage1
-                                              ? "Bấm nút để xem nhanh OTP 6 số hỗ trợ khách, không cần mở secret."
+                                              ? "Admin bấm để hiện ngay mã đăng nhập 6 số hỗ trợ khách. Khi mã còn hiệu lực thì chỉ cần sao chép."
                                               : "Mã 2FA luôn tự hiện và tự làm mới. Admin chỉ cần sao chép khi cần."}
                                           </div>
                                           <div className="mt-3 flex flex-wrap items-center gap-3">
-                                            {isPackage1 ? (
+                                            {showPackage1FetchButton ? (
                                               <button
                                                 type="button"
                                                 onClick={() => handleFetchStoreOrderOtp(order)}
@@ -5420,35 +5592,33 @@ function App() {
                                                 ) : (
                                                   <RotateCw size={16} />
                                                 )}
-                                                Lấy mã OTP
+                                                Lấy mã đăng nhập
                                               </button>
                                             ) : (
-                                              <div className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/20 bg-slate-950/60 px-4 py-3 text-sm font-semibold text-cyan-200">
-                                                {loadingStates.fetchStoreOrderOtp === orderId ? (
-                                                  <>
-                                                    <Loader2 size={16} className="animate-spin" />
-                                                    Đang làm mới mã...
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <RotateCw size={16} />
-                                                    Tự làm mới
-                                                  </>
-                                                )}
-                                              </div>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleCopy(otpDisplay, isPackage1 ? "Đã copy mã đăng nhập" : "Đã copy mã 2FA")}
+                                                disabled={otpSecondsLeft <= 0}
+                                                className="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                                              >
+                                                <Copy size={14} />
+                                                Sao chép mã
+                                              </button>
                                             )}
                                             <div className={`rounded-2xl px-4 py-3 text-2xl font-bold tracking-[0.3em] ${otpSecondsLeft > 0 ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border border-slate-700 bg-slate-900 text-slate-500"}`}>
                                               {otpDisplay}
                                             </div>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleCopy(otpDisplay, "Đã copy mã OTP")}
-                                              disabled={otpSecondsLeft <= 0}
-                                              className="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                                            >
-                                              <Copy size={14} />
-                                              Sao chép
-                                            </button>
+                                            {!showPackage1FetchButton ? null : (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleCopy(otpDisplay, isPackage1 ? "Đã copy mã đăng nhập" : "Đã copy mã 2FA")}
+                                                disabled={otpSecondsLeft <= 0}
+                                                className="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                                              >
+                                                <Copy size={14} />
+                                                Sao chép
+                                              </button>
+                                            )}
                                           </div>
                                           <div className={`mt-2 text-sm ${otpExpired ? "text-amber-300" : "text-slate-400"}`}>
                                             {otpStatusText}
@@ -5458,23 +5628,23 @@ function App() {
 
                                       <details className="mt-3 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3">
                                         <summary className="cursor-pointer list-none text-sm font-semibold text-slate-200">
-                                          Xem trace DB và thông tin ẩn của đơn này
+                                          Xem dữ liệu DB của đơn này
                                         </summary>
                                         <div className="mt-3 grid gap-3 lg:grid-cols-2">
                                           <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-3">
                                             <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                                              Trace DB / Liên kết nội bộ
+                                              Dữ liệu DB và liên kết đơn
                                             </div>
                                             <div className="mt-2 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
                                               {[
-                                                ["User ID", order?.userId || "--"],
+                                                ["User web ID", order?.userId || "--"],
                                                 ["MoMo order", order?.momoOrderId || "--"],
-                                                ["Reservation", order?.reservationType || "--"],
-                                                ["Reserved acc", order?.reservedAccountId || "--"],
-                                                ["Assigned acc", order?.assignedAccountId || "--"],
-                                                ["Acc gốc", order?.rootAssignedAccountId || "--"],
+                                                ["Kiểu giữ chỗ", order?.reservationType || "--"],
+                                                ["Acc giữ chỗ", order?.reservedAccountId || "--"],
+                                                ["Acc hiện tại ID", order?.assignedAccountId || "--"],
+                                                ["Acc gốc ID", order?.rootAssignedAccountId || "--"],
                                                 ["Loại acc", order?.assignedType || "--"],
-                                                ["Warranty", String(Number(order?.warrantyCount || 0))],
+                                                ["Số lần bảo hành", String(Number(order?.warrantyCount || 0))],
                                               ].map(([label, value]) => (
                                                 <div
                                                   key={`${buildStoreOrderKey(order)}-${label}`}
@@ -5493,14 +5663,14 @@ function App() {
 
                                           <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-3">
                                             <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                                              Thông tin ẩn / raw admin
+                                              Thông tin hệ thống cho admin
                                             </div>
                                             <div className="mt-2 grid gap-2 text-xs text-slate-300">
                                               {[
-                                                ["2FA real", order?.assignedOtpSecret || "--"],
-                                                ["Khách gắn vào nick", order?.assignedCustomerName || "--"],
-                                                ["MoMo raw", order?.momoMessage || "--"],
-                                                ["Trans ID", order?.momoTransId || "--"],
+                                                ["2FA real hiện lưu", order?.assignedOtpSecret || "--"],
+                                                ["Khách đang gắn vào nick", order?.assignedCustomerName || "--"],
+                                                ["MoMo message", order?.momoMessage || "--"],
+                                                ["MoMo transId", order?.momoTransId || "--"],
                                               ].map(([label, value]) => (
                                                 <div
                                                   key={`${buildStoreOrderKey(order)}-visible-${label}`}
@@ -11202,6 +11372,191 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
           </form>
         </div>
       )}
+
+      {showStoreWarrantyModal && storeWarrantyOrder && (() => {
+        const orderId = String(storeWarrantyOrder?.id || "").trim();
+        const filteredCandidates = storeWarrantyCandidates.filter((acc) => {
+          if (!storeWarrantySearch.trim()) return true;
+          const searchIndex = toNonAccentVietnamese(
+            [
+              acc?.username,
+              acc?.type === "package1"
+                ? "Gói 1 trống"
+                : acc?.type === "package2"
+                  ? "Gói 2 trống"
+                  : "Chưa chọn",
+              getPackage2ShelfLabel(acc?.package2Shelf),
+              formatDate(acc?.expiredAt),
+            ]
+              .filter(Boolean)
+              .join(" "),
+          );
+          return searchIndex.includes(toNonAccentVietnamese(storeWarrantySearch));
+        });
+        const selectedCandidate = storeWarrantyCandidates.find(
+          (acc) => String(acc?.id || "") === String(storeWarrantyReplacementId || ""),
+        );
+        const getRemainingDaysLabel = (expiredAt) =>
+          getExpiryStatus(expiredAt)?.text || "Không rõ hạn";
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <form
+              onSubmit={handleCreateStoreWarranty}
+              className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full shadow-2xl"
+              style={{ maxWidth: "680px" }}
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Shield size={20} className="text-cyan-400" />
+                  Bảo hành đơn web
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeStoreWarrantyModal}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-4">
+                <div className="text-[11px] uppercase tracking-[0.22em] text-cyan-400">
+                  Giữ nguyên user và order gốc
+                </div>
+                <div className="mt-2 grid gap-3 md:grid-cols-2 text-sm">
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-3">
+                    <div className="text-slate-500 text-[11px] uppercase tracking-[0.18em]">Đơn web</div>
+                    <div className="mt-1 text-white font-semibold break-all">
+                      {storeWarrantyOrder?.packageName || storeWarrantyOrder?.packageCode || "Đơn web"} · {orderId || "--"}
+                    </div>
+                    <div className="mt-1 text-slate-400">
+                      Khách: {storeWarrantyOrder?.customerName || storeWarrantyOrder?.customerEmail || storeWarrantyOrder?.customerPhone || "Khách web"}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-3">
+                    <div className="text-violet-300 text-[11px] uppercase tracking-[0.18em]">Bảo hành</div>
+                    <div className="mt-1 text-violet-100 font-semibold">
+                      {Number(storeWarrantyOrder?.warrantyCount || 0)} lần
+                    </div>
+                    <div className="mt-1 text-slate-400">
+                      Acc gốc: {storeWarrantyOrder?.rootAssignedUsername || storeWarrantyOrder?.assignedUsername || "--"}
+                    </div>
+                    <div className="mt-1 text-slate-400">
+                      Acc hiện tại: {storeWarrantyOrder?.assignedUsername || "--"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <label className="text-slate-400 text-sm block mb-1">
+                  Tìm acc thay thế trong kho tổng
+                </label>
+                <input
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  value={storeWarrantySearch}
+                  onChange={(e) => setStoreWarrantySearch(e.target.value)}
+                  placeholder="Tìm theo email, loại acc hoặc ngày hết hạn..."
+                />
+                <div className="mt-2 text-xs text-slate-400">
+                  Chỉ hiện acc sạch ở kho tổng, chưa có khách và chưa dính đơn/bảo hành khác.
+                </div>
+              </div>
+
+              <div className="mt-3 rounded-xl border border-slate-700 bg-slate-900/50 p-3 max-h-72 overflow-y-auto space-y-2">
+                {loadingStates.fetchStoreWarrantyCandidates === orderId ? (
+                  <div className="flex items-center justify-center gap-2 px-4 py-8 text-slate-300">
+                    <Loader2 size={18} className="animate-spin" />
+                    Đang tải acc thay thế...
+                  </div>
+                ) : filteredCandidates.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-sm text-slate-400">
+                    Không còn acc sạch phù hợp trong kho tổng để bảo hành đơn web này.
+                  </div>
+                ) : (
+                  filteredCandidates.map((acc) => {
+                    const accId = String(acc?.id || "");
+                    const selected = accId === String(storeWarrantyReplacementId || "");
+                    const accTypeLabel =
+                      acc?.type === "package1"
+                        ? "Gói 1 trống"
+                        : acc?.type === "package2"
+                          ? "Gói 2 trống"
+                          : "Chưa chọn";
+                    return (
+                      <button
+                        key={accId}
+                        type="button"
+                        onClick={() => setStoreWarrantyReplacementId(accId)}
+                        className={`w-full rounded-xl border px-4 py-3 text-left transition-colors ${
+                          selected
+                            ? "border-cyan-400 bg-cyan-500/10"
+                            : "border-slate-800 bg-slate-950/60 hover:border-cyan-500/40"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-white break-all">{acc?.username || "--"}</span>
+                          <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-1 text-[11px] text-slate-300">
+                            {accTypeLabel}
+                          </span>
+                          <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-200">
+                            {getPackage2ShelfLabel(acc?.package2Shelf)}
+                          </span>
+                          {selected ? (
+                            <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-200">
+                              Đã chọn
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 text-xs text-slate-400">
+                          Hết hạn: {formatDate(acc?.expiredAt) || "--"} · {getRemainingDaysLabel(acc?.expiredAt)}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="mt-4">
+                <label className="text-slate-400 text-sm block mb-1">
+                  Lý do bảo hành (tùy chọn)
+                </label>
+                <textarea
+                  rows={3}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white resize-none"
+                  value={storeWarrantyReason}
+                  onChange={(e) => setStoreWarrantyReason(e.target.value)}
+                  placeholder="Ví dụ: nick lỗi, mất quyền, cần đổi acc khác..."
+                />
+              </div>
+
+              {selectedCandidate ? (
+                <div className="mt-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-sm text-cyan-100">
+                  Sẽ chuyển đơn này sang acc:{" "}
+                  <span className="font-semibold">{selectedCandidate.username}</span>
+                </div>
+              ) : null}
+
+              <div className="flex gap-3 mt-5">
+                <button
+                  type="button"
+                  onClick={closeStoreWarrantyModal}
+                  className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={loadingStates.saveStoreWarranty || !storeWarrantyReplacementId}
+                  className="flex-1 p-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition-colors disabled:opacity-60"
+                >
+                  {loadingStates.saveStoreWarranty ? "Đang bảo hành..." : "Xác nhận bảo hành"}
+                </button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
 
       {/* ========================================================= */}
       {showWarrantyModal && warrantySourceAcc && (() => {
