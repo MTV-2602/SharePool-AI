@@ -4697,7 +4697,12 @@ function App() {
           title: "Gói 2 lấy từ kho tổng",
           description:
             "Chỉ cấp nick chưa chọn ở kho tổng, còn hơn 20 ngày và không dính đơn web / đơn sàn / bảo hành.",
-          meta: `Nguồn hiện thấy: ${storeManualOrderSourceSummary.eligibleConvertibleAccounts} nick chưa chọn có thể cấp. Kho market không tham gia luồng này.`,
+          meta: `Còn ${storeManualOrderSourceSummary.estimatedPackage2Supply} nick có thể cấp ngay từ kho tổng.`,
+          detailLines: [
+            `Nick chưa chọn có thể cấp: ${storeManualOrderSourceSummary.eligibleConvertibleAccounts}`,
+            `Tổng acc đang nằm ở kho tổng: ${storeManualOrderSourceSummary.totalWarehouseAccounts}`,
+            "Kho market không tham gia luồng này.",
+          ],
           toneClass:
             storeManualOrderSourceSummary.estimatedPackage2Supply > 0
               ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-100"
@@ -4707,7 +4712,13 @@ function App() {
           title: "Gói 1 lấy từ kho tổng",
           description:
             "Ưu tiên nick chia sẻ ở kho tổng còn slot và còn hơn 20 ngày. Nếu hết, hệ thống tự lấy nick chưa chọn ở kho tổng để đổi thành nick share.",
-          meta: `Nguồn hiện thấy: ${storeManualOrderSourceSummary.eligibleSharedAccounts} nick share còn ${storeManualOrderSourceSummary.eligibleSharedSlots} slot, ${storeManualOrderSourceSummary.eligibleConvertibleAccounts} nick chưa chọn có thể chuyển. Kho market không tham gia luồng này.`,
+          meta: `Còn ${storeManualOrderSourceSummary.estimatedPackage1Supply} slot có thể cấp ngay từ kho tổng.`,
+          detailLines: [
+            `Nick chia sẻ đang dùng được: ${storeManualOrderSourceSummary.eligibleSharedAccounts}`,
+            `Slot trống đang có sẵn: ${storeManualOrderSourceSummary.eligibleSharedSlots}`,
+            `Nick chưa chọn có thể chuyển sang share: ${storeManualOrderSourceSummary.eligibleConvertibleAccounts}`,
+            "Kho market không tham gia luồng này.",
+          ],
           toneClass:
             storeManualOrderSourceSummary.estimatedPackage1Supply > 0
               ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
@@ -11330,6 +11341,11 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   <p className="mt-2 text-xs font-medium opacity-90">
                     {storeManualOrderWarehouseHint.meta}
                   </p>
+                  <div className="mt-3 space-y-1 text-xs leading-5 opacity-90">
+                    {(storeManualOrderWarehouseHint.detailLines || []).map((line) => (
+                      <div key={line}>• {line}</div>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div>
