@@ -20,12 +20,12 @@ const STORE_PAYMENT_METHOD_PAYOS = "payos";
 
 const getPaymentMethodLabel = (method) =>
   String(method || "").trim().toLowerCase() === STORE_PAYMENT_METHOD_PAYOS
-    ? "Chuyển khoản payOS"
+    ? "Ngân hàng"
     : "MoMo";
 
 const getStoreCheckoutMethodLabel = (method) =>
   String(method || "").trim().toLowerCase() === STORE_PAYMENT_METHOD_PAYOS
-    ? "MB Bank QR"
+    ? "Ngân hàng"
     : "MoMo";
 
 const buildQrImageUrl = (value, size = 280) => {
@@ -834,7 +834,7 @@ function PublicStorefront() {
     if (!pkg?.purchasable || Number(pkg?.available || 0) <= 0) {
       return "Kho hiện tại của gói này đã hết. Khi có nick mới trong kho, bạn sẽ mua được.";
     }
-    return "Bấm Thanh toán để chọn MoMo hoặc MB Bank QR.";
+    return "Bấm Thanh toán để chọn phương thức thanh toán.";
   };
 
   const openPaymentPicker = (pkg) => {
@@ -1376,11 +1376,9 @@ function PublicStorefront() {
                       </div>
                       <div className="min-w-[220px] flex-1 space-y-3">
                         <div>
-                          <p className="text-sm font-semibold text-cyan-300">
-                            Quét mã MB Bank để thanh toán ngay trên web
-                          </p>
+                          <p className="text-sm font-semibold text-cyan-300">Mã QR thanh toán</p>
                           <p className="mt-1 text-sm text-slate-300">
-                            Không cần mở trang thanh toán ngoài. Sau khi chuyển khoản xong, hệ thống sẽ tự đối soát và cấp nick.
+                            Quét mã bằng app ngân hàng để thanh toán.
                           </p>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -1401,9 +1399,7 @@ function PublicStorefront() {
                             </a>
                           ) : null}
                         </div>
-                        <p className="text-xs leading-5 text-slate-400">
-                          Nếu app ngân hàng không quét được ảnh, bạn có thể bấm <span className="font-semibold text-slate-200">Sao chép mã QR</span> để dùng tiếp ở chỗ khác.
-                        </p>
+                        <p className="text-xs leading-5 text-slate-400">Nếu cần, bạn có thể sao chép mã QR để dùng tiếp.</p>
                       </div>
                     </div>
                   </div>
@@ -1498,13 +1494,12 @@ function PublicStorefront() {
 
               <div className="space-y-6">
                 <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
-                  <h3 className="text-lg font-semibold text-white">Quy trình nhận nick sau khi thanh toán</h3>
+                  <h3 className="text-lg font-semibold text-white">Hướng dẫn nhanh</h3>
                   <ol className="mt-4 space-y-2 text-sm leading-6 text-slate-300">
-                    <li>1. Đăng ký hoặc đăng nhập tài khoản user bằng email hoặc số điện thoại.</li>
-                    <li>2. Chọn gói phù hợp rồi thanh toán qua MoMo hoặc chuyển khoản payOS.</li>
-                    <li>3. Sau khi thanh toán thành công, hệ thống tự cấp tài khoản tương ứng.</li>
-                    <li>4. Gói 1 bấm nút Lấy mã để nhận OTP 6 số, tối đa 3 lượt.</li>
-                    <li>5. Gói 2 nhận đầy đủ tài khoản, mật khẩu, mã 2FA và mã hiện tại tự làm mới.</li>
+                    <li>1. Chọn gói phù hợp và bấm Thanh toán.</li>
+                    <li>2. Chọn MoMo hoặc Ngân hàng.</li>
+                    <li>3. Thanh toán xong, tài khoản sẽ hiện ngay tại đây.</li>
+                    <li>4. Gói 1 dùng nút Lấy mã để nhận mã đăng nhập.</li>
                   </ol>
                 </div>
               </div>
@@ -1514,18 +1509,16 @@ function PublicStorefront() {
       </div>
       {paymentPickerPackage ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-[2rem] border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-slate-950/40">
+          <div className="w-full max-w-lg rounded-[2rem] border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-slate-950/40">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">
-                  Chọn cổng thanh toán
+                  Chọn thanh toán
                 </p>
                 <h3 className="mt-2 text-2xl font-bold text-white">
                   {paymentPickerPackage.name}
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-400">
-                  Chọn MoMo hoặc MB Bank QR. Với MB Bank QR, hệ thống sẽ hiện mã QR ngay trên web để khách quét.
-                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-400">Chọn phương thức thanh toán phù hợp.</p>
               </div>
               <button
                 type="button"
@@ -1556,11 +1549,6 @@ function PublicStorefront() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs uppercase tracking-[0.25em] text-cyan-400">
-                            {paymentMethod === STORE_PAYMENT_METHOD_PAYOS
-                              ? "Ngân hàng"
-                              : "Ví điện tử"}
-                          </p>
                           <h4 className="mt-2 text-xl font-semibold text-white">
                             {getStoreCheckoutMethodLabel(paymentMethod)}
                           </h4>
@@ -1571,8 +1559,8 @@ function PublicStorefront() {
                       </div>
                       <p className="mt-3 text-sm leading-6 text-slate-300">
                         {paymentMethod === STORE_PAYMENT_METHOD_PAYOS
-                          ? "Hiện mã QR MB Bank ngay trên trang để khách quét và thanh toán."
-                          : "Mở trang thanh toán MoMo để hoàn tất đơn nhanh."}
+                          ? "Quét mã ngân hàng để thanh toán."
+                          : "Thanh toán qua ví MoMo."}
                       </p>
                       <button
                         type="button"
@@ -1605,9 +1593,9 @@ function PublicStorefront() {
                           )}`
                         )}
                       </button>
-                      <p className="mt-3 text-xs leading-5 text-slate-400">
-                        {blockedReason}
-                      </p>
+                      {!configured ? (
+                        <p className="mt-3 text-xs leading-5 text-slate-400">{blockedReason}</p>
+                      ) : null}
                     </div>
                   );
                 },
