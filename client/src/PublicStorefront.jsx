@@ -1098,10 +1098,22 @@ function PublicStorefront() {
               <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-100">{formatStatusLabel(order.status)}</span>
             </div>
             <div className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-4">
-              <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">Giá tiền</p><p className="mt-1 font-semibold text-white">{formatMoney(order.amount)}</p></div>
-              <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">MoMo order</p><p className="mt-1 font-semibold text-white">{order.momoOrderId || "--"}</p></div>
-              <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">Trạng thái MoMo</p><p className="mt-1 font-semibold text-white">{order.momoMessage || "--"}</p></div>
-              <div className="rounded-2xl bg-slate-950/70 p-3"><p className="text-slate-500">Hạn thanh toán</p><p className="mt-1 font-semibold text-white">{order.expiresAt ? formatDateTime(order.expiresAt) : "--"}</p></div>
+              <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
+                <p className="text-slate-500">Giá tiền</p>
+                <p className="mt-1 break-words font-semibold text-white">{formatMoney(order.amount)}</p>
+              </div>
+              <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
+                <p className="text-slate-500">MoMo order</p>
+                <p className="mt-1 break-all font-semibold leading-6 text-white">{order.momoOrderId || "--"}</p>
+              </div>
+              <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
+                <p className="text-slate-500">Trạng thái MoMo</p>
+                <p className="mt-1 break-words font-semibold leading-6 text-white">{order.momoMessage || "--"}</p>
+              </div>
+              <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
+                <p className="text-slate-500">Hạn thanh toán</p>
+                <p className="mt-1 break-words font-semibold leading-6 text-white">{order.expiresAt ? formatDateTime(order.expiresAt) : "--"}</p>
+              </div>
             </div>
             {isPendingStorePayment(order.status) ? (
               <div className="mt-4 flex flex-wrap items-center gap-3">
