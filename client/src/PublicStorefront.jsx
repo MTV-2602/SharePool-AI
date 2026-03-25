@@ -192,21 +192,19 @@ const isPendingStorePayment = (status) =>
 
 const packageFeatureMap = {
   package1: [
-    "Nhấn nút để lấy OTP đăng nhập",
-    "Lấy OTP tối đa 3 lần",
-    "Không hiển thị TOTP secret gốc",
-    "Nhận mã ngay sau thanh toán",
+    "1 tài khoản dùng chung 3 người",
+    "Giá rẻ nhất - tối ưu chi phí",
+    "Đáp ứng tốt nhu cầu học tập, cơ bản",
   ],
   package2: [
-    "Nhận đầy đủ TK / MK / 2FA",
-    "Có công cụ lấy OTP trên web",
-    "Nhận tài khoản ngay sau thanh toán",
-    "Hướng dẫn đăng nhập chi tiết",
+    "Dùng riêng hoặc share bạn bè",
+    "Toàn quyền đăng nhập",
+    "Ổn định - mượt hơn khi sử dụng",
   ],
   package3: [
-    "Chưa mua tự động",
-    "Chuyển sang liên hệ admin",
-    "Liên hệ qua Zalo",
+    "Nâng trực tiếp tài khoản của bạn",
+    "Giữ nguyên dữ liệu, lịch sử chat",
+    "Bảo mật cao - full quyền kiểm soát",
   ],
 };
 
@@ -1473,6 +1471,9 @@ function PublicStorefront() {
                 ) : null}
               </div>
               {packageCards}
+              <p className="mt-4 text-sm font-medium text-slate-300">
+                Cam kết: Giá tốt - Hỗ trợ nhanh - Uy tín lâu dài
+              </p>
             </section>
 
             <section ref={ordersSectionRef} className="mt-10 grid gap-8 xl:grid-cols-[1.4fr,0.8fr]">
