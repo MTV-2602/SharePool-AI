@@ -200,6 +200,7 @@ function PublicStorefront() {
   const authCardRef = useRef(null);
   const pendingReconcileRef = useRef(false);
   const purchaseLockRef = useRef(false);
+  const storeOrdersSyncRef = useRef(false);
 
   const refreshRouteState = () => setRouteState(readStoreRoute());
 
@@ -241,6 +242,15 @@ function PublicStorefront() {
     }
     const data = await apiRequest("/api/store/auth/me", { token: currentToken });
     setUser(data?.user || null);
+    setOrders(Array.isArray(data?.orders) ? data.orders : []);
+  };
+
+  const loadOrders = async (currentToken = token) => {
+    if (!currentToken) {
+      setOrders([]);
+      return;
+    }
+    const data = await apiRequest("/api/store/orders", { token: currentToken });
     setOrders(Array.isArray(data?.orders) ? data.orders : []);
   };
 
@@ -371,6 +381,42 @@ function PublicStorefront() {
       window.clearInterval(intervalId);
     };
   }, [orders, route.view, token, user]);
+
+  useEffect(() => {
+    if (!token || !user) return undefined;
+    let cancelled = false;
+
+    const syncOrders = async () => {
+      if (cancelled || storeOrdersSyncRef.current) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      storeOrdersSyncRef.current = true;
+      try {
+        await loadOrders(token);
+      } catch {
+        // Bỏ qua lỗi poll nhẹ. Lần kế tiếp sẽ tự thử lại.
+      } finally {
+        storeOrdersSyncRef.current = false;
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      syncOrders().catch(() => {});
+    };
+
+    const intervalId = window.setInterval(() => {
+      syncOrders().catch(() => {});
+    }, 8000);
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, [token, user]);
 
   useEffect(() => {
     if (!config.googleClientId || !googleButtonRef.current) return;
