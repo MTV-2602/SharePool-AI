@@ -1976,6 +1976,25 @@ function App() {
 
     const seenKeys = seenStoreOrderKeysRef.current;
     const allKeys = normalizedOrders.map((order) => buildStoreOrderKey(order));
+    const latestOrderMap = new Map(
+      normalizedOrders.map((order) => [buildStoreOrderKey(order), order]),
+    );
+    const refreshRecentStoreOrders = (freshOrders = []) => {
+      setRecentStoreOrders((prev) => {
+        const merged = new Map();
+        (Array.isArray(prev) ? prev : []).forEach((order) => {
+          const orderKey = buildStoreOrderKey(order);
+          const latestOrder = latestOrderMap.get(orderKey);
+          if (latestOrder) {
+            merged.set(orderKey, latestOrder);
+          }
+        });
+        freshOrders.forEach((order) => {
+          merged.set(buildStoreOrderKey(order), order);
+        });
+        return normalizeStoreAdminOrders(Array.from(merged.values())).slice(0, 5);
+      });
+    };
     const recentUnseenOrders = normalizedOrders.filter((order) => {
       const orderKey = buildStoreOrderKey(order);
       const createdAtMs = new Date(order?.createdAt || 0).getTime();
@@ -1987,6 +2006,8 @@ function App() {
     if (!hasInitializedStoreOrdersRef.current) {
       if (recentUnseenOrders.length > 0) {
         setRecentStoreOrders(recentUnseenOrders.slice(0, 5));
+      } else {
+        refreshRecentStoreOrders();
       }
       if (seenKeys.size === 0 && allKeys.length > 0) {
         allKeys.forEach((key) => seenKeys.add(key));
@@ -2005,17 +2026,14 @@ function App() {
       (order) => !seenKeys.has(buildStoreOrderKey(order)),
     );
 
-    if (freshOrders.length === 0) return;
+    if (freshOrders.length === 0) {
+      refreshRecentStoreOrders();
+      return;
+    }
 
     freshOrders.forEach((order) => seenKeys.add(buildStoreOrderKey(order)));
     persistSeenStoreOrderKeys(seenKeys);
-    setRecentStoreOrders((prev) => {
-      const merged = new Map();
-      [...freshOrders, ...prev].forEach((order) => {
-        merged.set(buildStoreOrderKey(order), order);
-      });
-      return normalizeStoreAdminOrders(Array.from(merged.values())).slice(0, 5);
-    });
+    refreshRecentStoreOrders(freshOrders);
   };
 
   const fetchData = async (showLoader = false) => {
