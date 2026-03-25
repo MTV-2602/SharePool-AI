@@ -7188,12 +7188,18 @@ function App() {
                                     const daysRemaining = getDaysRemaining(u);
                                     const linkedStoreOrder =
                                       getStoreOrderIdentityForAccountUser(acc, u);
-                                    const displayUserTitle =
-                                      linkedStoreOrder?.orderId || name;
+                                    const displayUserTitle = String(
+                                      name ||
+                                        linkedStoreOrder?.customerName ||
+                                        linkedStoreOrder?.orderId ||
+                                        "",
+                                    ).trim();
                                     const displayUserSubtitle = linkedStoreOrder
-                                      ? linkedStoreOrder.customerName ||
-                                        linkedStoreOrder.contact ||
-                                        ""
+                                      ? String(
+                                          linkedStoreOrder.orderId ||
+                                            linkedStoreOrder.contact ||
+                                            "",
+                                        ).trim()
                                       : "";
 
                                     // EXPIRY LOGIC (dựa trên ngày CÒN LẠI, không phải đã dùng)
@@ -7466,11 +7472,13 @@ function App() {
                                       )
                                     : null;
                                 const displayMarketplacePrimaryLabel = String(
-                                  linkedStoreOrderForDisplayUser?.orderId ||
-                                    displayMarketplaceName,
+                                  displayMarketplaceName ||
+                                    linkedStoreOrderForDisplayUser?.customerName ||
+                                    linkedStoreOrderForDisplayUser?.orderId ||
+                                    "",
                                 ).trim();
                                 const displayMarketplaceSecondaryLabel = String(
-                                  linkedStoreOrderForDisplayUser?.customerName ||
+                                  linkedStoreOrderForDisplayUser?.orderId ||
                                     linkedStoreOrderForDisplayUser?.contact ||
                                     "",
                                 ).trim();
