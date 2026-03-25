@@ -5670,6 +5670,48 @@ function App() {
                                         </div>
                                       </div>
 
+                                      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                                        {[
+                                          ["Acc hiện tại", currentAccountDisplay],
+                                          [
+                                            "Kho",
+                                            order?.assignedWarehouse
+                                              ? getPackage2ShelfLabel(order.assignedWarehouse)
+                                              : "--",
+                                          ],
+                                          [
+                                            "Thanh toán",
+                                            formatDateTime(order?.paidAt) ||
+                                              getStorePaymentStatusText(order) ||
+                                              "--",
+                                          ],
+                                          ["Bảo hành", `${Number(order?.warrantyCount || 0)} lần`],
+                                          ...(isPackage1
+                                            ? [[
+                                                "OTP còn lại",
+                                                `${Math.max(0, Number(order?.package1UsageLeft || 0))} lượt`,
+                                              ]]
+                                            : []),
+                                        ].map(([label, value]) => (
+                                          <div
+                                            key={`${buildStoreOrderKey(order)}-summary-${label}`}
+                                            className="inline-flex max-w-full items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-slate-200"
+                                          >
+                                            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                              {label}
+                                            </span>
+                                            <span className="truncate font-semibold text-white" title={value}>
+                                              {value}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+
+                                      <details className="mt-3 rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-3">
+                                        <summary className="cursor-pointer list-none text-sm font-semibold text-slate-200">
+                                          Chi tiết đơn
+                                        </summary>
+
                                       <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-6 text-sm">
                                         <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
                                           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
@@ -5941,6 +5983,7 @@ function App() {
                                             </div>
                                           </div>
                                         </div>
+                                      </details>
                                       </details>
                                     </div>
                                     );
