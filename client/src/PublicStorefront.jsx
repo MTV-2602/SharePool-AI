@@ -139,6 +139,32 @@ const formatStatusLabel = (status) => {
   if (normalized === "pending_payment") return "Đang tạo thanh toán";
   return normalized || "Mới";
 };
+
+const buildQuickCopyPayload = ({
+  username = "",
+  password = "",
+  otpSecret = "",
+  otpCode = "",
+  link = "",
+  isPackage1 = false,
+} = {}) => {
+  const lines = [];
+  if (username) lines.push(`Tài khoản: ${username}`);
+  if (password) lines.push(`Mật khẩu: ${password}`);
+  if (otpCode) {
+    lines.push(
+      isPackage1 ? `Mã đăng nhập: ${otpCode}` : `Mã 2FA hiện tại: ${otpCode}`,
+    );
+  }
+  if (!isPackage1 && otpSecret) {
+    lines.push(`Mã 2FA: ${otpSecret}`);
+  }
+  if (link) {
+    lines.push(`Link: ${link}`);
+  }
+  return lines.join("\n");
+};
+
 const isPendingStorePayment = (status) =>
   ["pending_payment", "awaiting_payment"].includes(
     String(status || "").trim().toLowerCase(),
@@ -1033,6 +1059,22 @@ function PublicStorefront() {
         </div>
         <p className="mt-3 text-sm text-slate-400">Mã để đăng nhập. Còn {Math.max(0, Number(order.package1UsageLeft || 0))} lần sử dụng.</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            onClick={() =>
+              copyText(
+                buildQuickCopyPayload({
+                  username: order.assignedUsername,
+                  password: order.assignedPassword,
+                  otpCode: otpSecondsLeft > 0 ? package1OtpDisplay : "",
+                  isPackage1: true,
+                }),
+                "Đã sao chép nhanh thông tin đăng nhập",
+              )
+            }
+            className="rounded-2xl bg-slate-800 px-4 py-3 font-semibold text-slate-100 hover:bg-slate-700"
+          >
+            Copy nhanh
+          </button>
           {otpSecondsLeft > 0 ? (
             <button
               onClick={() => copyText(package1OtpDisplay, "Đã sao chép mã đăng nhập")}
@@ -1075,6 +1117,22 @@ function PublicStorefront() {
         <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4">
           <p className="text-sm text-slate-300">Mã 2FA hiện tại tự làm mới mỗi 30 giây, không cần nhập lại secret.</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              onClick={() =>
+                copyText(
+                  buildQuickCopyPayload({
+                    username: order.assignedUsername,
+                    password: order.assignedPassword,
+                    otpSecret: order.assignedOtpSecret,
+                    otpCode: otp.code || "",
+                  }),
+                  "Đã sao chép nhanh thông tin tài khoản",
+                )
+              }
+              className="rounded-2xl bg-slate-800 px-4 py-3 font-semibold text-slate-100 hover:bg-slate-700"
+            >
+              Copy nhanh
+            </button>
             <div className="rounded-2xl bg-slate-900 px-4 py-3 text-2xl font-bold tracking-[0.3em] text-cyan-300">{otp.code || "------"}</div>
             <span className="text-sm text-slate-400">{otpSecondsLeft > 0 ? `Hết hạn sau ${otpSecondsLeft}s` : "Đang đợi mã"}</span>
           </div>
