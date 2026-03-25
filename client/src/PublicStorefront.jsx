@@ -946,9 +946,18 @@ function PublicStorefront() {
         </div>
         <p className="mt-3 text-sm text-slate-400">Mã để đăng nhập. Còn {Math.max(0, Number(order.package1UsageLeft || 0))} lần sử dụng.</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button onClick={() => handleGeneratePackage1Code(order)} disabled={loading || order.package1UsageLeft <= 0} className="rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500 disabled:opacity-50">
-            {order.package1UsageLeft > 0 ? "Lấy mã đăng nhập" : "Đã hết lượt"}
-          </button>
+          {otpSecondsLeft > 0 ? (
+            <button
+              onClick={() => copyText(package1OtpDisplay, "Đã sao chép mã đăng nhập")}
+              className="rounded-2xl bg-slate-800 px-4 py-3 font-semibold text-slate-100 hover:bg-slate-700"
+            >
+              Sao chép mã
+            </button>
+          ) : (
+            <button onClick={() => handleGeneratePackage1Code(order)} disabled={loading || order.package1UsageLeft <= 0} className="rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500 disabled:opacity-50">
+              {order.package1UsageLeft > 0 ? "Lấy mã đăng nhập" : "Đã hết lượt"}
+            </button>
+          )}
           <div className={`rounded-2xl px-4 py-3 text-2xl font-bold tracking-[0.3em] ${otpSecondsLeft > 0 ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border border-slate-700 bg-slate-900 text-slate-500"}`}>{package1OtpDisplay}</div>
           <span className={`text-sm ${package1OtpExpired ? "text-amber-300" : "text-slate-400"}`}>{package1OtpStatusText}</span>
         </div>
