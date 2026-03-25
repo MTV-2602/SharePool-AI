@@ -210,6 +210,13 @@ const getStorePaymentOrderId = (order = {}) =>
   String(order?.paymentOrderId || order?.momoOrderId || "").trim();
 const getStorePaymentStatusText = (order = {}) =>
   String(order?.paymentStatusText || order?.momoMessage || "").trim();
+const normalizeComparableIsoDate = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const time = new Date(raw).getTime();
+  if (!Number.isFinite(time)) return raw;
+  return new Date(time).toISOString();
+};
 const getStorePaymentMetaRows = (order = {}) => {
   const paymentMethodLabel = getStorePaymentMethodLabel(order);
   const paymentOrderId = getStorePaymentOrderId(order) || "--";
@@ -4703,8 +4710,10 @@ function App() {
     const userNameKey = toNonAccentVietnamese(
       String(getUserName(user) || "").trim().toLowerCase(),
     );
+    const userJoinedAt = normalizeComparableIsoDate(user?.joinedAt);
+    const userExpiredAt = normalizeComparableIsoDate(user?.expiredAt);
     const relatedOrders = (Array.isArray(storeOrders) ? storeOrders : [])
-      .filter((order) => {
+      .map((order) => {
         const relatedAccountIds = [
           order?.assignedAccountId,
           order?.rootAssignedAccountId,
@@ -4712,8 +4721,7 @@ function App() {
         ]
           .map((value) => String(value || "").trim())
           .filter(Boolean);
-        if (!relatedAccountIds.includes(accountId)) return false;
-        if (!userNameKey) return true;
+        if (!relatedAccountIds.includes(accountId)) return null;
         const orderNameKeys = [
           order?.assignedCustomerName,
           order?.customerName,
@@ -4724,21 +4732,59 @@ function App() {
             toNonAccentVietnamese(String(value || "").trim().toLowerCase()),
           )
           .filter(Boolean);
-        return orderNameKeys.includes(userNameKey);
+        const orderJoinedAt = normalizeComparableIsoDate(
+          order?.assignedCustomerJoinedAt,
+        );
+        const orderExpiredAt = normalizeComparableIsoDate(
+          order?.assignedCustomerExpiredAt,
+        );
+        return {
+          order,
+          joinMatched: !!userJoinedAt && !!orderJoinedAt && userJoinedAt === orderJoinedAt,
+          expiryMatched:
+            !!userExpiredAt && !!orderExpiredAt && userExpiredAt === orderExpiredAt,
+          nameMatched: !!userNameKey && orderNameKeys.includes(userNameKey),
+        };
+      })
+      .filter(Boolean)
+      .filter((entry) => {
+        if (entry.joinMatched) return true;
+        if (!userNameKey) return true;
+        return entry.nameMatched;
       })
       .sort((a, b) => {
+        if (a.joinMatched !== b.joinMatched) return a.joinMatched ? -1 : 1;
+        if (a.expiryMatched !== b.expiryMatched) return a.expiryMatched ? -1 : 1;
+        if (a.nameMatched !== b.nameMatched) return a.nameMatched ? -1 : 1;
         const aTime = new Date(
-          a?.updatedAt || a?.fulfilledAt || a?.paidAt || a?.createdAt || 0,
+          a.order?.updatedAt ||
+            a.order?.fulfilledAt ||
+            a.order?.paidAt ||
+            a.order?.createdAt ||
+            0,
         ).getTime();
         const bTime = new Date(
-          b?.updatedAt || b?.fulfilledAt || b?.paidAt || b?.createdAt || 0,
+          b.order?.updatedAt ||
+            b.order?.fulfilledAt ||
+            b.order?.paidAt ||
+            b.order?.createdAt ||
+            0,
         ).getTime();
         return bTime - aTime;
       });
     const matchedOrder =
-      relatedOrders[0] ||
+      relatedOrders[0]?.order ||
       (Array.isArray(storeOrders) ? storeOrders : [])
-        .filter((order) => String(order?.assignedAccountId || "").trim() === accountId)
+        .filter((order) => {
+          const relatedAccountIds = [
+            order?.assignedAccountId,
+            order?.rootAssignedAccountId,
+            order?.reservedAccountId,
+          ]
+            .map((value) => String(value || "").trim())
+            .filter(Boolean);
+          return relatedAccountIds.includes(accountId);
+        })
         .sort((a, b) => {
           const aTime = new Date(
             a?.updatedAt || a?.fulfilledAt || a?.paidAt || a?.createdAt || 0,
