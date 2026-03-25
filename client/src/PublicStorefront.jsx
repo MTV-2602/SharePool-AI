@@ -549,7 +549,13 @@ function PublicStorefront() {
         String(order.assignedOtpSecret || "").trim(),
     );
     if (package2Orders.length === 0) {
-      setOtpResults({});
+      setOtpResults((prev) =>
+        Object.fromEntries(
+          Object.entries(prev || {}).filter(
+            ([, value]) => String(value?.kind || "").trim() !== "package2",
+          ),
+        ),
+      );
       return undefined;
     }
 
@@ -571,13 +577,25 @@ function PublicStorefront() {
           entries[order.id] = buildOtpDisplayState({
             code: data?.code,
             expiresIn,
+            extra: { kind: "package2" },
           });
         } catch {
-          entries[order.id] = buildOtpDisplayState({ code: "------", expiresIn: 0 });
+          entries[order.id] = buildOtpDisplayState({
+            code: "------",
+            expiresIn: 0,
+            extra: { kind: "package2" },
+          });
         }
       }
       if (!cancelled) {
-        setOtpResults((prev) => ({ ...prev, ...entries }));
+        setOtpResults((prev) => {
+          const preservedEntries = Object.fromEntries(
+            Object.entries(prev || {}).filter(
+              ([, value]) => String(value?.kind || "").trim() !== "package2",
+            ),
+          );
+          return { ...preservedEntries, ...entries };
+        });
       }
       if (!cancelled) {
         timeoutId = window.setTimeout(
@@ -778,6 +796,7 @@ function PublicStorefront() {
           ...buildOtpDisplayState({
             code: data?.code,
             expiresIn: Number(data?.expiresIn || 0),
+            extra: { kind: "package1" },
           }),
           usageLeft: Number(data?.usageLeft || 0),
         },
