@@ -23,6 +23,19 @@ const getPaymentMethodLabel = (method) =>
     ? "Chuyển khoản payOS"
     : "MoMo";
 
+const getStoreCheckoutMethodLabel = (method) =>
+  String(method || "").trim().toLowerCase() === STORE_PAYMENT_METHOD_PAYOS
+    ? "MB Bank QR"
+    : "MoMo";
+
+const buildQrImageUrl = (value, size = 280) => {
+  const payload = String(value || "").trim();
+  if (!payload) return "";
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(
+    payload,
+  )}`;
+};
+
 const clearStoredAdminSession = () => {
   if (typeof window === "undefined") return;
   localStorage.removeItem(ADMIN_TOKEN_KEY);
@@ -216,6 +229,7 @@ function PublicStorefront() {
   const [sessionLoading, setSessionLoading] = useState(Boolean(initialStoreToken));
   const [purchaseLoadingCode, setPurchaseLoadingCode] = useState("");
   const [reconcileLoadingOrderId, setReconcileLoadingOrderId] = useState("");
+  const [paymentPickerPackageCode, setPaymentPickerPackageCode] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
@@ -232,6 +246,7 @@ function PublicStorefront() {
   const [otpNowMs, setOtpNowMs] = useState(() => Date.now());
   const googleButtonRef = useRef(null);
   const authCardRef = useRef(null);
+  const ordersSectionRef = useRef(null);
   const pendingReconcileRef = useRef(false);
   const purchaseLockRef = useRef(false);
   const storeOrdersSyncRef = useRef(false);
@@ -732,7 +747,23 @@ function PublicStorefront() {
       if (!payUrl) {
         throw new Error("Hệ thống không trả về liên kết thanh toán.");
       }
+      if (paymentMethod === STORE_PAYMENT_METHOD_PAYOS) {
+        await loadSession(token);
+        setMessage(
+          "Đã tạo mã QR MB Bank. Quét mã ngay bên dưới hoặc bấm tiếp tục thanh toán nếu cần.",
+        );
+        if (typeof window !== "undefined") {
+          window.requestAnimationFrame(() => {
+            ordersSectionRef.current?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          });
+        }
+        return data;
+      }
       window.location.href = payUrl;
+      return data;
     } catch (paymentError) {
       try {
         await loadConfig();
@@ -759,13 +790,56 @@ function PublicStorefront() {
       return "Bạn cần đăng nhập hoặc đăng ký tài khoản user trước khi thanh toán.";
     }
     if (!isPaymentMethodConfigured(paymentMethod)) {
-      return `${getPaymentMethodLabel(paymentMethod)} chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.`;
+      return `${getStoreCheckoutMethodLabel(paymentMethod)} chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.`;
     }
     if (!pkg?.purchasable || Number(pkg?.available || 0) <= 0) {
       return "Kho hiện tại của gói này đã hết. Khi có nick mới trong kho, bạn sẽ mua được.";
     }
-    return `Thanh toán ${getPaymentMethodLabel(paymentMethod)} xong, hệ thống sẽ tự cấp tài khoản ngay trên web.`;
+    return `Thanh toán ${getStoreCheckoutMethodLabel(paymentMethod)} xong, hệ thống sẽ tự cấp tài khoản ngay trên web.`;
   };
+
+  const getUnifiedPurchaseHint = (pkg) => {
+    if (sessionLoading) {
+      return "Hệ thống đang kiểm tra phiên đăng nhập của bạn.";
+    }
+    if (!user) {
+      return "Bạn cần đăng nhập hoặc đăng ký tài khoản user trước khi thanh toán.";
+    }
+    if (!pkg?.purchasable || Number(pkg?.available || 0) <= 0) {
+      return "Kho hiện tại của gói này đã hết. Khi có nick mới trong kho, bạn sẽ mua được.";
+    }
+    return "Bấm Thanh toán để chọn MoMo hoặc MB Bank QR.";
+  };
+
+  const openPaymentPicker = (pkg) => {
+    if (sessionLoading || loading || purchaseLockRef.current || purchaseLoadingCode) {
+      return;
+    }
+    if (!user) {
+      setMessage("");
+      setError("Bạn chưa đăng nhập tài khoản user. Vui lòng đăng nhập hoặc đăng ký rồi thử lại.");
+      focusAuthCard("login");
+      return;
+    }
+    if (!pkg?.purchasable || Number(pkg?.available || 0) <= 0) {
+      setMessage("");
+      setError("Kho hiện tại của gói này đã hết, nên hệ thống đã chặn không cho tạo thanh toán.");
+      return;
+    }
+    setPaymentPickerPackageCode(String(pkg?.code || "").trim());
+  };
+
+  const closePaymentPicker = () => {
+    setPaymentPickerPackageCode("");
+  };
+
+  const paymentPickerPackage = useMemo(
+    () =>
+      config.packages.find(
+        (item) => String(item?.code || "").trim() === paymentPickerPackageCode,
+      ) || null,
+    [config.packages, paymentPickerPackageCode],
+  );
 
   const handlePurchaseButtonClick = async (pkg, paymentMethod) => {
     if (sessionLoading || loading || purchaseLockRef.current || purchaseLoadingCode) return;
@@ -796,6 +870,7 @@ function PublicStorefront() {
         return;
       }
       await handleCreatePayment(latestPackage.code, paymentMethod);
+      setPaymentPickerPackageCode("");
     } finally {
       purchaseLockRef.current = false;
       setPurchaseLoadingCode("");
@@ -1038,42 +1113,28 @@ function PublicStorefront() {
             </a>
           ) : (
             <>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  [STORE_PAYMENT_METHOD_MOMO, "MoMo"],
-                  [STORE_PAYMENT_METHOD_PAYOS, "Chuyển khoản payOS"],
-                ].map(([paymentMethod, label]) => {
-                  const methodKey = `${pkg.code}:${paymentMethod}`;
-                  return (
-                    <button
-                      key={paymentMethod}
-                      onClick={() => handlePurchaseButtonClick(pkg, paymentMethod)}
-                      disabled={sessionLoading || loading || !!purchaseLoadingCode}
-                      className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {purchaseLoadingCode === methodKey ? (
-                        <span className="inline-flex items-center justify-center gap-2">
-                          <Loader2 size={16} className="animate-spin" />
-                          Đang tạo...
-                        </span>
-                      ) : sessionLoading ? (
-                        "Đang kiểm tra..."
-                      ) : !user ? (
-                        label
-                      ) : !isPaymentMethodConfigured(paymentMethod) ? (
-                        `${label} chưa bật`
-                      ) : pkg.purchasable ? (
-                        label
-                      ) : (
-                        "Tạm hết hàng"
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+              <button
+                onClick={() => openPaymentPicker(pkg)}
+                disabled={sessionLoading || loading || !!purchaseLoadingCode || !pkg?.purchasable}
+                className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {String(purchaseLoadingCode || "").startsWith(`${pkg.code}:`) ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Loader2 size={16} className="animate-spin" />
+                    Đang tạo...
+                  </span>
+                ) : sessionLoading ? (
+                  "Đang kiểm tra..."
+                ) : !user ? (
+                  "Thanh toán"
+                ) : pkg.purchasable ? (
+                  "Thanh toán"
+                ) : (
+                  "Tạm hết hàng"
+                )}
+              </button>
               <div className="mt-3 space-y-2 text-sm leading-5 text-slate-400">
-                <p>{getPurchaseBlockedReason(pkg, STORE_PAYMENT_METHOD_MOMO)}</p>
-                <p>{getPurchaseBlockedReason(pkg, STORE_PAYMENT_METHOD_PAYOS)}</p>
+                <p>{getUnifiedPurchaseHint(pkg)}</p>
               </div>
             </>
           )}
@@ -1216,31 +1277,78 @@ function PublicStorefront() {
               </div>
             </div>
             {isPendingStorePayment(order.status) ? (
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <p className="text-sm text-amber-200">
-                  Nick đang được giữ riêng cho đơn này đến {order.expiresAt ? formatDateTime(order.expiresAt) : "--"}.
-                </p>
-                <button
-                  onClick={() => handleReconcileOrderPayment(order.id)}
-                  disabled={loading}
-                  className="inline-flex items-center rounded-2xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {reconcileLoadingOrderId === order.id ? (
-                    <span className="inline-flex items-center gap-2">
-                      <Loader2 size={14} className="animate-spin" />
-                      Đang kiểm tra...
-                    </span>
-                  ) : (
-                    "Kiểm tra thanh toán"
-                  )}
-                </button>
-                {order.paymentUrl ? (
-                  <a
-                    href={order.paymentUrl}
-                    className="inline-flex items-center rounded-2xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white"
+              <div className="mt-4 space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm text-amber-200">
+                    Nick đang được giữ riêng cho đơn này đến {order.expiresAt ? formatDateTime(order.expiresAt) : "--"}.
+                  </p>
+                  <button
+                    onClick={() => handleReconcileOrderPayment(order.id)}
+                    disabled={loading}
+                    className="inline-flex items-center rounded-2xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    Tiếp tục thanh toán
-                  </a>
+                    {reconcileLoadingOrderId === order.id ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 size={14} className="animate-spin" />
+                        Đang kiểm tra...
+                      </span>
+                    ) : (
+                      "Kiểm tra thanh toán"
+                    )}
+                  </button>
+                  {order.paymentUrl ? (
+                    <a
+                      href={order.paymentUrl}
+                      className="inline-flex items-center rounded-2xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      Tiếp tục thanh toán
+                    </a>
+                  ) : null}
+                </div>
+                {String(order.paymentMethod || "").trim().toLowerCase() === STORE_PAYMENT_METHOD_PAYOS &&
+                String(order.paymentQrCode || "").trim() ? (
+                  <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                    <div className="flex flex-wrap items-start gap-5">
+                      <div className="rounded-2xl bg-white p-3 shadow-lg shadow-slate-950/20">
+                        <img
+                          src={buildQrImageUrl(order.paymentQrCode, 260)}
+                          alt={`QR thanh toán ${order.id}`}
+                          className="h-56 w-56 rounded-xl object-contain"
+                        />
+                      </div>
+                      <div className="min-w-[220px] flex-1 space-y-3">
+                        <div>
+                          <p className="text-sm font-semibold text-cyan-300">
+                            Quét mã MB Bank để thanh toán ngay trên web
+                          </p>
+                          <p className="mt-1 text-sm text-slate-300">
+                            Không cần mở trang thanh toán ngoài. Sau khi chuyển khoản xong, hệ thống sẽ tự đối soát và cấp nick.
+                          </p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <button
+                            onClick={() => copyText(order.paymentQrCode, "Đã sao chép mã QR thanh toán")}
+                            className="rounded-2xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700"
+                          >
+                            Sao chép mã QR
+                          </button>
+                          {order.paymentUrl ? (
+                            <a
+                              href={order.paymentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-2xl bg-slate-800 px-4 py-3 text-center text-sm font-semibold text-slate-100 hover:bg-slate-700"
+                            >
+                              Mở trang thanh toán
+                            </a>
+                          ) : null}
+                        </div>
+                        <p className="text-xs leading-5 text-slate-400">
+                          Nếu app ngân hàng không quét được ảnh, bạn có thể bấm <span className="font-semibold text-slate-200">Sao chép mã QR</span> để dùng tiếp ở chỗ khác.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 ) : null}
               </div>
             ) : null}
@@ -1313,7 +1421,7 @@ function PublicStorefront() {
               {packageCards}
             </section>
 
-            <section className="mt-10 grid gap-8 xl:grid-cols-[1.4fr,0.8fr]">
+            <section ref={ordersSectionRef} className="mt-10 grid gap-8 xl:grid-cols-[1.4fr,0.8fr]">
               <div>
                 <div className="mb-4">
                   <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">Đơn hàng</p>
@@ -1346,6 +1454,107 @@ function PublicStorefront() {
           </>
         )}
       </div>
+      {paymentPickerPackage ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-[2rem] border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-slate-950/40">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">
+                  Chọn cổng thanh toán
+                </p>
+                <h3 className="mt-2 text-2xl font-bold text-white">
+                  {paymentPickerPackage.name}
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Chọn MoMo hoặc MB Bank QR. Với MB Bank QR, hệ thống sẽ hiện mã QR ngay trên web để khách quét.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePaymentPicker}
+                className="rounded-full bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700"
+              >
+                Đóng
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              {[STORE_PAYMENT_METHOD_MOMO, STORE_PAYMENT_METHOD_PAYOS].map(
+                (paymentMethod) => {
+                  const methodKey = `${paymentPickerPackage.code}:${paymentMethod}`;
+                  const configured = isPaymentMethodConfigured(paymentMethod);
+                  const blockedReason = getPurchaseBlockedReason(
+                    paymentPickerPackage,
+                    paymentMethod,
+                  );
+                  return (
+                    <div
+                      key={paymentMethod}
+                      className={`rounded-3xl border p-5 ${
+                        configured
+                          ? "border-slate-700 bg-slate-950/70"
+                          : "border-amber-500/20 bg-amber-500/5"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.25em] text-cyan-400">
+                            {paymentMethod === STORE_PAYMENT_METHOD_PAYOS
+                              ? "Ngân hàng"
+                              : "Ví điện tử"}
+                          </p>
+                          <h4 className="mt-2 text-xl font-semibold text-white">
+                            {getStoreCheckoutMethodLabel(paymentMethod)}
+                          </h4>
+                        </div>
+                        <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
+                          {configured ? "Sẵn sàng" : "Chưa bật"}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-slate-300">
+                        {paymentMethod === STORE_PAYMENT_METHOD_PAYOS
+                          ? "Hiện mã QR MB Bank ngay trên trang để khách quét và thanh toán."
+                          : "Mở trang thanh toán MoMo để hoàn tất đơn nhanh."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handlePurchaseButtonClick(
+                            paymentPickerPackage,
+                            paymentMethod,
+                          )
+                        }
+                        disabled={
+                          sessionLoading ||
+                          loading ||
+                          !!purchaseLoadingCode ||
+                          !configured ||
+                          !paymentPickerPackage?.purchasable
+                        }
+                        className="mt-5 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {purchaseLoadingCode === methodKey ? (
+                          <span className="inline-flex items-center justify-center gap-2">
+                            <Loader2 size={16} className="animate-spin" />
+                            Đang tạo...
+                          </span>
+                        ) : (
+                          `Thanh toán bằng ${getStoreCheckoutMethodLabel(
+                            paymentMethod,
+                          )}`
+                        )}
+                      </button>
+                      <p className="mt-3 text-xs leading-5 text-slate-400">
+                        {blockedReason}
+                      </p>
+                    </div>
+                  );
+                },
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
