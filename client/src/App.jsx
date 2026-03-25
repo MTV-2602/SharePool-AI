@@ -1190,7 +1190,7 @@ function App() {
     warranty: false,
     saveStoreUser: false,
     saveStoreOrder: false,
-    resetStoreUserPassword: false,
+    createStoreManualOrder: false,
     deleteStoreUser: "",
     deleteStoreOrder: "",
     deleteMarketplaceOrder: {},
@@ -1218,7 +1218,7 @@ function App() {
   const [showImportGPTModal, setShowImportGPTModal] = useState(false);
   const [showStoreUserEditModal, setShowStoreUserEditModal] = useState(false);
   const [showStoreOrderEditModal, setShowStoreOrderEditModal] = useState(false);
-  const [showStoreUserPasswordModal, setShowStoreUserPasswordModal] =
+  const [showStoreManualOrderModal, setShowStoreManualOrderModal] =
     useState(false);
   const [storeUserEditForm, setStoreUserEditForm] = useState({
     id: "",
@@ -1232,11 +1232,12 @@ function App() {
     confirmPassword: "",
     unlinkGoogle: false,
   });
-  const [storeUserPasswordForm, setStoreUserPasswordForm] = useState({
-    id: "",
+  const [storeManualOrderForm, setStoreManualOrderForm] = useState({
     fullName: "",
+    phone: "",
+    email: "",
     password: "",
-    confirmPassword: "",
+    packageCode: "package1",
   });
   const [storeOrderEditForm, setStoreOrderEditForm] = useState({
     id: "",
@@ -1969,14 +1970,15 @@ function App() {
     setShowStoreUserEditModal(true);
   };
 
-  const openStoreUserPasswordReset = (user) => {
-    setStoreUserPasswordForm({
-      id: String(user?.id || ""),
+  const openStoreManualOrder = (user = null) => {
+    setStoreManualOrderForm({
       fullName: String(user?.fullName || ""),
+      phone: String(user?.phone || ""),
+      email: String(user?.email || ""),
       password: "",
-      confirmPassword: "",
+      packageCode: "package1",
     });
-    setShowStoreUserPasswordModal(true);
+    setShowStoreManualOrderModal(true);
   };
 
   const openStoreOrderEdit = (order = {}) => {
@@ -2032,46 +2034,6 @@ function App() {
     }
   };
 
-  const handleResetStoreUserPassword = async (e) => {
-    e.preventDefault();
-    const id = String(storeUserPasswordForm.id || "").trim();
-    if (!id) {
-      showAlert("Lỗi", "Thiếu ID user web.", "error");
-      return;
-    }
-    if (storeUserPasswordForm.password.length < 6) {
-      showAlert("Thiếu dữ liệu", "Mật khẩu mới phải có ít nhất 6 ký tự.", "warning");
-      return;
-    }
-    if (storeUserPasswordForm.password !== storeUserPasswordForm.confirmPassword) {
-      showAlert("Sai xác nhận", "Mật khẩu xác nhận không khớp.", "warning");
-      return;
-    }
-    setLoadingStates((prev) => ({ ...prev, resetStoreUserPassword: true }));
-    try {
-      await axios.post(`/api/store-users/${id}/reset-password`, {
-        password: storeUserPasswordForm.password,
-      });
-      setShowStoreUserPasswordModal(false);
-      setStoreUserPasswordForm({
-        id: "",
-        fullName: "",
-        password: "",
-        confirmPassword: "",
-      });
-      await fetchData();
-      showAlert("Thành công", "Đã đặt lại mật khẩu user web.", "success");
-    } catch (error) {
-      showAlert(
-        "Lỗi",
-        getApiErrorMessage(error, "Không thể đặt lại mật khẩu user."),
-        "error",
-      );
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, resetStoreUserPassword: false }));
-    }
-  };
-
   const handleSaveStoreOrder = async (e) => {
     e.preventDefault();
     const id = String(storeOrderEditForm.id || "").trim();
@@ -2109,6 +2071,67 @@ function App() {
       );
     } finally {
       setLoadingStates((prev) => ({ ...prev, saveStoreOrder: false }));
+    }
+  };
+
+  const handleCreateStoreManualOrder = async (e) => {
+    e.preventDefault();
+    const fullName = String(storeManualOrderForm.fullName || "").trim();
+    const phone = String(storeManualOrderForm.phone || "").trim();
+    const email = String(storeManualOrderForm.email || "").trim();
+    const password = String(storeManualOrderForm.password || "").trim();
+    const packageCode = String(storeManualOrderForm.packageCode || "").trim();
+
+    if (!fullName || !phone || !email || !packageCode) {
+      showAlert(
+        "Thiếu dữ liệu",
+        "Hãy nhập đủ họ tên, SĐT, email và chọn gói trước khi tạo đơn.",
+        "warning",
+      );
+      return;
+    }
+
+    setLoadingStates((prev) => ({ ...prev, createStoreManualOrder: true }));
+    try {
+      const response = await axios.post("/api/store-orders/admin", {
+        fullName,
+        phone,
+        email,
+        password,
+        packageCode,
+      });
+      setShowStoreManualOrderModal(false);
+      setStoreManualOrderForm({
+        fullName: "",
+        phone: "",
+        email: "",
+        password: "",
+        packageCode: "package1",
+      });
+      await fetchData();
+      broadcastDataChange();
+      const createdUserId = String(response?.data?.user?.id || "").trim();
+      if (createdUserId) {
+        setExpandedStoreUserId(createdUserId);
+      }
+      const generatedPassword = String(
+        response?.data?.generatedPassword || "",
+      ).trim();
+      showAlert(
+        "Đã tạo đơn web",
+        generatedPassword
+          ? `Đã tạo user và đơn thủ công. Mật khẩu tự sinh của user là: ${generatedPassword}`
+          : "Đã tạo đơn web thủ công và cấp nick ngay cho user.",
+        "success",
+      );
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể tạo đơn web thủ công."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, createStoreManualOrder: false }));
     }
   };
 
@@ -4727,8 +4750,8 @@ function App() {
                     Quản lí user mua hàng trên web
                   </h2>
                   <p className="text-sm text-slate-400 mt-2 max-w-3xl">
-                    Theo dõi user đăng ký, số đơn đã mua, trạng thái hoạt động và thao tác
-                    sửa thông tin hoặc đặt lại mật khẩu ngay trong admin.
+                    Theo dõi user web, đơn đã mua, trace DB đang gắn với từng đơn và
+                    tạo đơn thủ công ngay trong admin.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
@@ -4768,12 +4791,22 @@ function App() {
               </div>
 
               <div className="p-5 border-b border-slate-800">
-                <input
-                  value={storeUserQuery}
-                  onChange={(e) => setStoreUserQuery(e.target.value)}
-                  placeholder="Tìm theo tên user, SĐT, email, provider..."
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 outline-none transition-all"
-                />
+                <div className="flex flex-col gap-3 lg:flex-row">
+                  <input
+                    value={storeUserQuery}
+                    onChange={(e) => setStoreUserQuery(e.target.value)}
+                    placeholder="Tìm theo tên user, SĐT, email, provider..."
+                    className="flex-1 rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 outline-none transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => openStoreManualOrder()}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-3 text-white font-bold transition-colors"
+                  >
+                    <UserPlus size={16} />
+                    Tạo đơn thủ công
+                  </button>
+                </div>
               </div>
 
               <div className="p-5">
@@ -4792,12 +4825,12 @@ function App() {
                       return (
                         <div
                           key={user.id}
-                          className="rounded-2xl border border-slate-800 bg-slate-950/40 p-5 shadow-lg"
+                          className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 shadow-lg"
                         >
                           <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
-                            <div className="min-w-0 flex-1 space-y-4">
+                            <div className="min-w-0 flex-1 space-y-3">
                               <div className="flex flex-wrap items-center gap-2">
-                                <div className="text-xl font-black text-white break-all">
+                                <div className="text-lg font-black text-white break-all">
                                   {user.fullName || "User chưa có tên"}
                                 </div>
                                 {authProviders.map((provider) => (
@@ -4814,17 +4847,17 @@ function App() {
                                 ))}
                               </div>
 
-                              <div className="grid md:grid-cols-3 gap-3 text-sm">
+                              <div className="grid gap-3 lg:grid-cols-[minmax(180px,240px)_minmax(240px,1fr)]">
                                 <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
-                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
+                                  <div className="text-slate-500 text-[11px] uppercase tracking-[0.22em]">
                                     Zalo / SĐT
                                   </div>
                                   <div className="text-white font-semibold mt-1 break-all">
                                     {user.phone || "Chưa có"}
                                   </div>
                                 </div>
-                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3 md:col-span-2">
-                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
+                                  <div className="text-slate-500 text-[11px] uppercase tracking-[0.22em]">
                                     Email
                                   </div>
                                   <div className="text-white font-semibold mt-1 break-all">
@@ -4833,62 +4866,29 @@ function App() {
                                 </div>
                               </div>
 
-                              <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
-                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
-                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
-                                    Tổng đơn
-                                  </div>
-                                  <div className="text-white text-lg font-black mt-1">
-                                    {Number(user.totalOrders || 0)}
-                                  </div>
-                                </div>
-                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
-                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
-                                    Đã giao
-                                  </div>
-                                  <div className="text-emerald-300 text-lg font-black mt-1">
-                                    {Number(user.fulfilledOrders || 0)}
-                                  </div>
-                                </div>
-                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
-                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
-                                    Đang chờ
-                                  </div>
-                                  <div className="text-amber-300 text-lg font-black mt-1">
-                                    {Number(user.pendingOrders || 0)}
-                                  </div>
-                                </div>
-                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
-                                  <div className="text-slate-500 text-xs uppercase tracking-[0.22em]">
-                                    Đơn mới nhất
-                                  </div>
-                                  <div className="text-white font-semibold mt-1">
-                                    {user.latestOrderAt ? formatDate(user.latestOrderAt) : "Chưa có đơn"}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="grid sm:grid-cols-2 gap-3 text-xs text-slate-400">
-                                <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3">
-                                  <span className="uppercase tracking-[0.22em] text-slate-500">
-                                    Tạo lúc
-                                  </span>
-                                  <div className="text-slate-200 mt-1">
-                                    {user.createdAt ? formatDate(user.createdAt) : "Chưa có"}
-                                  </div>
-                                </div>
-                                <div className="rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3">
-                                  <span className="uppercase tracking-[0.22em] text-slate-500">
-                                    Cập nhật
-                                  </span>
-                                  <div className="text-slate-200 mt-1">
-                                    {user.updatedAt ? formatDate(user.updatedAt) : "Chưa có"}
-                                  </div>
-                                </div>
+                              <div className="flex flex-wrap gap-2 text-sm">
+                                <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-slate-200">
+                                  Tổng đơn: <span className="font-black text-white">{Number(user.totalOrders || 0)}</span>
+                                </span>
+                                <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-emerald-200">
+                                  Đã giao: <span className="font-black">{Number(user.fulfilledOrders || 0)}</span>
+                                </span>
+                                <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1.5 text-amber-200">
+                                  Đang chờ: <span className="font-black">{Number(user.pendingOrders || 0)}</span>
+                                </span>
+                                <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1.5 text-cyan-200">
+                                  Mới nhất: <span className="font-black">{user.latestOrderAt ? formatDate(user.latestOrderAt) : "Chưa có"}</span>
+                                </span>
+                                <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-slate-300">
+                                  Tạo: <span className="font-semibold text-slate-100">{user.createdAt ? formatDate(user.createdAt) : "--"}</span>
+                                </span>
+                                <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-slate-300">
+                                  Cập nhật: <span className="font-semibold text-slate-100">{user.updatedAt ? formatDate(user.updatedAt) : "--"}</span>
+                                </span>
                               </div>
                             </div>
 
-                            <div className="xl:w-56 shrink-0 flex xl:flex-col gap-3">
+                            <div className="xl:w-56 shrink-0 grid gap-3">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -4907,19 +4907,19 @@ function App() {
                               </button>
                               <button
                                 type="button"
+                                onClick={() => openStoreManualOrder(user)}
+                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 px-4 py-3 text-white font-bold transition-colors"
+                              >
+                                <UserPlus size={16} />
+                                Tạo đơn
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => openStoreUserEdit(user)}
                                 className="flex-1 xl:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-4 py-3 text-white font-bold transition-colors"
                               >
                                 <Pencil size={16} />
                                 Sửa user
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openStoreUserPasswordReset(user)}
-                                className="flex-1 xl:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-500 px-4 py-3 text-white font-bold transition-colors"
-                              >
-                                <Lock size={16} />
-                                Đặt lại mật khẩu
                               </button>
                               <button
                                 type="button"
@@ -5048,6 +5048,65 @@ function App() {
                                           </div>
                                           <div className="mt-1 text-slate-200">
                                             {formatDateTime(order?.updatedAt) || "--"}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                        <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-3">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                            Trace DB / Liên kết nội bộ
+                                          </div>
+                                          <div className="mt-2 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                                            {[
+                                              ["User ID", order?.userId || "--"],
+                                              ["MoMo order", order?.momoOrderId || "--"],
+                                              ["Reservation", order?.reservationType || "--"],
+                                              ["Reserved acc", order?.reservedAccountId || "--"],
+                                              ["Assigned acc", order?.assignedAccountId || "--"],
+                                              ["Acc gốc", order?.rootAssignedAccountId || "--"],
+                                              ["Loại acc", order?.assignedType || "--"],
+                                              ["Warranty", String(Number(order?.warrantyCount || 0))],
+                                            ].map(([label, value]) => (
+                                              <div
+                                                key={`${buildStoreOrderKey(order)}-${label}`}
+                                                className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2"
+                                              >
+                                                <div className="uppercase tracking-[0.16em] text-[10px] text-slate-500">
+                                                  {label}
+                                                </div>
+                                                <div className="mt-1 break-all font-medium text-slate-100">
+                                                  {value || "--"}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+
+                                        <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-3">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                            Thông tin admin nhìn thấy
+                                          </div>
+                                          <div className="mt-2 grid gap-2 text-xs text-slate-300">
+                                            {[
+                                              ["Username", order?.assignedUsername || "--"],
+                                              ["Mật khẩu", order?.assignedPassword || "--"],
+                                              ["2FA", order?.assignedOtpSecret || "--"],
+                                              ["Link", order?.assignedLink || "--"],
+                                              ["Khách gắn vào nick", order?.assignedCustomerName || "--"],
+                                            ].map(([label, value]) => (
+                                              <div
+                                                key={`${buildStoreOrderKey(order)}-visible-${label}`}
+                                                className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2"
+                                              >
+                                                <div className="uppercase tracking-[0.16em] text-[10px] text-slate-500">
+                                                  {label}
+                                                </div>
+                                                <div className="mt-1 break-all font-medium text-slate-100">
+                                                  {value || "--"}
+                                                </div>
+                                              </div>
+                                            ))}
                                           </div>
                                         </div>
                                       </div>
@@ -10594,67 +10653,108 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         </div>
       )}
 
-      {showStoreUserPasswordModal && (
+      {showStoreManualOrderModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <form
-            onSubmit={handleResetStoreUserPassword}
+            onSubmit={handleCreateStoreManualOrder}
             className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full shadow-2xl"
             style={{ maxWidth: "520px" }}
           >
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-white flex gap-2 items-center">
-                <Lock size={20} className="text-violet-400" />
-                Đặt lại mật khẩu user
+                <UserPlus size={20} className="text-emerald-400" />
+                Tạo đơn web thủ công
               </h2>
               <button
                 type="button"
-                onClick={() => setShowStoreUserPasswordModal(false)}
+                onClick={() => setShowStoreManualOrderModal(false)}
                 className="text-slate-400 hover:text-white"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700/50 mb-4">
-              <div className="text-sm text-slate-400">User đang chọn:</div>
-              <div className="text-white font-bold mt-1">
-                {storeUserPasswordForm.fullName || "User web"}
-              </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3 mb-4 text-sm text-slate-300">
+              Admin có thể tạo đơn cho user sẵn có hoặc nhập thông tin mới để hệ thống
+              tự tạo user rồi cấp nick ngay sau khi lưu.
             </div>
 
             <div className="space-y-3">
               <div>
-                <label className="text-slate-400 text-sm block mb-1">
-                  Mật khẩu mới *
-                </label>
-                <input
-                  type="password"
+                <label className="text-slate-400 text-sm block mb-1">Gói *</label>
+                <select
                   required
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
-                  value={storeUserPasswordForm.password}
+                  value={storeManualOrderForm.packageCode}
                   onChange={(e) =>
-                    setStoreUserPasswordForm((prev) => ({
+                    setStoreManualOrderForm((prev) => ({
                       ...prev,
-                      password: e.target.value,
+                      packageCode: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="package1">Gói 1 - Chia sẻ tiết kiệm</option>
+                  <option value="package2">Gói 2 - Tài khoản riêng tư</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm block mb-1">Họ tên *</label>
+                <input
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  value={storeManualOrderForm.fullName}
+                  onChange={(e) =>
+                    setStoreManualOrderForm((prev) => ({
+                      ...prev,
+                      fullName: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm block mb-1">SĐT / Zalo *</label>
+                <input
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  value={storeManualOrderForm.phone}
+                  onChange={(e) =>
+                    setStoreManualOrderForm((prev) => ({
+                      ...prev,
+                      phone: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm block mb-1">Email *</label>
+                <input
+                  type="email"
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
+                  value={storeManualOrderForm.email}
+                  onChange={(e) =>
+                    setStoreManualOrderForm((prev) => ({
+                      ...prev,
+                      email: e.target.value,
                     }))
                   }
                 />
               </div>
               <div>
                 <label className="text-slate-400 text-sm block mb-1">
-                  Nhập lại mật khẩu *
+                  Mật khẩu user (để trống nếu muốn hệ thống tự sinh)
                 </label>
                 <input
-                  type="password"
-                  required
+                  type="text"
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white"
-                  value={storeUserPasswordForm.confirmPassword}
+                  value={storeManualOrderForm.password}
                   onChange={(e) =>
-                    setStoreUserPasswordForm((prev) => ({
+                    setStoreManualOrderForm((prev) => ({
                       ...prev,
-                      confirmPassword: e.target.value,
+                      password: e.target.value,
                     }))
                   }
+                  placeholder="Tối thiểu 6 ký tự hoặc để trống"
                 />
               </div>
             </div>
@@ -10662,19 +10762,19 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
             <div className="flex gap-3 mt-5">
               <button
                 type="button"
-                onClick={() => setShowStoreUserPasswordModal(false)}
+                onClick={() => setShowStoreManualOrderModal(false)}
                 className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors"
               >
                 Hủy
               </button>
               <button
                 type="submit"
-                disabled={loadingStates.resetStoreUserPassword}
-                className="flex-1 p-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-bold transition-colors disabled:opacity-60"
+                disabled={loadingStates.createStoreManualOrder}
+                className="flex-1 p-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors disabled:opacity-60"
               >
-                {loadingStates.resetStoreUserPassword
-                  ? "Đang cập nhật..."
-                  : "Đặt lại mật khẩu"}
+                {loadingStates.createStoreManualOrder
+                  ? "Đang tạo..."
+                  : "Tạo đơn và cấp nick"}
               </button>
             </div>
           </form>

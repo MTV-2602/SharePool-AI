@@ -1395,6 +1395,8 @@ const createStoreId = (prefix) =>
   `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const createRandomHexToken = (size = 24) =>
   crypto.randomBytes(size).toString("hex");
+const createStoreManualPassword = () =>
+  `web${crypto.randomBytes(4).toString("hex")}`;
 const hashSha256 = (value) =>
   crypto.createHash("sha256").update(String(value || "")).digest("hex");
 const upsertStringIntoList = (list = [], value = "") => {
@@ -3764,6 +3766,8 @@ const fulfillStoreOrder = async (order) => {
             status: "fulfilled",
             assignedAccountId: String(claim?.updatedAcc?.id || ""),
             assignedUsername: String(claim?.updatedAcc?.username || ""),
+            rootAssignedAccountId: String(claim?.updatedAcc?.id || ""),
+            rootAssignedUsername: String(claim?.updatedAcc?.username || ""),
             assignedPassword: String(claim?.updatedAcc?.password || ""),
             assignedLink: String(claim?.updatedAcc?.link || ""),
             assignedType: String(claim?.updatedAcc?.type || ""),
@@ -3793,6 +3797,8 @@ const fulfillStoreOrder = async (order) => {
             status: "fulfilled",
             assignedAccountId: String(claim?.updatedAcc?.id || ""),
             assignedUsername: String(claim?.updatedAcc?.username || ""),
+            rootAssignedAccountId: String(claim?.updatedAcc?.id || ""),
+            rootAssignedUsername: String(claim?.updatedAcc?.username || ""),
             assignedPassword: String(claim?.updatedAcc?.password || ""),
             assignedOtpSecret: String(claim?.updatedAcc?.otpSecret || ""),
             assignedLink: String(claim?.updatedAcc?.link || ""),
@@ -4545,6 +4551,124 @@ app.put("/api/store-orders/:id", verifyToken, async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ error: "Không thể cập nhật đơn web." });
+  }
+});
+
+app.post("/api/store-orders/admin", verifyToken, async (req, res) => {
+  try {
+    const packageCode = String(req.body?.packageCode || "").trim();
+    const fullName = String(req.body?.fullName || "").trim();
+    const phone = String(req.body?.phone || "").trim();
+    const email = String(req.body?.email || "").trim();
+    let password = String(req.body?.password || "").trim();
+    const phoneNormalized = normalizePhoneValue(phone);
+    const emailLower = normalizeEmailLower(email);
+    const packageConfig = STORE_PACKAGE_MAP[packageCode];
+
+    if (!["package1", "package2"].includes(packageCode) || !packageConfig?.automated) {
+      return res.status(400).json({ error: "Chỉ hỗ trợ tạo đơn tay cho Gói 1 hoặc Gói 2." });
+    }
+    if (!fullName) {
+      return res.status(400).json({ error: "Họ tên không được để trống." });
+    }
+    if (!phoneNormalized) {
+      return res.status(400).json({ error: "Số điện thoại không hợp lệ." });
+    }
+    if (!emailLower) {
+      return res.status(400).json({ error: "Email không hợp lệ." });
+    }
+
+    const [phoneUser, emailUser] = await Promise.all([
+      StoreUser.findOne({ phoneNormalized }),
+      StoreUser.findOne({ emailLower }),
+    ]);
+
+    if (
+      phoneUser &&
+      emailUser &&
+      String(phoneUser?.id || "").trim() !== String(emailUser?.id || "").trim()
+    ) {
+      return res.status(409).json({
+        error:
+          "SĐT và email đang thuộc về hai user web khác nhau. Hãy sửa dữ liệu trước khi tạo đơn.",
+      });
+    }
+
+    let user = phoneUser || emailUser || null;
+    let generatedPassword = "";
+    if (!user) {
+      if (!password) {
+        generatedPassword = createStoreManualPassword();
+        password = generatedPassword;
+      }
+      if (password.length < 6) {
+        return res.status(400).json({
+          error: "Mật khẩu user mới phải có ít nhất 6 ký tự.",
+        });
+      }
+      user = await StoreUser.create({
+        id: createStoreId("store_user"),
+        fullName,
+        phone,
+        phoneNormalized,
+        email,
+        emailLower,
+        passwordHash: await bcrypt.hash(password, 10),
+        authProviders: ["password"],
+      });
+    } else {
+      user.fullName = fullName;
+      user.phone = phone;
+      user.phoneNormalized = phoneNormalized;
+      user.email = email;
+      user.emailLower = emailLower;
+      if (password) {
+        if (password.length < 6) {
+          return res.status(400).json({
+            error: "Mật khẩu mới phải có ít nhất 6 ký tự.",
+          });
+        }
+        user.passwordHash = await bcrypt.hash(password, 10);
+        user.authProviders = upsertStringIntoList(user.authProviders, "password");
+      }
+      user.updatedAt = new Date().toISOString();
+      await user.save();
+    }
+
+    const nowIso = new Date().toISOString();
+    const order = await StoreOrder.create({
+      id: createStoreId("ord"),
+      userId: String(user.id || "").trim(),
+      packageCode,
+      packageName: packageConfig.name,
+      amount: Number(packageConfig.price || 0),
+      status: "paid",
+      paymentMethod: "admin_manual",
+      momoOrderId: "",
+      momoMessage: "Admin tạo đơn thủ công",
+      paidAt: nowIso,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    let fulfilledOrder = null;
+    try {
+      fulfilledOrder = await fulfillStoreOrder(order);
+    } catch (error) {
+      await StoreOrder.deleteOne({ id: String(order.id || "").trim() });
+      throw error;
+    }
+
+    return res.json({
+      success: true,
+      generatedPassword,
+      user: sanitizeStoreUserForAdmin(user),
+      order: sanitizeStoreOrderForAdmin(fulfilledOrder, user),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Không thể tạo đơn web thủ công.",
+    });
   }
 });
 
