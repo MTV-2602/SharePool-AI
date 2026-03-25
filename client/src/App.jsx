@@ -3382,6 +3382,60 @@ function App() {
     }, 4000);
   };
 
+  const focusChatgptAccountFromStoreOrder = (accountId, label = "") => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return;
+    const targetAccount = accounts.find(
+      (acc) => String(acc?.id || "").trim() === normalizedId,
+    );
+    const normalizedType =
+      String(targetAccount?.type || "unassigned").trim() || "unassigned";
+    const isTrackedMarketplaceAccount =
+      marketplaceTrackedAccountIds?.has(normalizedId);
+
+    setActiveTab("chatgpt");
+    setSoldPackage2ProviderFilter("all");
+    setChatgptCustomerFilter("all");
+
+    if (targetAccount) {
+      if (isTrackedMarketplaceAccount || isChatgptMarketWarehouse(targetAccount)) {
+        setGptSubTab("market");
+        setPackage2ShelfTab(isTrackedMarketplaceAccount ? "sold" : "all");
+      } else if (isChatgptShortDateWarehouse(targetAccount)) {
+        setGptSubTab("short");
+        setPackage2ShelfTab("all");
+      } else {
+        setGptSubTab("total");
+        setPackage2ShelfTab("all");
+        setChatgptTotalTypeTab(
+          ["package1", "package2", "unassigned"].includes(normalizedType)
+            ? normalizedType
+            : "all",
+        );
+      }
+    } else {
+      setGptSubTab("all");
+      setPackage2ShelfTab("all");
+      setChatgptTotalTypeTab("all");
+    }
+
+    if (label) {
+      setSearchQuery(String(label || "").trim());
+    }
+    setHighlightedChatgptAccountId(normalizedId);
+    setTimeout(() => {
+      const row = document.getElementById(`chatgpt-account-row-${normalizedId}`);
+      if (row) {
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 120);
+    setTimeout(() => {
+      setHighlightedChatgptAccountId((prev) =>
+        prev === normalizedId ? "" : prev,
+      );
+    }, 4000);
+  };
+
   const focusTeamAccountFromMarketplace = (accountId, label = "") => {
     const normalizedId = String(accountId || "").trim();
     if (!normalizedId) return;
@@ -4714,7 +4768,7 @@ function App() {
                           <button
                             type="button"
                             onClick={() =>
-                              focusChatgptAccountFromMarketplace(
+                              focusChatgptAccountFromStoreOrder(
                                 order.assignedAccountId,
                                 order.assignedUsername || order.id,
                               )
@@ -4984,7 +5038,7 @@ function App() {
                                             <button
                                               type="button"
                                               onClick={() =>
-                                                focusChatgptAccountFromMarketplace(
+                                                focusChatgptAccountFromStoreOrder(
                                                   order.assignedAccountId,
                                                   order.assignedUsername || order.id,
                                                 )
