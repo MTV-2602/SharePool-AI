@@ -540,6 +540,8 @@ const storeOrderSchema = new mongoose.Schema({
   momoResultCode: { type: Number, default: null },
   momoMessage: { type: String, default: "" },
   momoPayUrl: { type: String, default: "" },
+  momoDeepLink: { type: String, default: "" },
+  momoQrCodeUrl: { type: String, default: "" },
   payosOrderCode: { type: Number, default: null, index: true },
   payosPaymentLinkId: { type: String, default: "", index: true },
   payosCheckoutUrl: { type: String, default: "" },
@@ -1672,6 +1674,8 @@ const clearStoreMomoPaymentFields = () => ({
   momoResultCode: null,
   momoMessage: "",
   momoPayUrl: "",
+  momoDeepLink: "",
+  momoQrCodeUrl: "",
 });
 const clearStorePayosPaymentFields = () => ({
   payosOrderCode: null,
@@ -1980,6 +1984,8 @@ const sanitizeStoreOrder = (order) => {
         : Number(order.momoResultCode),
     momoMessage: String(order.momoMessage || ""),
     momoPayUrl: String(order.momoPayUrl || ""),
+    momoDeepLink: String(order.momoDeepLink || "").trim(),
+    momoQrCodeUrl: String(order.momoQrCodeUrl || "").trim(),
     payosOrderCode:
       order.payosOrderCode === null || order.payosOrderCode === undefined
         ? null
@@ -2060,6 +2066,8 @@ const sanitizeStoreOrderForAdmin = (order, user = null) => {
     paymentUrl: getStorePaymentUrl(order),
     paymentQrCode: String(order.payosQrCode || "").trim(),
     momoOrderId: String(order.momoOrderId || "").trim(),
+    momoDeepLink: String(order.momoDeepLink || "").trim(),
+    momoQrCodeUrl: String(order.momoQrCodeUrl || "").trim(),
     payosOrderCode:
       order.payosOrderCode === null || order.payosOrderCode === undefined
         ? null
@@ -4629,6 +4637,15 @@ const createMomoPaymentForStoreOrder = async (req, order) => {
         paymentMethod: STORE_PAYMENT_METHOD_MOMO,
         momoRequestId: requestId,
         momoPayUrl: String(data.payUrl || "").trim(),
+        momoDeepLink: String(
+          data.deeplink ||
+            data.deepLink ||
+            data.appLink ||
+            data.deeplinkMiniApp ||
+            data.universalLink ||
+            "",
+        ).trim(),
+        momoQrCodeUrl: String(data.qrCodeUrl || data.qrCode || "").trim(),
         ...clearStorePayosPaymentFields(),
         updatedAt: new Date().toISOString(),
       },

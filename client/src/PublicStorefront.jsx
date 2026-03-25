@@ -229,6 +229,7 @@ function PublicStorefront() {
   const [purchaseLoadingCode, setPurchaseLoadingCode] = useState("");
   const [reconcileLoadingOrderId, setReconcileLoadingOrderId] = useState("");
   const [paymentPickerPackageCode, setPaymentPickerPackageCode] = useState("");
+  const [paymentPreviewOrderId, setPaymentPreviewOrderId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
@@ -302,11 +303,12 @@ function PublicStorefront() {
     if (!currentToken) {
       setUser(null);
       setOrders([]);
-      return;
+      return { user: null, orders: [] };
     }
     const data = await apiRequest("/api/store/auth/me", { token: currentToken });
     setUser(data?.user || null);
     setOrders(Array.isArray(data?.orders) ? data.orders : []);
+    return data;
   };
 
   const loadOrders = async (currentToken = token) => {
@@ -765,22 +767,29 @@ function PublicStorefront() {
       if (!payUrl) {
         throw new Error("Hệ thống không trả về liên kết thanh toán.");
       }
-      if (paymentMethod === STORE_PAYMENT_METHOD_PAYOS) {
-        await loadSession(token);
-        setMessage(
-          "Đã tạo mã QR MB Bank. Quét mã ngay bên dưới hoặc bấm tiếp tục thanh toán nếu cần.",
-        );
-        if (typeof window !== "undefined") {
-          window.requestAnimationFrame(() => {
-            ordersSectionRef.current?.scrollIntoView({
-              behavior: "smooth",
-              block: "start",
-            });
+      const sessionData = await loadSession(token);
+      const latestOrders = Array.isArray(sessionData?.orders)
+        ? sessionData.orders
+        : [];
+      const previewOrderId = String(data?.order?.id || "").trim();
+      const previewOrder =
+        latestOrders.find((item) => String(item?.id || "").trim() === previewOrderId) ||
+        data?.order ||
+        null;
+      setPaymentPreviewOrderId(String(previewOrder?.id || previewOrderId || "").trim());
+      setMessage(
+        paymentMethod === STORE_PAYMENT_METHOD_PAYOS
+          ? "Đã tạo mã QR ngân hàng. Quét mã ngay trong popup để thanh toán."
+          : "Đã tạo thanh toán MoMo. Hoàn tất ngay trong popup này.",
+      );
+      if (typeof window !== "undefined") {
+        window.requestAnimationFrame(() => {
+          ordersSectionRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
           });
-        }
-        return data;
+        });
       }
-      window.location.href = payUrl;
       return data;
     } catch (paymentError) {
       try {
@@ -862,10 +871,17 @@ function PublicStorefront() {
       return;
     }
     setPaymentPickerPackageCode(String(pkg?.code || "").trim());
+    const existingPendingOrder = orders.find(
+      (item) =>
+        String(item?.packageCode || "").trim() === String(pkg?.code || "").trim() &&
+        isPendingStorePayment(item?.status),
+    );
+    setPaymentPreviewOrderId(String(existingPendingOrder?.id || "").trim());
   };
 
   const closePaymentPicker = () => {
     setPaymentPickerPackageCode("");
+    setPaymentPreviewOrderId("");
   };
 
   const paymentPickerPackage = useMemo(
@@ -875,6 +891,16 @@ function PublicStorefront() {
       ) || null,
     [config.packages, paymentPickerPackageCode],
   );
+
+  const paymentPreviewOrder = useMemo(() => {
+    const previewOrderId = String(paymentPreviewOrderId || "").trim();
+    if (previewOrderId) {
+      return (
+        orders.find((item) => String(item?.id || "").trim() === previewOrderId) || null
+      );
+    }
+    return null;
+  }, [orders, paymentPreviewOrderId]);
 
   const handlePurchaseButtonClick = async (pkg, paymentMethod) => {
     if (
@@ -912,7 +938,6 @@ function PublicStorefront() {
         return;
       }
       await handleCreatePayment(latestPackage.code, paymentMethod);
-      setPaymentPickerPackageCode("");
     } finally {
       purchaseLockRef.current = false;
       setPurchaseLoadingCode("");
@@ -1602,6 +1627,157 @@ function PublicStorefront() {
                 },
               )}
             </div>
+
+            {paymentPreviewOrder ? (
+              <div className="mt-6 rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-cyan-400">
+                      Thanh toán hiện tại
+                    </p>
+                    <h4 className="mt-2 text-xl font-semibold text-white">
+                      {paymentPreviewOrder.packageName}
+                    </h4>
+                    <p className="mt-2 text-sm text-slate-300">
+                      {paymentPreviewOrder.paymentMethodLabel || getPaymentMethodLabel(paymentPreviewOrder.paymentMethod)} • {formatStatusLabel(paymentPreviewOrder.status)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleReconcileOrderPayment(paymentPreviewOrder.id)}
+                    disabled={loading}
+                    className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {reconcileLoadingOrderId === paymentPreviewOrder.id ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 size={14} className="animate-spin" />
+                        Đang kiểm tra...
+                      </span>
+                    ) : (
+                      "Kiểm tra thanh toán"
+                    )}
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-3">
+                  <div className="rounded-2xl bg-slate-950/70 p-3">
+                    <p className="text-slate-500">Mã thanh toán</p>
+                    <p className="mt-1 break-all font-semibold leading-6 text-white">
+                      {paymentPreviewOrder.paymentOrderId || "--"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-950/70 p-3">
+                    <p className="text-slate-500">Giá tiền</p>
+                    <p className="mt-1 font-semibold text-white">
+                      {formatMoney(paymentPreviewOrder.amount)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-950/70 p-3">
+                    <p className="text-slate-500">Hạn thanh toán</p>
+                    <p className="mt-1 break-words font-semibold leading-6 text-white">
+                      {paymentPreviewOrder.expiresAt
+                        ? formatDateTime(paymentPreviewOrder.expiresAt)
+                        : "--"}
+                    </p>
+                  </div>
+                </div>
+
+                {isPendingStorePayment(paymentPreviewOrder.status) &&
+                String(paymentPreviewOrder.paymentMethod || "").trim().toLowerCase() ===
+                  STORE_PAYMENT_METHOD_PAYOS ? (
+                  <div className="mt-4 flex flex-wrap items-start gap-5">
+                    {String(paymentPreviewOrder.paymentQrCode || "").trim() ? (
+                      <div className="rounded-2xl bg-white p-3 shadow-lg shadow-slate-950/20">
+                        <img
+                          src={buildQrImageUrl(paymentPreviewOrder.paymentQrCode, 240)}
+                          alt={`QR thanh toán ${paymentPreviewOrder.id}`}
+                          className="h-52 w-52 rounded-xl object-contain"
+                        />
+                      </div>
+                    ) : null}
+                    <div className="min-w-[220px] flex-1 space-y-3">
+                      <div>
+                        <p className="text-sm font-semibold text-cyan-300">Mã QR thanh toán</p>
+                        <p className="mt-1 text-sm text-slate-300">
+                          Quét mã bằng app ngân hàng để thanh toán.
+                        </p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {String(paymentPreviewOrder.paymentQrCode || "").trim() ? (
+                          <button
+                            onClick={() =>
+                              copyText(
+                                paymentPreviewOrder.paymentQrCode,
+                                "Đã sao chép mã QR thanh toán",
+                              )
+                            }
+                            className="rounded-2xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700"
+                          >
+                            Sao chép mã QR
+                          </button>
+                        ) : null}
+                        {paymentPreviewOrder.paymentUrl ? (
+                          <a
+                            href={paymentPreviewOrder.paymentUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-2xl bg-slate-800 px-4 py-3 text-center text-sm font-semibold text-slate-100 hover:bg-slate-700"
+                          >
+                            Mở trang thanh toán
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : isPendingStorePayment(paymentPreviewOrder.status) ? (
+                  <div className="mt-4 flex flex-wrap items-start gap-5">
+                    {String(paymentPreviewOrder.momoQrCodeUrl || "").trim() ? (
+                      <div className="rounded-2xl bg-white p-3 shadow-lg shadow-slate-950/20">
+                        <img
+                          src={paymentPreviewOrder.momoQrCodeUrl}
+                          alt={`QR MoMo ${paymentPreviewOrder.id}`}
+                          className="h-52 w-52 rounded-xl object-contain"
+                        />
+                      </div>
+                    ) : null}
+                    <div className="min-w-[220px] flex-1 space-y-3">
+                      <div>
+                        <p className="text-sm font-semibold text-cyan-300">Thanh toán MoMo</p>
+                        <p className="mt-1 text-sm text-slate-300">
+                          {String(paymentPreviewOrder.momoQrCodeUrl || "").trim()
+                            ? "Quét mã hoặc mở app MoMo để thanh toán."
+                            : "Bấm mở MoMo để hoàn tất thanh toán."}
+                        </p>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {paymentPreviewOrder.momoDeepLink ? (
+                          <a
+                            href={paymentPreviewOrder.momoDeepLink}
+                            className="rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 text-center text-sm font-semibold text-white"
+                          >
+                            Mở MoMo
+                          </a>
+                        ) : null}
+                        {paymentPreviewOrder.paymentUrl ? (
+                          <a
+                            href={paymentPreviewOrder.paymentUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-2xl bg-slate-800 px-4 py-3 text-center text-sm font-semibold text-slate-100 hover:bg-slate-700"
+                          >
+                            Mở trang thanh toán
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+                    Đơn này đã xử lý xong. Bạn có thể đóng popup hoặc kiểm tra lại trạng thái nếu cần.
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
