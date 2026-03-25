@@ -4664,6 +4664,69 @@ function App() {
     });
     return grouped;
   })();
+  const getStoreOrderIdentityForAccountUser = (acc = {}, user = null) => {
+    const accountId = String(acc?.id || "").trim();
+    if (!accountId || !user) return null;
+    const userNameKey = toNonAccentVietnamese(
+      String(getUserName(user) || "").trim().toLowerCase(),
+    );
+    const relatedOrders = (Array.isArray(storeOrders) ? storeOrders : [])
+      .filter((order) => {
+        const relatedAccountIds = [
+          order?.assignedAccountId,
+          order?.rootAssignedAccountId,
+          order?.reservedAccountId,
+        ]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean);
+        if (!relatedAccountIds.includes(accountId)) return false;
+        if (!userNameKey) return true;
+        const orderNameKeys = [
+          order?.assignedCustomerName,
+          order?.customerName,
+          order?.customerEmail,
+          order?.customerPhone,
+        ]
+          .map((value) =>
+            toNonAccentVietnamese(String(value || "").trim().toLowerCase()),
+          )
+          .filter(Boolean);
+        return orderNameKeys.includes(userNameKey);
+      })
+      .sort((a, b) => {
+        const aTime = new Date(
+          a?.updatedAt || a?.fulfilledAt || a?.paidAt || a?.createdAt || 0,
+        ).getTime();
+        const bTime = new Date(
+          b?.updatedAt || b?.fulfilledAt || b?.paidAt || b?.createdAt || 0,
+        ).getTime();
+        return bTime - aTime;
+      });
+    const matchedOrder =
+      relatedOrders[0] ||
+      (Array.isArray(storeOrders) ? storeOrders : [])
+        .filter((order) => String(order?.assignedAccountId || "").trim() === accountId)
+        .sort((a, b) => {
+          const aTime = new Date(
+            a?.updatedAt || a?.fulfilledAt || a?.paidAt || a?.createdAt || 0,
+          ).getTime();
+          const bTime = new Date(
+            b?.updatedAt || b?.fulfilledAt || b?.paidAt || b?.createdAt || 0,
+          ).getTime();
+          return bTime - aTime;
+        })[0];
+    if (!matchedOrder) return null;
+    return {
+      orderId: String(matchedOrder?.id || "").trim(),
+      contact: String(
+        matchedOrder?.customerPhone ||
+          matchedOrder?.customerEmail ||
+          matchedOrder?.assignedCustomerName ||
+          "",
+      ).trim(),
+      statusLabel: getStoreOrderStatusLabel(matchedOrder?.status),
+    };
+  };
   const storeManualOrderSourceSummary = (() => {
     const totalWarehouseAccounts = (Array.isArray(accounts) ? accounts : []).filter(
       (acc) => normalizePackage2Shelf(acc?.package2Shelf) === "none",
@@ -6961,6 +7024,8 @@ function App() {
                                     const dateStr = getUserDate(u);
                                     const daysUsed = getDaysUsed(u);
                                     const daysRemaining = getDaysRemaining(u);
+                                    const linkedStoreOrder =
+                                      getStoreOrderIdentityForAccountUser(acc, u);
 
                                     // EXPIRY LOGIC (dựa trên ngày CÒN LẠI, không phải đã dùng)
                                     const isExpired =
@@ -6988,6 +7053,26 @@ function App() {
                                             )}
                                             👤 {name}
                                           </span>
+                                          {linkedStoreOrder ? (
+                                            <div className="mt-1 flex max-w-[220px] flex-wrap items-center gap-1 text-[10px] leading-relaxed">
+                                              <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                                {linkedStoreOrder.orderId || "Đơn web"}
+                                              </span>
+                                              {linkedStoreOrder.contact ? (
+                                                <span
+                                                  className="break-all text-cyan-100"
+                                                  title={linkedStoreOrder.contact}
+                                                >
+                                                  {linkedStoreOrder.contact}
+                                                </span>
+                                              ) : null}
+                                              {linkedStoreOrder.statusLabel ? (
+                                                <span className="text-cyan-300/80">
+                                                  · {linkedStoreOrder.statusLabel}
+                                                </span>
+                                              ) : null}
+                                            </div>
+                                          ) : null}
                                           {dateStr ? (
                                             <span className="text-[10px] text-slate-400 flex items-center gap-1 flex-wrap">
                                               <Calendar size={10} /> {dateStr}
