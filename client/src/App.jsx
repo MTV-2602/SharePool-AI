@@ -1,6 +1,5 @@
 ﻿import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
-import { useMemo } from "react";
 import {
   Trash2,
   UserPlus,
@@ -1557,6 +1556,49 @@ function App() {
   }, [teamAccounts]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const handleStorageSync = (event) => {
+      if (
+        event?.key &&
+        ![
+          ADMIN_TOKEN_STORAGE_KEY,
+          ADMIN_TOKEN_EXPIRES_AT_STORAGE_KEY,
+          STORE_TOKEN_STORAGE_KEY,
+          SESSION_ROLE_STORAGE_KEY,
+        ].includes(event.key)
+      ) {
+        return;
+      }
+
+      const token = localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+      const expiresAt = localStorage.getItem(ADMIN_TOKEN_EXPIRES_AT_STORAGE_KEY);
+      const storeToken = localStorage.getItem(STORE_TOKEN_STORAGE_KEY);
+      const sessionRole = readStoredSessionRole();
+      const expiryTime = expiresAt ? new Date(expiresAt).getTime() : 0;
+      const hasValidAdminSession =
+        !!token &&
+        !!expiresAt &&
+        Number.isFinite(expiryTime) &&
+        expiryTime > Date.now();
+
+      if (sessionRole === "user" && storeToken) {
+        clearStoredAdminSession();
+        setIsAuthenticated(false);
+        window.location.replace("/store");
+        return;
+      }
+
+      if (!hasValidAdminSession) {
+        setIsAuthenticated(false);
+      }
+    };
+
+    window.addEventListener("storage", handleStorageSync);
+    return () => window.removeEventListener("storage", handleStorageSync);
+  }, []);
+
+  useEffect(() => {
     setChatgptMarketplaceOrderPage(1);
   }, [searchQuery, marketplaceOrderQuery, marketplaceOrderProviderFilter]);
 
@@ -2283,6 +2325,35 @@ function App() {
       setLoadingStates((prev) => ({ ...prev, fetchStoreOrderOtp: "" }));
     }
   };
+
+  useEffect(() => {
+    if (activeTab !== "chatgpt" || !expandedStoreUserId) return;
+    const visibleOrders = (storeOrders || []).filter(
+      (order) =>
+        String(order?.userId || "").trim() === expandedStoreUserId &&
+        String(order?.packageCode || "").trim() === "package2" &&
+        String(order?.status || "").trim() === "fulfilled",
+    );
+    visibleOrders.forEach((order) => {
+      const orderId = String(order?.id || "").trim();
+      if (!orderId) return;
+      const orderOtp = storeOrderOtpResults[orderId] || {};
+      const otpSecondsLeft = getStoreOrderOtpSecondsRemaining(
+        orderOtp,
+        storeOrderOtpNowMs,
+      );
+      if (otpSecondsLeft > 0) return;
+      if (loadingStates.fetchStoreOrderOtp === orderId) return;
+      handleFetchStoreOrderOtp(order, { silent: true });
+    });
+  }, [
+    activeTab,
+    expandedStoreUserId,
+    storeOrders,
+    storeOrderOtpResults,
+    storeOrderOtpNowMs,
+    loadingStates.fetchStoreOrderOtp,
+  ]);
 
   const handleCreateStoreManualOrder = async (e) => {
     e.preventDefault();
@@ -4575,7 +4646,7 @@ function App() {
     });
     return grouped;
   })();
-  const storeManualOrderSourceSummary = useMemo(() => {
+  const storeManualOrderSourceSummary = (() => {
     const totalWarehouseAccounts = (Array.isArray(accounts) ? accounts : []).filter(
       (acc) => normalizePackage2Shelf(acc?.package2Shelf) === "none",
     );
@@ -4619,7 +4690,7 @@ function App() {
         eligibleSharedSlots + eligibleConvertibleAccounts.length * 3,
       estimatedPackage2Supply: eligibleConvertibleAccounts.length,
     };
-  }, [accounts]);
+  })();
   const storeManualOrderWarehouseHint =
     String(storeManualOrderForm?.packageCode || "").trim() === "package2"
       ? {
@@ -4650,34 +4721,6 @@ function App() {
     (currentTeamMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE,
     currentTeamMarketplaceOrderPage * MARKETPLACE_ORDER_PAGE_SIZE,
   );
-  useEffect(() => {
-    if (activeTab !== "chatgpt" || !expandedStoreUserId) return;
-    const visibleOrders = (storeOrders || []).filter(
-      (order) =>
-        String(order?.userId || "").trim() === expandedStoreUserId &&
-        String(order?.packageCode || "").trim() === "package2" &&
-        String(order?.status || "").trim() === "fulfilled",
-    );
-    visibleOrders.forEach((order) => {
-      const orderId = String(order?.id || "").trim();
-      if (!orderId) return;
-      const orderOtp = storeOrderOtpResults[orderId] || {};
-      const otpSecondsLeft = getStoreOrderOtpSecondsRemaining(
-        orderOtp,
-        storeOrderOtpNowMs,
-      );
-      if (otpSecondsLeft > 0) return;
-      if (loadingStates.fetchStoreOrderOtp === orderId) return;
-      handleFetchStoreOrderOtp(order, { silent: true });
-    });
-  }, [
-    activeTab,
-    expandedStoreUserId,
-    storeOrders,
-    storeOrderOtpResults,
-    storeOrderOtpNowMs,
-    loadingStates.fetchStoreOrderOtp,
-  ]);
   const chatgptMarketplaceVisibleStart =
     filteredChatgptMarketplaceOrders.length > 0
       ? (currentChatgptMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE + 1

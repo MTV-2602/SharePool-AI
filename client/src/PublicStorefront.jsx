@@ -314,6 +314,48 @@ function PublicStorefront() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const handleStorageSync = (event) => {
+      if (
+        event?.key &&
+        ![
+          STORE_TOKEN_KEY,
+          ADMIN_TOKEN_KEY,
+          ADMIN_TOKEN_EXPIRES_AT_KEY,
+          SESSION_ROLE_KEY,
+        ].includes(event.key)
+      ) {
+        return;
+      }
+
+      const nextStoreToken = String(
+        localStorage.getItem(STORE_TOKEN_KEY) || "",
+      ).trim();
+      const sessionRole = readStoredSessionRole();
+      const adminSessionActive = hasValidStoredAdminSession();
+
+      if (sessionRole === "admin" && adminSessionActive) {
+        clearStoredStoreSession();
+        setSessionToken("");
+        setUser(null);
+        setOrders([]);
+        window.location.replace("/");
+        return;
+      }
+
+      if (!nextStoreToken) {
+        setSessionToken("");
+        setUser(null);
+        setOrders([]);
+      }
+    };
+
+    window.addEventListener("storage", handleStorageSync);
+    return () => window.removeEventListener("storage", handleStorageSync);
+  }, []);
+
+  useEffect(() => {
     if (route.view !== "payment-result" || !route.orderId || !token) return;
     let cancelled = false;
     (async () => {
