@@ -4796,14 +4796,17 @@ function App() {
           return bTime - aTime;
         })[0];
     if (!matchedOrder) return null;
+    const orderId = String(matchedOrder?.id || "").trim();
+    const customerName = String(
+      matchedOrder?.assignedCustomerName || matchedOrder?.customerName || "",
+    ).trim();
+    const contact = String(
+      matchedOrder?.customerPhone || matchedOrder?.customerEmail || "",
+    ).trim();
     return {
-      orderId: String(matchedOrder?.id || "").trim(),
-      contact: String(
-        matchedOrder?.customerPhone ||
-          matchedOrder?.customerEmail ||
-          matchedOrder?.assignedCustomerName ||
-          "",
-      ).trim(),
+      orderId,
+      customerName,
+      contact,
       statusLabel: getStoreOrderStatusLabel(matchedOrder?.status),
     };
   };
@@ -7142,6 +7145,13 @@ function App() {
                                     const daysRemaining = getDaysRemaining(u);
                                     const linkedStoreOrder =
                                       getStoreOrderIdentityForAccountUser(acc, u);
+                                    const displayUserTitle =
+                                      linkedStoreOrder?.orderId || name;
+                                    const displayUserSubtitle = linkedStoreOrder
+                                      ? linkedStoreOrder.customerName ||
+                                        linkedStoreOrder.contact ||
+                                        ""
+                                      : "";
 
                                     // EXPIRY LOGIC (dựa trên ngày CÒN LẠI, không phải đã dùng)
                                     const isExpired =
@@ -7158,8 +7168,8 @@ function App() {
                                       >
                                         <div className="flex flex-col">
                                           <span
-                                            className={`font-bold truncate max-w-[120px] flex items-center gap-1 ${isExpired ? "text-red-500" : isNearExpiry ? "text-yellow-400" : "text-white"}`}
-                                            title={name}
+                                            className={`font-bold truncate max-w-[180px] flex items-center gap-1 ${isExpired ? "text-red-500" : isNearExpiry ? "text-yellow-400" : "text-white"}`}
+                                            title={displayUserTitle}
                                           >
                                             {isExpired && (
                                               <AlertCircle size={12} />
@@ -7167,14 +7177,14 @@ function App() {
                                             {isNearExpiry && (
                                               <AlertTriangle size={12} />
                                             )}
-                                            👤 {name}
+                                            👤 {displayUserTitle}
                                           </span>
-                                          {linkedStoreOrder?.orderId ? (
+                                          {displayUserSubtitle ? (
                                             <div
-                                              className="mt-1 max-w-[220px] truncate text-[10px] font-bold text-cyan-200"
-                                              title={linkedStoreOrder.orderId}
+                                              className="mt-1 max-w-[220px] truncate text-[10px] font-semibold text-cyan-200"
+                                              title={displayUserSubtitle}
                                             >
-                                              {linkedStoreOrder.orderId}
+                                              {displayUserSubtitle}
                                             </div>
                                           ) : null}
                                           {dateStr ? (
@@ -7403,6 +7413,22 @@ function App() {
                                     trackedMarketplaceEntry?.label ||
                                     trackedMarketplaceSummary?.currentUsername ||
                                     trackedMarketplaceSummary?.soldUsername ||
+                                    "",
+                                ).trim();
+                                const linkedStoreOrderForDisplayUser =
+                                  displayMarketplaceUser
+                                    ? getStoreOrderIdentityForAccountUser(
+                                        acc,
+                                        displayMarketplaceUser,
+                                      )
+                                    : null;
+                                const displayMarketplacePrimaryLabel = String(
+                                  linkedStoreOrderForDisplayUser?.orderId ||
+                                    displayMarketplaceName,
+                                ).trim();
+                                const displayMarketplaceSecondaryLabel = String(
+                                  linkedStoreOrderForDisplayUser?.customerName ||
+                                    linkedStoreOrderForDisplayUser?.contact ||
                                     "",
                                 ).trim();
                                 const soldMarketplaceUsername = String(
@@ -7839,8 +7865,13 @@ function App() {
                                                   className="text-yellow-500"
                                                 />
                                               )}
-                                              👤 {getUserName(displayMarketplaceUser)}
+                                              👤 {displayMarketplacePrimaryLabel}
                                             </span>
+                                            {displayMarketplaceSecondaryLabel ? (
+                                              <span className="text-[10px] ml-6 block font-semibold text-cyan-200">
+                                                {displayMarketplaceSecondaryLabel}
+                                              </span>
+                                            ) : null}
                                             <span
                                               className={`text-[10px] block ml-6 ${isExpired
                                                 ? "text-red-300"
