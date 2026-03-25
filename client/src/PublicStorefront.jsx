@@ -1078,22 +1078,6 @@ function PublicStorefront() {
         </div>
         <p className="mt-3 text-sm text-slate-400">Mã để đăng nhập. Còn {Math.max(0, Number(order.package1UsageLeft || 0))} lần sử dụng.</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            onClick={() =>
-              copyText(
-                buildQuickCopyPayload({
-                  username: order.assignedUsername,
-                  password: order.assignedPassword,
-                  otpCode: otpSecondsLeft > 0 ? package1OtpDisplay : "",
-                  isPackage1: true,
-                }),
-                "Đã sao chép nhanh thông tin đăng nhập",
-              )
-            }
-            className="rounded-2xl bg-slate-800 px-4 py-3 font-semibold text-slate-100 hover:bg-slate-700"
-          >
-            Copy nhanh
-          </button>
           {otpSecondsLeft > 0 ? (
             <button
               onClick={() => copyText(package1OtpDisplay, "Đã sao chép mã đăng nhập")}
