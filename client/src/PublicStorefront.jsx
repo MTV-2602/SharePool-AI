@@ -852,6 +852,13 @@ function PublicStorefront() {
   const renderPackage1Order = (order) => {
     const otp = otpResults[order.id] || {};
     const otpSecondsLeft = getOtpSecondsRemaining(otp, otpNowMs);
+    const package1OtpExpired = Boolean(otp.code) && otpSecondsLeft <= 0;
+    const package1OtpDisplay = otpSecondsLeft > 0 ? otp.code || "------" : "------";
+    const package1OtpStatusText = otpSecondsLeft > 0
+      ? `Hết hạn sau ${otpSecondsLeft}s`
+      : package1OtpExpired
+        ? "Mã đã hết hạn"
+        : "Bấm Lấy mã để hiện OTP 6 số";
     return (
       <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
         <div className="space-y-3">
@@ -879,8 +886,8 @@ function PublicStorefront() {
           <button onClick={() => handleGeneratePackage1Code(order)} disabled={loading || order.package1UsageLeft <= 0} className="rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500 disabled:opacity-50">
             {order.package1UsageLeft > 0 ? "Lấy mã" : "Đã hết lượt"}
           </button>
-          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-2xl font-bold tracking-[0.3em] text-emerald-300">{otp.code || "------"}</div>
-          <span className="text-sm text-slate-400">{otpSecondsLeft > 0 ? `Hết hạn sau ${otpSecondsLeft}s` : "OTP hiển thị 6 số"}</span>
+          <div className={`rounded-2xl px-4 py-3 text-2xl font-bold tracking-[0.3em] ${otpSecondsLeft > 0 ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border border-slate-700 bg-slate-900 text-slate-500"}`}>{package1OtpDisplay}</div>
+          <span className={`text-sm ${package1OtpExpired ? "text-amber-300" : "text-slate-400"}`}>{package1OtpStatusText}</span>
         </div>
       </div>
     );
