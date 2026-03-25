@@ -1454,6 +1454,23 @@ const buildStorePackage1UsageLeft = (order = {}) =>
     Number(order?.package1MaxUsage || STORE_PACKAGE1_MAX_OTP_USES) -
       Number(order?.package1UsedCount || 0),
   );
+const resolveStoreOrderOtpSecret = async (order = {}) => {
+  const packageCode = String(order?.packageCode || "").trim().toLowerCase();
+  const assignedAccountId = String(
+    order?.assignedAccountId || order?.rootAssignedAccountId || "",
+  ).trim();
+  let otpSecret =
+    packageCode === "package2"
+      ? String(order?.assignedOtpSecret || "").trim()
+      : "";
+  if (!otpSecret && assignedAccountId) {
+    const account = await Account.findOne({ id: assignedAccountId })
+      .select("otpSecret")
+      .lean();
+    otpSecret = String(account?.otpSecret || "").trim();
+  }
+  return otpSecret;
+};
 const STORE_PENDING_PAYMENT_STATUSES = ["pending_payment", "awaiting_payment"];
 const STORE_HIDDEN_ORDER_STATUSES = new Set(["payment_failed", "payment_expired"]);
 const STORE_IMMEDIATE_DELETE_ORDER_STATUSES = [
@@ -4551,6 +4568,46 @@ app.put("/api/store-orders/:id", verifyToken, async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ error: "Không thể cập nhật đơn web." });
+  }
+});
+
+app.post("/api/store-orders/:id/otp", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiếu ID đơn web." });
+    }
+
+    const order = await StoreOrder.findOne({ id });
+    if (!order) {
+      return res.status(404).json({ error: "Không tìm thấy đơn web." });
+    }
+
+    const assignedAccountId = String(
+      order?.assignedAccountId || order?.rootAssignedAccountId || "",
+    ).trim();
+    if (!assignedAccountId) {
+      return res.status(400).json({
+        error: "Đơn này chưa có nick để lấy mã 2FA.",
+      });
+    }
+
+    const otpSecret = await resolveStoreOrderOtpSecret(order);
+    if (!otpSecret) {
+      return res.status(400).json({
+        error: "Nick của đơn này chưa có mã 2FA để lấy nhanh.",
+      });
+    }
+
+    const otp = generateTotpCode(otpSecret);
+    return res.json({
+      success: true,
+      packageCode: String(order?.packageCode || "").trim(),
+      code: otp.code,
+      expiresIn: otp.expiresIn,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Không thể lấy mã 2FA nhanh." });
   }
 });
 

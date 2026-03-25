@@ -177,6 +177,19 @@ const normalizeMarketplaceProvider = (value, fallback = "datammo") => {
 };
 const getMarketplaceProviderLabel = (value) =>
   normalizeMarketplaceProvider(value) === "shopmini" ? "Shopmini" : "Datammo";
+const buildStoreOrderOtpState = ({ code = "", expiresIn = 0 } = {}) => {
+  const normalizedExpiresIn = Number(expiresIn || 0);
+  return {
+    code: String(code || ""),
+    expiresAtMs:
+      normalizedExpiresIn > 0 ? Date.now() + normalizedExpiresIn * 1000 : 0,
+  };
+};
+const getStoreOrderOtpSecondsRemaining = (otp = {}, nowMs = Date.now()) => {
+  const expiresAtMs = Number(otp?.expiresAtMs || 0);
+  if (!expiresAtMs) return 0;
+  return Math.max(0, Math.ceil((expiresAtMs - nowMs) / 1000));
+};
 const normalizeStoreOrderStatus = (value) =>
   String(value || "").trim().toLowerCase();
 const getStoreOrderStatusLabel = (value) => {
@@ -1224,6 +1237,7 @@ function App() {
     createStoreManualOrder: false,
     deleteStoreUser: "",
     deleteStoreOrder: "",
+    fetchStoreOrderOtp: "",
     deleteMarketplaceOrder: {},
     teamMode: {},
     changeTeamWarehouse: {},
@@ -1303,6 +1317,8 @@ function App() {
   const [recentDatammoOrders, setRecentDatammoOrders] = useState([]);
   const [recentStoreOrders, setRecentStoreOrders] = useState([]);
   const [storeOrders, setStoreOrders] = useState([]);
+  const [storeOrderOtpResults, setStoreOrderOtpResults] = useState({});
+  const [storeOrderOtpNowMs, setStoreOrderOtpNowMs] = useState(Date.now());
 
   // User Input Modal
   const [showUserModal, setShowUserModal] = useState(false);
@@ -1350,6 +1366,11 @@ function App() {
     package2Shelf: "none",
     note: "",
   });
+
+  useEffect(() => {
+    const interval = setInterval(() => setStoreOrderOtpNowMs(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const refreshApiOverlay = () => {
     setApiOverlay(buildApiOverlayState(apiRequestsRef.current));
@@ -2132,6 +2153,36 @@ function App() {
     }
   };
 
+  const handleFetchStoreOrderOtp = async (order = {}) => {
+    const orderId = String(order?.id || "").trim();
+    if (!orderId) {
+      showAlert("Lỗi", "Thiếu ID đơn web.", "error");
+      return;
+    }
+    setLoadingStates((prev) => ({ ...prev, fetchStoreOrderOtp: orderId }));
+    try {
+      const response = await axios.post(`/api/store-orders/${orderId}/otp`);
+      const data = response?.data || {};
+      setStoreOrderOtpResults((prev) => ({
+        ...prev,
+        [orderId]: buildStoreOrderOtpState({
+          code: data?.code,
+          expiresIn: Number(data?.expiresIn || 0),
+        }),
+      }));
+      setToastMessage("Đã lấy mã 2FA nhanh");
+      setTimeout(() => setToastMessage(""), 2000);
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể lấy mã 2FA nhanh của đơn web."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, fetchStoreOrderOtp: "" }));
+    }
+  };
+
   const handleCreateStoreManualOrder = async (e) => {
     e.preventDefault();
     const fullName = String(storeManualOrderForm.fullName || "").trim();
@@ -2241,6 +2292,11 @@ function App() {
         setLoadingStates((prev) => ({ ...prev, deleteStoreOrder: orderId }));
         try {
           const response = await axios.delete(`/api/store-orders/${orderId}`);
+          setStoreOrderOtpResults((prev) => {
+            const next = { ...prev };
+            delete next[orderId];
+            return next;
+          });
           await fetchData();
           broadcastDataChange();
           const diagnosticsMessage = buildAccountTraceAlertMessage(
@@ -5066,7 +5122,26 @@ function App() {
                                 </div>
                               ) : (
                                 <div className="mt-4 space-y-3">
-                                  {userOrders.map((order) => (
+                                  {userOrders.map((order) => {
+                                    const orderId = String(order?.id || "").trim();
+                                    const isPackage1 =
+                                      String(order?.packageCode || "").trim() === "package1";
+                                    const orderOtp = storeOrderOtpResults[orderId] || {};
+                                    const otpSecondsLeft = getStoreOrderOtpSecondsRemaining(
+                                      orderOtp,
+                                      storeOrderOtpNowMs,
+                                    );
+                                    const otpExpired = Boolean(orderOtp?.code) && otpSecondsLeft <= 0;
+                                    const otpDisplay =
+                                      otpSecondsLeft > 0 ? orderOtp?.code || "------" : "------";
+                                    const otpStatusText = otpSecondsLeft > 0
+                                      ? `Hết hạn sau ${otpSecondsLeft}s`
+                                      : otpExpired
+                                        ? "Mã đã hết hạn"
+                                        : isPackage1
+                                          ? "Bấm Lấy mã OTP để xem 6 số nhanh"
+                                          : "Bấm Lấy mã 2FA để hiện mã đăng nhập";
+                                    return (
                                     <div
                                       key={buildStoreOrderKey(order)}
                                       className="rounded-xl border border-slate-800 bg-slate-950/70 p-4"
@@ -5179,66 +5254,151 @@ function App() {
                                         </div>
                                       </div>
 
-                                      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                      <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(300px,1fr)_minmax(320px,1fr)]">
                                         <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-3">
                                           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                                            Trace DB / Liên kết nội bộ
+                                            Thông tin giao cho khách
                                           </div>
-                                          <div className="mt-2 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                                          <div className="mt-2 grid gap-2 text-xs text-slate-300">
                                             {[
-                                              ["User ID", order?.userId || "--"],
-                                              ["MoMo order", order?.momoOrderId || "--"],
-                                              ["Reservation", order?.reservationType || "--"],
-                                              ["Reserved acc", order?.reservedAccountId || "--"],
-                                              ["Assigned acc", order?.assignedAccountId || "--"],
-                                              ["Acc gốc", order?.rootAssignedAccountId || "--"],
-                                              ["Loại acc", order?.assignedType || "--"],
-                                              ["Warranty", String(Number(order?.warrantyCount || 0))],
+                                              ["Tài khoản", order?.assignedUsername || "--"],
+                                              ["Mật khẩu", order?.assignedPassword || "--"],
+                                              ["Link", order?.assignedLink || "--"],
                                             ].map(([label, value]) => (
                                               <div
-                                                key={`${buildStoreOrderKey(order)}-${label}`}
+                                                key={`${buildStoreOrderKey(order)}-delivery-${label}`}
                                                 className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2"
                                               >
                                                 <div className="uppercase tracking-[0.16em] text-[10px] text-slate-500">
                                                   {label}
                                                 </div>
-                                                <div className="mt-1 break-all font-medium text-slate-100">
-                                                  {value || "--"}
+                                                <div className="mt-1 flex items-center gap-2">
+                                                  <div className="min-w-0 flex-1 break-all font-medium text-slate-100">
+                                                    {value || "--"}
+                                                  </div>
+                                                  {value && value !== "--" ? (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleCopy(value, `Đã copy ${label}`)}
+                                                      className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1.5 text-[11px] font-bold text-slate-100 hover:bg-slate-700 transition-colors"
+                                                    >
+                                                      <Copy size={12} />
+                                                      Copy
+                                                    </button>
+                                                  ) : null}
                                                 </div>
                                               </div>
                                             ))}
                                           </div>
                                         </div>
 
-                                        <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-3">
-                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                                            Thông tin admin nhìn thấy
+                                        <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-3">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-cyan-300">
+                                            {isPackage1 ? "Lấy mã OTP nhanh" : "Lấy mã 2FA nhanh"}
                                           </div>
-                                          <div className="mt-2 grid gap-2 text-xs text-slate-300">
-                                            {[
-                                              ["Username", order?.assignedUsername || "--"],
-                                              ["Mật khẩu", order?.assignedPassword || "--"],
-                                              ["2FA", order?.assignedOtpSecret || "--"],
-                                              ["Link", order?.assignedLink || "--"],
-                                              ["Khách gắn vào nick", order?.assignedCustomerName || "--"],
-                                            ].map(([label, value]) => (
-                                              <div
-                                                key={`${buildStoreOrderKey(order)}-visible-${label}`}
-                                                className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2"
-                                              >
-                                                <div className="uppercase tracking-[0.16em] text-[10px] text-slate-500">
-                                                  {label}
-                                                </div>
-                                                <div className="mt-1 break-all font-medium text-slate-100">
-                                                  {value || "--"}
-                                                </div>
-                                              </div>
-                                            ))}
+                                          <div className="mt-2 text-sm text-slate-300">
+                                            {isPackage1
+                                              ? "Bấm nút để xem nhanh OTP 6 số hỗ trợ khách, không cần mở secret."
+                                              : "Bấm nút để hiện ngay mã 2FA đang dùng, không cần copy secret đi chỗ khác."}
+                                          </div>
+                                          <div className="mt-3 flex flex-wrap items-center gap-3">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleFetchStoreOrderOtp(order)}
+                                              disabled={loadingStates.fetchStoreOrderOtp === orderId}
+                                              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-bold text-white hover:bg-cyan-500 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              {loadingStates.fetchStoreOrderOtp === orderId ? (
+                                                <Loader2 size={16} className="animate-spin" />
+                                              ) : (
+                                                <RotateCw size={16} />
+                                              )}
+                                              {isPackage1 ? "Lấy mã OTP" : "Lấy mã 2FA"}
+                                            </button>
+                                            <div className={`rounded-2xl px-4 py-3 text-2xl font-bold tracking-[0.3em] ${otpSecondsLeft > 0 ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border border-slate-700 bg-slate-900 text-slate-500"}`}>
+                                              {otpDisplay}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleCopy(otpDisplay, "Đã copy mã OTP")}
+                                              disabled={otpSecondsLeft <= 0}
+                                              className="inline-flex items-center gap-1 rounded-xl bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                                            >
+                                              <Copy size={14} />
+                                              Sao chép
+                                            </button>
+                                          </div>
+                                          <div className={`mt-2 text-sm ${otpExpired ? "text-amber-300" : "text-slate-400"}`}>
+                                            {otpStatusText}
                                           </div>
                                         </div>
                                       </div>
+
+                                      <details className="mt-3 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-3">
+                                        <summary className="cursor-pointer list-none text-sm font-semibold text-slate-200">
+                                          Xem trace DB và thông tin ẩn của đơn này
+                                        </summary>
+                                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-3">
+                                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                              Trace DB / Liên kết nội bộ
+                                            </div>
+                                            <div className="mt-2 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                                              {[
+                                                ["User ID", order?.userId || "--"],
+                                                ["MoMo order", order?.momoOrderId || "--"],
+                                                ["Reservation", order?.reservationType || "--"],
+                                                ["Reserved acc", order?.reservedAccountId || "--"],
+                                                ["Assigned acc", order?.assignedAccountId || "--"],
+                                                ["Acc gốc", order?.rootAssignedAccountId || "--"],
+                                                ["Loại acc", order?.assignedType || "--"],
+                                                ["Warranty", String(Number(order?.warrantyCount || 0))],
+                                              ].map(([label, value]) => (
+                                                <div
+                                                  key={`${buildStoreOrderKey(order)}-${label}`}
+                                                  className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2"
+                                                >
+                                                  <div className="uppercase tracking-[0.16em] text-[10px] text-slate-500">
+                                                    {label}
+                                                  </div>
+                                                  <div className="mt-1 break-all font-medium text-slate-100">
+                                                    {value || "--"}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+
+                                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-3">
+                                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                              Thông tin ẩn / raw admin
+                                            </div>
+                                            <div className="mt-2 grid gap-2 text-xs text-slate-300">
+                                              {[
+                                                ["2FA real", order?.assignedOtpSecret || "--"],
+                                                ["Khách gắn vào nick", order?.assignedCustomerName || "--"],
+                                                ["MoMo raw", order?.momoMessage || "--"],
+                                                ["Trans ID", order?.momoTransId || "--"],
+                                              ].map(([label, value]) => (
+                                                <div
+                                                  key={`${buildStoreOrderKey(order)}-visible-${label}`}
+                                                  className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2"
+                                                >
+                                                  <div className="uppercase tracking-[0.16em] text-[10px] text-slate-500">
+                                                    {label}
+                                                  </div>
+                                                  <div className="mt-1 break-all font-medium text-slate-100">
+                                                    {value || "--"}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </details>
                                     </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
