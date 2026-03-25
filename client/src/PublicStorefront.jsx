@@ -12,6 +12,46 @@ import {
 } from "lucide-react";
 
 const STORE_TOKEN_KEY = "store_user_token";
+const ADMIN_TOKEN_KEY = "admin_token";
+const ADMIN_TOKEN_EXPIRES_AT_KEY = "token_expires_at";
+const SESSION_ROLE_KEY = "active_session_role";
+
+const clearStoredAdminSession = () => {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(ADMIN_TOKEN_KEY);
+  localStorage.removeItem(ADMIN_TOKEN_EXPIRES_AT_KEY);
+};
+
+const clearStoredStoreSession = () => {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(STORE_TOKEN_KEY);
+};
+
+const readStoredSessionRole = () => {
+  if (typeof window === "undefined") return "";
+  return String(localStorage.getItem(SESSION_ROLE_KEY) || "").trim();
+};
+
+const writeStoredSessionRole = (role = "") => {
+  if (typeof window === "undefined") return;
+  const normalizedRole = String(role || "").trim();
+  if (normalizedRole) {
+    localStorage.setItem(SESSION_ROLE_KEY, normalizedRole);
+  } else {
+    localStorage.removeItem(SESSION_ROLE_KEY);
+  }
+};
+
+const hasValidStoredAdminSession = () => {
+  if (typeof window === "undefined") return false;
+  const token = String(localStorage.getItem(ADMIN_TOKEN_KEY) || "").trim();
+  const expiresAt = String(
+    localStorage.getItem(ADMIN_TOKEN_EXPIRES_AT_KEY) || "",
+  ).trim();
+  if (!token || !expiresAt) return false;
+  const expiryTime = new Date(expiresAt).getTime();
+  return Number.isFinite(expiryTime) && expiryTime > Date.now();
+};
 
 const readStoreRoute = () => {
   if (typeof window === "undefined") {
@@ -222,13 +262,29 @@ function PublicStorefront() {
     let cancelled = false;
     const bootstrapStore = async () => {
       try {
+        const sessionRole = readStoredSessionRole();
+        const adminSessionActive = hasValidStoredAdminSession();
+        if (initialStoreToken) {
+          clearStoredAdminSession();
+          writeStoredSessionRole("user");
+        } else if (adminSessionActive && sessionRole !== "user") {
+          clearStoredStoreSession();
+          writeStoredSessionRole("admin");
+          window.location.replace("/");
+          return;
+        } else if (!adminSessionActive && sessionRole === "admin") {
+          writeStoredSessionRole("");
+        }
         await loadConfig();
         if (initialStoreToken) {
           await loadSession(initialStoreToken);
+        } else if (sessionRole === "user") {
+          writeStoredSessionRole("");
         }
       } catch (bootstrapError) {
         if (initialStoreToken) {
           setSessionToken("");
+          writeStoredSessionRole("");
         }
         if (!cancelled) {
           setError(bootstrapError.message || "Không tải được dữ liệu cửa hàng");
@@ -331,6 +387,8 @@ function PublicStorefront() {
               method: "POST",
               body: { credential: response.credential },
             });
+            clearStoredAdminSession();
+            writeStoredSessionRole("user");
             setSessionToken(data?.token || "");
             setUser(data?.user || null);
             setOrders([]);
@@ -437,6 +495,8 @@ function PublicStorefront() {
         method: "POST",
         body: loginForm,
       });
+      clearStoredAdminSession();
+      writeStoredSessionRole("user");
       setSessionToken(data?.token || "");
       setUser(data?.user || null);
       setLoginForm({ identifier: "", password: "" });
@@ -459,6 +519,8 @@ function PublicStorefront() {
         method: "POST",
         body: registerForm,
       });
+      clearStoredAdminSession();
+      writeStoredSessionRole("user");
       setSessionToken(data?.token || "");
       setUser(data?.user || null);
       setRegisterForm({ fullName: "", phone: "", email: "", password: "" });
@@ -643,6 +705,7 @@ function PublicStorefront() {
 
   const handleLogout = () => {
     setSessionToken("");
+    writeStoredSessionRole("");
     setUser(null);
     setOrders([]);
     setMessage("Đã đăng xuất");

@@ -27,6 +27,11 @@ import {
   Globe,
 } from "lucide-react";
 
+const ADMIN_TOKEN_STORAGE_KEY = "admin_token";
+const ADMIN_TOKEN_EXPIRES_AT_STORAGE_KEY = "token_expires_at";
+const STORE_TOKEN_STORAGE_KEY = "store_user_token";
+const SESSION_ROLE_STORAGE_KEY = "active_session_role";
+
 // Helper: Xóa dấu Tiếng Việt
 const toNonAccentVietnamese = (str) => {
   if (!str) return "";
@@ -95,6 +100,32 @@ const buildEmptyTeamSlot = () => ({
   addedAt: "",
   expiredAt: "",
 });
+
+const clearStoredAdminSession = () => {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+  localStorage.removeItem(ADMIN_TOKEN_EXPIRES_AT_STORAGE_KEY);
+};
+
+const clearStoredStoreSession = () => {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(STORE_TOKEN_STORAGE_KEY);
+};
+
+const readStoredSessionRole = () => {
+  if (typeof window === "undefined") return "";
+  return String(localStorage.getItem(SESSION_ROLE_STORAGE_KEY) || "").trim();
+};
+
+const writeStoredSessionRole = (role = "") => {
+  if (typeof window === "undefined") return;
+  const normalizedRole = String(role || "").trim();
+  if (normalizedRole) {
+    localStorage.setItem(SESSION_ROLE_STORAGE_KEY, normalizedRole);
+  } else {
+    localStorage.removeItem(SESSION_ROLE_STORAGE_KEY);
+  }
+};
 const normalizeTeamSlotsForUi = (slots = []) =>
   Array.from({ length: 4 }, (_, index) => {
     const slot = Array.isArray(slots) ? slots[index] || {} : {};
@@ -1382,22 +1413,32 @@ function App() {
 
   // CHECK LOGIN ON LOAD - Verify token from localStorage
   useEffect(() => {
-    const token = localStorage.getItem("admin_token");
-    const expiresAt = localStorage.getItem("token_expires_at");
+    const token = localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+    const expiresAt = localStorage.getItem(ADMIN_TOKEN_EXPIRES_AT_STORAGE_KEY);
+    const storeToken = localStorage.getItem(STORE_TOKEN_STORAGE_KEY);
+    const sessionRole = readStoredSessionRole();
+    const now = Date.now();
+    const expiryTime = expiresAt ? new Date(expiresAt).getTime() : 0;
+    const hasValidAdminSession =
+      !!token && !!expiresAt && Number.isFinite(expiryTime) && now < expiryTime;
 
-    if (token && expiresAt) {
-      // Check if token is still valid
-      const expiryTime = new Date(expiresAt).getTime();
-      const now = Date.now();
+    if (sessionRole === "user" && storeToken) {
+      clearStoredAdminSession();
+      window.location.replace("/store");
+      return;
+    }
 
-      if (now < expiryTime) {
-        // Token still valid
-        setIsAuthenticated(true);
-        setTimeout(() => fetchData(true), 100);
-      } else {
-        // Token expired, clear storage
-        localStorage.removeItem("admin_token");
-        localStorage.removeItem("token_expires_at");
+    if (hasValidAdminSession) {
+      clearStoredStoreSession();
+      writeStoredSessionRole("admin");
+      setIsAuthenticated(true);
+      setTimeout(() => fetchData(true), 100);
+      return;
+    }
+
+    if (token || expiresAt) {
+      clearStoredAdminSession();
+      if (sessionRole !== "user") {
         showAlert(
           "Phiên hết hạn",
           "Token đã hết hạn. Vui lòng đăng nhập lại.",
@@ -1405,6 +1446,14 @@ function App() {
         );
       }
     }
+
+    if (storeToken) {
+      writeStoredSessionRole("user");
+      window.location.replace("/store");
+      return;
+    }
+
+    writeStoredSessionRole("");
   }, []);
 
   // Serverless-friendly auto-sync:
@@ -1501,12 +1550,19 @@ function App() {
 
       if (response.data.success) {
         if (response.data.role === "user") {
-          localStorage.setItem("store_user_token", response.data.token || "");
+          clearStoredAdminSession();
+          localStorage.setItem(STORE_TOKEN_STORAGE_KEY, response.data.token || "");
+          writeStoredSessionRole("user");
           window.location.href = response.data.redirectTo || "/store";
           return;
         }
-        localStorage.setItem("admin_token", response.data.token);
-        localStorage.setItem("token_expires_at", response.data.expiresAt);
+        clearStoredStoreSession();
+        localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, response.data.token);
+        localStorage.setItem(
+          ADMIN_TOKEN_EXPIRES_AT_STORAGE_KEY,
+          response.data.expiresAt,
+        );
+        writeStoredSessionRole("admin");
         setIsAuthenticated(true);
         fetchData(true);
         showAlert(
@@ -1531,7 +1587,9 @@ function App() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("admin_token");
+    clearStoredAdminSession();
+    clearStoredStoreSession();
+    writeStoredSessionRole("");
     setIsAuthenticated(false);
     setLoginForm({ identifier: "", password: "" });
     setRecentDatammoOrders([]);
