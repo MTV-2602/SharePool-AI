@@ -540,6 +540,13 @@ const storeOrderSchema = new mongoose.Schema({
   momoResultCode: { type: Number, default: null },
   momoMessage: { type: String, default: "" },
   momoPayUrl: { type: String, default: "" },
+  payosOrderCode: { type: Number, default: null, index: true },
+  payosPaymentLinkId: { type: String, default: "", index: true },
+  payosCheckoutUrl: { type: String, default: "" },
+  payosQrCode: { type: String, default: "" },
+  payosStatus: { type: String, default: "" },
+  payosCode: { type: String, default: "" },
+  payosDesc: { type: String, default: "" },
   expiresAt: { type: String, default: "" },
   reservedAccountId: { type: String, default: "" },
   reservedAccountUsername: { type: String, default: "" },
@@ -697,6 +704,11 @@ app.get("/api/store/config", async (req, res) => {
       },
       momoConfigured:
         !!MOMO_PARTNER_CODE && !!MOMO_ACCESS_KEY && !!MOMO_SECRET_KEY,
+      payosConfigured:
+        !!PAYOS_BASE_URL &&
+        !!PAYOS_CLIENT_ID &&
+        !!PAYOS_API_KEY &&
+        !!PAYOS_CHECKSUM_KEY,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -973,12 +985,29 @@ app.post("/api/store/orders/:id/reconcile", verifyStoreUserToken, async (req, re
   }
 });
 
-app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, next) => {
+app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => {
   try {
     const packageCode = String(req.body?.packageCode || "").trim().toLowerCase();
     const packageConfig = STORE_PACKAGE_MAP[packageCode];
+    const paymentMethod = normalizeStorePaymentMethod(req.body?.paymentMethod);
     if (!packageConfig || packageCode === "package3") {
-      return next();
+      return res.status(400).json({ error: "Gói này chưa hỗ trợ mua tự động" });
+    }
+
+    if (
+      paymentMethod === STORE_PAYMENT_METHOD_MOMO &&
+      (!MOMO_PARTNER_CODE || !MOMO_ACCESS_KEY || !MOMO_SECRET_KEY)
+    ) {
+      return res.status(400).json({ error: "MoMo chưa được cấu hình đầy đủ" });
+    }
+    if (
+      paymentMethod === STORE_PAYMENT_METHOD_PAYOS &&
+      (!PAYOS_BASE_URL ||
+        !PAYOS_CLIENT_ID ||
+        !PAYOS_API_KEY ||
+        !PAYOS_CHECKSUM_KEY)
+    ) {
+      return res.status(400).json({ error: "payOS chưa được cấu hình đầy đủ" });
     }
 
     await cleanupOldStoreFailedOrders({ userId: req.storeUser.id });
@@ -988,22 +1017,40 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, nex
       packageCode: packageConfig.code,
     });
     if (reusableOrder?.id) {
-      let payUrl = String(reusableOrder.momoPayUrl || "").trim();
-      let freshOrder = reusableOrder;
-      if (!payUrl) {
-        payUrl = await createMomoPaymentForStoreOrder(req, reusableOrder);
-        freshOrder = await StoreOrder.findOneAndUpdate(
+      const sameMethod =
+        normalizeStorePaymentMethod(reusableOrder.paymentMethod) === paymentMethod;
+      let workingOrder = reusableOrder;
+      if (!sameMethod) {
+        workingOrder = await StoreOrder.findOneAndUpdate(
           { id: reusableOrder.id },
           {
             $set: {
-              status: "awaiting_payment",
-              momoPayUrl: payUrl,
+              paymentMethod,
+              ...(paymentMethod === STORE_PAYMENT_METHOD_MOMO
+                ? {
+                    ...clearStorePayosPaymentFields(),
+                    momoOrderId:
+                      String(reusableOrder?.momoOrderId || "").trim() ||
+                      createStoreId("momo_order"),
+                  }
+                : {
+                    ...clearStoreMomoPaymentFields(),
+                  }),
               updatedAt: new Date().toISOString(),
             },
           },
           { new: true },
-        ).lean();
+        );
       }
+
+      let payUrl = getStorePaymentUrl(workingOrder);
+      if (!payUrl) {
+        payUrl =
+          paymentMethod === STORE_PAYMENT_METHOD_PAYOS
+            ? await createPayosPaymentForStoreOrder(req, workingOrder)
+            : await createMomoPaymentForStoreOrder(req, workingOrder);
+      }
+      const freshOrder = await StoreOrder.findOne({ id: reusableOrder.id }).lean();
       return res.json({
         success: true,
         reused: true,
@@ -1037,8 +1084,12 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, nex
       packageCode: packageConfig.code,
       packageName: packageConfig.name,
       amount: packageConfig.price,
+      paymentMethod,
       status: "pending_payment",
-      momoOrderId: createStoreId("momo_order"),
+      momoOrderId:
+        paymentMethod === STORE_PAYMENT_METHOD_MOMO
+          ? createStoreId("momo_order")
+          : "",
       expiresAt: getStorePaymentExpiresAtIso(),
       reservedAccountId: reservation.reservedAccountId,
       reservedAccountUsername: reservation.reservedAccountUsername,
@@ -1050,13 +1101,15 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res, nex
     let payUrl = "";
     let freshOrder = null;
     try {
-      payUrl = await createMomoPaymentForStoreOrder(req, order);
+      payUrl =
+        paymentMethod === STORE_PAYMENT_METHOD_PAYOS
+          ? await createPayosPaymentForStoreOrder(req, order)
+          : await createMomoPaymentForStoreOrder(req, order);
       freshOrder = await StoreOrder.findOneAndUpdate(
         { id: order.id },
         {
           $set: {
             status: "awaiting_payment",
-            momoPayUrl: payUrl,
             updatedAt: new Date().toISOString(),
           },
         },
@@ -1233,6 +1286,34 @@ app.post("/api/store/momo/ipn", async (req, res) => {
   }
 });
 
+app.post("/api/store/payos/webhook", async (req, res) => {
+  try {
+    const webhookData = req.body?.data || {};
+    const paymentLinkId = String(
+      webhookData?.paymentLinkId || webhookData?.id || "",
+    ).trim();
+    const orderCodeRaw = webhookData?.orderCode;
+    const orderCode = Number(orderCodeRaw);
+
+    let order = null;
+    if (paymentLinkId) {
+      order = await StoreOrder.findOne({ payosPaymentLinkId: paymentLinkId });
+    }
+    if (!order && Number.isFinite(orderCode) && orderCode > 0) {
+      order = await StoreOrder.findOne({ payosOrderCode: orderCode });
+    }
+    if (!order) {
+      return res.status(200).json({ code: "00", desc: "success" });
+    }
+
+    await reconcileStoreOrderPaymentStatus(order);
+    return res.status(200).json({ code: "00", desc: "success" });
+  } catch (error) {
+    console.error("Store payOS webhook error:", error?.message || error);
+    return res.status(500).json({ code: "99", desc: "server error" });
+  }
+});
+
 // 1. GET ALL DATA (Protected - requires token)
 
 // --- DATAMMO INTEGRATION ---
@@ -1359,10 +1440,23 @@ const MOMO_QUERY_ENDPOINT =
   process.env.MOMO_QUERY_ENDPOINT ||
   MOMO_ENDPOINT.replace(/\/create(?:\?.*)?$/i, "/query");
 const MOMO_REQUEST_TYPE = process.env.MOMO_REQUEST_TYPE || "captureWallet";
+const PAYOS_BASE_URL = String(
+  process.env.PAYOS_BASE_URL || "https://api-merchant.payos.vn",
+).trim();
+const PAYOS_CLIENT_ID = String(process.env.PAYOS_CLIENT_ID || "").trim();
+const PAYOS_API_KEY = String(process.env.PAYOS_API_KEY || "").trim();
+const PAYOS_CHECKSUM_KEY = String(process.env.PAYOS_CHECKSUM_KEY || "").trim();
+const PAYOS_PARTNER_CODE = String(process.env.PAYOS_PARTNER_CODE || "").trim();
 const GOOGLE_OAUTH_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || "").trim();
 const googleOAuthClient = GOOGLE_OAUTH_CLIENT_ID
   ? new OAuth2Client(GOOGLE_OAUTH_CLIENT_ID)
   : null;
+const STORE_PAYMENT_METHOD_MOMO = "momo";
+const STORE_PAYMENT_METHOD_PAYOS = "payos";
+const VALID_STORE_PAYMENT_METHODS = [
+  STORE_PAYMENT_METHOD_MOMO,
+  STORE_PAYMENT_METHOD_PAYOS,
+];
 const STORE_PACKAGE_MAP = {
   package1: {
     code: "package1",
@@ -1393,6 +1487,8 @@ const normalizePhoneValue = (value) => {
 };
 const createStoreId = (prefix) =>
   `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const createStoreNumericOrderCode = () =>
+  Number(`${Date.now()}${Math.floor(Math.random() * 90 + 10)}`);
 const createRandomHexToken = (size = 24) =>
   crypto.randomBytes(size).toString("hex");
 const createStoreManualPassword = () =>
@@ -1454,6 +1550,143 @@ const buildStorePackage1UsageLeft = (order = {}) =>
     Number(order?.package1MaxUsage || STORE_PACKAGE1_MAX_OTP_USES) -
       Number(order?.package1UsedCount || 0),
   );
+const normalizeStorePaymentMethod = (
+  value,
+  fallback = STORE_PAYMENT_METHOD_MOMO,
+) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (VALID_STORE_PAYMENT_METHODS.includes(normalized)) return normalized;
+  return fallback;
+};
+const getStorePaymentMethodLabel = (value) => {
+  const normalized = normalizeStorePaymentMethod(value);
+  if (normalized === STORE_PAYMENT_METHOD_PAYOS) return "Chuyển khoản payOS";
+  return "MoMo";
+};
+const getStorePaymentUrl = (order = {}) => {
+  const paymentMethod = normalizeStorePaymentMethod(order?.paymentMethod);
+  if (paymentMethod === STORE_PAYMENT_METHOD_PAYOS) {
+    return String(order?.payosCheckoutUrl || "").trim();
+  }
+  return String(order?.momoPayUrl || "").trim();
+};
+const getStorePaymentOrderId = (order = {}) => {
+  const paymentMethod = normalizeStorePaymentMethod(order?.paymentMethod);
+  if (paymentMethod === STORE_PAYMENT_METHOD_PAYOS) {
+    return (
+      String(order?.payosPaymentLinkId || "").trim() ||
+      (Number.isFinite(Number(order?.payosOrderCode))
+        ? String(Number(order?.payosOrderCode))
+        : "")
+    );
+  }
+  return String(order?.momoOrderId || "").trim();
+};
+const getStorePaymentStatusText = (order = {}) => {
+  const paymentMethod = normalizeStorePaymentMethod(order?.paymentMethod);
+  if (paymentMethod === STORE_PAYMENT_METHOD_PAYOS) {
+    const normalizedStatus = String(order?.payosStatus || "")
+      .trim()
+      .toUpperCase();
+    if (normalizedStatus === "PAID" || normalizedStatus === "SUCCEEDED") {
+      return "Đã thanh toán";
+    }
+    if (normalizedStatus === "PENDING") {
+      return "Chờ thanh toán";
+    }
+    if (normalizedStatus === "CANCELLED") {
+      return "Đã hủy thanh toán";
+    }
+    if (normalizedStatus === "EXPIRED") {
+      return "Hết hạn thanh toán";
+    }
+    if (normalizedStatus === "FAILED") {
+      return "Thanh toán thất bại";
+    }
+    const desc = String(order?.payosDesc || "").trim();
+    if (desc && desc.toLowerCase() !== "success") return desc;
+    return String(order?.momoMessage || "").trim();
+  }
+  return String(order?.momoMessage || "").trim();
+};
+const getStorePayosAuthHeaders = () => {
+  const headers = {
+    "x-client-id": PAYOS_CLIENT_ID,
+    "x-api-key": PAYOS_API_KEY,
+  };
+  if (PAYOS_PARTNER_CODE) {
+    headers["x-partner-code"] = PAYOS_PARTNER_CODE;
+  }
+  return headers;
+};
+const buildPayosCreateSignature = ({
+  amount,
+  cancelUrl,
+  description,
+  orderCode,
+  returnUrl,
+} = {}) => {
+  const raw = [
+    `amount=${Math.round(Number(amount || 0))}`,
+    `cancelUrl=${String(cancelUrl || "").trim()}`,
+    `description=${String(description || "").trim()}`,
+    `orderCode=${Math.round(Number(orderCode || 0))}`,
+    `returnUrl=${String(returnUrl || "").trim()}`,
+  ].join("&");
+  return crypto
+    .createHmac("sha256", PAYOS_CHECKSUM_KEY)
+    .update(raw)
+    .digest("hex");
+};
+const buildStorePaymentReturnUrl = (req, order = {}) =>
+  `${getAppBaseUrl(req)}/store?view=payment-result&orderId=${encodeURIComponent(
+    String(order?.id || "").trim(),
+  )}`;
+const buildStorePaymentCancelUrl = (req, order = {}) =>
+  buildStorePaymentReturnUrl(req, order);
+const buildStorePayosDescription = (order = {}) => {
+  const tail = String(order?.id || "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(-6)
+    .toUpperCase();
+  return `WD${tail || String(Date.now()).slice(-6)}`;
+};
+const clearStoreMomoPaymentFields = () => ({
+  momoOrderId: "",
+  momoRequestId: "",
+  momoTransId: "",
+  momoResultCode: null,
+  momoMessage: "",
+  momoPayUrl: "",
+});
+const clearStorePayosPaymentFields = () => ({
+  payosOrderCode: null,
+  payosPaymentLinkId: "",
+  payosCheckoutUrl: "",
+  payosQrCode: "",
+  payosStatus: "",
+  payosCode: "",
+  payosDesc: "",
+});
+const isStorePayosSuccess = (data = {}) => {
+  const normalizedStatus = String(data?.status || "")
+    .trim()
+    .toUpperCase();
+  return (
+    normalizedStatus === "PAID" ||
+    normalizedStatus === "SUCCEEDED" ||
+    Number(data?.amountRemaining || 0) <= 0 ||
+    Number(data?.amountPaid || 0) >= Math.round(Number(data?.amount || 0))
+  );
+};
+const isStorePayosFinalFailure = (data = {}) => {
+  const normalizedStatus = String(data?.status || "")
+    .trim()
+    .toUpperCase();
+  return ["CANCELLED", "EXPIRED", "FAILED"].includes(normalizedStatus);
+};
 const resolveStoreOrderOtpSecret = async (order = {}) => {
   const packageCode = String(order?.packageCode || "").trim().toLowerCase();
   const assignedAccountId = String(
@@ -1721,7 +1954,12 @@ const sanitizeStoreOrder = (order) => {
       String(order.packageName || STORE_PACKAGE_MAP[packageCode]?.name || ""),
     amount: Number(order.amount || 0),
     status: String(order.status || "pending"),
-    paymentMethod: String(order.paymentMethod || "momo"),
+    paymentMethod: normalizeStorePaymentMethod(order.paymentMethod),
+    paymentMethodLabel: getStorePaymentMethodLabel(order.paymentMethod),
+    paymentOrderId: getStorePaymentOrderId(order),
+    paymentStatusText: getStorePaymentStatusText(order),
+    paymentUrl: getStorePaymentUrl(order),
+    paymentQrCode: String(order.payosQrCode || "").trim(),
     momoOrderId: String(order.momoOrderId || ""),
     momoTransId: String(order.momoTransId || ""),
     momoResultCode:
@@ -1730,6 +1968,15 @@ const sanitizeStoreOrder = (order) => {
         : Number(order.momoResultCode),
     momoMessage: String(order.momoMessage || ""),
     momoPayUrl: String(order.momoPayUrl || ""),
+    payosOrderCode:
+      order.payosOrderCode === null || order.payosOrderCode === undefined
+        ? null
+        : Number(order.payosOrderCode),
+    payosPaymentLinkId: String(order.payosPaymentLinkId || "").trim(),
+    payosStatus: String(order.payosStatus || "").trim(),
+    payosCode: String(order.payosCode || "").trim(),
+    payosDesc: String(order.payosDesc || "").trim(),
+    payosCheckoutUrl: String(order.payosCheckoutUrl || "").trim(),
     expiresAt: String(order.expiresAt || ""),
     createdAt: String(order.createdAt || ""),
     updatedAt: String(order.updatedAt || ""),
@@ -1794,8 +2041,21 @@ const sanitizeStoreOrderForAdmin = (order, user = null) => {
     ).trim(),
     amount: Number(order.amount || 0),
     status: String(order.status || "").trim(),
-    paymentMethod: String(order.paymentMethod || "momo").trim(),
+    paymentMethod: normalizeStorePaymentMethod(order.paymentMethod),
+    paymentMethodLabel: getStorePaymentMethodLabel(order.paymentMethod),
+    paymentOrderId: getStorePaymentOrderId(order),
+    paymentStatusText: getStorePaymentStatusText(order),
+    paymentUrl: getStorePaymentUrl(order),
+    paymentQrCode: String(order.payosQrCode || "").trim(),
     momoOrderId: String(order.momoOrderId || "").trim(),
+    payosOrderCode:
+      order.payosOrderCode === null || order.payosOrderCode === undefined
+        ? null
+        : Number(order.payosOrderCode),
+    payosPaymentLinkId: String(order.payosPaymentLinkId || "").trim(),
+    payosStatus: String(order.payosStatus || "").trim(),
+    payosCode: String(order.payosCode || "").trim(),
+    payosDesc: String(order.payosDesc || "").trim(),
     createdAt: String(order.createdAt || "").trim(),
     updatedAt: String(order.updatedAt || "").trim(),
     paidAt: String(order.paidAt || "").trim(),
@@ -4331,13 +4591,94 @@ const createMomoPaymentForStoreOrder = async (req, order) => {
     { id: String(order?.id || "").trim() },
     {
       $set: {
+        paymentMethod: STORE_PAYMENT_METHOD_MOMO,
         momoRequestId: requestId,
         momoPayUrl: String(data.payUrl || "").trim(),
+        ...clearStorePayosPaymentFields(),
         updatedAt: new Date().toISOString(),
       },
     },
   );
   return String(data.payUrl || "").trim();
+};
+const createPayosPaymentForStoreOrder = async (req, order) => {
+  if (!PAYOS_BASE_URL || !PAYOS_CLIENT_ID || !PAYOS_API_KEY || !PAYOS_CHECKSUM_KEY) {
+    throw new Error("payOS chưa được cấu hình đầy đủ");
+  }
+  const orderCode =
+    Number.isFinite(Number(order?.payosOrderCode)) && Number(order?.payosOrderCode) > 0
+      ? Number(order.payosOrderCode)
+      : createStoreNumericOrderCode();
+  const returnUrl = buildStorePaymentReturnUrl(req, order);
+  const cancelUrl = buildStorePaymentCancelUrl(req, order);
+  const description = buildStorePayosDescription(order);
+  const expiredAtMs =
+    new Date(String(order?.expiresAt || "").trim()).getTime() || Date.now() + STORE_PAYMENT_HOLD_MS;
+  const expiredAt = Math.floor(expiredAtMs / 1000);
+  const payload = {
+    orderCode,
+    amount: Math.round(Number(order?.amount || 0)),
+    description,
+    buyerName: String(req?.storeUser?.fullName || "").trim(),
+    buyerEmail: String(req?.storeUser?.email || "").trim(),
+    buyerPhone: String(req?.storeUser?.phone || "").trim(),
+    items: [
+      {
+        name: String(order?.packageName || order?.packageCode || "Đơn web").trim(),
+        quantity: 1,
+        price: Math.round(Number(order?.amount || 0)),
+      },
+    ],
+    cancelUrl,
+    returnUrl,
+    expiredAt,
+    signature: buildPayosCreateSignature({
+      amount: Math.round(Number(order?.amount || 0)),
+      cancelUrl,
+      description,
+      orderCode,
+      returnUrl,
+    }),
+  };
+  const response = await axios.post(
+    `${PAYOS_BASE_URL.replace(/\/+$/, "")}/v2/payment-requests`,
+    payload,
+    {
+      timeout: 20000,
+      headers: {
+        "Content-Type": "application/json",
+        ...getStorePayosAuthHeaders(),
+      },
+    },
+  );
+  const responseData = response?.data || {};
+  const paymentData = responseData?.data || {};
+  if (
+    String(responseData?.code || "").trim() !== "00" ||
+    !String(paymentData?.checkoutUrl || "").trim()
+  ) {
+    throw new Error(
+      String(responseData?.desc || paymentData?.desc || "Không tạo được liên kết thanh toán payOS"),
+    );
+  }
+  await StoreOrder.findOneAndUpdate(
+    { id: String(order?.id || "").trim() },
+    {
+      $set: {
+        paymentMethod: STORE_PAYMENT_METHOD_PAYOS,
+        payosOrderCode: orderCode,
+        payosPaymentLinkId: String(paymentData?.paymentLinkId || "").trim(),
+        payosCheckoutUrl: String(paymentData?.checkoutUrl || "").trim(),
+        payosQrCode: String(paymentData?.qrCode || "").trim(),
+        payosStatus: String(paymentData?.status || "").trim(),
+        payosCode: String(responseData?.code || "").trim(),
+        payosDesc: String(responseData?.desc || "").trim(),
+        ...clearStoreMomoPaymentFields(),
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  );
+  return String(paymentData?.checkoutUrl || "").trim();
 };
 const queryMomoPaymentStatusForStoreOrder = async (order = {}) => {
   const partnerCode = MOMO_PARTNER_CODE;
@@ -4373,6 +4714,27 @@ const queryMomoPaymentStatusForStoreOrder = async (order = {}) => {
   });
   return response?.data || {};
 };
+const queryPayosPaymentStatusForStoreOrder = async (order = {}) => {
+  if (!PAYOS_BASE_URL || !PAYOS_CLIENT_ID || !PAYOS_API_KEY) {
+    throw new Error("payOS chưa được cấu hình đầy đủ");
+  }
+  const lookupId =
+    String(order?.payosPaymentLinkId || "").trim() ||
+    (Number.isFinite(Number(order?.payosOrderCode))
+      ? String(Number(order?.payosOrderCode))
+      : "");
+  if (!lookupId) {
+    throw new Error("Đơn hàng chưa có mã payOS để đối soát");
+  }
+  const response = await axios.get(
+    `${PAYOS_BASE_URL.replace(/\/+$/, "")}/v2/payment-requests/${encodeURIComponent(lookupId)}`,
+    {
+      timeout: 20000,
+      headers: getStorePayosAuthHeaders(),
+    },
+  );
+  return response?.data || {};
+};
 const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
   const order =
     orderInput && typeof orderInput.save === "function"
@@ -4383,12 +4745,48 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
   if (!isStorePendingPaymentStatus(normalizedStatus) && normalizedStatus !== "paid") {
     return order;
   }
+  const paymentMethod = normalizeStorePaymentMethod(order.paymentMethod);
+  const nowIso = new Date().toISOString();
+  if (paymentMethod === STORE_PAYMENT_METHOD_PAYOS) {
+    const responseData = await queryPayosPaymentStatusForStoreOrder(order);
+    const data = responseData?.data || {};
+    order.payosCode = String(responseData?.code || "").trim();
+    order.payosDesc = String(responseData?.desc || "").trim();
+    order.payosStatus = String(data?.status || "").trim();
+    if (!String(order.payosPaymentLinkId || "").trim()) {
+      order.payosPaymentLinkId = String(data?.id || data?.paymentLinkId || "").trim();
+    }
+    if (!String(order.payosCheckoutUrl || "").trim()) {
+      order.payosCheckoutUrl = String(data?.checkoutUrl || "").trim();
+    }
+    if (!String(order.payosQrCode || "").trim()) {
+      order.payosQrCode = String(data?.qrCode || "").trim();
+    }
+    order.updatedAt = nowIso;
+    if (isStorePayosSuccess(data)) {
+      if (!String(order.paidAt || "").trim()) {
+        order.paidAt = nowIso;
+      }
+      order.status = "paid";
+      await order.save();
+      try {
+        await fulfillStoreOrder(order);
+      } catch (error) {
+        return StoreOrder.findOne({ id: order.id });
+      }
+      return StoreOrder.findOne({ id: order.id });
+    }
+    if (isStorePayosFinalFailure(data)) {
+      await StoreOrder.deleteOne({ id: order.id });
+      return null;
+    }
+    await order.save();
+    return order;
+  }
   const data = await queryMomoPaymentStatusForStoreOrder(order);
   const resultCode = Number(data?.resultCode ?? Number.NaN);
   const message = String(data?.message || "").trim();
   const transId = String(data?.transId || "").trim();
-  const payType = String(data?.payType || "").trim();
-  const nowIso = new Date().toISOString();
   if (!Number.isNaN(resultCode)) {
     order.momoResultCode = resultCode;
   }
@@ -4397,9 +4795,6 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
   }
   if (transId) {
     order.momoTransId = transId;
-  }
-  if (payType) {
-    order.paymentMethod = payType;
   }
   order.updatedAt = nowIso;
   if (resultCode === 0) {

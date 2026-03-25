@@ -201,6 +201,35 @@ const getStoreOrderStatusLabel = (value) => {
   if (normalized === "payment_failed") return "Thanh toán thất bại";
   return String(value || "Không rõ");
 };
+const getStorePaymentMethodLabel = (order = {}) =>
+  String(order?.paymentMethodLabel || "").trim() ||
+  (String(order?.paymentMethod || "").trim().toLowerCase() === "payos"
+    ? "Chuyển khoản payOS"
+    : "MoMo");
+const getStorePaymentOrderId = (order = {}) =>
+  String(order?.paymentOrderId || order?.momoOrderId || "").trim();
+const getStorePaymentStatusText = (order = {}) =>
+  String(order?.paymentStatusText || order?.momoMessage || "").trim();
+const getStorePaymentMetaRows = (order = {}) => {
+  const paymentMethodLabel = getStorePaymentMethodLabel(order);
+  const paymentOrderId = getStorePaymentOrderId(order) || "--";
+  const paymentStatusText = getStorePaymentStatusText(order) || "--";
+  const paymentReference =
+    paymentMethodLabel === "Chuyển khoản payOS"
+      ? String(order?.payosPaymentLinkId || order?.payosOrderCode || "--").trim() || "--"
+      : String(order?.momoTransId || "--").trim() || "--";
+  return [
+    ["Phương thức thanh toán", paymentMethodLabel],
+    ["Mã thanh toán", paymentOrderId],
+    ["Trạng thái thanh toán", paymentStatusText],
+    [
+      paymentMethodLabel === "Chuyển khoản payOS"
+        ? "Mã link payOS"
+        : "Mã giao dịch MoMo",
+      paymentReference,
+    ],
+  ];
+};
 const buildAccountTraceAlertMessage = (diagnostics = {}) => {
   if (!diagnostics || typeof diagnostics !== "object") return "";
   const parts = [];
@@ -4413,12 +4442,14 @@ function App() {
           order?.id,
           order?.packageName,
           order?.packageCode,
+          getStorePaymentMethodLabel(order),
           order?.customerName,
           order?.customerEmail,
           order?.customerPhone,
           order?.assignedUsername,
-          order?.momoOrderId,
+          getStorePaymentOrderId(order),
           getStoreOrderStatusLabel(order?.status),
+          getStorePaymentStatusText(order),
         ]
           .filter(Boolean)
           .join(" "),
@@ -4546,12 +4577,14 @@ function App() {
         order?.id,
         order?.packageName,
         order?.packageCode,
+        getStorePaymentMethodLabel(order),
         order?.customerName,
         order?.customerEmail,
         order?.customerPhone,
         order?.assignedUsername,
-        order?.momoOrderId,
+        getStorePaymentOrderId(order),
         getStoreOrderStatusLabel(order?.status),
+        getStorePaymentStatusText(order),
       ]
         .filter(Boolean)
         .join(" "),
@@ -5203,9 +5236,9 @@ function App() {
                           <div className="text-sm text-sky-100/90 break-all">
                             Trạng thái: {getStoreOrderStatusLabel(order.status)} · Nick: {accountLabel}
                           </div>
-                          {order.momoOrderId ? (
+                          {getStorePaymentOrderId(order) ? (
                             <div className="text-xs text-sky-100/75 break-all">
-                              MoMo: {order.momoOrderId}
+                              {getStorePaymentMethodLabel(order)}: {getStorePaymentOrderId(order)}
                             </div>
                           ) : null}
                         </div>
@@ -5503,9 +5536,9 @@ function App() {
                                           <div className="mt-1 text-sm text-slate-400 break-all">
                                             Đơn #{order.id}
                                           </div>
-                                          {order.momoOrderId ? (
+                                          {getStorePaymentOrderId(order) ? (
                                             <div className="mt-1 text-xs text-slate-500 break-all">
-                                              MoMo: {order.momoOrderId}
+                                              {getStorePaymentMethodLabel(order)}: {getStorePaymentOrderId(order)}
                                             </div>
                                           ) : null}
                                         </div>
@@ -5579,7 +5612,7 @@ function App() {
                                             Thanh toán
                                           </div>
                                           <div className="mt-1 text-slate-200">
-                                            {formatDateTime(order?.paidAt) || order?.momoMessage || "--"}
+                                            {formatDateTime(order?.paidAt) || getStorePaymentStatusText(order) || "--"}
                                           </div>
                                         </div>
                                         <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
@@ -5773,7 +5806,7 @@ function App() {
                                             <div className="mt-2 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
                                               {[
                                                 ["User web ID", order?.userId || "--"],
-                                                ["MoMo order", order?.momoOrderId || "--"],
+                                                ...getStorePaymentMetaRows(order),
                                                 ["Kiểu giữ chỗ", order?.reservationType || "--"],
                                                 ["Acc giữ chỗ", order?.reservedAccountId || "--"],
                                                 ["Acc hiện tại ID", order?.assignedAccountId || "--"],
@@ -5804,8 +5837,22 @@ function App() {
                                               {[
                                                 ["2FA real hiện lưu", order?.assignedOtpSecret || "--"],
                                                 ["Khách đang gắn vào nick", order?.assignedCustomerName || "--"],
-                                                ["MoMo message", order?.momoMessage || "--"],
-                                                ["MoMo transId", order?.momoTransId || "--"],
+                                                [
+                                                  getStorePaymentMethodLabel(order) === "Chuyển khoản payOS"
+                                                    ? "payOS code"
+                                                    : "MoMo message",
+                                                  getStorePaymentMethodLabel(order) === "Chuyển khoản payOS"
+                                                    ? order?.payosCode || "--"
+                                                    : order?.momoMessage || "--",
+                                                ],
+                                                [
+                                                  getStorePaymentMethodLabel(order) === "Chuyển khoản payOS"
+                                                    ? "payOS desc"
+                                                    : "MoMo transId",
+                                                  getStorePaymentMethodLabel(order) === "Chuyển khoản payOS"
+                                                    ? order?.payosDesc || "--"
+                                                    : order?.momoTransId || "--",
+                                                ],
                                               ].map(([label, value]) => (
                                                 <div
                                                   key={`${buildStoreOrderKey(order)}-visible-${label}`}

@@ -15,6 +15,13 @@ const STORE_TOKEN_KEY = "store_user_token";
 const ADMIN_TOKEN_KEY = "admin_token";
 const ADMIN_TOKEN_EXPIRES_AT_KEY = "token_expires_at";
 const SESSION_ROLE_KEY = "active_session_role";
+const STORE_PAYMENT_METHOD_MOMO = "momo";
+const STORE_PAYMENT_METHOD_PAYOS = "payos";
+
+const getPaymentMethodLabel = (method) =>
+  String(method || "").trim().toLowerCase() === STORE_PAYMENT_METHOD_PAYOS
+    ? "Chuyển khoản payOS"
+    : "MoMo";
 
 const clearStoredAdminSession = () => {
   if (typeof window === "undefined") return;
@@ -199,6 +206,7 @@ function PublicStorefront() {
     googleClientId: "",
     contact: { zaloUrl: "", messengerUrl: "" },
     momoConfigured: false,
+    payosConfigured: false,
   });
   const [token, setToken] = useState(initialStoreToken);
   const [user, setUser] = useState(null);
@@ -255,6 +263,7 @@ function PublicStorefront() {
       googleClientId: String(data?.googleClientId || ""),
       contact: data?.contact || { zaloUrl: "", messengerUrl: "" },
       momoConfigured: !!data?.momoConfigured,
+      payosConfigured: !!data?.payosConfigured,
     };
     setConfig(normalizedConfig);
     return normalizedConfig;
@@ -405,7 +414,7 @@ function PublicStorefront() {
     const pendingOrders = orders.filter(
       (order) =>
         isPendingStorePayment(order.status) &&
-        String(order.momoOrderId || "").trim(),
+        String(order.paymentOrderId || order.momoOrderId || "").trim(),
     );
     if (pendingOrders.length === 0) return undefined;
 
@@ -706,7 +715,7 @@ function PublicStorefront() {
     }
   };
 
-  const handleCreatePayment = async (packageCode) => {
+  const handleCreatePayment = async (packageCode, paymentMethod) => {
     if (!user) {
       setError("Vui lòng đăng nhập trước khi mua.");
       return;
@@ -717,7 +726,7 @@ function PublicStorefront() {
       const data = await apiRequest("/api/store/orders/payment", {
         method: "POST",
         token,
-        body: { packageCode },
+        body: { packageCode, paymentMethod },
       });
       const payUrl = String(data?.payUrl || "").trim();
       if (!payUrl) {
@@ -735,23 +744,30 @@ function PublicStorefront() {
     }
   };
 
-  const getPurchaseBlockedReason = (pkg) => {
+  const isPaymentMethodConfigured = (paymentMethod, currentConfig = config) => {
+    if (paymentMethod === STORE_PAYMENT_METHOD_PAYOS) {
+      return !!currentConfig?.payosConfigured;
+    }
+    return !!currentConfig?.momoConfigured;
+  };
+
+  const getPurchaseBlockedReason = (pkg, paymentMethod) => {
     if (sessionLoading) {
       return "Hệ thống đang kiểm tra phiên đăng nhập của bạn.";
     }
     if (!user) {
       return "Bạn cần đăng nhập hoặc đăng ký tài khoản user trước khi thanh toán.";
     }
-    if (!config.momoConfigured) {
-      return "Thanh toán MoMo chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.";
+    if (!isPaymentMethodConfigured(paymentMethod)) {
+      return `${getPaymentMethodLabel(paymentMethod)} chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.`;
     }
     if (!pkg?.purchasable || Number(pkg?.available || 0) <= 0) {
       return "Kho hiện tại của gói này đã hết. Khi có nick mới trong kho, bạn sẽ mua được.";
     }
-    return "Thanh toán MoMo xong, hệ thống sẽ tự cấp tài khoản ngay trên web.";
+    return `Thanh toán ${getPaymentMethodLabel(paymentMethod)} xong, hệ thống sẽ tự cấp tài khoản ngay trên web.`;
   };
 
-  const handlePurchaseButtonClick = async (pkg) => {
+  const handlePurchaseButtonClick = async (pkg, paymentMethod) => {
     if (sessionLoading || loading || purchaseLockRef.current || purchaseLoadingCode) return;
     if (!user) {
       setMessage("");
@@ -760,23 +776,26 @@ function PublicStorefront() {
       return;
     }
     purchaseLockRef.current = true;
-    setPurchaseLoadingCode(String(pkg?.code || ""));
+    const purchaseKey = `${String(pkg?.code || "")}:${String(paymentMethod || STORE_PAYMENT_METHOD_MOMO)}`;
+    setPurchaseLoadingCode(purchaseKey);
     try {
-    const latestConfig = await loadConfig();
-    const latestPackage = Array.isArray(latestConfig?.packages)
-      ? latestConfig.packages.find((item) => item.code === pkg?.code)
-      : null;
-    if (!latestConfig?.momoConfigured) {
-      setMessage("");
-      setError("Thanh toán MoMo chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.");
-      return;
-    }
-    if (!latestPackage?.purchasable || Number(latestPackage?.available || 0) <= 0) {
-      setMessage("");
-      setError("Kho hiện tại của gói này đã hết, nên hệ thống đã chặn không cho tạo thanh toán.");
-      return;
-    }
-      await handleCreatePayment(latestPackage.code);
+      const latestConfig = await loadConfig();
+      const latestPackage = Array.isArray(latestConfig?.packages)
+        ? latestConfig.packages.find((item) => item.code === pkg?.code)
+        : null;
+      if (!isPaymentMethodConfigured(paymentMethod, latestConfig)) {
+        setMessage("");
+        setError(
+          `${getPaymentMethodLabel(paymentMethod)} chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.`,
+        );
+        return;
+      }
+      if (!latestPackage?.purchasable || Number(latestPackage?.available || 0) <= 0) {
+        setMessage("");
+        setError("Kho hiện tại của gói này đã hết, nên hệ thống đã chặn không cho tạo thanh toán.");
+        return;
+      }
+      await handleCreatePayment(latestPackage.code, paymentMethod);
     } finally {
       purchaseLockRef.current = false;
       setPurchaseLoadingCode("");
@@ -818,7 +837,7 @@ function PublicStorefront() {
         token,
       });
       await loadSession(token);
-      setMessage("Đã kiểm tra lại trạng thái thanh toán MoMo.");
+      setMessage("Đã kiểm tra lại trạng thái thanh toán.");
     } catch (reconcileError) {
       setError(reconcileError.message || "Không thể kiểm tra trạng thái thanh toán.");
     } finally {
@@ -858,7 +877,7 @@ function PublicStorefront() {
           </h2>
           <p className="mt-2 text-sm leading-6 text-slate-400">
             {authMode === "login"
-              ? "Đăng nhập bằng email hoặc số điện thoại để tiếp tục thanh toán MoMo."
+              ? "Đăng nhập bằng email hoặc số điện thoại để tiếp tục thanh toán trực tuyến."
               : "Điền thông tin một lần để theo dõi đơn hàng và nhận tài khoản ngay trên web."}
           </p>
         </div>
@@ -1019,25 +1038,43 @@ function PublicStorefront() {
             </a>
           ) : (
             <>
-            <button onClick={() => handlePurchaseButtonClick(pkg)} disabled={sessionLoading || loading || !!purchaseLoadingCode} className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
-              {purchaseLoadingCode === pkg.code ? (
-                <span className="inline-flex items-center justify-center gap-2">
-                  <Loader2 size={16} className="animate-spin" />
-                  Đang tạo thanh toán...
-                </span>
-              ) : sessionLoading
-                ? "Đang kiểm tra..."
-                : !user
-                  ? "Đăng nhập để mua"
-                  : !config.momoConfigured
-                    ? "Chưa cấu hình MoMo"
-                    : pkg.purchasable
-                      ? "Mua ngay"
-                      : "Tạm hết hàng"}
-            </button>
-            <p className="mt-3 min-h-[40px] text-sm leading-5 text-slate-400">
-              {getPurchaseBlockedReason(pkg)}
-            </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  [STORE_PAYMENT_METHOD_MOMO, "MoMo"],
+                  [STORE_PAYMENT_METHOD_PAYOS, "Chuyển khoản payOS"],
+                ].map(([paymentMethod, label]) => {
+                  const methodKey = `${pkg.code}:${paymentMethod}`;
+                  return (
+                    <button
+                      key={paymentMethod}
+                      onClick={() => handlePurchaseButtonClick(pkg, paymentMethod)}
+                      disabled={sessionLoading || loading || !!purchaseLoadingCode}
+                      className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {purchaseLoadingCode === methodKey ? (
+                        <span className="inline-flex items-center justify-center gap-2">
+                          <Loader2 size={16} className="animate-spin" />
+                          Đang tạo...
+                        </span>
+                      ) : sessionLoading ? (
+                        "Đang kiểm tra..."
+                      ) : !user ? (
+                        label
+                      ) : !isPaymentMethodConfigured(paymentMethod) ? (
+                        `${label} chưa bật`
+                      ) : pkg.purchasable ? (
+                        label
+                      ) : (
+                        "Tạm hết hàng"
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-3 space-y-2 text-sm leading-5 text-slate-400">
+                <p>{getPurchaseBlockedReason(pkg, STORE_PAYMENT_METHOD_MOMO)}</p>
+                <p>{getPurchaseBlockedReason(pkg, STORE_PAYMENT_METHOD_PAYOS)}</p>
+              </div>
             </>
           )}
         </div>
@@ -1154,7 +1191,9 @@ function PublicStorefront() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold text-white">{order.packageName}</h3>
-                <p className="mt-1 text-sm text-slate-400">Đơn #{order.id} • {formatDateTime(order.createdAt)}</p>
+                <p className="mt-1 text-sm text-slate-400">
+                  Đơn #{order.id} • {formatDateTime(order.createdAt)} • {order.paymentMethodLabel || getPaymentMethodLabel(order.paymentMethod)}
+                </p>
               </div>
               <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-100">{formatStatusLabel(order.status)}</span>
             </div>
@@ -1164,12 +1203,12 @@ function PublicStorefront() {
                 <p className="mt-1 break-words font-semibold text-white">{formatMoney(order.amount)}</p>
               </div>
               <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
-                <p className="text-slate-500">MoMo order</p>
-                <p className="mt-1 break-all font-semibold leading-6 text-white">{order.momoOrderId || "--"}</p>
+                <p className="text-slate-500">Mã thanh toán</p>
+                <p className="mt-1 break-all font-semibold leading-6 text-white">{order.paymentOrderId || order.momoOrderId || "--"}</p>
               </div>
               <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
-                <p className="text-slate-500">Trạng thái MoMo</p>
-                <p className="mt-1 break-words font-semibold leading-6 text-white">{order.momoMessage || "--"}</p>
+                <p className="text-slate-500">Trạng thái thanh toán</p>
+                <p className="mt-1 break-words font-semibold leading-6 text-white">{order.paymentStatusText || order.momoMessage || "--"}</p>
               </div>
               <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
                 <p className="text-slate-500">Hạn thanh toán</p>
@@ -1195,9 +1234,9 @@ function PublicStorefront() {
                     "Kiểm tra thanh toán"
                   )}
                 </button>
-                {order.momoPayUrl ? (
+                {order.paymentUrl ? (
                   <a
-                    href={order.momoPayUrl}
+                    href={order.paymentUrl}
                     className="inline-flex items-center rounded-2xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white"
                   >
                     Tiếp tục thanh toán
@@ -1222,7 +1261,7 @@ function PublicStorefront() {
               <p className="text-xs uppercase tracking-[0.4em] text-cyan-400">ChatGPT Store</p>
               <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Mua ChatGPT tự động</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                Đăng ký hoặc đăng nhập để thanh toán MoMo và nhận tài khoản ngay trên web.
+                Đăng ký hoặc đăng nhập để thanh toán bằng MoMo hoặc chuyển khoản payOS và nhận tài khoản ngay trên web.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -1296,7 +1335,7 @@ function PublicStorefront() {
                   <h3 className="text-lg font-semibold text-white">Quy trình nhận nick sau khi thanh toán</h3>
                   <ol className="mt-4 space-y-2 text-sm leading-6 text-slate-300">
                     <li>1. Đăng ký hoặc đăng nhập tài khoản user bằng email hoặc số điện thoại.</li>
-                    <li>2. Chọn gói phù hợp rồi thanh toán qua MoMo.</li>
+                    <li>2. Chọn gói phù hợp rồi thanh toán qua MoMo hoặc chuyển khoản payOS.</li>
                     <li>3. Sau khi thanh toán thành công, hệ thống tự cấp tài khoản tương ứng.</li>
                     <li>4. Gói 1 bấm nút Lấy mã để nhận OTP 6 số, tối đa 3 lượt.</li>
                     <li>5. Gói 2 nhận đầy đủ tài khoản, mật khẩu, mã 2FA và mã hiện tại tự làm mới.</li>
