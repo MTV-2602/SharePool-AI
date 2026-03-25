@@ -24,6 +24,7 @@ import {
   ArrowRightLeft,
   RotateCw,
   Globe,
+  Phone,
 } from "lucide-react";
 
 const ADMIN_TOKEN_STORAGE_KEY = "admin_token";
@@ -5312,21 +5313,20 @@ function App() {
 
         {activeTab === "store-users" && (
           <div className="space-y-6">
-            <div className="rounded-2xl border border-cyan-500/20 bg-slate-900/80 shadow-2xl overflow-hidden">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 p-5 border-b border-slate-800">
+            <div className="overflow-hidden rounded-[28px] border border-cyan-500/15 bg-slate-900/85 shadow-[0_18px_55px_rgba(8,15,40,0.38)]">
+              <div className="flex flex-col gap-5 border-b border-slate-800/80 p-5 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <div className="text-xs font-black uppercase tracking-[0.3em] text-cyan-300">
+                  <div className="text-[11px] font-black uppercase tracking-[0.34em] text-cyan-300/90">
                     User Web
                   </div>
-                  <h2 className="text-2xl font-black text-white mt-2">
+                  <h2 className="mt-2 text-2xl font-black text-white">
                     Quản lí user mua hàng trên web
                   </h2>
-                  <p className="text-sm text-slate-400 mt-2 max-w-3xl">
-                    Theo dõi user web, đơn đã mua, trace DB đang gắn với từng đơn và
-                    tạo đơn thủ công ngay trong admin.
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                    Theo dõi user, đơn đã mua và thao tác nhanh ngay trong admin.
                   </p>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0">
+                <div className="grid min-w-0 grid-cols-2 gap-3 md:grid-cols-4">
                   {[
                     {
                       label: "Tổng user",
@@ -5351,29 +5351,29 @@ function App() {
                   ].map((item) => (
                     <div
                       key={item.label}
-                      className={`rounded-xl border px-4 py-3 ${item.tone}`}
+                      className={`rounded-2xl border px-4 py-3.5 ${item.tone}`}
                     >
-                      <div className="text-[11px] uppercase tracking-[0.25em] opacity-80">
+                      <div className="text-[10px] uppercase tracking-[0.26em] opacity-80">
                         {item.label}
                       </div>
-                      <div className="text-2xl font-black mt-1">{item.value}</div>
+                      <div className="mt-1 text-2xl font-black">{item.value}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="p-5 border-b border-slate-800">
-                <div className="flex flex-col gap-3 lg:flex-row">
+              <div className="border-b border-slate-800/80 p-5">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                   <input
                     value={storeUserQuery}
                     onChange={(e) => setStoreUserQuery(e.target.value)}
-                    placeholder="Tìm theo tên user, SĐT, email, provider..."
-                    className="flex-1 rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 outline-none transition-all"
+                    placeholder="Tìm theo tên user, SĐT hoặc email..."
+                    className="flex-1 rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white placeholder:text-slate-500 outline-none transition-all focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30"
                   />
                   <button
                     type="button"
                     onClick={() => openStoreManualOrder()}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-3 text-white font-bold transition-colors"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 font-bold text-white transition-colors hover:bg-emerald-500"
                   >
                     <UserPlus size={16} />
                     Tạo đơn thủ công
@@ -5394,21 +5394,59 @@ function App() {
                         : [];
                       const userOrders = storeOrdersByUserId.get(String(user?.id || "").trim()) || [];
                       const isExpanded = expandedStoreUserId === String(user?.id || "").trim();
+                      const userStats = [
+                        {
+                          label: "Tổng đơn",
+                          value: Number(user.totalOrders || 0),
+                          tone:
+                            "border-slate-700/90 bg-slate-900/70 text-slate-100",
+                        },
+                        {
+                          label: "Đã giao",
+                          value: Number(user.fulfilledOrders || 0),
+                          tone:
+                            "border-emerald-500/25 bg-emerald-500/10 text-emerald-200",
+                        },
+                        {
+                          label: "Đang chờ",
+                          value: Number(user.pendingOrders || 0),
+                          tone:
+                            "border-amber-500/25 bg-amber-500/10 text-amber-200",
+                        },
+                        {
+                          label: "Mới nhất",
+                          value: user.latestOrderAt ? formatDate(user.latestOrderAt) : "Chưa có",
+                          tone:
+                            "border-cyan-500/25 bg-cyan-500/10 text-cyan-200",
+                        },
+                        {
+                          label: "Tạo",
+                          value: user.createdAt ? formatDate(user.createdAt) : "--",
+                          tone:
+                            "border-slate-700/90 bg-slate-900/70 text-slate-300",
+                        },
+                        {
+                          label: "Cập nhật",
+                          value: user.updatedAt ? formatDate(user.updatedAt) : "--",
+                          tone:
+                            "border-slate-700/90 bg-slate-900/70 text-slate-300",
+                        },
+                      ];
                       return (
                         <div
                           key={user.id}
-                          className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 shadow-lg"
+                          className="rounded-[24px] border border-slate-800/90 bg-slate-950/45 p-4 shadow-[0_12px_30px_rgba(5,12,30,0.22)]"
                         >
-                          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
-                            <div className="min-w-0 flex-1 space-y-3">
+                          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
+                            <div className="min-w-0 space-y-4">
                               <div className="flex flex-wrap items-center gap-2">
-                                <div className="text-lg font-black text-white break-all">
+                                <div className="text-xl font-black text-white break-all">
                                   {user.fullName || "User chưa có tên"}
                                 </div>
                                 {authProviders.map((provider) => (
                                   <span
                                     key={`${user.id}-${provider}`}
-                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.18em] ${
+                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ${
                                       provider === "google"
                                         ? "bg-violet-500/15 text-violet-200 border border-violet-500/25"
                                         : "bg-blue-500/15 text-blue-200 border border-blue-500/25"
@@ -5419,48 +5457,39 @@ function App() {
                                 ))}
                               </div>
 
-                              <div className="grid gap-3 lg:grid-cols-[minmax(180px,240px)_minmax(240px,1fr)]">
-                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
-                                  <div className="text-slate-500 text-[11px] uppercase tracking-[0.22em]">
-                                    Zalo / SĐT
-                                  </div>
-                                  <div className="text-white font-semibold mt-1 break-all">
-                                    {user.phone || "Chưa có"}
-                                  </div>
+                              <div className="flex flex-wrap gap-2">
+                                <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-slate-700/90 bg-slate-900/75 px-3 py-2 text-sm text-slate-100">
+                                  <Phone size={14} className="shrink-0 text-cyan-300" />
+                                  <span className="font-semibold break-all">
+                                    {user.phone || "Chưa có SĐT"}
+                                  </span>
                                 </div>
-                                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-3">
-                                  <div className="text-slate-500 text-[11px] uppercase tracking-[0.22em]">
-                                    Email
-                                  </div>
-                                  <div className="text-white font-semibold mt-1 break-all">
-                                    {user.email || "Chưa có"}
-                                  </div>
+                                <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-slate-700/90 bg-slate-900/75 px-3 py-2 text-sm text-slate-100">
+                                  <Mail size={14} className="shrink-0 text-cyan-300" />
+                                  <span className="font-semibold break-all">
+                                    {user.email || "Chưa có email"}
+                                  </span>
                                 </div>
                               </div>
 
-                              <div className="flex flex-wrap gap-2 text-sm">
-                                <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-slate-200">
-                                  Tổng đơn: <span className="font-black text-white">{Number(user.totalOrders || 0)}</span>
-                                </span>
-                                <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-emerald-200">
-                                  Đã giao: <span className="font-black">{Number(user.fulfilledOrders || 0)}</span>
-                                </span>
-                                <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1.5 text-amber-200">
-                                  Đang chờ: <span className="font-black">{Number(user.pendingOrders || 0)}</span>
-                                </span>
-                                <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1.5 text-cyan-200">
-                                  Mới nhất: <span className="font-black">{user.latestOrderAt ? formatDate(user.latestOrderAt) : "Chưa có"}</span>
-                                </span>
-                                <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-slate-300">
-                                  Tạo: <span className="font-semibold text-slate-100">{user.createdAt ? formatDate(user.createdAt) : "--"}</span>
-                                </span>
-                                <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1.5 text-slate-300">
-                                  Cập nhật: <span className="font-semibold text-slate-100">{user.updatedAt ? formatDate(user.updatedAt) : "--"}</span>
-                                </span>
+                              <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
+                                {userStats.map((item) => (
+                                  <div
+                                    key={`${user.id}-${item.label}`}
+                                    className={`rounded-2xl border px-3.5 py-3 ${item.tone}`}
+                                  >
+                                    <div className="text-[10px] uppercase tracking-[0.22em] opacity-75">
+                                      {item.label}
+                                    </div>
+                                    <div className="mt-1 text-sm font-black break-all">
+                                      {item.value}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             </div>
 
-                            <div className="xl:w-56 shrink-0 grid gap-3">
+                            <div className="grid gap-2 xl:content-start xl:grid-cols-2">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -5470,7 +5499,7 @@ function App() {
                                       : String(user?.id || "").trim(),
                                   )
                                 }
-                                className="flex-1 xl:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-3 text-white font-bold transition-colors"
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-500 xl:col-span-2"
                               >
                                 <FileSpreadsheet size={16} />
                                 {isExpanded
@@ -5480,7 +5509,7 @@ function App() {
                               <button
                                 type="button"
                                 onClick={() => openStoreManualOrder(user)}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 px-4 py-3 text-white font-bold transition-colors"
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-800 px-4 py-3 text-sm font-bold text-emerald-200 transition-colors hover:bg-slate-700"
                               >
                                 <UserPlus size={16} />
                                 Tạo đơn
@@ -5488,7 +5517,7 @@ function App() {
                               <button
                                 type="button"
                                 onClick={() => openStoreUserEdit(user)}
-                                className="flex-1 xl:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-4 py-3 text-white font-bold transition-colors"
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-cyan-500"
                               >
                                 <Pencil size={16} />
                                 Sửa user
@@ -5497,7 +5526,7 @@ function App() {
                                 type="button"
                                 onClick={() => handleDeleteStoreUser(user)}
                                 disabled={loadingStates.deleteStoreUser === String(user?.id || "").trim()}
-                                className="flex-1 xl:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-red-700 hover:bg-red-600 px-4 py-3 text-white font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-700 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60 xl:col-span-2"
                               >
                                 <Trash2 size={16} />
                                 {loadingStates.deleteStoreUser === String(user?.id || "").trim()
