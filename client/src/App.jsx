@@ -7140,24 +7140,12 @@ function App() {
                                             )}
                                             👤 {name}
                                           </span>
-                                          {linkedStoreOrder ? (
-                                            <div className="mt-1 flex max-w-[220px] flex-wrap items-center gap-1 text-[10px] leading-relaxed">
-                                              <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                                {linkedStoreOrder.orderId || "Đơn web"}
-                                              </span>
-                                              {linkedStoreOrder.contact ? (
-                                                <span
-                                                  className="break-all text-cyan-100"
-                                                  title={linkedStoreOrder.contact}
-                                                >
-                                                  {linkedStoreOrder.contact}
-                                                </span>
-                                              ) : null}
-                                              {linkedStoreOrder.statusLabel ? (
-                                                <span className="text-cyan-300/80">
-                                                  · {linkedStoreOrder.statusLabel}
-                                                </span>
-                                              ) : null}
+                                          {linkedStoreOrder?.orderId ? (
+                                            <div
+                                              className="mt-1 max-w-[220px] truncate text-[10px] font-bold text-cyan-200"
+                                              title={linkedStoreOrder.orderId}
+                                            >
+                                              {linkedStoreOrder.orderId}
                                             </div>
                                           ) : null}
                                           {dateStr ? (
