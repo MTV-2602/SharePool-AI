@@ -227,6 +227,7 @@ function PublicStorefront() {
   const [authMode, setAuthMode] = useState("login");
   const [loading, setLoading] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(Boolean(initialStoreToken));
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const [purchaseLoadingCode, setPurchaseLoadingCode] = useState("");
   const [reconcileLoadingOrderId, setReconcileLoadingOrderId] = useState("");
   const [paymentPickerPackageCode, setPaymentPickerPackageCode] = useState("");
@@ -284,6 +285,21 @@ function PublicStorefront() {
     return normalizedConfig;
   };
 
+  const loadCatalog = async () => {
+    setCatalogLoading(true);
+    try {
+      const data = await apiRequest("/api/store/catalog");
+      const nextPackages = Array.isArray(data?.packages) ? data.packages : [];
+      setConfig((prev) => ({
+        ...prev,
+        packages: nextPackages.length ? nextPackages : prev.packages,
+      }));
+      return nextPackages;
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
+
   const loadSession = async (currentToken = token) => {
     if (!currentToken) {
       setUser(null);
@@ -336,6 +352,10 @@ function PublicStorefront() {
           writeStoredSessionRole("");
         }
         await loadConfig();
+        loadCatalog().catch((catalogError) => {
+          console.error("Failed to load store catalog", catalogError);
+          setCatalogLoading(false);
+        });
         if (initialStoreToken) {
           await loadSession(initialStoreToken);
         } else if (sessionRole === "user") {
@@ -786,6 +806,9 @@ function PublicStorefront() {
     if (sessionLoading) {
       return "Hệ thống đang kiểm tra phiên đăng nhập của bạn.";
     }
+    if (catalogLoading || pkg?.available === null || pkg?.available === undefined) {
+      return "Hệ thống đang tải số lượng nick còn lại.";
+    }
     if (!user) {
       return "Bạn cần đăng nhập hoặc đăng ký tài khoản user trước khi thanh toán.";
     }
@@ -802,6 +825,9 @@ function PublicStorefront() {
     if (sessionLoading) {
       return "Hệ thống đang kiểm tra phiên đăng nhập của bạn.";
     }
+    if (catalogLoading || pkg?.available === null || pkg?.available === undefined) {
+      return "Hệ thống đang tải kho còn lại.";
+    }
     if (!user) {
       return "Bạn cần đăng nhập hoặc đăng ký tài khoản user trước khi thanh toán.";
     }
@@ -812,13 +838,24 @@ function PublicStorefront() {
   };
 
   const openPaymentPicker = (pkg) => {
-    if (sessionLoading || loading || purchaseLockRef.current || purchaseLoadingCode) {
+    if (
+      sessionLoading ||
+      catalogLoading ||
+      loading ||
+      purchaseLockRef.current ||
+      purchaseLoadingCode
+    ) {
       return;
     }
     if (!user) {
       setMessage("");
       setError("Bạn chưa đăng nhập tài khoản user. Vui lòng đăng nhập hoặc đăng ký rồi thử lại.");
       focusAuthCard("login");
+      return;
+    }
+    if (pkg?.available === null || pkg?.available === undefined) {
+      setMessage("");
+      setError("Hệ thống đang tải số lượng nick còn lại. Vui lòng thử lại sau vài giây.");
       return;
     }
     if (!pkg?.purchasable || Number(pkg?.available || 0) <= 0) {
@@ -842,7 +879,14 @@ function PublicStorefront() {
   );
 
   const handlePurchaseButtonClick = async (pkg, paymentMethod) => {
-    if (sessionLoading || loading || purchaseLockRef.current || purchaseLoadingCode) return;
+    if (
+      sessionLoading ||
+      catalogLoading ||
+      loading ||
+      purchaseLockRef.current ||
+      purchaseLoadingCode
+    )
+      return;
     if (!user) {
       setMessage("");
       setError("Bạn chưa đăng nhập tài khoản user. Vui lòng đăng nhập hoặc đăng ký rồi thử lại.");
@@ -853,11 +897,11 @@ function PublicStorefront() {
     const purchaseKey = `${String(pkg?.code || "")}:${String(paymentMethod || STORE_PAYMENT_METHOD_MOMO)}`;
     setPurchaseLoadingCode(purchaseKey);
     try {
-      const latestConfig = await loadConfig();
-      const latestPackage = Array.isArray(latestConfig?.packages)
-        ? latestConfig.packages.find((item) => item.code === pkg?.code)
+      const latestPackages = await loadCatalog();
+      const latestPackage = Array.isArray(latestPackages)
+        ? latestPackages.find((item) => item.code === pkg?.code)
         : null;
-      if (!isPaymentMethodConfigured(paymentMethod, latestConfig)) {
+      if (!isPaymentMethodConfigured(paymentMethod, config)) {
         setMessage("");
         setError(
           `${getPaymentMethodLabel(paymentMethod)} chưa được cấu hình hoàn chỉnh. Vui lòng liên hệ admin.`,
@@ -1095,7 +1139,11 @@ function PublicStorefront() {
               <h3 className="mt-2 text-xl font-semibold text-white">{pkg.name}</h3>
             </div>
             <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
-              {pkg.available === null ? "Liên hệ" : `Còn ${pkg.available}`}
+              {pkg.code === "package3"
+                ? "Liên hệ"
+                : pkg.available === null || pkg.available === undefined
+                  ? "Đang tải"
+                  : `Còn ${pkg.available}`}
             </span>
           </div>
           <p className="mb-4 text-3xl font-bold text-white">{formatMoney(pkg.price)}</p>
@@ -1115,7 +1163,15 @@ function PublicStorefront() {
             <>
               <button
                 onClick={() => openPaymentPicker(pkg)}
-                disabled={sessionLoading || loading || !!purchaseLoadingCode || !pkg?.purchasable}
+                disabled={
+                  sessionLoading ||
+                  catalogLoading ||
+                  loading ||
+                  !!purchaseLoadingCode ||
+                  pkg?.available === null ||
+                  pkg?.available === undefined ||
+                  !pkg?.purchasable
+                }
                 className="w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {String(purchaseLoadingCode || "").startsWith(`${pkg.code}:`) ? (
@@ -1125,6 +1181,8 @@ function PublicStorefront() {
                   </span>
                 ) : sessionLoading ? (
                   "Đang kiểm tra..."
+                ) : catalogLoading || pkg?.available === null || pkg?.available === undefined ? (
+                  "Đang tải kho..."
                 ) : !user ? (
                   "Thanh toán"
                 ) : pkg.purchasable ? (
@@ -1526,9 +1584,12 @@ function PublicStorefront() {
                         }
                         disabled={
                           sessionLoading ||
+                          catalogLoading ||
                           loading ||
                           !!purchaseLoadingCode ||
                           !configured ||
+                          paymentPickerPackage?.available === null ||
+                          paymentPickerPackage?.available === undefined ||
                           !paymentPickerPackage?.purchasable
                         }
                         className="mt-5 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50"

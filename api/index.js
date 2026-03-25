@@ -690,9 +690,12 @@ const DEFAULT_STORE_CONTACT_ZALO_URL = "https://zalo.me/0345440153";
 
 app.get("/api/store/config", async (req, res) => {
   try {
-    const packages = await buildStoreCatalog();
     res.json({
-      packages,
+      packages: Object.values(STORE_PACKAGE_MAP).map((pkg) => ({
+        ...pkg,
+        available: pkg.automated ? null : null,
+        purchasable: false,
+      })),
       googleClientId: GOOGLE_OAUTH_CLIENT_ID,
       contact: {
         zaloUrl: String(
@@ -710,6 +713,15 @@ app.get("/api/store/config", async (req, res) => {
         !!PAYOS_API_KEY &&
         !!PAYOS_CHECKSUM_KEY,
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/store/catalog", async (req, res) => {
+  try {
+    const packages = await getCachedStoreCatalog();
+    res.json({ packages });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -3832,6 +3844,29 @@ const buildStoreCatalog = async () => {
       purchasable: false,
     },
   ];
+};
+const STORE_CATALOG_CACHE_TTL_MS = 10000;
+let storeCatalogCacheData = null;
+let storeCatalogCacheExpiresAt = 0;
+let storeCatalogCachePromise = null;
+const getCachedStoreCatalog = async ({ force = false } = {}) => {
+  const now = Date.now();
+  if (!force && storeCatalogCacheData && storeCatalogCacheExpiresAt > now) {
+    return storeCatalogCacheData;
+  }
+  if (!force && storeCatalogCachePromise) {
+    return storeCatalogCachePromise;
+  }
+  storeCatalogCachePromise = buildStoreCatalog()
+    .then((packages) => {
+      storeCatalogCacheData = packages;
+      storeCatalogCacheExpiresAt = Date.now() + STORE_CATALOG_CACHE_TTL_MS;
+      return packages;
+    })
+    .finally(() => {
+      storeCatalogCachePromise = null;
+    });
+  return storeCatalogCachePromise;
 };
 const claimStorePackage1AccountForOrder = async ({ order, user }) => {
   const customer = buildStoreCustomerRecord(user);
