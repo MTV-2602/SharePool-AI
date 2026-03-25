@@ -4482,6 +4482,34 @@ function App() {
     (currentTeamMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE,
     currentTeamMarketplaceOrderPage * MARKETPLACE_ORDER_PAGE_SIZE,
   );
+  useEffect(() => {
+    if (activeTab !== "chatgpt" || !expandedStoreUserId) return;
+    const visibleOrders = (storeOrders || []).filter(
+      (order) =>
+        String(order?.userId || "").trim() === expandedStoreUserId &&
+        String(order?.packageCode || "").trim() === "package2" &&
+        String(order?.status || "").trim() === "fulfilled",
+    );
+    visibleOrders.forEach((order) => {
+      const orderId = String(order?.id || "").trim();
+      if (!orderId) return;
+      const orderOtp = storeOrderOtpResults[orderId] || {};
+      const otpSecondsLeft = getStoreOrderOtpSecondsRemaining(
+        orderOtp,
+        storeOrderOtpNowMs,
+      );
+      if (otpSecondsLeft > 0) return;
+      if (loadingStates.fetchStoreOrderOtp === orderId) return;
+      handleFetchStoreOrderOtp(order);
+    });
+  }, [
+    activeTab,
+    expandedStoreUserId,
+    storeOrders,
+    storeOrderOtpResults,
+    storeOrderOtpNowMs,
+    loadingStates.fetchStoreOrderOtp,
+  ]);
   const chatgptMarketplaceVisibleStart =
     filteredChatgptMarketplaceOrders.length > 0
       ? (currentChatgptMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE + 1
@@ -5140,7 +5168,9 @@ function App() {
                                         ? "Mã đã hết hạn"
                                         : isPackage1
                                           ? "Bấm Lấy mã OTP để xem 6 số nhanh"
-                                          : "Bấm Lấy mã 2FA để hiện mã đăng nhập";
+                                          : loadingStates.fetchStoreOrderOtp === orderId
+                                            ? "Đang làm mới mã 2FA..."
+                                            : "Mã 2FA sẽ tự hiện khi tải xong";
                                     return (
                                     <div
                                       key={buildStoreOrderKey(order)}
@@ -5294,27 +5324,43 @@ function App() {
 
                                         <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-3">
                                           <div className="text-[11px] uppercase tracking-[0.18em] text-cyan-300">
-                                            {isPackage1 ? "Lấy mã OTP nhanh" : "Lấy mã 2FA nhanh"}
+                                            {isPackage1 ? "Lấy mã OTP nhanh" : "Mã 2FA tự làm mới"}
                                           </div>
                                           <div className="mt-2 text-sm text-slate-300">
                                             {isPackage1
                                               ? "Bấm nút để xem nhanh OTP 6 số hỗ trợ khách, không cần mở secret."
-                                              : "Bấm nút để hiện ngay mã 2FA đang dùng, không cần copy secret đi chỗ khác."}
+                                              : "Mã 2FA luôn tự hiện và tự làm mới. Admin chỉ cần sao chép khi cần."}
                                           </div>
                                           <div className="mt-3 flex flex-wrap items-center gap-3">
-                                            <button
-                                              type="button"
-                                              onClick={() => handleFetchStoreOrderOtp(order)}
-                                              disabled={loadingStates.fetchStoreOrderOtp === orderId}
-                                              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-bold text-white hover:bg-cyan-500 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-                                            >
-                                              {loadingStates.fetchStoreOrderOtp === orderId ? (
-                                                <Loader2 size={16} className="animate-spin" />
-                                              ) : (
-                                                <RotateCw size={16} />
-                                              )}
-                                              {isPackage1 ? "Lấy mã OTP" : "Lấy mã 2FA"}
-                                            </button>
+                                            {isPackage1 ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleFetchStoreOrderOtp(order)}
+                                                disabled={loadingStates.fetchStoreOrderOtp === orderId}
+                                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-bold text-white hover:bg-cyan-500 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                                              >
+                                                {loadingStates.fetchStoreOrderOtp === orderId ? (
+                                                  <Loader2 size={16} className="animate-spin" />
+                                                ) : (
+                                                  <RotateCw size={16} />
+                                                )}
+                                                Lấy mã OTP
+                                              </button>
+                                            ) : (
+                                              <div className="inline-flex items-center gap-2 rounded-2xl border border-cyan-500/20 bg-slate-950/60 px-4 py-3 text-sm font-semibold text-cyan-200">
+                                                {loadingStates.fetchStoreOrderOtp === orderId ? (
+                                                  <>
+                                                    <Loader2 size={16} className="animate-spin" />
+                                                    Đang làm mới mã...
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <RotateCw size={16} />
+                                                    Tự làm mới
+                                                  </>
+                                                )}
+                                              </div>
+                                            )}
                                             <div className={`rounded-2xl px-4 py-3 text-2xl font-bold tracking-[0.3em] ${otpSecondsLeft > 0 ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border border-slate-700 bg-slate-900 text-slate-500"}`}>
                                               {otpDisplay}
                                             </div>
