@@ -4980,6 +4980,21 @@ function App() {
                                           <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1 text-xs font-bold text-cyan-200">
                                             {formatMoney(order?.amount)}
                                           </span>
+                                          {order?.assignedAccountId ? (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                focusChatgptAccountFromMarketplace(
+                                                  order.assignedAccountId,
+                                                  order.assignedUsername || order.id,
+                                                )
+                                              }
+                                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-sky-600 hover:bg-sky-500 px-3 py-2 text-xs font-bold text-white transition-colors"
+                                            >
+                                              <ArrowRightLeft size={14} />
+                                              Tới acc
+                                            </button>
+                                          ) : null}
                                           {String(order?.packageCode || "").trim() === "package1" && (
                                             <button
                                               type="button"
