@@ -230,6 +230,7 @@ function PublicStorefront() {
   const [reconcileLoadingOrderId, setReconcileLoadingOrderId] = useState("");
   const [paymentPickerPackageCode, setPaymentPickerPackageCode] = useState("");
   const [paymentPreviewOrderId, setPaymentPreviewOrderId] = useState("");
+  const [paymentPreviewOrderDraft, setPaymentPreviewOrderDraft] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
@@ -767,21 +768,32 @@ function PublicStorefront() {
       if (!payUrl) {
         throw new Error("Hệ thống không trả về liên kết thanh toán.");
       }
-      const sessionData = await loadSession(token);
-      const latestOrders = Array.isArray(sessionData?.orders)
-        ? sessionData.orders
-        : [];
       const previewOrderId = String(data?.order?.id || "").trim();
-      const previewOrder =
-        latestOrders.find((item) => String(item?.id || "").trim() === previewOrderId) ||
-        data?.order ||
-        null;
+      const previewOrder = data?.order || null;
       setPaymentPreviewOrderId(String(previewOrder?.id || previewOrderId || "").trim());
+      setPaymentPreviewOrderDraft(previewOrder);
       setMessage(
         paymentMethod === STORE_PAYMENT_METHOD_PAYOS
           ? "Đã tạo mã QR ngân hàng. Quét mã ngay trong popup để thanh toán."
           : "Đã tạo thanh toán MoMo. Hoàn tất ngay trong popup này.",
       );
+      loadSession(token).catch(() => {});
+      const hasInlineMomoAction =
+        paymentMethod === STORE_PAYMENT_METHOD_MOMO &&
+        !!(
+          String(previewOrder?.momoQrCodeUrl || "").trim() ||
+          String(previewOrder?.momoDeepLink || "").trim()
+        );
+      if (
+        paymentMethod === STORE_PAYMENT_METHOD_MOMO &&
+        !hasInlineMomoAction &&
+        payUrl &&
+        typeof window !== "undefined"
+      ) {
+        setMessage("MoMo chưa trả mã QR, đang chuyển tới trang thanh toán...");
+        window.location.assign(payUrl);
+        return data;
+      }
       if (typeof window !== "undefined") {
         window.requestAnimationFrame(() => {
           ordersSectionRef.current?.scrollIntoView({
@@ -877,11 +889,13 @@ function PublicStorefront() {
         isPendingStorePayment(item?.status),
     );
     setPaymentPreviewOrderId(String(existingPendingOrder?.id || "").trim());
+    setPaymentPreviewOrderDraft(existingPendingOrder || null);
   };
 
   const closePaymentPicker = () => {
     setPaymentPickerPackageCode("");
     setPaymentPreviewOrderId("");
+    setPaymentPreviewOrderDraft(null);
   };
 
   const paymentPickerPackage = useMemo(
@@ -896,11 +910,15 @@ function PublicStorefront() {
     const previewOrderId = String(paymentPreviewOrderId || "").trim();
     if (previewOrderId) {
       return (
-        orders.find((item) => String(item?.id || "").trim() === previewOrderId) || null
+        orders.find((item) => String(item?.id || "").trim() === previewOrderId) ||
+        (String(paymentPreviewOrderDraft?.id || "").trim() === previewOrderId
+          ? paymentPreviewOrderDraft
+          : null) ||
+        null
       );
     }
-    return null;
-  }, [orders, paymentPreviewOrderId]);
+    return paymentPreviewOrderDraft || null;
+  }, [orders, paymentPreviewOrderDraft, paymentPreviewOrderId]);
 
   const handlePurchaseButtonClick = async (pkg, paymentMethod) => {
     if (
@@ -921,10 +939,6 @@ function PublicStorefront() {
     const purchaseKey = `${String(pkg?.code || "")}:${String(paymentMethod || STORE_PAYMENT_METHOD_MOMO)}`;
     setPurchaseLoadingCode(purchaseKey);
     try {
-      const latestPackages = await loadCatalog();
-      const latestPackage = Array.isArray(latestPackages)
-        ? latestPackages.find((item) => item.code === pkg?.code)
-        : null;
       if (!isPaymentMethodConfigured(paymentMethod, config)) {
         setMessage("");
         setError(
@@ -932,12 +946,12 @@ function PublicStorefront() {
         );
         return;
       }
-      if (!latestPackage?.purchasable || Number(latestPackage?.available || 0) <= 0) {
+      if (!pkg?.purchasable || Number(pkg?.available || 0) <= 0) {
         setMessage("");
         setError("Kho hiện tại của gói này đã hết, nên hệ thống đã chặn không cho tạo thanh toán.");
         return;
       }
-      await handleCreatePayment(latestPackage.code, paymentMethod);
+      await handleCreatePayment(pkg.code, paymentMethod);
     } finally {
       purchaseLockRef.current = false;
       setPurchaseLoadingCode("");
