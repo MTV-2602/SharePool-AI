@@ -1812,6 +1812,15 @@ function App() {
     }).format(Number.isFinite(amount) ? amount : 0);
   };
 
+  const getDaysUntilExpiry = (isoString) => {
+    if (!isoString) return null;
+    const expDate = new Date(isoString);
+    const expTime = expDate.getTime();
+    if (!Number.isFinite(expTime)) return null;
+    const now = new Date();
+    return Math.ceil((expTime - now.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
   // Helper to check expiry warning
   const getExpiryStatus = (isoString) => {
     if (!isoString) return { text: "", color: "text-slate-500", isExpired: false, dateStr: "" };
@@ -4474,6 +4483,73 @@ function App() {
     });
     return grouped;
   })();
+  const storeManualOrderSourceSummary = useMemo(() => {
+    const totalWarehouseAccounts = (Array.isArray(accounts) ? accounts : []).filter(
+      (acc) => normalizePackage2Shelf(acc?.package2Shelf) === "none",
+    );
+    const hasBlockingTrace = (acc = {}) => {
+      const storeTraceSummary = acc?.storeTraceSummary || null;
+      const marketplaceTraceSummary = acc?.marketplaceTraceSummary || null;
+      return (
+        Number(storeTraceSummary?.totalOrders || 0) > 0 ||
+        Number(marketplaceTraceSummary?.orderCount || 0) > 0 ||
+        Number(marketplaceTraceSummary?.warrantyCount || 0) > 0
+      );
+    };
+    const isOverStoreMinDays = (acc = {}) => {
+      const daysLeft = getDaysUntilExpiry(acc?.expiredAt);
+      return Number.isFinite(daysLeft) && daysLeft > 20;
+    };
+    const eligibleSharedAccounts = totalWarehouseAccounts.filter((acc) => {
+      if (String(acc?.type || "").trim() !== "package1") return false;
+      if (!isOverStoreMinDays(acc)) return false;
+      if (hasBlockingTrace(acc)) return false;
+      const usedSlots = Array.isArray(acc?.users) ? acc.users.length : 0;
+      return Math.max(0, 3 - usedSlots) > 0;
+    });
+    const eligibleSharedSlots = eligibleSharedAccounts.reduce((sum, acc) => {
+      const usedSlots = Array.isArray(acc?.users) ? acc.users.length : 0;
+      return sum + Math.max(0, 3 - usedSlots);
+    }, 0);
+    const eligibleConvertibleAccounts = totalWarehouseAccounts.filter((acc) => {
+      const accountType = String(acc?.type || "").trim();
+      if (accountType && accountType !== "unassigned") return false;
+      if (!isOverStoreMinDays(acc)) return false;
+      if (hasBlockingTrace(acc)) return false;
+      return (Array.isArray(acc?.users) ? acc.users.length : 0) === 0;
+    });
+    return {
+      totalWarehouseAccounts: totalWarehouseAccounts.length,
+      eligibleSharedAccounts: eligibleSharedAccounts.length,
+      eligibleSharedSlots,
+      eligibleConvertibleAccounts: eligibleConvertibleAccounts.length,
+      estimatedPackage1Supply:
+        eligibleSharedSlots + eligibleConvertibleAccounts.length * 3,
+      estimatedPackage2Supply: eligibleConvertibleAccounts.length,
+    };
+  }, [accounts]);
+  const storeManualOrderWarehouseHint =
+    String(storeManualOrderForm?.packageCode || "").trim() === "package2"
+      ? {
+          title: "Gói 2 lấy từ kho tổng",
+          description:
+            "Chỉ cấp nick chưa chọn ở kho tổng, còn hơn 20 ngày và không dính đơn web / đơn sàn / bảo hành.",
+          meta: `Nguồn hiện thấy: ${storeManualOrderSourceSummary.eligibleConvertibleAccounts} nick chưa chọn có thể cấp. Kho market không tham gia luồng này.`,
+          toneClass:
+            storeManualOrderSourceSummary.estimatedPackage2Supply > 0
+              ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-100"
+              : "border-red-500/30 bg-red-500/10 text-red-100",
+        }
+      : {
+          title: "Gói 1 lấy từ kho tổng",
+          description:
+            "Ưu tiên nick chia sẻ ở kho tổng còn slot và còn hơn 20 ngày. Nếu hết, hệ thống tự lấy nick chưa chọn ở kho tổng để đổi thành nick share.",
+          meta: `Nguồn hiện thấy: ${storeManualOrderSourceSummary.eligibleSharedAccounts} nick share còn ${storeManualOrderSourceSummary.eligibleSharedSlots} slot, ${storeManualOrderSourceSummary.eligibleConvertibleAccounts} nick chưa chọn có thể chuyển. Kho market không tham gia luồng này.`,
+          toneClass:
+            storeManualOrderSourceSummary.estimatedPackage1Supply > 0
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+              : "border-red-500/30 bg-red-500/10 text-red-100",
+        };
   const paginatedChatgptMarketplaceOrders = filteredChatgptMarketplaceOrders.slice(
     (currentChatgptMarketplaceOrderPage - 1) * MARKETPLACE_ORDER_PAGE_SIZE,
     currentChatgptMarketplaceOrderPage * MARKETPLACE_ORDER_PAGE_SIZE,
@@ -11029,6 +11105,19 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   <option value="package1">Gói 1 - Chia sẻ tiết kiệm</option>
                   <option value="package2">Gói 2 - Tài khoản riêng tư</option>
                 </select>
+                <div
+                  className={`mt-3 rounded-xl border px-4 py-3 text-sm ${storeManualOrderWarehouseHint.toneClass}`}
+                >
+                  <div className="font-semibold text-white mb-1">
+                    {storeManualOrderWarehouseHint.title}
+                  </div>
+                  <p className="leading-relaxed">
+                    {storeManualOrderWarehouseHint.description}
+                  </p>
+                  <p className="mt-2 text-xs font-medium opacity-90">
+                    {storeManualOrderWarehouseHint.meta}
+                  </p>
+                </div>
               </div>
               <div>
                 <label className="text-slate-400 text-sm block mb-1">Họ tên *</label>
