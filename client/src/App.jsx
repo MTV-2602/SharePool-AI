@@ -202,6 +202,43 @@ const getStoreOrderStatusLabel = (value) => {
   if (normalized === "payment_failed") return "Thanh toán thất bại";
   return String(value || "Không rõ");
 };
+const isStoreReservationLockStatus = (value) => {
+  const normalized = normalizeStoreOrderStatus(value);
+  return (
+    normalized === "pending_payment" ||
+    normalized === "awaiting_payment" ||
+    normalized === "paid"
+  );
+};
+const getActiveStoreReservationTraces = (acc = {}) => {
+  const activeTraces = Array.isArray(acc?.storeTraceSummary?.activeReservationTraces)
+    ? acc.storeTraceSummary.activeReservationTraces
+    : [];
+  if (activeTraces.length > 0) {
+    return activeTraces.filter(
+      (trace) =>
+        String(trace?.role || "").trim() === "reserved" &&
+        isStoreReservationLockStatus(trace?.status),
+    );
+  }
+  const traces = Array.isArray(acc?.storeTraceSummary?.traces)
+    ? acc.storeTraceSummary.traces
+    : [];
+  return traces.filter(
+    (trace) =>
+      String(trace?.role || "").trim() === "reserved" &&
+      isStoreReservationLockStatus(trace?.status),
+  );
+};
+const getActiveStoreReservationCount = (acc = {}) => {
+  const directCount = Number(acc?.storeTraceSummary?.activeReservedOrders || 0);
+  if (directCount > 0) return directCount;
+  return getActiveStoreReservationTraces(acc).length;
+};
+const getLatestStoreReservationTrace = (acc = {}) =>
+  acc?.storeTraceSummary?.latestActiveReservation ||
+  getActiveStoreReservationTraces(acc)[0] ||
+  null;
 const getStorePaymentMethodLabel = (order = {}) =>
   String(order?.paymentMethodLabel || "").trim() ||
   (String(order?.paymentMethod || "").trim().toLowerCase() === "payos"
@@ -4818,7 +4855,7 @@ function App() {
       const storeTraceSummary = acc?.storeTraceSummary || null;
       const marketplaceTraceSummary = acc?.marketplaceTraceSummary || null;
       return (
-        Number(storeTraceSummary?.totalOrders || 0) > 0 ||
+        getActiveStoreReservationCount(acc) > 0 ||
         Number(marketplaceTraceSummary?.orderCount || 0) > 0 ||
         Number(marketplaceTraceSummary?.warrantyCount || 0) > 0
       );
@@ -6929,7 +6966,30 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredChatgptAccounts.map((acc) => (
+                    {filteredChatgptAccounts.map((acc) => {
+                        const activeStoreReservationTraces = getActiveStoreReservationTraces(acc);
+                        const activeStoreReservationCount = getActiveStoreReservationCount(acc);
+                        const latestStoreReservationTrace = getLatestStoreReservationTrace(acc);
+                        const hasActiveStoreReservation = activeStoreReservationCount > 0;
+                        const activeStoreReservationPackageName = String(
+                          latestStoreReservationTrace?.packageName || "",
+                        ).trim();
+                        const activeStoreReservationOrderId = String(
+                          latestStoreReservationTrace?.orderId || "",
+                        ).trim();
+                        const activeStoreReservationCustomer = String(
+                          latestStoreReservationTrace?.customerName ||
+                            latestStoreReservationTrace?.customerEmail ||
+                            "",
+                        ).trim();
+                        const activeStoreReservationStatusLabel = getStoreOrderStatusLabel(
+                          latestStoreReservationTrace?.status,
+                        );
+                        const activeStoreReservationExpiresAt = formatDate(
+                          latestStoreReservationTrace?.expiresAt,
+                        );
+                        const isAccountLockedByStoreOrder = hasActiveStoreReservation;
+                        return (
                         <tr
                           id={`chatgpt-account-row-${acc.id}`}
                           key={acc.id}
@@ -6971,10 +7031,13 @@ function App() {
                               onChange={(e) =>
                                 handleTypeChange(acc, e.target.value)
                               }
-                              disabled={loadingStates.changeType[acc.id]}
+                              disabled={
+                                loadingStates.changeType[acc.id] ||
+                                isAccountLockedByStoreOrder
+                              }
                               className={`
                                             ${gptSubTab === "market" ? "hidden" : "w-full"} text-xs rounded px-2 py-2 outline-none font-bold border cursor-pointer appearance-none text-center
-                                            ${loadingStates.changeType[acc.id] ? "opacity-50 cursor-wait" : ""}
+                                            ${loadingStates.changeType[acc.id] || isAccountLockedByStoreOrder ? "opacity-50 cursor-not-allowed" : ""}
                                             ${acc.type === "package1"
                                   ? "bg-blue-900/40 text-blue-400 border-blue-700/50"
                                   : acc.type === "package2"
@@ -6997,6 +7060,10 @@ function App() {
                                   <div className="w-full rounded px-2 py-1.5 text-center text-[11px] font-semibold border bg-amber-900/40 text-amber-200 border-amber-700/60">
                                     Khoa don san
                                   </div>
+                                ) : hasActiveStoreReservation ? (
+                                  <div className="w-full rounded px-2 py-1.5 text-center text-[11px] font-semibold border bg-cyan-900/40 text-cyan-200 border-cyan-700/60">
+                                    Don web dang giu cho
+                                  </div>
                                 ) : (
                                   <select
                                     value={normalizePackage2Shelf(acc.package2Shelf)}
@@ -7011,7 +7078,8 @@ function App() {
                                     disabled={
                                       loadingStates.changeType[acc.id] ||
                                       loadingStates.changeShelf[acc.id] ||
-                                      hasAssignedCustomer(acc)
+                                      hasAssignedCustomer(acc) ||
+                                      isAccountLockedByStoreOrder
                                     }
                                     className={`
                                       w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center
@@ -7147,18 +7215,33 @@ function App() {
                             {acc.type === "package1" ? (
                               <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
                                 <div className="flex justify-between items-center text-xs mb-2 pb-1 border-b border-slate-700/50">
+                                  {(() => {
+                                    const currentUserCount = Array.isArray(acc.users)
+                                      ? acc.users.length
+                                      : 0;
+                                    const reservedSlotCount =
+                                      activeStoreReservationCount;
+                                    const occupiedSlotCount =
+                                      currentUserCount + reservedSlotCount;
+                                    return (
+                                      <>
                                   <span
                                     style={{
                                       color:
-                                        acc.users?.length >= 3
+                                        occupiedSlotCount >= 3
                                           ? "#ef4444"
                                           : "#10b981",
                                       fontWeight: "bold",
                                     }}
                                   >
-                                    {acc.users?.length || 0}/3 Slot
+                                    {Math.min(3, occupiedSlotCount)}/3 Slot
                                   </span>
-                                  {acc.users?.length < 3 ? (
+                                  {reservedSlotCount > 0 && (
+                                    <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                      Giu cho web {reservedSlotCount}
+                                    </span>
+                                  )}
+                                  {occupiedSlotCount < 3 ? (
                                     <button
                                       type="button"
                                       onClick={() => openAddUserModal(acc.id)}
@@ -7169,6 +7252,9 @@ function App() {
                                   ) : (
                                     <span className="text-xs text-red-400 font-bold italic">Đã Đầy</span>
                                   )}
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                                 {isChatgptMarketWarehouse(acc) && !marketplaceTrackedAccountIds.has(String(acc?.id || "")) && (
                                   <div className="mb-2 w-full px-2 py-0.5 bg-emerald-900/40 text-emerald-300 font-bold rounded text-[10px] uppercase border border-emerald-800/50 flex items-center justify-center gap-1 shadow-sm">
@@ -7180,11 +7266,32 @@ function App() {
                                     <Globe size={10} /> Kho duoi 25 ngay - day tay
                                   </div>
                                 )}
+                                {hasActiveStoreReservation && (
+                                  <div className="mb-2 rounded-lg border border-cyan-700/40 bg-cyan-950/20 px-2.5 py-2 text-[10px] text-cyan-100">
+                                    <div className="font-black uppercase tracking-[0.1em] text-cyan-200">
+                                      Đơn web đang giữ chỗ
+                                    </div>
+                                    <div className="mt-1 text-[11px] font-semibold text-white">
+                                      {activeStoreReservationPackageName || "Đơn web giữ chỗ"}
+                                    </div>
+                                    <div className="mt-1 text-cyan-100">
+                                      {activeStoreReservationOrderId || "--"}
+                                      {activeStoreReservationCustomer
+                                        ? ` · ${activeStoreReservationCustomer}`
+                                        : ""}
+                                    </div>
+                                    <div className="mt-1 text-slate-300">
+                                      {activeStoreReservationStatusLabel || "Đang chờ thanh toán"}
+                                      {activeStoreReservationExpiresAt
+                                        ? ` · Giữ tới ${activeStoreReservationExpiresAt}`
+                                        : ""}
+                                    </div>
+                                  </div>
+                                )}
                                 <div className="space-y-1">
                                   {acc.users?.map((u, index) => {
                                     const name = getUserName(u);
                                     const dateStr = getUserDate(u);
-                                    const daysUsed = getDaysUsed(u);
                                     const daysRemaining = getDaysRemaining(u);
                                     const linkedStoreOrder =
                                       getStoreOrderIdentityForAccountUser(acc, u);
@@ -7346,9 +7453,43 @@ function App() {
                                       </div>
                                     );
                                   })}
+                                  {activeStoreReservationTraces.map((trace, traceIndex) => (
+                                    <div
+                                      key={`${acc.id}-reserved-slot-${trace.orderId || traceIndex}`}
+                                      className="flex justify-between items-center text-xs p-2 rounded border mb-1 bg-cyan-950/20 border-cyan-700/40"
+                                    >
+                                      <div className="flex flex-col min-w-0">
+                                        <span
+                                          className="font-bold truncate max-w-[220px] flex items-center gap-1 text-cyan-100"
+                                          title={trace.orderId || "Đơn web giữ chỗ"}
+                                        >
+                                          <Lock size={12} />
+                                          {trace.orderId || "Đơn web giữ chỗ"}
+                                        </span>
+                                        {trace.customerName || trace.customerEmail ? (
+                                          <div
+                                            className="mt-1 max-w-[220px] truncate text-[10px] font-semibold text-white"
+                                            title={trace.customerName || trace.customerEmail}
+                                          >
+                                            {trace.customerName || trace.customerEmail}
+                                          </div>
+                                        ) : null}
+                                        <span className="text-[10px] text-slate-300">
+                                          {getStoreOrderStatusLabel(trace.status)}
+                                          {trace.expiresAt
+                                            ? ` · Giữ tới ${formatDate(trace.expiresAt)}`
+                                            : ""}
+                                        </span>
+                                      </div>
+                                      <div className="rounded-md border border-cyan-600/40 bg-cyan-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                        Giữ chỗ
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             ) : acc.type === "package2" ||
+                              hasActiveStoreReservation ||
                               isChatgptMarketWarehouse(acc) ||
                               isChatgptShortDateWarehouse(acc) ||
                               marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
@@ -8035,31 +8176,41 @@ function App() {
                                       <div className="flex flex-col gap-2">
                                         {renderWarrantySummary()}
                                         {(() => {
-                                          const warehouseCardClasses = isOnDatammoShelf
-                                            ? "border-emerald-700/50 bg-emerald-950/20 text-emerald-100"
-                                            : package2Shelf === "main"
-                                              ? "border-amber-700/50 bg-amber-950/20 text-amber-100"
-                                              : "border-slate-700/60 bg-slate-900/80 text-slate-100";
-                                          const warehouseChipClasses = isOnDatammoShelf
-                                            ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
-                                            : package2Shelf === "main"
-                                              ? "border-amber-500/30 bg-amber-500/15 text-amber-200"
-                                              : "border-slate-600/60 bg-slate-800 text-slate-200";
-                                          const warehouseTitle = isOnDatammoShelf
-                                            ? "Kho market"
-                                            : package2Shelf === "main"
-                                              ? "Kho duoi 25 ngay"
-                                              : "Kho tong";
-                                          const warehouseStatus = isOnDatammoShelf
-                                            ? "Chua ban"
-                                            : package2Shelf === "main"
-                                              ? "Day tay"
-                                              : "San sang";
-                                          const warehouseDescription = isOnDatammoShelf
-                                            ? "Acc dang nam trong kho market va se duoc ban tu dong qua Datammo + Shopmini."
-                                            : package2Shelf === "main"
-                                              ? "Acc duoi 25 ngay, chi de day tay va khong di vao API stock/buy."
-                                              : "Acc dang nam o kho tong, co the them khach tay hoac chuyen sang kho khac.";
+                                          const warehouseCardClasses = hasActiveStoreReservation
+                                            ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
+                                            : isOnDatammoShelf
+                                              ? "border-emerald-700/50 bg-emerald-950/20 text-emerald-100"
+                                              : package2Shelf === "main"
+                                                ? "border-amber-700/50 bg-amber-950/20 text-amber-100"
+                                                : "border-slate-700/60 bg-slate-900/80 text-slate-100";
+                                          const warehouseChipClasses = hasActiveStoreReservation
+                                            ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-200"
+                                            : isOnDatammoShelf
+                                              ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
+                                              : package2Shelf === "main"
+                                                ? "border-amber-500/30 bg-amber-500/15 text-amber-200"
+                                                : "border-slate-600/60 bg-slate-800 text-slate-200";
+                                          const warehouseTitle = hasActiveStoreReservation
+                                            ? "Don web dang giu cho"
+                                            : isOnDatammoShelf
+                                              ? "Kho market"
+                                              : package2Shelf === "main"
+                                                ? "Kho duoi 25 ngay"
+                                                : "Kho tong";
+                                          const warehouseStatus = hasActiveStoreReservation
+                                            ? "Da khoa"
+                                            : isOnDatammoShelf
+                                              ? "Chua ban"
+                                              : package2Shelf === "main"
+                                                ? "Day tay"
+                                                : "San sang";
+                                          const warehouseDescription = hasActiveStoreReservation
+                                            ? "Acc nay dang duoc don web giu cho nen tam thoi khoa sua, xoa va doi kho."
+                                            : isOnDatammoShelf
+                                              ? "Acc dang nam trong kho market va se duoc ban tu dong qua Datammo + Shopmini."
+                                              : package2Shelf === "main"
+                                                ? "Acc duoi 25 ngay, chi de day tay va khong di vao API stock/buy."
+                                                : "Acc dang nam o kho tong, co the them khach tay hoac chuyen sang kho khac.";
                                           return (
                                             <div
                                               className={`rounded-xl border px-3 py-3 shadow-sm ${warehouseCardClasses}`}
@@ -8086,7 +8237,36 @@ function App() {
                                                   {warehouseStatus}
                                                 </span>
                                               </div>
-                                              {isOnDatammoShelf && (
+                                              {hasActiveStoreReservation ? (
+                                                <div className="mt-2 space-y-1.5">
+                                                  {activeStoreReservationTraces.map((trace, traceIndex) => (
+                                                    <div
+                                                      key={`${acc.id}-package2-reservation-${trace.orderId || trace.expiresAt || traceIndex}`}
+                                                      className="rounded-lg border border-cyan-500/25 bg-slate-950/35 px-2.5 py-2 text-[10px] text-cyan-50"
+                                                    >
+                                                      <div className="flex items-start justify-between gap-2">
+                                                        <div className="min-w-0">
+                                                          <div className="truncate font-black uppercase tracking-[0.08em] text-cyan-200">
+                                                            {trace.orderId || "Don web"}
+                                                          </div>
+                                                          <div className="mt-0.5 truncate text-slate-200">
+                                                            {trace.customerName || "Khach web"}
+                                                          </div>
+                                                        </div>
+                                                        <span className="shrink-0 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                                          Giữ chỗ
+                                                        </span>
+                                                      </div>
+                                                      <div className="mt-1 text-[10px] text-slate-300">
+                                                        {getStoreOrderStatusLabel(trace.status)}
+                                                        {trace.expiresAt
+                                                          ? ` · Giữ tới ${formatDate(trace.expiresAt)}`
+                                                          : ""}
+                                                      </div>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              ) : isOnDatammoShelf && (
                                                 <div className="mt-2 flex flex-wrap gap-1.5">
                                                   <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-200">
                                                     Datammo
@@ -8102,7 +8282,7 @@ function App() {
                                             </div>
                                           );
                                         })()}
-                                        {isOnDatammoShelf ? (
+                                        {hasActiveStoreReservation ? null : isOnDatammoShelf ? (
                                           <div className="flex gap-1">
                                             <button
                                               type="button"
@@ -8199,8 +8379,17 @@ function App() {
                                   });
                                   setShowEditModal(true);
                                 }}
-                                className="bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white p-2 rounded transition-colors"
-                                title="Sửa Tài Khoản"
+                                disabled={isAccountLockedByStoreOrder}
+                                className={`p-2 rounded transition-colors ${
+                                  isAccountLockedByStoreOrder
+                                    ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                                    : "bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white"
+                                }`}
+                                title={
+                                  isAccountLockedByStoreOrder
+                                    ? "Acc dang bi don web giu cho"
+                                    : "Sửa Tài Khoản"
+                                }
                               >
                                 <Pencil size={16} />
                               </button>
@@ -8210,15 +8399,25 @@ function App() {
                                   setDeletingId(acc.id);
                                   setShowDeleteModal(true);
                                 }}
-                                className="bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white p-2 rounded transition-colors"
-                                title="Xóa Tài Khoản"
+                                disabled={isAccountLockedByStoreOrder}
+                                className={`p-2 rounded transition-colors ${
+                                  isAccountLockedByStoreOrder
+                                    ? "bg-slate-800 text-slate-500 cursor-not-allowed"
+                                    : "bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white"
+                                }`}
+                                title={
+                                  isAccountLockedByStoreOrder
+                                    ? "Acc dang bi don web giu cho"
+                                    : "Xóa Tài Khoản"
+                                }
                               >
                                 <Trash2 size={16} />
                               </button>
                             </div>
                           </td>
-                        </tr>
-                      ))}
+                    </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

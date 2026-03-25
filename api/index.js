@@ -2127,6 +2127,7 @@ const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
         totalOrders: 0,
         assignedOrders: 0,
         reservedOrders: 0,
+        activeReservedOrders: 0,
         warrantyOrders: 0,
         pendingOrders: 0,
         fulfilledOrders: 0,
@@ -2137,6 +2138,8 @@ const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
         latestPackageName: "",
         latestCustomerName: "",
         latestCustomerEmail: "",
+        latestActiveReservation: null,
+        activeReservationTraces: [],
         traces: [],
       });
     }
@@ -2200,6 +2203,9 @@ const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
     targets.forEach((target) => {
       const summary = touchSummary(target.accountId);
       if (!summary) return;
+      const isActiveReservation =
+        target.role === "reserved" &&
+        (isStorePendingPaymentStatus(status) || status === "paid");
       summary.totalOrders += 1;
       if (target.role === "assigned") {
         summary.assignedOrders += 1;
@@ -2214,6 +2220,9 @@ const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
       if (isStorePendingPaymentStatus(status) || status === "paid") {
         summary.pendingOrders += 1;
       }
+      if (isActiveReservation) {
+        summary.activeReservedOrders += 1;
+      }
       if (STORE_HIDDEN_ORDER_STATUSES.has(status)) {
         summary.hiddenOrders += 1;
       }
@@ -2226,6 +2235,18 @@ const buildStoreAccountTraceMap = (orders = [], userMap = new Map()) => {
         summary.latestPackageName = traceBase.packageName;
         summary.latestCustomerName = traceBase.customerName;
         summary.latestCustomerEmail = traceBase.customerEmail;
+      }
+      if (isActiveReservation && !summary.latestActiveReservation) {
+        summary.latestActiveReservation = {
+          ...traceBase,
+          role: target.role,
+        };
+      }
+      if (isActiveReservation && summary.activeReservationTraces.length < 5) {
+        summary.activeReservationTraces.push({
+          ...traceBase,
+          role: target.role,
+        });
       }
       if (summary.traces.length < 5) {
         summary.traces.push({
@@ -5315,6 +5336,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
       ]),
     );
     let marketplaceAccountTraceMap = new Map();
+    let storeAccountTraceMap = new Map();
     try {
       marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
         datammoOrders,
@@ -5323,6 +5345,14 @@ app.get("/api/data", verifyToken, async (req, res) => {
     } catch (traceError) {
       console.error("Trace diagnostic build failed:", traceError);
     }
+    try {
+      storeAccountTraceMap = buildStoreAccountTraceMap(
+        rawStoreOrders,
+        storeUserMap,
+      );
+    } catch (traceError) {
+      console.error("Store trace diagnostic build failed:", traceError);
+    }
     res.json({
       chatgpt: accounts.map((acc) => ({
         ...acc,
@@ -5330,6 +5360,8 @@ app.get("/api/data", verifyToken, async (req, res) => {
           acc?.package2Shelf,
           CHATGPT_TOTAL_VALUE,
         ),
+        storeTraceSummary:
+          storeAccountTraceMap.get(String(acc?.id || "").trim()) || null,
         marketplaceTraceSummary:
           marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) || null,
       })),
