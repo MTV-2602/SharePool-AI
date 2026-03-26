@@ -1402,13 +1402,13 @@ function PublicStorefront() {
                 </div>
                 {String(order.paymentMethod || "").trim().toLowerCase() === STORE_PAYMENT_METHOD_PAYOS &&
                 String(order.paymentQrCode || "").trim() ? (
-                  <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+                  <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3">
                     <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-4">
                       <div className="rounded-2xl bg-white p-3 shadow-lg shadow-slate-950/20">
                         <img
                           src={buildQrImageUrl(order.paymentQrCode, 260)}
                           alt={`QR thanh toán ${order.id}`}
-                          className="h-36 w-36 rounded-xl object-contain sm:h-44 sm:w-44"
+                          className="h-28 w-28 rounded-xl object-contain sm:h-36 sm:w-36"
                         />
                       </div>
                       <div className="w-full min-w-0 flex-1 space-y-3 text-center sm:min-w-[220px] sm:text-left">
@@ -1424,15 +1424,12 @@ function PublicStorefront() {
                               href={order.paymentUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="rounded-2xl bg-slate-800 px-4 py-3 text-center text-sm font-semibold text-slate-100 hover:bg-slate-700"
-                            >
-                              Mở trang thanh toán
+                            className="rounded-2xl bg-slate-800 px-4 py-3 text-center text-sm font-semibold text-slate-100 hover:bg-slate-700"
+                          >
+                              Mở ngân hàng
                             </a>
                           ) : null}
                         </div>
-                        <p className="text-xs leading-5 text-slate-400">
-                          Nếu app ngân hàng không quét trực tiếp, bạn có thể sao chép mã QR hoặc mở trang thanh toán.
-                        </p>
                       </div>
                     </div>
                   </div>
@@ -1544,9 +1541,9 @@ function PublicStorefront() {
         )}
       </div>
       {paymentPickerPackage ? (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 px-3 py-4 backdrop-blur-sm sm:px-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 px-2 py-3 backdrop-blur-sm sm:px-4">
           <div className="flex min-h-full items-start justify-center sm:items-center">
-          <div className="w-full max-w-lg rounded-[2rem] border border-slate-800 bg-slate-900 p-4 shadow-2xl shadow-slate-950/40 sm:p-6">
+          <div className="w-full max-w-xl rounded-[2rem] border border-slate-800 bg-slate-900 p-4 shadow-2xl shadow-slate-950/40 sm:p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">
@@ -1566,7 +1563,7 @@ function PublicStorefront() {
               </button>
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
               {[STORE_PAYMENT_METHOD_MOMO, STORE_PAYMENT_METHOD_PAYOS].map(
                 (paymentMethod) => {
                   const methodKey = `${paymentPickerPackage.code}:${paymentMethod}`;
@@ -1594,7 +1591,7 @@ function PublicStorefront() {
                           {configured ? "Sẵn sàng" : "Chưa bật"}
                         </span>
                       </div>
-                      <p className="mt-3 text-sm leading-6 text-slate-300">
+                      <p className="mt-3 min-h-10 text-sm leading-6 text-slate-300">
                         {paymentMethod === STORE_PAYMENT_METHOD_PAYOS
                           ? "Quét mã hoặc mở app ngân hàng."
                           : "Mở MoMo để thanh toán."}
@@ -1617,7 +1614,7 @@ function PublicStorefront() {
                           paymentPickerPackage?.available === undefined ||
                           !paymentPickerPackage?.purchasable
                         }
-                        className="mt-5 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="mt-4 w-full rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-semibold text-white transition hover:from-cyan-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {purchaseLoadingCode === methodKey ? (
                           <span className="inline-flex items-center justify-center gap-2">
@@ -1640,13 +1637,13 @@ function PublicStorefront() {
             </div>
 
             {paymentPreviewOrder ? (
-              <div className="mt-5 rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+              <div className="mt-4 rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-[0.3em] text-cyan-400">
                       Thanh toán hiện tại
                     </p>
-                    <h4 className="mt-2 text-xl font-semibold text-white">
+                    <h4 className="mt-2 text-lg font-semibold text-white sm:text-xl">
                       {paymentPreviewOrder.packageName}
                     </h4>
                     <p className="mt-2 text-sm text-slate-300">
@@ -1671,19 +1668,19 @@ function PublicStorefront() {
                 </div>
 
                 <div className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-3">
-                  <div className="rounded-2xl bg-slate-950/70 p-3">
+                  <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
                     <p className="text-slate-500">Mã thanh toán</p>
                     <p className="mt-1 break-all font-semibold leading-6 text-white">
                       {paymentPreviewOrder.paymentOrderId || "--"}
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-slate-950/70 p-3">
+                  <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
                     <p className="text-slate-500">Giá tiền</p>
                     <p className="mt-1 font-semibold text-white">
                       {formatMoney(paymentPreviewOrder.amount)}
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-slate-950/70 p-3">
+                  <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
                     <p className="text-slate-500">Hạn thanh toán</p>
                     <p className="mt-1 break-words font-semibold leading-6 text-white">
                       {paymentPreviewOrder.expiresAt
@@ -1696,13 +1693,14 @@ function PublicStorefront() {
                 {isPendingStorePayment(paymentPreviewOrder.status) &&
                 String(paymentPreviewOrder.paymentMethod || "").trim().toLowerCase() ===
                   STORE_PAYMENT_METHOD_PAYOS ? (
-                  <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="mt-4 rounded-2xl border border-cyan-500/10 bg-slate-950/30 p-3">
+                    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-4">
                     {String(paymentPreviewOrder.paymentQrCode || "").trim() ? (
                       <div className="rounded-2xl bg-white p-3 shadow-lg shadow-slate-950/20">
                         <img
                           src={buildQrImageUrl(paymentPreviewOrder.paymentQrCode, 240)}
                           alt={`QR thanh toán ${paymentPreviewOrder.id}`}
-                          className="h-36 w-36 rounded-xl object-contain sm:h-44 sm:w-44"
+                          className="h-28 w-28 rounded-xl object-contain sm:h-36 sm:w-36"
                         />
                       </div>
                     ) : null}
@@ -1710,7 +1708,7 @@ function PublicStorefront() {
                       <div>
                         <p className="text-sm font-semibold text-cyan-300">Quét QR thanh toán</p>
                         <p className="mt-1 text-sm text-slate-300">
-                          Quét mã ngân hàng để thanh toán.
+                          Quét mã bằng app ngân hàng.
                         </p>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-1">
@@ -1721,20 +1719,22 @@ function PublicStorefront() {
                             rel="noreferrer"
                             className="rounded-2xl bg-slate-800 px-4 py-3 text-center text-sm font-semibold text-slate-100 hover:bg-slate-700"
                           >
-                            Mở trang thanh toán
+                            Mở ngân hàng
                           </a>
                         ) : null}
                       </div>
                     </div>
+                    </div>
                   </div>
                 ) : isPendingStorePayment(paymentPreviewOrder.status) ? (
-                  <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="mt-4 rounded-2xl border border-cyan-500/10 bg-slate-950/30 p-3">
+                    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-4">
                     {String(paymentPreviewOrder.momoQrCodeUrl || "").trim() ? (
                       <div className="rounded-2xl bg-white p-3 shadow-lg shadow-slate-950/20">
                         <img
                           src={paymentPreviewOrder.momoQrCodeUrl}
                           alt={`QR MoMo ${paymentPreviewOrder.id}`}
-                          className="h-36 w-36 rounded-xl object-contain sm:h-44 sm:w-44"
+                          className="h-28 w-28 rounded-xl object-contain sm:h-36 sm:w-36"
                         />
                       </div>
                     ) : null}
@@ -1767,6 +1767,7 @@ function PublicStorefront() {
                           </a>
                         ) : null}
                       </div>
+                    </div>
                     </div>
                   </div>
                 ) : (
