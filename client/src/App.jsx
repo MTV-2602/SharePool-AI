@@ -4750,8 +4750,8 @@ function App() {
     );
     const userJoinedAt = normalizeComparableIsoDate(user?.joinedAt);
     const userExpiredAt = normalizeComparableIsoDate(user?.expiredAt);
-    const relatedOrders = (Array.isArray(storeOrders) ? storeOrders : [])
-      .map((order) => {
+    const allRelatedOrders = (Array.isArray(storeOrders) ? storeOrders : [])
+      .filter((order) => {
         const relatedAccountIds = [
           order?.assignedAccountId,
           order?.rootAssignedAccountId,
@@ -4759,7 +4759,10 @@ function App() {
         ]
           .map((value) => String(value || "").trim())
           .filter(Boolean);
-        if (!relatedAccountIds.includes(accountId)) return null;
+        return relatedAccountIds.includes(accountId);
+      });
+    const relatedOrders = allRelatedOrders
+      .map((order) => {
         const orderNameKeys = [
           order?.assignedCustomerName,
           order?.customerName,
@@ -4810,28 +4813,13 @@ function App() {
         ).getTime();
         return bTime - aTime;
       });
-    const matchedOrder =
-      relatedOrders[0]?.order ||
-      (Array.isArray(storeOrders) ? storeOrders : [])
-        .filter((order) => {
-          const relatedAccountIds = [
-            order?.assignedAccountId,
-            order?.rootAssignedAccountId,
-            order?.reservedAccountId,
-          ]
-            .map((value) => String(value || "").trim())
-            .filter(Boolean);
-          return relatedAccountIds.includes(accountId);
-        })
-        .sort((a, b) => {
-          const aTime = new Date(
-            a?.updatedAt || a?.fulfilledAt || a?.paidAt || a?.createdAt || 0,
-          ).getTime();
-          const bTime = new Date(
-            b?.updatedAt || b?.fulfilledAt || b?.paidAt || b?.createdAt || 0,
-          ).getTime();
-          return bTime - aTime;
-        })[0];
+    let matchedOrder = relatedOrders[0]?.order || null;
+    if (!matchedOrder) {
+      const accountUsers = Array.isArray(acc?.users) ? acc.users : [];
+      if (accountUsers.length <= 1 && allRelatedOrders.length === 1) {
+        matchedOrder = allRelatedOrders[0];
+      }
+    }
     if (!matchedOrder) return null;
     const orderId = String(matchedOrder?.id || "").trim();
     const customerName = String(
