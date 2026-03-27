@@ -2089,12 +2089,11 @@ function App() {
               String(selectedSupportConversationId || "").trim()
           ) {
             if (event === "support.message.created" && nextMessage) {
-              if (isSupportViewportNearBottom()) {
-                queueSupportScrollToBottom();
-              }
+              queueSupportScrollToBottom();
               setSupportMessages((prev) =>
                 mergeSupportMessageItem(prev, nextMessage),
               );
+              flushSupportScrollToBottom();
             } else if (!nextConversation) {
               loadSupportConversationMessages(selectedSupportConversationId, {
                 silent: true,

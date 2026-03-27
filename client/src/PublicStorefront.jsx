@@ -752,10 +752,9 @@ function PublicStorefront() {
       nextMessage?.conversationId || nextConversationId || "",
     ).trim();
     if (currentConversationId && currentConversationId === messageConversationId) {
-      if (isSupportViewportNearBottom()) {
-        queueSupportScrollToBottom();
-      }
+      queueSupportScrollToBottom();
       setSupportMessages((prev) => mergeRealtimeSupportMessages(prev, nextMessage));
+      flushSupportScrollToBottom();
       return {
         handled: true,
         conversationId: messageConversationId,
