@@ -2650,7 +2650,10 @@ function PublicStorefront() {
                   </div>
                 ) : (
                   <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-                    Đơn này đã xử lý xong. Bạn có thể đóng popup hoặc kiểm tra lại trạng thái nếu cần.
+                    {String(paymentPreviewOrder.status || "").trim().toLowerCase() ===
+                    "fulfilled"
+                      ? "Thanh toán đã xác nhận và tài khoản đã được giao. Bạn có thể đóng popup hoặc xem lại ở danh sách đơn hàng."
+                      : "Hệ thống đã xác nhận thanh toán. Nếu tài khoản chưa hiện ngay, hãy bấm kiểm tra lại trạng thái để nhận giao nick."}
                   </div>
                 )}
               </div>

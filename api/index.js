@@ -2618,16 +2618,43 @@ const clearStorePayosPaymentFields = () => ({
   payosCode: "",
   payosDesc: "",
 });
+const parseFiniteStoreAmount = (value) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+};
 const isStorePayosSuccess = (data = {}) => {
   const normalizedStatus = String(data?.status || "")
     .trim()
     .toUpperCase();
-  return (
-    normalizedStatus === "PAID" ||
-    normalizedStatus === "SUCCEEDED" ||
-    Number(data?.amountRemaining || 0) <= 0 ||
-    Number(data?.amountPaid || 0) >= Math.round(Number(data?.amount || 0))
-  );
+  if (normalizedStatus === "PAID" || normalizedStatus === "SUCCEEDED") {
+    return true;
+  }
+
+  const totalAmount = parseFiniteStoreAmount(data?.amount);
+  const paidAmount = parseFiniteStoreAmount(data?.amountPaid);
+  const remainingAmount = parseFiniteStoreAmount(data?.amountRemaining);
+
+  if (
+    Number.isFinite(totalAmount) &&
+    totalAmount > 0 &&
+    Number.isFinite(paidAmount) &&
+    paidAmount >= Math.round(totalAmount)
+  ) {
+    return true;
+  }
+
+  if (
+    Number.isFinite(totalAmount) &&
+    totalAmount > 0 &&
+    Number.isFinite(paidAmount) &&
+    paidAmount > 0 &&
+    Number.isFinite(remainingAmount) &&
+    remainingAmount === 0
+  ) {
+    return true;
+  }
+
+  return false;
 };
 const isStorePayosFinalFailure = (data = {}) => {
   const normalizedStatus = String(data?.status || "")
@@ -2722,6 +2749,25 @@ const isStorePendingPaymentStatus = (status = "") =>
   STORE_PENDING_PAYMENT_STATUSES.includes(
     String(status || "").trim().toLowerCase(),
   );
+const getStorePendingStatusFromExistingPayment = (order = {}) => {
+  const paymentMethod = normalizeStorePaymentMethod(order?.paymentMethod);
+  if (paymentMethod === STORE_PAYMENT_METHOD_PAYOS) {
+    return (
+      String(order?.payosCheckoutUrl || "").trim() ||
+      String(order?.payosPaymentLinkId || "").trim() ||
+      (Number.isFinite(Number(order?.payosOrderCode)) &&
+        Number(order?.payosOrderCode) > 0)
+    )
+      ? "awaiting_payment"
+      : "pending_payment";
+  }
+  return (
+    String(order?.momoPayUrl || "").trim() ||
+    String(order?.momoOrderId || "").trim()
+  )
+    ? "awaiting_payment"
+    : "pending_payment";
+};
 const isStoreOrderHoldActive = (order = {}, nowMs = Date.now()) => {
   if (!isStorePendingPaymentStatus(order?.status)) return false;
   const expiresAtMs = parseStoreDateMs(order?.expiresAt);
@@ -3648,6 +3694,8 @@ const buildStoreReservationSnapshot = async ({ excludeOrderId = "" } = {}) => {
 const sanitizeStoreOrder = (order) => {
   if (!order) return null;
   const packageCode = String(order.packageCode || "");
+  const isFulfilled =
+    normalizeStoreOrderStatusValue(order?.status) === "fulfilled";
   const warrantyRounds = Array.isArray(order?.warrantyRounds)
     ? order.warrantyRounds
         .map((round) => ({
@@ -3711,28 +3759,44 @@ const sanitizeStoreOrder = (order) => {
   if (packageCode === "package1") {
     return {
       ...base,
-      package1AccessToken: String(order.package1AccessToken || ""),
+      package1AccessToken: isFulfilled
+        ? String(order.package1AccessToken || "")
+        : "",
       package1UsedCount: Number(order.package1UsedCount || 0),
       package1UsageLeft: buildStorePackage1UsageLeft(order),
-      assignedUsername: String(order.assignedUsername || ""),
-      assignedPassword: String(order.assignedPassword || ""),
-      assignedLink: String(order.assignedLink || ""),
-      assignedCustomerName: String(order.assignedCustomerName || ""),
-      assignedCustomerJoinedAt: String(order.assignedCustomerJoinedAt || ""),
-      assignedCustomerExpiredAt: String(order.assignedCustomerExpiredAt || ""),
+      assignedUsername: isFulfilled ? String(order.assignedUsername || "") : "",
+      assignedPassword: isFulfilled ? String(order.assignedPassword || "") : "",
+      assignedLink: isFulfilled ? String(order.assignedLink || "") : "",
+      assignedCustomerName: isFulfilled
+        ? String(order.assignedCustomerName || "")
+        : "",
+      assignedCustomerJoinedAt: isFulfilled
+        ? String(order.assignedCustomerJoinedAt || "")
+        : "",
+      assignedCustomerExpiredAt: isFulfilled
+        ? String(order.assignedCustomerExpiredAt || "")
+        : "",
     };
   }
   if (packageCode === "package2") {
     return {
       ...base,
-      assignedUsername: String(order.assignedUsername || ""),
-      assignedPassword: String(order.assignedPassword || ""),
-      assignedOtpSecret: String(order.assignedOtpSecret || ""),
-      assignedLink: String(order.assignedLink || ""),
-      assignedType: String(order.assignedType || ""),
-      assignedCustomerName: String(order.assignedCustomerName || ""),
-      assignedCustomerJoinedAt: String(order.assignedCustomerJoinedAt || ""),
-      assignedCustomerExpiredAt: String(order.assignedCustomerExpiredAt || ""),
+      assignedUsername: isFulfilled ? String(order.assignedUsername || "") : "",
+      assignedPassword: isFulfilled ? String(order.assignedPassword || "") : "",
+      assignedOtpSecret: isFulfilled
+        ? String(order.assignedOtpSecret || "")
+        : "",
+      assignedLink: isFulfilled ? String(order.assignedLink || "") : "",
+      assignedType: isFulfilled ? String(order.assignedType || "") : "",
+      assignedCustomerName: isFulfilled
+        ? String(order.assignedCustomerName || "")
+        : "",
+      assignedCustomerJoinedAt: isFulfilled
+        ? String(order.assignedCustomerJoinedAt || "")
+        : "",
+      assignedCustomerExpiredAt: isFulfilled
+        ? String(order.assignedCustomerExpiredAt || "")
+        : "",
     };
   }
   return base;
@@ -6227,8 +6291,16 @@ const fulfillStoreOrder = async (order) => {
   if (!safeOrder?.id) {
     throw new Error("Đơn hàng không hợp lệ");
   }
-  if (String(safeOrder.status || "").trim().toLowerCase() === "fulfilled") {
+  const normalizedStatus = String(safeOrder.status || "").trim().toLowerCase();
+  if (normalizedStatus === "fulfilled") {
     return StoreOrder.findOne({ id: safeOrder.id });
+  }
+  if (normalizedStatus !== "paid") {
+    const error = new Error(
+      "Don hang chua duoc xac nhan thanh toan, khong duoc giao nick.",
+    );
+    error.statusCode = 409;
+    throw error;
   }
   let claim = null;
   try {
@@ -6538,6 +6610,7 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
   if (paymentMethod === STORE_PAYMENT_METHOD_PAYOS) {
     const responseData = await queryPayosPaymentStatusForStoreOrder(order);
     const data = responseData?.data || {};
+    const payosResponseCode = String(responseData?.code || "").trim();
     order.payosCode = String(responseData?.code || "").trim();
     order.payosDesc = String(responseData?.desc || "").trim();
     order.payosStatus = String(data?.status || "").trim();
@@ -6551,7 +6624,7 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
       order.payosQrCode = String(data?.qrCode || "").trim();
     }
     order.updatedAt = nowIso;
-    if (isStorePayosSuccess(data)) {
+    if (payosResponseCode === "00" && isStorePayosSuccess(data)) {
       if (!String(order.paidAt || "").trim()) {
         order.paidAt = nowIso;
       }
@@ -6564,9 +6637,13 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
       }
       return StoreOrder.findOne({ id: order.id });
     }
-    if (isStorePayosFinalFailure(data)) {
+    if (payosResponseCode === "00" && isStorePayosFinalFailure(data)) {
       await StoreOrder.deleteOne({ id: order.id });
       return null;
+    }
+    if (payosResponseCode === "00" && normalizedStatus === "paid") {
+      order.status = getStorePendingStatusFromExistingPayment(order);
+      order.paidAt = "";
     }
     await order.save();
     return order;
@@ -6597,6 +6674,10 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
       return StoreOrder.findOne({ id: order.id });
     }
     return StoreOrder.findOne({ id: order.id });
+  }
+  if (!Number.isNaN(resultCode) && normalizedStatus === "paid") {
+    order.status = getStorePendingStatusFromExistingPayment(order);
+    order.paidAt = "";
   }
   await order.save();
   return order;
