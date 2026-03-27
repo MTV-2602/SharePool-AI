@@ -1,6 +1,11 @@
 ﻿import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import {
+  canUseRealtimeRuntime,
+  getRealtimeSafetySyncMs,
+  subscribeToBroadcastTopic,
+} from "./realtime";
+import {
   Trash2,
   UserPlus,
   Pencil,
@@ -1236,6 +1241,29 @@ const buildStoreVoucherFormState = (voucher = null) => ({
   startsAt: String(voucher?.startsAt || "").trim().slice(0, 16),
   endsAt: String(voucher?.endsAt || "").trim().slice(0, 16),
 });
+const buildDefaultAdminRealtimeConfig = () => ({
+  enabled: false,
+  url: "",
+  anonKey: "",
+  safetySyncMs: 90000,
+  adminTopic: "",
+});
+const normalizeAdminRealtimeConfig = (value = null) => ({
+  enabled: !!value?.enabled,
+  url: String(value?.url || "").trim(),
+  anonKey: String(value?.anonKey || "").trim(),
+  safetySyncMs: getRealtimeSafetySyncMs(value, 90000),
+  adminTopic: String(value?.adminTopic || "").trim(),
+});
+const buildDefaultDashboardSummary = () => ({
+  totalStoreUsers: 0,
+  totalStoreOrders: 0,
+  fulfilledStoreOrders: 0,
+  pendingStoreOrders: 0,
+  unreadSupportConversations: 0,
+  openSupportConversations: 0,
+  totalVouchers: 0,
+});
 
 function App() {
   // LOGIN STATE
@@ -1254,6 +1282,12 @@ function App() {
   const [selectedSupportConversationId, setSelectedSupportConversationId] =
     useState("");
   const [supportReplyDraft, setSupportReplyDraft] = useState("");
+  const [dashboardSummary, setDashboardSummary] = useState(
+    buildDefaultDashboardSummary(),
+  );
+  const [adminRealtime, setAdminRealtime] = useState(
+    buildDefaultAdminRealtimeConfig(),
+  );
   const [voucherQuery, setVoucherQuery] = useState("");
   const [showVoucherModal, setShowVoucherModal] = useState(false);
   const [voucherForm, setVoucherForm] = useState(buildStoreVoucherFormState());
@@ -1600,63 +1634,135 @@ function App() {
     writeStoredSessionRole("");
   }, []);
 
-  // Serverless-friendly auto-sync:
-  // poll lightweight data version endpoint instead of long-lived SSE connections.
   useEffect(() => {
-    if (!isAuthenticated) return;
-
-    let isMounted = true;
-
-    const checkDataVersion = async () => {
-      if (document.hidden) return;
-      try {
-        const response = await axios.get("/api/data-version", {
-          timeout: 8000,
-          skipGlobalLoading: true,
-        });
-        const nextVersion = Number(response?.data?.version || 0);
-        if (!Number.isFinite(nextVersion) || nextVersion <= 0) return;
-
-        if (!dataVersionRef.current) {
-          dataVersionRef.current = nextVersion;
-          return;
-        }
-
-        if (nextVersion > dataVersionRef.current && isMounted) {
-          dataVersionRef.current = nextVersion;
-          fetchData(false);
-        }
-      } catch (e) {
-        // Ignore transient poll errors. Next cycle will retry.
-      }
+    if (typeof window === "undefined" || !("BroadcastChannel" in window)) {
+      return undefined;
+    }
+    const channel = new BroadcastChannel("web-ban-acc-admin-sync");
+    channelRef.current = channel;
+    channel.onmessage = () => {
+      if (!isAuthenticated) return;
+      refreshAdminSurface({ includeSummary: true }).catch(() => {});
     };
-
-    checkDataVersion();
-    const interval = setInterval(checkDataVersion, 3000);
-
     return () => {
-      isMounted = false;
-      clearInterval(interval);
+      if (channelRef.current === channel) {
+        channelRef.current = null;
+      }
+      channel.close();
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, activeTab, selectedSupportConversationId]);
 
-  // Backward-compatible helper for cases calling it manually.
-  const broadcastDataChange = () => { };
+  const broadcastDataChange = () => {
+    if (!channelRef.current) return;
+    try {
+      channelRef.current.postMessage({
+        type: "admin-sync",
+        at: Date.now(),
+      });
+    } catch {}
+  };
 
-  // REFRESH when tab becomes visible
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) return undefined;
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        fetchData();
+        refreshAdminSurface({ includeSummary: true }).catch(() => {});
       }
     };
 
+    window.addEventListener("focus", handleVisibilityChange);
+    window.addEventListener("online", handleVisibilityChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () =>
+    return () => {
+      window.removeEventListener("focus", handleVisibilityChange);
+      window.removeEventListener("online", handleVisibilityChange);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [isAuthenticated]);
+    };
+  }, [isAuthenticated, activeTab, selectedSupportConversationId]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    const intervalId = window.setInterval(() => {
+      if (document.hidden) return;
+      refreshAdminSurface({ includeSummary: true }).catch(() => {});
+    }, getRealtimeSafetySyncMs(adminRealtime, 90000));
+    return () => window.clearInterval(intervalId);
+  }, [adminRealtime, isAuthenticated, activeTab, selectedSupportConversationId]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (activeTab === "store-users") {
+      loadAdminStoreUsers({ silent: true }).catch(() => {});
+      loadDashboardSummary({ silent: true }).catch(() => {});
+      return;
+    }
+    if (activeTab === "store-vouchers") {
+      loadAdminStoreVouchers({ silent: true }).catch(() => {});
+      loadDashboardSummary({ silent: true }).catch(() => {});
+      return;
+    }
+    if (activeTab === "support") {
+      loadSupportConversations({ silent: true }).catch(() => {});
+      loadDashboardSummary({ silent: true }).catch(() => {});
+      return;
+    }
+    if (activeTab === "chatgpt") {
+      loadAdminStoreOrders({ silent: true }).catch(() => {});
+      loadAdminStoreUsers({ silent: true }).catch(() => {});
+      loadDashboardSummary({ silent: true }).catch(() => {});
+    }
+  }, [activeTab, isAuthenticated]);
+
+  useEffect(() => {
+    if (
+      !isAuthenticated ||
+      !adminRealtime?.adminTopic ||
+      !canUseRealtimeRuntime(adminRealtime)
+    ) {
+      return undefined;
+    }
+
+    return subscribeToBroadcastTopic({
+      config: adminRealtime,
+      topic: adminRealtime.adminTopic,
+      onMessage: ({ event, payload }) => {
+        if (event === "support.message.created" || event === "support.thread.read") {
+          loadDashboardSummary({ silent: true }).catch(() => {});
+          loadSupportConversations({ silent: true }).catch(() => {});
+          if (
+            selectedSupportConversationId &&
+            String(payload?.conversationId || "").trim() ===
+              String(selectedSupportConversationId || "").trim()
+          ) {
+            loadSupportConversationMessages(selectedSupportConversationId, {
+              silent: true,
+            }).catch(() => {});
+          }
+          return;
+        }
+        if (event === "voucher.updated") {
+          loadDashboardSummary({ silent: true }).catch(() => {});
+          if (activeTab === "store-vouchers") {
+            loadAdminStoreVouchers({ silent: true }).catch(() => {});
+          }
+          return;
+        }
+        if (event === "order.updated") {
+          loadDashboardSummary({ silent: true }).catch(() => {});
+          loadAdminStoreOrders({ silent: true }).catch(() => {});
+          if (activeTab === "chatgpt" || activeTab === "store-users") {
+            loadAdminStoreUsers({ silent: true }).catch(() => {});
+          }
+        }
+      },
+    });
+  }, [
+    activeTab,
+    adminRealtime,
+    isAuthenticated,
+    selectedSupportConversationId,
+  ]);
 
   useEffect(() => {
     const validIds = new Set(accounts.map((acc) => acc.id));
@@ -2169,6 +2275,9 @@ function App() {
         if (Number.isFinite(nextVersion) && nextVersion > 0) {
           dataVersionRef.current = nextVersion;
         }
+        if (res.data?.realtime) {
+          setAdminRealtime(normalizeAdminRealtimeConfig(res.data.realtime));
+        }
         syncDatammoOrderBanner(res.data?.datammoOrders);
         syncStoreOrderBanner(res.data?.storeOrders);
         setStoreOrders(normalizeStoreAdminOrders(res.data?.storeOrders));
@@ -2225,6 +2334,40 @@ function App() {
         setDatammoWarrantyCases(
           normalizeDatammoWarrantyCases(res.data?.datammoWarrantyCases),
         );
+        setDashboardSummary({
+          totalStoreUsers: Array.isArray(res.data?.storeUsers)
+            ? res.data.storeUsers.length
+            : 0,
+          totalStoreOrders: Array.isArray(res.data?.storeOrders)
+            ? res.data.storeOrders.length
+            : 0,
+          fulfilledStoreOrders: Array.isArray(res.data?.storeOrders)
+            ? res.data.storeOrders.filter(
+                (item) => String(item?.status || "").trim() === "fulfilled",
+              ).length
+            : 0,
+          pendingStoreOrders: Array.isArray(res.data?.storeOrders)
+            ? res.data.storeOrders.filter((item) =>
+                ["pending_payment", "awaiting_payment", "paid"].includes(
+                  String(item?.status || "").trim(),
+                ),
+              ).length
+            : 0,
+          unreadSupportConversations: Array.isArray(res.data?.supportConversations)
+            ? res.data.supportConversations.filter(
+                (item) => Number(item?.adminUnreadCount || 0) > 0,
+              ).length
+            : 0,
+          openSupportConversations: Array.isArray(res.data?.supportConversations)
+            ? res.data.supportConversations.filter(
+                (item) =>
+                  String(item?.status || "").trim().toLowerCase() === "open",
+              ).length
+            : 0,
+          totalVouchers: Array.isArray(res.data?.storeVouchers)
+            ? res.data.storeVouchers.length
+            : 0,
+        });
       } catch (error) {
         if (showLoader) {
           showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
@@ -2238,6 +2381,188 @@ function App() {
     })();
     fetchDataPromiseRef.current = runFetch;
     return runFetch;
+  };
+
+  const loadDashboardSummary = async ({ silent = true } = {}) => {
+    try {
+      const response = await axios.get("/api/admin/dashboard/summary", {
+        timeout: 10000,
+        skipGlobalLoading: silent,
+      });
+      if (response?.data?.summary) {
+        setDashboardSummary({
+          ...buildDefaultDashboardSummary(),
+          ...response.data.summary,
+        });
+      }
+      if (response?.data?.realtime) {
+        setAdminRealtime(normalizeAdminRealtimeConfig(response.data.realtime));
+      }
+      return response?.data || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Không thể tải tổng quan admin."),
+          "error",
+        );
+      }
+      return null;
+    }
+  };
+
+  const loadAdminStoreOrders = async ({ silent = true, limit = 100 } = {}) => {
+    try {
+      const response = await axios.get("/api/admin/store-orders", {
+        params: { limit },
+        timeout: 10000,
+        skipGlobalLoading: silent,
+      });
+      const nextOrders = normalizeStoreAdminOrders(response?.data?.orders);
+      syncStoreOrderBanner(nextOrders);
+      setStoreOrders(nextOrders);
+      return response?.data || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Không thể tải danh sách đơn web."),
+          "error",
+        );
+      }
+      return null;
+    }
+  };
+
+  const loadAdminStoreUsers = async ({ silent = true, limit = 100 } = {}) => {
+    try {
+      const response = await axios.get("/api/admin/store-users", {
+        params: { limit },
+        timeout: 10000,
+        skipGlobalLoading: silent,
+      });
+      setStoreUsers(
+        [...(response?.data?.users || [])].sort((a, b) => {
+          const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
+          const bTime = new Date(b?.latestOrderAt || b?.createdAt || 0).getTime();
+          return bTime - aTime;
+        }),
+      );
+      return response?.data || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Không thể tải danh sách user web."),
+          "error",
+        );
+      }
+      return null;
+    }
+  };
+
+  const loadAdminStoreVouchers = async ({
+    silent = true,
+    limit = 100,
+  } = {}) => {
+    try {
+      const response = await axios.get("/api/admin/store-vouchers", {
+        params: { limit },
+        timeout: 10000,
+        skipGlobalLoading: silent,
+      });
+      setStoreVouchers(
+        [...(response?.data?.vouchers || [])].sort((a, b) => {
+          const aTime = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
+          const bTime = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
+          return bTime - aTime;
+        }),
+      );
+      return response?.data || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Không thể tải danh sách voucher."),
+          "error",
+        );
+      }
+      return null;
+    }
+  };
+
+  const loadSupportConversations = async ({
+    silent = true,
+    limit = 100,
+  } = {}) => {
+    try {
+      const response = await axios.get("/api/store-support/conversations", {
+        params: { limit },
+        timeout: 10000,
+        skipGlobalLoading: silent,
+      });
+      setSupportConversations(
+        [...(response?.data?.conversations || [])].sort((a, b) => {
+          const aTime = new Date(a?.lastMessageAt || a?.createdAt || 0).getTime();
+          const bTime = new Date(b?.lastMessageAt || b?.createdAt || 0).getTime();
+          return bTime - aTime;
+        }),
+      );
+      return response?.data || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Không thể tải danh sách hội thoại."),
+          "error",
+        );
+      }
+      return null;
+    }
+  };
+
+  const refreshAdminSurface = async ({
+    forceFull = false,
+    includeSummary = true,
+  } = {}) => {
+    if (!isAuthenticated) return;
+
+    if (
+      forceFull ||
+      ["chatgpt", "netflix", "capcut", "canva", "coursera"].includes(activeTab)
+    ) {
+      await fetchData(false);
+      return;
+    }
+
+    const tasks = [];
+    if (includeSummary) {
+      tasks.push(loadDashboardSummary({ silent: true }));
+    }
+    if (activeTab === "store-users") {
+      tasks.push(loadAdminStoreUsers({ silent: true }));
+    }
+    if (activeTab === "store-vouchers") {
+      tasks.push(loadAdminStoreVouchers({ silent: true }));
+    }
+    if (activeTab === "support") {
+      tasks.push(loadSupportConversations({ silent: true }));
+      if (selectedSupportConversationId) {
+        tasks.push(
+          loadSupportConversationMessages(selectedSupportConversationId, {
+            silent: true,
+          }),
+        );
+      }
+    }
+    if (activeTab === "chatgpt") {
+      tasks.push(loadAdminStoreOrders({ silent: true }));
+      tasks.push(loadAdminStoreUsers({ silent: true }));
+    }
+    if (tasks.length === 0) {
+      tasks.push(loadDashboardSummary({ silent: true }));
+    }
+    await Promise.allSettled(tasks);
   };
 
   const openStoreUserEdit = (user) => {
@@ -2386,7 +2711,10 @@ function App() {
         unlinkGoogle: storeUserEditForm.unlinkGoogle,
       });
       setShowStoreUserEditModal(false);
-      await fetchData();
+      await Promise.all([
+        loadAdminStoreUsers({ silent: true }),
+        loadDashboardSummary({ silent: true }),
+      ]);
       broadcastDataChange();
       showAlert("Thành công", "Đã cập nhật user web.", "success");
     } catch (error) {
@@ -2426,7 +2754,10 @@ function App() {
         package1UsedCount,
       });
       setShowStoreOrderEditModal(false);
-      await fetchData();
+      await Promise.all([
+        loadAdminStoreOrders({ silent: true }),
+        loadDashboardSummary({ silent: true }),
+      ]);
       broadcastDataChange();
       showAlert("Thành công", "Đã cập nhật lượt lấy mã của đơn Gói 1.", "success");
     } catch (error) {
@@ -2518,7 +2849,10 @@ function App() {
       }
       setShowVoucherModal(false);
       setVoucherForm(buildStoreVoucherFormState());
-      await fetchData();
+      await Promise.all([
+        loadAdminStoreVouchers({ silent: true }),
+        loadDashboardSummary({ silent: true }),
+      ]);
       broadcastDataChange();
       showAlert(
         "Thành công",
@@ -2549,7 +2883,10 @@ function App() {
         setLoadingStates((prev) => ({ ...prev, deleteVoucher: voucherId }));
         try {
           await axios.delete(`/api/store-vouchers/${voucherId}`);
-          await fetchData();
+          await Promise.all([
+            loadAdminStoreVouchers({ silent: true }),
+            loadDashboardSummary({ silent: true }),
+          ]);
           broadcastDataChange();
           showAlert("Thành công", "Đã xóa voucher.", "success");
         } catch (error) {
@@ -2583,6 +2920,10 @@ function App() {
     try {
       const response = await axios.get(
         `/api/store-support/conversations/${normalizedConversationId}/messages`,
+        {
+          params: { limit: 50 },
+          skipGlobalLoading: silent,
+        },
       );
       if (response?.data?.conversation) {
         const freshConversation = response.data.conversation;
@@ -2708,10 +3049,10 @@ function App() {
       loadSupportConversationMessages(selectedSupportConversationId, {
         silent: true,
       }).catch(() => {});
-    }, 7000);
+    }, getRealtimeSafetySyncMs(adminRealtime, 90000));
 
     return () => window.clearInterval(intervalId);
-  }, [activeTab, selectedSupportConversationId]);
+  }, [activeTab, adminRealtime, selectedSupportConversationId]);
 
   useEffect(() => {
     if (!selectedSupportConversationId) return;

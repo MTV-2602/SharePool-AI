@@ -9,6 +9,13 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const { OAuth2Client } = require("google-auth-library");
+const {
+  buildAdminRealtimeTopic,
+  buildStoreRealtimeClientConfig,
+  buildStoreSupportRealtimeTopic,
+  buildStoreUserRealtimeTopic,
+  emitRealtimeEvents,
+} = require("./realtime");
 
 const app = express();
 
@@ -583,6 +590,8 @@ const storeOrderSchema = new mongoose.Schema({
   createdAt: { type: String, default: () => new Date().toISOString() },
   updatedAt: { type: String, default: () => new Date().toISOString() },
 });
+storeOrderSchema.index({ userId: 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, createdAt: -1 });
 const StoreOrder =
   mongoose.models.StoreOrder ||
   mongoose.model("StoreOrder", storeOrderSchema, "store_orders");
@@ -621,6 +630,7 @@ const storeSupportConversationSchema = new mongoose.Schema({
   createdAt: { type: String, default: () => new Date().toISOString() },
   updatedAt: { type: String, default: () => new Date().toISOString() },
 });
+storeSupportConversationSchema.index({ lastMessageAt: -1 });
 const StoreSupportConversation =
   mongoose.models.StoreSupportConversation ||
   mongoose.model(
@@ -638,6 +648,7 @@ const storeSupportMessageSchema = new mongoose.Schema({
   createdAt: { type: String, default: () => new Date().toISOString(), index: true },
   readAt: { type: String, default: "" },
 });
+storeSupportMessageSchema.index({ conversationId: 1, createdAt: 1 });
 const StoreSupportMessage =
   mongoose.models.StoreSupportMessage ||
   mongoose.model(
@@ -678,6 +689,104 @@ const verifyToken = (req, res, next) => {
     return res.status(401).json({ error: "Invalid token" });
   }
 };
+
+const getRequestIp = (req) => {
+  const forwarded = String(req.headers["x-forwarded-for"] || "")
+    .split(",")[0]
+    .trim();
+  return (
+    forwarded ||
+    String(req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || "")
+      .trim() ||
+    "unknown"
+  );
+};
+
+const pruneRateLimitBuckets = (buckets, now) => {
+  if (buckets.size <= 5000) return;
+  for (const [key, entry] of buckets.entries()) {
+    if (!entry || Number(entry?.resetAt || 0) <= now) {
+      buckets.delete(key);
+    }
+  }
+};
+
+const createInMemoryRateLimit = ({
+  windowMs = 60000,
+  max = 10,
+  keyPrefix = "default",
+  keySelector,
+  message = "Ban thao tac qua nhanh. Vui long thu lai sau.",
+} = {}) => {
+  const buckets = new Map();
+  return (req, res, next) => {
+    const now = Date.now();
+    pruneRateLimitBuckets(buckets, now);
+    const rawKey = String(
+      typeof keySelector === "function" ? keySelector(req) : getRequestIp(req),
+    ).trim();
+    const bucketKey = `${keyPrefix}:${rawKey || "anonymous"}`;
+    const current = buckets.get(bucketKey);
+    if (!current || Number(current.resetAt || 0) <= now) {
+      buckets.set(bucketKey, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    if (Number(current.count || 0) >= max) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((Number(current.resetAt || now) - now) / 1000),
+      );
+      res.setHeader("Retry-After", String(retryAfterSeconds));
+      return res.status(429).json({ error: message });
+    }
+    current.count += 1;
+    buckets.set(bucketKey, current);
+    return next();
+  };
+};
+
+const loginRateLimit = createInMemoryRateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 20,
+  keyPrefix: "login",
+  keySelector: (req) =>
+    `${getRequestIp(req)}:${String(req.body?.identifier || req.body?.email || req.body?.phone || "")
+      .trim()
+      .toLowerCase()}`,
+  message: "Ban dang thu dang nhap qua nhieu lan. Vui long doi it phut.",
+});
+
+const voucherValidateRateLimit = createInMemoryRateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyPrefix: "voucher-validate",
+  keySelector: (req) =>
+    `${String(req.storeUser?.id || "").trim() || getRequestIp(req)}:${String(req.body?.voucherCode || "")
+      .trim()
+      .toUpperCase()}`,
+  message: "Ban kiem tra voucher qua nhanh. Vui long thu lai sau.",
+});
+
+const storeSupportSendRateLimit = createInMemoryRateLimit({
+  windowMs: 60 * 1000,
+  max: 12,
+  keyPrefix: "support-send",
+  keySelector: (req) => String(req.storeUser?.id || "").trim() || getRequestIp(req),
+  message: "Ban gui tin nhan qua nhanh. Vui long cho mot chut.",
+});
+
+const storeOrderPaymentRateLimit = createInMemoryRateLimit({
+  windowMs: 60 * 1000,
+  max: 8,
+  keyPrefix: "store-payment",
+  keySelector: (req) => String(req.storeUser?.id || "").trim() || getRequestIp(req),
+  message: "Ban tao lien ket thanh toan qua nhanh. Vui long thu lai sau.",
+});
+
+const apiSlowLogThresholdMs = toPositiveInt(
+  process.env.API_SLOW_LOG_THRESHOLD_MS,
+  1500,
+);
 
 // --- DATA VERSION + OPTIONAL SSE (serverless-friendly) ---
 const ENABLE_SSE = process.env.ENABLE_SSE === "true";
@@ -738,6 +847,31 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    const durationMs = Date.now() - startedAt;
+    if (res.statusCode >= 500 || durationMs >= apiSlowLogThresholdMs) {
+      console.log(
+        `[api] ${req.method} ${req.originalUrl} -> ${res.statusCode} in ${durationMs}ms`,
+      );
+    }
+  });
+  next();
+});
+
+app.use((req, res, next) => {
+  const path = String(req.path || "").trim();
+  if (
+    path === "/api/data" ||
+    path.startsWith("/api/store/") ||
+    path.startsWith("/api/store-support/")
+  ) {
+    void scheduleStoreMaintenance();
+  }
+  next();
+});
+
 // --- API ROUTES ---
 
 // TEST ENDPOINT
@@ -758,6 +892,10 @@ const DEFAULT_STORE_CONTACT_ZALO_URL = "https://zalo.me/0345440153";
 
 app.get("/api/store/config", async (req, res) => {
   try {
+    res.setHeader(
+      "Cache-Control",
+      "public, s-maxage=60, stale-while-revalidate=300",
+    );
     res.json({
       packages: Object.values(STORE_PACKAGE_MAP).map((pkg) => ({
         ...pkg,
@@ -780,6 +918,7 @@ app.get("/api/store/config", async (req, res) => {
         !!PAYOS_CLIENT_ID &&
         !!PAYOS_API_KEY &&
         !!PAYOS_CHECKSUM_KEY,
+      realtime: buildStoreRealtimeClientConfig(),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -789,6 +928,10 @@ app.get("/api/store/config", async (req, res) => {
 app.get("/api/store/catalog", async (req, res) => {
   try {
     const packages = await getCachedStoreCatalog();
+    res.setHeader(
+      "Cache-Control",
+      "public, s-maxage=30, stale-while-revalidate=120",
+    );
     res.json({ packages });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -999,6 +1142,10 @@ app.get("/api/store/auth/me", verifyStoreUserToken, async (req, res) => {
     res.json({
       user: sanitizeStoreUser(req.storeUser),
       orders: orders.map((order) => sanitizeStoreOrder(order)),
+      realtime: {
+        ...buildStoreRealtimeClientConfig(),
+        userTopic: buildStoreUserRealtimeTopic(String(req.storeUser?.id || "").trim()),
+      },
     });
   } catch (error) {
     res.status(500).json({ error: error.message || "Không tải được tài khoản" });
@@ -1014,7 +1161,7 @@ app.get("/api/store/orders", verifyStoreUserToken, async (req, res) => {
   }
 });
 
-app.post("/api/store/vouchers/validate", verifyStoreUserToken, async (req, res) => {
+app.post("/api/store/vouchers/validate", verifyStoreUserToken, voucherValidateRateLimit, async (req, res) => {
   try {
     const pricing = await resolveStoreVoucherPricing({
       voucherCode: req.body?.voucherCode,
@@ -1041,6 +1188,8 @@ app.get("/api/store/support/thread", verifyStoreUserToken, async (req, res) => {
   try {
     const conversation = await getOrCreateStoreSupportConversation(req.storeUser);
     const shouldMarkRead = String(req.query?.markRead || "0").trim() === "1";
+    const limit = parsePositiveLimit(req.query?.limit, 30, 100);
+    const before = String(req.query?.before || "").trim();
     if (shouldMarkRead) {
       await markStoreSupportConversationRead({
         conversationId: conversation.id,
@@ -1051,16 +1200,32 @@ app.get("/api/store/support/thread", verifyStoreUserToken, async (req, res) => {
       StoreSupportConversation.findOne({
         id: String(conversation.id || "").trim(),
       }).lean(),
-      listStoreSupportMessages(conversation.id),
+      listStoreSupportMessages(conversation.id, { limit, before }),
     ]);
+    const normalizedConversation = freshConversation || conversation;
+    if (
+      shouldMarkRead &&
+      normalizedConversation &&
+      Number(conversation?.userUnreadCount || 0) > 0
+    ) {
+      await emitStoreSupportReadRealtimeUpdate({
+        conversation: normalizedConversation,
+        readerRole: "user",
+      });
+    }
     return res.json({
       success: true,
       conversation: sanitizeStoreSupportConversationForUser(
-        freshConversation || conversation,
+        normalizedConversation,
       ),
       messages: (messages || []).map((message) =>
         sanitizeStoreSupportMessage(message),
       ),
+      pagination: {
+        limit,
+        before,
+        hasMore: (messages || []).length >= limit,
+      },
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
@@ -1069,7 +1234,7 @@ app.get("/api/store/support/thread", verifyStoreUserToken, async (req, res) => {
   }
 });
 
-app.post("/api/store/support/thread/messages", verifyStoreUserToken, async (req, res) => {
+app.post("/api/store/support/thread/messages", verifyStoreUserToken, storeSupportSendRateLimit, async (req, res) => {
   try {
     const conversation = await getOrCreateStoreSupportConversation(req.storeUser);
     const message = await appendStoreSupportMessage({
@@ -1081,6 +1246,10 @@ app.post("/api/store/support/thread/messages", verifyStoreUserToken, async (req,
     const freshConversation = await StoreSupportConversation.findOne({
       id: String(conversation.id || "").trim(),
     }).lean();
+    await emitStoreSupportMessageRealtimeUpdate({
+      conversation: freshConversation || conversation,
+      message,
+    });
     return res.json({
       success: true,
       conversation: sanitizeStoreSupportConversationForUser(
@@ -1105,6 +1274,12 @@ app.post("/api/store/support/thread/read", verifyStoreUserToken, async (req, res
     const freshConversation = await StoreSupportConversation.findOne({
       id: String(conversation.id || "").trim(),
     }).lean();
+    if (Number(conversation?.userUnreadCount || 0) > 0) {
+      await emitStoreSupportReadRealtimeUpdate({
+        conversation: freshConversation || conversation,
+        readerRole: "user",
+      });
+    }
     return res.json({
       success: true,
       conversation: sanitizeStoreSupportConversationForUser(
@@ -1157,6 +1332,9 @@ app.post("/api/store/orders/:id/reconcile", verifyStoreUserToken, async (req, re
     if (STORE_HIDDEN_ORDER_STATUSES.has(normalizedStatus)) {
       return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
     }
+    await emitStoreOrderRealtimeUpdate(order, {
+      includeStock: normalizedStatus === "fulfilled",
+    });
     res.json({
       order: sanitizeStoreOrder(
         typeof order?.toObject === "function" ? order.toObject() : order,
@@ -1169,7 +1347,7 @@ app.post("/api/store/orders/:id/reconcile", verifyStoreUserToken, async (req, re
   }
 });
 
-app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => {
+app.post("/api/store/orders/payment", verifyStoreUserToken, storeOrderPaymentRateLimit, async (req, res) => {
   try {
     const packageCode = String(req.body?.packageCode || "").trim().toLowerCase();
     const packageConfig = STORE_PACKAGE_MAP[packageCode];
@@ -1261,6 +1439,7 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => 
             : await createMomoPaymentForStoreOrder(req, workingOrder);
       }
       const freshOrder = await StoreOrder.findOne({ id: reusableOrder.id }).lean();
+      await emitStoreOrderRealtimeUpdate(freshOrder);
       return res.json({
         success: true,
         reused: true,
@@ -1351,6 +1530,7 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => 
       throw paymentError;
     }
 
+    await emitStoreOrderRealtimeUpdate(freshOrder);
     return res.json({
       success: true,
       payUrl,
@@ -1363,7 +1543,7 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => 
   }
 });
 
-app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => {
+app.post("/api/store/orders/payment-legacy-disabled", verifyStoreUserToken, async (req, res) => {
   try {
     const packageCode = String(req.body?.packageCode || "").trim().toLowerCase();
     const packageConfig = STORE_PACKAGE_MAP[packageCode];
@@ -1448,6 +1628,7 @@ app.post("/api/store/package1/code", async (req, res) => {
       },
       { new: true },
     );
+    await emitStoreOrderRealtimeUpdate(updatedOrder);
     res.json({
       success: true,
       code: otp.code,
@@ -1494,9 +1675,13 @@ app.post("/api/store/momo/ipn", async (req, res) => {
       order.status = "paid";
       order.paidAt = new Date().toISOString();
       await order.save();
-      await fulfillStoreOrder(order);
+      const fulfilledOrder = await fulfillStoreOrder(order);
+      await emitStoreOrderRealtimeUpdate(fulfilledOrder || order, {
+        includeStock: true,
+      });
     } else {
       await StoreOrder.deleteOne({ id: order.id });
+      await emitStoreOrderRealtimeUpdate(order);
     }
     return res.json({ resultCode: 0, message: "OK" });
   } catch (error) {
@@ -1525,7 +1710,12 @@ app.post("/api/store/payos/webhook", async (req, res) => {
       return res.status(200).json({ code: "00", desc: "success" });
     }
 
-    await reconcileStoreOrderPaymentStatus(order);
+    const nextOrder = await reconcileStoreOrderPaymentStatus(order);
+    if (nextOrder) {
+      await emitStoreOrderRealtimeUpdate(nextOrder, {
+        includeStock: String(nextOrder?.status || "").trim().toLowerCase() === "fulfilled",
+      });
+    }
     return res.status(200).json({ code: "00", desc: "success" });
   } catch (error) {
     console.error("Store payOS webhook error:", error?.message || error);
@@ -1738,6 +1928,7 @@ const sanitizeStoreUser = (user) => {
     phone: String(user.phone || ""),
     email: String(user.email || ""),
     createdAt: String(user.createdAt || ""),
+    realtimeTopic: buildStoreUserRealtimeTopic(String(user.id || "").trim()),
   };
 };
 const sanitizeStoreUserForAdmin = (user, stats = {}) => {
@@ -1881,6 +2072,9 @@ const sanitizeStoreSupportConversationForAdmin = (conversation = {}) => ({
   userUnreadCount: Math.max(0, Number(conversation?.userUnreadCount || 0)),
   createdAt: String(conversation?.createdAt || "").trim(),
   updatedAt: String(conversation?.updatedAt || "").trim(),
+  realtimeTopic: buildStoreSupportRealtimeTopic(
+    String(conversation?.id || "").trim(),
+  ),
 });
 const sanitizeStoreSupportConversationForUser = (conversation = {}) => ({
   id: String(conversation?.id || "").trim(),
@@ -1891,7 +2085,189 @@ const sanitizeStoreSupportConversationForUser = (conversation = {}) => ({
   unreadCount: Math.max(0, Number(conversation?.userUnreadCount || 0)),
   createdAt: String(conversation?.createdAt || "").trim(),
   updatedAt: String(conversation?.updatedAt || "").trim(),
+  realtimeTopic: buildStoreSupportRealtimeTopic(
+    String(conversation?.id || "").trim(),
+  ),
 });
+
+const buildAdminRealtimeConfig = () => ({
+  ...buildStoreRealtimeClientConfig(),
+  adminTopic: buildAdminRealtimeTopic(),
+});
+
+const buildRealtimePayload = (type, extra = {}) => ({
+  type: String(type || "").trim(),
+  version: Number(latestDataVersion || 0),
+  changedAt: new Date().toISOString(),
+  entityId: String(extra?.entityId || "").trim(),
+  userId: String(extra?.userId || "").trim(),
+  conversationId: String(extra?.conversationId || "").trim(),
+  status: String(extra?.status || "").trim(),
+  packageCode: String(extra?.packageCode || "").trim(),
+  senderRole: String(extra?.senderRole || "").trim(),
+});
+
+const safeEmitRealtimeEvents = async (events = []) => {
+  const messages = (Array.isArray(events) ? events : []).filter(
+    (event) => String(event?.topic || "").trim() && String(event?.event || "").trim(),
+  );
+  if (messages.length === 0) return;
+  try {
+    await emitRealtimeEvents(messages);
+  } catch (error) {
+    console.error("Realtime broadcast failed:", error?.message || error);
+  }
+};
+
+const emitStoreOrderRealtimeUpdate = async (
+  orderInput = null,
+  { includeStock = false } = {},
+) => {
+  const order =
+    orderInput && typeof orderInput.toObject === "function"
+      ? orderInput.toObject()
+      : { ...(orderInput || {}) };
+  const entityId = String(order?.id || "").trim();
+  const userId = String(order?.userId || "").trim();
+  if (!entityId) return;
+  const payload = buildRealtimePayload("order.updated", {
+    entityId,
+    userId,
+    status: String(order?.status || "").trim(),
+    packageCode: String(order?.packageCode || "").trim(),
+  });
+  const events = [
+    {
+      topic: buildAdminRealtimeTopic(),
+      event: "order.updated",
+      payload,
+    },
+  ];
+  if (userId) {
+    events.push({
+      topic: buildStoreUserRealtimeTopic(userId),
+      event: "order.updated",
+      payload,
+    });
+  }
+  if (includeStock) {
+    const stockPayload = buildRealtimePayload("stock.updated", {
+      entityId,
+      userId,
+      status: String(order?.status || "").trim(),
+      packageCode: String(order?.packageCode || "").trim(),
+    });
+    events.push({
+      topic: buildAdminRealtimeTopic(),
+      event: "stock.updated",
+      payload: stockPayload,
+    });
+  }
+  await safeEmitRealtimeEvents(events);
+};
+
+const emitStoreVoucherRealtimeUpdate = async (voucherInput = null) => {
+  const voucher =
+    voucherInput && typeof voucherInput.toObject === "function"
+      ? voucherInput.toObject()
+      : { ...(voucherInput || {}) };
+  const entityId = String(voucher?.id || "").trim();
+  if (!entityId) return;
+  await safeEmitRealtimeEvents([
+    {
+      topic: buildAdminRealtimeTopic(),
+      event: "voucher.updated",
+      payload: buildRealtimePayload("voucher.updated", {
+        entityId,
+      }),
+    },
+  ]);
+};
+
+const emitStoreSupportMessageRealtimeUpdate = async ({
+  conversation = null,
+  message = null,
+} = {}) => {
+  const safeConversation =
+    conversation && typeof conversation.toObject === "function"
+      ? conversation.toObject()
+      : { ...(conversation || {}) };
+  const safeMessage =
+    message && typeof message.toObject === "function"
+      ? message.toObject()
+      : { ...(message || {}) };
+  const conversationId = String(
+    safeConversation?.id || safeMessage?.conversationId || "",
+  ).trim();
+  if (!conversationId) return;
+  const userId = String(safeConversation?.userId || "").trim();
+  const payload = buildRealtimePayload("support.message.created", {
+    entityId: String(safeMessage?.id || "").trim(),
+    userId,
+    conversationId,
+    senderRole: String(safeMessage?.senderRole || "").trim(),
+  });
+  const events = [
+    {
+      topic: buildAdminRealtimeTopic(),
+      event: "support.message.created",
+      payload,
+    },
+    {
+      topic: buildStoreSupportRealtimeTopic(conversationId),
+      event: "support.message.created",
+      payload,
+    },
+  ];
+  if (userId) {
+    events.push({
+      topic: buildStoreUserRealtimeTopic(userId),
+      event: "support.message.created",
+      payload,
+    });
+  }
+  await safeEmitRealtimeEvents(events);
+};
+
+const emitStoreSupportReadRealtimeUpdate = async ({
+  conversation = null,
+  readerRole = "",
+} = {}) => {
+  const safeConversation =
+    conversation && typeof conversation.toObject === "function"
+      ? conversation.toObject()
+      : { ...(conversation || {}) };
+  const conversationId = String(safeConversation?.id || "").trim();
+  if (!conversationId) return;
+  const userId = String(safeConversation?.userId || "").trim();
+  const payload = buildRealtimePayload("support.thread.read", {
+    entityId: conversationId,
+    userId,
+    conversationId,
+    senderRole: String(readerRole || "").trim(),
+  });
+  const events = [
+    {
+      topic: buildAdminRealtimeTopic(),
+      event: "support.thread.read",
+      payload,
+    },
+    {
+      topic: buildStoreSupportRealtimeTopic(conversationId),
+      event: "support.thread.read",
+      payload,
+    },
+  ];
+  if (userId) {
+    events.push({
+      topic: buildStoreUserRealtimeTopic(userId),
+      event: "support.thread.read",
+      payload,
+    });
+  }
+  await safeEmitRealtimeEvents(events);
+};
+
 const buildStoreVoucherWritePayload = (body = {}, existingVoucher = null) => {
   const code = normalizeStoreVoucherCode(body?.code || existingVoucher?.code);
   const type = normalizeStoreVoucherType(body?.type || existingVoucher?.type);
@@ -2299,6 +2675,27 @@ const cleanupOldStoreFailedOrders = async (extra = {}) => {
     ],
   });
 };
+let nextStoreMaintenanceAtMs = 0;
+let storeMaintenancePromise = null;
+const scheduleStoreMaintenance = () => {
+  const now = Date.now();
+  if (storeMaintenancePromise) return storeMaintenancePromise;
+  if (nextStoreMaintenanceAtMs > now) return null;
+  nextStoreMaintenanceAtMs = now + 60 * 1000;
+  storeMaintenancePromise = (async () => {
+    try {
+      await Promise.all([
+        expireStaleStoreOrders(),
+        cleanupOldStoreFailedOrders(),
+      ]);
+    } catch (error) {
+      console.error("Store maintenance failed:", error?.message || error);
+    } finally {
+      storeMaintenancePromise = null;
+    }
+  })();
+  return storeMaintenancePromise;
+};
 const buildStoreVoucherUsageQuery = ({
   voucherId = "",
   voucherCode = "",
@@ -2615,15 +3012,21 @@ const getOrCreateStoreSupportConversation = async (storeUserInput = null) => {
 };
 const listStoreSupportMessages = async (
   conversationId = "",
-  { limit = 100 } = {},
+  { limit = 50, before = "" } = {},
 ) => {
   const normalizedConversationId = String(conversationId || "").trim();
   if (!normalizedConversationId) return [];
-  const safeLimit = Math.max(1, Math.min(200, Number(limit || 100)));
-  return StoreSupportMessage.find({ conversationId: normalizedConversationId })
-    .sort({ createdAt: 1, id: 1 })
+  const safeLimit = Math.max(1, Math.min(200, Number(limit || 50)));
+  const beforeCursor = String(before || "").trim();
+  const query = { conversationId: normalizedConversationId };
+  if (beforeCursor) {
+    query.createdAt = { $lt: beforeCursor };
+  }
+  const rawMessages = await StoreSupportMessage.find(query)
+    .sort({ createdAt: -1, id: -1 })
     .limit(safeLimit)
     .lean();
+  return rawMessages.reverse();
 };
 const markStoreSupportConversationRead = async ({
   conversationId = "",
@@ -2755,6 +3158,238 @@ const loadVisibleStoreOrdersForUser = async (userId) => {
       assignedLink: String(order?.assignedLink || linkedAcc?.link || "").trim(),
     };
   });
+};
+
+const parsePositivePage = (value, fallback = 1) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+};
+
+const parsePositiveLimit = (value, fallback = 50, max = 200) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(max, Math.floor(parsed));
+};
+
+const buildStoreUserStatsMapForIds = async (userIds = []) => {
+  const normalizedIds = Array.from(
+    new Set(
+      (Array.isArray(userIds) ? userIds : [])
+        .map((item) => String(item || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (normalizedIds.length === 0) return new Map();
+  const stats = await StoreOrder.aggregate([
+    {
+      $match: {
+        userId: { $in: normalizedIds },
+      },
+    },
+    {
+      $group: {
+        _id: "$userId",
+        totalOrders: { $sum: 1 },
+        fulfilledOrders: {
+          $sum: {
+            $cond: [{ $eq: ["$status", "fulfilled"] }, 1, 0],
+          },
+        },
+        pendingOrders: {
+          $sum: {
+            $cond: [
+              {
+                $in: ["$status", ["pending_payment", "awaiting_payment", "paid"]],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+        latestOrderAt: { $max: "$createdAt" },
+      },
+    },
+  ]);
+  return new Map(
+    (Array.isArray(stats) ? stats : []).map((item) => [
+      String(item?._id || "").trim(),
+      {
+        totalOrders: Number(item?.totalOrders || 0),
+        fulfilledOrders: Number(item?.fulfilledOrders || 0),
+        pendingOrders: Number(item?.pendingOrders || 0),
+        latestOrderAt: String(item?.latestOrderAt || "").trim(),
+      },
+    ]),
+  );
+};
+
+const listAdminStoreOrders = async ({ page = 1, limit = 100 } = {}) => {
+  const safePage = parsePositivePage(page, 1);
+  const safeLimit = parsePositiveLimit(limit, 100, 200);
+  const skip = (safePage - 1) * safeLimit;
+  const filter = {
+    status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+  };
+  const [total, rawOrders] = await Promise.all([
+    StoreOrder.countDocuments(filter),
+    StoreOrder.find(filter)
+      .sort({ createdAt: -1, id: -1 })
+      .skip(skip)
+      .limit(safeLimit)
+      .lean(),
+  ]);
+  const userIds = Array.from(
+    new Set(
+      (rawOrders || [])
+        .map((order) => String(order?.userId || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const users = userIds.length
+    ? await StoreUser.find({ id: { $in: userIds } })
+        .select("id fullName email phone createdAt updatedAt")
+        .lean()
+    : [];
+  const userMap = new Map(
+    (users || []).map((user) => [String(user?.id || "").trim(), user]),
+  );
+  return {
+    orders: (rawOrders || [])
+      .map((order) =>
+        sanitizeStoreOrderForAdmin(
+          order,
+          userMap.get(String(order?.userId || "").trim()) || null,
+        ),
+      )
+      .filter(Boolean),
+    page: safePage,
+    limit: safeLimit,
+    total: Number(total || 0),
+    hasMore: skip + safeLimit < Number(total || 0),
+  };
+};
+
+const listAdminStoreUsers = async ({ page = 1, limit = 100 } = {}) => {
+  const safePage = parsePositivePage(page, 1);
+  const safeLimit = parsePositiveLimit(limit, 100, 200);
+  const skip = (safePage - 1) * safeLimit;
+  const [total, users] = await Promise.all([
+    StoreUser.countDocuments({}),
+    StoreUser.find({})
+      .select("id fullName email phone authProviders googleId passwordHash createdAt updatedAt")
+      .sort({ updatedAt: -1, createdAt: -1, id: -1 })
+      .skip(skip)
+      .limit(safeLimit)
+      .lean(),
+  ]);
+  const statsMap = await buildStoreUserStatsMapForIds(
+    (users || []).map((user) => String(user?.id || "").trim()),
+  );
+  return {
+    users: (users || [])
+      .map((user) =>
+        sanitizeStoreUserForAdmin(
+          user,
+          statsMap.get(String(user?.id || "").trim()) || null,
+        ),
+      )
+      .filter(Boolean),
+    page: safePage,
+    limit: safeLimit,
+    total: Number(total || 0),
+    hasMore: skip + safeLimit < Number(total || 0),
+  };
+};
+
+const listAdminStoreVouchers = async ({ page = 1, limit = 100 } = {}) => {
+  const safePage = parsePositivePage(page, 1);
+  const safeLimit = parsePositiveLimit(limit, 100, 200);
+  const skip = (safePage - 1) * safeLimit;
+  const [total, vouchers] = await Promise.all([
+    StoreVoucher.countDocuments({}),
+    StoreVoucher.find({})
+      .sort({ createdAt: -1, id: -1 })
+      .skip(skip)
+      .limit(safeLimit)
+      .lean(),
+  ]);
+  const statsMap = await buildStoreVoucherStatsMap(vouchers);
+  return {
+    vouchers: (vouchers || [])
+      .map((voucher) =>
+        sanitizeStoreVoucherForAdmin(
+          voucher,
+          statsMap.get(String(voucher?.id || "").trim()) || null,
+        ),
+      )
+      .filter(Boolean),
+    page: safePage,
+    limit: safeLimit,
+    total: Number(total || 0),
+    hasMore: skip + safeLimit < Number(total || 0),
+  };
+};
+
+const listAdminStoreSupportConversations = async ({
+  page = 1,
+  limit = 50,
+} = {}) => {
+  const safePage = parsePositivePage(page, 1);
+  const safeLimit = parsePositiveLimit(limit, 50, 200);
+  const skip = (safePage - 1) * safeLimit;
+  const [total, conversations] = await Promise.all([
+    StoreSupportConversation.countDocuments({}),
+    StoreSupportConversation.find({})
+      .sort({ lastMessageAt: -1, createdAt: -1, id: -1 })
+      .skip(skip)
+      .limit(safeLimit)
+      .lean(),
+  ]);
+  return {
+    conversations: (conversations || [])
+      .map((conversation) =>
+        sanitizeStoreSupportConversationForAdmin(conversation),
+      )
+      .filter(Boolean),
+    page: safePage,
+    limit: safeLimit,
+    total: Number(total || 0),
+    hasMore: skip + safeLimit < Number(total || 0),
+  };
+};
+
+const buildAdminDashboardSummary = async () => {
+  const [
+    totalStoreUsers,
+    totalStoreOrders,
+    fulfilledStoreOrders,
+    pendingStoreOrders,
+    unreadSupportConversations,
+    openSupportConversations,
+    totalVouchers,
+  ] = await Promise.all([
+    StoreUser.countDocuments({}),
+    StoreOrder.countDocuments({
+      status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+    }),
+    StoreOrder.countDocuments({ status: "fulfilled" }),
+    StoreOrder.countDocuments({
+      status: { $in: ["pending_payment", "awaiting_payment", "paid"] },
+    }),
+    StoreSupportConversation.countDocuments({ adminUnreadCount: { $gt: 0 } }),
+    StoreSupportConversation.countDocuments({ status: "open" }),
+    StoreVoucher.countDocuments({}),
+  ]);
+  return {
+    totalStoreUsers: Number(totalStoreUsers || 0),
+    totalStoreOrders: Number(totalStoreOrders || 0),
+    fulfilledStoreOrders: Number(fulfilledStoreOrders || 0),
+    pendingStoreOrders: Number(pendingStoreOrders || 0),
+    unreadSupportConversations: Number(unreadSupportConversations || 0),
+    openSupportConversations: Number(openSupportConversations || 0),
+    totalVouchers: Number(totalVouchers || 0),
+  };
 };
 const buildStoreReservationSnapshot = async ({ excludeOrderId = "" } = {}) => {
   const activeOrders = await StoreOrder.find(
@@ -5358,6 +5993,7 @@ const warrantyStoreOrderForAdmin = async (
     throw error;
   }
 };
+
 const fulfillStoreOrder = async (order) => {
   const safeOrder =
     typeof order?.toObject === "function" ? order.toObject() : { ...(order || {}) };
@@ -6117,8 +6753,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
   try {
     await reconcileChatgptMarketInventory();
     await reconcileTeamMarketInventory();
-    await expireStaleStoreOrders();
-    await cleanupOldStoreFailedOrders();
+    void scheduleStoreMaintenance();
     const [
       accounts,
       netflixAccs,
@@ -6262,10 +6897,96 @@ app.get("/api/data", verifyToken, async (req, res) => {
           sanitizeStoreSupportConversationForAdmin(conversation),
         )
         .filter(Boolean),
+      realtime: buildAdminRealtimeConfig(),
       version: latestDataVersion,
     });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get("/api/admin/dashboard/summary", verifyToken, async (req, res) => {
+  try {
+    const summary = await buildAdminDashboardSummary();
+    return res.json({
+      success: true,
+      summary,
+      realtime: buildAdminRealtimeConfig(),
+      version: latestDataVersion,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc tong quan admin.",
+    });
+  }
+});
+
+app.get("/api/admin/store-orders", verifyToken, async (req, res) => {
+  try {
+    const data = await listAdminStoreOrders({
+      page: req.query?.page,
+      limit: req.query?.limit,
+    });
+    return res.json({
+      success: true,
+      orders: data.orders,
+      pagination: {
+        page: data.page,
+        limit: data.limit,
+        total: data.total,
+        hasMore: data.hasMore,
+      },
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc danh sach don web.",
+    });
+  }
+});
+
+app.get("/api/admin/store-users", verifyToken, async (req, res) => {
+  try {
+    const data = await listAdminStoreUsers({
+      page: req.query?.page,
+      limit: req.query?.limit,
+    });
+    return res.json({
+      success: true,
+      users: data.users,
+      pagination: {
+        page: data.page,
+        limit: data.limit,
+        total: data.total,
+        hasMore: data.hasMore,
+      },
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc danh sach user web.",
+    });
+  }
+});
+
+app.get("/api/admin/store-vouchers", verifyToken, async (req, res) => {
+  try {
+    const data = await listAdminStoreVouchers({
+      page: req.query?.page,
+      limit: req.query?.limit,
+    });
+    return res.json({
+      success: true,
+      vouchers: data.vouchers,
+      pagination: {
+        page: data.page,
+        limit: data.limit,
+        total: data.total,
+        hasMore: data.hasMore,
+      },
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc danh sach voucher.",
+    });
   }
 });
 
@@ -6282,6 +7003,7 @@ app.post("/api/store-vouchers", verifyToken, async (req, res) => {
       createdAt: new Date().toISOString(),
     });
     const statsMap = await buildStoreVoucherStatsMap([voucher]);
+    await emitStoreVoucherRealtimeUpdate(voucher);
     return res.json({
       success: true,
       voucher: sanitizeStoreVoucherForAdmin(
@@ -6317,6 +7039,7 @@ app.put("/api/store-vouchers/:id", verifyToken, async (req, res) => {
     Object.assign(currentVoucher, payload);
     await currentVoucher.save();
     const statsMap = await buildStoreVoucherStatsMap([currentVoucher]);
+    await emitStoreVoucherRealtimeUpdate(currentVoucher);
     return res.json({
       success: true,
       voucher: sanitizeStoreVoucherForAdmin(
@@ -6341,6 +7064,7 @@ app.delete("/api/store-vouchers/:id", verifyToken, async (req, res) => {
     if (!deleted) {
       return res.status(404).json({ error: "Khong tim thay voucher." });
     }
+    await emitStoreVoucherRealtimeUpdate(deleted);
     return res.json({ success: true, id });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
@@ -6349,9 +7073,34 @@ app.delete("/api/store-vouchers/:id", verifyToken, async (req, res) => {
   }
 });
 
+app.get("/api/store-support/conversations", verifyToken, async (req, res) => {
+  try {
+    const data = await listAdminStoreSupportConversations({
+      page: req.query?.page,
+      limit: req.query?.limit,
+    });
+    return res.json({
+      success: true,
+      conversations: data.conversations,
+      pagination: {
+        page: data.page,
+        limit: data.limit,
+        total: data.total,
+        hasMore: data.hasMore,
+      },
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc danh sach hoi thoai.",
+    });
+  }
+});
+
 app.get("/api/store-support/conversations/:id/messages", verifyToken, async (req, res) => {
   try {
     const id = String(req.params?.id || "").trim();
+    const limit = parsePositiveLimit(req.query?.limit, 50, 100);
+    const before = String(req.query?.before || "").trim();
     if (!id) {
       return res.status(400).json({ error: "Thieu ID hoi thoai." });
     }
@@ -6365,16 +7114,28 @@ app.get("/api/store-support/conversations/:id/messages", verifyToken, async (req
     });
     const [freshConversation, messages] = await Promise.all([
       StoreSupportConversation.findOne({ id }).lean(),
-      listStoreSupportMessages(id),
+      listStoreSupportMessages(id, { limit, before }),
     ]);
+    const normalizedConversation = freshConversation || conversation;
+    if (Number(conversation?.adminUnreadCount || 0) > 0) {
+      await emitStoreSupportReadRealtimeUpdate({
+        conversation: normalizedConversation,
+        readerRole: "admin",
+      });
+    }
     return res.json({
       success: true,
       conversation: sanitizeStoreSupportConversationForAdmin(
-        freshConversation || conversation,
+        normalizedConversation,
       ),
       messages: (messages || []).map((message) =>
         sanitizeStoreSupportMessage(message),
       ),
+      pagination: {
+        limit,
+        before,
+        hasMore: (messages || []).length >= limit,
+      },
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
@@ -6404,6 +7165,10 @@ app.post("/api/store-support/conversations/:id/messages", verifyToken, async (re
       readerRole: "admin",
     });
     const freshConversation = await StoreSupportConversation.findOne({ id }).lean();
+    await emitStoreSupportMessageRealtimeUpdate({
+      conversation: freshConversation || conversation,
+      message,
+    });
     return res.json({
       success: true,
       conversation: sanitizeStoreSupportConversationForAdmin(
@@ -6433,6 +7198,12 @@ app.post("/api/store-support/conversations/:id/read", verifyToken, async (req, r
       readerRole: "admin",
     });
     const freshConversation = await StoreSupportConversation.findOne({ id }).lean();
+    if (Number(conversation?.adminUnreadCount || 0) > 0) {
+      await emitStoreSupportReadRealtimeUpdate({
+        conversation: freshConversation || conversation,
+        readerRole: "admin",
+      });
+    }
     return res.json({
       success: true,
       conversation: sanitizeStoreSupportConversationForAdmin(
@@ -6461,7 +7232,10 @@ app.delete("/api/store-orders/:id", verifyToken, async (req, res) => {
     const accountId = String(
       order?.assignedAccountId || order?.reservedAccountId || "",
     ).trim();
+    const deletedSnapshot =
+      typeof order?.toObject === "function" ? order.toObject() : { ...(order || {}) };
     await deleteStoreOrderForAdmin(order);
+    await emitStoreOrderRealtimeUpdate(deletedSnapshot, { includeStock: true });
     const diagnostics = accountId
       ? await buildChatgptAccountAdminDiagnostics(accountId)
       : null;
@@ -6510,6 +7284,7 @@ app.put("/api/store-orders/:id", verifyToken, async (req, res) => {
     order.package1UsedCount = package1UsedCount;
     order.updatedAt = new Date().toISOString();
     await order.save();
+    await emitStoreOrderRealtimeUpdate(order);
 
     const storeUser = order?.userId
       ? await StoreUser.findOne({ id: String(order.userId || "").trim() }).lean()
@@ -6609,6 +7384,7 @@ app.post("/api/store-orders/:id/warranty", verifyToken, async (req, res) => {
       replacementAccountId: req.body?.replacementAccountId,
       reason: req.body?.reason,
     });
+    await emitStoreOrderRealtimeUpdate(updatedOrder, { includeStock: true });
     const storeUser = updatedOrder?.userId
       ? await StoreUser.findOne({
           id: String(updatedOrder.userId || "").trim(),
@@ -6730,6 +7506,7 @@ app.post("/api/store-orders/admin", verifyToken, async (req, res) => {
       await StoreOrder.deleteOne({ id: String(order.id || "").trim() });
       throw error;
     }
+    await emitStoreOrderRealtimeUpdate(fulfilledOrder, { includeStock: true });
 
     return res.json({
       success: true,
@@ -8925,7 +9702,7 @@ app.post("/api/proxy-sheet", async (req, res) => {
 });
 
 // 6. LOGIN ENDPOINT (Secure authentication with 7-day expiry)
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", loginRateLimit, async (req, res) => {
   try {
     const identifier = String(
       req.body?.identifier || req.body?.email || req.body?.phone || "",

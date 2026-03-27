@@ -13,6 +13,11 @@ import {
   ShieldCheck,
   User,
 } from "lucide-react";
+import {
+  canUseRealtimeRuntime,
+  getRealtimeSafetySyncMs,
+  subscribeToBroadcastTopic,
+} from "./realtime";
 
 const STORE_TOKEN_KEY = "store_user_token";
 const ADMIN_TOKEN_KEY = "admin_token";
@@ -248,6 +253,12 @@ function PublicStorefront() {
     contact: { zaloUrl: "", messengerUrl: "" },
     momoConfigured: false,
     payosConfigured: false,
+    realtime: {
+      enabled: false,
+      url: "",
+      anonKey: "",
+      safetySyncMs: 90000,
+    },
   });
   const [token, setToken] = useState(initialStoreToken);
   const [user, setUser] = useState(null);
@@ -291,6 +302,7 @@ function PublicStorefront() {
   const pendingReconcileRef = useRef(false);
   const purchaseLockRef = useRef(false);
   const storeOrdersSyncRef = useRef(false);
+  const supportThreadSyncRef = useRef(false);
 
   const refreshRouteState = () => setRouteState(readStoreRoute());
 
@@ -320,6 +332,12 @@ function PublicStorefront() {
       contact: data?.contact || { zaloUrl: "", messengerUrl: "" },
       momoConfigured: !!data?.momoConfigured,
       payosConfigured: !!data?.payosConfigured,
+      realtime: {
+        enabled: !!data?.realtime?.enabled,
+        url: String(data?.realtime?.url || "").trim(),
+        anonKey: String(data?.realtime?.anonKey || "").trim(),
+        safetySyncMs: getRealtimeSafetySyncMs(data?.realtime, 90000),
+      },
     };
     setConfig(normalizedConfig);
     return normalizedConfig;
@@ -432,6 +450,27 @@ function PublicStorefront() {
       return null;
     } finally {
       if (!silent) setSupportLoading(false);
+    }
+  };
+
+  const syncOrdersSilently = async () => {
+    if (!token || !user || storeOrdersSyncRef.current) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    storeOrdersSyncRef.current = true;
+    try {
+      await loadOrders(token);
+    } finally {
+      storeOrdersSyncRef.current = false;
+    }
+  };
+
+  const syncSupportThreadSilently = async ({ markRead = false } = {}) => {
+    if (!token || !user || supportThreadSyncRef.current) return;
+    supportThreadSyncRef.current = true;
+    try {
+      await loadSupportThread({ markRead, silent: true });
+    } finally {
+      supportThreadSyncRef.current = false;
     }
   };
 
@@ -613,8 +652,8 @@ function PublicStorefront() {
       }
     };
 
-    const initialDelayMs = route.view === "payment-result" ? 1500 : 5000;
-    const intervalMs = route.view === "payment-result" ? 8000 : 15000;
+    const initialDelayMs = route.view === "payment-result" ? 1500 : 8000;
+    const intervalMs = route.view === "payment-result" ? 10000 : 30000;
     const timeoutId = window.setTimeout(() => {
       runReconcile().catch(() => {});
     }, initialDelayMs);
@@ -630,59 +669,109 @@ function PublicStorefront() {
 
   useEffect(() => {
     if (!token || !user) return undefined;
-    let cancelled = false;
-
-    const syncOrders = async () => {
-      if (cancelled || storeOrdersSyncRef.current) return;
-      if (typeof document !== "undefined" && document.hidden) return;
-      storeOrdersSyncRef.current = true;
-      try {
-        await loadOrders(token);
-      } catch {
-        // Bỏ qua lỗi poll nhẹ. Lần kế tiếp sẽ tự thử lại.
-      } finally {
-        storeOrdersSyncRef.current = false;
-      }
-    };
-
     const handleVisibilityOrFocus = () => {
-      syncOrders().catch(() => {});
+      syncOrdersSilently().catch(() => {});
     };
-
-    const intervalId = window.setInterval(() => {
-      syncOrders().catch(() => {});
-    }, 8000);
 
     window.addEventListener("focus", handleVisibilityOrFocus);
     document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("online", handleVisibilityOrFocus);
 
     return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
       window.removeEventListener("focus", handleVisibilityOrFocus);
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("online", handleVisibilityOrFocus);
     };
-  }, [token, user]);
+  }, [token, user, supportOpen]);
 
   useEffect(() => {
     if (!supportOpen || !token || !user) return undefined;
-    let cancelled = false;
+    syncSupportThreadSilently({ markRead: true }).catch(() => {});
 
-    const syncSupportThread = async () => {
-      if (cancelled) return;
-      await loadSupportThread({ markRead: true, silent: true });
+    const handleSupportVisibility = () => {
+      const shouldMarkRead =
+        typeof document === "undefined" || !document.hidden;
+      syncSupportThreadSilently({ markRead: shouldMarkRead }).catch(() => {});
     };
 
-    syncSupportThread().catch(() => {});
-    const intervalId = window.setInterval(() => {
-      syncSupportThread().catch(() => {});
-    }, 7000);
+    window.addEventListener("focus", handleSupportVisibility);
+    document.addEventListener("visibilitychange", handleSupportVisibility);
+    window.addEventListener("online", handleSupportVisibility);
 
     return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleSupportVisibility);
+      document.removeEventListener("visibilitychange", handleSupportVisibility);
+      window.removeEventListener("online", handleSupportVisibility);
     };
   }, [supportOpen, token, user]);
+
+  useEffect(() => {
+    if (!token || !user) return undefined;
+    const intervalId = window.setInterval(() => {
+      syncOrdersSilently().catch(() => {});
+    }, getRealtimeSafetySyncMs(config?.realtime, 90000));
+    return () => window.clearInterval(intervalId);
+  }, [config?.realtime, token, user]);
+
+  useEffect(() => {
+    if (!supportOpen || !token || !user) return undefined;
+    const intervalId = window.setInterval(() => {
+      const shouldMarkRead =
+        typeof document === "undefined" || !document.hidden;
+      syncSupportThreadSilently({ markRead: shouldMarkRead }).catch(() => {});
+    }, getRealtimeSafetySyncMs(config?.realtime, 90000));
+    return () => window.clearInterval(intervalId);
+  }, [config?.realtime, supportOpen, token, user]);
+
+  useEffect(() => {
+    if (!user?.realtimeTopic || !canUseRealtimeRuntime(config?.realtime)) {
+      return undefined;
+    }
+
+    return subscribeToBroadcastTopic({
+      config: config.realtime,
+      topic: user.realtimeTopic,
+      onMessage: ({ event }) => {
+        if (event === "order.updated") {
+          syncOrdersSilently().catch(() => {});
+          return;
+        }
+        if (event === "stock.updated") {
+          loadCatalog().catch(() => {});
+          return;
+        }
+        if (
+          !supportOpen &&
+          (event === "support.message.created" || event === "support.thread.read")
+        ) {
+          syncSupportThreadSilently({ markRead: false }).catch(() => {});
+        }
+      },
+    });
+  }, [config?.realtime, supportOpen, user?.realtimeTopic]);
+
+  useEffect(() => {
+    if (
+      !supportOpen ||
+      !supportConversation?.realtimeTopic ||
+      !canUseRealtimeRuntime(config?.realtime)
+    ) {
+      return undefined;
+    }
+
+    return subscribeToBroadcastTopic({
+      config: config.realtime,
+      topic: supportConversation.realtimeTopic,
+      onMessage: ({ event }) => {
+        if (event !== "support.message.created" && event !== "support.thread.read") {
+          return;
+        }
+        const shouldMarkRead =
+          typeof document === "undefined" || !document.hidden;
+        syncSupportThreadSilently({ markRead: shouldMarkRead }).catch(() => {});
+      },
+    });
+  }, [config?.realtime, supportConversation?.realtimeTopic, supportOpen]);
 
   useEffect(() => {
     if (user) return;
