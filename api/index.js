@@ -7623,7 +7623,7 @@ const buildDefaultAdminDataSections = ({ omitChatgpt = false } = {}) => {
 
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
-    await scheduleInventoryReconcile();
+    void scheduleInventoryReconcile();
     void scheduleStoreMaintenance();
     const omitChatgpt = String(req.query?.omitChatgpt || "0").trim() === "1";
     const requestedSections = normalizeAdminDataSections(req.query?.sections);
@@ -7882,7 +7882,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
 
 app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
   try {
-    await scheduleInventoryReconcile();
+    void scheduleInventoryReconcile();
     const payload = await getCachedAdminRead(
       "admin:chatgpt-accounts",
       {
