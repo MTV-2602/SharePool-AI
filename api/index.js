@@ -7504,15 +7504,89 @@ app.all(
 );
 // ---------------------------
 
+const ADMIN_DATA_SECTION_NAMES = new Set([
+  "summary",
+  "chatgpt",
+  "netflix",
+  "canva",
+  "capcut",
+  "team",
+  "datammo",
+  "storeOrders",
+  "storeUsers",
+  "storeVouchers",
+  "supportConversations",
+]);
+
+const normalizeAdminDataSections = (value = "") => {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value || "")
+        .split(",")
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
+  return Array.from(
+    new Set(
+      rawItems.filter((item) => ADMIN_DATA_SECTION_NAMES.has(item)),
+    ),
+  ).sort();
+};
+
+const buildDefaultAdminDataSections = ({ omitChatgpt = false } = {}) => {
+  const sections = [
+    "summary",
+    "netflix",
+    "canva",
+    "capcut",
+    "team",
+    "datammo",
+    "storeOrders",
+    "storeUsers",
+    "storeVouchers",
+    "supportConversations",
+  ];
+  if (!omitChatgpt) {
+    sections.unshift("chatgpt");
+  }
+  return sections;
+};
+
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
     void scheduleInventoryReconcile();
     void scheduleStoreMaintenance();
     const omitChatgpt = String(req.query?.omitChatgpt || "0").trim() === "1";
+    const requestedSections = normalizeAdminDataSections(req.query?.sections);
+    const sections =
+      requestedSections.length > 0
+        ? requestedSections
+        : buildDefaultAdminDataSections({ omitChatgpt });
+    const sectionSet = new Set(sections);
     const payload = await getCachedAdminRead(
       "admin:data",
-      { omitChatgpt: omitChatgpt ? 1 : 0 },
+      {
+        omitChatgpt: omitChatgpt ? 1 : 0,
+        sections: sections.join(","),
+      },
       async () => {
+        const shouldLoadChatgpt = !omitChatgpt && sectionSet.has("chatgpt");
+        const shouldLoadNetflix = sectionSet.has("netflix");
+        const shouldLoadCanva = sectionSet.has("canva");
+        const shouldLoadCapcut = sectionSet.has("capcut");
+        const shouldLoadTeam = sectionSet.has("team");
+        const shouldLoadDatammo = sectionSet.has("datammo");
+        const shouldLoadStoreOrders = sectionSet.has("storeOrders");
+        const shouldLoadStoreUsers =
+          sectionSet.has("storeUsers") ||
+          sectionSet.has("storeVouchers") ||
+          sectionSet.has("storeOrders") ||
+          shouldLoadChatgpt;
+        const shouldLoadStoreVouchers = sectionSet.has("storeVouchers");
+        const shouldLoadSupportConversations = sectionSet.has(
+          "supportConversations",
+        );
+        const shouldLoadSummary = sectionSet.has("summary");
+        const shouldBuildChatgptTrace = shouldLoadChatgpt;
         const [
           accounts,
           netflixAccs,
@@ -7526,62 +7600,79 @@ app.get("/api/data", verifyToken, async (req, res) => {
           storeUserOrderStats,
           storeVouchers,
           storeSupportConversations,
+          dashboardSummary,
         ] = await Promise.all([
-          Account.find({}).lean(),
-          Netflix.find({}).lean(),
-          Canva.find({}).lean(),
-          Capcut.find({}).lean(),
-          TeamAccount.find({}).lean(),
-          DatammoOrder.find({}).sort({ createdAt: -1 }).limit(100).lean(),
-          DatammoWarrantyCase.find({}).sort({ updatedAt: -1 }).limit(100).lean(),
-          StoreOrder.find({
-            status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
-          })
-            .sort({ createdAt: -1 })
-            .limit(100)
-            .lean(),
-          StoreUser.find({})
-            .select(
-              "id fullName email phone authProviders googleId passwordHash createdAt updatedAt",
-            )
-            .lean(),
-          StoreOrder.aggregate([
-            {
-              $group: {
-                _id: "$userId",
-                totalOrders: { $sum: 1 },
-                fulfilledOrders: {
-                  $sum: {
-                    $cond: [{ $eq: ["$status", "fulfilled"] }, 1, 0],
-                  },
-                },
-                pendingOrders: {
-                  $sum: {
-                    $cond: [
-                      {
-                        $in: [
-                          "$status",
-                          ["pending_payment", "awaiting_payment", "paid"],
+          shouldLoadChatgpt ? Account.find({}).lean() : Promise.resolve([]),
+          shouldLoadNetflix ? Netflix.find({}).lean() : Promise.resolve([]),
+          shouldLoadCanva ? Canva.find({}).lean() : Promise.resolve([]),
+          shouldLoadCapcut ? Capcut.find({}).lean() : Promise.resolve([]),
+          shouldLoadTeam ? TeamAccount.find({}).lean() : Promise.resolve([]),
+          shouldLoadDatammo || shouldBuildChatgptTrace
+            ? DatammoOrder.find({}).sort({ createdAt: -1 }).limit(100).lean()
+            : Promise.resolve([]),
+          shouldLoadDatammo || shouldBuildChatgptTrace
+            ? DatammoWarrantyCase.find({})
+                .sort({ updatedAt: -1 })
+                .limit(100)
+                .lean()
+            : Promise.resolve([]),
+          shouldLoadStoreOrders || shouldBuildChatgptTrace
+            ? StoreOrder.find({
+                status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+              })
+                .sort({ createdAt: -1 })
+                .limit(100)
+                .lean()
+            : Promise.resolve([]),
+          shouldLoadStoreUsers || shouldBuildChatgptTrace
+            ? StoreUser.find({})
+                .select(
+                  "id fullName email phone authProviders googleId passwordHash createdAt updatedAt",
+                )
+                .lean()
+            : Promise.resolve([]),
+          shouldLoadStoreUsers || shouldBuildChatgptTrace
+            ? StoreOrder.aggregate([
+                {
+                  $group: {
+                    _id: "$userId",
+                    totalOrders: { $sum: 1 },
+                    fulfilledOrders: {
+                      $sum: {
+                        $cond: [{ $eq: ["$status", "fulfilled"] }, 1, 0],
+                      },
+                    },
+                    pendingOrders: {
+                      $sum: {
+                        $cond: [
+                          {
+                            $in: [
+                              "$status",
+                              ["pending_payment", "awaiting_payment", "paid"],
+                            ],
+                          },
+                          1,
+                          0,
                         ],
                       },
-                      1,
-                      0,
-                    ],
+                    },
+                    latestOrderAt: { $max: "$createdAt" },
                   },
                 },
-                latestOrderAt: { $max: "$createdAt" },
-              },
-            },
-          ]),
-          StoreVoucher.find({}).sort({ createdAt: -1, id: -1 }).lean(),
-          StoreSupportConversation.find({})
-            .sort({ lastMessageAt: -1, createdAt: -1, id: -1 })
-            .lean(),
+              ])
+            : Promise.resolve([]),
+          shouldLoadStoreVouchers
+            ? StoreVoucher.find({}).sort({ createdAt: -1, id: -1 }).lean()
+            : Promise.resolve([]),
+          shouldLoadSupportConversations
+            ? StoreSupportConversation.find({})
+                .sort({ lastMessageAt: -1, createdAt: -1, id: -1 })
+                .lean()
+            : Promise.resolve([]),
+          shouldLoadSummary
+            ? buildAdminDashboardSummary()
+            : Promise.resolve(null),
         ]);
-        const voucherStatsMap = await buildStoreVoucherStatsMap(
-          storeVouchers,
-          storeUsers,
-        );
         const storeUserMap = new Map(
           (storeUsers || []).map((user) => [String(user?.id || "").trim(), user]),
         );
@@ -7598,75 +7689,113 @@ app.get("/api/data", verifyToken, async (req, res) => {
         );
         let marketplaceAccountTraceMap = new Map();
         let storeAccountTraceMap = new Map();
-        try {
-          marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
-            datammoOrders,
-            datammoWarrantyCases,
-          );
-        } catch (traceError) {
-          console.error("Trace diagnostic build failed:", traceError);
+        if (shouldBuildChatgptTrace) {
+          try {
+            marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
+              datammoOrders,
+              datammoWarrantyCases,
+            );
+          } catch (traceError) {
+            console.error("Trace diagnostic build failed:", traceError);
+          }
+          try {
+            storeAccountTraceMap = buildStoreAccountTraceMap(
+              rawStoreOrders,
+              storeUserMap,
+            );
+          } catch (traceError) {
+            console.error("Store trace diagnostic build failed:", traceError);
+          }
         }
-        try {
-          storeAccountTraceMap = buildStoreAccountTraceMap(
-            rawStoreOrders,
-            storeUserMap,
-          );
-        } catch (traceError) {
-          console.error("Store trace diagnostic build failed:", traceError);
-        }
-        return {
-          chatgpt: omitChatgpt
-            ? []
-            : accounts.map((acc) => ({
-                ...acc,
-                package2Shelf: normalizePackage2Shelf(
-                  acc?.package2Shelf,
-                  CHATGPT_TOTAL_VALUE,
-                ),
-                storeTraceSummary:
-                  storeAccountTraceMap.get(String(acc?.id || "").trim()) || null,
-                marketplaceTraceSummary:
-                  marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) || null,
-              })),
+        const response = {
           chatgptOmitted: omitChatgpt,
-          netflix: netflixAccs,
-          canva: canvaAccs,
-          capcut: capcutAccs,
-          team: teamAccs.map((teamAcc) => sanitizeTeamAccount(teamAcc)),
-          datammoOrders,
-          datammoWarrantyCases,
-          storeOrders: rawStoreOrders
+          realtime: buildAdminRealtimeConfig(),
+          version: latestDataVersion,
+        };
+        if (shouldLoadChatgpt) {
+          response.chatgpt = accounts.map((acc) => ({
+            ...acc,
+            package2Shelf: normalizePackage2Shelf(
+              acc?.package2Shelf,
+              CHATGPT_TOTAL_VALUE,
+            ),
+            storeTraceSummary:
+              storeAccountTraceMap.get(String(acc?.id || "").trim()) || null,
+            marketplaceTraceSummary:
+              marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) ||
+              null,
+          }));
+        }
+        if (shouldLoadNetflix) {
+          response.netflix = netflixAccs;
+        }
+        if (shouldLoadCanva) {
+          response.canva = canvaAccs;
+        }
+        if (shouldLoadCapcut) {
+          response.capcut = capcutAccs;
+        }
+        if (shouldLoadTeam) {
+          response.team = teamAccs.map((teamAcc) => sanitizeTeamAccount(teamAcc));
+        }
+        if (shouldLoadDatammo) {
+          response.datammoOrders = datammoOrders;
+          response.datammoWarrantyCases = datammoWarrantyCases;
+        }
+        if (shouldLoadStoreOrders) {
+          response.storeOrders = rawStoreOrders
             .map((order) =>
               sanitizeStoreOrderForAdmin(
                 order,
                 storeUserMap.get(String(order?.userId || "").trim()) || null,
               ),
             )
-            .filter(Boolean),
-          storeUsers: (storeUsers || [])
+            .filter(Boolean);
+        }
+        if (shouldLoadStoreUsers) {
+          response.storeUsers = (storeUsers || [])
             .map((user) =>
               sanitizeStoreUserForAdmin(
                 user,
                 storeUserStatsMap.get(String(user?.id || "").trim()) || null,
               ),
             )
-            .filter(Boolean),
-          storeVouchers: (storeVouchers || [])
+            .filter(Boolean);
+        }
+        if (shouldLoadStoreVouchers) {
+          const voucherStatsMap = await buildStoreVoucherStatsMap(
+            storeVouchers,
+            storeUsers,
+          );
+          response.storeVouchers = (storeVouchers || [])
             .map((voucher) =>
               sanitizeStoreVoucherForAdmin(
                 voucher,
                 voucherStatsMap.get(String(voucher?.id || "").trim()) || null,
               ),
             )
-            .filter(Boolean),
-          supportConversations: (storeSupportConversations || [])
+            .filter(Boolean);
+        }
+        if (shouldLoadSupportConversations) {
+          response.supportConversations = (storeSupportConversations || [])
             .map((conversation) =>
               sanitizeStoreSupportConversationForAdmin(conversation),
             )
-            .filter(Boolean),
-          realtime: buildAdminRealtimeConfig(),
-          version: latestDataVersion,
-        };
+            .filter(Boolean);
+        }
+        if (shouldLoadSummary) {
+          response.summary =
+            dashboardSummary || {
+              totalStoreUsers: 0,
+              totalStoreOrders: 0,
+              fulfilledStoreOrders: 0,
+              pendingStoreOrders: 0,
+              unreadSupportConversations: 0,
+              openSupportConversations: 0,
+              totalVouchers: 0,
+            };
+        }
+        return response;
       },
     );
     res.json(payload);

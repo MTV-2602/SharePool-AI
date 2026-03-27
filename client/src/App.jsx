@@ -1296,6 +1296,55 @@ const buildDefaultChatgptAdminPaginationState = () => ({
     marketShelfTabs: { all: 0, sold: 0, soldDatammo: 0, soldShopmini: 0 },
   },
 });
+const ADMIN_TAB_DATA_SECTION_MAP = {
+  chatgpt: ["team", "datammo", "storeOrders", "storeUsers", "summary"],
+  netflix: ["netflix", "summary"],
+  capcut: ["capcut", "summary"],
+  canva: ["canva", "summary"],
+  coursera: ["summary"],
+  "store-users": ["storeUsers", "storeOrders", "summary"],
+  "store-vouchers": ["storeVouchers", "summary"],
+  support: ["supportConversations", "summary"],
+};
+const resolveAdminDataSectionsForTab = (
+  tab = "",
+  { omitChatgpt = false } = {},
+) => {
+  const baseSections = Array.isArray(ADMIN_TAB_DATA_SECTION_MAP[tab])
+    ? ADMIN_TAB_DATA_SECTION_MAP[tab]
+    : ["summary"];
+  return Array.from(
+    new Set(
+      baseSections.filter(
+        (section) => !(omitChatgpt && section === "chatgpt"),
+      ),
+    ),
+  );
+};
+const sortAdminCreatedAtDesc = (items = []) =>
+  [...(items || [])].sort(
+    (a, b) =>
+      new Date(b?.createdAt || b?.updatedAt || 0).getTime() -
+      new Date(a?.createdAt || a?.updatedAt || 0).getTime(),
+  );
+const sortAdminStoreUsersForUi = (items = []) =>
+  [...(items || [])].sort((a, b) => {
+    const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
+    const bTime = new Date(b?.latestOrderAt || b?.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
+const sortAdminStoreVouchersForUi = (items = []) =>
+  [...(items || [])].sort((a, b) => {
+    const aTime = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
+    const bTime = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
+const sortAdminSupportConversationsForUi = (items = []) =>
+  [...(items || [])].sort((a, b) => {
+    const aTime = new Date(a?.lastMessageAt || a?.createdAt || 0).getTime();
+    const bTime = new Date(b?.lastMessageAt || b?.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
 
 function App() {
   // LOGIN STATE
@@ -1666,10 +1715,8 @@ function App() {
       setTimeout(async () => {
         await fetchData({
           showLoader: true,
-          omitChatgpt: true,
           syncChatgptPage: false,
         });
-        await Promise.allSettled([loadDashboardSummary({ silent: true })]);
       }, 100);
       return;
     }
@@ -1756,9 +1803,15 @@ function App() {
       skipNextAdminTabBootstrapRef.current = false;
       return;
     }
-    if (activeTab === "store-users") {
-      loadAdminStoreUsers({ silent: true }).catch(() => {});
-      loadDashboardSummary({ silent: true }).catch(() => {});
+    if (
+      ["chatgpt", "netflix", "capcut", "canva", "coursera", "store-users"].includes(
+        activeTab,
+      )
+    ) {
+      fetchData({
+        showLoader: false,
+        syncChatgptPage: false,
+      }).catch(() => {});
       return;
     }
     if (activeTab === "store-vouchers") {
@@ -1768,12 +1821,6 @@ function App() {
     }
     if (activeTab === "support") {
       loadSupportConversations({ silent: true, limit: 20 }).catch(() => {});
-      loadDashboardSummary({ silent: true }).catch(() => {});
-      return;
-    }
-    if (activeTab === "chatgpt") {
-      loadAdminStoreOrders({ silent: true }).catch(() => {});
-      loadAdminStoreUsers({ silent: true }).catch(() => {});
       loadDashboardSummary({ silent: true }).catch(() => {});
     }
   }, [activeTab, isAuthenticated]);
@@ -1905,15 +1952,14 @@ function App() {
           if (!shouldRefreshInventorySurface) {
             return;
           }
-          if (activeTab === "chatgpt") {
-            fetchData({
-              showLoader: false,
-              omitChatgpt: true,
-              syncChatgptPage: false,
-            }).catch(() => {});
-            loadAdminChatgptAccounts({ silent: true }).catch(() => {});
-            return;
-          }
+        if (activeTab === "chatgpt") {
+          fetchData({
+            showLoader: false,
+            syncChatgptPage: false,
+          }).catch(() => {});
+          loadAdminChatgptAccounts({ silent: true }).catch(() => {});
+          return;
+        }
           fetchData(false).catch(() => {});
         }
       },
@@ -2653,10 +2699,19 @@ function App() {
       typeof resolvedOptions.omitChatgpt === "boolean"
         ? resolvedOptions.omitChatgpt
         : activeTab === "chatgpt";
+    const requestedSections = Array.isArray(resolvedOptions.sections)
+      ? resolvedOptions.sections
+      : String(resolvedOptions.sections || "")
+          .split(",")
+          .map((section) => String(section || "").trim())
+          .filter(Boolean);
+    const dataSections =
+      requestedSections.length > 0
+        ? Array.from(new Set(requestedSections))
+        : resolveAdminDataSectionsForTab(activeTab, { omitChatgpt });
+    const dataSectionSet = new Set(dataSections);
     const syncChatgptPage =
-      omitChatgpt &&
-      activeTab === "chatgpt" &&
-      resolvedOptions.syncChatgptPage !== false;
+      activeTab === "chatgpt" && resolvedOptions.syncChatgptPage !== false;
     const requestLabel =
       String(resolvedOptions.requestLabel || "").trim() ||
       "Đang tải lại dữ liệu";
@@ -2667,8 +2722,15 @@ function App() {
     const runFetch = (async () => {
       if (showLoader) setLoading(true);
       try {
+        const queryParams = {};
+        if (omitChatgpt) {
+          queryParams.omitChatgpt = 1;
+        }
+        if (dataSections.length > 0) {
+          queryParams.sections = dataSections.join(",");
+        }
         const res = await axios.get("/api/data", {
-          params: omitChatgpt ? { omitChatgpt: 1 } : undefined,
+          params: Object.keys(queryParams).length > 0 ? queryParams : undefined,
           timeout: 10000,
           headers: { "Cache-Control": "no-cache" },
           requestLabel,
@@ -2681,10 +2743,19 @@ function App() {
         if (res.data?.realtime) {
           setAdminRealtime(normalizeAdminRealtimeConfig(res.data.realtime));
         }
-        syncDatammoOrderBanner(res.data?.datammoOrders);
-        syncStoreOrderBanner(res.data?.storeOrders);
-        setStoreOrders(normalizeStoreAdminOrders(res.data?.storeOrders));
-        if (!omitChatgpt && res.data && res.data.chatgpt) {
+        if (dataSectionSet.has("datammo")) {
+          syncDatammoOrderBanner(res.data?.datammoOrders);
+          setDatammoOrderHistory(normalizeDatammoOrders(res.data?.datammoOrders));
+          setDatammoWarrantyCases(
+            normalizeDatammoWarrantyCases(res.data?.datammoWarrantyCases),
+          );
+        }
+        if (dataSectionSet.has("storeOrders")) {
+          const nextStoreOrders = normalizeStoreAdminOrders(res.data?.storeOrders);
+          syncStoreOrderBanner(nextStoreOrders);
+          setStoreOrders(nextStoreOrders);
+        }
+        if (dataSectionSet.has("chatgpt") && !omitChatgpt && res.data?.chatgpt) {
           const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
           const sortedGPT = [...res.data.chatgpt]
             .map((acc) => ({
@@ -2700,77 +2771,42 @@ function App() {
             return new Date(b.createdAt) - new Date(a.createdAt);
           });
           setAccounts(sortedGPT);
-        } else if (!omitChatgpt) {
+        } else if (dataSectionSet.has("chatgpt") && !omitChatgpt) {
           setAccounts([]);
         }
-        const sortA = (arr) => [...(arr || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        setNetflixAccounts(sortA(res.data?.netflix));
-        setCanvaAccounts(sortA(res.data?.canva));
-        setCapcutAccounts(sortA(res.data?.capcut));
-        setTeamAccounts(
-          sortA(res.data?.team).map((acc) => normalizeTeamAccountForUi(acc)),
-        );
-        setStoreUsers(
-          [...(res.data?.storeUsers || [])].sort((a, b) => {
-            const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
-            const bTime = new Date(b?.latestOrderAt || b?.createdAt || 0).getTime();
-            return bTime - aTime;
-          }),
-        );
-        setStoreVouchers(
-          [...(res.data?.storeVouchers || [])].sort((a, b) => {
-            const aTime = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
-            const bTime = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
-            return bTime - aTime;
-          }),
-        );
-        setSupportConversations(
-          [...(res.data?.supportConversations || [])].sort((a, b) => {
-            const aTime = new Date(a?.lastMessageAt || a?.createdAt || 0).getTime();
-            const bTime = new Date(b?.lastMessageAt || b?.createdAt || 0).getTime();
-            return bTime - aTime;
-          }),
-        );
-        setDatammoOrderHistory(
-          normalizeDatammoOrders(res.data?.datammoOrders),
-        );
-        setDatammoWarrantyCases(
-          normalizeDatammoWarrantyCases(res.data?.datammoWarrantyCases),
-        );
-        setDashboardSummary({
-          totalStoreUsers: Array.isArray(res.data?.storeUsers)
-            ? res.data.storeUsers.length
-            : 0,
-          totalStoreOrders: Array.isArray(res.data?.storeOrders)
-            ? res.data.storeOrders.length
-            : 0,
-          fulfilledStoreOrders: Array.isArray(res.data?.storeOrders)
-            ? res.data.storeOrders.filter(
-                (item) => String(item?.status || "").trim() === "fulfilled",
-              ).length
-            : 0,
-          pendingStoreOrders: Array.isArray(res.data?.storeOrders)
-            ? res.data.storeOrders.filter((item) =>
-                ["pending_payment", "awaiting_payment", "paid"].includes(
-                  String(item?.status || "").trim(),
-                ),
-              ).length
-            : 0,
-          unreadSupportConversations: Array.isArray(res.data?.supportConversations)
-            ? res.data.supportConversations.filter(
-                (item) => Number(item?.adminUnreadCount || 0) > 0,
-              ).length
-            : 0,
-          openSupportConversations: Array.isArray(res.data?.supportConversations)
-            ? res.data.supportConversations.filter(
-                (item) =>
-                  String(item?.status || "").trim().toLowerCase() === "open",
-              ).length
-            : 0,
-          totalVouchers: Array.isArray(res.data?.storeVouchers)
-            ? res.data.storeVouchers.length
-            : 0,
-        });
+        if (dataSectionSet.has("netflix")) {
+          setNetflixAccounts(sortAdminCreatedAtDesc(res.data?.netflix));
+        }
+        if (dataSectionSet.has("canva")) {
+          setCanvaAccounts(sortAdminCreatedAtDesc(res.data?.canva));
+        }
+        if (dataSectionSet.has("capcut")) {
+          setCapcutAccounts(sortAdminCreatedAtDesc(res.data?.capcut));
+        }
+        if (dataSectionSet.has("team")) {
+          setTeamAccounts(
+            sortAdminCreatedAtDesc(res.data?.team).map((acc) =>
+              normalizeTeamAccountForUi(acc),
+            ),
+          );
+        }
+        if (dataSectionSet.has("storeUsers")) {
+          setStoreUsers(sortAdminStoreUsersForUi(res.data?.storeUsers));
+        }
+        if (dataSectionSet.has("storeVouchers")) {
+          setStoreVouchers(sortAdminStoreVouchersForUi(res.data?.storeVouchers));
+        }
+        if (dataSectionSet.has("supportConversations")) {
+          setSupportConversations(
+            sortAdminSupportConversationsForUi(res.data?.supportConversations),
+          );
+        }
+        if (dataSectionSet.has("summary") && res.data?.summary) {
+          setDashboardSummary({
+            ...buildDefaultDashboardSummary(),
+            ...res.data.summary,
+          });
+        }
         if (syncChatgptPage) {
           void loadAdminChatgptAccounts({ silent: true });
         }
@@ -2797,11 +2833,9 @@ function App() {
         fetchData({
           showLoader: true,
           requestLabel,
-          omitChatgpt: true,
           syncChatgptPage: false,
         }),
         loadAdminChatgptAccounts({ silent: true }),
-        loadDashboardSummary({ silent: true }),
       ]);
       return;
     }
@@ -2928,13 +2962,7 @@ function App() {
         timeout: 10000,
         skipGlobalLoading: silent,
       });
-      setStoreUsers(
-        [...(response?.data?.users || [])].sort((a, b) => {
-          const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
-          const bTime = new Date(b?.latestOrderAt || b?.createdAt || 0).getTime();
-          return bTime - aTime;
-        }),
-      );
+      setStoreUsers(sortAdminStoreUsersForUi(response?.data?.users));
       return response?.data || null;
     } catch (error) {
       if (!silent) {
@@ -2958,13 +2986,7 @@ function App() {
         timeout: 10000,
         skipGlobalLoading: silent,
       });
-      setStoreVouchers(
-        [...(response?.data?.vouchers || [])].sort((a, b) => {
-          const aTime = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
-          const bTime = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
-          return bTime - aTime;
-        }),
-      );
+      setStoreVouchers(sortAdminStoreVouchersForUi(response?.data?.vouchers));
       return response?.data || null;
     } catch (error) {
       if (!silent) {
@@ -2989,11 +3011,7 @@ function App() {
         skipGlobalLoading: silent,
       });
       setSupportConversations(
-        [...(response?.data?.conversations || [])].sort((a, b) => {
-          const aTime = new Date(a?.lastMessageAt || a?.createdAt || 0).getTime();
-          const bTime = new Date(b?.lastMessageAt || b?.createdAt || 0).getTime();
-          return bTime - aTime;
-        }),
+        sortAdminSupportConversationsForUi(response?.data?.conversations),
       );
       return response?.data || null;
     } catch (error) {
@@ -3014,20 +3032,26 @@ function App() {
   } = {}) => {
     if (!isAuthenticated) return;
 
-    if (
-      forceFull ||
-      ["netflix", "capcut", "canva", "coursera"].includes(activeTab)
-    ) {
-      await fetchData(false);
-      return;
-    }
-
     const tasks = [];
-    if (includeSummary) {
+    const usesSectionFetch =
+      forceFull ||
+      [
+        "chatgpt",
+        "netflix",
+        "capcut",
+        "canva",
+        "coursera",
+        "store-users",
+      ].includes(activeTab);
+    if (usesSectionFetch) {
+      tasks.push(
+        fetchData({
+          showLoader: false,
+          syncChatgptPage: false,
+        }),
+      );
+    } else if (includeSummary) {
       tasks.push(loadDashboardSummary({ silent: true }));
-    }
-    if (activeTab === "store-users") {
-      tasks.push(loadAdminStoreUsers({ silent: true }));
     }
     if (activeTab === "store-vouchers") {
       tasks.push(loadAdminStoreVouchers({ silent: true }));
@@ -3043,16 +3067,7 @@ function App() {
       }
     }
     if (activeTab === "chatgpt") {
-      tasks.push(
-        fetchData({
-          showLoader: false,
-          omitChatgpt: true,
-          syncChatgptPage: false,
-        }),
-      );
       tasks.push(loadAdminChatgptAccounts({ silent: true }));
-      tasks.push(loadAdminStoreOrders({ silent: true }));
-      tasks.push(loadAdminStoreUsers({ silent: true }));
     }
     if (tasks.length === 0) {
       tasks.push(loadDashboardSummary({ silent: true }));
