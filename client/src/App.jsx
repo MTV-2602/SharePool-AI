@@ -1353,6 +1353,7 @@ const buildDefaultChatgptAdminPaginationState = () => ({
     marketShelfTabs: { all: 0, sold: 0, soldDatammo: 0, soldShopmini: 0 },
   },
 });
+const ADMIN_AUTO_REFRESH_CACHE_MS = 30000;
 const ADMIN_TAB_DATA_SECTION_MAP = {
   chatgpt: ["team", "datammo", "storeOrders", "summary"],
   netflix: ["netflix", "summary"],
@@ -1551,6 +1552,13 @@ function App() {
   // BroadcastChannel for real-time sync between tabs
   const channelRef = useRef(null);
   const dataVersionRef = useRef(0);
+  const adminSectionCacheRef = useRef(new Map());
+  const chatgptListCacheRef = useRef({
+    key: "",
+    version: 0,
+    loadedAt: 0,
+  });
+  const lastAutoRefreshAtRef = useRef(0);
   const isFetchingDataRef = useRef(false);
   const fetchDataPromiseRef = useRef(null);
   const chatgptPageEffectPrimedRef = useRef(false);
@@ -1780,12 +1788,14 @@ function App() {
       writeStoredSessionRole("admin");
       skipNextAdminTabBootstrapRef.current = true;
       setIsAuthenticated(true);
-      setTimeout(async () => {
-        await fetchData({
-          showLoader: activeTab !== "chatgpt",
-          syncChatgptPage: false,
-        });
-      }, 100);
+      if (activeTab !== "chatgpt") {
+        setTimeout(async () => {
+          await fetchData({
+            showLoader: true,
+            syncChatgptPage: false,
+          });
+        }, 100);
+      }
       return;
     }
 
@@ -1837,13 +1847,22 @@ function App() {
     } catch {}
   };
 
+  const shouldSkipAutoRefresh = () => {
+    const now = Date.now();
+    if (now - Number(lastAutoRefreshAtRef.current || 0) < 5000) {
+      return true;
+    }
+    lastAutoRefreshAtRef.current = now;
+    return false;
+  };
+
   useEffect(() => {
     if (!isAuthenticated) return undefined;
 
     const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        refreshAdminSurface({ includeSummary: true }).catch(() => {});
-      }
+      if (document.hidden) return;
+      if (shouldSkipAutoRefresh()) return;
+      refreshAdminSurface({ includeSummary: true }).catch(() => {});
     };
 
     window.addEventListener("focus", handleVisibilityChange);
@@ -1860,6 +1879,7 @@ function App() {
     if (!isAuthenticated) return undefined;
     const intervalId = window.setInterval(() => {
       if (document.hidden) return;
+      if (shouldSkipAutoRefresh()) return;
       refreshAdminSurface({ includeSummary: true }).catch(() => {});
     }, getRealtimeSafetySyncMs(adminRealtime, 90000));
     return () => window.clearInterval(intervalId);
@@ -1877,24 +1897,29 @@ function App() {
       return;
     }
     if (
-      ["chatgpt", "netflix", "capcut", "canva", "coursera", "store-users"].includes(
+      ["netflix", "capcut", "canva", "coursera", "store-users"].includes(
         activeTab,
       )
     ) {
       fetchData({
         showLoader: false,
         syncChatgptPage: false,
+        allowCached: true,
       }).catch(() => {});
       return;
     }
     if (activeTab === "store-vouchers") {
-      loadAdminStoreVouchers({ silent: true }).catch(() => {});
-      loadDashboardSummary({ silent: true }).catch(() => {});
+      loadAdminStoreVouchers({ silent: true, allowCached: true }).catch(() => {});
+      loadDashboardSummary({ silent: true, allowCached: true }).catch(() => {});
       return;
     }
     if (activeTab === "support") {
-      loadSupportConversations({ silent: true, limit: 20 }).catch(() => {});
-      loadDashboardSummary({ silent: true }).catch(() => {});
+      loadSupportConversations({
+        silent: true,
+        limit: 20,
+        allowCached: true,
+      }).catch(() => {});
+      loadDashboardSummary({ silent: true, allowCached: true }).catch(() => {});
     }
   }, [activeTab, isAuthenticated]);
 
@@ -1916,7 +1941,19 @@ function App() {
       setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
       return;
     }
-    loadAdminChatgptAccounts({ silent: true }).catch(() => {});
+    loadAdminChatgptAccounts({ silent: true, allowCached: true })
+      .catch(() => {})
+      .finally(() => {
+        fetchData({
+          showLoader: false,
+          syncChatgptPage: false,
+          allowCached: true,
+          omitChatgpt: true,
+          sections: resolveAdminDataSectionsForTab("chatgpt", {
+            omitChatgpt: true,
+          }),
+        }).catch(() => {});
+      });
   }, [activeTab, chatgptListFilterKey, isAuthenticated]);
 
   useEffect(() => {
@@ -1925,7 +1962,19 @@ function App() {
       chatgptPageEffectPrimedRef.current = true;
       return;
     }
-    loadAdminChatgptAccounts({ silent: true }).catch(() => {});
+    loadAdminChatgptAccounts({ silent: true, allowCached: true })
+      .catch(() => {})
+      .finally(() => {
+        fetchData({
+          showLoader: false,
+          syncChatgptPage: false,
+          allowCached: true,
+          omitChatgpt: true,
+          sections: resolveAdminDataSectionsForTab("chatgpt", {
+            omitChatgpt: true,
+          }),
+        }).catch(() => {});
+      });
   }, [
     activeTab,
     isAuthenticated,
@@ -2136,7 +2185,7 @@ function App() {
             }
           }
           loadDashboardSummary({ silent: true }).catch(() => {});
-          if (activeTab === "chatgpt" || activeTab === "store-users") {
+          if (activeTab === "store-users") {
             loadAdminStoreUsers({ silent: true }).catch(() => {});
           }
           if (!nextAdminOrder && activeTab === "store-users") {
@@ -2339,10 +2388,12 @@ function App() {
         writeStoredSessionRole("admin");
         skipNextAdminTabBootstrapRef.current = true;
         setIsAuthenticated(true);
-        fetchData({
-          showLoader: activeTab !== "chatgpt",
-          syncChatgptPage: false,
-        });
+        if (activeTab !== "chatgpt") {
+          fetchData({
+            showLoader: true,
+            syncChatgptPage: false,
+          });
+        }
         showAlert(
           "Xin chào",
           response.data.message || "Đăng nhập thành công! 👋",
@@ -2935,6 +2986,46 @@ function App() {
     refreshRecentStoreOrders(freshOrders);
   };
 
+  const markAdminSectionsCached = (sections = [], version = 0) => {
+    const normalizedVersion = Number(version || dataVersionRef.current || 0);
+    if (!normalizedVersion) return;
+    const loadedAt = Date.now();
+    const nextCache = new Map(adminSectionCacheRef.current);
+    (Array.isArray(sections) ? sections : []).forEach((section) => {
+      const normalizedSection = String(section || "").trim();
+      if (!normalizedSection) return;
+      nextCache.set(normalizedSection, {
+        version: normalizedVersion,
+        loadedAt,
+      });
+    });
+    adminSectionCacheRef.current = nextCache;
+  };
+
+  const hasFreshAdminSectionsCached = (sections = []) => {
+    const currentVersion = Number(dataVersionRef.current || 0);
+    if (!currentVersion) return false;
+    const now = Date.now();
+    return (Array.isArray(sections) ? sections : []).every((section) => {
+      const entry = adminSectionCacheRef.current.get(String(section || "").trim());
+      if (!entry) return false;
+      if (Number(entry.version || 0) !== currentVersion) return false;
+      return now - Number(entry.loadedAt || 0) <= ADMIN_AUTO_REFRESH_CACHE_MS;
+    });
+  };
+
+  const hasFreshChatgptListCached = (requestKey = "") => {
+    const currentVersion = Number(dataVersionRef.current || 0);
+    if (!currentVersion) return false;
+    const cacheEntry = chatgptListCacheRef.current || {};
+    if (String(cacheEntry.key || "") !== String(requestKey || "")) return false;
+    if (Number(cacheEntry.version || 0) !== currentVersion) return false;
+    return (
+      Date.now() - Number(cacheEntry.loadedAt || 0) <=
+      ADMIN_AUTO_REFRESH_CACHE_MS
+    );
+  };
+
   const fetchData = async (options = true) => {
     const resolvedOptions =
       typeof options === "object" && options !== null
@@ -2958,9 +3049,13 @@ function App() {
     const dataSectionSet = new Set(dataSections);
     const syncChatgptPage =
       activeTab === "chatgpt" && resolvedOptions.syncChatgptPage !== false;
+    const allowCached = !!resolvedOptions.allowCached;
     const requestLabel =
       String(resolvedOptions.requestLabel || "").trim() ||
       "Đang tải lại dữ liệu";
+    if (allowCached && hasFreshAdminSectionsCached(dataSections)) {
+      return null;
+    }
     if (isFetchingDataRef.current && fetchDataPromiseRef.current) {
       return fetchDataPromiseRef.current;
     }
@@ -2986,6 +3081,7 @@ function App() {
         if (Number.isFinite(nextVersion) && nextVersion > 0) {
           dataVersionRef.current = nextVersion;
         }
+        markAdminSectionsCached(dataSections, nextVersion);
         if (res.data?.realtime) {
           setAdminRealtime(normalizeAdminRealtimeConfig(res.data.realtime));
         }
@@ -3054,7 +3150,10 @@ function App() {
           });
         }
         if (syncChatgptPage) {
-          void loadAdminChatgptAccounts({ silent: true });
+          void loadAdminChatgptAccounts({
+            silent: true,
+            allowCached,
+          });
         }
       } catch (error) {
         if (showLoader) {
@@ -3090,12 +3189,23 @@ function App() {
     return fetchData({ showLoader: true, requestLabel });
   };
 
-  const loadDashboardSummary = async ({ silent = true } = {}) => {
+  const loadDashboardSummary = async ({
+    silent = true,
+    allowCached = false,
+  } = {}) => {
+    if (allowCached && hasFreshAdminSectionsCached(["summary"])) {
+      return null;
+    }
     try {
       const response = await axios.get("/api/admin/dashboard/summary", {
         timeout: 10000,
         skipGlobalLoading: silent,
       });
+      const nextVersion = Number(response?.data?.version || dataVersionRef.current || 0);
+      if (Number.isFinite(nextVersion) && nextVersion > 0) {
+        dataVersionRef.current = nextVersion;
+      }
+      markAdminSectionsCached(["summary"], nextVersion);
       if (response?.data?.summary) {
         setDashboardSummary({
           ...buildDefaultDashboardSummary(),
@@ -3122,6 +3232,7 @@ function App() {
     silent = true,
     page = chatgptAdminPagination.page,
     limit = chatgptAdminPagination.limit,
+    allowCached = false,
   } = {}) => {
     const safePage = Math.max(1, Number(page || 1));
     const safeLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(Number(limit))
@@ -3140,6 +3251,9 @@ function App() {
       chatgptExpiryMax,
       searchQuery,
     ].join("|");
+    if (allowCached && hasFreshChatgptListCached(requestKey)) {
+      return null;
+    }
     if (
       chatgptListInFlightRef.current.promise &&
       chatgptListInFlightRef.current.key === requestKey
@@ -3168,10 +3282,19 @@ function App() {
         timeout: 10000,
         skipGlobalLoading: silent,
       });
+      const nextVersion = Number(response?.data?.version || 0);
+      if (Number.isFinite(nextVersion) && nextVersion > 0) {
+        dataVersionRef.current = nextVersion;
+      }
       if (requestSeq !== chatgptListRequestSeqRef.current) {
         return response?.data || null;
       }
       chatgptListAppliedSeqRef.current = requestSeq;
+      chatgptListCacheRef.current = {
+        key: requestKey,
+        version: Number(response?.data?.version || dataVersionRef.current || 0),
+        loadedAt: Date.now(),
+      };
       setAccounts(
         Array.isArray(response?.data?.accounts) ? response.data.accounts : [],
       );
@@ -3270,13 +3393,22 @@ function App() {
   const loadAdminStoreVouchers = async ({
     silent = true,
     limit = 100,
+    allowCached = false,
   } = {}) => {
+    if (allowCached && hasFreshAdminSectionsCached(["storeVouchers"])) {
+      return null;
+    }
     try {
       const response = await axios.get("/api/admin/store-vouchers", {
         params: { limit },
         timeout: 10000,
         skipGlobalLoading: silent,
       });
+      const nextVersion = Number(response?.data?.version || dataVersionRef.current || 0);
+      if (Number.isFinite(nextVersion) && nextVersion > 0) {
+        dataVersionRef.current = nextVersion;
+      }
+      markAdminSectionsCached(["storeVouchers"], nextVersion);
       setStoreVouchers(sortAdminStoreVouchersForUi(response?.data?.vouchers));
       return response?.data || null;
     } catch (error) {
@@ -3296,12 +3428,21 @@ function App() {
     limit = DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE,
     page = 1,
     append = false,
+    allowCached = false,
   } = {}) => {
     const safePage = Math.max(1, Number(page || 1));
     const safeLimit = Math.max(
       1,
       Math.min(100, Number(limit || DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE)),
     );
+    if (
+      allowCached &&
+      !append &&
+      safePage === 1 &&
+      hasFreshAdminSectionsCached(["supportConversations"])
+    ) {
+      return null;
+    }
     if (append) {
       setSupportConversationPagination((prev) => ({
         ...prev,
@@ -3317,6 +3458,18 @@ function App() {
         timeout: 10000,
         skipGlobalLoading: silent,
       });
+      if (!append && safePage === 1) {
+        const nextVersion = Number(
+          response?.data?.version || dataVersionRef.current || 0,
+        );
+        if (Number.isFinite(nextVersion) && nextVersion > 0) {
+          dataVersionRef.current = nextVersion;
+        }
+        markAdminSectionsCached(
+          ["supportConversations"],
+          nextVersion,
+        );
+      }
       const incomingConversations = sortAdminSupportConversationsForUi(
         response?.data?.conversations,
       );
@@ -3392,16 +3545,17 @@ function App() {
         fetchData({
           showLoader: false,
           syncChatgptPage: activeTab === "chatgpt",
+          allowCached: true,
         }),
       );
     } else if (includeSummary) {
-      tasks.push(loadDashboardSummary({ silent: true }));
+      tasks.push(loadDashboardSummary({ silent: true, allowCached: true }));
     }
     if (activeTab === "store-vouchers") {
-      tasks.push(loadAdminStoreVouchers({ silent: true }));
+      tasks.push(loadAdminStoreVouchers({ silent: true, allowCached: true }));
     }
     if (activeTab === "support") {
-      tasks.push(loadSupportConversations({ silent: true }));
+      tasks.push(loadSupportConversations({ silent: true, allowCached: true }));
       if (selectedSupportConversationId) {
         tasks.push(
           loadSupportConversationMessages(selectedSupportConversationId, {

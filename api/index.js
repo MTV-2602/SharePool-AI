@@ -807,12 +807,12 @@ let sseClients = [];
 let latestDataVersion = Date.now();
 const adminReadCacheTtlMs = toPositiveInt(
   process.env.ADMIN_READ_CACHE_TTL_MS,
-  8000,
+  60000,
 );
 const adminReadCache = new Map();
 const chatgptAdminSnapshotCacheTtlMs = toPositiveInt(
   process.env.CHATGPT_ADMIN_SNAPSHOT_CACHE_TTL_MS,
-  adminReadCacheTtlMs,
+  Math.max(adminReadCacheTtlMs, 180000),
 );
 let chatgptAdminSnapshotCache = null;
 
