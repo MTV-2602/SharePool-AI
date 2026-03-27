@@ -2361,6 +2361,20 @@ function App() {
     supportScrollModeRef.current = "bottom";
   };
 
+  const flushSupportScrollToBottom = () => {
+    if (typeof window === "undefined") return;
+    const scrollToLatest = () => {
+      const viewport = supportMessagesViewportRef.current;
+      if (!viewport) return;
+      viewport.scrollTop = Number(viewport.scrollHeight || 0);
+    };
+    scrollToLatest();
+    window.requestAnimationFrame(() => {
+      scrollToLatest();
+      window.requestAnimationFrame(scrollToLatest);
+    });
+  };
+
   const queueSupportScrollPreserve = () => {
     const viewport = supportMessagesViewportRef.current;
     supportPreviousScrollHeightRef.current = Number(viewport?.scrollHeight || 0);
@@ -3348,6 +3362,8 @@ function App() {
     setSupportMessages([]);
     queueSupportScrollToBottom();
     await loadSupportConversationMessages(normalizedConversationId);
+    queueSupportScrollToBottom();
+    flushSupportScrollToBottom();
   };
 
   const handleSendSupportReply = async (e) => {
@@ -3368,6 +3384,7 @@ function App() {
       setSupportMessages((prev) =>
         freshMessage ? mergeSupportMessageItem(prev, freshMessage) : prev,
       );
+      flushSupportScrollToBottom();
       if (freshConversation) {
         setSupportConversations((prev) =>
           mergeSupportConversationItem(prev, freshConversation),
@@ -7367,7 +7384,7 @@ function App() {
 
         {activeTab === "support" && (
           <div className="grid gap-5 xl:grid-cols-[390px,minmax(0,1fr)] xl:items-stretch">
-            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.92))] shadow-[0_22px_60px_rgba(2,8,23,0.5)] lg:flex lg:h-[calc(100dvh-150px)] lg:flex-col">
+            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.92))] shadow-[0_22px_60px_rgba(2,8,23,0.5)] lg:flex lg:h-[min(78vh,42rem)] lg:flex-col">
               <div className="border-b border-slate-800/80 p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -7570,9 +7587,9 @@ function App() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.12),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))] shadow-[0_22px_60px_rgba(2,8,23,0.48)] lg:flex lg:h-[calc(100dvh-150px)] lg:flex-col">
+            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.12),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))] shadow-[0_22px_60px_rgba(2,8,23,0.48)] lg:flex lg:h-[min(78vh,42rem)] lg:flex-col">
               {!selectedSupportConversation ? (
-                <div className="flex min-h-[640px] flex-col items-center justify-center gap-4 p-8 text-center lg:min-h-0 lg:flex-1">
+                <div className="flex min-h-[520px] flex-col items-center justify-center gap-4 p-8 text-center lg:min-h-0 lg:flex-1">
                   <div className="flex h-16 w-16 items-center justify-center rounded-[22px] border border-sky-400/25 bg-sky-500/10 text-sky-200">
                     <MessageCircle size={28} />
                   </div>
@@ -7643,9 +7660,14 @@ function App() {
                         ) : null}
                         <button
                           type="button"
-                          onClick={() =>
-                            loadSupportConversationMessages(selectedSupportConversation.id)
-                          }
+                          onClick={async () => {
+                            queueSupportScrollToBottom();
+                            await loadSupportConversationMessages(
+                              selectedSupportConversation.id,
+                            );
+                            queueSupportScrollToBottom();
+                            flushSupportScrollToBottom();
+                          }}
                           disabled={
                             loadingStates.fetchSupportThread === selectedSupportConversation.id
                           }
@@ -7704,7 +7726,7 @@ function App() {
                           }}
                           className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] px-4 py-4 md:px-5"
                         >
-                          <div className="mx-auto flex max-w-4xl flex-col gap-4">
+                          <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-4">
                             {supportPagination.hasMore ? (
                               <div className="flex justify-center">
                                 <button
@@ -7743,7 +7765,7 @@ function App() {
                                 Hội thoại này chưa có tin nhắn nào.
                               </div>
                             ) : (
-                              <div className="space-y-3">
+                              <div className="mt-auto space-y-3">
                                 {supportMessages.map((messageItem, index) => {
                                   const previousMessage = supportMessages[index - 1] || null;
                                   const fromUser =

@@ -430,6 +430,20 @@ function PublicStorefront() {
     supportScrollModeRef.current = "bottom";
   };
 
+  const flushSupportScrollToBottom = () => {
+    if (typeof window === "undefined") return;
+    const scrollToLatest = () => {
+      const viewport = supportMessagesViewportRef.current;
+      if (!viewport) return;
+      viewport.scrollTop = Number(viewport.scrollHeight || 0);
+    };
+    scrollToLatest();
+    window.requestAnimationFrame(() => {
+      scrollToLatest();
+      window.requestAnimationFrame(scrollToLatest);
+    });
+  };
+
   const queueSupportScrollPreserve = () => {
     const viewport = supportMessagesViewportRef.current;
     supportPreviousScrollHeightRef.current = Number(viewport?.scrollHeight || 0);
@@ -766,9 +780,13 @@ function PublicStorefront() {
       setSupportMessages([]);
       setSupportPagination(buildDefaultSupportPaginationState());
       await loadSupportThread({ markRead: true, reset: true });
+      queueSupportScrollToBottom();
+      flushSupportScrollToBottom();
       return;
     }
     await loadSupportThread({ markRead: true, silent: true });
+    queueSupportScrollToBottom();
+    flushSupportScrollToBottom();
   };
 
   useEffect(() => {
@@ -1606,6 +1624,7 @@ function PublicStorefront() {
       setSupportMessages((prev) =>
         nextMessage ? mergeRealtimeSupportMessages(prev, nextMessage) : prev,
       );
+      flushSupportScrollToBottom();
       setSupportDraft("");
       setMessage("Đã gửi tin nhắn cho admin.");
     } catch (supportError) {
@@ -2233,7 +2252,7 @@ function PublicStorefront() {
                 onClick={() => setSupportOpen(false)}
                 className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm sm:hidden"
               />
-              <div className="pointer-events-auto fixed inset-x-3 bottom-24 top-20 flex flex-col overflow-hidden rounded-[30px] border border-slate-800 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.12),_transparent_35%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(2,6,23,0.94))] shadow-[0_30px_80px_rgba(2,6,23,0.62)] sm:inset-auto sm:bottom-24 sm:right-4 sm:top-auto sm:h-[min(72vh,44rem)] sm:w-[min(26rem,calc(100vw-2rem))]">
+              <div className="pointer-events-auto fixed inset-x-3 bottom-24 top-20 flex flex-col overflow-hidden rounded-[30px] border border-slate-800 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.12),_transparent_35%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(2,6,23,0.94))] shadow-[0_30px_80px_rgba(2,6,23,0.62)] sm:inset-auto sm:bottom-24 sm:right-4 sm:top-auto sm:h-[min(68vh,40rem)] sm:w-[min(24rem,calc(100vw-2rem))]">
                 <div className="shrink-0 border-b border-slate-800/80 bg-[linear-gradient(135deg,#0891b2,#2563eb)] px-4 py-4 text-white sm:px-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -2280,7 +2299,7 @@ function PublicStorefront() {
                   }}
                   className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5"
                 >
-                  <div className="space-y-4">
+                  <div className="flex min-h-full flex-col gap-4">
                     {supportPagination.hasMore ? (
                       <div className="flex justify-center">
                         <button
@@ -2318,52 +2337,54 @@ function PublicStorefront() {
                         Chưa có tin nhắn nào. Bạn có thể nhắn nội dung cần hỗ trợ ở ô bên dưới.
                       </div>
                     ) : (
-                      supportMessages.map((chatMessage, index) => {
-                        const previousMessage = supportMessages[index - 1] || null;
-                        const fromAdmin =
-                          String(chatMessage.senderRole || "").trim() === "admin";
-                        const shouldRenderDayDivider =
-                          !previousMessage ||
-                          !isSameSupportDay(
-                            previousMessage?.createdAt,
-                            chatMessage?.createdAt,
-                          );
-                        return (
-                          <div key={chatMessage.id}>
-                            {shouldRenderDayDivider ? (
-                              <div className="mb-3 flex justify-center">
-                                <div className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                                  {formatSupportDayLabel(chatMessage.createdAt)}
+                      <div className="mt-auto space-y-4">
+                        {supportMessages.map((chatMessage, index) => {
+                          const previousMessage = supportMessages[index - 1] || null;
+                          const fromAdmin =
+                            String(chatMessage.senderRole || "").trim() === "admin";
+                          const shouldRenderDayDivider =
+                            !previousMessage ||
+                            !isSameSupportDay(
+                              previousMessage?.createdAt,
+                              chatMessage?.createdAt,
+                            );
+                          return (
+                            <div key={chatMessage.id}>
+                              {shouldRenderDayDivider ? (
+                                <div className="mb-3 flex justify-center">
+                                  <div className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                    {formatSupportDayLabel(chatMessage.createdAt)}
+                                  </div>
                                 </div>
-                              </div>
-                            ) : null}
-                            <div
-                              className={`flex ${
-                                fromAdmin ? "justify-start" : "justify-end"
-                              }`}
-                            >
+                              ) : null}
                               <div
-                                className={`max-w-[90%] rounded-[26px] px-4 py-3 text-sm leading-6 shadow-[0_12px_24px_rgba(2,6,23,0.18)] sm:max-w-[82%] ${
-                                  fromAdmin
-                                    ? "border border-slate-700 bg-slate-900 text-slate-100"
-                                    : "bg-cyan-600 text-white"
+                                className={`flex ${
+                                  fromAdmin ? "justify-start" : "justify-end"
                                 }`}
                               >
                                 <div
-                                  className={`mb-2 text-[11px] font-bold uppercase tracking-[0.14em] ${
-                                    fromAdmin ? "text-slate-400" : "text-cyan-100"
+                                  className={`max-w-[90%] rounded-[26px] px-4 py-3 text-sm leading-6 shadow-[0_12px_24px_rgba(2,6,23,0.18)] sm:max-w-[82%] ${
+                                    fromAdmin
+                                      ? "border border-slate-700 bg-slate-900 text-slate-100"
+                                      : "bg-cyan-600 text-white"
                                   }`}
                                 >
-                                  {fromAdmin ? "Admin" : "Bạn"} • {formatSupportMessageTime(chatMessage.createdAt)}
-                                </div>
-                                <div className="whitespace-pre-wrap break-words">
-                                  {chatMessage.body}
+                                  <div
+                                    className={`mb-2 text-[11px] font-bold uppercase tracking-[0.14em] ${
+                                      fromAdmin ? "text-slate-400" : "text-cyan-100"
+                                    }`}
+                                  >
+                                    {fromAdmin ? "Admin" : "Bạn"} • {formatSupportMessageTime(chatMessage.createdAt)}
+                                  </div>
+                                  <div className="whitespace-pre-wrap break-words">
+                                    {chatMessage.body}
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 </div>
