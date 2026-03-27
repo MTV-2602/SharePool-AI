@@ -1302,6 +1302,7 @@ function App() {
   const [selectedSupportConversationId, setSelectedSupportConversationId] =
     useState("");
   const [supportReplyDraft, setSupportReplyDraft] = useState("");
+  const [showSupportInfoPanel, setShowSupportInfoPanel] = useState(false);
   const [supportConversationQuery, setSupportConversationQuery] = useState("");
   const [supportConversationFilter, setSupportConversationFilter] =
     useState("all");
@@ -3361,6 +3362,7 @@ function App() {
     setSupportPagination(buildDefaultSupportPaginationState());
     setSelectedSupportConversationId(normalizedConversationId);
     setSupportReplyDraft("");
+    setShowSupportInfoPanel(false);
     setSupportMessages([]);
     queueSupportScrollToBottom();
     await loadSupportConversationMessages(normalizedConversationId);
@@ -3459,6 +3461,7 @@ function App() {
     setSupportMessages([]);
     setSupportPagination(buildDefaultSupportPaginationState());
     setSupportReplyDraft("");
+    setShowSupportInfoPanel(false);
   }, [selectedSupportConversationId, supportConversations]);
 
   useEffect(() => {
@@ -7607,44 +7610,23 @@ function App() {
                               Cập nhật {formatRelativeTime(selectedSupportConversation?.lastMessageAt) || "--"}
                             </div>
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-400">
-                            {selectedSupportConversation?.userEmail ? (
-                              <span className="inline-flex items-center gap-1">
-                                <Mail size={12} />
-                                <span className="max-w-[220px] truncate">
-                                  {selectedSupportConversation.userEmail}
-                                </span>
-                              </span>
-                            ) : null}
-                            {selectedSupportConversation?.userPhone ? (
-                              <span className="inline-flex items-center gap-1">
-                                <Phone size={12} />
-                                <span>{selectedSupportConversation.userPhone}</span>
-                              </span>
-                            ) : null}
-                            <span>{selectedSupportConversationOrders.length} đơn web</span>
-                          </div>
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {selectedSupportConversation?.userEmail ? (
-                          <a
-                            href={`mailto:${selectedSupportConversation.userEmail}`}
-                            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/90 px-3 py-1.5 text-xs font-bold text-slate-100 transition-colors hover:border-slate-500 hover:text-white"
-                          >
-                            <Mail size={13} />
-                            Email
-                          </a>
-                        ) : null}
-                        {selectedSupportConversation?.userPhone ? (
-                          <a
-                            href={`tel:${selectedSupportConversation.userPhone}`}
-                            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/90 px-3 py-1.5 text-xs font-bold text-slate-100 transition-colors hover:border-slate-500 hover:text-white"
-                          >
-                            <Phone size={13} />
-                            Gọi nhanh
-                          </a>
-                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowSupportInfoPanel((prev) => !prev)
+                          }
+                          className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors ${
+                            showSupportInfoPanel
+                              ? "border-sky-400/50 bg-sky-500/12 text-sky-100"
+                              : "border-slate-700 bg-slate-900/90 text-slate-100 hover:border-slate-500 hover:text-white"
+                          }`}
+                        >
+                          <Info size={13} />
+                          {showSupportInfoPanel ? "Ẩn info" : "Xem info"}
+                        </button>
                         <button
                           type="button"
                           onClick={async () => {
@@ -7675,6 +7657,46 @@ function App() {
                     </div>
                     </div>
 
+                    {showSupportInfoPanel ? (
+                      <div className="mt-3 rounded-[18px] border border-slate-700/80 bg-slate-950/60 px-3 py-3 text-xs text-slate-300">
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                              Email
+                            </div>
+                            <div className="mt-1 break-all text-slate-100">
+                              {selectedSupportConversation?.userEmail || "Chưa có"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                              Số điện thoại
+                            </div>
+                            <div className="mt-1 text-slate-100">
+                              {selectedSupportConversation?.userPhone || "Chưa có"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                              Đơn web
+                            </div>
+                            <div className="mt-1 text-slate-100">
+                              {selectedSupportConversationOrders.length}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                              Tin gần nhất
+                            </div>
+                            <div className="mt-1 line-clamp-2 text-slate-100">
+                              {selectedSupportConversation?.lastMessagePreview ||
+                                "Chưa có tin nhắn"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
                     <div className="mt-3 flex flex-1 min-h-0 flex-col">
                       <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-700/70 bg-slate-950/55">
                         <div className="border-b border-slate-800/80 px-4 py-3">
@@ -7690,9 +7712,6 @@ function App() {
                             <div className="flex flex-wrap gap-2 text-xs">
                               <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1 text-slate-300">
                                 {supportMessages.length} tin gần nhất
-                              </span>
-                              <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1 text-slate-300">
-                                Lưu {supportRetentionDays} ngày
                               </span>
                             </div>
                           </div>
@@ -7844,16 +7863,8 @@ function App() {
                               className="min-h-[84px] w-full resize-none bg-transparent px-2 py-2 text-sm text-white outline-none placeholder:text-slate-500"
                             />
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
-                              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                                <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
-                                  Hiện ngay trên web user
-                                </span>
-                                <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
-                                  Ctrl + Enter để gửi
-                                </span>
-                                <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
-                                  {supportReplyDraft.trim().length} ký tự
-                                </span>
+                              <div className="text-[11px] text-slate-500">
+                                {supportReplyDraft.trim().length} ký tự
                               </div>
                               <button
                                 type="submit"
