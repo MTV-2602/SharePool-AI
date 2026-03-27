@@ -1570,6 +1570,7 @@ function App() {
   const [warrantyReplacementSearch, setWarrantyReplacementSearch] = useState("");
   const [warrantyWarehouseFilter, setWarrantyWarehouseFilter] = useState("all");
   const [selectedChatgptIds, setSelectedChatgptIds] = useState([]);
+  const [expandedChatgptAccountId, setExpandedChatgptAccountId] = useState("");
   const [selectedTeamIds, setSelectedTeamIds] = useState([]);
   // CUSTOM ALERT & CONFIRM MODAL
   const [alertInfo, setAlertInfo] = useState({
@@ -1869,6 +1870,18 @@ function App() {
     chatgptAdminPagination.page,
     chatgptAdminPagination.limit,
   ]);
+
+  useEffect(() => {
+    if (!expandedChatgptAccountId) return;
+    const stillVisible = (Array.isArray(accounts) ? accounts : []).some(
+      (acc) =>
+        String(acc?.id || "").trim() ===
+        String(expandedChatgptAccountId || "").trim(),
+    );
+    if (!stillVisible) {
+      setExpandedChatgptAccountId("");
+    }
+  }, [accounts, expandedChatgptAccountId]);
 
   useEffect(() => {
     if (isAuthenticated && activeTab === "chatgpt") return;
@@ -9045,7 +9058,7 @@ function App() {
               }}
             >
               <div className="overflow-x-auto w-full">
-                <table className="legacy-table w-full border-collapse min-w-[800px]">
+                <table className="legacy-table w-full border-collapse min-w-[720px]">
                   <thead>
                     <tr style={{ background: "rgba(15, 23, 42, 0.6)" }}>
                       <th className="w-12 text-center">
@@ -9062,13 +9075,13 @@ function App() {
                           className="w-4 h-4 accent-emerald-500 cursor-pointer"
                         />
                       </th>
-                      <th className="w-40">
+                      <th className="w-32">
                         {gptSubTab === "market" ? "Kho / Trạng thái" : "Loại Gói"}
                       </th>
                       <th>Thông Tin</th>
-                      <th className="w-32">Link Mail</th>
-                      <th className="w-64">Slot / Khách (Sửa/Xóa)</th>
-                      <th className="text-center w-24">Hành Động</th>
+                      <th className="w-24">Link Mail</th>
+                      <th className="w-56">Slot / Khách (Sửa/Xóa)</th>
+                      <th className="text-center w-28">Hành Động</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -9095,11 +9108,29 @@ function App() {
                           latestStoreReservationTrace?.expiresAt,
                         );
                         const isAccountLockedByStoreOrder = hasActiveStoreReservation;
+                        const isChatgptRowExpanded =
+                          String(expandedChatgptAccountId || "").trim() ===
+                          String(acc?.id || "").trim();
+                        const previewChatgptUsers = Array.isArray(acc?.users)
+                          ? acc.users.slice(0, 2)
+                          : [];
+                        const hiddenPreviewChatgptUserCount = Math.max(
+                          0,
+                          (Array.isArray(acc?.users) ? acc.users.length : 0) -
+                            previewChatgptUsers.length,
+                        );
+                        const accountExpiryStatus = acc?.expiredAt
+                          ? getExpiryStatus(acc.expiredAt)
+                          : null;
                         return (
                         <tr
                           id={`chatgpt-account-row-${acc.id}`}
                           key={acc.id}
                           className={`hover:bg-slate-800/50 transition-colors ${
+                            isChatgptRowExpanded
+                              ? "bg-slate-900/35"
+                              : ""
+                          } ${
                             String(highlightedChatgptAccountId || "") ===
                             String(acc.id || "")
                               ? "bg-cyan-900/20 ring-1 ring-cyan-500/50"
@@ -9120,7 +9151,7 @@ function App() {
                           <td className="align-top">
                             {gptSubTab === "market" && (
                               <div
-                                className={`w-full text-xs rounded px-2 py-2 outline-none font-bold border text-center ${
+                                className={`w-full rounded-md px-2 py-1.5 text-[10px] font-bold border text-center ${
                                   marketplaceTrackedAccountIds.has(String(acc.id || ""))
                                     ? "bg-amber-900/40 text-amber-300 border-amber-700/50"
                                     : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"
@@ -9142,7 +9173,7 @@ function App() {
                                 isAccountLockedByStoreOrder
                               }
                               className={`
-                                            ${gptSubTab === "market" ? "hidden" : "w-full"} text-xs rounded px-2 py-2 outline-none font-bold border cursor-pointer appearance-none text-center
+                                            ${gptSubTab === "market" ? "hidden" : "w-full"} rounded-md px-2 py-1.5 text-[10px] outline-none font-bold border cursor-pointer appearance-none text-center
                                             ${loadingStates.changeType[acc.id] || isAccountLockedByStoreOrder ? "opacity-50 cursor-not-allowed" : ""}
                                             ${acc.type === "package1"
                                   ? "bg-blue-900/40 text-blue-400 border-blue-700/50"
@@ -9163,11 +9194,11 @@ function App() {
                             {supportsChatgptMarketType(acc.type) && (
                               <div className="mt-2">
                                 {marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
-                                  <div className="w-full rounded px-2 py-1.5 text-center text-[11px] font-semibold border bg-amber-900/40 text-amber-200 border-amber-700/60">
+                                  <div className="w-full rounded-md px-2 py-1.5 text-center text-[10px] font-semibold border bg-amber-900/40 text-amber-200 border-amber-700/60">
                                     Khoa don san
                                   </div>
                                 ) : hasActiveStoreReservation ? (
-                                  <div className="w-full rounded px-2 py-1.5 text-center text-[11px] font-semibold border bg-cyan-900/40 text-cyan-200 border-cyan-700/60">
+                                  <div className="w-full rounded-md px-2 py-1.5 text-center text-[10px] font-semibold border bg-cyan-900/40 text-cyan-200 border-cyan-700/60">
                                     Don web dang giu cho
                                   </div>
                                 ) : (
@@ -9188,7 +9219,7 @@ function App() {
                                       isAccountLockedByStoreOrder
                                     }
                                     className={`
-                                      w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center
+                                      w-full rounded-md px-2 py-1.5 text-[10px] outline-none font-semibold border text-center
                                       ${normalizePackage2Shelf(acc.package2Shelf) === "none"
                                         ? "bg-slate-800 text-slate-300 border-slate-600"
                                         : normalizePackage2Shelf(acc.package2Shelf) === "main"
@@ -9215,102 +9246,174 @@ function App() {
                               </div>
                             )}
                           </td>
-                          <td>
-                            <div className="font-bold text-white mb-2 flex items-center gap-2 text-base">
-                              <User size={16} className="text-slate-400" />
-                              <span className="font-mono text-lg">{acc.username}</span>
-                              <button
-                                className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors ml-2"
-                                onClick={() => handleCopy(acc.username, "Đã copy Tên Tài Khoản")}
-                                title="Copy Username"
-                              >
-                                <Copy size={14} /> Copy
-                              </button>
-                            </div>
-                          <div className="text-slate-400 flex items-center gap-2 font-mono text-sm mt-1">
-                              <span className="w-20 text-slate-400 text-xs">Mật khẩu:</span>
-                              <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[120px]">{acc.password}</span>
-                              <button
-                                className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors"
-                                onClick={() => handleCopy(acc.password, "Đã copy Mật khẩu")}
-                                title="Copy Password"
-                              >
-                                <Copy size={14} /> Copy
-                              </button>
-                            </div>
-                            {acc.otpSecret && (
-                              <div className="text-slate-400 flex items-start gap-2 font-mono text-sm mt-2">
-                                <span className="w-20 text-slate-400 text-xs pt-1">2FA:</span>
-                                <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-cyan-200 min-w-[120px] break-all">
-                                  {acc.otpSecret}
+                          <td className="align-top py-3">
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-300">
+                                  <User size={13} />
+                                </span>
+                                <span className="font-mono text-sm font-bold text-white break-all">
+                                  {acc.username}
                                 </span>
                                 <button
-                                  className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors"
+                                  className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-slate-600"
                                   onClick={() =>
                                     handleCopy(
-                                      buildChatgpt2faCopyText(acc.otpSecret),
-                                      "Đã copy mã 2FA & hướng dẫn lấy mã đăng nhập",
+                                      acc.username,
+                                      "Đã copy Tên Tài Khoản",
                                     )
                                   }
-                                  title="Copy 2FA Secret"
+                                  title="Copy Username"
                                 >
-                                  <Copy size={14} /> Copy
+                                  <Copy size={11} /> Copy
                                 </button>
-                                <a
-                                  href={buildChatgpt2faLiveUrl(acc.otpSecret)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="bg-cyan-700 hover:bg-cyan-600 px-2.5 py-1 rounded text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
-                                  title="Mở 2fa.live"
-                                >
-                                  <ExternalLink size={14} /> 2fa.live
-                                </a>
                               </div>
-                            )}
-                            {acc.otpSecret && (
-                              <div className="text-[11px] text-cyan-300/80 mt-1 ml-[88px]">
-                                Dùng mã 2FA này trên 2fa.live để lấy mã đăng nhập.
+
+                              <div className="flex flex-wrap gap-1.5 text-[10px]">
+                                {accountExpiryStatus && (
+                                  <span
+                                    className={`rounded-full border px-2 py-0.5 font-semibold ${
+                                      accountExpiryStatus.color.includes("red")
+                                        ? "border-red-700/60 bg-red-900/20 text-red-300"
+                                        : accountExpiryStatus.color.includes("yellow")
+                                          ? "border-yellow-700/60 bg-yellow-900/20 text-yellow-300"
+                                          : "border-emerald-700/60 bg-emerald-900/20 text-emerald-300"
+                                    }`}
+                                  >
+                                    {accountExpiryStatus.text}
+                                  </span>
+                                )}
+                                {acc.password && (
+                                  <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-slate-300">
+                                    Có mật khẩu
+                                  </span>
+                                )}
+                                {acc.otpSecret && (
+                                  <span className="rounded-full border border-cyan-700/60 bg-cyan-950/20 px-2 py-0.5 text-cyan-200">
+                                    Có 2FA
+                                  </span>
+                                )}
+                                {getVisibleAccountNote(acc.note) && (
+                                  <span className="rounded-full border border-yellow-700/60 bg-yellow-900/20 px-2 py-0.5 text-yellow-200">
+                                    Có ghi chú
+                                  </span>
+                                )}
                               </div>
-                            )}
-                            <div className="mt-3">
-                              <button
-                                className="bg-indigo-600/80 hover:bg-indigo-400 px-3 py-1.5 rounded text-white text-xs font-bold flex items-center gap-2 transition-transform shadow-md hover:-translate-y-0.5"
-                                onClick={() => handleCopy(buildChatgptCopyText(acc), getChatgptCopySuccessText(acc))}
-                              >
-                                <Copy size={14} /> {getChatgptCopyButtonText(acc)}
-                              </button>
+
+                              {isChatgptRowExpanded && (
+                                <div className="space-y-2 rounded-xl border border-slate-700/60 bg-slate-950/35 p-2.5">
+                                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+                                    <span className="w-16 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                                      Mật khẩu
+                                    </span>
+                                    <span className="rounded-md bg-slate-800 px-2 py-1 font-mono font-bold text-white break-all">
+                                      {acc.password}
+                                    </span>
+                                    <button
+                                      className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-slate-600"
+                                      onClick={() =>
+                                        handleCopy(
+                                          acc.password,
+                                          "Đã copy Mật khẩu",
+                                        )
+                                      }
+                                      title="Copy Password"
+                                    >
+                                      <Copy size={11} /> Copy
+                                    </button>
+                                  </div>
+
+                                  {acc.otpSecret && (
+                                    <>
+                                      <div className="flex flex-wrap items-start gap-2 text-xs text-slate-300">
+                                        <span className="w-16 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                                          2FA
+                                        </span>
+                                        <span className="min-w-[120px] rounded-md bg-slate-800 px-2 py-1 font-mono font-bold text-cyan-200 break-all">
+                                          {acc.otpSecret}
+                                        </span>
+                                        <button
+                                          className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-slate-600"
+                                          onClick={() =>
+                                            handleCopy(
+                                              buildChatgpt2faCopyText(
+                                                acc.otpSecret,
+                                              ),
+                                              "Đã copy mã 2FA & hướng dẫn lấy mã đăng nhập",
+                                            )
+                                          }
+                                          title="Copy 2FA Secret"
+                                        >
+                                          <Copy size={11} /> Copy
+                                        </button>
+                                        <a
+                                          href={buildChatgpt2faLiveUrl(
+                                            acc.otpSecret,
+                                          )}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-1 rounded-md bg-cyan-700 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-cyan-600"
+                                          title="Mở 2fa.live"
+                                        >
+                                          <ExternalLink size={11} /> 2fa.live
+                                        </a>
+                                      </div>
+                                      <div className="ml-[72px] text-[10px] text-cyan-300/80">
+                                        Dùng 2FA này trên 2fa.live để lấy mã đăng nhập.
+                                      </div>
+                                    </>
+                                  )}
+
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <button
+                                      className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600/80 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-md transition-colors hover:bg-indigo-500"
+                                      onClick={() =>
+                                        handleCopy(
+                                          buildChatgptCopyText(acc),
+                                          getChatgptCopySuccessText(acc),
+                                        )
+                                      }
+                                    >
+                                      <Copy size={12} />{" "}
+                                      {getChatgptCopyButtonText(acc)}
+                                    </button>
+                                    {acc.expiredAt && (
+                                      <div
+                                        className={`flex items-center gap-1 text-[10px] ${getExpiryStatus(acc.expiredAt).color}`}
+                                      >
+                                        <Calendar size={10} />
+                                        <span>
+                                          {formatDate(acc.expiredAt)}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {getVisibleAccountNote(acc.note) && (
+                                    <div className="rounded-lg border border-yellow-700/30 bg-yellow-900/10 px-2 py-1.5 text-[10px] italic text-yellow-200">
+                                      {getVisibleAccountNote(acc.note)}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                            {acc.expiredAt && (
-                              <div
-                                className={`text-xs mt-3 ml-6 flex items-center gap-1 ${getExpiryStatus(acc.expiredAt).color}`}
-                              >
-                                <Calendar size={10} />
-                                <span>{getExpiryStatus(acc.expiredAt).text}</span>
-                                <span className="text-slate-600 italic">({formatDate(acc.expiredAt)})</span>
-                              </div>
-                            )}
-                            {getVisibleAccountNote(acc.note) && (
-                              <div className="text-xs text-yellow-500/80 italic mt-2 ml-6 bg-yellow-900/10 p-1.5 rounded inline-block">
-                                📝 {getVisibleAccountNote(acc.note)}
-                              </div>
-                            )}
                           </td>
-                          <td className="align-top pt-4">
+                          <td className="align-top py-3">
                             {acc.link ? (
-                              <div className="flex flex-col gap-2">
+                              <div className="flex flex-col gap-1.5">
                                 <a
                                   href={acc.link}
                                   target="_blank"
-                                  className="bg-teal-600 hover:bg-teal-500 text-white text-xs px-3 py-1.5 rounded-md font-bold no-underline inline-flex items-center gap-2 shadow-md transition-transform hover:scale-105 justify-center w-[100px]"
+                                  className="inline-flex items-center justify-center gap-1 rounded-md bg-teal-700/90 px-2 py-1 text-[10px] font-bold text-white no-underline transition-colors hover:bg-teal-600"
                                 >
-                                  <Mail size={14} /> Mở Mail
+                                  <Mail size={11} /> Mail
                                 </a>
                                 <button
                                   onClick={() => handleCopy(acc.link, "Đã copy Link Mail")}
-                                  className="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded flex items-center gap-1 text-xs text-white transition-colors font-bold justify-center w-[100px]"
+                                  className="inline-flex items-center justify-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-slate-600"
                                   title="Copy Link Mail"
                                 >
-                                  <Copy size={14} /> Copy Link
+                                  <Copy size={11} /> Copy
                                 </button>
                               </div>
                             ) : (
@@ -9362,6 +9465,59 @@ function App() {
                                     );
                                   })()}
                                 </div>
+                                {!isChatgptRowExpanded ? (
+                                  <div className="space-y-1.5">
+                                    <div className="flex flex-wrap gap-1">
+                                      {isChatgptMarketWarehouse(acc) &&
+                                        !marketplaceTrackedAccountIds.has(
+                                          String(acc?.id || ""),
+                                        ) && (
+                                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-800/50 bg-emerald-900/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-300">
+                                            <Globe size={9} /> Kho market
+                                          </span>
+                                        )}
+                                      {isChatgptShortDateWarehouse(acc) &&
+                                        !marketplaceTrackedAccountIds.has(
+                                          String(acc?.id || ""),
+                                        ) && (
+                                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-800/50 bg-amber-900/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-amber-300">
+                                            <Globe size={9} /> Kho dưới 25
+                                          </span>
+                                        )}
+                                      {hasActiveStoreReservation && (
+                                        <span className="inline-flex items-center gap-1 rounded-full border border-cyan-700/40 bg-cyan-950/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                          <Lock size={9} /> Giữ chỗ{" "}
+                                          {activeStoreReservationCount}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {previewChatgptUsers.length > 0 ? (
+                                        previewChatgptUsers.map((u, index) => (
+                                          <span
+                                            key={`${acc.id}-preview-user-${index}`}
+                                            className="max-w-[150px] truncate rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] font-semibold text-white"
+                                            title={String(
+                                              getUserName(u) || "Khách",
+                                            )}
+                                          >
+                                            {getUserName(u) || "Khách"}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        <span className="text-[10px] italic text-slate-500">
+                                          Chưa có khách
+                                        </span>
+                                      )}
+                                      {hiddenPreviewChatgptUserCount > 0 && (
+                                        <span className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-300">
+                                          +{hiddenPreviewChatgptUserCount} nữa
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
                                 {isChatgptMarketWarehouse(acc) && !marketplaceTrackedAccountIds.has(String(acc?.id || "")) && (
                                   <div className="mb-2 w-full px-2 py-0.5 bg-emerald-900/40 text-emerald-300 font-bold rounded text-[10px] uppercase border border-emerald-800/50 flex items-center justify-center gap-1 shadow-sm">
                                     <Globe size={10} /> Kho market - chua ban
@@ -9593,6 +9749,8 @@ function App() {
                                     </div>
                                   ))}
                                 </div>
+                                  </>
+                                )}
                               </div>
                             ) : acc.type === "package2" ||
                               hasActiveStoreReservation ||
@@ -9966,6 +10124,66 @@ function App() {
 
                                 return (
                                   <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
+                                    {!isChatgptRowExpanded ? (
+                                      <div className="space-y-1.5">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-200">
+                                            {package2ShelfLabel}
+                                          </span>
+                                          {displayMarketplaceExpiryDate ? (
+                                            <span
+                                              className={`text-[10px] font-semibold ${
+                                                isExpired
+                                                  ? "text-red-300"
+                                                  : isNearExpiry
+                                                    ? "text-yellow-300"
+                                                    : "text-emerald-300"
+                                              }`}
+                                            >
+                                              {displayMarketplaceExpiryDate}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        <div className="text-[11px] font-semibold text-white">
+                                          {displayMarketplacePrimaryLabel ||
+                                            activeStoreReservationPackageName ||
+                                            package2ShelfLabel}
+                                        </div>
+                                        <div className="text-[10px] text-slate-400">
+                                          {displayMarketplaceSecondaryLabel ||
+                                            (showMarketplaceManagementCard
+                                              ? `${providerLabel} · ${marketplaceStatusLabel}`
+                                              : hasActiveStoreReservation
+                                                ? `${activeStoreReservationStatusLabel || "Đang giữ chỗ"}${activeStoreReservationExpiresAt ? ` · ${activeStoreReservationExpiresAt}` : ""}`
+                                                : package2ShelfLabel)}
+                                        </div>
+                                        <div className="flex flex-wrap gap-1">
+                                          {showMarketplaceManagementCard && (
+                                            <>
+                                              <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                                {providerLabel}
+                                              </span>
+                                              <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-200">
+                                                {marketplaceStatusLabel}
+                                              </span>
+                                            </>
+                                          )}
+                                          {hasActiveStoreReservation && (
+                                            <span className="rounded-full border border-cyan-700/40 bg-cyan-950/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
+                                              Giữ chỗ web
+                                            </span>
+                                          )}
+                                          {!showMarketplaceManagementCard &&
+                                            !hasActiveStoreReservation &&
+                                            !displayMarketplacePrimaryLabel && (
+                                              <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-300">
+                                                Sẵn sàng
+                                              </span>
+                                            )}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <>
                                     {renderAdminTraceSummary()}
                                     {displayMarketplaceUser ? (
                                       showMarketplaceManagementCard ? (
@@ -10413,6 +10631,8 @@ function App() {
                                         ) : null}
                                       </div>
                                     )}
+                                      </>
+                                    )}
                                   </div>
                                 );
                               })()
@@ -10422,8 +10642,9 @@ function App() {
                               </span>
                             )}
                           </td>
-                          <td className="text-center">
-                            <div className="flex justify-center gap-2">
+                          <td className="text-center align-top py-3">
+                            <div className="flex flex-col items-center gap-1.5">
+                              <div className="flex justify-center gap-1.5">
                               {(() => {
                                 const primaryUser = Array.isArray(acc.users)
                                   ? acc.users[0]
@@ -10467,10 +10688,10 @@ function App() {
                                   <button
                                     type="button"
                                     onClick={() => openWarrantyModal(acc)}
-                                    className="bg-slate-700 hover:bg-cyan-600 text-slate-300 hover:text-white p-2 rounded transition-colors"
+                                    className="rounded-md bg-slate-700 p-1.5 text-slate-300 transition-colors hover:bg-cyan-600 hover:text-white"
                                     title="Bao hanh don san"
                                   >
-                                    <Shield size={16} />
+                                    <Shield size={14} />
                                   </button>
                                 );
                               })()}
@@ -10486,7 +10707,7 @@ function App() {
                                   setShowEditModal(true);
                                 }}
                                 disabled={isAccountLockedByStoreOrder}
-                                className={`p-2 rounded transition-colors ${
+                                className={`rounded-md p-1.5 transition-colors ${
                                   isAccountLockedByStoreOrder
                                     ? "bg-slate-800 text-slate-500 cursor-not-allowed"
                                     : "bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white"
@@ -10497,7 +10718,7 @@ function App() {
                                     : "Sửa Tài Khoản"
                                 }
                               >
-                                <Pencil size={16} />
+                                <Pencil size={14} />
                               </button>
                               <button
                                 type="button"
@@ -10506,7 +10727,7 @@ function App() {
                                   setShowDeleteModal(true);
                                 }}
                                 disabled={isAccountLockedByStoreOrder}
-                                className={`p-2 rounded transition-colors ${
+                                className={`rounded-md p-1.5 transition-colors ${
                                   isAccountLockedByStoreOrder
                                     ? "bg-slate-800 text-slate-500 cursor-not-allowed"
                                     : "bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white"
@@ -10517,7 +10738,35 @@ function App() {
                                     : "Xóa Tài Khoản"
                                 }
                               >
-                                <Trash2 size={16} />
+                                <Trash2 size={14} />
+                              </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedChatgptAccountId((prev) =>
+                                    String(prev || "").trim() ===
+                                    String(acc?.id || "").trim()
+                                      ? ""
+                                      : String(acc?.id || "").trim(),
+                                  )
+                                }
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-200 transition-colors hover:bg-slate-700 hover:text-white"
+                                title={
+                                  isChatgptRowExpanded
+                                    ? "Thu gọn"
+                                    : "Xem chi tiết"
+                                }
+                              >
+                                <ChevronUp
+                                  size={12}
+                                  className={`transition-transform ${
+                                    isChatgptRowExpanded
+                                      ? ""
+                                      : "rotate-180"
+                                  }`}
+                                />
+                                {isChatgptRowExpanded ? "Ẩn" : "Xem"}
                               </button>
                             </div>
                           </td>
