@@ -165,6 +165,42 @@ const formatChatTime = (value) => {
     month: "2-digit",
   });
 };
+const mergeRealtimeSupportConversation = (currentConversation = null, incoming = null) => {
+  const safeIncoming =
+    incoming && typeof incoming === "object" ? incoming : null;
+  const incomingId = String(safeIncoming?.id || "").trim();
+  if (!incomingId) return currentConversation;
+  if (!currentConversation) return safeIncoming;
+  const currentId = String(currentConversation?.id || "").trim();
+  if (currentId && currentId !== incomingId) return currentConversation;
+  return {
+    ...(currentConversation || {}),
+    ...safeIncoming,
+  };
+};
+const mergeRealtimeSupportMessages = (items = [], incoming = null) => {
+  const safeIncoming =
+    incoming && typeof incoming === "object" ? incoming : null;
+  const messageId = String(safeIncoming?.id || "").trim();
+  if (!messageId) return [...(Array.isArray(items) ? items : [])];
+  const nextItems = [...(Array.isArray(items) ? items : [])];
+  const existingIndex = nextItems.findIndex(
+    (item) => String(item?.id || "").trim() === messageId,
+  );
+  if (existingIndex >= 0) {
+    nextItems[existingIndex] = {
+      ...nextItems[existingIndex],
+      ...safeIncoming,
+    };
+  } else {
+    nextItems.push(safeIncoming);
+  }
+  return nextItems.sort((a, b) => {
+    const aTime = new Date(a?.createdAt || 0).getTime();
+    const bTime = new Date(b?.createdAt || 0).getTime();
+    return aTime - bTime;
+  });
+};
 const getVoucherTypeLabel = (type, value) =>
   String(type || "").trim().toLowerCase() === "fixed"
     ? `${formatMoney(value)}`
@@ -474,6 +510,48 @@ function PublicStorefront() {
     }
   };
 
+  const applyRealtimeSupportPayload = ({ event = "", payload = {} } = {}) => {
+    const nextConversation =
+      payload?.userConversation && typeof payload.userConversation === "object"
+        ? payload.userConversation
+        : null;
+    const nextMessage =
+      payload?.message && typeof payload.message === "object"
+        ? payload.message
+        : null;
+    const nextConversationId = String(
+      nextConversation?.id || payload?.conversationId || "",
+    ).trim();
+    if (nextConversation) {
+      setSupportConversation((prev) =>
+        mergeRealtimeSupportConversation(prev, nextConversation),
+      );
+    }
+    if (event !== "support.message.created" || !nextMessage) {
+      return {
+        handled: !!nextConversation,
+        conversationId: nextConversationId,
+      };
+    }
+    const currentConversationId = String(
+      nextConversationId || supportConversation?.id || "",
+    ).trim();
+    const messageConversationId = String(
+      nextMessage?.conversationId || nextConversationId || "",
+    ).trim();
+    if (currentConversationId && currentConversationId === messageConversationId) {
+      setSupportMessages((prev) => mergeRealtimeSupportMessages(prev, nextMessage));
+      return {
+        handled: true,
+        conversationId: messageConversationId,
+      };
+    }
+    return {
+      handled: !!nextConversation,
+      conversationId: messageConversationId || nextConversationId,
+    };
+  };
+
   const openSupportPanel = async () => {
     if (!user) {
       setMessage("");
@@ -731,7 +809,7 @@ function PublicStorefront() {
     return subscribeToBroadcastTopic({
       config: config.realtime,
       topic: user.realtimeTopic,
-      onMessage: ({ event }) => {
+      onMessage: ({ event, payload }) => {
         if (event === "order.updated") {
           syncOrdersSilently().catch(() => {});
           return;
@@ -740,15 +818,15 @@ function PublicStorefront() {
           loadCatalog().catch(() => {});
           return;
         }
-        if (
-          !supportOpen &&
-          (event === "support.message.created" || event === "support.thread.read")
-        ) {
-          syncSupportThreadSilently({ markRead: false }).catch(() => {});
+        if (event === "support.message.created" || event === "support.thread.read") {
+          const { handled } = applyRealtimeSupportPayload({ event, payload });
+          if (!handled) {
+            syncSupportThreadSilently({ markRead: false }).catch(() => {});
+          }
         }
       },
     });
-  }, [config?.realtime, supportOpen, user?.realtimeTopic]);
+  }, [config?.realtime, supportConversation?.id, supportOpen, user?.realtimeTopic]);
 
   useEffect(() => {
     if (
@@ -762,16 +840,19 @@ function PublicStorefront() {
     return subscribeToBroadcastTopic({
       config: config.realtime,
       topic: supportConversation.realtimeTopic,
-      onMessage: ({ event }) => {
+      onMessage: ({ event, payload }) => {
         if (event !== "support.message.created" && event !== "support.thread.read") {
           return;
         }
-        const shouldMarkRead =
-          typeof document === "undefined" || !document.hidden;
-        syncSupportThreadSilently({ markRead: shouldMarkRead }).catch(() => {});
+        const { handled } = applyRealtimeSupportPayload({ event, payload });
+        if (!handled) {
+          const shouldMarkRead =
+            typeof document === "undefined" || !document.hidden;
+          syncSupportThreadSilently({ markRead: shouldMarkRead }).catch(() => {});
+        }
       },
     });
-  }, [config?.realtime, supportConversation?.realtimeTopic, supportOpen]);
+  }, [config?.realtime, supportConversation?.id, supportConversation?.realtimeTopic, supportOpen]);
 
   useEffect(() => {
     if (user) return;
@@ -1279,9 +1360,11 @@ function PublicStorefront() {
         body: { body },
       });
       const nextMessage = data?.message || null;
-      setSupportConversation(data?.conversation || supportConversation);
+      setSupportConversation((prev) =>
+        mergeRealtimeSupportConversation(prev, data?.conversation || supportConversation),
+      );
       setSupportMessages((prev) =>
-        nextMessage ? [...prev, nextMessage] : prev,
+        nextMessage ? mergeRealtimeSupportMessages(prev, nextMessage) : prev,
       );
       setSupportDraft("");
       setMessage("Đã gửi tin nhắn cho admin.");

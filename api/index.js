@@ -841,6 +841,10 @@ app.use((req, res, next) => {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         bumpDataVersion();
         notifyClients();
+        const inventoryRealtimeMeta = inferAdminInventoryRealtimeMeta(req);
+        if (inventoryRealtimeMeta) {
+          void emitAdminInventoryRealtimeUpdate(inventoryRealtimeMeta);
+        }
       }
     });
   }
@@ -2107,6 +2111,102 @@ const buildRealtimePayload = (type, extra = {}) => ({
   senderRole: String(extra?.senderRole || "").trim(),
 });
 
+const normalizeAdminInventoryRealtimeScope = (value = "") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (
+    ["chatgpt", "team", "netflix", "capcut", "canva", "coursera"].includes(
+      normalized,
+    )
+  ) {
+    return normalized;
+  }
+  return "all";
+};
+
+const inferAdminInventoryRealtimeMeta = (req = {}) => {
+  const path = String(req.path || req.originalUrl || "")
+    .split("?")[0]
+    .trim();
+  if (!path) return null;
+
+  const directScopeMatch = path.match(/^\/api\/(netflix|capcut|canva)(?:\/|$)/i);
+  if (directScopeMatch) {
+    return {
+      scope: normalizeAdminInventoryRealtimeScope(directScopeMatch[1]),
+      entityId: String(req.params?.id || req.body?.id || "").trim(),
+      action: String(req.method || "").trim().toLowerCase(),
+      path,
+    };
+  }
+
+  if (
+    path === "/api/chatgpt" ||
+    path === "/api/chatgpt-public" ||
+    /^\/api\/chatgpt\/[^/]+(?:\/warranty)?$/i.test(path) ||
+    path === "/api/move-user"
+  ) {
+    return {
+      scope: "chatgpt",
+      entityId: String(
+        req.params?.id || req.body?.accId || req.body?.fromAccId || "",
+      ).trim(),
+      action: String(req.method || "").trim().toLowerCase(),
+      path,
+    };
+  }
+
+  if (
+    path === "/api/team" ||
+    path === "/api/team-public" ||
+    /^\/api\/team\/[^/]+(?:\/warranty)?$/i.test(path) ||
+    path === "/api/team-move-slot"
+  ) {
+    return {
+      scope: "team",
+      entityId: String(
+        req.params?.id || req.body?.accId || req.body?.fromAccId || "",
+      ).trim(),
+      action: String(req.method || "").trim().toLowerCase(),
+      path,
+    };
+  }
+
+  if (path === "/api/simple-move-user" || path === "/api/extend-user") {
+    return {
+      scope: normalizeAdminInventoryRealtimeScope(
+        req.body?.platform || "chatgpt",
+      ),
+      entityId: String(
+        req.body?.accId || req.body?.fromAccId || req.body?.toAccId || "",
+      ).trim(),
+      action: String(req.method || "").trim().toLowerCase(),
+      path,
+    };
+  }
+
+  return null;
+};
+
+const emitAdminInventoryRealtimeUpdate = async ({
+  scope = "all",
+  entityId = "",
+  action = "",
+  path = "",
+} = {}) => {
+  await safeEmitRealtimeEvents([
+    {
+      topic: buildAdminRealtimeTopic(),
+      event: "inventory.updated",
+      payload: {
+        ...buildRealtimePayload("inventory.updated", { entityId }),
+        scope: normalizeAdminInventoryRealtimeScope(scope),
+        action: String(action || "").trim().toLowerCase(),
+        path: String(path || "").trim(),
+      },
+    },
+  ]);
+};
+
 const safeEmitRealtimeEvents = async (events = []) => {
   const messages = (Array.isArray(events) ? events : []).filter(
     (event) => String(event?.topic || "").trim() && String(event?.event || "").trim(),
@@ -2201,12 +2301,19 @@ const emitStoreSupportMessageRealtimeUpdate = async ({
   ).trim();
   if (!conversationId) return;
   const userId = String(safeConversation?.userId || "").trim();
-  const payload = buildRealtimePayload("support.message.created", {
-    entityId: String(safeMessage?.id || "").trim(),
-    userId,
-    conversationId,
-    senderRole: String(safeMessage?.senderRole || "").trim(),
-  });
+  const payload = {
+    ...buildRealtimePayload("support.message.created", {
+      entityId: String(safeMessage?.id || "").trim(),
+      userId,
+      conversationId,
+      senderRole: String(safeMessage?.senderRole || "").trim(),
+    }),
+    message: sanitizeStoreSupportMessage(safeMessage),
+    adminConversation: sanitizeStoreSupportConversationForAdmin(
+      safeConversation,
+    ),
+    userConversation: sanitizeStoreSupportConversationForUser(safeConversation),
+  };
   const events = [
     {
       topic: buildAdminRealtimeTopic(),
@@ -2240,12 +2347,18 @@ const emitStoreSupportReadRealtimeUpdate = async ({
   const conversationId = String(safeConversation?.id || "").trim();
   if (!conversationId) return;
   const userId = String(safeConversation?.userId || "").trim();
-  const payload = buildRealtimePayload("support.thread.read", {
-    entityId: conversationId,
-    userId,
-    conversationId,
-    senderRole: String(readerRole || "").trim(),
-  });
+  const payload = {
+    ...buildRealtimePayload("support.thread.read", {
+      entityId: conversationId,
+      userId,
+      conversationId,
+      senderRole: String(readerRole || "").trim(),
+    }),
+    adminConversation: sanitizeStoreSupportConversationForAdmin(
+      safeConversation,
+    ),
+    userConversation: sanitizeStoreSupportConversationForUser(safeConversation),
+  };
   const events = [
     {
       topic: buildAdminRealtimeTopic(),
@@ -8994,6 +9107,8 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
       fromAccId,
       toAccId,
       slotIndex,
+      fromExpectedUpdatedAt,
+      toExpectedUpdatedAt,
     } = req.body;
 
     if (String(fromAccId || "").trim() === String(toAccId || "").trim()) {
@@ -9001,9 +9116,6 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
         error: "Khong the chuyen slot vao chinh Team nguon.",
       });
     }
-    const fromExpectedUpdatedAt = "";
-    const toExpectedUpdatedAt = "";
-
     const fromAcc = await TeamAccount.findOne({ id: fromAccId });
     const toAcc = await TeamAccount.findOne({ id: toAccId });
     const fromSnapshot = snapshotDocument(fromAcc);
@@ -9072,7 +9184,7 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
 
     // Use atomic $set updates to guarantee Database correctly writes the arrays
     const toMoveResult = await TeamAccount.updateOne(
-      { id: toAccId },
+      buildConditionalUpdateFilter(toAccId, toExpectedUpdatedAt),
       {
         $set: {
           [`slots.${emptySlotIdx}`]: slotToMove,
@@ -9088,7 +9200,7 @@ app.post("/api/team-move-slot", verifyToken, async (req, res) => {
     }
 
     const fromMoveResult = await TeamAccount.updateOne(
-      { id: fromAccId },
+      buildConditionalUpdateFilter(fromAccId, fromExpectedUpdatedAt),
       {
         $set: {
           [`slots.${slotIndex}`]: buildEmptyTeamSlot(),
@@ -9240,7 +9352,7 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     }
 
     const toPersisted = await Account.updateOne(
-      { id: toAccId },
+      buildConditionalUpdateFilter(toAccId, toExpectedUpdatedAt),
       {
         $set: {
           users: toAcc.users || [],
@@ -9258,7 +9370,7 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     }
 
     const fromPersisted = await Account.updateOne(
-      { id: fromAccId },
+      buildConditionalUpdateFilter(fromAccId, fromExpectedUpdatedAt),
       {
         $set: {
           users: fromAcc.users || [],
@@ -9343,7 +9455,7 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
     const nextFromUsers = (fromAcc.users || []).slice(1);
 
     const persistedTo = await Model.findOneAndUpdate(
-      { id: toAccId },
+      buildConditionalUpdateFilter(toAccId, toExpectedUpdatedAt),
       {
         $set: {
           users: nextToUsers,
@@ -9357,7 +9469,7 @@ app.post("/api/simple-move-user", verifyToken, async (req, res) => {
     }
 
     const persistedFrom = await Model.findOneAndUpdate(
-      { id: fromAccId },
+      buildConditionalUpdateFilter(fromAccId, fromExpectedUpdatedAt),
       {
         $set: {
           users: nextFromUsers,
@@ -9398,8 +9510,18 @@ app.post("/api/extend-user", verifyToken, async (req, res) => {
       return res.status(404).json({ error: "User/Account not found" });
     ensureCurrentVersion(acc, expectedUpdatedAt, "Tai khoan nay");
 
-    const user = acc.users[userIndex];
     const now = new Date();
+    const nextUsers = Array.isArray(acc.users)
+      ? acc.users.map((item) =>
+          item && typeof item.toObject === "function"
+            ? item.toObject()
+            : JSON.parse(JSON.stringify(item || {})),
+        )
+      : [];
+    const user = nextUsers[userIndex];
+    if (!user) {
+      return res.status(404).json({ error: "User/Account not found" });
+    }
 
     const defaultDuration =
       platform && platform !== "chatgpt"
@@ -9428,10 +9550,24 @@ app.post("/api/extend-user", verifyToken, async (req, res) => {
       `[Extended +${extDuration} on ${now.toLocaleDateString()}]`;
 
     // markModified để Mongoose detect thay đổi trong subdocument array
-    acc.markModified("users");
-    acc.updatedAt = now.toISOString();
-    await acc.save();
-    res.json({ message: "User extended successfully", updatedUser: user });
+    const updated = await Model.findOneAndUpdate(
+      buildConditionalUpdateFilter(accId, expectedUpdatedAt),
+      {
+        $set: {
+          users: nextUsers,
+          updatedAt: now.toISOString(),
+        },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      throw buildConcurrencyError("Tai khoan nay");
+    }
+    res.json({
+      message: "User extended successfully",
+      updatedUser: updated?.users?.[userIndex] || user,
+      account: updated,
+    });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
