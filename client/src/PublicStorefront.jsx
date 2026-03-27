@@ -389,8 +389,11 @@ function PublicStorefront() {
   const purchaseLockRef = useRef(false);
   const storeOrdersSyncRef = useRef(false);
   const supportThreadSyncRef = useRef(false);
+  const supportConversationRef = useRef(null);
   const supportThreadLoadSeqRef = useRef(0);
   const supportThreadAppliedSeqRef = useRef(0);
+  const supportLastReadSignatureRef = useRef("");
+  const supportLastReadAtRef = useRef(0);
   const supportScrollModeRef = useRef("");
   const supportPreviousScrollHeightRef = useRef(0);
   const supportPreviousScrollTopRef = useRef(0);
@@ -432,6 +435,42 @@ function PublicStorefront() {
     supportPreviousScrollHeightRef.current = Number(viewport?.scrollHeight || 0);
     supportPreviousScrollTopRef.current = Number(viewport?.scrollTop || 0);
     supportScrollModeRef.current = "preserve";
+  };
+
+  const getSupportUnreadCount = (conversation = supportConversationRef.current) =>
+    Math.max(
+      0,
+      Number(
+        conversation?.unreadCount ?? conversation?.userUnreadCount ?? 0,
+      ),
+    );
+
+  const shouldMarkSupportThreadRead = ({
+    force = false,
+    conversation = supportConversationRef.current,
+  } = {}) => {
+    if (!supportOpen || !token || !user) return false;
+    if (!force && typeof document !== "undefined" && document.hidden) {
+      return false;
+    }
+    const unreadCount = getSupportUnreadCount(conversation);
+    if (!force && unreadCount <= 0) return false;
+    const signature = [
+      String(conversation?.id || "").trim(),
+      String(conversation?.lastMessageAt || "").trim(),
+      unreadCount,
+    ].join(":");
+    const now = Date.now();
+    if (
+      !force &&
+      supportLastReadSignatureRef.current === signature &&
+      now - Number(supportLastReadAtRef.current || 0) < 15000
+    ) {
+      return false;
+    }
+    supportLastReadSignatureRef.current = signature;
+    supportLastReadAtRef.current = now;
+    return true;
   };
 
   const loadConfig = async () => {
@@ -556,6 +595,10 @@ function PublicStorefront() {
     if (!isLoadingOlder) {
       supportThreadLoadSeqRef.current = requestSeq;
     }
+    const effectiveMarkRead =
+      !isLoadingOlder &&
+      markRead &&
+      shouldMarkSupportThreadRead({ force: reset && !supportConversationRef.current });
     try {
       if (!silent && !isLoadingOlder) setSupportLoading(true);
       if (isLoadingOlder) {
@@ -563,7 +606,7 @@ function PublicStorefront() {
         queueSupportScrollPreserve();
       }
       const data = await apiRequest(
-        `/api/store/support/thread?markRead=${markRead ? "1" : "0"}${
+        `/api/store/support/thread?markRead=${effectiveMarkRead ? "1" : "0"}${
           normalizedCursor
             ? `&cursor=${encodeURIComponent(normalizedCursor)}`
             : ""
@@ -577,6 +620,14 @@ function PublicStorefront() {
           ? data.conversation
           : null;
       const nextMessages = Array.isArray(data?.messages) ? data.messages : [];
+      if (effectiveMarkRead && nextConversation) {
+        supportLastReadSignatureRef.current = [
+          String(nextConversation?.id || "").trim(),
+          String(nextConversation?.lastMessageAt || "").trim(),
+          0,
+        ].join(":");
+        supportLastReadAtRef.current = Date.now();
+      }
       if (!isLoadingOlder && requestSeq < supportThreadAppliedSeqRef.current) {
         return data;
       }
@@ -710,6 +761,8 @@ function PublicStorefront() {
     setSupportOpen(true);
     setSupportMessages([]);
     setSupportPagination(buildDefaultSupportPaginationState());
+    supportLastReadSignatureRef.current = "";
+    supportLastReadAtRef.current = 0;
     queueSupportScrollToBottom();
     await loadSupportThread({ markRead: true, reset: true });
     if (typeof window !== "undefined") {
@@ -721,6 +774,10 @@ function PublicStorefront() {
       });
     }
   };
+
+  useEffect(() => {
+    supportConversationRef.current = supportConversation;
+  }, [supportConversation]);
 
   useEffect(() => {
     if (!supportOpen) return;
@@ -936,11 +993,9 @@ function PublicStorefront() {
 
   useEffect(() => {
     if (!supportOpen || !token || !user) return undefined;
-    syncSupportThreadSilently({ markRead: true }).catch(() => {});
 
     const handleSupportVisibility = () => {
-      const shouldMarkRead =
-        typeof document === "undefined" || !document.hidden;
+      const shouldMarkRead = shouldMarkSupportThreadRead();
       syncSupportThreadSilently({ markRead: shouldMarkRead }).catch(() => {});
     };
 
@@ -966,8 +1021,7 @@ function PublicStorefront() {
   useEffect(() => {
     if (!supportOpen || !token || !user) return undefined;
     const intervalId = window.setInterval(() => {
-      const shouldMarkRead =
-        typeof document === "undefined" || !document.hidden;
+      const shouldMarkRead = shouldMarkSupportThreadRead();
       syncSupportThreadSilently({ markRead: shouldMarkRead }).catch(() => {});
     }, getRealtimeSafetySyncMs(config?.realtime, 90000));
     return () => window.clearInterval(intervalId);
@@ -1018,8 +1072,7 @@ function PublicStorefront() {
         }
         const { handled } = applyRealtimeSupportPayload({ event, payload });
         if (!handled) {
-          const shouldMarkRead =
-            typeof document === "undefined" || !document.hidden;
+          const shouldMarkRead = shouldMarkSupportThreadRead();
           syncSupportThreadSilently({ markRead: shouldMarkRead }).catch(() => {});
         }
       },
@@ -1028,6 +1081,9 @@ function PublicStorefront() {
 
   useEffect(() => {
     if (user) return;
+    supportConversationRef.current = null;
+    supportLastReadSignatureRef.current = "";
+    supportLastReadAtRef.current = 0;
     supportThreadLoadSeqRef.current = 0;
     supportThreadAppliedSeqRef.current = 0;
     setSupportPagination(buildDefaultSupportPaginationState());

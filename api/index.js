@@ -777,6 +777,14 @@ const storeSupportSendRateLimit = createInMemoryRateLimit({
   message: "Ban gui tin nhan qua nhanh. Vui long cho mot chut.",
 });
 
+const storeSupportThreadRateLimit = createInMemoryRateLimit({
+  windowMs: 10 * 1000,
+  max: 20,
+  keyPrefix: "support-thread",
+  keySelector: (req) => String(req.storeUser?.id || "").trim() || getRequestIp(req),
+  message: "Ban tai khung chat qua nhanh. Vui long cho mot chut.",
+});
+
 const storeOrderPaymentRateLimit = createInMemoryRateLimit({
   windowMs: 60 * 1000,
   max: 8,
@@ -1255,17 +1263,23 @@ app.post("/api/store/vouchers/validate", verifyStoreUserToken, voucherValidateRa
   }
 });
 
-app.get("/api/store/support/thread", verifyStoreUserToken, async (req, res) => {
+app.get(
+  "/api/store/support/thread",
+  verifyStoreUserToken,
+  storeSupportThreadRateLimit,
+  async (req, res) => {
   try {
     const conversation = await getOrCreateStoreSupportConversation(req.storeUser);
     const shouldMarkRead = String(req.query?.markRead || "0").trim() === "1";
+    const shouldApplyMarkRead =
+      shouldMarkRead && Number(conversation?.userUnreadCount || 0) > 0;
     const limit = parsePositiveLimit(
       req.query?.limit,
       STORE_SUPPORT_THREAD_PAGE_SIZE,
       100,
     );
     const cursor = String(req.query?.cursor || req.query?.before || "").trim();
-    if (shouldMarkRead) {
+    if (shouldApplyMarkRead) {
       await markStoreSupportConversationRead({
         conversationId: conversation.id,
         readerRole: "user",
@@ -1279,9 +1293,8 @@ app.get("/api/store/support/thread", verifyStoreUserToken, async (req, res) => {
     ]);
     const normalizedConversation = freshConversation || conversation;
     if (
-      shouldMarkRead &&
-      normalizedConversation &&
-      Number(conversation?.userUnreadCount || 0) > 0
+      shouldApplyMarkRead &&
+      normalizedConversation
     ) {
       await emitStoreSupportReadRealtimeUpdate({
         conversation: normalizedConversation,
@@ -1342,17 +1355,24 @@ app.post("/api/store/support/thread/messages", verifyStoreUserToken, storeSuppor
   }
 });
 
-app.post("/api/store/support/thread/read", verifyStoreUserToken, async (req, res) => {
+app.post(
+  "/api/store/support/thread/read",
+  verifyStoreUserToken,
+  storeSupportThreadRateLimit,
+  async (req, res) => {
   try {
     const conversation = await getOrCreateStoreSupportConversation(req.storeUser);
-    await markStoreSupportConversationRead({
-      conversationId: conversation.id,
-      readerRole: "user",
-    });
+    const shouldApplyMarkRead = Number(conversation?.userUnreadCount || 0) > 0;
+    if (shouldApplyMarkRead) {
+      await markStoreSupportConversationRead({
+        conversationId: conversation.id,
+        readerRole: "user",
+      });
+    }
     const freshConversation = await StoreSupportConversation.findOne({
       id: String(conversation.id || "").trim(),
     }).lean();
-    if (Number(conversation?.userUnreadCount || 0) > 0) {
+    if (shouldApplyMarkRead) {
       await emitStoreSupportReadRealtimeUpdate({
         conversation: freshConversation || conversation,
         readerRole: "user",
