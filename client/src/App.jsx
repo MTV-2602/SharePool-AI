@@ -41,7 +41,7 @@ const ADMIN_TOKEN_STORAGE_KEY = "admin_token";
 const ADMIN_TOKEN_EXPIRES_AT_STORAGE_KEY = "token_expires_at";
 const STORE_TOKEN_STORAGE_KEY = "store_user_token";
 const SESSION_ROLE_STORAGE_KEY = "active_session_role";
-const DEFAULT_SUPPORT_PAGE_SIZE = 30;
+const DEFAULT_SUPPORT_PAGE_SIZE = 8;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
 
 // Helper: Xóa dấu Tiếng Việt
@@ -2373,6 +2373,8 @@ function App() {
       scrollToLatest();
       window.requestAnimationFrame(scrollToLatest);
     });
+    window.setTimeout(scrollToLatest, 40);
+    window.setTimeout(scrollToLatest, 160);
   };
 
   const queueSupportScrollPreserve = () => {
@@ -7383,56 +7385,41 @@ function App() {
         )}
 
         {activeTab === "support" && (
-          <div className="grid gap-5 xl:grid-cols-[390px,minmax(0,1fr)] xl:items-stretch">
-            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.92))] shadow-[0_22px_60px_rgba(2,8,23,0.5)] lg:flex lg:h-[min(78vh,42rem)] lg:flex-col">
-              <div className="border-b border-slate-800/80 p-5">
+          <div className="grid gap-4 xl:grid-cols-[320px,minmax(0,1fr)] xl:items-stretch">
+            <div className="overflow-hidden rounded-[24px] border border-sky-400/20 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.92))] shadow-[0_18px_48px_rgba(2,8,23,0.42)] lg:flex lg:h-[min(74vh,38rem)] lg:flex-col">
+              <div className="border-b border-slate-800/80 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-[11px] font-black uppercase tracking-[0.34em] text-sky-300/90">
                       Hỗ trợ web
                     </div>
-                    <h2 className="mt-2 flex items-center gap-2 text-[22px] font-black text-white">
+                    <h2 className="mt-2 flex items-center gap-2 text-[20px] font-black text-white">
                       <MessageCircle size={18} className="text-sky-300" />
                       Hộp thư user
                     </h2>
                     <p className="mt-2 max-w-sm text-sm leading-6 text-slate-400">
-                      Tập trung tin nhắn mới, tìm nhanh khách cần trả lời và mở hội thoại như một màn chat thật.
+                      Chỉ giữ danh sách ngắn gọn để bạn mở và trả lời nhanh.
                     </p>
                   </div>
-                  <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-emerald-200">
+                  <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-200">
                     Live
                   </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-3 gap-2">
-                  <div className="rounded-2xl border border-slate-700/80 bg-slate-950/60 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">
-                      Tất cả
-                    </div>
-                    <div className="mt-1 text-xl font-black text-white">
-                      {supportConversations.length}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-amber-200/80">
-                      Chưa đọc
-                    </div>
-                    <div className="mt-1 text-xl font-black text-amber-100">
-                      {supportUnreadConversationCount}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-emerald-200/80">
-                      Đang mở
-                    </div>
-                    <div className="mt-1 text-xl font-black text-emerald-100">
-                      {supportOpenConversationCount}
-                    </div>
-                  </div>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1.5 text-slate-200">
+                    {supportConversations.length} hội thoại
+                  </span>
+                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-amber-100">
+                    {supportUnreadConversationCount} chưa đọc
+                  </span>
+                  <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-emerald-100">
+                    {supportOpenConversationCount} đang mở
+                  </span>
                 </div>
 
-                <div className="mt-4 rounded-[24px] border border-slate-700/80 bg-slate-950/65 p-3">
-                  <label className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-3">
+                <div className="mt-4 rounded-[20px] border border-slate-700/80 bg-slate-950/65 p-3">
+                  <label className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2.5">
                     <Search size={15} className="text-slate-500" />
                     <input
                       type="text"
@@ -7465,7 +7452,7 @@ function App() {
                           key={filterItem.key}
                           type="button"
                           onClick={() => setSupportConversationFilter(filterItem.key)}
-                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-all ${
+                          className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-all ${
                             active
                               ? "border-sky-400/50 bg-sky-500/15 text-sky-100"
                               : "border-slate-700 bg-slate-900/80 text-slate-400 hover:border-slate-500 hover:text-white"
@@ -7482,7 +7469,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto p-3">
+              <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
                 {supportConversations.length === 0 ? (
                   <div className="rounded-[24px] border border-dashed border-slate-700 bg-slate-950/60 px-5 py-14 text-center text-slate-400">
                     Chưa có user nào chat trên web.
@@ -7492,7 +7479,7 @@ function App() {
                     Không có hội thoại nào khớp với bộ lọc hiện tại.
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {filteredSupportConversations.map((conversation) => {
                       const selected =
                         String(conversation?.id || "").trim() === selectedSupportConversationId;
@@ -7507,7 +7494,7 @@ function App() {
                           key={conversation.id}
                           type="button"
                           onClick={() => handleSelectSupportConversation(conversation.id)}
-                          className={`group relative w-full overflow-hidden rounded-[26px] border p-4 text-left transition-all ${
+                          className={`group relative w-full overflow-hidden rounded-[22px] border p-3 text-left transition-all ${
                             selected
                               ? "border-sky-400/60 bg-sky-500/12 shadow-[0_16px_35px_rgba(14,165,233,0.12)]"
                               : "border-slate-800 bg-slate-950/78 hover:-translate-y-0.5 hover:border-sky-500/30 hover:bg-slate-950/92"
@@ -7520,7 +7507,7 @@ function App() {
                           />
                           <div className="flex items-start gap-3">
                             <div
-                              className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-black ${
+                              className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-black ${
                                 selected
                                   ? "bg-sky-400/20 text-sky-100"
                                   : "bg-slate-800 text-slate-200"
@@ -7539,30 +7526,13 @@ function App() {
                                   {statusMeta.label}
                                 </div>
                                 {unreadCount > 0 ? (
-                                  <div className="rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-black text-slate-950">
+                                  <div className="rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-black text-slate-950">
                                     {unreadCount} mới
                                   </div>
                                 ) : null}
                               </div>
 
-                              <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-400">
-                                {conversation.userEmail ? (
-                                  <span className="inline-flex items-center gap-1">
-                                    <Mail size={11} />
-                                    <span className="max-w-[220px] truncate">
-                                      {conversation.userEmail}
-                                    </span>
-                                  </span>
-                                ) : null}
-                                {conversation.userPhone ? (
-                                  <span className="inline-flex items-center gap-1">
-                                    <Phone size={11} />
-                                    <span>{conversation.userPhone}</span>
-                                  </span>
-                                ) : null}
-                              </div>
-
-                              <div className="mt-3 rounded-2xl bg-slate-900/90 px-3 py-2.5 text-sm leading-6 text-slate-200 line-clamp-2">
+                              <div className="mt-2 rounded-2xl bg-slate-900/90 px-3 py-2 text-sm leading-6 text-slate-200 line-clamp-2">
                                 {conversation.lastMessagePreview || "Chưa có tin nhắn"}
                               </div>
 
@@ -7587,55 +7557,72 @@ function App() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.12),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))] shadow-[0_22px_60px_rgba(2,8,23,0.48)] lg:flex lg:h-[min(78vh,42rem)] lg:flex-col">
+            <div className="overflow-hidden rounded-[24px] border border-sky-400/20 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.12),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))] shadow-[0_18px_48px_rgba(2,8,23,0.42)] lg:flex lg:h-[min(74vh,38rem)] lg:flex-col">
               {!selectedSupportConversation ? (
-                <div className="flex min-h-[520px] flex-col items-center justify-center gap-4 p-8 text-center lg:min-h-0 lg:flex-1">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-[22px] border border-sky-400/25 bg-sky-500/10 text-sky-200">
-                    <MessageCircle size={28} />
+                <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center lg:min-h-0 lg:flex-1">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-[20px] border border-sky-400/25 bg-sky-500/10 text-sky-200">
+                    <MessageCircle size={24} />
                   </div>
                   <div>
-                    <div className="text-xl font-black text-white">
+                    <div className="text-lg font-black text-white">
                       Chọn một hội thoại để bắt đầu trả lời
                     </div>
                     <p className="mt-2 max-w-md text-sm leading-6 text-slate-400">
-                      Bạn sẽ thấy toàn bộ lịch sử chat, thông tin liên hệ của user và khung trả lời ngay ở đây.
+                      Chỉ giữ phần chat cần thiết để bạn xem và trả lời nhanh hơn.
                     </p>
                   </div>
                 </div>
               ) : (
                 <>
-                  <div className="flex h-full min-h-0 flex-col p-4 lg:p-5">
-                    <div className="shrink-0 border-b border-slate-800/80 pb-4">
+                  <div className="flex h-full min-h-0 flex-col p-4">
+                    <div className="shrink-0 border-b border-slate-800/80 pb-3">
                       <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="min-w-0 flex items-start gap-4">
-                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[22px] bg-sky-500/15 text-lg font-black text-sky-100 ring-1 ring-sky-400/20">
+                      <div className="min-w-0 flex items-start gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-sky-500/15 text-sm font-black text-sky-100 ring-1 ring-sky-400/20">
                           {selectedSupportConversationDisplayName.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
                           <div className="text-[11px] font-black uppercase tracking-[0.28em] text-sky-300">
                             Hội thoại đang mở
                           </div>
-                          <div className="mt-1 truncate text-[24px] font-black text-white">
+                          <div className="mt-1 truncate text-[20px] font-black text-white">
                             {selectedSupportConversationDisplayName}
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-2">
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
                             <div
-                              className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] ${selectedSupportConversationStatusMeta.badgeClass}`}
+                              className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${selectedSupportConversationStatusMeta.badgeClass}`}
                             >
                               {selectedSupportConversationStatusMeta.label}
                             </div>
                             {Number(selectedSupportConversation?.adminUnreadCount || 0) > 0 ? (
-                              <div className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-[11px] font-bold text-amber-100">
+                              <div className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold text-amber-100">
                                 {selectedSupportConversation.adminUnreadCount} tin chưa đọc
                               </div>
                             ) : (
-                              <div className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-3 py-1 text-[11px] font-bold text-emerald-100">
+                              <div className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-100">
                                 Đã đọc hết
                               </div>
                             )}
-                            <div className="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-[11px] font-medium text-slate-300">
+                            <div className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-[10px] font-medium text-slate-300">
                               Cập nhật {formatRelativeTime(selectedSupportConversation?.lastMessageAt) || "--"}
                             </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-400">
+                            {selectedSupportConversation?.userEmail ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Mail size={12} />
+                                <span className="max-w-[220px] truncate">
+                                  {selectedSupportConversation.userEmail}
+                                </span>
+                              </span>
+                            ) : null}
+                            {selectedSupportConversation?.userPhone ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Phone size={12} />
+                                <span>{selectedSupportConversation.userPhone}</span>
+                              </span>
+                            ) : null}
+                            <span>{selectedSupportConversationOrders.length} đơn web</span>
                           </div>
                         </div>
                       </div>
@@ -7643,18 +7630,18 @@ function App() {
                         {selectedSupportConversation?.userEmail ? (
                           <a
                             href={`mailto:${selectedSupportConversation.userEmail}`}
-                            className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-2 text-sm font-bold text-slate-100 transition-colors hover:border-slate-500 hover:text-white"
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/90 px-3 py-1.5 text-xs font-bold text-slate-100 transition-colors hover:border-slate-500 hover:text-white"
                           >
-                            <Mail size={14} />
+                            <Mail size={13} />
                             Email
                           </a>
                         ) : null}
                         {selectedSupportConversation?.userPhone ? (
                           <a
                             href={`tel:${selectedSupportConversation.userPhone}`}
-                            className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-2 text-sm font-bold text-slate-100 transition-colors hover:border-slate-500 hover:text-white"
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/90 px-3 py-1.5 text-xs font-bold text-slate-100 transition-colors hover:border-slate-500 hover:text-white"
                           >
-                            <Phone size={14} />
+                            <Phone size={13} />
                             Gọi nhanh
                           </a>
                         ) : null}
@@ -7671,10 +7658,10 @@ function App() {
                           disabled={
                             loadingStates.fetchSupportThread === selectedSupportConversation.id
                           }
-                          className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-sky-500 disabled:opacity-60"
+                          className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-sky-500 disabled:opacity-60"
                         >
                           <RefreshCw
-                            size={14}
+                            size={13}
                             className={
                               loadingStates.fetchSupportThread ===
                               selectedSupportConversation.id
@@ -7688,23 +7675,23 @@ function App() {
                     </div>
                     </div>
 
-                    <div className="mt-4 grid flex-1 min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr),320px]">
-                      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[26px] border border-slate-700/70 bg-slate-950/55">
-                        <div className="border-b border-slate-800/80 px-4 py-4 md:px-5">
+                    <div className="mt-3 flex flex-1 min-h-0 flex-col">
+                      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-700/70 bg-slate-950/55">
+                        <div className="border-b border-slate-800/80 px-4 py-3">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
                               <div className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-300">
                                 Khung chat trực tiếp
                               </div>
-                              <p className="mt-1 text-sm text-slate-400">
-                                Ô trả lời luôn nằm cuối khung chat, bạn chỉ cuộn trong hộp chat chứ không cần kéo cả trang.
+                              <p className="mt-1 text-xs text-slate-400">
+                                Mặc định chỉ hiện ít tin mới nhất. Cuộn lên để xem cũ hơn.
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-2 text-xs">
-                              <span className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-slate-300">
-                                {supportMessages.length} tin đang hiển thị
+                              <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1 text-slate-300">
+                                {supportMessages.length} tin gần nhất
                               </span>
-                              <span className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-slate-300">
+                              <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1 text-slate-300">
                                 Lưu {supportRetentionDays} ngày
                               </span>
                             </div>
@@ -7724,33 +7711,32 @@ function App() {
                             }
                             handleLoadOlderSupportMessages().catch(() => {});
                           }}
-                          className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] px-4 py-4 md:px-5"
+                          className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] px-3 py-3 md:px-4"
                         >
-                          <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-4">
+                          <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-3">
                             {supportPagination.hasMore ? (
                               <div className="flex justify-center">
                                 <button
                                   type="button"
                                   onClick={() => handleLoadOlderSupportMessages()}
                                   disabled={supportPagination.loadingOlder}
-                                  className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2 text-xs font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:opacity-60"
+                                  className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-3 py-1.5 text-[11px] font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:opacity-60"
                                 >
                                   {supportPagination.loadingOlder ? (
-                                    <Loader2 size={14} className="animate-spin" />
+                                    <Loader2 size={13} className="animate-spin" />
                                   ) : (
-                                    <ChevronUp size={14} />
+                                    <ChevronUp size={13} />
                                   )}
                                   {supportPagination.loadingOlder
-                                    ? "Đang tải tin cũ..."
-                                    : "Xem tin nhắn cũ hơn"}
+                                    ? "Đang tải..."
+                                    : "Xem cũ hơn"}
                                 </button>
                               </div>
                             ) : null}
 
                             {supportRetainedAfterLabel ? (
-                              <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-xs leading-6 text-amber-100">
-                                Tin nhắn trong khung này chỉ lưu tối đa {supportRetentionDays} ngày.
-                                {` `}Những tin cũ hơn mốc {supportRetainedAfterLabel} sẽ tự dọn để chat nhẹ và dễ quản lý hơn.
+                              <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
+                                Chat chỉ giữ {supportRetentionDays} ngày. Tin cũ hơn {supportRetainedAfterLabel} sẽ tự dọn.
                               </div>
                             ) : null}
 
@@ -7765,7 +7751,7 @@ function App() {
                                 Hội thoại này chưa có tin nhắn nào.
                               </div>
                             ) : (
-                              <div className="mt-auto space-y-3">
+                              <div className="mt-auto space-y-2.5">
                                 {supportMessages.map((messageItem, index) => {
                                   const previousMessage = supportMessages[index - 1] || null;
                                   const fromUser =
@@ -7780,7 +7766,7 @@ function App() {
                                     <div key={messageItem.id}>
                                       {shouldRenderDayDivider ? (
                                         <div className="mb-3 flex justify-center">
-                                          <div className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                          <div className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
                                             {formatSupportDayLabel(messageItem.createdAt)}
                                           </div>
                                         </div>
@@ -7790,15 +7776,15 @@ function App() {
                                           fromUser ? "justify-start" : "justify-end"
                                         }`}
                                       >
-                                        <div className="max-w-[94%] sm:max-w-[82%]">
+                                        <div className="max-w-[92%] sm:max-w-[74%]">
                                           <div
-                                            className={`rounded-[26px] px-4 py-3.5 shadow-[0_16px_30px_rgba(2,6,23,0.18)] ${
+                                            className={`rounded-[22px] px-3.5 py-3 shadow-[0_16px_30px_rgba(2,6,23,0.18)] ${
                                               fromUser
                                                 ? "border border-slate-700/90 bg-slate-950/95 text-slate-100"
                                                 : "bg-[linear-gradient(135deg,#0284c7,#38bdf8)] text-white"
                                             }`}
                                           >
-                                            <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em]">
+                                            <div className="mb-1.5 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em]">
                                               <span
                                                 className={
                                                   fromUser
@@ -7807,15 +7793,6 @@ function App() {
                                                 }
                                               >
                                                 {fromUser ? "User" : "Admin"}
-                                              </span>
-                                              <span
-                                                className={
-                                                  fromUser
-                                                    ? "text-slate-600"
-                                                    : "text-sky-100/80"
-                                                }
-                                              >
-                                                •
                                               </span>
                                               <span
                                                 className={
@@ -7829,7 +7806,7 @@ function App() {
                                                 )}
                                               </span>
                                             </div>
-                                            <div className="whitespace-pre-wrap break-words text-sm leading-7">
+                                            <div className="whitespace-pre-wrap break-words text-sm leading-6">
                                               {messageItem.body}
                                             </div>
                                           </div>
@@ -7845,11 +7822,11 @@ function App() {
 
                         <form
                           onSubmit={handleSendSupportReply}
-                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/85 p-4 md:p-5"
+                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/85 p-3.5"
                         >
-                          <div className="rounded-[28px] border border-slate-700/80 bg-slate-950/90 p-3">
+                          <div className="rounded-[22px] border border-slate-700/80 bg-slate-950/90 p-3">
                             <textarea
-                              rows={3}
+                              rows={2}
                               value={supportReplyDraft}
                               onChange={(e) => setSupportReplyDraft(e.target.value)}
                               onKeyDown={(e) => {
@@ -7864,10 +7841,10 @@ function App() {
                                 }
                               }}
                               placeholder="Nhập câu trả lời ngắn gọn, rõ ràng cho user..."
-                              className="min-h-[104px] w-full resize-none bg-transparent px-3 py-2 text-white outline-none placeholder:text-slate-500"
+                              className="min-h-[84px] w-full resize-none bg-transparent px-2 py-2 text-sm text-white outline-none placeholder:text-slate-500"
                             />
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                                 <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
                                   Hiện ngay trên web user
                                 </span>
@@ -7881,16 +7858,16 @@ function App() {
                               <button
                                 type="submit"
                                 disabled={loadingStates.sendSupportMessage || !supportReplyDraft.trim()}
-                                className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-5 py-3 text-sm font-black text-white shadow-[0_16px_30px_rgba(2,132,199,0.22)] transition-all hover:translate-y-[-1px] hover:shadow-[0_20px_40px_rgba(2,132,199,0.26)] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center gap-2 rounded-xl bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-4 py-2 text-xs font-black text-white shadow-[0_12px_24px_rgba(2,132,199,0.2)] transition-all hover:translate-y-[-1px] hover:shadow-[0_16px_30px_rgba(2,132,199,0.24)] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {loadingStates.sendSupportMessage ? (
                                   <>
-                                    <Loader2 size={15} className="animate-spin" />
+                                    <Loader2 size={14} className="animate-spin" />
                                     Đang gửi
                                   </>
                                 ) : (
                                   <>
-                                    <SendHorizontal size={15} />
+                                    <SendHorizontal size={14} />
                                     Gửi trả lời
                                   </>
                                 )}
@@ -7898,99 +7875,6 @@ function App() {
                             </div>
                           </div>
                         </form>
-                      </div>
-
-                      <div className="space-y-4 overflow-y-auto xl:pr-1">
-                        <div className="rounded-[24px] border border-slate-700/80 bg-slate-950/55 p-4">
-                          <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                            Thông tin user
-                          </div>
-                          <div className="mt-3 space-y-3 text-sm text-slate-300">
-                            <div className="rounded-2xl bg-slate-900/85 px-3 py-3">
-                              <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
-                                Email
-                              </div>
-                              <div className="mt-1 break-all font-semibold text-white">
-                                {selectedSupportConversation?.userEmail || "Chưa có"}
-                              </div>
-                            </div>
-                            <div className="rounded-2xl bg-slate-900/85 px-3 py-3">
-                              <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
-                                Số điện thoại
-                              </div>
-                              <div className="mt-1 font-semibold text-white">
-                                {selectedSupportConversation?.userPhone || "Chưa có"}
-                              </div>
-                            </div>
-                            <div className="rounded-2xl bg-slate-900/85 px-3 py-3">
-                              <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
-                                Nội dung gần nhất
-                              </div>
-                              <div className="mt-1 text-slate-200">
-                                {selectedSupportConversation?.lastMessagePreview ||
-                                  "Chưa có tin nhắn"}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-                          <div className="rounded-[24px] border border-slate-700/80 bg-slate-950/55 px-4 py-4">
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">
-                              Tin hiển thị
-                            </div>
-                            <div className="mt-2 text-2xl font-black text-white">
-                              {supportMessages.length}
-                            </div>
-                          </div>
-                          <div className="rounded-[24px] border border-amber-400/20 bg-amber-500/10 px-4 py-4">
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-amber-200/80">
-                              Chưa đọc
-                            </div>
-                            <div className="mt-2 text-2xl font-black text-amber-100">
-                              {Math.max(
-                                0,
-                                Number(selectedSupportConversation?.adminUnreadCount || 0),
-                              )}
-                            </div>
-                          </div>
-                          <div className="rounded-[24px] border border-emerald-400/20 bg-emerald-500/10 px-4 py-4">
-                            <div className="text-[11px] uppercase tracking-[0.16em] text-emerald-200/80">
-                              Đơn web
-                            </div>
-                            <div className="mt-2 text-2xl font-black text-emerald-100">
-                              {selectedSupportConversationOrders.length}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="rounded-[24px] border border-slate-700/80 bg-slate-950/55 p-4">
-                          <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                            Đơn web gần đây
-                          </div>
-                          {recentSelectedSupportConversationOrders.length === 0 ? (
-                            <div className="mt-3 rounded-2xl border border-dashed border-slate-700 px-4 py-6 text-sm text-slate-400">
-                              User này chưa có đơn web gần đây.
-                            </div>
-                          ) : (
-                            <div className="mt-3 space-y-2">
-                              {recentSelectedSupportConversationOrders.map((order) => (
-                                <div
-                                  key={order.id}
-                                  className="rounded-2xl border border-slate-700/70 bg-slate-900/90 px-3 py-3 text-sm text-slate-200"
-                                >
-                                  <div className="font-bold text-white">
-                                    {order.packageName || order.packageCode || "Đơn web"}
-                                  </div>
-                                  <div className="mt-1 text-[11px] text-slate-400">
-                                    {getStoreOrderStatusLabel(order?.status)} ·{" "}
-                                    {formatDateTime(order?.createdAt) || "--"}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
                       </div>
                     </div>
                   </div>

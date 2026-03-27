@@ -26,7 +26,7 @@ const ADMIN_TOKEN_EXPIRES_AT_KEY = "token_expires_at";
 const SESSION_ROLE_KEY = "active_session_role";
 const STORE_PAYMENT_METHOD_MOMO = "momo";
 const STORE_PAYMENT_METHOD_PAYOS = "payos";
-const DEFAULT_SUPPORT_PAGE_SIZE = 30;
+const DEFAULT_SUPPORT_PAGE_SIZE = 8;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
 
 const getPaymentMethodLabel = (method) =>
@@ -442,6 +442,8 @@ function PublicStorefront() {
       scrollToLatest();
       window.requestAnimationFrame(scrollToLatest);
     });
+    window.setTimeout(scrollToLatest, 40);
+    window.setTimeout(scrollToLatest, 160);
   };
 
   const queueSupportScrollPreserve = () => {
@@ -2252,33 +2254,33 @@ function PublicStorefront() {
                 onClick={() => setSupportOpen(false)}
                 className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm sm:hidden"
               />
-              <div className="pointer-events-auto fixed inset-x-3 bottom-24 top-20 flex flex-col overflow-hidden rounded-[30px] border border-slate-800 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.12),_transparent_35%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(2,6,23,0.94))] shadow-[0_30px_80px_rgba(2,6,23,0.62)] sm:inset-auto sm:bottom-24 sm:right-4 sm:top-auto sm:h-[min(68vh,40rem)] sm:w-[min(24rem,calc(100vw-2rem))]">
-                <div className="shrink-0 border-b border-slate-800/80 bg-[linear-gradient(135deg,#0891b2,#2563eb)] px-4 py-4 text-white sm:px-5">
+              <div className="pointer-events-auto fixed inset-x-3 bottom-24 top-20 flex flex-col overflow-hidden rounded-[26px] border border-slate-800 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.12),_transparent_35%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(2,6,23,0.94))] shadow-[0_30px_80px_rgba(2,6,23,0.62)] sm:inset-auto sm:bottom-24 sm:right-4 sm:top-auto sm:h-[min(64vh,34rem)] sm:w-[min(22rem,calc(100vw-2rem))]">
+                <div className="shrink-0 border-b border-slate-800/80 bg-[linear-gradient(135deg,#0891b2,#2563eb)] px-4 py-3 text-white sm:px-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-50/80">
-                        Chat web trực tiếp
+                        Chat admin
                       </div>
-                      <div className="mt-1 text-lg font-black sm:text-xl">
-                        Nhắn admin ngay tại đây
+                      <div className="mt-1 text-lg font-black">
+                        Hỗ trợ nhanh
                       </div>
-                      <p className="mt-1 text-sm leading-6 text-cyan-50/85">
-                        Mở ra là thấy ngay đoạn chat mới nhất, không bị đứng ở đầu hội thoại.
+                      <p className="mt-1 text-xs leading-5 text-cyan-50/85">
+                        Mặc định hiện tin mới nhất trước. Cuộn lên để xem cũ hơn.
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setSupportOpen(false)}
-                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-white transition hover:bg-white/20"
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white transition hover:bg-white/20"
                     >
                       <X size={16} />
                     </button>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-cyan-50">
-                      {supportMessages.length} tin đang hiển thị
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-cyan-50">
+                      {supportMessages.length} tin gần nhất
                     </span>
-                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-cyan-50">
+                    <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-cyan-50">
                       Lưu {Math.max(1, Number(supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS))} ngày
                     </span>
                   </div>
@@ -2297,33 +2299,32 @@ function PublicStorefront() {
                     }
                     loadOlderSupportMessages().catch(() => {});
                   }}
-                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5"
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4"
                 >
-                  <div className="flex min-h-full flex-col gap-4">
+                  <div className="flex min-h-full flex-col gap-3">
                     {supportPagination.hasMore ? (
                       <div className="flex justify-center">
                         <button
                           type="button"
                           onClick={() => loadOlderSupportMessages()}
                           disabled={supportPagination.loadingOlder}
-                          className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:opacity-60"
+                          className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-3 py-1.5 text-[11px] font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:opacity-60"
                         >
                           {supportPagination.loadingOlder ? (
-                            <Loader2 size={14} className="animate-spin" />
+                            <Loader2 size={13} className="animate-spin" />
                           ) : (
-                            <ChevronUp size={14} />
+                            <ChevronUp size={13} />
                           )}
                           {supportPagination.loadingOlder
-                            ? "Đang tải tin cũ..."
-                            : "Xem tin nhắn cũ hơn"}
+                            ? "Đang tải..."
+                            : "Xem cũ hơn"}
                         </button>
                       </div>
                     ) : null}
 
                     {supportPagination?.retainedAfter ? (
-                      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-xs leading-6 text-amber-100">
-                        Chat web chỉ lưu tối đa {Math.max(1, Number(supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS))} ngày.
-                        {` `}Các tin cũ hơn mốc {formatDateTime(supportPagination.retainedAfter)} sẽ tự dọn để khung chat luôn nhẹ.
+                      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
+                        Chat chỉ lưu {Math.max(1, Number(supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS))} ngày. Tin cũ hơn {formatDateTime(supportPagination.retainedAfter)} sẽ tự dọn.
                       </div>
                     ) : null}
 
@@ -2337,7 +2338,7 @@ function PublicStorefront() {
                         Chưa có tin nhắn nào. Bạn có thể nhắn nội dung cần hỗ trợ ở ô bên dưới.
                       </div>
                     ) : (
-                      <div className="mt-auto space-y-4">
+                      <div className="mt-auto space-y-2.5">
                         {supportMessages.map((chatMessage, index) => {
                           const previousMessage = supportMessages[index - 1] || null;
                           const fromAdmin =
@@ -2352,7 +2353,7 @@ function PublicStorefront() {
                             <div key={chatMessage.id}>
                               {shouldRenderDayDivider ? (
                                 <div className="mb-3 flex justify-center">
-                                  <div className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                  <div className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
                                     {formatSupportDayLabel(chatMessage.createdAt)}
                                   </div>
                                 </div>
@@ -2363,14 +2364,14 @@ function PublicStorefront() {
                                 }`}
                               >
                                 <div
-                                  className={`max-w-[90%] rounded-[26px] px-4 py-3 text-sm leading-6 shadow-[0_12px_24px_rgba(2,6,23,0.18)] sm:max-w-[82%] ${
+                                  className={`max-w-[88%] rounded-[22px] px-3.5 py-3 text-sm leading-6 shadow-[0_12px_24px_rgba(2,6,23,0.18)] sm:max-w-[78%] ${
                                     fromAdmin
                                       ? "border border-slate-700 bg-slate-900 text-slate-100"
                                       : "bg-cyan-600 text-white"
                                   }`}
                                 >
                                   <div
-                                    className={`mb-2 text-[11px] font-bold uppercase tracking-[0.14em] ${
+                                    className={`mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] ${
                                       fromAdmin ? "text-slate-400" : "text-cyan-100"
                                     }`}
                                   >
@@ -2391,18 +2392,18 @@ function PublicStorefront() {
 
                 <form
                   onSubmit={handleSendSupportMessage}
-                  className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-4 pb-4 pt-4 sm:px-5 sm:pb-5"
+                  className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-3 pb-3 pt-3 sm:px-4 sm:pb-4"
                 >
-                  <div className="rounded-[28px] border border-slate-700/80 bg-slate-950/90 p-3">
+                  <div className="rounded-[22px] border border-slate-700/80 bg-slate-950/90 p-3">
                     <textarea
                       value={supportDraft}
                       onChange={(event) => setSupportDraft(event.target.value)}
-                      rows={3}
+                      rows={2}
                       placeholder="Nhập nội dung cần admin hỗ trợ..."
-                      className="min-h-[92px] w-full resize-none bg-transparent px-2 py-2 text-white outline-none placeholder:text-slate-500"
+                      className="min-h-[74px] w-full resize-none bg-transparent px-2 py-2 text-sm text-white outline-none placeholder:text-slate-500"
                     />
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
-                      <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                      <div className="flex flex-wrap gap-2 text-[11px] text-slate-500">
                         <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1">
                           Realtime với admin
                         </span>
@@ -2413,11 +2414,11 @@ function PublicStorefront() {
                       <button
                         type="submit"
                         disabled={supportSending || !supportDraft.trim()}
-                        className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {supportSending ? (
                           <>
-                            <Loader2 size={16} className="animate-spin" />
+                            <Loader2 size={15} className="animate-spin" />
                             Đang gửi
                           </>
                         ) : (
