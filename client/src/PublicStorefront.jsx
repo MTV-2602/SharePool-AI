@@ -2413,36 +2413,36 @@ function PublicStorefront() {
 
                 <form
                   onSubmit={handleSendSupportMessage}
-                  className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-2 pb-2 pt-2 sm:px-2.5 sm:pb-2.5"
+                  className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-2 pb-1.5 pt-1.5 sm:px-2 sm:pb-2"
                 >
-                  <div className="rounded-[16px] border border-slate-700/80 bg-slate-950/90 p-2">
+                  <div className="rounded-[14px] border border-slate-700/80 bg-slate-950/90 p-1.5">
                     <textarea
                       value={supportDraft}
                       onChange={(event) => setSupportDraft(event.target.value)}
-                      rows={2}
+                      rows={1}
                       placeholder="Nhập tin nhắn..."
-                      className="min-h-[50px] w-full resize-none bg-transparent px-1 py-1 text-[12px] text-white outline-none placeholder:text-slate-500"
+                      className="min-h-[36px] max-h-[82px] w-full resize-none bg-transparent px-1 py-0.5 text-[11px] leading-5 text-white outline-none placeholder:text-slate-500"
                     />
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2">
-                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-500">
-                        <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2 py-0.5">
+                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-1.5">
+                      <div className="flex flex-wrap gap-1.5 text-[9px] text-slate-500">
+                        <span className="rounded-full border border-slate-700 bg-slate-900/85 px-1.5 py-0.5">
                           {supportDraft.trim().length} ký tự
                         </span>
                       </div>
                       <button
                         type="submit"
                         disabled={supportSending || !supportDraft.trim()}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center gap-1 rounded-lg bg-cyan-600 px-2 py-1 text-[10px] font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {supportSending ? (
                           <>
-                            <Loader2 size={15} className="animate-spin" />
+                            <Loader2 size={13} className="animate-spin" />
                             Đang gửi
                           </>
                         ) : (
                           <>
-                            <SendHorizontal size={16} />
-                            Gửi tin nhắn
+                            <SendHorizontal size={14} />
+                            Gửi
                           </>
                         )}
                       </button>
