@@ -777,16 +777,10 @@ function PublicStorefront() {
     setSupportOpen(true);
     supportLastReadSignatureRef.current = "";
     supportLastReadAtRef.current = 0;
+    setSupportMessages([]);
+    setSupportPagination(buildDefaultSupportPaginationState());
     queueSupportScrollToBottom();
-    if (!supportConversationRef.current || supportMessages.length === 0) {
-      setSupportMessages([]);
-      setSupportPagination(buildDefaultSupportPaginationState());
-      await loadSupportThread({ markRead: true, reset: true });
-      queueSupportScrollToBottom();
-      flushSupportScrollToBottom();
-      return;
-    }
-    await loadSupportThread({ markRead: true, silent: true });
+    await loadSupportThread({ markRead: true, reset: true });
     queueSupportScrollToBottom();
     flushSupportScrollToBottom();
   };
@@ -2254,34 +2248,34 @@ function PublicStorefront() {
                 onClick={() => setSupportOpen(false)}
                 className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm sm:hidden"
               />
-              <div className="pointer-events-auto fixed inset-x-3 bottom-24 top-20 flex flex-col overflow-hidden rounded-[26px] border border-slate-800 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.12),_transparent_35%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(2,6,23,0.94))] shadow-[0_30px_80px_rgba(2,6,23,0.62)] sm:inset-auto sm:bottom-24 sm:right-4 sm:top-auto sm:h-[min(64vh,34rem)] sm:w-[min(22rem,calc(100vw-2rem))]">
-                <div className="shrink-0 border-b border-slate-800/80 bg-[linear-gradient(135deg,#0891b2,#2563eb)] px-4 py-3 text-white sm:px-4">
-                  <div className="flex items-start justify-between gap-3">
+              <div className="pointer-events-auto fixed inset-x-2 bottom-2 top-14 flex flex-col overflow-hidden rounded-[24px] border border-slate-800 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.12),_transparent_35%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(2,6,23,0.94))] shadow-[0_30px_80px_rgba(2,6,23,0.62)] sm:inset-auto sm:bottom-24 sm:right-4 sm:top-auto sm:h-[min(68vh,36rem)] sm:w-[min(22rem,calc(100vw-2rem))]">
+                <div className="shrink-0 border-b border-slate-800/80 bg-[linear-gradient(135deg,#0891b2,#2563eb)] px-3 py-2.5 text-white sm:px-4">
+                  <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-50/80">
+                      <div className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-50/80">
                         Chat admin
                       </div>
-                      <div className="mt-1 text-lg font-black">
+                      <div className="mt-0.5 text-base font-black">
                         Hỗ trợ nhanh
                       </div>
-                      <p className="mt-1 text-xs leading-5 text-cyan-50/85">
-                        Mặc định hiện tin mới nhất trước. Cuộn lên để xem cũ hơn.
-                      </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setSupportOpen(false)}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white transition hover:bg-white/20"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white transition hover:bg-white/20"
                     >
-                      <X size={16} />
+                      <X size={15} />
                     </button>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                    <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-cyan-50">
-                      {supportMessages.length} tin gần nhất
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                    <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-cyan-50">
+                      {supportMessages.length} tin
                     </span>
-                    <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-cyan-50">
+                    <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-cyan-50">
                       Lưu {Math.max(1, Number(supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS))} ngày
+                    </span>
+                    <span className="text-cyan-50/80">
+                      Mới nhất ở dưới
                     </span>
                   </div>
                 </div>
@@ -2299,7 +2293,7 @@ function PublicStorefront() {
                     }
                     loadOlderSupportMessages().catch(() => {});
                   }}
-                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4"
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2.5 sm:px-4"
                 >
                   <div className="flex min-h-full flex-col gap-3">
                     {supportPagination.hasMore ? (
@@ -2338,7 +2332,7 @@ function PublicStorefront() {
                         Chưa có tin nhắn nào. Bạn có thể nhắn nội dung cần hỗ trợ ở ô bên dưới.
                       </div>
                     ) : (
-                      <div className="mt-auto space-y-2.5">
+                      <div className="mt-auto space-y-2">
                         {supportMessages.map((chatMessage, index) => {
                           const previousMessage = supportMessages[index - 1] || null;
                           const fromAdmin =
@@ -2353,7 +2347,7 @@ function PublicStorefront() {
                             <div key={chatMessage.id}>
                               {shouldRenderDayDivider ? (
                                 <div className="mb-3 flex justify-center">
-                                  <div className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                  <div className="rounded-full border border-slate-700 bg-slate-900/85 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
                                     {formatSupportDayLabel(chatMessage.createdAt)}
                                   </div>
                                 </div>
@@ -2364,14 +2358,14 @@ function PublicStorefront() {
                                 }`}
                               >
                                 <div
-                                  className={`max-w-[88%] rounded-[22px] px-3.5 py-3 text-sm leading-6 shadow-[0_12px_24px_rgba(2,6,23,0.18)] sm:max-w-[78%] ${
+                                  className={`max-w-[86%] rounded-[20px] px-3 py-2.5 text-sm leading-5 shadow-[0_12px_24px_rgba(2,6,23,0.18)] sm:max-w-[78%] ${
                                     fromAdmin
                                       ? "border border-slate-700 bg-slate-900 text-slate-100"
                                       : "bg-cyan-600 text-white"
                                   }`}
                                 >
                                   <div
-                                    className={`mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] ${
+                                    className={`mb-1 text-[10px] font-bold uppercase tracking-[0.14em] ${
                                       fromAdmin ? "text-slate-400" : "text-cyan-100"
                                     }`}
                                   >
@@ -2392,29 +2386,26 @@ function PublicStorefront() {
 
                 <form
                   onSubmit={handleSendSupportMessage}
-                  className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-3 pb-3 pt-3 sm:px-4 sm:pb-4"
+                  className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-3 pb-3 pt-2.5 sm:px-4 sm:pb-4"
                 >
-                  <div className="rounded-[22px] border border-slate-700/80 bg-slate-950/90 p-3">
+                  <div className="rounded-[20px] border border-slate-700/80 bg-slate-950/90 p-2.5">
                     <textarea
                       value={supportDraft}
                       onChange={(event) => setSupportDraft(event.target.value)}
                       rows={2}
                       placeholder="Nhập nội dung cần admin hỗ trợ..."
-                      className="min-h-[74px] w-full resize-none bg-transparent px-2 py-2 text-sm text-white outline-none placeholder:text-slate-500"
+                      className="min-h-[64px] w-full resize-none bg-transparent px-2 py-1.5 text-sm text-white outline-none placeholder:text-slate-500"
                     />
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
                       <div className="flex flex-wrap gap-2 text-[11px] text-slate-500">
-                        <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1">
-                          Realtime với admin
-                        </span>
-                        <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1">
+                        <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2 py-0.5">
                           {supportDraft.trim().length} ký tự
                         </span>
                       </div>
                       <button
                         type="submit"
                         disabled={supportSending || !supportDraft.trim()}
-                        className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {supportSending ? (
                           <>
@@ -2435,24 +2426,22 @@ function PublicStorefront() {
             </>
           ) : null}
 
-          <button
-            type="button"
-            onClick={() => {
-              if (supportOpen) {
-                setSupportOpen(false);
-                return;
-              }
-              openSupportPanel().catch(() => {});
-            }}
-            className="pointer-events-auto relative inline-flex h-16 w-16 items-center justify-center rounded-full bg-[linear-gradient(135deg,#4f46e5,#2563eb)] text-white shadow-[0_24px_50px_rgba(37,99,235,0.35)] transition hover:translate-y-[-1px] hover:shadow-[0_28px_60px_rgba(37,99,235,0.45)]"
-          >
-            {Math.max(0, Number(supportConversation?.unreadCount || 0)) > 0 ? (
-              <span className="absolute -left-1 -top-1 inline-flex min-h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-black text-white ring-4 ring-slate-950">
-                {Math.min(99, Math.max(0, Number(supportConversation?.unreadCount || 0)))}
-              </span>
-            ) : null}
-            {supportOpen ? <X size={24} /> : <MessageCircle size={24} />}
-          </button>
+          {!supportOpen ? (
+            <button
+              type="button"
+              onClick={() => {
+                openSupportPanel().catch(() => {});
+              }}
+              className="pointer-events-auto relative inline-flex h-14 w-14 items-center justify-center rounded-full bg-[linear-gradient(135deg,#4f46e5,#2563eb)] text-white shadow-[0_24px_50px_rgba(37,99,235,0.35)] transition hover:translate-y-[-1px] hover:shadow-[0_28px_60px_rgba(37,99,235,0.45)]"
+            >
+              {Math.max(0, Number(supportConversation?.unreadCount || 0)) > 0 ? (
+                <span className="absolute -left-1 -top-1 inline-flex min-h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-black text-white ring-4 ring-slate-950">
+                  {Math.min(99, Math.max(0, Number(supportConversation?.unreadCount || 0)))}
+                </span>
+              ) : null}
+              <MessageCircle size={23} />
+            </button>
+          ) : null}
         </div>
       ) : null}
       {paymentPickerPackage ? (
