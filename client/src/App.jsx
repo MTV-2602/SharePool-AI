@@ -1423,6 +1423,7 @@ function App() {
   const dataVersionRef = useRef(0);
   const isFetchingDataRef = useRef(false);
   const fetchDataPromiseRef = useRef(null);
+  const skipNextAdminTabBootstrapRef = useRef(false);
   const seenDatammoOrderKeysRef = useRef(null);
   const seenStoreOrderKeysRef = useRef(null);
   const hasInitializedDatammoOrdersRef = useRef(false);
@@ -1639,6 +1640,7 @@ function App() {
     if (hasValidAdminSession) {
       clearStoredStoreSession();
       writeStoredSessionRole("admin");
+      skipNextAdminTabBootstrapRef.current = true;
       setIsAuthenticated(true);
       setTimeout(() => fetchData(true), 100);
       return;
@@ -1722,6 +1724,10 @@ function App() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
+    if (skipNextAdminTabBootstrapRef.current) {
+      skipNextAdminTabBootstrapRef.current = false;
+      return;
+    }
     if (activeTab === "store-users") {
       loadAdminStoreUsers({ silent: true }).catch(() => {});
       loadDashboardSummary({ silent: true }).catch(() => {});
@@ -1814,6 +1820,23 @@ function App() {
           return;
         }
         if (event === "inventory.updated") {
+          const normalizedScope = String(payload?.scope || "")
+            .trim()
+            .toLowerCase();
+          const shouldRefreshInventorySurface =
+            (activeTab === "chatgpt" &&
+              ["", "all", "chatgpt", "team"].includes(normalizedScope)) ||
+            (activeTab === "netflix" &&
+              ["", "all", "netflix"].includes(normalizedScope)) ||
+            (activeTab === "capcut" &&
+              ["", "all", "capcut"].includes(normalizedScope)) ||
+            (activeTab === "canva" &&
+              ["", "all", "canva"].includes(normalizedScope)) ||
+            (activeTab === "coursera" &&
+              ["", "all", "coursera"].includes(normalizedScope));
+          if (!shouldRefreshInventorySurface) {
+            return;
+          }
           fetchData(false).catch(() => {});
         }
       },
@@ -1949,6 +1972,7 @@ function App() {
           response.data.expiresAt,
         );
         writeStoredSessionRole("admin");
+        skipNextAdminTabBootstrapRef.current = true;
         setIsAuthenticated(true);
         fetchData(true);
         showAlert(

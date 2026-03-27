@@ -514,6 +514,7 @@ const storeUserSchema = new mongoose.Schema({
   createdAt: { type: String, default: () => new Date().toISOString() },
   updatedAt: { type: String, default: () => new Date().toISOString() },
 });
+storeUserSchema.index({ updatedAt: -1, createdAt: -1, id: -1 });
 const StoreUser =
   mongoose.models.StoreUser ||
   mongoose.model("StoreUser", storeUserSchema, "store_users");
@@ -631,6 +632,7 @@ const storeSupportConversationSchema = new mongoose.Schema({
   updatedAt: { type: String, default: () => new Date().toISOString() },
 });
 storeSupportConversationSchema.index({ lastMessageAt: -1 });
+storeSupportConversationSchema.index({ adminUnreadCount: 1 });
 const StoreSupportConversation =
   mongoose.models.StoreSupportConversation ||
   mongoose.model(
@@ -792,9 +794,74 @@ const apiSlowLogThresholdMs = toPositiveInt(
 const ENABLE_SSE = process.env.ENABLE_SSE === "true";
 let sseClients = [];
 let latestDataVersion = Date.now();
+const adminReadCacheTtlMs = toPositiveInt(
+  process.env.ADMIN_READ_CACHE_TTL_MS,
+  8000,
+);
+const adminReadCache = new Map();
 
 const bumpDataVersion = () => {
   latestDataVersion = Date.now();
+  adminReadCache.clear();
+};
+
+const buildAdminReadCacheKey = (name = "", params = {}) => {
+  const normalizedName = String(name || "").trim();
+  const entries = Object.entries(params || {})
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));
+  if (entries.length === 0) return normalizedName;
+  return `${normalizedName}:${JSON.stringify(entries)}`;
+};
+
+const getCachedAdminRead = async (
+  name = "",
+  params = {},
+  loader = async () => null,
+  ttlMs = adminReadCacheTtlMs,
+) => {
+  const cacheKey = buildAdminReadCacheKey(name, params);
+  const cacheVersion = latestDataVersion;
+  const now = Date.now();
+  const existing = adminReadCache.get(cacheKey);
+  if (
+    existing &&
+    existing.version === cacheVersion &&
+    existing.expiresAt > now
+  ) {
+    if (Object.prototype.hasOwnProperty.call(existing, "value")) {
+      return existing.value;
+    }
+    if (existing.promise) {
+      return existing.promise;
+    }
+  }
+
+  const loadPromise = (async () => {
+    const value = await loader();
+    const pendingEntry = adminReadCache.get(cacheKey);
+    if (pendingEntry?.promise === loadPromise) {
+      adminReadCache.set(cacheKey, {
+        version: cacheVersion,
+        expiresAt: Date.now() + ttlMs,
+        value,
+      });
+    }
+    return value;
+  })().catch((error) => {
+    const pendingEntry = adminReadCache.get(cacheKey);
+    if (pendingEntry?.promise === loadPromise) {
+      adminReadCache.delete(cacheKey);
+    }
+    throw error;
+  });
+
+  adminReadCache.set(cacheKey, {
+    version: cacheVersion,
+    expiresAt: now + ttlMs,
+    promise: loadPromise,
+  });
+  return loadPromise;
 };
 
 const notifyClients = () => {
@@ -2884,6 +2951,27 @@ const scheduleStoreMaintenance = () => {
     }
   })();
   return storeMaintenancePromise;
+};
+let nextInventoryReconcileAtMs = 0;
+let inventoryReconcilePromise = null;
+const scheduleInventoryReconcile = () => {
+  const now = Date.now();
+  if (inventoryReconcilePromise) return inventoryReconcilePromise;
+  if (nextInventoryReconcileAtMs > now) return null;
+  nextInventoryReconcileAtMs = now + 60 * 1000;
+  inventoryReconcilePromise = (async () => {
+    try {
+      await Promise.all([
+        reconcileChatgptMarketInventory(),
+        reconcileTeamMarketInventory(),
+      ]);
+    } catch (error) {
+      console.error("Inventory reconcile failed:", error?.message || error);
+    } finally {
+      inventoryReconcilePromise = null;
+    }
+  })();
+  return inventoryReconcilePromise;
 };
 const buildStoreVoucherUsageQuery = ({
   voucherId = "",
@@ -7059,155 +7147,166 @@ app.all(
 
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
-    await reconcileChatgptMarketInventory();
-    await reconcileTeamMarketInventory();
+    void scheduleInventoryReconcile();
     void scheduleStoreMaintenance();
-    const [
-      accounts,
-      netflixAccs,
-      canvaAccs,
-      capcutAccs,
-      teamAccs,
-      datammoOrders,
-      datammoWarrantyCases,
-      rawStoreOrders,
-      storeUsers,
-      storeUserOrderStats,
-      storeVouchers,
-      storeSupportConversations,
-    ] = await Promise.all([
-      Account.find({}).lean(),
-      Netflix.find({}).lean(),
-      Canva.find({}).lean(),
-      Capcut.find({}).lean(),
-      TeamAccount.find({}).lean(),
-      DatammoOrder.find({}).sort({ createdAt: -1 }).limit(100).lean(),
-      DatammoWarrantyCase.find({}).sort({ updatedAt: -1 }).limit(100).lean(),
-      StoreOrder.find({
-        status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
-      })
-        .sort({ createdAt: -1 })
-        .limit(100)
-        .lean(),
-      StoreUser.find({})
-        .select("id fullName email phone authProviders googleId passwordHash createdAt updatedAt")
-        .lean(),
-      StoreOrder.aggregate([
-        {
-          $group: {
-            _id: "$userId",
-            totalOrders: { $sum: 1 },
-            fulfilledOrders: {
-              $sum: {
-                $cond: [{ $eq: ["$status", "fulfilled"] }, 1, 0],
-              },
-            },
-            pendingOrders: {
-              $sum: {
-                $cond: [
-                  {
-                    $in: ["$status", ["pending_payment", "awaiting_payment", "paid"]],
+    const payload = await getCachedAdminRead(
+      "admin:data",
+      {},
+      async () => {
+        const [
+          accounts,
+          netflixAccs,
+          canvaAccs,
+          capcutAccs,
+          teamAccs,
+          datammoOrders,
+          datammoWarrantyCases,
+          rawStoreOrders,
+          storeUsers,
+          storeUserOrderStats,
+          storeVouchers,
+          storeSupportConversations,
+        ] = await Promise.all([
+          Account.find({}).lean(),
+          Netflix.find({}).lean(),
+          Canva.find({}).lean(),
+          Capcut.find({}).lean(),
+          TeamAccount.find({}).lean(),
+          DatammoOrder.find({}).sort({ createdAt: -1 }).limit(100).lean(),
+          DatammoWarrantyCase.find({}).sort({ updatedAt: -1 }).limit(100).lean(),
+          StoreOrder.find({
+            status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+          })
+            .sort({ createdAt: -1 })
+            .limit(100)
+            .lean(),
+          StoreUser.find({})
+            .select(
+              "id fullName email phone authProviders googleId passwordHash createdAt updatedAt",
+            )
+            .lean(),
+          StoreOrder.aggregate([
+            {
+              $group: {
+                _id: "$userId",
+                totalOrders: { $sum: 1 },
+                fulfilledOrders: {
+                  $sum: {
+                    $cond: [{ $eq: ["$status", "fulfilled"] }, 1, 0],
                   },
-                  1,
-                  0,
-                ],
+                },
+                pendingOrders: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $in: [
+                          "$status",
+                          ["pending_payment", "awaiting_payment", "paid"],
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                latestOrderAt: { $max: "$createdAt" },
               },
             },
-            latestOrderAt: { $max: "$createdAt" },
-          },
-        },
-      ]),
-      StoreVoucher.find({}).sort({ createdAt: -1, id: -1 }).lean(),
-      StoreSupportConversation.find({})
-        .sort({ lastMessageAt: -1, createdAt: -1, id: -1 })
-        .lean(),
-    ]);
-    const voucherStatsMap = await buildStoreVoucherStatsMap(
-      storeVouchers,
-      storeUsers,
+          ]),
+          StoreVoucher.find({}).sort({ createdAt: -1, id: -1 }).lean(),
+          StoreSupportConversation.find({})
+            .sort({ lastMessageAt: -1, createdAt: -1, id: -1 })
+            .lean(),
+        ]);
+        const voucherStatsMap = await buildStoreVoucherStatsMap(
+          storeVouchers,
+          storeUsers,
+        );
+        const storeUserMap = new Map(
+          (storeUsers || []).map((user) => [String(user?.id || "").trim(), user]),
+        );
+        const storeUserStatsMap = new Map(
+          (storeUserOrderStats || []).map((item) => [
+            String(item?._id || "").trim(),
+            {
+              totalOrders: Number(item?.totalOrders || 0),
+              fulfilledOrders: Number(item?.fulfilledOrders || 0),
+              pendingOrders: Number(item?.pendingOrders || 0),
+              latestOrderAt: String(item?.latestOrderAt || "").trim(),
+            },
+          ]),
+        );
+        let marketplaceAccountTraceMap = new Map();
+        let storeAccountTraceMap = new Map();
+        try {
+          marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
+            datammoOrders,
+            datammoWarrantyCases,
+          );
+        } catch (traceError) {
+          console.error("Trace diagnostic build failed:", traceError);
+        }
+        try {
+          storeAccountTraceMap = buildStoreAccountTraceMap(
+            rawStoreOrders,
+            storeUserMap,
+          );
+        } catch (traceError) {
+          console.error("Store trace diagnostic build failed:", traceError);
+        }
+        return {
+          chatgpt: accounts.map((acc) => ({
+            ...acc,
+            package2Shelf: normalizePackage2Shelf(
+              acc?.package2Shelf,
+              CHATGPT_TOTAL_VALUE,
+            ),
+            storeTraceSummary:
+              storeAccountTraceMap.get(String(acc?.id || "").trim()) || null,
+            marketplaceTraceSummary:
+              marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) || null,
+          })),
+          netflix: netflixAccs,
+          canva: canvaAccs,
+          capcut: capcutAccs,
+          team: teamAccs.map((teamAcc) => sanitizeTeamAccount(teamAcc)),
+          datammoOrders,
+          datammoWarrantyCases,
+          storeOrders: rawStoreOrders
+            .map((order) =>
+              sanitizeStoreOrderForAdmin(
+                order,
+                storeUserMap.get(String(order?.userId || "").trim()) || null,
+              ),
+            )
+            .filter(Boolean),
+          storeUsers: (storeUsers || [])
+            .map((user) =>
+              sanitizeStoreUserForAdmin(
+                user,
+                storeUserStatsMap.get(String(user?.id || "").trim()) || null,
+              ),
+            )
+            .filter(Boolean),
+          storeVouchers: (storeVouchers || [])
+            .map((voucher) =>
+              sanitizeStoreVoucherForAdmin(
+                voucher,
+                voucherStatsMap.get(String(voucher?.id || "").trim()) || null,
+              ),
+            )
+            .filter(Boolean),
+          supportConversations: (storeSupportConversations || [])
+            .map((conversation) =>
+              sanitizeStoreSupportConversationForAdmin(conversation),
+            )
+            .filter(Boolean),
+          realtime: buildAdminRealtimeConfig(),
+          version: latestDataVersion,
+        };
+      },
     );
-    const storeUserMap = new Map(
-      (storeUsers || []).map((user) => [String(user?.id || "").trim(), user]),
-    );
-    const storeUserStatsMap = new Map(
-      (storeUserOrderStats || []).map((item) => [
-        String(item?._id || "").trim(),
-        {
-          totalOrders: Number(item?.totalOrders || 0),
-          fulfilledOrders: Number(item?.fulfilledOrders || 0),
-          pendingOrders: Number(item?.pendingOrders || 0),
-          latestOrderAt: String(item?.latestOrderAt || "").trim(),
-        },
-      ]),
-    );
-    let marketplaceAccountTraceMap = new Map();
-    let storeAccountTraceMap = new Map();
-    try {
-      marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
-        datammoOrders,
-        datammoWarrantyCases,
-      );
-    } catch (traceError) {
-      console.error("Trace diagnostic build failed:", traceError);
-    }
-    try {
-      storeAccountTraceMap = buildStoreAccountTraceMap(
-        rawStoreOrders,
-        storeUserMap,
-      );
-    } catch (traceError) {
-      console.error("Store trace diagnostic build failed:", traceError);
-    }
-    res.json({
-      chatgpt: accounts.map((acc) => ({
-        ...acc,
-        package2Shelf: normalizePackage2Shelf(
-          acc?.package2Shelf,
-          CHATGPT_TOTAL_VALUE,
-        ),
-        storeTraceSummary:
-          storeAccountTraceMap.get(String(acc?.id || "").trim()) || null,
-        marketplaceTraceSummary:
-          marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) || null,
-      })),
-      netflix: netflixAccs,
-      canva: canvaAccs,
-      capcut: capcutAccs,
-      team: teamAccs.map((teamAcc) => sanitizeTeamAccount(teamAcc)),
-      datammoOrders,
-      datammoWarrantyCases,
-      storeOrders: rawStoreOrders
-        .map((order) =>
-          sanitizeStoreOrderForAdmin(
-            order,
-            storeUserMap.get(String(order?.userId || "").trim()) || null,
-          ),
-        )
-        .filter(Boolean),
-      storeUsers: (storeUsers || [])
-        .map((user) =>
-          sanitizeStoreUserForAdmin(
-            user,
-            storeUserStatsMap.get(String(user?.id || "").trim()) || null,
-          ),
-        )
-        .filter(Boolean),
-      storeVouchers: (storeVouchers || [])
-        .map((voucher) =>
-          sanitizeStoreVoucherForAdmin(
-            voucher,
-            voucherStatsMap.get(String(voucher?.id || "").trim()) || null,
-          ),
-        )
-        .filter(Boolean),
-      supportConversations: (storeSupportConversations || [])
-        .map((conversation) =>
-          sanitizeStoreSupportConversationForAdmin(conversation),
-        )
-        .filter(Boolean),
-      realtime: buildAdminRealtimeConfig(),
-      version: latestDataVersion,
-    });
+    res.json(payload);
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -7215,13 +7314,17 @@ app.get("/api/data", verifyToken, async (req, res) => {
 
 app.get("/api/admin/dashboard/summary", verifyToken, async (req, res) => {
   try {
-    const summary = await buildAdminDashboardSummary();
-    return res.json({
-      success: true,
-      summary,
-      realtime: buildAdminRealtimeConfig(),
-      version: latestDataVersion,
-    });
+    const payload = await getCachedAdminRead(
+      "admin:dashboard-summary",
+      {},
+      async () => ({
+        success: true,
+        summary: await buildAdminDashboardSummary(),
+        realtime: buildAdminRealtimeConfig(),
+        version: latestDataVersion,
+      }),
+    );
+    return res.json(payload);
   } catch (error) {
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong tai duoc tong quan admin.",
@@ -7231,20 +7334,29 @@ app.get("/api/admin/dashboard/summary", verifyToken, async (req, res) => {
 
 app.get("/api/admin/store-orders", verifyToken, async (req, res) => {
   try {
-    const data = await listAdminStoreOrders({
-      page: req.query?.page,
-      limit: req.query?.limit,
-    });
-    return res.json({
-      success: true,
-      orders: data.orders,
-      pagination: {
-        page: data.page,
-        limit: data.limit,
-        total: data.total,
-        hasMore: data.hasMore,
+    const safePage = parsePositivePage(req.query?.page, 1);
+    const safeLimit = parsePositiveLimit(req.query?.limit, 100, 200);
+    const payload = await getCachedAdminRead(
+      "admin:store-orders",
+      { page: safePage, limit: safeLimit },
+      async () => {
+        const data = await listAdminStoreOrders({
+          page: safePage,
+          limit: safeLimit,
+        });
+        return {
+          success: true,
+          orders: data.orders,
+          pagination: {
+            page: data.page,
+            limit: data.limit,
+            total: data.total,
+            hasMore: data.hasMore,
+          },
+        };
       },
-    });
+    );
+    return res.json(payload);
   } catch (error) {
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong tai duoc danh sach don web.",
@@ -7254,20 +7366,29 @@ app.get("/api/admin/store-orders", verifyToken, async (req, res) => {
 
 app.get("/api/admin/store-users", verifyToken, async (req, res) => {
   try {
-    const data = await listAdminStoreUsers({
-      page: req.query?.page,
-      limit: req.query?.limit,
-    });
-    return res.json({
-      success: true,
-      users: data.users,
-      pagination: {
-        page: data.page,
-        limit: data.limit,
-        total: data.total,
-        hasMore: data.hasMore,
+    const safePage = parsePositivePage(req.query?.page, 1);
+    const safeLimit = parsePositiveLimit(req.query?.limit, 100, 200);
+    const payload = await getCachedAdminRead(
+      "admin:store-users",
+      { page: safePage, limit: safeLimit },
+      async () => {
+        const data = await listAdminStoreUsers({
+          page: safePage,
+          limit: safeLimit,
+        });
+        return {
+          success: true,
+          users: data.users,
+          pagination: {
+            page: data.page,
+            limit: data.limit,
+            total: data.total,
+            hasMore: data.hasMore,
+          },
+        };
       },
-    });
+    );
+    return res.json(payload);
   } catch (error) {
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong tai duoc danh sach user web.",
@@ -7277,20 +7398,29 @@ app.get("/api/admin/store-users", verifyToken, async (req, res) => {
 
 app.get("/api/admin/store-vouchers", verifyToken, async (req, res) => {
   try {
-    const data = await listAdminStoreVouchers({
-      page: req.query?.page,
-      limit: req.query?.limit,
-    });
-    return res.json({
-      success: true,
-      vouchers: data.vouchers,
-      pagination: {
-        page: data.page,
-        limit: data.limit,
-        total: data.total,
-        hasMore: data.hasMore,
+    const safePage = parsePositivePage(req.query?.page, 1);
+    const safeLimit = parsePositiveLimit(req.query?.limit, 100, 200);
+    const payload = await getCachedAdminRead(
+      "admin:store-vouchers",
+      { page: safePage, limit: safeLimit },
+      async () => {
+        const data = await listAdminStoreVouchers({
+          page: safePage,
+          limit: safeLimit,
+        });
+        return {
+          success: true,
+          vouchers: data.vouchers,
+          pagination: {
+            page: data.page,
+            limit: data.limit,
+            total: data.total,
+            hasMore: data.hasMore,
+          },
+        };
       },
-    });
+    );
+    return res.json(payload);
   } catch (error) {
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong tai duoc danh sach voucher.",
