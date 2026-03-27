@@ -12,6 +12,7 @@ import {
   SendHorizontal,
   ShieldCheck,
   User,
+  X,
 } from "lucide-react";
 import {
   canUseRealtimeRuntime,
@@ -778,6 +779,18 @@ function PublicStorefront() {
   useEffect(() => {
     supportConversationRef.current = supportConversation;
   }, [supportConversation]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const isMobileOverlay =
+      supportOpen && typeof window !== "undefined" && window.innerWidth < 768;
+    if (!isMobileOverlay) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [supportOpen]);
 
   useEffect(() => {
     if (!supportOpen) return;
@@ -2206,18 +2219,36 @@ function PublicStorefront() {
                         : "Đăng nhập user để chat trực tiếp trên web. Nếu cần nhanh hơn, bạn vẫn có thể bấm Zalo."}
                     </p>
                   ) : (
-                    <div className="mt-5 overflow-hidden rounded-[28px] border border-slate-800 bg-slate-950/60">
-                      <div className="border-b border-slate-800/80 px-4 py-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <div className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-300">
-                              Chat web trực tiếp
+                    <div className="mt-5">
+                      <button
+                        type="button"
+                        aria-label="Đóng chat web"
+                        onClick={() => setSupportOpen(false)}
+                        className="fixed inset-0 z-40 bg-slate-950/65 backdrop-blur-sm md:hidden"
+                      />
+                      <div className="fixed inset-x-3 bottom-3 top-20 z-50 flex flex-col overflow-hidden rounded-[30px] border border-slate-800 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.12),_transparent_35%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(2,6,23,0.94))] shadow-[0_30px_80px_rgba(2,6,23,0.62)] md:static md:inset-auto md:z-auto md:h-[72vh] md:min-h-[560px] md:max-h-[760px]">
+                        <div className="shrink-0 border-b border-slate-800/80 px-4 py-4 sm:px-5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-300">
+                                Chat web trực tiếp
+                              </div>
+                              <div className="mt-1 text-lg font-black text-white sm:text-xl">
+                                Nhắn admin ngay trên web
+                              </div>
+                              <p className="mt-1 text-sm leading-6 text-slate-400">
+                                Tin mới nằm sát cuối khung, ô nhập luôn bám dưới để nhắn nhanh trên điện thoại.
+                              </p>
                             </div>
-                            <p className="mt-1 text-sm text-slate-400">
-                              Chỉ tải đoạn chat gần nhất trước. Kéo lên hoặc bấm nút để xem thêm tin cũ.
-                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setSupportOpen(false)}
+                              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900/90 text-slate-300 transition hover:border-slate-500 hover:text-white"
+                            >
+                              <X size={16} />
+                            </button>
                           </div>
-                          <div className="flex flex-wrap gap-2 text-xs">
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs">
                             <span className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-slate-300">
                               {supportMessages.length} tin đang hiển thị
                             </span>
@@ -2226,149 +2257,154 @@ function PublicStorefront() {
                             </span>
                           </div>
                         </div>
-                      </div>
 
-                      <div
-                        ref={supportMessagesViewportRef}
-                        onScroll={(event) => {
-                          if (event.currentTarget.scrollTop > 56) return;
-                          if (
-                            supportPagination.loadingOlder ||
-                            !supportPagination.hasMore ||
-                            !supportPagination.nextCursor
-                          ) {
-                            return;
-                          }
-                          loadOlderSupportMessages().catch(() => {});
-                        }}
-                        className="max-h-[420px] overflow-y-auto px-4 py-4"
-                      >
-                        <div className="space-y-4">
-                          {supportPagination.hasMore ? (
-                            <div className="flex justify-center">
-                              <button
-                                type="button"
-                                onClick={() => loadOlderSupportMessages()}
-                                disabled={supportPagination.loadingOlder}
-                                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:opacity-60"
-                              >
-                                {supportPagination.loadingOlder ? (
-                                  <Loader2 size={14} className="animate-spin" />
-                                ) : (
-                                  <ChevronUp size={14} />
-                                )}
-                                {supportPagination.loadingOlder
-                                  ? "Đang tải tin cũ..."
-                                  : "Xem tin nhắn cũ hơn"}
-                              </button>
-                            </div>
-                          ) : null}
+                        <div
+                          ref={supportMessagesViewportRef}
+                          onScroll={(event) => {
+                            if (event.currentTarget.scrollTop > 56) return;
+                            if (
+                              supportPagination.loadingOlder ||
+                              !supportPagination.hasMore ||
+                              !supportPagination.nextCursor
+                            ) {
+                              return;
+                            }
+                            loadOlderSupportMessages().catch(() => {});
+                          }}
+                          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5"
+                        >
+                          <div className="space-y-4">
+                            {supportPagination.hasMore ? (
+                              <div className="flex justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => loadOlderSupportMessages()}
+                                  disabled={supportPagination.loadingOlder}
+                                  className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:opacity-60"
+                                >
+                                  {supportPagination.loadingOlder ? (
+                                    <Loader2 size={14} className="animate-spin" />
+                                  ) : (
+                                    <ChevronUp size={14} />
+                                  )}
+                                  {supportPagination.loadingOlder
+                                    ? "Đang tải tin cũ..."
+                                    : "Xem tin nhắn cũ hơn"}
+                                </button>
+                              </div>
+                            ) : null}
 
-                          {supportPagination?.retainedAfter ? (
-                            <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-xs leading-6 text-amber-100">
-                              Chat web chỉ lưu tối đa {Math.max(1, Number(supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS))} ngày.
-                              {` `}Các tin cũ hơn mốc {formatDateTime(supportPagination.retainedAfter)} sẽ tự dọn để khung chat luôn nhẹ.
-                            </div>
-                          ) : null}
+                            {supportPagination?.retainedAfter ? (
+                              <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-xs leading-6 text-amber-100">
+                                Chat web chỉ lưu tối đa {Math.max(1, Number(supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS))} ngày.
+                                {` `}Các tin cũ hơn mốc {formatDateTime(supportPagination.retainedAfter)} sẽ tự dọn để khung chat luôn nhẹ.
+                              </div>
+                            ) : null}
 
-                          {supportLoading ? (
-                            <div className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4 text-sm text-slate-400">
-                              <Loader2 size={16} className="animate-spin" />
-                              Đang tải hội thoại...
-                            </div>
-                          ) : supportMessages.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-10 text-sm text-slate-400">
-                              Chưa có tin nhắn nào. Bạn có thể nhắn nội dung cần hỗ trợ ở ô bên dưới.
-                            </div>
-                          ) : (
-                            supportMessages.map((chatMessage, index) => {
-                              const previousMessage = supportMessages[index - 1] || null;
-                              const fromAdmin =
-                                String(chatMessage.senderRole || "").trim() === "admin";
-                              const shouldRenderDayDivider =
-                                !previousMessage ||
-                                !isSameSupportDay(
-                                  previousMessage?.createdAt,
-                                  chatMessage?.createdAt,
-                                );
-                              return (
-                                <div key={chatMessage.id}>
-                                  {shouldRenderDayDivider ? (
-                                    <div className="mb-3 flex justify-center">
-                                      <div className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                                        {formatSupportDayLabel(chatMessage.createdAt)}
+                            {supportLoading ? (
+                              <div className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4 text-sm text-slate-400">
+                                <Loader2 size={16} className="animate-spin" />
+                                Đang tải hội thoại...
+                              </div>
+                            ) : supportMessages.length === 0 ? (
+                              <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-10 text-sm text-slate-400">
+                                Chưa có tin nhắn nào. Bạn có thể nhắn nội dung cần hỗ trợ ở ô bên dưới.
+                              </div>
+                            ) : (
+                              supportMessages.map((chatMessage, index) => {
+                                const previousMessage = supportMessages[index - 1] || null;
+                                const fromAdmin =
+                                  String(chatMessage.senderRole || "").trim() === "admin";
+                                const shouldRenderDayDivider =
+                                  !previousMessage ||
+                                  !isSameSupportDay(
+                                    previousMessage?.createdAt,
+                                    chatMessage?.createdAt,
+                                  );
+                                return (
+                                  <div key={chatMessage.id}>
+                                    {shouldRenderDayDivider ? (
+                                      <div className="mb-3 flex justify-center">
+                                        <div className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                          {formatSupportDayLabel(chatMessage.createdAt)}
+                                        </div>
                                       </div>
-                                    </div>
-                                  ) : null}
-                                  <div
-                                    className={`flex ${
-                                      fromAdmin ? "justify-start" : "justify-end"
-                                    }`}
-                                  >
+                                    ) : null}
                                     <div
-                                      className={`max-w-[88%] rounded-[26px] px-4 py-3 text-sm leading-6 shadow-[0_12px_24px_rgba(2,6,23,0.18)] ${
-                                        fromAdmin
-                                          ? "border border-slate-700 bg-slate-900 text-slate-100"
-                                          : "bg-cyan-600 text-white"
+                                      className={`flex ${
+                                        fromAdmin ? "justify-start" : "justify-end"
                                       }`}
                                     >
                                       <div
-                                        className={`mb-2 text-[11px] font-bold uppercase tracking-[0.14em] ${
+                                        className={`max-w-[90%] rounded-[26px] px-4 py-3 text-sm leading-6 shadow-[0_12px_24px_rgba(2,6,23,0.18)] sm:max-w-[82%] ${
                                           fromAdmin
-                                            ? "text-slate-400"
-                                            : "text-cyan-100"
+                                            ? "border border-slate-700 bg-slate-900 text-slate-100"
+                                            : "bg-cyan-600 text-white"
                                         }`}
                                       >
-                                        {fromAdmin ? "Admin" : "Bạn"} • {formatSupportMessageTime(chatMessage.createdAt)}
-                                      </div>
-                                      <div className="whitespace-pre-wrap break-words">
-                                        {chatMessage.body}
+                                        <div
+                                          className={`mb-2 text-[11px] font-bold uppercase tracking-[0.14em] ${
+                                            fromAdmin
+                                              ? "text-slate-400"
+                                              : "text-cyan-100"
+                                          }`}
+                                        >
+                                          {fromAdmin ? "Admin" : "Bạn"} • {formatSupportMessageTime(chatMessage.createdAt)}
+                                        </div>
+                                        <div className="whitespace-pre-wrap break-words">
+                                          {chatMessage.body}
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-
-                      <form onSubmit={handleSendSupportMessage} className="border-t border-slate-800/80 bg-slate-950/85 p-4">
-                        <textarea
-                          value={supportDraft}
-                          onChange={(event) => setSupportDraft(event.target.value)}
-                          rows={3}
-                          placeholder="Nhập nội dung cần admin hỗ trợ..."
-                          className="w-full rounded-3xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500"
-                        />
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                            <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1">
-                              Realtime với admin
-                            </span>
-                            <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1">
-                              {supportDraft.trim().length} ký tự
-                            </span>
-                          </div>
-                          <button
-                            type="submit"
-                            disabled={supportSending || !supportDraft.trim()}
-                            className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {supportSending ? (
-                              <>
-                                <Loader2 size={16} className="animate-spin" />
-                                Đang gửi
-                              </>
-                            ) : (
-                              <>
-                                <SendHorizontal size={16} />
-                                Gửi tin nhắn
-                              </>
+                                );
+                              })
                             )}
-                          </button>
+                          </div>
                         </div>
-                      </form>
+
+                        <form
+                          onSubmit={handleSendSupportMessage}
+                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-4 pb-4 pt-4 sm:px-5 sm:pb-5"
+                        >
+                          <div className="rounded-[28px] border border-slate-700/80 bg-slate-950/90 p-3">
+                            <textarea
+                              value={supportDraft}
+                              onChange={(event) => setSupportDraft(event.target.value)}
+                              rows={3}
+                              placeholder="Nhập nội dung cần admin hỗ trợ..."
+                              className="min-h-[92px] w-full resize-none bg-transparent px-2 py-2 text-white outline-none placeholder:text-slate-500"
+                            />
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
+                              <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                                <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1">
+                                  Realtime với admin
+                                </span>
+                                <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1">
+                                  {supportDraft.trim().length} ký tự
+                                </span>
+                              </div>
+                              <button
+                                type="submit"
+                                disabled={supportSending || !supportDraft.trim()}
+                                className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {supportSending ? (
+                                  <>
+                                    <Loader2 size={16} className="animate-spin" />
+                                    Đang gửi
+                                  </>
+                                ) : (
+                                  <>
+                                    <SendHorizontal size={16} />
+                                    Gửi tin nhắn
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
                     </div>
                   )}
                 </div>

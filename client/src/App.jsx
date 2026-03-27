@@ -7366,8 +7366,8 @@ function App() {
         )}
 
         {activeTab === "support" && (
-          <div className="grid gap-5 xl:grid-cols-[390px,minmax(0,1fr)]">
-            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.92))] shadow-[0_22px_60px_rgba(2,8,23,0.5)]">
+          <div className="grid gap-5 xl:grid-cols-[390px,minmax(0,1fr)] xl:items-stretch">
+            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.92))] shadow-[0_22px_60px_rgba(2,8,23,0.5)] lg:flex lg:h-[calc(100dvh-150px)] lg:flex-col">
               <div className="border-b border-slate-800/80 p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -7465,7 +7465,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="max-h-[780px] overflow-y-auto p-3">
+              <div className="flex-1 min-h-0 overflow-y-auto p-3">
                 {supportConversations.length === 0 ? (
                   <div className="rounded-[24px] border border-dashed border-slate-700 bg-slate-950/60 px-5 py-14 text-center text-slate-400">
                     Chưa có user nào chat trên web.
@@ -7570,9 +7570,9 @@ function App() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.12),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))] shadow-[0_22px_60px_rgba(2,8,23,0.48)]">
+            <div className="overflow-hidden rounded-[28px] border border-sky-400/20 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.12),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))] shadow-[0_22px_60px_rgba(2,8,23,0.48)] lg:flex lg:h-[calc(100dvh-150px)] lg:flex-col">
               {!selectedSupportConversation ? (
-                <div className="flex min-h-[640px] flex-col items-center justify-center gap-4 p-8 text-center">
+                <div className="flex min-h-[640px] flex-col items-center justify-center gap-4 p-8 text-center lg:min-h-0 lg:flex-1">
                   <div className="flex h-16 w-16 items-center justify-center rounded-[22px] border border-sky-400/25 bg-sky-500/10 text-sky-200">
                     <MessageCircle size={28} />
                   </div>
@@ -7587,8 +7587,9 @@ function App() {
                 </div>
               ) : (
                 <>
-                  <div className="border-b border-slate-800/80 p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex h-full min-h-0 flex-col p-4 lg:p-5">
+                    <div className="shrink-0 border-b border-slate-800/80 pb-4">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0 flex items-start gap-4">
                         <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[22px] bg-sky-500/15 text-lg font-black text-sky-100 ring-1 ring-sky-400/20">
                           {selectedSupportConversationDisplayName.charAt(0).toUpperCase()}
@@ -7663,9 +7664,10 @@ function App() {
                         </button>
                       </div>
                     </div>
+                    </div>
 
-                    <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr),320px]">
-                      <div className="flex min-h-[680px] flex-col overflow-hidden rounded-[26px] border border-slate-700/70 bg-slate-950/55">
+                    <div className="mt-4 grid flex-1 min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr),320px]">
+                      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[26px] border border-slate-700/70 bg-slate-950/55">
                         <div className="border-b border-slate-800/80 px-4 py-4 md:px-5">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
@@ -7673,7 +7675,7 @@ function App() {
                                 Khung chat trực tiếp
                               </div>
                               <p className="mt-1 text-sm text-slate-400">
-                                Chỉ tải đoạn chat gần nhất trước. Cuộn lên hoặc bấm nút phía trên để xem thêm tin cũ.
+                                Ô trả lời luôn nằm cuối khung chat, bạn chỉ cuộn trong hộp chat chứ không cần kéo cả trang.
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-2 text-xs">
@@ -7700,7 +7702,7 @@ function App() {
                             }
                             handleLoadOlderSupportMessages().catch(() => {});
                           }}
-                          className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] px-4 py-4 md:px-5"
+                          className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] px-4 py-4 md:px-5"
                         >
                           <div className="mx-auto flex max-w-4xl flex-col gap-4">
                             {supportPagination.hasMore ? (
@@ -7821,7 +7823,7 @@ function App() {
 
                         <form
                           onSubmit={handleSendSupportReply}
-                          className="border-t border-slate-800/80 bg-slate-950/75 p-4 md:p-5"
+                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/85 p-4 md:p-5"
                         >
                           <div className="rounded-[28px] border border-slate-700/80 bg-slate-950/90 p-3">
                             <textarea
@@ -7840,7 +7842,7 @@ function App() {
                                 }
                               }}
                               placeholder="Nhập câu trả lời ngắn gọn, rõ ràng cho user..."
-                              className="min-h-[104px] w-full resize-y bg-transparent px-3 py-2 text-white outline-none placeholder:text-slate-500"
+                              className="min-h-[104px] w-full resize-none bg-transparent px-3 py-2 text-white outline-none placeholder:text-slate-500"
                             />
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
                               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -7876,7 +7878,7 @@ function App() {
                         </form>
                       </div>
 
-                      <div className="space-y-4">
+                      <div className="space-y-4 overflow-y-auto xl:pr-1">
                         <div className="rounded-[24px] border border-slate-700/80 bg-slate-950/55 p-4">
                           <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
                             Thông tin user
