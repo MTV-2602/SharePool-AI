@@ -5341,20 +5341,20 @@ function App() {
 
         {activeTab === "store-users" && (
           <div className="space-y-6">
-            <div className="overflow-hidden rounded-[28px] border border-cyan-500/15 bg-slate-900/85 shadow-[0_18px_55px_rgba(8,15,40,0.38)]">
-              <div className="flex flex-col gap-5 border-b border-slate-800/80 p-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="overflow-hidden rounded-[24px] border border-cyan-500/15 bg-slate-900/85 shadow-[0_18px_55px_rgba(8,15,40,0.38)]">
+              <div className="flex flex-col gap-4 border-b border-slate-800/80 p-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="text-[11px] font-black uppercase tracking-[0.34em] text-cyan-300/90">
                     User Web
                   </div>
-                  <h2 className="mt-2 text-2xl font-black text-white">
+                  <h2 className="mt-1.5 text-xl font-black text-white">
                     Quản lí user mua hàng trên web
                   </h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                  <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
                     Theo dõi user, đơn đã mua và thao tác nhanh ngay trong admin.
                   </p>
                 </div>
-                <div className="grid min-w-0 grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-4">
                   {[
                     {
                       label: "Tổng user",
@@ -5379,29 +5379,29 @@ function App() {
                   ].map((item) => (
                     <div
                       key={item.label}
-                      className={`rounded-2xl border px-4 py-3.5 ${item.tone}`}
+                      className={`rounded-2xl border px-3 py-2.5 ${item.tone}`}
                     >
                       <div className="text-[10px] uppercase tracking-[0.26em] opacity-80">
                         {item.label}
                       </div>
-                      <div className="mt-1 text-2xl font-black">{item.value}</div>
+                      <div className="mt-1 text-xl font-black">{item.value}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="border-b border-slate-800/80 p-5">
+              <div className="border-b border-slate-800/80 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                   <input
                     value={storeUserQuery}
                     onChange={(e) => setStoreUserQuery(e.target.value)}
                     placeholder="Tìm theo tên user, SĐT hoặc email..."
-                    className="flex-1 rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white placeholder:text-slate-500 outline-none transition-all focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30"
+                    className="flex-1 rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-2.5 text-white placeholder:text-slate-500 outline-none transition-all focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30"
                   />
                   <button
                     type="button"
                     onClick={() => openStoreManualOrder()}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 font-bold text-white transition-colors hover:bg-emerald-500"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 font-bold text-white transition-colors hover:bg-emerald-500 lg:w-auto lg:self-start"
                   >
                     <UserPlus size={16} />
                     Tạo đơn thủ công
@@ -5409,13 +5409,13 @@ function App() {
                 </div>
               </div>
 
-              <div className="p-5">
+              <div className="p-4">
                 {filteredStoreUsers.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 px-6 py-12 text-center text-slate-400">
                     Chưa có user web nào khớp bộ lọc hiện tại.
                   </div>
                 ) : (
-                  <div className="grid gap-4">
+                  <div className="grid gap-3">
                     {filteredStoreUsers.map((user) => {
                       const authProviders = Array.isArray(user?.authProviders)
                         ? user.authProviders
@@ -5451,10 +5451,10 @@ function App() {
                       return (
                         <div
                           key={user.id}
-                          className="rounded-[20px] border border-slate-800/90 bg-slate-950/45 px-3 py-3 shadow-[0_10px_24px_rgba(5,12,30,0.18)]"
+                          className="rounded-[18px] border border-slate-800/90 bg-slate-950/45 px-3 py-2.5 shadow-[0_10px_24px_rgba(5,12,30,0.18)]"
                         >
-                          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                            <div className="min-w-0 flex-1 space-y-2.5">
+                          <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0 flex-1 space-y-2">
                               <div className="flex flex-wrap items-center gap-2">
                                 <div className="text-base font-black text-white break-all">
                                   {user.fullName || "User chưa có tên"}
@@ -5473,7 +5473,7 @@ function App() {
                                 ))}
                               </div>
 
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-wrap gap-1.5">
                                 <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-slate-700/90 bg-slate-900/75 px-3 py-1.5 text-xs text-slate-100">
                                   <Phone size={13} className="shrink-0 text-cyan-300" />
                                   <span className="font-semibold break-all">
@@ -5488,11 +5488,11 @@ function App() {
                                 </div>
                               </div>
 
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-wrap gap-1.5">
                                 {userStats.map((item) => (
                                   <div
                                     key={`${user.id}-${item.label}`}
-                                    className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ${item.tone}`}
+                                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${item.tone}`}
                                   >
                                     <span className="text-[10px] uppercase tracking-[0.18em] opacity-75">
                                       {item.label}
@@ -5504,7 +5504,7 @@ function App() {
                                 ))}
                               </div>
 
-                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                              <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-500">
                                 <span>
                                   Tạo:{" "}
                                   <span className="font-semibold text-slate-300">
@@ -5520,7 +5520,7 @@ function App() {
                               </div>
                             </div>
 
-                            <div className="flex flex-wrap gap-2 xl:max-w-[420px] xl:justify-end">
+                            <div className="flex flex-wrap gap-1.5 lg:max-w-[380px] lg:justify-end">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -5530,7 +5530,7 @@ function App() {
                                       : String(user?.id || "").trim(),
                                   )
                                 }
-                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-500"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-emerald-500"
                               >
                                 <FileSpreadsheet size={15} />
                                 {isExpanded
@@ -5540,7 +5540,7 @@ function App() {
                               <button
                                 type="button"
                                 onClick={() => openStoreManualOrder(user)}
-                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-emerald-200 transition-colors hover:bg-slate-700"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-emerald-200 transition-colors hover:bg-slate-700"
                               >
                                 <UserPlus size={15} />
                                 Tạo đơn
@@ -5548,7 +5548,7 @@ function App() {
                               <button
                                 type="button"
                                 onClick={() => openStoreUserEdit(user)}
-                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-cyan-500"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-cyan-500"
                               >
                                 <Pencil size={15} />
                                 Sửa
@@ -5557,7 +5557,7 @@ function App() {
                                 type="button"
                                 onClick={() => handleDeleteStoreUser(user)}
                                 disabled={loadingStates.deleteStoreUser === String(user?.id || "").trim()}
-                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 <Trash2 size={15} />
                                 {loadingStates.deleteStoreUser === String(user?.id || "").trim()
@@ -5568,7 +5568,7 @@ function App() {
                           </div>
 
                           {isExpanded && (
-                            <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                            <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                   <div className="text-xs font-black uppercase tracking-[0.22em] text-emerald-300">
