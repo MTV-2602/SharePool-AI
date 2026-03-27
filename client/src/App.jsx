@@ -8366,65 +8366,17 @@ function App() {
               }
               return null;
             })()}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-              <div
-                style={{
-                  background: "rgba(59, 130, 246, 0.1)",
-                  borderLeft: "4px solid #3b82f6",
-                }}
-                className="p-6 rounded-lg border border-blue-900/30"
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="text-xl font-bold text-blue-400 mb-1">
-                      🔥 Gói 1 – Chia sẻ tiết kiệm
-                    </h3>
-                    <div className="text-2xl font-bold text-yellow-400 mb-3">
-                      50.000đ
-                      <span className="text-sm text-slate-400 font-normal">
-                        /tháng
-                      </span>
-                    </div>
-                  </div>
-                  <div className="bg-blue-600/20 text-blue-300 px-3 py-1 rounded text-xs font-bold">
-                    POPULAR
-                  </div>
+            <div className="mb-6 rounded-2xl border border-sky-700/30 bg-[linear-gradient(135deg,rgba(14,165,233,0.12),rgba(59,130,246,0.08))] px-4 py-3 shadow-[0_14px_34px_rgba(14,165,233,0.08)]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-sky-200">
+                  Slogan
+                </span>
+                <div className="text-sm font-semibold text-slate-100 sm:text-base">
+                  Dậy sớm để thành công.
                 </div>
-                <ul className="space-y-2 text-sm text-slate-300">
-                  <li>• 👥 1 tài khoản / 3 người dùng chung</li>
-                  <li>• ⚡ Cấp sẵn – vào dùng ngay</li>
-                  <li>• 🔒 Không đổi mật khẩu</li>
-                </ul>
               </div>
-
-              <div
-                style={{
-                  background: "rgba(139, 92, 246, 0.1)",
-                  borderLeft: "4px solid #8b5cf6",
-                }}
-                className="p-6 rounded-lg border border-purple-900/30"
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="text-xl font-bold text-purple-400 mb-1">
-                      🔥 Gói 2 – Tài khoản linh hoạt
-                    </h3>
-                    <div className="text-2xl font-bold text-yellow-400 mb-3">
-                      100.000đ
-                      <span className="text-sm text-slate-400 font-normal">
-                        /tháng
-                      </span>
-                    </div>
-                  </div>
-                  <div className="bg-purple-600/20 text-purple-300 px-3 py-1 rounded text-xs font-bold">
-                    PREMIUM
-                  </div>
-                </div>
-                <ul className="space-y-2 text-sm text-slate-300">
-                  <li>• 👤 Dùng 1 mình hoặc 👥 mua chung với bạn bè</li>
-                  <li>• 🔑 Toàn quyền đăng nhập</li>
-                  <li>• 🔄 Tự đổi mật khẩu</li>
-                </ul>
+              <div className="mt-1 text-[11px] text-slate-400">
+                Làm nhanh, làm gọn, quản lý rõ ràng hơn mỗi ngày.
               </div>
             </div>
 
