@@ -5447,34 +5447,22 @@ function App() {
                           tone:
                             "border-cyan-500/25 bg-cyan-500/10 text-cyan-200",
                         },
-                        {
-                          label: "Tạo",
-                          value: user.createdAt ? formatDate(user.createdAt) : "--",
-                          tone:
-                            "border-slate-700/90 bg-slate-900/70 text-slate-300",
-                        },
-                        {
-                          label: "Cập nhật",
-                          value: user.updatedAt ? formatDate(user.updatedAt) : "--",
-                          tone:
-                            "border-slate-700/90 bg-slate-900/70 text-slate-300",
-                        },
                       ];
                       return (
                         <div
                           key={user.id}
-                          className="rounded-[22px] border border-slate-800/90 bg-slate-950/45 px-4 py-3 shadow-[0_12px_30px_rgba(5,12,30,0.22)]"
+                          className="rounded-[20px] border border-slate-800/90 bg-slate-950/45 px-3 py-3 shadow-[0_10px_24px_rgba(5,12,30,0.18)]"
                         >
-                          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                            <div className="min-w-0 flex-1 space-y-3">
+                          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="min-w-0 flex-1 space-y-2.5">
                               <div className="flex flex-wrap items-center gap-2">
-                                <div className="text-lg font-black text-white break-all">
+                                <div className="text-base font-black text-white break-all">
                                   {user.fullName || "User chưa có tên"}
                                 </div>
                                 {authProviders.map((provider) => (
                                   <span
                                     key={`${user.id}-${provider}`}
-                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ${
+                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] ${
                                       provider === "google"
                                         ? "border border-violet-500/25 bg-violet-500/15 text-violet-200"
                                         : "border border-blue-500/25 bg-blue-500/15 text-blue-200"
@@ -5486,13 +5474,13 @@ function App() {
                               </div>
 
                               <div className="flex flex-wrap gap-2">
-                                <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-slate-700/90 bg-slate-900/75 px-3 py-1.5 text-sm text-slate-100">
+                                <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-slate-700/90 bg-slate-900/75 px-3 py-1.5 text-xs text-slate-100">
                                   <Phone size={13} className="shrink-0 text-cyan-300" />
                                   <span className="font-semibold break-all">
                                     {user.phone || "Chưa có SĐT"}
                                   </span>
                                 </div>
-                                <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-slate-700/90 bg-slate-900/75 px-3 py-1.5 text-sm text-slate-100">
+                                <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-slate-700/90 bg-slate-900/75 px-3 py-1.5 text-xs text-slate-100">
                                   <Mail size={13} className="shrink-0 text-cyan-300" />
                                   <span className="font-semibold break-all">
                                     {user.email || "Chưa có email"}
@@ -5504,16 +5492,31 @@ function App() {
                                 {userStats.map((item) => (
                                   <div
                                     key={`${user.id}-${item.label}`}
-                                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 ${item.tone}`}
+                                    className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ${item.tone}`}
                                   >
                                     <span className="text-[10px] uppercase tracking-[0.18em] opacity-75">
                                       {item.label}
                                     </span>
-                                    <span className="text-sm font-black break-all">
+                                    <span className="text-xs font-black break-all">
                                       {item.value}
                                     </span>
                                   </div>
                                 ))}
+                              </div>
+
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                                <span>
+                                  Tạo:{" "}
+                                  <span className="font-semibold text-slate-300">
+                                    {user.createdAt ? formatDate(user.createdAt) : "--"}
+                                  </span>
+                                </span>
+                                <span>
+                                  Cập nhật:{" "}
+                                  <span className="font-semibold text-slate-300">
+                                    {user.updatedAt ? formatDate(user.updatedAt) : "--"}
+                                  </span>
+                                </span>
                               </div>
                             </div>
 
@@ -5527,7 +5530,7 @@ function App() {
                                       : String(user?.id || "").trim(),
                                   )
                                 }
-                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-500"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-emerald-500"
                               >
                                 <FileSpreadsheet size={15} />
                                 {isExpanded
@@ -5537,7 +5540,7 @@ function App() {
                               <button
                                 type="button"
                                 onClick={() => openStoreManualOrder(user)}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-800 px-3.5 py-2 text-sm font-bold text-emerald-200 transition-colors hover:bg-slate-700"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-bold text-emerald-200 transition-colors hover:bg-slate-700"
                               >
                                 <UserPlus size={15} />
                                 Tạo đơn
@@ -5545,7 +5548,7 @@ function App() {
                               <button
                                 type="button"
                                 onClick={() => openStoreUserEdit(user)}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-3.5 py-2 text-sm font-bold text-white transition-colors hover:bg-cyan-500"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-cyan-500"
                               >
                                 <Pencil size={15} />
                                 Sửa
@@ -5554,7 +5557,7 @@ function App() {
                                 type="button"
                                 onClick={() => handleDeleteStoreUser(user)}
                                 disabled={loadingStates.deleteStoreUser === String(user?.id || "").trim()}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-700 px-3.5 py-2 text-sm font-bold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 <Trash2 size={15} />
                                 {loadingStates.deleteStoreUser === String(user?.id || "").trim()
