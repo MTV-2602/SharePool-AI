@@ -1192,19 +1192,23 @@ app.get("/api/store/support/thread", verifyStoreUserToken, async (req, res) => {
   try {
     const conversation = await getOrCreateStoreSupportConversation(req.storeUser);
     const shouldMarkRead = String(req.query?.markRead || "0").trim() === "1";
-    const limit = parsePositiveLimit(req.query?.limit, 30, 100);
-    const before = String(req.query?.before || "").trim();
+    const limit = parsePositiveLimit(
+      req.query?.limit,
+      STORE_SUPPORT_THREAD_PAGE_SIZE,
+      100,
+    );
+    const cursor = String(req.query?.cursor || req.query?.before || "").trim();
     if (shouldMarkRead) {
       await markStoreSupportConversationRead({
         conversationId: conversation.id,
         readerRole: "user",
       });
     }
-    const [freshConversation, messages] = await Promise.all([
+    const [freshConversation, messagePage] = await Promise.all([
       StoreSupportConversation.findOne({
         id: String(conversation.id || "").trim(),
       }).lean(),
-      listStoreSupportMessages(conversation.id, { limit, before }),
+      listStoreSupportMessages(conversation.id, { limit, cursor }),
     ]);
     const normalizedConversation = freshConversation || conversation;
     if (
@@ -1222,13 +1226,16 @@ app.get("/api/store/support/thread", verifyStoreUserToken, async (req, res) => {
       conversation: sanitizeStoreSupportConversationForUser(
         normalizedConversation,
       ),
-      messages: (messages || []).map((message) =>
+      messages: (messagePage?.messages || []).map((message) =>
         sanitizeStoreSupportMessage(message),
       ),
       pagination: {
         limit,
-        before,
-        hasMore: (messages || []).length >= limit,
+        cursor,
+        nextCursor: String(messagePage?.nextCursor || "").trim(),
+        hasMore: !!messagePage?.hasMore,
+        retainedAfter: String(messagePage?.retainedAfter || "").trim(),
+        retentionDays: STORE_SUPPORT_MESSAGE_RETENTION_DAYS,
       },
     });
   } catch (error) {
@@ -1866,6 +1873,10 @@ const googleOAuthClient = GOOGLE_OAUTH_CLIENT_ID
   : null;
 const STORE_PAYMENT_METHOD_MOMO = "momo";
 const STORE_PAYMENT_METHOD_PAYOS = "payos";
+const STORE_SUPPORT_MESSAGE_RETENTION_DAYS = 7;
+const STORE_SUPPORT_MESSAGE_RETENTION_MS =
+  STORE_SUPPORT_MESSAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const STORE_SUPPORT_THREAD_PAGE_SIZE = 30;
 const VALID_STORE_PAYMENT_METHODS = [
   STORE_PAYMENT_METHOD_MOMO,
   STORE_PAYMENT_METHOD_PAYOS,
@@ -2052,6 +2063,24 @@ const sanitizeStoreVoucherForCheckout = ({
     discountAmount: Number(discountAmount || 0),
     finalAmount: Number(finalAmount || 0),
   };
+};
+const getStoreSupportRetentionCutoffIso = () =>
+  new Date(Date.now() - STORE_SUPPORT_MESSAGE_RETENTION_MS).toISOString();
+const buildStoreSupportCursor = (message = null) => {
+  const createdAt = String(message?.createdAt || "").trim();
+  const id = String(message?.id || "").trim();
+  if (!createdAt || !id) return "";
+  return `${createdAt}__${id}`;
+};
+const parseStoreSupportCursor = (value = "") => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const separatorIndex = raw.lastIndexOf("__");
+  if (separatorIndex <= 0) return null;
+  const createdAt = raw.slice(0, separatorIndex).trim();
+  const id = raw.slice(separatorIndex + 2).trim();
+  if (!createdAt || !id) return null;
+  return { createdAt, id };
 };
 const sanitizeStoreSupportMessage = (message = {}) => ({
   id: String(message?.id || "").trim(),
@@ -2800,6 +2829,7 @@ const scheduleStoreMaintenance = () => {
       await Promise.all([
         expireStaleStoreOrders(),
         cleanupOldStoreFailedOrders(),
+        cleanupOldStoreSupportMessages(),
       ]);
     } catch (error) {
       console.error("Store maintenance failed:", error?.message || error);
@@ -3125,21 +3155,105 @@ const getOrCreateStoreSupportConversation = async (storeUserInput = null) => {
 };
 const listStoreSupportMessages = async (
   conversationId = "",
-  { limit = 50, before = "" } = {},
+  { limit = STORE_SUPPORT_THREAD_PAGE_SIZE, before = "", cursor = "" } = {},
 ) => {
   const normalizedConversationId = String(conversationId || "").trim();
-  if (!normalizedConversationId) return [];
-  const safeLimit = Math.max(1, Math.min(200, Number(limit || 50)));
-  const beforeCursor = String(before || "").trim();
-  const query = { conversationId: normalizedConversationId };
-  if (beforeCursor) {
-    query.createdAt = { $lt: beforeCursor };
+  if (!normalizedConversationId) {
+    return {
+      messages: [],
+      hasMore: false,
+      nextCursor: "",
+      retainedAfter: getStoreSupportRetentionCutoffIso(),
+    };
+  }
+  const safeLimit = Math.max(1, Math.min(100, Number(limit || STORE_SUPPORT_THREAD_PAGE_SIZE)));
+  const normalizedCursor = parseStoreSupportCursor(cursor || before);
+  const retentionCutoffIso = getStoreSupportRetentionCutoffIso();
+  const query = {
+    conversationId: normalizedConversationId,
+    createdAt: { $gte: retentionCutoffIso },
+  };
+  if (normalizedCursor) {
+    query.$or = [
+      { createdAt: { $lt: normalizedCursor.createdAt } },
+      {
+        createdAt: normalizedCursor.createdAt,
+        id: { $lt: normalizedCursor.id },
+      },
+    ];
   }
   const rawMessages = await StoreSupportMessage.find(query)
     .sort({ createdAt: -1, id: -1 })
-    .limit(safeLimit)
+    .limit(safeLimit + 1)
     .lean();
-  return rawMessages.reverse();
+  const hasMore = rawMessages.length > safeLimit;
+  const slicedMessages = hasMore ? rawMessages.slice(0, safeLimit) : rawMessages;
+  const nextCursor = hasMore
+    ? buildStoreSupportCursor(
+        slicedMessages.length > 0
+          ? slicedMessages[slicedMessages.length - 1]
+          : null,
+      )
+    : "";
+  return {
+    messages: slicedMessages.reverse(),
+    hasMore,
+    nextCursor,
+    retainedAfter: retentionCutoffIso,
+  };
+};
+const cleanupOldStoreSupportMessages = async () => {
+  const cutoffIso = getStoreSupportRetentionCutoffIso();
+  const affectedConversationIds = await StoreSupportMessage.distinct("conversationId", {
+    createdAt: { $lt: cutoffIso },
+  });
+  if (!Array.isArray(affectedConversationIds) || affectedConversationIds.length === 0) {
+    return 0;
+  }
+
+  const deleteResult = await StoreSupportMessage.deleteMany({
+    createdAt: { $lt: cutoffIso },
+  });
+  const nowIso = new Date().toISOString();
+
+  await Promise.all(
+    affectedConversationIds
+      .map((conversationId) => String(conversationId || "").trim())
+      .filter(Boolean)
+      .map(async (conversationId) => {
+        const [latestMessage, adminUnreadCount, userUnreadCount] = await Promise.all([
+          StoreSupportMessage.findOne({ conversationId })
+            .sort({ createdAt: -1, id: -1 })
+            .lean(),
+          StoreSupportMessage.countDocuments({
+            conversationId,
+            senderRole: "user",
+            $or: [{ readAt: "" }, { readAt: null }, { readAt: { $exists: false } }],
+          }),
+          StoreSupportMessage.countDocuments({
+            conversationId,
+            senderRole: "admin",
+            $or: [{ readAt: "" }, { readAt: null }, { readAt: { $exists: false } }],
+          }),
+        ]);
+
+        await StoreSupportConversation.findOneAndUpdate(
+          { id: conversationId },
+          {
+            $set: {
+              lastMessageAt: String(latestMessage?.createdAt || "").trim(),
+              lastMessagePreview: String(latestMessage?.body || "").trim().slice(0, 160),
+              lastSenderRole: String(latestMessage?.senderRole || "").trim(),
+              adminUnreadCount: Math.max(0, Number(adminUnreadCount || 0)),
+              userUnreadCount: Math.max(0, Number(userUnreadCount || 0)),
+              updatedAt: nowIso,
+            },
+          },
+        );
+      }),
+  );
+
+  return Number(deleteResult?.deletedCount || 0);
 };
 const markStoreSupportConversationRead = async ({
   conversationId = "",
@@ -7212,8 +7326,12 @@ app.get("/api/store-support/conversations", verifyToken, async (req, res) => {
 app.get("/api/store-support/conversations/:id/messages", verifyToken, async (req, res) => {
   try {
     const id = String(req.params?.id || "").trim();
-    const limit = parsePositiveLimit(req.query?.limit, 50, 100);
-    const before = String(req.query?.before || "").trim();
+    const limit = parsePositiveLimit(
+      req.query?.limit,
+      STORE_SUPPORT_THREAD_PAGE_SIZE,
+      100,
+    );
+    const cursor = String(req.query?.cursor || req.query?.before || "").trim();
     if (!id) {
       return res.status(400).json({ error: "Thieu ID hoi thoai." });
     }
@@ -7225,9 +7343,9 @@ app.get("/api/store-support/conversations/:id/messages", verifyToken, async (req
       conversationId: id,
       readerRole: "admin",
     });
-    const [freshConversation, messages] = await Promise.all([
+    const [freshConversation, messagePage] = await Promise.all([
       StoreSupportConversation.findOne({ id }).lean(),
-      listStoreSupportMessages(id, { limit, before }),
+      listStoreSupportMessages(id, { limit, cursor }),
     ]);
     const normalizedConversation = freshConversation || conversation;
     if (Number(conversation?.adminUnreadCount || 0) > 0) {
@@ -7241,13 +7359,16 @@ app.get("/api/store-support/conversations/:id/messages", verifyToken, async (req
       conversation: sanitizeStoreSupportConversationForAdmin(
         normalizedConversation,
       ),
-      messages: (messages || []).map((message) =>
+      messages: (messagePage?.messages || []).map((message) =>
         sanitizeStoreSupportMessage(message),
       ),
       pagination: {
         limit,
-        before,
-        hasMore: (messages || []).length >= limit,
+        cursor,
+        nextCursor: String(messagePage?.nextCursor || "").trim(),
+        hasMore: !!messagePage?.hasMore,
+        retainedAfter: String(messagePage?.retainedAfter || "").trim(),
+        retentionDays: STORE_SUPPORT_MESSAGE_RETENTION_DAYS,
       },
     });
   } catch (error) {

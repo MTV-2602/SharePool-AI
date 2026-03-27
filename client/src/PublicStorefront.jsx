@@ -25,6 +25,8 @@ const ADMIN_TOKEN_EXPIRES_AT_KEY = "token_expires_at";
 const SESSION_ROLE_KEY = "active_session_role";
 const STORE_PAYMENT_METHOD_MOMO = "momo";
 const STORE_PAYMENT_METHOD_PAYOS = "payos";
+const DEFAULT_SUPPORT_PAGE_SIZE = 30;
+const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
 
 const getPaymentMethodLabel = (method) =>
   String(method || "").trim().toLowerCase() === STORE_PAYMENT_METHOD_PAYOS
@@ -165,6 +167,35 @@ const formatChatTime = (value) => {
     month: "2-digit",
   });
 };
+const formatSupportMessageTime = (value) => {
+  const time = new Date(value || "");
+  if (Number.isNaN(time.getTime())) return "--";
+  return time.toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+const formatSupportDayLabel = (value) => {
+  const time = new Date(value || "");
+  if (Number.isNaN(time.getTime())) return "--";
+  return time.toLocaleDateString("vi-VN", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+  });
+};
+const isSameSupportDay = (leftValue, rightValue) => {
+  const leftTime = new Date(leftValue || "");
+  const rightTime = new Date(rightValue || "");
+  if (Number.isNaN(leftTime.getTime()) || Number.isNaN(rightTime.getTime())) {
+    return false;
+  }
+  return (
+    leftTime.getFullYear() === rightTime.getFullYear() &&
+    leftTime.getMonth() === rightTime.getMonth() &&
+    leftTime.getDate() === rightTime.getDate()
+  );
+};
 const mergeRealtimeSupportConversation = (currentConversation = null, incoming = null) => {
   const safeIncoming =
     incoming && typeof incoming === "object" ? incoming : null;
@@ -209,6 +240,13 @@ const mergeRealtimeSupportMessageBatch = (items = [], incomingItems = []) => {
     [...safeItems],
   );
 };
+const buildDefaultSupportPaginationState = () => ({
+  nextCursor: "",
+  hasMore: false,
+  loadingOlder: false,
+  retainedAfter: "",
+  retentionDays: DEFAULT_SUPPORT_RETENTION_DAYS,
+});
 const getVoucherTypeLabel = (type, value) =>
   String(type || "").trim().toLowerCase() === "fixed"
     ? `${formatMoney(value)}`
@@ -324,6 +362,9 @@ function PublicStorefront() {
   const [supportSending, setSupportSending] = useState(false);
   const [supportConversation, setSupportConversation] = useState(null);
   const [supportMessages, setSupportMessages] = useState([]);
+  const [supportPagination, setSupportPagination] = useState(
+    buildDefaultSupportPaginationState(),
+  );
   const [supportDraft, setSupportDraft] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -343,12 +384,16 @@ function PublicStorefront() {
   const authCardRef = useRef(null);
   const ordersSectionRef = useRef(null);
   const supportPanelRef = useRef(null);
+  const supportMessagesViewportRef = useRef(null);
   const pendingReconcileRef = useRef(false);
   const purchaseLockRef = useRef(false);
   const storeOrdersSyncRef = useRef(false);
   const supportThreadSyncRef = useRef(false);
   const supportThreadLoadSeqRef = useRef(0);
   const supportThreadAppliedSeqRef = useRef(0);
+  const supportScrollModeRef = useRef("");
+  const supportPreviousScrollHeightRef = useRef(0);
+  const supportPreviousScrollTopRef = useRef(0);
 
   const refreshRouteState = () => setRouteState(readStoreRoute());
 
@@ -368,6 +413,25 @@ function PublicStorefront() {
     if (typeof window === "undefined") return;
     if (nextToken) localStorage.setItem(STORE_TOKEN_KEY, nextToken);
     else localStorage.removeItem(STORE_TOKEN_KEY);
+  };
+
+  const isSupportViewportNearBottom = () => {
+    const viewport = supportMessagesViewportRef.current;
+    if (!viewport) return true;
+    return (
+      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 140
+    );
+  };
+
+  const queueSupportScrollToBottom = () => {
+    supportScrollModeRef.current = "bottom";
+  };
+
+  const queueSupportScrollPreserve = () => {
+    const viewport = supportMessagesViewportRef.current;
+    supportPreviousScrollHeightRef.current = Number(viewport?.scrollHeight || 0);
+    supportPreviousScrollTopRef.current = Number(viewport?.scrollTop || 0);
+    supportScrollModeRef.current = "preserve";
   };
 
   const loadConfig = async () => {
@@ -472,20 +536,38 @@ function PublicStorefront() {
   const loadSupportThread = async ({
     markRead = true,
     silent = false,
+    cursor = "",
+    append = false,
+    reset = false,
   } = {}) => {
     if (!token || !user) {
       supportThreadLoadSeqRef.current = 0;
       supportThreadAppliedSeqRef.current = 0;
       setSupportConversation(null);
       setSupportMessages([]);
+      setSupportPagination(buildDefaultSupportPaginationState());
       return null;
     }
-    const requestSeq = supportThreadLoadSeqRef.current + 1;
-    supportThreadLoadSeqRef.current = requestSeq;
+    const normalizedCursor = String(cursor || "").trim();
+    const isLoadingOlder = append || !!normalizedCursor;
+    const requestSeq = isLoadingOlder
+      ? supportThreadLoadSeqRef.current
+      : supportThreadLoadSeqRef.current + 1;
+    if (!isLoadingOlder) {
+      supportThreadLoadSeqRef.current = requestSeq;
+    }
     try {
-      if (!silent) setSupportLoading(true);
+      if (!silent && !isLoadingOlder) setSupportLoading(true);
+      if (isLoadingOlder) {
+        setSupportPagination((prev) => ({ ...prev, loadingOlder: true }));
+        queueSupportScrollPreserve();
+      }
       const data = await apiRequest(
-        `/api/store/support/thread?markRead=${markRead ? "1" : "0"}`,
+        `/api/store/support/thread?markRead=${markRead ? "1" : "0"}${
+          normalizedCursor
+            ? `&cursor=${encodeURIComponent(normalizedCursor)}`
+            : ""
+        }&limit=${DEFAULT_SUPPORT_PAGE_SIZE}`,
         {
           token,
         },
@@ -495,25 +577,61 @@ function PublicStorefront() {
           ? data.conversation
           : null;
       const nextMessages = Array.isArray(data?.messages) ? data.messages : [];
-      if (requestSeq < supportThreadAppliedSeqRef.current) {
+      if (!isLoadingOlder && requestSeq < supportThreadAppliedSeqRef.current) {
         return data;
       }
-      supportThreadAppliedSeqRef.current = requestSeq;
+      if (!isLoadingOlder) {
+        supportThreadAppliedSeqRef.current = requestSeq;
+      }
+      const nextPagination = data?.pagination || {};
       setSupportConversation((prev) =>
         mergeRealtimeSupportConversation(prev, nextConversation),
       );
-      setSupportMessages((prev) =>
-        mergeRealtimeSupportMessageBatch(prev, nextMessages),
-      );
+      setSupportPagination((prev) => ({
+        ...prev,
+        nextCursor: String(nextPagination?.nextCursor || "").trim(),
+        hasMore: !!nextPagination?.hasMore,
+        retainedAfter: String(nextPagination?.retainedAfter || "").trim(),
+        retentionDays:
+          Number(nextPagination?.retentionDays || 0) ||
+          prev.retentionDays ||
+          DEFAULT_SUPPORT_RETENTION_DAYS,
+        loadingOlder: false,
+      }));
+      setSupportMessages((prev) => {
+        if (reset && !isLoadingOlder) {
+          return mergeRealtimeSupportMessageBatch([], nextMessages);
+        }
+        return mergeRealtimeSupportMessageBatch(prev, nextMessages);
+      });
       return data;
     } catch (supportError) {
+      if (isLoadingOlder) {
+        setSupportPagination((prev) => ({ ...prev, loadingOlder: false }));
+      }
       if (!silent) {
         setError(supportError.message || "Không tải được chat hỗ trợ.");
       }
       return null;
     } finally {
-      if (!silent) setSupportLoading(false);
+      if (!silent && !isLoadingOlder) setSupportLoading(false);
     }
+  };
+
+  const loadOlderSupportMessages = async () => {
+    if (
+      supportPagination.loadingOlder ||
+      !supportPagination.hasMore ||
+      !supportPagination.nextCursor
+    ) {
+      return;
+    }
+    await loadSupportThread({
+      markRead: false,
+      silent: true,
+      cursor: supportPagination.nextCursor,
+      append: true,
+    });
   };
 
   const syncOrdersSilently = async () => {
@@ -567,6 +685,9 @@ function PublicStorefront() {
       nextMessage?.conversationId || nextConversationId || "",
     ).trim();
     if (currentConversationId && currentConversationId === messageConversationId) {
+      if (isSupportViewportNearBottom()) {
+        queueSupportScrollToBottom();
+      }
       setSupportMessages((prev) => mergeRealtimeSupportMessages(prev, nextMessage));
       return {
         handled: true,
@@ -587,7 +708,10 @@ function PublicStorefront() {
       return;
     }
     setSupportOpen(true);
-    await loadSupportThread({ markRead: true });
+    setSupportMessages([]);
+    setSupportPagination(buildDefaultSupportPaginationState());
+    queueSupportScrollToBottom();
+    await loadSupportThread({ markRead: true, reset: true });
     if (typeof window !== "undefined") {
       window.requestAnimationFrame(() => {
         supportPanelRef.current?.scrollIntoView({
@@ -597,6 +721,27 @@ function PublicStorefront() {
       });
     }
   };
+
+  useEffect(() => {
+    if (!supportOpen) return;
+    if (typeof window === "undefined") return;
+    const viewport = supportMessagesViewportRef.current;
+    if (!viewport) return;
+    window.requestAnimationFrame(() => {
+      const activeViewport = supportMessagesViewportRef.current;
+      if (!activeViewport) return;
+      if (supportScrollModeRef.current === "preserve") {
+        const deltaHeight =
+          Number(activeViewport.scrollHeight || 0) -
+          Number(supportPreviousScrollHeightRef.current || 0);
+        activeViewport.scrollTop =
+          Number(supportPreviousScrollTopRef.current || 0) + deltaHeight;
+      } else if (supportScrollModeRef.current === "bottom") {
+        activeViewport.scrollTop = activeViewport.scrollHeight;
+      }
+      supportScrollModeRef.current = "";
+    });
+  }, [supportMessages, supportOpen]);
 
   useEffect(() => {
     const onPopState = () => refreshRouteState();
@@ -885,6 +1030,7 @@ function PublicStorefront() {
     if (user) return;
     supportThreadLoadSeqRef.current = 0;
     supportThreadAppliedSeqRef.current = 0;
+    setSupportPagination(buildDefaultSupportPaginationState());
     setSupportOpen(false);
     setSupportConversation(null);
     setSupportMessages([]);
@@ -1389,6 +1535,7 @@ function PublicStorefront() {
         body: { body },
       });
       const nextMessage = data?.message || null;
+      queueSupportScrollToBottom();
       setSupportConversation((prev) =>
         mergeRealtimeSupportConversation(prev, data?.conversation || supportConversation),
       );
@@ -1421,6 +1568,7 @@ function PublicStorefront() {
     setSupportOpen(false);
     setSupportConversation(null);
     setSupportMessages([]);
+    setSupportPagination(buildDefaultSupportPaginationState());
     setSupportDraft("");
     setVoucherCodeInput("");
     setVoucherPreview(null);
@@ -2002,62 +2150,150 @@ function PublicStorefront() {
                         : "Đăng nhập user để chat trực tiếp trên web. Nếu cần nhanh hơn, bạn vẫn có thể bấm Zalo."}
                     </p>
                   ) : (
-                    <div className="mt-5 space-y-4">
-                      <div className="max-h-[360px] space-y-3 overflow-y-auto rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
-                        {supportLoading ? (
-                          <div className="flex items-center gap-2 text-sm text-slate-400">
-                            <Loader2 size={16} className="animate-spin" />
-                            Đang tải hội thoại...
+                    <div className="mt-5 overflow-hidden rounded-[28px] border border-slate-800 bg-slate-950/60">
+                      <div className="border-b border-slate-800/80 px-4 py-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-300">
+                              Chat web trực tiếp
+                            </div>
+                            <p className="mt-1 text-sm text-slate-400">
+                              Chỉ tải đoạn chat gần nhất trước. Kéo lên hoặc bấm nút để xem thêm tin cũ.
+                            </p>
                           </div>
-                        ) : supportMessages.length === 0 ? (
-                          <div className="text-sm text-slate-400">
-                            Chưa có tin nhắn nào. Bạn có thể nhắn nội dung cần hỗ trợ ở ô bên dưới.
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            <span className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-slate-300">
+                              {supportMessages.length} tin đang hiển thị
+                            </span>
+                            <span className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-slate-300">
+                              Lưu {Math.max(1, Number(supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS))} ngày
+                            </span>
                           </div>
-                        ) : (
-                          supportMessages.map((chatMessage) => {
-                            const fromAdmin =
-                              String(chatMessage.senderRole || "").trim() === "admin";
-                            return (
-                              <div
-                                key={chatMessage.id}
-                                className={`flex ${fromAdmin ? "justify-start" : "justify-end"}`}
-                              >
-                                <div
-                                  className={`max-w-[88%] rounded-3xl px-4 py-3 text-sm leading-6 ${
-                                    fromAdmin
-                                      ? "bg-slate-800 text-slate-100"
-                                      : "bg-cyan-600 text-white"
-                                  }`}
-                                >
-                                  <div className="whitespace-pre-wrap break-words">
-                                    {chatMessage.body}
-                                  </div>
-                                  <div
-                                    className={`mt-2 text-[11px] ${
-                                      fromAdmin ? "text-slate-400" : "text-cyan-100"
-                                    }`}
-                                  >
-                                    {fromAdmin ? "Admin" : "Bạn"} • {formatChatTime(chatMessage.createdAt)}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
+                        </div>
                       </div>
 
-                      <form onSubmit={handleSendSupportMessage} className="space-y-3">
+                      <div
+                        ref={supportMessagesViewportRef}
+                        onScroll={(event) => {
+                          if (event.currentTarget.scrollTop > 56) return;
+                          if (
+                            supportPagination.loadingOlder ||
+                            !supportPagination.hasMore ||
+                            !supportPagination.nextCursor
+                          ) {
+                            return;
+                          }
+                          loadOlderSupportMessages().catch(() => {});
+                        }}
+                        className="max-h-[420px] overflow-y-auto px-4 py-4"
+                      >
+                        <div className="space-y-4">
+                          {supportPagination.hasMore ? (
+                            <div className="flex justify-center">
+                              <button
+                                type="button"
+                                onClick={() => loadOlderSupportMessages()}
+                                disabled={supportPagination.loadingOlder}
+                                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:opacity-60"
+                              >
+                                {supportPagination.loadingOlder ? (
+                                  <Loader2 size={14} className="animate-spin" />
+                                ) : (
+                                  <ChevronUp size={14} />
+                                )}
+                                {supportPagination.loadingOlder
+                                  ? "Đang tải tin cũ..."
+                                  : "Xem tin nhắn cũ hơn"}
+                              </button>
+                            </div>
+                          ) : null}
+
+                          {supportPagination?.retainedAfter ? (
+                            <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-xs leading-6 text-amber-100">
+                              Chat web chỉ lưu tối đa {Math.max(1, Number(supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS))} ngày.
+                              {` `}Các tin cũ hơn mốc {formatDateTime(supportPagination.retainedAfter)} sẽ tự dọn để khung chat luôn nhẹ.
+                            </div>
+                          ) : null}
+
+                          {supportLoading ? (
+                            <div className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4 text-sm text-slate-400">
+                              <Loader2 size={16} className="animate-spin" />
+                              Đang tải hội thoại...
+                            </div>
+                          ) : supportMessages.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-10 text-sm text-slate-400">
+                              Chưa có tin nhắn nào. Bạn có thể nhắn nội dung cần hỗ trợ ở ô bên dưới.
+                            </div>
+                          ) : (
+                            supportMessages.map((chatMessage, index) => {
+                              const previousMessage = supportMessages[index - 1] || null;
+                              const fromAdmin =
+                                String(chatMessage.senderRole || "").trim() === "admin";
+                              const shouldRenderDayDivider =
+                                !previousMessage ||
+                                !isSameSupportDay(
+                                  previousMessage?.createdAt,
+                                  chatMessage?.createdAt,
+                                );
+                              return (
+                                <div key={chatMessage.id}>
+                                  {shouldRenderDayDivider ? (
+                                    <div className="mb-3 flex justify-center">
+                                      <div className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                        {formatSupportDayLabel(chatMessage.createdAt)}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                  <div
+                                    className={`flex ${
+                                      fromAdmin ? "justify-start" : "justify-end"
+                                    }`}
+                                  >
+                                    <div
+                                      className={`max-w-[88%] rounded-[26px] px-4 py-3 text-sm leading-6 shadow-[0_12px_24px_rgba(2,6,23,0.18)] ${
+                                        fromAdmin
+                                          ? "border border-slate-700 bg-slate-900 text-slate-100"
+                                          : "bg-cyan-600 text-white"
+                                      }`}
+                                    >
+                                      <div
+                                        className={`mb-2 text-[11px] font-bold uppercase tracking-[0.14em] ${
+                                          fromAdmin
+                                            ? "text-slate-400"
+                                            : "text-cyan-100"
+                                        }`}
+                                      >
+                                        {fromAdmin ? "Admin" : "Bạn"} • {formatSupportMessageTime(chatMessage.createdAt)}
+                                      </div>
+                                      <div className="whitespace-pre-wrap break-words">
+                                        {chatMessage.body}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleSendSupportMessage} className="border-t border-slate-800/80 bg-slate-950/85 p-4">
                         <textarea
                           value={supportDraft}
                           onChange={(event) => setSupportDraft(event.target.value)}
-                          rows={4}
+                          rows={3}
                           placeholder="Nhập nội dung cần admin hỗ trợ..."
                           className="w-full rounded-3xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500"
                         />
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <p className="text-xs text-slate-500">
-                            Admin sẽ thấy và trả lời ngay trong mục hỗ trợ trên trang quản trị.
-                          </p>
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                            <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1">
+                              Realtime với admin
+                            </span>
+                            <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1">
+                              {supportDraft.trim().length} ký tự
+                            </span>
+                          </div>
                           <button
                             type="submit"
                             disabled={supportSending || !supportDraft.trim()}

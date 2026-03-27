@@ -34,12 +34,15 @@ import {
   Phone,
   Search,
   SendHorizontal,
+  ChevronUp,
 } from "lucide-react";
 
 const ADMIN_TOKEN_STORAGE_KEY = "admin_token";
 const ADMIN_TOKEN_EXPIRES_AT_STORAGE_KEY = "token_expires_at";
 const STORE_TOKEN_STORAGE_KEY = "store_user_token";
 const SESSION_ROLE_STORAGE_KEY = "active_session_role";
+const DEFAULT_SUPPORT_PAGE_SIZE = 30;
+const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
 
 // Helper: Xóa dấu Tiếng Việt
 const toNonAccentVietnamese = (str) => {
@@ -1271,6 +1274,13 @@ const buildDefaultDashboardSummary = () => ({
   openSupportConversations: 0,
   totalVouchers: 0,
 });
+const buildDefaultSupportPaginationState = () => ({
+  nextCursor: "",
+  hasMore: false,
+  loadingOlder: false,
+  retainedAfter: "",
+  retentionDays: DEFAULT_SUPPORT_RETENTION_DAYS,
+});
 
 function App() {
   // LOGIN STATE
@@ -1286,6 +1296,9 @@ function App() {
   const [storeVouchers, setStoreVouchers] = useState([]);
   const [supportConversations, setSupportConversations] = useState([]);
   const [supportMessages, setSupportMessages] = useState([]);
+  const [supportPagination, setSupportPagination] = useState(
+    buildDefaultSupportPaginationState(),
+  );
   const [selectedSupportConversationId, setSelectedSupportConversationId] =
     useState("");
   const [supportReplyDraft, setSupportReplyDraft] = useState("");
@@ -1418,6 +1431,10 @@ function App() {
   const selectedSupportConversationIdRef = useRef("");
   const supportMessageLoadSeqRef = useRef(0);
   const supportMessageAppliedSeqRef = useRef(0);
+  const supportMessagesViewportRef = useRef(null);
+  const supportScrollModeRef = useRef("");
+  const supportPreviousScrollHeightRef = useRef(0);
+  const supportPreviousScrollTopRef = useRef(0);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1764,6 +1781,9 @@ function App() {
               String(selectedSupportConversationId || "").trim()
           ) {
             if (event === "support.message.created" && nextMessage) {
+              if (isSupportViewportNearBottom()) {
+                queueSupportScrollToBottom();
+              }
               setSupportMessages((prev) =>
                 mergeSupportMessageItem(prev, nextMessage),
               );
@@ -1815,6 +1835,27 @@ function App() {
       supportMessageAppliedSeqRef.current = 0;
     }
   }, [selectedSupportConversationId]);
+
+  useEffect(() => {
+    if (!selectedSupportConversationId) return;
+    if (typeof window === "undefined") return;
+    const viewport = supportMessagesViewportRef.current;
+    if (!viewport) return;
+    window.requestAnimationFrame(() => {
+      const activeViewport = supportMessagesViewportRef.current;
+      if (!activeViewport) return;
+      if (supportScrollModeRef.current === "preserve") {
+        const deltaHeight =
+          Number(activeViewport.scrollHeight || 0) -
+          Number(supportPreviousScrollHeightRef.current || 0);
+        activeViewport.scrollTop =
+          Number(supportPreviousScrollTopRef.current || 0) + deltaHeight;
+      } else if (supportScrollModeRef.current === "bottom") {
+        activeViewport.scrollTop = activeViewport.scrollHeight;
+      }
+      supportScrollModeRef.current = "";
+    });
+  }, [selectedSupportConversationId, supportMessages]);
 
   useEffect(() => {
     const validIds = new Set(accounts.map((acc) => acc.id));
@@ -2153,6 +2194,46 @@ function App() {
     }
   };
 
+  const formatSupportMessageTime = (isoString) => {
+    if (!isoString) return "";
+    try {
+      return new Date(isoString).toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch (e) {
+      return "";
+    }
+  };
+
+  const formatSupportDayLabel = (isoString) => {
+    if (!isoString) return "";
+    try {
+      return new Date(isoString).toLocaleDateString("vi-VN", {
+        weekday: "long",
+        day: "2-digit",
+        month: "2-digit",
+      });
+    } catch (e) {
+      return "";
+    }
+  };
+
+  const isSameSupportDay = (leftValue, rightValue) => {
+    if (!leftValue || !rightValue) return false;
+    try {
+      const leftDate = new Date(leftValue);
+      const rightDate = new Date(rightValue);
+      return (
+        leftDate.getFullYear() === rightDate.getFullYear() &&
+        leftDate.getMonth() === rightDate.getMonth() &&
+        leftDate.getDate() === rightDate.getDate()
+      );
+    } catch (e) {
+      return false;
+    }
+  };
+
   const getSupportConversationDisplayName = (conversation = {}) =>
     String(
       conversation?.userName ||
@@ -2242,6 +2323,25 @@ function App() {
       (nextItems, message) => mergeSupportMessageItem(nextItems, message),
       [...safeItems],
     );
+  };
+
+  const isSupportViewportNearBottom = () => {
+    const viewport = supportMessagesViewportRef.current;
+    if (!viewport) return true;
+    return (
+      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 140
+    );
+  };
+
+  const queueSupportScrollToBottom = () => {
+    supportScrollModeRef.current = "bottom";
+  };
+
+  const queueSupportScrollPreserve = () => {
+    const viewport = supportMessagesViewportRef.current;
+    supportPreviousScrollHeightRef.current = Number(viewport?.scrollHeight || 0);
+    supportPreviousScrollTopRef.current = Number(viewport?.scrollTop || 0);
+    supportScrollModeRef.current = "preserve";
   };
 
   const formatMoney = (value) => {
@@ -3073,7 +3173,12 @@ function App() {
 
   const loadSupportConversationMessages = async (
     conversationId,
-    { silent = false } = {},
+    {
+      silent = false,
+      cursor = "",
+      append = false,
+      reset = false,
+    } = {},
   ) => {
     const normalizedConversationId = String(conversationId || "").trim();
     if (!normalizedConversationId) {
@@ -3081,21 +3186,35 @@ function App() {
       supportMessageLoadSeqRef.current = 0;
       supportMessageAppliedSeqRef.current = 0;
       setSupportMessages([]);
+      setSupportPagination(buildDefaultSupportPaginationState());
       return null;
     }
-    const requestSeq = supportMessageLoadSeqRef.current + 1;
-    supportMessageLoadSeqRef.current = requestSeq;
-    if (!silent) {
+    const normalizedCursor = String(cursor || "").trim();
+    const isLoadingOlder = append || !!normalizedCursor;
+    const requestSeq = isLoadingOlder
+      ? supportMessageLoadSeqRef.current
+      : supportMessageLoadSeqRef.current + 1;
+    if (!isLoadingOlder) {
+      supportMessageLoadSeqRef.current = requestSeq;
+    }
+    if (!silent && !isLoadingOlder) {
       setLoadingStates((prev) => ({
         ...prev,
         fetchSupportThread: normalizedConversationId,
       }));
     }
+    if (isLoadingOlder) {
+      setSupportPagination((prev) => ({ ...prev, loadingOlder: true }));
+      queueSupportScrollPreserve();
+    }
     try {
       const response = await axios.get(
         `/api/store-support/conversations/${normalizedConversationId}/messages`,
         {
-          params: { limit: 50 },
+          params: {
+            limit: DEFAULT_SUPPORT_PAGE_SIZE,
+            ...(normalizedCursor ? { cursor: normalizedCursor } : {}),
+          },
           skipGlobalLoading: silent,
         },
       );
@@ -3127,21 +3246,42 @@ function App() {
       if (requestSeq < supportMessageAppliedSeqRef.current) {
         return response?.data || null;
       }
-      supportMessageAppliedSeqRef.current = requestSeq;
-      setSupportMessages((prev) =>
-        mergeSupportMessageCollection(
-          Array.isArray(prev)
-            ? prev.filter(
-                (item) =>
-                  String(item?.conversationId || "").trim() ===
-                  normalizedConversationId,
-              )
-            : [],
-          Array.isArray(response?.data?.messages) ? response.data.messages : [],
-        ),
-      );
+      if (!isLoadingOlder) {
+        supportMessageAppliedSeqRef.current = requestSeq;
+      }
+      const incomingMessages = Array.isArray(response?.data?.messages)
+        ? response.data.messages
+        : [];
+      const nextPagination = response?.data?.pagination || {};
+      setSupportPagination((prev) => ({
+        ...prev,
+        nextCursor: String(nextPagination?.nextCursor || "").trim(),
+        hasMore: !!nextPagination?.hasMore,
+        retainedAfter: String(nextPagination?.retainedAfter || "").trim(),
+        retentionDays:
+          Number(nextPagination?.retentionDays || 0) ||
+          prev.retentionDays ||
+          DEFAULT_SUPPORT_RETENTION_DAYS,
+        loadingOlder: false,
+      }));
+      setSupportMessages((prev) => {
+        const scopedPrev = Array.isArray(prev)
+          ? prev.filter(
+              (item) =>
+                String(item?.conversationId || "").trim() ===
+                normalizedConversationId,
+            )
+          : [];
+        if (reset && !isLoadingOlder) {
+          return mergeSupportMessageCollection([], incomingMessages);
+        }
+        return mergeSupportMessageCollection(scopedPrev, incomingMessages);
+      });
       return response?.data || null;
     } catch (error) {
+      if (isLoadingOlder) {
+        setSupportPagination((prev) => ({ ...prev, loadingOlder: false }));
+      }
       if (!silent) {
         showAlert(
           "Lỗi",
@@ -3151,10 +3291,26 @@ function App() {
       }
       return null;
     } finally {
-      if (!silent) {
+      if (!silent && !isLoadingOlder) {
         setLoadingStates((prev) => ({ ...prev, fetchSupportThread: "" }));
       }
     }
+  };
+
+  const handleLoadOlderSupportMessages = async () => {
+    if (
+      !selectedSupportConversationId ||
+      supportPagination.loadingOlder ||
+      !supportPagination.hasMore ||
+      !supportPagination.nextCursor
+    ) {
+      return;
+    }
+    await loadSupportConversationMessages(selectedSupportConversationId, {
+      silent: true,
+      cursor: supportPagination.nextCursor,
+      append: true,
+    });
   };
 
   const handleSelectSupportConversation = async (conversationId) => {
@@ -3162,9 +3318,11 @@ function App() {
     selectedSupportConversationIdRef.current = normalizedConversationId;
     supportMessageLoadSeqRef.current = 0;
     supportMessageAppliedSeqRef.current = 0;
+    setSupportPagination(buildDefaultSupportPaginationState());
     setSelectedSupportConversationId(normalizedConversationId);
     setSupportReplyDraft("");
     setSupportMessages([]);
+    queueSupportScrollToBottom();
     await loadSupportConversationMessages(normalizedConversationId);
   };
 
@@ -3182,6 +3340,7 @@ function App() {
       );
       const freshMessage = response?.data?.message || null;
       const freshConversation = response?.data?.conversation || null;
+      queueSupportScrollToBottom();
       setSupportMessages((prev) =>
         freshMessage ? mergeSupportMessageItem(prev, freshMessage) : prev,
       );
@@ -3255,6 +3414,7 @@ function App() {
     if (stillExists) return;
     setSelectedSupportConversationId("");
     setSupportMessages([]);
+    setSupportPagination(buildDefaultSupportPaginationState());
     setSupportReplyDraft("");
   }, [selectedSupportConversationId, supportConversations]);
 
@@ -5647,6 +5807,12 @@ function App() {
     : [];
   const recentSelectedSupportConversationOrders =
     selectedSupportConversationOrders.slice(0, 3);
+  const supportRetentionDays = Math.max(
+    1,
+    Number(supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS),
+  );
+  const supportRetainedAfterLabel =
+    formatDateTime(supportPagination?.retainedAfter) || "";
   const getStoreOrderIdentityForAccountUser = (acc = {}, user = null) => {
     const accountId = String(acc?.id || "").trim();
     if (!accountId || !user) return null;
@@ -7474,218 +7640,311 @@ function App() {
                       </div>
                     </div>
 
-                    <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1.35fr),minmax(320px,0.65fr)]">
-                      <div className="rounded-[24px] border border-slate-700/80 bg-slate-950/55 p-4">
-                        <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                          Thông tin hội thoại
-                        </div>
-                        <div className="mt-3 grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
-                          <div className="rounded-2xl bg-slate-900/85 px-3 py-3">
-                            <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
-                              Email
+                    <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr),320px]">
+                      <div className="flex min-h-[680px] flex-col overflow-hidden rounded-[26px] border border-slate-700/70 bg-slate-950/55">
+                        <div className="border-b border-slate-800/80 px-4 py-4 md:px-5">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-300">
+                                Khung chat trực tiếp
+                              </div>
+                              <p className="mt-1 text-sm text-slate-400">
+                                Chỉ tải đoạn chat gần nhất trước. Cuộn lên hoặc bấm nút phía trên để xem thêm tin cũ.
+                              </p>
                             </div>
-                            <div className="mt-1 break-all font-semibold text-white">
-                              {selectedSupportConversation?.userEmail || "Chưa có"}
-                            </div>
-                          </div>
-                          <div className="rounded-2xl bg-slate-900/85 px-3 py-3">
-                            <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
-                              Số điện thoại
-                            </div>
-                            <div className="mt-1 font-semibold text-white">
-                              {selectedSupportConversation?.userPhone || "Chưa có"}
-                            </div>
-                          </div>
-                          <div className="rounded-2xl bg-slate-900/85 px-3 py-3 sm:col-span-2">
-                            <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
-                              Nội dung gần nhất
-                            </div>
-                            <div className="mt-1 text-slate-200">
-                              {selectedSupportConversation?.lastMessagePreview ||
-                                "Chưa có tin nhắn"}
+                            <div className="flex flex-wrap gap-2 text-xs">
+                              <span className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-slate-300">
+                                {supportMessages.length} tin đang hiển thị
+                              </span>
+                              <span className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1.5 text-slate-300">
+                                Lưu {supportRetentionDays} ngày
+                              </span>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
-                        <div className="rounded-[24px] border border-slate-700/80 bg-slate-950/55 px-4 py-4">
-                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">
-                            Số tin nhắn
-                          </div>
-                          <div className="mt-2 text-2xl font-black text-white">
-                            {supportMessages.length}
-                          </div>
-                        </div>
-                        <div className="rounded-[24px] border border-amber-400/20 bg-amber-500/10 px-4 py-4">
-                          <div className="text-[11px] uppercase tracking-[0.16em] text-amber-200/80">
-                            Chưa đọc
-                          </div>
-                          <div className="mt-2 text-2xl font-black text-amber-100">
-                            {Math.max(
-                              0,
-                              Number(selectedSupportConversation?.adminUnreadCount || 0),
+                        <div
+                          ref={supportMessagesViewportRef}
+                          onScroll={(event) => {
+                            if (event.currentTarget.scrollTop > 56) return;
+                            if (
+                              supportPagination.loadingOlder ||
+                              !supportPagination.hasMore ||
+                              !supportPagination.nextCursor
+                            ) {
+                              return;
+                            }
+                            handleLoadOlderSupportMessages().catch(() => {});
+                          }}
+                          className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] px-4 py-4 md:px-5"
+                        >
+                          <div className="mx-auto flex max-w-4xl flex-col gap-4">
+                            {supportPagination.hasMore ? (
+                              <div className="flex justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleLoadOlderSupportMessages()}
+                                  disabled={supportPagination.loadingOlder}
+                                  className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-4 py-2 text-xs font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:opacity-60"
+                                >
+                                  {supportPagination.loadingOlder ? (
+                                    <Loader2 size={14} className="animate-spin" />
+                                  ) : (
+                                    <ChevronUp size={14} />
+                                  )}
+                                  {supportPagination.loadingOlder
+                                    ? "Đang tải tin cũ..."
+                                    : "Xem tin nhắn cũ hơn"}
+                                </button>
+                              </div>
+                            ) : null}
+
+                            {supportRetainedAfterLabel ? (
+                              <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-xs leading-6 text-amber-100">
+                                Tin nhắn trong khung này chỉ lưu tối đa {supportRetentionDays} ngày.
+                                {` `}Những tin cũ hơn mốc {supportRetainedAfterLabel} sẽ tự dọn để chat nhẹ và dễ quản lý hơn.
+                              </div>
+                            ) : null}
+
+                            {loadingStates.fetchSupportThread === selectedSupportConversation.id &&
+                            supportMessages.length === 0 ? (
+                              <div className="flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-4 text-sm text-slate-400">
+                                <Loader2 size={16} className="animate-spin" />
+                                Đang tải tin nhắn...
+                              </div>
+                            ) : supportMessages.length === 0 ? (
+                              <div className="rounded-[24px] border border-dashed border-slate-700 bg-slate-950/60 px-4 py-12 text-center text-slate-400">
+                                Hội thoại này chưa có tin nhắn nào.
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {supportMessages.map((messageItem, index) => {
+                                  const previousMessage = supportMessages[index - 1] || null;
+                                  const fromUser =
+                                    String(messageItem?.senderRole || "").trim() === "user";
+                                  const shouldRenderDayDivider =
+                                    !previousMessage ||
+                                    !isSameSupportDay(
+                                      previousMessage?.createdAt,
+                                      messageItem?.createdAt,
+                                    );
+                                  return (
+                                    <div key={messageItem.id}>
+                                      {shouldRenderDayDivider ? (
+                                        <div className="mb-3 flex justify-center">
+                                          <div className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                            {formatSupportDayLabel(messageItem.createdAt)}
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                      <div
+                                        className={`flex ${
+                                          fromUser ? "justify-start" : "justify-end"
+                                        }`}
+                                      >
+                                        <div className="max-w-[94%] sm:max-w-[82%]">
+                                          <div
+                                            className={`rounded-[26px] px-4 py-3.5 shadow-[0_16px_30px_rgba(2,6,23,0.18)] ${
+                                              fromUser
+                                                ? "border border-slate-700/90 bg-slate-950/95 text-slate-100"
+                                                : "bg-[linear-gradient(135deg,#0284c7,#38bdf8)] text-white"
+                                            }`}
+                                          >
+                                            <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em]">
+                                              <span
+                                                className={
+                                                  fromUser
+                                                    ? "text-slate-400"
+                                                    : "text-sky-50/90"
+                                                }
+                                              >
+                                                {fromUser ? "User" : "Admin"}
+                                              </span>
+                                              <span
+                                                className={
+                                                  fromUser
+                                                    ? "text-slate-600"
+                                                    : "text-sky-100/80"
+                                                }
+                                              >
+                                                •
+                                              </span>
+                                              <span
+                                                className={
+                                                  fromUser
+                                                    ? "text-slate-400"
+                                                    : "text-sky-50/90"
+                                                }
+                                              >
+                                                {formatSupportMessageTime(
+                                                  messageItem.createdAt,
+                                                )}
+                                              </span>
+                                            </div>
+                                            <div className="whitespace-pre-wrap break-words text-sm leading-7">
+                                              {messageItem.body}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
                         </div>
-                        <div className="rounded-[24px] border border-emerald-400/20 bg-emerald-500/10 px-4 py-4">
-                          <div className="text-[11px] uppercase tracking-[0.16em] text-emerald-200/80">
-                            Đơn web
-                          </div>
-                          <div className="mt-2 text-2xl font-black text-emerald-100">
-                            {selectedSupportConversationOrders.length}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
 
-                    {recentSelectedSupportConversationOrders.length > 0 ? (
-                      <div className="mt-4 rounded-[24px] border border-slate-700/80 bg-slate-950/55 p-4">
-                        <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
-                          Đơn web gần đây của user
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {recentSelectedSupportConversationOrders.map((order) => (
-                            <div
-                              key={order.id}
-                              className="rounded-2xl border border-slate-700/70 bg-slate-900/90 px-3 py-2 text-sm text-slate-200"
-                            >
-                              <div className="font-bold text-white">
-                                {order.packageName || order.packageCode || "Đơn web"}
+                        <form
+                          onSubmit={handleSendSupportReply}
+                          className="border-t border-slate-800/80 bg-slate-950/75 p-4 md:p-5"
+                        >
+                          <div className="rounded-[28px] border border-slate-700/80 bg-slate-950/90 p-3">
+                            <textarea
+                              rows={3}
+                              value={supportReplyDraft}
+                              onChange={(e) => setSupportReplyDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (
+                                  (e.ctrlKey || e.metaKey) &&
+                                  e.key === "Enter" &&
+                                  supportReplyDraft.trim() &&
+                                  !loadingStates.sendSupportMessage
+                                ) {
+                                  e.preventDefault();
+                                  e.currentTarget.form?.requestSubmit();
+                                }
+                              }}
+                              placeholder="Nhập câu trả lời ngắn gọn, rõ ràng cho user..."
+                              className="min-h-[104px] w-full resize-y bg-transparent px-3 py-2 text-white outline-none placeholder:text-slate-500"
+                            />
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
+                                  Hiện ngay trên web user
+                                </span>
+                                <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
+                                  Ctrl + Enter để gửi
+                                </span>
+                                <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
+                                  {supportReplyDraft.trim().length} ký tự
+                                </span>
                               </div>
-                              <div className="mt-1 text-[11px] text-slate-400">
-                                {getStoreOrderStatusLabel(order?.status)} ·{" "}
-                                {formatDateTime(order?.createdAt) || "--"}
+                              <button
+                                type="submit"
+                                disabled={loadingStates.sendSupportMessage || !supportReplyDraft.trim()}
+                                className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-5 py-3 text-sm font-black text-white shadow-[0_16px_30px_rgba(2,132,199,0.22)] transition-all hover:translate-y-[-1px] hover:shadow-[0_20px_40px_rgba(2,132,199,0.26)] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {loadingStates.sendSupportMessage ? (
+                                  <>
+                                    <Loader2 size={15} className="animate-spin" />
+                                    Đang gửi
+                                  </>
+                                ) : (
+                                  <>
+                                    <SendHorizontal size={15} />
+                                    Gửi trả lời
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="rounded-[24px] border border-slate-700/80 bg-slate-950/55 p-4">
+                          <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Thông tin user
+                          </div>
+                          <div className="mt-3 space-y-3 text-sm text-slate-300">
+                            <div className="rounded-2xl bg-slate-900/85 px-3 py-3">
+                              <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                                Email
+                              </div>
+                              <div className="mt-1 break-all font-semibold text-white">
+                                {selectedSupportConversation?.userEmail || "Chưa có"}
                               </div>
                             </div>
-                          ))}
+                            <div className="rounded-2xl bg-slate-900/85 px-3 py-3">
+                              <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                                Số điện thoại
+                              </div>
+                              <div className="mt-1 font-semibold text-white">
+                                {selectedSupportConversation?.userPhone || "Chưa có"}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl bg-slate-900/85 px-3 py-3">
+                              <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                                Nội dung gần nhất
+                              </div>
+                              <div className="mt-1 text-slate-200">
+                                {selectedSupportConversation?.lastMessagePreview ||
+                                  "Chưa có tin nhắn"}
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ) : null}
-                  </div>
 
-                  <div className="flex min-h-[640px] flex-col">
-                    <div className="flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] p-4 md:p-5">
-                      {loadingStates.fetchSupportThread === selectedSupportConversation.id &&
-                      supportMessages.length === 0 ? (
-                        <div className="flex items-center gap-2 text-sm text-slate-400">
-                          <Loader2 size={16} className="animate-spin" />
-                          Đang tải tin nhắn...
+                        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                          <div className="rounded-[24px] border border-slate-700/80 bg-slate-950/55 px-4 py-4">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">
+                              Tin hiển thị
+                            </div>
+                            <div className="mt-2 text-2xl font-black text-white">
+                              {supportMessages.length}
+                            </div>
+                          </div>
+                          <div className="rounded-[24px] border border-amber-400/20 bg-amber-500/10 px-4 py-4">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-amber-200/80">
+                              Chưa đọc
+                            </div>
+                            <div className="mt-2 text-2xl font-black text-amber-100">
+                              {Math.max(
+                                0,
+                                Number(selectedSupportConversation?.adminUnreadCount || 0),
+                              )}
+                            </div>
+                          </div>
+                          <div className="rounded-[24px] border border-emerald-400/20 bg-emerald-500/10 px-4 py-4">
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-emerald-200/80">
+                              Đơn web
+                            </div>
+                            <div className="mt-2 text-2xl font-black text-emerald-100">
+                              {selectedSupportConversationOrders.length}
+                            </div>
+                          </div>
                         </div>
-                      ) : supportMessages.length === 0 ? (
-                        <div className="rounded-[24px] border border-dashed border-slate-700 bg-slate-950/60 px-4 py-12 text-center text-slate-400">
-                          Hội thoại này chưa có tin nhắn nào.
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {supportMessages.map((messageItem) => {
-                            const fromUser =
-                              String(messageItem?.senderRole || "").trim() === "user";
-                            return (
-                              <div
-                                key={messageItem.id}
-                                className={`flex ${
-                                  fromUser ? "justify-start" : "justify-end"
-                                }`}
-                              >
-                                <div className="max-w-[92%] sm:max-w-[80%]">
-                                  <div
-                                    className={`rounded-[28px] px-4 py-3.5 shadow-[0_16px_30px_rgba(2,6,23,0.18)] ${
-                                      fromUser
-                                        ? "border border-slate-700/90 bg-slate-950/90 text-slate-100"
-                                        : "bg-[linear-gradient(135deg,#0284c7,#38bdf8)] text-white"
-                                    }`}
-                                  >
-                                    <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em]">
-                                      <span
-                                        className={
-                                          fromUser ? "text-slate-400" : "text-sky-50/90"
-                                        }
-                                      >
-                                        {fromUser ? "User" : "Admin"}
-                                      </span>
-                                      <span
-                                        className={
-                                          fromUser ? "text-slate-600" : "text-sky-100/80"
-                                        }
-                                      >
-                                        •
-                                      </span>
-                                      <span
-                                        className={
-                                          fromUser ? "text-slate-400" : "text-sky-50/90"
-                                        }
-                                      >
-                                        {formatDateTime(messageItem.createdAt)}
-                                      </span>
-                                    </div>
-                                    <div className="whitespace-pre-wrap break-words text-sm leading-7">
-                                      {messageItem.body}
-                                    </div>
+
+                        <div className="rounded-[24px] border border-slate-700/80 bg-slate-950/55 p-4">
+                          <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Đơn web gần đây
+                          </div>
+                          {recentSelectedSupportConversationOrders.length === 0 ? (
+                            <div className="mt-3 rounded-2xl border border-dashed border-slate-700 px-4 py-6 text-sm text-slate-400">
+                              User này chưa có đơn web gần đây.
+                            </div>
+                          ) : (
+                            <div className="mt-3 space-y-2">
+                              {recentSelectedSupportConversationOrders.map((order) => (
+                                <div
+                                  key={order.id}
+                                  className="rounded-2xl border border-slate-700/70 bg-slate-900/90 px-3 py-3 text-sm text-slate-200"
+                                >
+                                  <div className="font-bold text-white">
+                                    {order.packageName || order.packageCode || "Đơn web"}
+                                  </div>
+                                  <div className="mt-1 text-[11px] text-slate-400">
+                                    {getStoreOrderStatusLabel(order?.status)} ·{" "}
+                                    {formatDateTime(order?.createdAt) || "--"}
                                   </div>
                                 </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    <form
-                      onSubmit={handleSendSupportReply}
-                      className="border-t border-slate-800/80 bg-slate-950/55 p-4 md:p-5"
-                    >
-                      <div className="rounded-[28px] border border-slate-700/80 bg-slate-950/80 p-3">
-                        <textarea
-                          rows={4}
-                          value={supportReplyDraft}
-                          onChange={(e) => setSupportReplyDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (
-                              (e.ctrlKey || e.metaKey) &&
-                              e.key === "Enter" &&
-                              supportReplyDraft.trim() &&
-                              !loadingStates.sendSupportMessage
-                            ) {
-                              e.preventDefault();
-                              e.currentTarget.form?.requestSubmit();
-                            }
-                          }}
-                          placeholder="Nhập nội dung trả lời cho user..."
-                          className="min-h-[120px] w-full resize-y bg-transparent px-3 py-2 text-white outline-none placeholder:text-slate-500"
-                        />
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                            <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
-                              Hiện ngay trên web user
-                            </span>
-                            <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
-                              Ctrl + Enter để gửi nhanh
-                            </span>
-                            <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1">
-                              {supportReplyDraft.trim().length} ký tự
-                            </span>
-                          </div>
-                          <button
-                            type="submit"
-                            disabled={loadingStates.sendSupportMessage || !supportReplyDraft.trim()}
-                            className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-5 py-3 text-sm font-black text-white shadow-[0_16px_30px_rgba(2,132,199,0.22)] transition-all hover:translate-y-[-1px] hover:shadow-[0_20px_40px_rgba(2,132,199,0.26)] disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {loadingStates.sendSupportMessage ? (
-                              <>
-                                <Loader2 size={15} className="animate-spin" />
-                                Đang gửi
-                              </>
-                            ) : (
-                              <>
-                                <SendHorizontal size={15} />
-                                Gửi trả lời
-                              </>
-                            )}
-                          </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </form>
+                    </div>
                   </div>
                 </>
               )}
