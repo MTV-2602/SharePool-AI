@@ -1415,6 +1415,9 @@ function App() {
   const hasInitializedDatammoOrdersRef = useRef(false);
   const hasInitializedStoreOrdersRef = useRef(false);
   const apiRequestsRef = useRef(new Map());
+  const selectedSupportConversationIdRef = useRef("");
+  const supportMessageLoadSeqRef = useRef(0);
+  const supportMessageAppliedSeqRef = useRef(0);
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1801,6 +1804,17 @@ function App() {
     isAuthenticated,
     selectedSupportConversationId,
   ]);
+
+  useEffect(() => {
+    const normalizedConversationId = String(
+      selectedSupportConversationId || "",
+    ).trim();
+    selectedSupportConversationIdRef.current = normalizedConversationId;
+    if (!normalizedConversationId) {
+      supportMessageLoadSeqRef.current = 0;
+      supportMessageAppliedSeqRef.current = 0;
+    }
+  }, [selectedSupportConversationId]);
 
   useEffect(() => {
     const validIds = new Set(accounts.map((acc) => acc.id));
@@ -2219,6 +2233,15 @@ function App() {
       const bTime = new Date(b?.createdAt || 0).getTime();
       return aTime - bTime;
     });
+  };
+
+  const mergeSupportMessageCollection = (items = [], messages = []) => {
+    const safeItems = Array.isArray(items) ? items : [];
+    const safeMessages = Array.isArray(messages) ? messages : [];
+    return safeMessages.reduce(
+      (nextItems, message) => mergeSupportMessageItem(nextItems, message),
+      [...safeItems],
+    );
   };
 
   const formatMoney = (value) => {
@@ -3054,9 +3077,14 @@ function App() {
   ) => {
     const normalizedConversationId = String(conversationId || "").trim();
     if (!normalizedConversationId) {
+      selectedSupportConversationIdRef.current = "";
+      supportMessageLoadSeqRef.current = 0;
+      supportMessageAppliedSeqRef.current = 0;
       setSupportMessages([]);
       return null;
     }
+    const requestSeq = supportMessageLoadSeqRef.current + 1;
+    supportMessageLoadSeqRef.current = requestSeq;
     if (!silent) {
       setLoadingStates((prev) => ({
         ...prev,
@@ -3087,8 +3115,30 @@ function App() {
             }),
         );
       }
-      setSupportMessages(
-        Array.isArray(response?.data?.messages) ? response.data.messages : [],
+      const activeConversationId = String(
+        selectedSupportConversationIdRef.current || "",
+      ).trim();
+      if (
+        activeConversationId &&
+        activeConversationId !== normalizedConversationId
+      ) {
+        return response?.data || null;
+      }
+      if (requestSeq < supportMessageAppliedSeqRef.current) {
+        return response?.data || null;
+      }
+      supportMessageAppliedSeqRef.current = requestSeq;
+      setSupportMessages((prev) =>
+        mergeSupportMessageCollection(
+          Array.isArray(prev)
+            ? prev.filter(
+                (item) =>
+                  String(item?.conversationId || "").trim() ===
+                  normalizedConversationId,
+              )
+            : [],
+          Array.isArray(response?.data?.messages) ? response.data.messages : [],
+        ),
       );
       return response?.data || null;
     } catch (error) {
@@ -3109,8 +3159,12 @@ function App() {
 
   const handleSelectSupportConversation = async (conversationId) => {
     const normalizedConversationId = String(conversationId || "").trim();
+    selectedSupportConversationIdRef.current = normalizedConversationId;
+    supportMessageLoadSeqRef.current = 0;
+    supportMessageAppliedSeqRef.current = 0;
     setSelectedSupportConversationId(normalizedConversationId);
     setSupportReplyDraft("");
+    setSupportMessages([]);
     await loadSupportConversationMessages(normalizedConversationId);
   };
 

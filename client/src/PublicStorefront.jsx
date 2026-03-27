@@ -201,6 +201,14 @@ const mergeRealtimeSupportMessages = (items = [], incoming = null) => {
     return aTime - bTime;
   });
 };
+const mergeRealtimeSupportMessageBatch = (items = [], incomingItems = []) => {
+  const safeItems = Array.isArray(items) ? items : [];
+  const safeIncomingItems = Array.isArray(incomingItems) ? incomingItems : [];
+  return safeIncomingItems.reduce(
+    (nextItems, item) => mergeRealtimeSupportMessages(nextItems, item),
+    [...safeItems],
+  );
+};
 const getVoucherTypeLabel = (type, value) =>
   String(type || "").trim().toLowerCase() === "fixed"
     ? `${formatMoney(value)}`
@@ -339,6 +347,8 @@ function PublicStorefront() {
   const purchaseLockRef = useRef(false);
   const storeOrdersSyncRef = useRef(false);
   const supportThreadSyncRef = useRef(false);
+  const supportThreadLoadSeqRef = useRef(0);
+  const supportThreadAppliedSeqRef = useRef(0);
 
   const refreshRouteState = () => setRouteState(readStoreRoute());
 
@@ -464,10 +474,14 @@ function PublicStorefront() {
     silent = false,
   } = {}) => {
     if (!token || !user) {
+      supportThreadLoadSeqRef.current = 0;
+      supportThreadAppliedSeqRef.current = 0;
       setSupportConversation(null);
       setSupportMessages([]);
       return null;
     }
+    const requestSeq = supportThreadLoadSeqRef.current + 1;
+    supportThreadLoadSeqRef.current = requestSeq;
     try {
       if (!silent) setSupportLoading(true);
       const data = await apiRequest(
@@ -476,8 +490,21 @@ function PublicStorefront() {
           token,
         },
       );
-      setSupportConversation(data?.conversation || null);
-      setSupportMessages(Array.isArray(data?.messages) ? data.messages : []);
+      const nextConversation =
+        data?.conversation && typeof data.conversation === "object"
+          ? data.conversation
+          : null;
+      const nextMessages = Array.isArray(data?.messages) ? data.messages : [];
+      if (requestSeq < supportThreadAppliedSeqRef.current) {
+        return data;
+      }
+      supportThreadAppliedSeqRef.current = requestSeq;
+      setSupportConversation((prev) =>
+        mergeRealtimeSupportConversation(prev, nextConversation),
+      );
+      setSupportMessages((prev) =>
+        mergeRealtimeSupportMessageBatch(prev, nextMessages),
+      );
       return data;
     } catch (supportError) {
       if (!silent) {
@@ -856,6 +883,8 @@ function PublicStorefront() {
 
   useEffect(() => {
     if (user) return;
+    supportThreadLoadSeqRef.current = 0;
+    supportThreadAppliedSeqRef.current = 0;
     setSupportOpen(false);
     setSupportConversation(null);
     setSupportMessages([]);
