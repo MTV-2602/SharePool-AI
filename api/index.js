@@ -10066,6 +10066,17 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
           "Team ngoai kho tong khong duoc doi qua Slot/Business. Hay dua ve kho tong truoc.",
       });
     }
+    if (
+      updatePayload.saleMode !== undefined &&
+      normalizeTeamSaleMode(updatePayload.saleMode) !==
+        normalizeTeamSaleMode(existing.saleMode) &&
+      countActiveTeamCustomers(existing.slots) > 0
+    ) {
+      return res.status(400).json({
+        error:
+          "Team dang co khach. Vui long xoa hoac chuyen het khach truoc khi doi giua Business va Slot.",
+      });
+    }
 
     const updated = await TeamAccount.findOneAndUpdate(
       buildConditionalUpdateFilter(req.params.id, expectedUpdatedAt),

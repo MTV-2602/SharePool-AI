@@ -3927,6 +3927,15 @@ function App() {
 
   // TEAM MOVE SLOT LOGIC
   const openMoveSlotModal = (accId, slIndex, sData) => {
+    const sourceAcc = teamAccounts.find((acc) => acc.id === accId);
+    if (normalizeTeamSaleMode(sourceAcc?.saleMode) !== "slot") {
+      showAlert(
+        "Khong hop le",
+        "Khach Business khong duoc chuyen bang chuc nang Chuyen Slot.",
+        "warning",
+      );
+      return;
+    }
     setMovingSlot({ fromAccId: accId, slotIndex: slIndex, ...sData });
     setDestinationAccId("");
     setMoveSlotDestinationSearch("");
@@ -3941,6 +3950,9 @@ function App() {
     try {
       const fromTeam = teamAccounts.find((acc) => acc.id === movingSlot.fromAccId);
       const toTeam = teamAccounts.find((acc) => acc.id === destinationAccId);
+      if (normalizeTeamSaleMode(fromTeam?.saleMode) !== "slot") {
+        throw new Error("Khach Business khong duoc chuyen bang chuc nang Chuyen Slot.");
+      }
       await axios.post(
         "/api/team-move-slot",
         buildMoveExpectedPayload(
@@ -4485,10 +4497,19 @@ function App() {
     const targetMode = normalizeTeamSaleMode(nextMode);
     const currentMode = normalizeTeamSaleMode(acc?.saleMode);
     if (!acc?.id || targetMode === currentMode) return;
+    const activeCustomers = getActiveTeamCustomers(acc);
     if (!isTeamTotalWarehouse(acc)) {
       showAlert(
         "Khong the doi loai",
         "Team ngoai kho tong khong duoc doi qua Slot/Business o day.",
+        "warning",
+      );
+      return;
+    }
+    if (activeCustomers.length > 0) {
+      showAlert(
+        "Khong the doi loai",
+        "Team dang co khach, khong duoc doi giua Business va Slot.",
         "warning",
       );
       return;
@@ -12488,14 +12509,14 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                 {teamSections.map((section) => (
                   <div
                     key={section.key}
-                    className={`rounded-2xl border p-4 sm:p-5 space-y-4 shadow-lg ${section.panelClass}`}
+                    className={`rounded-xl border p-3 sm:p-4 space-y-3 shadow-md ${section.panelClass}`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <h3 className="text-base sm:text-lg font-bold text-white">{section.title}</h3>
                         <p className="text-xs text-slate-400">{section.subtitle}</p>
                       </div>
-                      <span className={`px-3 py-1 rounded-full border text-xs font-bold ${section.badgeClass}`}>
+                      <span className={`px-2.5 py-1 rounded-full border text-[11px] font-bold ${section.badgeClass}`}>
                         {section.accounts.length} acc
                       </span>
                     </div>
@@ -12505,7 +12526,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         Chưa có tài khoản trong bảng này.
                       </div>
                     ) : (
-                      <div className="space-y-6">
+                      <div className="space-y-4">
                         {section.accounts.map((acc) => {
                 const expDays = acc.expiredAt ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000) : null;
                 const isExpired = expDays !== null && expDays <= 0;
@@ -12613,9 +12634,9 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                       )
                     : "Datammo + Shopmini";
                 return (
-                  <div id={`team-account-row-${acc.id}`} key={acc.id} className={`rounded-2xl border shadow-xl overflow-hidden ${String(highlightedTeamAccountId || "") === String(acc.id || "") ? "ring-1 ring-cyan-500/50 bg-cyan-900/10" : ""} ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}>
+                  <div id={`team-account-row-${acc.id}`} key={acc.id} className={`rounded-xl border shadow-lg overflow-hidden ${String(highlightedTeamAccountId || "") === String(acc.id || "") ? "ring-1 ring-cyan-500/50 bg-cyan-900/10" : ""} ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}>
                     {/* Account header */}
-                    <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3 bg-indigo-900/40 border-b border-slate-700">
+                    <div className="px-3 py-3 sm:px-4 flex flex-wrap items-start justify-between gap-3 bg-indigo-900/40 border-b border-slate-700">
                       <div className="flex items-start gap-3">
                         <input
                           type="checkbox"
@@ -12624,31 +12645,31 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                           className="mt-1 w-4 h-4 accent-emerald-500 cursor-pointer shrink-0"
                           title="Chon Team"
                         />
-                        <div>
-                          <div className="flex items-center gap-2 font-bold text-white text-sm">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 font-bold text-white text-sm">
                           <span className="text-indigo-300">🏢</span>
-                          <span className="font-mono text-xl">{acc.username}</span>
-                          <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors ml-2" onClick={() => handleCopy(acc.username, "Đã copy Tên Team")} title="Copy Username"><Copy size={14} /> Copy</button>
+                          <span className="font-mono text-base sm:text-lg break-all">{acc.username}</span>
+                          <button className="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white text-[11px] font-bold flex items-center gap-1 transition-colors" onClick={() => handleCopy(acc.username, "Đã copy Tên Team")} title="Copy Username"><Copy size={12} /> Copy</button>
                           <span className={`px-2 py-1 rounded-full text-[10px] font-bold border ${isBusinessMode ? "bg-cyan-900/35 text-cyan-300 border-cyan-700/60" : "bg-teal-900/35 text-teal-300 border-teal-700/60"}`}>
                             {isBusinessMode ? "Bảng Business" : "Bảng Slot"}
                           </span>
                         </div>
-                        <div className="text-xs text-slate-300 mt-3 flex flex-col gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="w-20 text-slate-400">Pass GPT:</span>
-                            <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[120px]">{acc.password}</span>
-                            <button className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors" onClick={() => handleCopy(acc.password, "Đã copy Pass GPT")} title="Copy Pass GPT">
-                              <Copy size={14} /> Copy
+                        <div className="text-[11px] text-slate-300 mt-2 flex flex-col gap-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="w-14 text-slate-400">Pass:</span>
+                            <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-white min-w-[100px] break-all">{acc.password}</span>
+                            <button className="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white text-[11px] font-bold flex items-center gap-1 transition-colors" onClick={() => handleCopy(acc.password, "Đã copy Pass GPT")} title="Copy Pass GPT">
+                              <Copy size={12} /> Copy
                             </button>
                           </div>
                           {acc.otpSecret && (
-                            <div className="flex items-start gap-2 mt-1">
-                              <span className="w-20 text-slate-400 pt-1">2FA:</span>
-                              <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-cyan-200 min-w-[120px] break-all">
+                            <div className="flex flex-wrap items-start gap-2">
+                              <span className="w-14 text-slate-400 pt-1">2FA:</span>
+                              <span className="font-mono font-bold bg-slate-800 px-2 py-1 rounded text-cyan-200 min-w-[100px] break-all">
                                 {acc.otpSecret}
                               </span>
                               <button
-                                className="bg-slate-700 hover:bg-slate-600 px-2.5 py-1 rounded text-white text-xs font-bold flex items-center gap-1 transition-colors"
+                                className="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-white text-[11px] font-bold flex items-center gap-1 transition-colors"
                                 onClick={() =>
                                   handleCopy(
                                     buildChatgpt2faCopyText(acc.otpSecret),
@@ -12657,16 +12678,16 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                 }
                                 title="Copy 2FA Secret"
                               >
-                                <Copy size={14} /> Copy
+                                <Copy size={12} /> Copy
                               </button>
                               <a
                                 href={buildChatgpt2faLiveUrl(acc.otpSecret)}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="bg-cyan-700 hover:bg-cyan-600 px-2.5 py-1 rounded text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                                className="bg-cyan-700 hover:bg-cyan-600 px-2 py-1 rounded text-white text-[11px] font-bold inline-flex items-center gap-1 transition-colors"
                                 title="Mở 2fa.live"
                               >
-                                <ExternalLink size={14} /> 2fa.live
+                                <ExternalLink size={12} /> 2fa.live
                               </a>
                             </div>
                           )}
@@ -12685,7 +12706,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         {acc.note && <div className="text-xs text-yellow-500/80 mt-3 italic bg-yellow-900/10 p-2 rounded inline-block">📝 {acc.note}</div>}
                       </div>
                       </div>
-                      <div className="flex flex-col items-end justify-between gap-1 shrink-0 h-full min-h-[140px] w-full sm:w-auto">
+                      <div className="flex flex-col items-end justify-between gap-1 shrink-0 w-full lg:w-auto">
                         <div className="flex flex-col items-end gap-1 w-full">
                           <div className={`text-xs font-bold ${isExpired ? "text-red-400" : isNear ? "text-yellow-400" : "text-green-400"}`}>
                             {isExpired ? `❌ Hết hạn ${Math.abs(expDays)}d trước` : expDays !== null ? `✅ Còn ${expDays} ngày` : ""}
@@ -12701,7 +12722,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                               !!loadingStates.changeTeamWarehouse?.[acc.id] ||
                               usedSlots > 0
                             }
-                            className={`w-full text-[11px] rounded px-2 py-1.5 outline-none font-semibold border text-center ${
+                            className={`w-full text-[10px] rounded px-2 py-1 outline-none font-semibold border text-center ${
                               normalizeTeamWarehouse(acc.warehouse) === "market"
                                 ? "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"
                                 : normalizeTeamWarehouse(acc.warehouse) === "short"
@@ -12812,25 +12833,31 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                   isBusinessMode ? "slot" : "business",
                                 )
                               }
-                              disabled={!!loadingStates.teamMode?.[acc.id]}
-                              className={`text-[11px] px-2 py-1 rounded border font-bold inline-flex items-center gap-1 transition-colors ${isBusinessMode ? "bg-teal-900/30 text-teal-300 border-teal-700/60 hover:bg-teal-800/40" : "bg-cyan-900/30 text-cyan-300 border-cyan-700/60 hover:bg-cyan-800/40"} ${loadingStates.teamMode?.[acc.id] ? "opacity-60 cursor-wait" : ""}`}
-                              title="Đổi nhanh loại Team"
+                              disabled={!!loadingStates.teamMode?.[acc.id] || usedSlots > 0}
+                              className={`text-[10px] px-2 py-1 rounded border font-bold inline-flex items-center gap-1 transition-colors ${isBusinessMode ? "bg-teal-900/30 text-teal-300 border-teal-700/60 hover:bg-teal-800/40" : "bg-cyan-900/30 text-cyan-300 border-cyan-700/60 hover:bg-cyan-800/40"} ${loadingStates.teamMode?.[acc.id] || usedSlots > 0 ? "opacity-60 cursor-not-allowed" : ""}`}
+                              title={
+                                usedSlots > 0
+                                  ? "Team đang có khách nên không đổi loại được"
+                                  : "Đổi nhanh loại Team"
+                              }
                             >
                               {loadingStates.teamMode?.[acc.id] ? (
                                 <>
                                   <Loader2 size={11} className="animate-spin" /> Đang đổi...
                                 </>
+                              ) : usedSlots > 0 ? (
+                                <>Đang có khách</>
                               ) : (
                                 <>↔ {isBusinessMode ? "Qua Slot team" : "Qua Business"}</>
                               )}
                             </button>
                           )}
-                          <div className="text-xs text-indigo-300 font-bold mb-1">
+                          <div className="text-[11px] text-indigo-300 font-bold mb-1">
                             {usedSlots}/{customerCapacity} {isBusinessMode ? "khách" : "slot đã cấp"}
                           </div>
                         </div>
 
-                        <div className="w-full flex flex-col gap-2 mt-auto pt-2">
+                        <div className="w-full flex flex-col gap-1.5 mt-auto pt-2">
                           {hasCapacityAvailable ? (
                             <div className="flex flex-col gap-1 my-1 w-full">
                               {isTeamTotalWarehouse(acc) ? (
@@ -12841,7 +12868,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                       Kho tong
                                     </span>
                                   </div>
-                                  <div className="flex gap-2">
+                                  <div className="flex gap-1.5">
                                     <button onClick={() => {
                                       const emptyIdx = (acc.slots || []).findIndex(s => s.status === "empty" || !s.gmail);
                                       if (emptyIdx !== -1) {
@@ -12851,8 +12878,8 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                         setSlotFormExpiredAt(addDurationToDate(new Date(), "1M").toISOString().split("T")[0]);
                                         setShowSlotModal(true);
                                       }
-                                    }} className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-2 py-1.5 rounded text-xs transition-colors shadow flex items-center justify-center gap-1 w-full" title="Gan khach thuong">
-                                      <UserPlus size={14} /> Khach
+                                    }} className="bg-emerald-600 hover:bg-emerald-500 font-bold text-white px-2 py-1.5 rounded text-[11px] transition-colors shadow flex items-center justify-center gap-1 w-full" title="Gan khach thuong">
+                                      <UserPlus size={13} /> Khach
                                     </button>
                                   </div>
                                 </div>
@@ -12875,8 +12902,8 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                           )}
                           <button onClick={() => {
                             handleCopy(buildTeamBusinessCopyText(acc), "Đã copy toàn bộ form Team");
-                          }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 w-full justify-center shadow-lg transition-transform hover:scale-105 mb-1">
-                            <Copy size={16} /> COPY CẢ CỤM
+                          }} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-[11px] font-bold flex items-center gap-1.5 w-full justify-center shadow transition-transform hover:scale-[1.01] mb-1">
+                            <Copy size={13} /> COPY CẢ CỤM
                           </button>
 
                           <div className="flex gap-2 w-full relative group">
@@ -12884,28 +12911,28 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                               <button
                                 type="button"
                                 onClick={() => openWarrantyModal(acc, "team")}
-                                className="bg-slate-700 hover:bg-cyan-600 text-slate-300 hover:text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 justify-center transition-colors"
+                                className="bg-slate-700 hover:bg-cyan-600 text-slate-300 hover:text-white px-2 py-1.5 rounded text-[11px] flex items-center gap-1 justify-center transition-colors"
                                 title="Bao hanh don san Team"
                               >
                                 <Shield size={11} />
                               </button>
                             )}
-                            <button onClick={() => { setTeamEditForm(buildTeamEditFormState({ id: acc.id, username: acc.username, password: acc.password, otpSecret: acc.otpSecret || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode), warehouse: normalizeTeamWarehouse(acc.warehouse) })); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
-                            <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-xs flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
+                            <button onClick={() => { setTeamEditForm(buildTeamEditFormState({ id: acc.id, username: acc.username, password: acc.password, otpSecret: acc.otpSecret || "", recoveryUrl: acc.recoveryUrl || "", note: acc.note || "", expiredAt: acc.expiredAt ? new Date(acc.expiredAt).toISOString().split("T")[0] : "", saleMode: normalizeTeamSaleMode(acc.saleMode), warehouse: normalizeTeamWarehouse(acc.warehouse) })); setShowTeamEditModal(true); }} className="bg-blue-700 hover:bg-blue-600 text-white px-2 py-1.5 rounded text-[11px] flex items-center gap-1 flex-1 justify-center"><Pencil size={11} /> Sửa</button>
+                            <button onClick={() => handleDeleteTeamAccount(acc.id)} className="bg-red-800 hover:bg-red-700 text-white px-2 py-1.5 rounded text-[11px] flex items-center gap-1 flex-1 justify-center"><Trash2 size={11} /> Xóa</button>
                           </div>
                         </div>
                       </div>
                     </div>
                     {/* Slots */}
                     {usedSlots > 0 ? (
-                      <div className={`p-4 grid gap-3 ${isBusinessMode ? "grid-cols-1" : "grid-cols-2 sm:grid-cols-4"}`}>
+                      <div className={`p-3 grid gap-2.5 ${isBusinessMode ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4"}`}>
                         {customerEntries.map(({ slot, si }) => {
                           const sExpDays = slot.expiredAt ? Math.ceil((new Date(slot.expiredAt) - new Date()) / 86400000) : null;
                           const sExpired = sExpDays !== null && sExpDays <= 0;
                           const sNear = sExpDays !== null && sExpDays > 0 && sExpDays <= 3;
 
                           return (
-                            <div key={si} className={`rounded-xl border p-3 flex flex-col gap-1 w-full ${sExpired ? "border-red-800 bg-red-950/30" : sNear ? "border-yellow-800 bg-yellow-950/20" : "border-indigo-700/50 bg-indigo-900/20"}`}>
+                            <div key={si} className={`rounded-xl border p-2.5 flex flex-col gap-1 w-full ${sExpired ? "border-red-800 bg-red-950/30" : sNear ? "border-yellow-800 bg-yellow-950/20" : "border-indigo-700/50 bg-indigo-900/20"}`}>
                               <>
                                 <div className="flex-1 space-y-0.5">
                                   <div className="text-[10px] uppercase tracking-wide text-slate-400 font-bold">
@@ -12936,27 +12963,29 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                     <button
                                       type="button"
                                       onClick={() => handleExtendUser(acc.id, si, slot, "team")}
-                                      className="bg-green-600 hover:bg-green-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
+                                      className="bg-green-600 hover:bg-green-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-[1.02] flex-1 flex justify-center items-center"
                                       title="Gia hạn"
                                     >
-                                      <RotateCw size={14} />
+                                      <RotateCw size={13} />
                                     </button>
                                   )}
-                                  <button
-                                    type="button"
-                                    onClick={() => openMoveSlotModal(acc.id, si, slot)}
-                                    className="bg-orange-600 hover:bg-orange-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
-                                    title={isBusinessMode ? "Chuyển khách" : "Chuyển Slot"}
-                                  >
-                                    <ArrowRightLeft size={14} />
-                                  </button>
+                                  {!isBusinessMode ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => openMoveSlotModal(acc.id, si, slot)}
+                                      className="bg-orange-600 hover:bg-orange-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-[1.02] flex-1 flex justify-center items-center"
+                                      title="Chuyển Slot"
+                                    >
+                                      <ArrowRightLeft size={13} />
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     onClick={() => { setSlotTarget({ accId: acc.id, slotIdx: si, slot }); setSlotFormGmail(slot.gmail || ""); setSlotFormName(slot.customerName || ""); setSlotFormExp(slot.addedAt ? new Date(slot.addedAt).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]); setSlotFormExpiredAt(slot.expiredAt ? new Date(slot.expiredAt).toISOString().split("T")[0] : addDurationToDate(new Date(), "1M").toISOString().split("T")[0]); setShowSlotModal(true); }}
-                                    className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
+                                    className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-[1.02] flex-1 flex justify-center items-center"
                                     title={isBusinessMode ? "Sửa khách" : "Sửa Slot"}
                                   >
-                                    <Pencil size={14} />
+                                    <Pencil size={13} />
                                   </button>
                                   <button
                                     type="button"
@@ -12976,10 +13005,10 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                         }
                                       });
                                     }}
-                                    className="bg-red-600 hover:bg-red-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105 flex-1 flex justify-center items-center"
+                                    className="bg-red-600 hover:bg-red-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-[1.02] flex-1 flex justify-center items-center"
                                     title="Xóa khách"
                                   >
-                                    <X size={14} />
+                                    <X size={13} />
                                   </button>
                                 </div>
                               </>
@@ -12988,7 +13017,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         })}
                       </div>
                     ) : (
-                      <div className="p-4 flex items-center justify-center text-slate-500 text-sm italic">
+                      <div className="p-3 flex items-center justify-center text-slate-500 text-sm italic">
                         Chưa có khách nào trong tài khoản này.
                       </div>
                     )}
