@@ -2403,7 +2403,15 @@ function App() {
     refreshRecentStoreOrders(freshOrders);
   };
 
-  const fetchData = async (showLoader = false) => {
+  const fetchData = async (options = true) => {
+    const resolvedOptions =
+      typeof options === "object" && options !== null
+        ? options
+        : { showLoader: !!options };
+    const showLoader = !!resolvedOptions.showLoader;
+    const requestLabel =
+      String(resolvedOptions.requestLabel || "").trim() ||
+      "Đang tải lại dữ liệu";
     if (isFetchingDataRef.current && fetchDataPromiseRef.current) {
       return fetchDataPromiseRef.current;
     }
@@ -2414,7 +2422,7 @@ function App() {
         const res = await axios.get("/api/data", {
           timeout: 10000,
           headers: { "Cache-Control": "no-cache" },
-          requestLabel: "Đang tải lại dữ liệu",
+          requestLabel,
           skipGlobalLoading: !showLoader,
         });
         const nextVersion = Number(res.data?.version || 0);
@@ -2528,6 +2536,10 @@ function App() {
     fetchDataPromiseRef.current = runFetch;
     return runFetch;
   };
+
+  const syncAdminDataAfterMutation = async (
+    requestLabel = "Đang tải lại dữ liệu sau cập nhật",
+  ) => fetchData({ showLoader: true, requestLabel });
 
   const loadDashboardSummary = async ({ silent = true } = {}) => {
     try {
@@ -2819,7 +2831,7 @@ function App() {
         reason: storeWarrantyReason,
       });
       closeStoreWarrantyModal();
-      await fetchData();
+      await syncAdminDataAfterMutation("Đang đồng bộ kho sau bảo hành");
       broadcastDataChange();
       showAlert("Thành công", "Đã bảo hành đơn web và chuyển sang acc mới.", "success");
     } catch (error) {
@@ -2857,10 +2869,7 @@ function App() {
         unlinkGoogle: storeUserEditForm.unlinkGoogle,
       });
       setShowStoreUserEditModal(false);
-      await Promise.all([
-        loadAdminStoreUsers({ silent: true }),
-        loadDashboardSummary({ silent: true }),
-      ]);
+      await syncAdminDataAfterMutation("Đang đồng bộ user web");
       broadcastDataChange();
       showAlert("Thành công", "Đã cập nhật user web.", "success");
     } catch (error) {
@@ -2900,10 +2909,7 @@ function App() {
         package1UsedCount,
       });
       setShowStoreOrderEditModal(false);
-      await Promise.all([
-        loadAdminStoreOrders({ silent: true }),
-        loadDashboardSummary({ silent: true }),
-      ]);
+      await syncAdminDataAfterMutation("Đang đồng bộ đơn web");
       broadcastDataChange();
       showAlert("Thành công", "Đã cập nhật lượt lấy mã của đơn Gói 1.", "success");
     } catch (error) {
@@ -2995,10 +3001,7 @@ function App() {
       }
       setShowVoucherModal(false);
       setVoucherForm(buildStoreVoucherFormState());
-      await Promise.all([
-        loadAdminStoreVouchers({ silent: true }),
-        loadDashboardSummary({ silent: true }),
-      ]);
+      await syncAdminDataAfterMutation("Đang đồng bộ voucher");
       broadcastDataChange();
       showAlert(
         "Thành công",
@@ -3029,10 +3032,7 @@ function App() {
         setLoadingStates((prev) => ({ ...prev, deleteVoucher: voucherId }));
         try {
           await axios.delete(`/api/store-vouchers/${voucherId}`);
-          await Promise.all([
-            loadAdminStoreVouchers({ silent: true }),
-            loadDashboardSummary({ silent: true }),
-          ]);
+          await syncAdminDataAfterMutation("Đang đồng bộ voucher");
           broadcastDataChange();
           showAlert("Thành công", "Đã xóa voucher.", "success");
         } catch (error) {
@@ -3366,7 +3366,7 @@ function App() {
         package2Shelf: "none",
         note: "",
       });
-      fetchData();
+      await syncAdminDataAfterMutation("Đang đồng bộ kho ChatGPT");
       broadcastDataChange();
     } catch (error) {
       showAlert("Error", "Lỗi khi thêm tài khoản", "error");
@@ -3438,7 +3438,7 @@ function App() {
         withExpectedUpdatedAt({ users: newUsers }, acc),
       );
       setShowUserModal(false);
-      fetchData();
+      await syncAdminDataAfterMutation("Đang đồng bộ khách hàng");
       broadcastDataChange();
     } catch (err) {
       showAlert("Lỗi", getApiErrorMessage(err, "Không lưu được khách hàng"), "error");
@@ -3461,7 +3461,7 @@ function App() {
             `/api/chatgpt/${accId}`,
             withExpectedUpdatedAt({ users: newUsers }, acc),
           );
-          fetchData();
+          await syncAdminDataAfterMutation("Đang đồng bộ khách hàng");
           broadcastDataChange();
         } catch (err) {
           showAlert("Lỗi", getApiErrorMessage(err, "Lỗi xóa khách"), "error");
@@ -3530,7 +3530,7 @@ function App() {
       }
 
       setShowExtendModal(false);
-      fetchData();
+      await syncAdminDataAfterMutation("Đang đồng bộ gia hạn");
       broadcastDataChange();
       showAlert("Thành Công", `Đã gia hạn thêm ${extensionLabel}!`, "success");
     } catch (error) {
@@ -3567,7 +3567,7 @@ function App() {
       );
       setShowEditModal(false);
       setEditingAcc(null);
-      fetchData();
+      await syncAdminDataAfterMutation("Đang đồng bộ tài khoản");
       broadcastDataChange();
     } catch (error) {
       showAlert("Lỗi", getApiErrorMessage(error, "Lỗi cập nhật"), "error");
@@ -3651,7 +3651,7 @@ function App() {
       setShowMoveUserModal(false);
       setMovingUser(null);
       setMoveDestinationSearch("");
-      fetchData();
+      await syncAdminDataAfterMutation("Đang đồng bộ chuyển khách");
       broadcastDataChange();
       showAlert("Thành Công", `Đã chuyển khách sang tài khoản mới!`, "success");
     } catch (error) {
@@ -3696,7 +3696,7 @@ function App() {
       setShowMoveSlotModal(false);
       setMovingSlot(null);
       setMoveSlotDestinationSearch("");
-      fetchData();
+      await syncAdminDataAfterMutation("Đang đồng bộ Team");
       broadcastDataChange();
       showAlert("Thành Công", `Đã chuyển khách sang tài khoản Team khác!`, "success");
     } catch (error) {
@@ -3762,7 +3762,7 @@ function App() {
       setShowDeleteModal(false);
       setDeletingId(null);
       setShowEditModal(false);
-      fetchData();
+      await syncAdminDataAfterMutation("Đang đồng bộ xóa tài khoản");
       broadcastDataChange();
     } catch (error) {
       showAlert("Lỗi", getApiErrorMessage(error, "Lỗi xóa tài khoản"), "error");
@@ -3802,7 +3802,7 @@ function App() {
         await axios.delete(`/api/team/${accId}`, {
           data: withExpectedUpdatedAt({}, accToDelete),
         });
-        fetchData();
+        await syncAdminDataAfterMutation("Đang đồng bộ Team");
         broadcastDataChange();
         showAlert("Đã xóa", "Team account đã bị xóa.", "info");
       } catch (err) {
@@ -4350,7 +4350,7 @@ function App() {
           ),
         );
       } else {
-        await fetchData(false);
+        await syncAdminDataAfterMutation("Đang đồng bộ Team");
       }
       broadcastDataChange();
       showAlert(
@@ -4443,7 +4443,7 @@ function App() {
         }
       }
 
-      await fetchData(false);
+      await syncAdminDataAfterMutation("Đang đồng bộ Team");
       broadcastDataChange();
       setSelectedTeamIds([]);
 
@@ -4896,8 +4896,8 @@ function App() {
   const renderApiOverlay = () => {
     if (!apiOverlay.visible) return null;
     return (
-      <div className="fixed top-4 right-4 z-[10000] w-[min(92vw,420px)] pointer-events-none">
-        <div className="rounded-2xl border border-cyan-700/60 bg-slate-900/95 shadow-2xl overflow-hidden">
+      <div className="fixed inset-0 z-[10000] flex items-start justify-end bg-slate-950/28 px-4 py-4 backdrop-blur-[1.5px]">
+        <div className="w-[min(92vw,460px)] rounded-2xl border border-cyan-700/60 bg-slate-900/95 shadow-2xl overflow-hidden">
           <div className="h-1.5 bg-slate-800 overflow-hidden">
             {apiOverlay.indeterminate ? (
               <div className="h-full w-full bg-gradient-to-r from-cyan-400/70 via-blue-500 to-emerald-400/70 animate-pulse" />
@@ -4910,8 +4910,8 @@ function App() {
           </div>
           <div className="p-5 space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full bg-cyan-900/40 border border-cyan-700/50 flex items-center justify-center">
-                <Loader2 size={20} className="text-cyan-300 animate-spin" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-full border border-cyan-700/50 bg-cyan-900/40">
+                <Loader2 size={20} className="animate-spin text-cyan-300" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold text-white">{apiOverlay.title || "Đang xử lý API"}</div>
@@ -4927,10 +4927,10 @@ function App() {
                 </div>
               )}
             </div>
-            <div className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs text-slate-300">
+            <div className="rounded-xl border border-amber-500/20 bg-slate-950/70 px-3 py-2 text-xs text-slate-300">
               {apiOverlay.indeterminate
-                ? "Request này không có progress byte-thật từ browser, nên app chỉ hiện trạng thái đang xử lý."
-                : "App vẫn dùng được, nhưng nên chờ request này xong để tránh lệch dữ liệu."}
+                ? "Hệ thống đang đồng bộ lại dữ liệu. Đừng bấm lặp thao tác này để tránh trùng hoặc lệch dữ liệu."
+                : "Đang tải lại dữ liệu mới từ server. Nên chờ hoàn tất rồi thao tác tiếp để tránh duplicate."}
             </div>
           </div>
         </div>
