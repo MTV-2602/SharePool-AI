@@ -174,7 +174,8 @@ const getTeamSaleModeLabel = (value) =>
     : "Slot team";
 const DATAMMO_SEEN_ORDER_KEYS_STORAGE_KEY = "datammo_seen_order_keys";
 const STORE_SEEN_ORDER_KEYS_STORAGE_KEY = "store_seen_order_keys";
-const DATAMMO_RECENT_ORDER_WINDOW_MS = 15 * 60 * 1000;
+const DATAMMO_RECENT_ORDER_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ADMIN_RECENT_ORDER_LIMIT = 5;
 const buildDatammoOrderKey = (order = {}) =>
   String(
     order._id ||
@@ -596,6 +597,45 @@ const buildMarketplaceOrderSummaries = (orders = [], warrantyCases = []) =>
       searchIndex,
     };
   });
+const isRecentAdminOrderNotification = (order = {}) => {
+  const createdAtMs = new Date(order?.createdAt || 0).getTime();
+  if (!Number.isFinite(createdAtMs) || createdAtMs <= 0) return false;
+  return Date.now() - createdAtMs <= DATAMMO_RECENT_ORDER_WINDOW_MS;
+};
+const normalizeRecentDatammoNotifications = (orders = []) => {
+  const deduped = new Map();
+  normalizeDatammoOrders(orders).forEach((order) => {
+    const orderKey = buildDatammoOrderKey(order);
+    if (!orderKey || !isRecentAdminOrderNotification(order)) return;
+    deduped.set(orderKey, order);
+  });
+  return normalizeDatammoOrders(Array.from(deduped.values())).slice(
+    0,
+    ADMIN_RECENT_ORDER_LIMIT,
+  );
+};
+const normalizeRecentStoreNotifications = (orders = []) => {
+  const deduped = new Map();
+  normalizeStoreAdminOrders(orders)
+    .filter((order) => {
+      const status = normalizeStoreOrderStatus(order?.status);
+      return (
+        status === "awaiting_payment" ||
+        status === "pending_payment" ||
+        status === "paid" ||
+        status === "fulfilled"
+      );
+    })
+    .forEach((order) => {
+      const orderKey = buildStoreOrderKey(order);
+      if (!orderKey || !isRecentAdminOrderNotification(order)) return;
+      deduped.set(orderKey, order);
+    });
+  return normalizeStoreAdminOrders(Array.from(deduped.values())).slice(
+    0,
+    ADMIN_RECENT_ORDER_LIMIT,
+  );
+};
 const loadSeenDatammoOrderKeys = () => {
   if (typeof window === "undefined") return new Set();
   try {
@@ -1884,6 +1924,16 @@ function App() {
   }, [accounts, expandedChatgptAccountId]);
 
   useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setRecentDatammoOrders((prev) =>
+        normalizeRecentDatammoNotifications(prev),
+      );
+      setRecentStoreOrders((prev) => normalizeRecentStoreNotifications(prev));
+    }, 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
     if (isAuthenticated && activeTab === "chatgpt") return;
     chatgptPageEffectPrimedRef.current = false;
   }, [activeTab, isAuthenticated]);
@@ -1949,11 +1999,56 @@ function App() {
           }
           return;
         }
+        if (event === "marketplace.order.created") {
+          const nextMarketplaceOrder = normalizeDatammoOrders([
+            payload?.marketplaceOrder,
+          ])[0];
+          if (nextMarketplaceOrder) {
+            syncDatammoOrderBanner([nextMarketplaceOrder]);
+            setDatammoOrderHistory((prev) =>
+              normalizeDatammoOrders([
+                nextMarketplaceOrder,
+                ...(Array.isArray(prev) ? prev : []),
+              ]),
+            );
+          }
+          return;
+        }
         if (event === "order.updated") {
+          const nextAdminOrder = normalizeStoreAdminOrders([
+            payload?.adminOrder,
+          ])[0];
+          const realtimeOrderKind = String(payload?.kind || "")
+            .trim()
+            .toLowerCase();
+          if (nextAdminOrder) {
+            setStoreOrders((prev) => {
+              const nextKey = buildStoreOrderKey(nextAdminOrder);
+              const remaining = (Array.isArray(prev) ? prev : []).filter(
+                (item) => buildStoreOrderKey(item) !== nextKey,
+              );
+              if (
+                normalizeStoreOrderStatus(nextAdminOrder?.status) ===
+                "payment_failed"
+              ) {
+                return normalizeStoreAdminOrders(remaining);
+              }
+              return normalizeStoreAdminOrders([nextAdminOrder, ...remaining]);
+            });
+            if (realtimeOrderKind === "created") {
+              syncStoreOrderBanner([nextAdminOrder]);
+            } else {
+              setRecentStoreOrders((prev) =>
+                normalizeRecentStoreNotifications(prev),
+              );
+            }
+          }
           loadDashboardSummary({ silent: true }).catch(() => {});
-          loadAdminStoreOrders({ silent: true }).catch(() => {});
           if (activeTab === "chatgpt" || activeTab === "store-users") {
             loadAdminStoreUsers({ silent: true }).catch(() => {});
+          }
+          if (!nextAdminOrder && activeTab === "store-users") {
+            loadAdminStoreOrders({ silent: true }).catch(() => {});
           }
           return;
         }
@@ -2588,7 +2683,7 @@ function App() {
   };
 
   const syncDatammoOrderBanner = (orders = []) => {
-    const normalizedOrders = normalizeDatammoOrders(orders);
+    const normalizedOrders = normalizeRecentDatammoNotifications(orders);
     if (!seenDatammoOrderKeysRef.current) {
       seenDatammoOrderKeysRef.current = loadSeenDatammoOrderKeys();
     }
@@ -2605,7 +2700,13 @@ function App() {
 
     if (!hasInitializedDatammoOrdersRef.current) {
       if (recentUnseenOrders.length > 0) {
-        setRecentDatammoOrders(recentUnseenOrders.slice(0, 5));
+        setRecentDatammoOrders(
+          normalizeRecentDatammoNotifications(recentUnseenOrders),
+        );
+      } else {
+        setRecentDatammoOrders((prev) =>
+          normalizeRecentDatammoNotifications(prev),
+        );
       }
       if (seenKeys.size === 0 && allKeys.length > 0) {
         allKeys.forEach((key) => seenKeys.add(key));
@@ -2624,28 +2725,21 @@ function App() {
       (order) => !seenKeys.has(buildDatammoOrderKey(order)),
     );
 
-    if (freshOrders.length === 0) return;
+    if (freshOrders.length === 0) {
+      setRecentDatammoOrders((prev) =>
+        normalizeRecentDatammoNotifications(prev),
+      );
+      return;
+    }
 
     freshOrders.forEach((order) => seenKeys.add(buildDatammoOrderKey(order)));
     persistSeenDatammoOrderKeys(seenKeys);
     setRecentDatammoOrders((prev) => {
-      const merged = new Map();
-      [...freshOrders, ...prev].forEach((order) => {
-        merged.set(buildDatammoOrderKey(order), order);
-      });
-      return normalizeDatammoOrders(Array.from(merged.values())).slice(0, 5);
+      return normalizeRecentDatammoNotifications([...freshOrders, ...prev]);
     });
   };
   const syncStoreOrderBanner = (orders = []) => {
-    const normalizedOrders = normalizeStoreAdminOrders(orders).filter((order) => {
-      const status = normalizeStoreOrderStatus(order?.status);
-      return (
-        status === "awaiting_payment" ||
-        status === "pending_payment" ||
-        status === "paid" ||
-        status === "fulfilled"
-      );
-    });
+    const normalizedOrders = normalizeRecentStoreNotifications(orders);
     if (!seenStoreOrderKeysRef.current) {
       seenStoreOrderKeysRef.current = loadSeenStoreOrderKeys();
     }
@@ -2668,7 +2762,7 @@ function App() {
         freshOrders.forEach((order) => {
           merged.set(buildStoreOrderKey(order), order);
         });
-        return normalizeStoreAdminOrders(Array.from(merged.values())).slice(0, 5);
+        return normalizeRecentStoreNotifications(Array.from(merged.values()));
       });
     };
     const recentUnseenOrders = normalizedOrders.filter((order) => {
@@ -2681,7 +2775,9 @@ function App() {
 
     if (!hasInitializedStoreOrdersRef.current) {
       if (recentUnseenOrders.length > 0) {
-        setRecentStoreOrders(recentUnseenOrders.slice(0, 5));
+        setRecentStoreOrders(
+          normalizeRecentStoreNotifications(recentUnseenOrders),
+        );
       } else {
         refreshRecentStoreOrders();
       }

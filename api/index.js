@@ -1631,7 +1631,10 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, storeOrderPaymentRat
       throw paymentError;
     }
 
-    await emitStoreOrderRealtimeUpdate(freshOrder);
+    await emitStoreOrderRealtimeUpdate(freshOrder, {
+      kind: "created",
+      adminOrder: sanitizeStoreOrderForAdmin(freshOrder, req.storeUser),
+    });
     return res.json({
       success: true,
       payUrl,
@@ -2359,7 +2362,7 @@ const safeEmitRealtimeEvents = async (events = []) => {
 
 const emitStoreOrderRealtimeUpdate = async (
   orderInput = null,
-  { includeStock = false } = {},
+  { includeStock = false, kind = "updated", adminOrder = null } = {},
 ) => {
   const order =
     orderInput && typeof orderInput.toObject === "function"
@@ -2374,11 +2377,19 @@ const emitStoreOrderRealtimeUpdate = async (
     status: String(order?.status || "").trim(),
     packageCode: String(order?.packageCode || "").trim(),
   });
+  const resolvedAdminOrder =
+    adminOrder && typeof adminOrder === "object"
+      ? adminOrder
+      : sanitizeStoreOrderForAdmin(order);
   const events = [
     {
       topic: buildAdminRealtimeTopic(),
       event: "order.updated",
-      payload,
+      payload: {
+        ...payload,
+        kind: String(kind || "updated").trim().toLowerCase() || "updated",
+        adminOrder: resolvedAdminOrder,
+      },
     },
   ];
   if (userId) {
@@ -2402,6 +2413,43 @@ const emitStoreOrderRealtimeUpdate = async (
     });
   }
   await safeEmitRealtimeEvents(events);
+};
+
+const emitMarketplaceOrderRealtimeUpdate = async (orderInput = null) => {
+  const order =
+    orderInput && typeof orderInput.toObject === "function"
+      ? orderInput.toObject()
+      : { ...(orderInput || {}) };
+  const entityId = String(order?._id || order?.id || order?.orderId || "").trim();
+  if (!entityId) return;
+  const scope = normalizeMarketplaceScope(order?.scope, "chatgpt");
+  await safeEmitRealtimeEvents([
+    {
+      topic: buildAdminRealtimeTopic(),
+      event: "marketplace.order.created",
+      payload: {
+        ...buildRealtimePayload("marketplace.order.created", {
+          entityId,
+          status: "created",
+        }),
+        scope,
+        marketplaceOrder: order,
+      },
+    },
+    {
+      topic: buildAdminRealtimeTopic(),
+      event: "inventory.updated",
+      payload: {
+        ...buildRealtimePayload("inventory.updated", {
+          entityId,
+          status: "created",
+        }),
+        scope: normalizeAdminInventoryRealtimeScope(scope),
+        action: "marketplace_order_created",
+        path: "/api/marketplace-order",
+      },
+    },
+  ]);
 };
 
 const emitStoreVoucherRealtimeUpdate = async (voucherInput = null) => {
@@ -7145,7 +7193,7 @@ const logMarketplaceOrder = async ({
   quantity,
   claimed,
 }) => {
-  await DatammoOrder.create({
+  const createdOrder = await DatammoOrder.create({
     scope: String(scope || "chatgpt").trim().toLowerCase(),
     provider: normalizeMarketplaceProvider(provider),
     orderId,
@@ -7169,6 +7217,8 @@ const logMarketplaceOrder = async ({
       delivery: String(item?.delivery || ""),
     })),
   });
+  await emitMarketplaceOrderRealtimeUpdate(createdOrder);
+  return createdOrder;
 };
 
 const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
