@@ -1919,6 +1919,42 @@ function App() {
   ]);
 
   useEffect(() => {
+    if (gptSubTab !== "market") return;
+    const marketSummary =
+      chatgptAdminPagination.summary?.marketShelfTabs ||
+      buildDefaultChatgptAdminPaginationState().summary.marketShelfTabs;
+    const unsoldCount = Math.max(0, Number(marketSummary?.all || 0));
+    const soldCount = Math.max(0, Number(marketSummary?.sold || 0));
+    if (package2ShelfTab === "all" && unsoldCount === 0 && soldCount > 0) {
+      setPackage2ShelfTab("sold");
+      return;
+    }
+    if (package2ShelfTab === "sold" && soldCount === 0 && unsoldCount > 0) {
+      setPackage2ShelfTab("all");
+      if (soldPackage2ProviderFilter !== "all") {
+        setSoldPackage2ProviderFilter("all");
+      }
+      return;
+    }
+    if (package2ShelfTab === "sold" && soldPackage2ProviderFilter !== "all") {
+      const providerCount =
+        soldPackage2ProviderFilter === "datammo"
+          ? Number(marketSummary?.soldDatammo || 0)
+          : soldPackage2ProviderFilter === "shopmini"
+            ? Number(marketSummary?.soldShopmini || 0)
+            : soldCount;
+      if (providerCount <= 0 && soldCount > 0) {
+        setSoldPackage2ProviderFilter("all");
+      }
+    }
+  }, [
+    chatgptAdminPagination.summary,
+    gptSubTab,
+    package2ShelfTab,
+    soldPackage2ProviderFilter,
+  ]);
+
+  useEffect(() => {
     if (!expandedChatgptAccountId) return;
     const stillVisible = (Array.isArray(accounts) ? accounts : []).some(
       (acc) =>
