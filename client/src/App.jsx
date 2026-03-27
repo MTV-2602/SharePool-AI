@@ -42,6 +42,7 @@ const ADMIN_TOKEN_STORAGE_KEY = "admin_token";
 const ADMIN_TOKEN_EXPIRES_AT_STORAGE_KEY = "token_expires_at";
 const STORE_TOKEN_STORAGE_KEY = "store_user_token";
 const SESSION_ROLE_STORAGE_KEY = "active_session_role";
+const DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE = 20;
 const DEFAULT_SUPPORT_PAGE_SIZE = 6;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
 
@@ -1284,6 +1285,13 @@ const buildDefaultSupportPaginationState = () => ({
   retainedAfter: "",
   retentionDays: DEFAULT_SUPPORT_RETENTION_DAYS,
 });
+const buildDefaultSupportConversationPaginationState = () => ({
+  page: 1,
+  limit: DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE,
+  total: 0,
+  hasMore: false,
+  loadingMore: false,
+});
 const buildDefaultChatgptAdminPaginationState = () => ({
   page: 1,
   limit: DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
@@ -1363,6 +1371,8 @@ function App() {
   const [supportPagination, setSupportPagination] = useState(
     buildDefaultSupportPaginationState(),
   );
+  const [supportConversationPagination, setSupportConversationPagination] =
+    useState(buildDefaultSupportConversationPaginationState());
   const [selectedSupportConversationId, setSelectedSupportConversationId] =
     useState("");
   const [supportReplyDraft, setSupportReplyDraft] = useState("");
@@ -3002,19 +3012,57 @@ function App() {
 
   const loadSupportConversations = async ({
     silent = true,
-    limit = 100,
+    limit = DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE,
+    page = 1,
+    append = false,
   } = {}) => {
+    const safePage = Math.max(1, Number(page || 1));
+    const safeLimit = Math.max(
+      1,
+      Math.min(100, Number(limit || DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE)),
+    );
+    if (append) {
+      setSupportConversationPagination((prev) => ({
+        ...prev,
+        loadingMore: true,
+      }));
+    }
     try {
       const response = await axios.get("/api/store-support/conversations", {
-        params: { limit },
+        params: {
+          limit: safeLimit,
+          page: safePage,
+        },
         timeout: 10000,
         skipGlobalLoading: silent,
       });
-      setSupportConversations(
-        sortAdminSupportConversationsForUi(response?.data?.conversations),
+      const incomingConversations = sortAdminSupportConversationsForUi(
+        response?.data?.conversations,
       );
+      setSupportConversations((prev) => {
+        const baseItems = append ? prev : prev.length > 0 ? prev : [];
+        return incomingConversations.reduce(
+          (items, conversation) =>
+            mergeSupportConversationItem(items, conversation),
+          baseItems,
+        );
+      });
+      setSupportConversationPagination((prev) => ({
+        ...prev,
+        page: Number(response?.data?.pagination?.page || safePage),
+        limit: Number(response?.data?.pagination?.limit || safeLimit),
+        total: Number(response?.data?.pagination?.total || 0),
+        hasMore: !!response?.data?.pagination?.hasMore,
+        loadingMore: false,
+      }));
       return response?.data || null;
     } catch (error) {
+      if (append) {
+        setSupportConversationPagination((prev) => ({
+          ...prev,
+          loadingMore: false,
+        }));
+      }
       if (!silent) {
         showAlert(
           "Lỗi",
@@ -3024,6 +3072,21 @@ function App() {
       }
       return null;
     }
+  };
+
+  const handleLoadMoreSupportConversations = async () => {
+    if (
+      supportConversationPagination.loadingMore ||
+      !supportConversationPagination.hasMore
+    ) {
+      return;
+    }
+    await loadSupportConversations({
+      silent: true,
+      page: Number(supportConversationPagination.page || 1) + 1,
+      limit: supportConversationPagination.limit,
+      append: true,
+    });
   };
 
   const refreshAdminSurface = async ({
@@ -3651,14 +3714,6 @@ function App() {
     setSupportReplyDraft("");
     setShowSupportInfoPanel(false);
   }, [selectedSupportConversationId, supportConversations]);
-
-  useEffect(() => {
-    if (activeTab !== "support") return;
-    if (selectedSupportConversationId) return;
-    const firstConversation = (supportConversations || [])[0];
-    if (!firstConversation?.id) return;
-    handleSelectSupportConversation(firstConversation.id).catch(() => {});
-  }, [activeTab, selectedSupportConversationId, supportConversations]);
 
   const handleCreateStoreManualOrder = async (e) => {
     e.preventDefault();
@@ -7534,7 +7589,12 @@ function App() {
 
                 <div className="mt-2.5 flex flex-wrap gap-1.5 text-[10px]">
                   <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2 py-0.5 text-slate-200">
-                    {supportConversations.length} hội thoại
+                    {supportConversations.length}
+                    {Number(supportConversationPagination.total || 0) >
+                    supportConversations.length
+                      ? ` / ${supportConversationPagination.total}`
+                      : ""}{" "}
+                    hội thoại
                   </span>
                   <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-amber-100">
                     {supportUnreadConversationCount} chưa đọc
@@ -7605,79 +7665,102 @@ function App() {
                     Không có hội thoại nào khớp với bộ lọc hiện tại.
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
-                    {filteredSupportConversations.map((conversation) => {
-                      const selected =
-                        String(conversation?.id || "").trim() === selectedSupportConversationId;
-                      const displayName = getSupportConversationDisplayName(conversation);
-                      const statusMeta = getSupportConversationStatusMeta(conversation?.status);
-                      const unreadCount = Math.max(
-                        0,
-                        Number(conversation?.adminUnreadCount || 0),
-                      );
-                      return (
-                        <button
-                          key={conversation.id}
-                          type="button"
-                          onClick={() => handleSelectSupportConversation(conversation.id)}
-                          className={`group relative w-full overflow-hidden rounded-[16px] border p-2 text-left transition-all ${
-                            selected
-                              ? "border-sky-400/60 bg-sky-500/12 shadow-[0_16px_35px_rgba(14,165,233,0.12)]"
-                              : "border-slate-800 bg-slate-950/78 hover:-translate-y-0.5 hover:border-sky-500/30 hover:bg-slate-950/92"
-                          }`}
-                        >
-                          <div
-                            className={`absolute inset-y-4 left-0 w-1 rounded-r-full ${
-                              selected ? "bg-sky-400" : unreadCount > 0 ? "bg-amber-400/80" : "bg-transparent"
+                  <div className="space-y-2">
+                    <div className="px-1 text-[10px] text-slate-500">
+                      Chỉ tải danh sách hội thoại trước. Bấm vào user nào thì mới tải tin nhắn của user đó.
+                    </div>
+                    <div className="space-y-1.5">
+                      {filteredSupportConversations.map((conversation) => {
+                        const selected =
+                          String(conversation?.id || "").trim() === selectedSupportConversationId;
+                        const displayName = getSupportConversationDisplayName(conversation);
+                        const statusMeta = getSupportConversationStatusMeta(conversation?.status);
+                        const unreadCount = Math.max(
+                          0,
+                          Number(conversation?.adminUnreadCount || 0),
+                        );
+                        return (
+                          <button
+                            key={conversation.id}
+                            type="button"
+                            onClick={() => handleSelectSupportConversation(conversation.id)}
+                            className={`group relative w-full overflow-hidden rounded-[16px] border p-2 text-left transition-all ${
+                              selected
+                                ? "border-sky-400/60 bg-sky-500/12 shadow-[0_16px_35px_rgba(14,165,233,0.12)]"
+                                : "border-slate-800 bg-slate-950/78 hover:-translate-y-0.5 hover:border-sky-500/30 hover:bg-slate-950/92"
                             }`}
-                          />
-                          <div className="flex items-start gap-2.5">
+                          >
                             <div
-                              className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-[10px] font-black ${
-                                selected
-                                  ? "bg-sky-400/20 text-sky-100"
-                                  : "bg-slate-800 text-slate-200"
+                              className={`absolute inset-y-4 left-0 w-1 rounded-r-full ${
+                                selected ? "bg-sky-400" : unreadCount > 0 ? "bg-amber-400/80" : "bg-transparent"
                               }`}
-                            >
-                              {displayName.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <div className="truncate text-[12px] font-black text-white">
-                                  {displayName}
-                                </div>
-                                <div
-                                  className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] ${statusMeta.badgeClass}`}
-                                >
-                                  {statusMeta.label}
-                                </div>
-                                {unreadCount > 0 ? (
-                                  <div className="rounded-full bg-amber-400 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
-                                    {unreadCount} mới
+                            />
+                            <div className="flex items-start gap-2.5">
+                              <div
+                                className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-[10px] font-black ${
+                                  selected
+                                    ? "bg-sky-400/20 text-sky-100"
+                                    : "bg-slate-800 text-slate-200"
+                                }`}
+                              >
+                                {displayName.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="truncate text-[12px] font-black text-white">
+                                    {displayName}
                                   </div>
-                                ) : null}
-                              </div>
+                                  <div
+                                    className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] ${statusMeta.badgeClass}`}
+                                  >
+                                    {statusMeta.label}
+                                  </div>
+                                  {unreadCount > 0 ? (
+                                    <div className="rounded-full bg-amber-400 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
+                                      {unreadCount} mới
+                                    </div>
+                                  ) : null}
+                                </div>
 
-                              <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-300">
-                                {conversation.lastMessagePreview || "Chưa có tin nhắn"}
-                              </div>
+                                <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-300">
+                                  {conversation.lastMessagePreview || "Chưa có tin nhắn"}
+                                </div>
 
-                              <div className="mt-1 flex items-center justify-between gap-3 text-[10px]">
-                                <span className="font-semibold text-slate-500">
-                                  {conversation.lastSenderRole === "admin"
-                                    ? "Admin vừa trả lời"
-                                    : "User vừa nhắn"}
-                                </span>
-                                <span className="text-slate-500">
-                                  {formatRelativeTime(conversation.lastMessageAt) ||
-                                    formatDateTime(conversation.lastMessageAt)}
-                                </span>
+                                <div className="mt-1 flex items-center justify-between gap-3 text-[10px]">
+                                  <span className="font-semibold text-slate-500">
+                                    {conversation.lastSenderRole === "admin"
+                                      ? "Admin vừa trả lời"
+                                      : "User vừa nhắn"}
+                                  </span>
+                                  <span className="text-slate-500">
+                                    {formatRelativeTime(conversation.lastMessageAt) ||
+                                      formatDateTime(conversation.lastMessageAt)}
+                                  </span>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </button>
-                      );
-                    })}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {supportConversationPagination.hasMore ? (
+                      <button
+                        type="button"
+                        onClick={() => handleLoadMoreSupportConversations()}
+                        disabled={supportConversationPagination.loadingMore}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-900/90 px-3 py-2 text-[11px] font-semibold text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {supportConversationPagination.loadingMore
+                          ? "Đang tải thêm hội thoại..."
+                          : "Xem thêm hội thoại"}
+                      </button>
+                    ) : Number(supportConversationPagination.total || 0) >
+                      supportConversations.length ? (
+                      <div className="px-2 text-[10px] text-slate-500">
+                        Đang hiển thị {supportConversations.length} / {supportConversationPagination.total} hội thoại.
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
