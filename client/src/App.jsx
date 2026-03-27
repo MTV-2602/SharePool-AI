@@ -8071,11 +8071,11 @@ function App() {
 
                         <form
                           onSubmit={handleSendSupportReply}
-                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/85 p-2"
+                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/85 p-1.5"
                         >
-                          <div className="rounded-[16px] border border-slate-700/80 bg-slate-950/90 p-2">
+                          <div className="rounded-[14px] border border-slate-700/80 bg-slate-950/90 p-1.5">
                             <textarea
-                              rows={2}
+                              rows={1}
                               value={supportReplyDraft}
                               onChange={(e) => setSupportReplyDraft(e.target.value)}
                               onKeyDown={(e) => {
@@ -8090,26 +8090,26 @@ function App() {
                                 }
                               }}
                               placeholder="Trả lời user..."
-                              className="min-h-[54px] w-full resize-none bg-transparent px-1 py-1 text-[12px] text-white outline-none placeholder:text-slate-500"
+                              className="min-h-[34px] max-h-[74px] w-full resize-none bg-transparent px-1 py-0.5 text-[11px] leading-5 text-white outline-none placeholder:text-slate-500"
                             />
-                            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-2">
-                              <div className="text-[10px] text-slate-500">
+                            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-1.5">
+                              <div className="text-[9px] text-slate-500">
                                 {supportReplyDraft.trim().length} ký tự
                               </div>
                               <button
                                 type="submit"
                                 disabled={loadingStates.sendSupportMessage || !supportReplyDraft.trim()}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-2.5 py-1.5 text-[10px] font-semibold text-white shadow-[0_10px_18px_rgba(2,132,199,0.18)] transition-all hover:translate-y-[-1px] hover:shadow-[0_14px_24px_rgba(2,132,199,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center gap-1 rounded-lg bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-2 py-1 text-[10px] font-semibold text-white shadow-[0_10px_18px_rgba(2,132,199,0.18)] transition-all hover:translate-y-[-1px] hover:shadow-[0_14px_24px_rgba(2,132,199,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {loadingStates.sendSupportMessage ? (
                                   <>
-                                    <Loader2 size={14} className="animate-spin" />
+                                    <Loader2 size={12} className="animate-spin" />
                                     Đang gửi
                                   </>
                                 ) : (
                                   <>
-                                    <SendHorizontal size={14} />
-                                    Gửi trả lời
+                                    <SendHorizontal size={12} />
+                                    Gửi
                                   </>
                                 )}
                               </button>
