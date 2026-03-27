@@ -2039,13 +2039,13 @@ function App() {
   // Helper to safely get user name
   const getUserName = (u) => (typeof u === "object" && u !== null ? u.name : u);
   const renderCustomerFilterButtons = (value, onChange) => (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {CUSTOMER_FILTER_OPTIONS.map((option) => (
         <button
           key={option.value}
           type="button"
           onClick={() => onChange(option.value)}
-          className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
             value === option.value
               ? "bg-blue-600 text-white border-blue-500"
               : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white"
@@ -2061,7 +2061,7 @@ function App() {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="min-w-[128px] bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
+      className="min-w-[112px] rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 outline-none focus:border-blue-500"
     >
       {EXPIRY_FILTER_OPTIONS.map((option) => (
         <option key={option.value} value={option.value}>
@@ -2072,7 +2072,7 @@ function App() {
   );
 
   const renderExpiryRangeInputs = (minValue, onMinChange, maxValue, onMaxChange) => (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-1.5">
       <input
         type="number"
         min="0"
@@ -2080,9 +2080,9 @@ function App() {
         value={minValue}
         onChange={(e) => onMinChange(e.target.value.replace(/[^\d]/g, ""))}
         placeholder="Tu ngay"
-        className="w-24 bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
+        className="w-20 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 outline-none focus:border-blue-500"
       />
-      <span className="text-slate-500 text-xs font-bold uppercase tracking-wide">den</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">den</span>
       <input
         type="number"
         min="0"
@@ -2090,13 +2090,13 @@ function App() {
         value={maxValue}
         onChange={(e) => onMaxChange(e.target.value.replace(/[^\d]/g, ""))}
         placeholder="Den ngay"
-        className="w-24 bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
+        className="w-20 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 outline-none focus:border-blue-500"
       />
       {(minValue || maxValue) && (
         <button
           type="button"
           onClick={() => { onMinChange(""); onMaxChange(""); }}
-          className="text-xs px-2.5 py-2 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white font-bold"
+          className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-slate-700 hover:text-white"
         >
           Xoa
         </button>
@@ -7409,48 +7409,48 @@ function App() {
         )}
 
         {activeTab === "support" && (
-          <div className="grid gap-4 xl:grid-cols-[320px,minmax(0,1fr)] xl:items-stretch">
-            <div className="overflow-hidden rounded-[24px] border border-sky-400/20 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.14),_transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.92))] shadow-[0_18px_48px_rgba(2,8,23,0.42)] lg:flex lg:h-[min(74vh,38rem)] lg:flex-col">
-              <div className="border-b border-slate-800/80 p-4">
+          <div className="grid gap-3 xl:grid-cols-[280px,minmax(0,1fr)] xl:items-stretch">
+            <div className="overflow-hidden rounded-[20px] border border-sky-400/15 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.1),_transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))] shadow-[0_16px_40px_rgba(2,8,23,0.38)] lg:flex lg:h-[min(70vh,34rem)] lg:flex-col">
+              <div className="border-b border-slate-800/80 p-3.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[11px] font-black uppercase tracking-[0.34em] text-sky-300/90">
+                    <div className="text-[10px] font-black uppercase tracking-[0.3em] text-sky-300/90">
                       Hỗ trợ web
                     </div>
-                    <h2 className="mt-2 flex items-center gap-2 text-[20px] font-black text-white">
-                      <MessageCircle size={18} className="text-sky-300" />
+                    <h2 className="mt-1.5 flex items-center gap-2 text-lg font-black text-white">
+                      <MessageCircle size={16} className="text-sky-300" />
                       Hộp thư user
                     </h2>
-                    <p className="mt-2 max-w-sm text-sm leading-6 text-slate-400">
-                      Chỉ giữ danh sách ngắn gọn để bạn mở và trả lời nhanh.
+                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                      Danh sách gọn để mở và trả lời nhanh.
                     </p>
                   </div>
-                  <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-200">
+                  <div className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.14em] text-emerald-200">
                     Live
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                  <span className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1.5 text-slate-200">
+                <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
+                  <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2.5 py-1 text-slate-200">
                     {supportConversations.length} hội thoại
                   </span>
-                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-amber-100">
+                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-amber-100">
                     {supportUnreadConversationCount} chưa đọc
                   </span>
-                  <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-emerald-100">
+                  <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-emerald-100">
                     {supportOpenConversationCount} đang mở
                   </span>
                 </div>
 
-                <div className="mt-4 rounded-[20px] border border-slate-700/80 bg-slate-950/65 p-3">
-                  <label className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2.5">
-                    <Search size={15} className="text-slate-500" />
+                <div className="mt-3 rounded-[18px] border border-slate-700/80 bg-slate-950/65 p-2.5">
+                  <label className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2">
+                    <Search size={14} className="text-slate-500" />
                     <input
                       type="text"
                       value={supportConversationQuery}
                       onChange={(e) => setSupportConversationQuery(e.target.value)}
                       placeholder="Tìm theo tên, email, SĐT hoặc nội dung..."
-                      className="w-full bg-transparent text-sm text-white placeholder:text-slate-500 outline-none"
+                      className="w-full bg-transparent text-[13px] text-white placeholder:text-slate-500 outline-none"
                     />
                     {supportConversationQuery.trim() ? (
                       <button
@@ -7464,7 +7464,7 @@ function App() {
                     ) : null}
                   </label>
 
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {[
                       { key: "all", label: "Tất cả", count: supportConversations.length },
                       { key: "unread", label: "Chưa đọc", count: supportUnreadConversationCount },
@@ -7476,14 +7476,14 @@ function App() {
                           key={filterItem.key}
                           type="button"
                           onClick={() => setSupportConversationFilter(filterItem.key)}
-                          className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-all ${
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold transition-all ${
                             active
                               ? "border-sky-400/50 bg-sky-500/15 text-sky-100"
                               : "border-slate-700 bg-slate-900/80 text-slate-400 hover:border-slate-500 hover:text-white"
                           }`}
                         >
                           <span>{filterItem.label}</span>
-                          <span className="rounded-full bg-black/20 px-2 py-0.5 text-[11px]">
+                          <span className="rounded-full bg-black/20 px-1.5 py-0.5 text-[10px]">
                             {filterItem.count}
                           </span>
                         </button>
@@ -7493,7 +7493,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
+              <div className="flex-1 min-h-0 overflow-y-auto p-2">
                 {supportConversations.length === 0 ? (
                   <div className="rounded-[24px] border border-dashed border-slate-700 bg-slate-950/60 px-5 py-14 text-center text-slate-400">
                     Chưa có user nào chat trên web.
@@ -7503,7 +7503,7 @@ function App() {
                     Không có hội thoại nào khớp với bộ lọc hiện tại.
                   </div>
                 ) : (
-                  <div className="space-y-2.5">
+                  <div className="space-y-2">
                     {filteredSupportConversations.map((conversation) => {
                       const selected =
                         String(conversation?.id || "").trim() === selectedSupportConversationId;
@@ -7518,7 +7518,7 @@ function App() {
                           key={conversation.id}
                           type="button"
                           onClick={() => handleSelectSupportConversation(conversation.id)}
-                          className={`group relative w-full overflow-hidden rounded-[22px] border p-3 text-left transition-all ${
+                          className={`group relative w-full overflow-hidden rounded-[18px] border p-2.5 text-left transition-all ${
                             selected
                               ? "border-sky-400/60 bg-sky-500/12 shadow-[0_16px_35px_rgba(14,165,233,0.12)]"
                               : "border-slate-800 bg-slate-950/78 hover:-translate-y-0.5 hover:border-sky-500/30 hover:bg-slate-950/92"
@@ -7531,7 +7531,7 @@ function App() {
                           />
                           <div className="flex items-start gap-3">
                             <div
-                              className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-black ${
+                              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ${
                                 selected
                                   ? "bg-sky-400/20 text-sky-100"
                                   : "bg-slate-800 text-slate-200"
@@ -7541,26 +7541,26 @@ function App() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
-                                <div className="truncate text-sm font-black text-white">
+                                <div className="truncate text-[13px] font-black text-white">
                                   {displayName}
                                 </div>
                                 <div
-                                  className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${statusMeta.badgeClass}`}
+                                  className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] ${statusMeta.badgeClass}`}
                                 >
                                   {statusMeta.label}
                                 </div>
                                 {unreadCount > 0 ? (
-                                  <div className="rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-black text-slate-950">
+                                  <div className="rounded-full bg-amber-400 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
                                     {unreadCount} mới
                                   </div>
                                 ) : null}
                               </div>
 
-                              <div className="mt-2 rounded-2xl bg-slate-900/90 px-3 py-2 text-sm leading-6 text-slate-200 line-clamp-2">
+                              <div className="mt-1.5 line-clamp-2 text-[12px] leading-5 text-slate-300">
                                 {conversation.lastMessagePreview || "Chưa có tin nhắn"}
                               </div>
 
-                              <div className="mt-2 flex items-center justify-between gap-3 text-[11px]">
+                              <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px]">
                                 <span className="font-semibold text-slate-500">
                                   {conversation.lastSenderRole === "admin"
                                     ? "Admin vừa trả lời"
@@ -7581,7 +7581,7 @@ function App() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[24px] border border-sky-400/20 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.12),_transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))] shadow-[0_18px_48px_rgba(2,8,23,0.42)] lg:flex lg:h-[min(74vh,38rem)] lg:flex-col">
+            <div className="overflow-hidden rounded-[20px] border border-sky-400/20 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.1),_transparent_30%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.95))] shadow-[0_16px_40px_rgba(2,8,23,0.4)] lg:flex lg:h-[min(70vh,34rem)] lg:flex-col">
               {!selectedSupportConversation ? (
                 <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center lg:min-h-0 lg:flex-1">
                   <div className="flex h-14 w-14 items-center justify-center rounded-[20px] border border-sky-400/25 bg-sky-500/10 text-sky-200">
@@ -7598,36 +7598,33 @@ function App() {
                 </div>
               ) : (
                 <>
-                  <div className="flex h-full min-h-0 flex-col p-4">
-                    <div className="shrink-0 border-b border-slate-800/80 pb-3">
+                  <div className="flex h-full min-h-0 flex-col p-3.5">
+                    <div className="shrink-0 border-b border-slate-800/80 pb-2.5">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0 flex items-start gap-3">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-sky-500/15 text-sm font-black text-sky-100 ring-1 ring-sky-400/20">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] bg-sky-500/15 text-sm font-black text-sky-100 ring-1 ring-sky-400/20">
                           {selectedSupportConversationDisplayName.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[11px] font-black uppercase tracking-[0.28em] text-sky-300">
-                            Hội thoại đang mở
-                          </div>
-                          <div className="mt-1 truncate text-[20px] font-black text-white">
+                          <div className="truncate text-[18px] font-black text-white">
                             {selectedSupportConversationDisplayName}
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
                             <div
-                              className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${selectedSupportConversationStatusMeta.badgeClass}`}
+                              className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] ${selectedSupportConversationStatusMeta.badgeClass}`}
                             >
                               {selectedSupportConversationStatusMeta.label}
                             </div>
                             {Number(selectedSupportConversation?.adminUnreadCount || 0) > 0 ? (
-                              <div className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold text-amber-100">
+                              <div className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-semibold text-amber-100">
                                 {selectedSupportConversation.adminUnreadCount} tin chưa đọc
                               </div>
                             ) : (
-                              <div className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-100">
+                              <div className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-semibold text-emerald-100">
                                 Đã đọc hết
                               </div>
                             )}
-                            <div className="rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-[10px] font-medium text-slate-300">
+                            <div className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[9px] font-medium text-slate-300">
                               Cập nhật {formatRelativeTime(selectedSupportConversation?.lastMessageAt) || "--"}
                             </div>
                           </div>
@@ -7639,14 +7636,14 @@ function App() {
                           onClick={() =>
                             setShowSupportInfoPanel((prev) => !prev)
                           }
-                          className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors ${
+                          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
                             showSupportInfoPanel
                               ? "border-sky-400/50 bg-sky-500/12 text-sky-100"
                               : "border-slate-700 bg-slate-900/90 text-slate-100 hover:border-slate-500 hover:text-white"
                           }`}
                         >
                           <Info size={13} />
-                          {showSupportInfoPanel ? "Ẩn info" : "Xem info"}
+                          Info
                         </button>
                         <button
                           type="button"
@@ -7661,7 +7658,7 @@ function App() {
                           disabled={
                             loadingStates.fetchSupportThread === selectedSupportConversation.id
                           }
-                          className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-sky-500 disabled:opacity-60"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-sky-500 disabled:opacity-60"
                         >
                           <RefreshCw
                             size={13}
@@ -7679,10 +7676,10 @@ function App() {
                     </div>
 
                     {showSupportInfoPanel ? (
-                      <div className="mt-3 rounded-[18px] border border-slate-700/80 bg-slate-950/60 px-3 py-3 text-xs text-slate-300">
+                      <div className="mt-2.5 rounded-[16px] border border-slate-700/80 bg-slate-950/60 px-3 py-2.5 text-[11px] text-slate-300">
                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                           <div>
-                            <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                            <div className="text-[9px] uppercase tracking-[0.14em] text-slate-500">
                               Email
                             </div>
                             <div className="mt-1 break-all text-slate-100">
@@ -7718,20 +7715,20 @@ function App() {
                       </div>
                     ) : null}
 
-                    <div className="mt-3 flex flex-1 min-h-0 flex-col">
-                      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-700/70 bg-slate-950/55">
-                        <div className="border-b border-slate-800/80 px-4 py-3">
+                    <div className="mt-2.5 flex flex-1 min-h-0 flex-col">
+                      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-slate-700/70 bg-slate-950/55">
+                        <div className="border-b border-slate-800/80 px-3 py-2">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-300">
-                                Khung chat trực tiếp
+                              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-300">
+                                Chat trực tiếp
                               </div>
-                              <p className="mt-1 text-xs text-slate-400">
-                                Mặc định chỉ hiện ít tin mới nhất. Cuộn lên để xem cũ hơn.
+                              <p className="mt-0.5 text-[11px] text-slate-500">
+                                Mới nhất ở dưới, kéo lên để xem cũ hơn.
                               </p>
                             </div>
-                            <div className="flex flex-wrap gap-2 text-xs">
-                              <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1 text-slate-300">
+                            <div className="flex flex-wrap gap-2 text-[11px]">
+                              <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2 py-0.5 text-slate-300">
                                 {supportMessages.length} tin gần nhất
                               </span>
                             </div>
@@ -7751,16 +7748,16 @@ function App() {
                             }
                             handleLoadOlderSupportMessages().catch(() => {});
                           }}
-                          className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] px-3 py-3 md:px-4"
+                          className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] px-2.5 py-2.5 md:px-3"
                         >
-                          <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-3">
+                          <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-2.5">
                             {supportPagination.hasMore ? (
                               <div className="flex justify-center">
                                 <button
                                   type="button"
                                   onClick={() => handleLoadOlderSupportMessages()}
                                   disabled={supportPagination.loadingOlder}
-                                  className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/90 px-3 py-1.5 text-[11px] font-bold text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:opacity-60"
+                                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/90 px-2.5 py-1 text-[10px] font-semibold text-slate-200 transition-colors hover:border-slate-500 hover:text-white disabled:opacity-60"
                                 >
                                   {supportPagination.loadingOlder ? (
                                     <Loader2 size={13} className="animate-spin" />
@@ -7775,8 +7772,8 @@ function App() {
                             ) : null}
 
                             {supportRetainedAfterLabel ? (
-                              <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-[11px] leading-5 text-amber-100">
-                                Chat chỉ giữ {supportRetentionDays} ngày. Tin cũ hơn {supportRetainedAfterLabel} sẽ tự dọn.
+                              <div className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-[10px] text-amber-100">
+                                Lưu {supportRetentionDays} ngày, cũ hơn {supportRetainedAfterLabel} sẽ tự dọn.
                               </div>
                             ) : null}
 
@@ -7791,7 +7788,7 @@ function App() {
                                 Hội thoại này chưa có tin nhắn nào.
                               </div>
                             ) : (
-                              <div className="mt-auto space-y-2.5">
+                              <div className="mt-auto space-y-2">
                                 {supportMessages.map((messageItem, index) => {
                                   const previousMessage = supportMessages[index - 1] || null;
                                   const fromUser =
@@ -7806,7 +7803,7 @@ function App() {
                                     <div key={messageItem.id}>
                                       {shouldRenderDayDivider ? (
                                         <div className="mb-3 flex justify-center">
-                                          <div className="rounded-full border border-slate-700 bg-slate-900/85 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                                          <div className="rounded-full border border-slate-700 bg-slate-900/85 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">
                                             {formatSupportDayLabel(messageItem.createdAt)}
                                           </div>
                                         </div>
@@ -7816,15 +7813,15 @@ function App() {
                                           fromUser ? "justify-start" : "justify-end"
                                         }`}
                                       >
-                                        <div className="max-w-[92%] sm:max-w-[74%]">
+                                        <div className="max-w-[92%] sm:max-w-[68%]">
                                           <div
-                                            className={`rounded-[22px] px-3.5 py-3 shadow-[0_16px_30px_rgba(2,6,23,0.18)] ${
+                                            className={`rounded-[18px] px-3 py-2.5 shadow-[0_14px_24px_rgba(2,6,23,0.16)] ${
                                               fromUser
                                                 ? "border border-slate-700/90 bg-slate-950/95 text-slate-100"
                                                 : "bg-[linear-gradient(135deg,#0284c7,#38bdf8)] text-white"
                                             }`}
                                           >
-                                            <div className="mb-1.5 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em]">
+                                            <div className="mb-1 flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.08em]">
                                               <span
                                                 className={
                                                   fromUser
@@ -7846,7 +7843,7 @@ function App() {
                                                 )}
                                               </span>
                                             </div>
-                                            <div className="whitespace-pre-wrap break-words text-sm leading-6">
+                                            <div className="whitespace-pre-wrap break-words text-[13px] font-medium leading-5">
                                               {messageItem.body}
                                             </div>
                                           </div>
@@ -7862,9 +7859,9 @@ function App() {
 
                         <form
                           onSubmit={handleSendSupportReply}
-                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/85 p-3.5"
+                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/85 p-2.5"
                         >
-                          <div className="rounded-[22px] border border-slate-700/80 bg-slate-950/90 p-3">
+                          <div className="rounded-[18px] border border-slate-700/80 bg-slate-950/90 p-2.5">
                             <textarea
                               rows={2}
                               value={supportReplyDraft}
@@ -7880,17 +7877,17 @@ function App() {
                                   e.currentTarget.form?.requestSubmit();
                                 }
                               }}
-                              placeholder="Nhập câu trả lời ngắn gọn, rõ ràng cho user..."
-                              className="min-h-[84px] w-full resize-none bg-transparent px-2 py-2 text-sm text-white outline-none placeholder:text-slate-500"
+                              placeholder="Nhập câu trả lời cho user..."
+                              className="min-h-[64px] w-full resize-none bg-transparent px-1.5 py-1.5 text-[13px] text-white outline-none placeholder:text-slate-500"
                             />
-                            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
-                              <div className="text-[11px] text-slate-500">
+                            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-2.5">
+                              <div className="text-[10px] text-slate-500">
                                 {supportReplyDraft.trim().length} ký tự
                               </div>
                               <button
                                 type="submit"
                                 disabled={loadingStates.sendSupportMessage || !supportReplyDraft.trim()}
-                                className="inline-flex items-center gap-2 rounded-xl bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-4 py-2 text-xs font-black text-white shadow-[0_12px_24px_rgba(2,132,199,0.2)] transition-all hover:translate-y-[-1px] hover:shadow-[0_16px_30px_rgba(2,132,199,0.24)] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_10px_18px_rgba(2,132,199,0.18)] transition-all hover:translate-y-[-1px] hover:shadow-[0_14px_24px_rgba(2,132,199,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {loadingStates.sendSupportMessage ? (
                                   <>
@@ -8219,34 +8216,34 @@ function App() {
               </div>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4 justify-between mb-4">
-              <div className="flex-1 max-w-xl space-y-3">
+            <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+              <div className="flex-1 max-w-2xl space-y-2.5">
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="🔍 Tìm kiếm theo email hoặc tên khách..."
+                    placeholder="Tìm theo email hoặc tên khách..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   />
                   {searchQuery && (
                     <button
                       onClick={() => setSearchQuery("")}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
                     >
-                      <X size={18} />
+                      <X size={15} />
                     </button>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Lọc khách
                   </span>
                   {renderCustomerFilterButtons(
                     chatgptCustomerFilter,
                     setChatgptCustomerFilter,
                   )}
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Loc han
                   </span>
                   {renderExpiryRangeInputs(
@@ -8265,7 +8262,7 @@ function App() {
                         setChatgptExpiryFilter,
                       ),
                   )}
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Moc nhanh
                   </span>
                   {renderExpiryFilterSelect(
@@ -8280,14 +8277,14 @@ function App() {
                   )}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-xs text-slate-300 px-3 py-2 bg-slate-800 rounded-lg border border-slate-700">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <div className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] text-slate-300">
                   Đã chọn: <span className="font-bold text-white">{selectedChatgptIds.length}</span>
                 </div>
                 {selectedChatgptIds.length > 0 && (
                   <button
                     onClick={() => setSelectedChatgptIds([])}
-                    className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg font-semibold text-sm"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-600"
                   >
                     Bỏ chọn
                   </button>
@@ -8295,36 +8292,36 @@ function App() {
                 <button
                   onClick={() => handleBulkWarehouseMove("none")}
                   disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
-                  className="flex items-center gap-2 bg-blue-700 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <ArrowRightLeft size={18} /> Về kho tổng
+                  <ArrowRightLeft size={14} /> Kho tổng
                 </button>
                 <button
                   onClick={() => handleBulkWarehouseMove("cheap")}
                   disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
-                  className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Globe size={18} /> Đẩy sang kho market
+                  <Globe size={14} /> Kho market
                 </button>
                 <button
                   onClick={() => handleBulkWarehouseMove("main")}
                   disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
-                  className="flex items-center gap-2 bg-amber-700 hover:bg-amber-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-amber-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Globe size={18} /> Day sang kho duoi 25
+                  <Globe size={14} /> {"Kho <25"}
                 </button>
                 <button
                   onClick={handleCopySelectedChatgptMarketplaceFormat}
                   disabled={selectedChatgptIds.length === 0}
-                  className="flex items-center gap-2 bg-cyan-700 hover:bg-cyan-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg transition-transform justify-center disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <Copy size={18} /> Copy format web
+                  <Copy size={14} /> Copy web
                 </button>
                 <button
                   onClick={() => setShowImportGPTModal(true)}
-                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold shadow-lg hover:translate-y-[-2px] transition-transform justify-center"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-purple-500"
                 >
-                  <Upload size={18} /> Import Nhanh Tài Khoản
+                  <Upload size={14} /> Import
                 </button>
               </div>
             </div>
