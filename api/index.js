@@ -810,10 +810,16 @@ const adminReadCacheTtlMs = toPositiveInt(
   8000,
 );
 const adminReadCache = new Map();
+const chatgptAdminSnapshotCacheTtlMs = toPositiveInt(
+  process.env.CHATGPT_ADMIN_SNAPSHOT_CACHE_TTL_MS,
+  adminReadCacheTtlMs,
+);
+let chatgptAdminSnapshotCache = null;
 
 const bumpDataVersion = () => {
   latestDataVersion = Date.now();
   adminReadCache.clear();
+  chatgptAdminSnapshotCache = null;
 };
 
 const buildAdminReadCacheKey = (name = "", params = {}) => {
@@ -3897,6 +3903,65 @@ const matchesAdminChatgptExpiryRange = (
   if (max !== null && daysRemaining > max) return false;
   return true;
 };
+const CHATGPT_ADMIN_ACCOUNT_SELECT =
+  "id username password otpSecret type package2Shelf users note link status createdAt expiredAt updatedAt";
+const CHATGPT_ADMIN_MARKETPLACE_ORDER_TRACE_SELECT =
+  "provider orderId accounts.accountId";
+const CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT =
+  "provider orderId rootAccountId currentAccountId rounds.fromAccountId rounds.toAccountId";
+const CHATGPT_ADMIN_STORE_ORDER_TRACE_SELECT = [
+  "id",
+  "userId",
+  "status",
+  "packageCode",
+  "packageName",
+  "momoOrderId",
+  "createdAt",
+  "paidAt",
+  "fulfilledAt",
+  "expiresAt",
+  "updatedAt",
+  "assignedAccountId",
+  "reservedAccountId",
+  "rootAssignedAccountId",
+  "warrantyRounds.fromAccountId",
+  "warrantyRounds.toAccountId",
+].join(" ");
+const CHATGPT_ADMIN_STORE_USER_TRACE_SELECT =
+  "id fullName email phone createdAt updatedAt";
+const loadStoreUsersForTraceOrders = async (
+  orders = [],
+  select = CHATGPT_ADMIN_STORE_USER_TRACE_SELECT,
+) => {
+  const userIds = Array.from(
+    new Set(
+      (Array.isArray(orders) ? orders : [])
+        .map((order) => String(order?.userId || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (userIds.length === 0) return [];
+  return StoreUser.find({ id: { $in: userIds } }).select(select).lean();
+};
+const buildAdminChatgptSearchText = (account = {}) =>
+  normalizeAdminSearchText(
+    [
+      account?.username,
+      account?.password,
+      account?.note,
+      ...(Array.isArray(account?.users)
+        ? account.users.flatMap((user) => [user?.name, user?.joinedAt, user?.expiredAt])
+        : []),
+      account?.storeTraceSummary?.latestOrderId,
+      account?.storeTraceSummary?.latestCustomerName,
+      account?.storeTraceSummary?.latestCustomerEmail,
+      account?.marketplaceTraceSummary?.latestOrderId,
+      account?.marketplaceTraceSummary?.latestWarrantyOrderId,
+      account?.marketplaceTraceSummary?.latestProvider,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
 const sortAdminChatgptAccounts = (items = []) => {
   const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
   return [...(Array.isArray(items) ? items : [])].sort((left, right) => {
@@ -3908,6 +3973,140 @@ const sortAdminChatgptAccounts = (items = []) => {
       new Date(String(left?.createdAt || 0)).getTime()
     );
   });
+};
+const getCachedChatgptAdminSnapshot = async (
+  ttlMs = chatgptAdminSnapshotCacheTtlMs,
+) => {
+  const cacheVersion = latestDataVersion;
+  const now = Date.now();
+  const existing = chatgptAdminSnapshotCache;
+  if (
+    existing &&
+    existing.version === cacheVersion &&
+    existing.expiresAt > now
+  ) {
+    if (existing.value) {
+      return existing.value;
+    }
+    if (existing.promise) {
+      return existing.promise;
+    }
+  }
+
+  const loadPromise = (async () => {
+    const [accounts, datammoOrders, datammoWarrantyCases, rawStoreOrders] =
+      await Promise.all([
+        Account.find({}).select(CHATGPT_ADMIN_ACCOUNT_SELECT).lean(),
+        DatammoOrder.find({})
+          .sort({ createdAt: -1 })
+          .limit(100)
+          .select(CHATGPT_ADMIN_MARKETPLACE_ORDER_TRACE_SELECT)
+          .lean(),
+        DatammoWarrantyCase.find({})
+          .sort({ updatedAt: -1 })
+          .limit(100)
+          .select(CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT)
+          .lean(),
+        StoreOrder.find({
+          status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+        })
+          .sort({ createdAt: -1 })
+          .limit(100)
+          .select(CHATGPT_ADMIN_STORE_ORDER_TRACE_SELECT)
+          .lean(),
+      ]);
+
+    const storeUsers = await loadStoreUsersForTraceOrders(rawStoreOrders);
+    const storeUserMap = new Map(
+      (storeUsers || []).map((user) => [String(user?.id || "").trim(), user]),
+    );
+    const storeAccountTraceMap = buildStoreAccountTraceMap(
+      rawStoreOrders,
+      storeUserMap,
+    );
+    const marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
+      datammoOrders,
+      datammoWarrantyCases,
+    );
+    const enrichedAccounts = sortAdminChatgptAccounts(
+      (accounts || []).map((account) => {
+        const normalizedAccount = {
+          ...account,
+          package2Shelf: normalizePackage2Shelf(
+            account?.package2Shelf,
+            CHATGPT_TOTAL_VALUE,
+          ),
+          storeTraceSummary:
+            storeAccountTraceMap.get(String(account?.id || "").trim()) || null,
+          marketplaceTraceSummary:
+            marketplaceAccountTraceMap.get(String(account?.id || "").trim()) ||
+            null,
+        };
+        return {
+          ...normalizedAccount,
+          package2Shelf: normalizeChatgptMarketAccountState(normalizedAccount),
+        };
+      }),
+    );
+    const isTrackedMarketplaceAccount = (account = {}) =>
+      Number(account?.marketplaceTraceSummary?.orderCount || 0) > 0;
+    const isMarketAccount = (account = {}) =>
+      supportsChatgptMarket(account?.type) &&
+      normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
+        CHATGPT_MARKET_VALUE;
+    const isShortAccount = (account = {}) =>
+      supportsChatgptMarket(account?.type) &&
+      normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
+        CHATGPT_MANUAL_MARKET_VALUE;
+
+    const totalPoolAccounts = enrichedAccounts.filter((account) => {
+      if (!supportsChatgptMarket(account?.type)) return false;
+      if (isTrackedMarketplaceAccount(account)) return false;
+      if (isMarketAccount(account)) return false;
+      if (isShortAccount(account)) return false;
+      return true;
+    });
+    const marketUnsoldAccounts = enrichedAccounts.filter(
+      (account) => !isTrackedMarketplaceAccount(account) && isMarketAccount(account),
+    );
+    const marketSoldAccounts = enrichedAccounts.filter(
+      (account) => isTrackedMarketplaceAccount(account),
+    );
+    const shortAccounts = enrichedAccounts.filter(
+      (account) => !isTrackedMarketplaceAccount(account) && isShortAccount(account),
+    );
+
+    return {
+      enrichedAccounts,
+      totalPoolAccounts,
+      marketUnsoldAccounts,
+      marketSoldAccounts,
+      shortAccounts,
+    };
+  })()
+    .then((value) => {
+      if (chatgptAdminSnapshotCache?.promise === loadPromise) {
+        chatgptAdminSnapshotCache = {
+          version: cacheVersion,
+          expiresAt: Date.now() + ttlMs,
+          value,
+        };
+      }
+      return value;
+    })
+    .catch((error) => {
+      if (chatgptAdminSnapshotCache?.promise === loadPromise) {
+        chatgptAdminSnapshotCache = null;
+      }
+      throw error;
+    });
+
+  chatgptAdminSnapshotCache = {
+    version: cacheVersion,
+    expiresAt: now + ttlMs,
+    promise: loadPromise,
+  };
+  return loadPromise;
 };
 const listAdminChatgptAccounts = async ({
   page = 1,
@@ -3938,50 +4137,13 @@ const listAdminChatgptAccounts = async ({
       : String(soldProviderFilter || "").trim().toLowerCase() === "datammo"
         ? "datammo"
         : "all";
-
-  const [accounts, datammoOrders, datammoWarrantyCases, rawStoreOrders, storeUsers] =
-    await Promise.all([
-      Account.find({}).lean(),
-      DatammoOrder.find({}).sort({ createdAt: -1 }).limit(100).lean(),
-      DatammoWarrantyCase.find({}).sort({ updatedAt: -1 }).limit(100).lean(),
-      StoreOrder.find({
-        status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
-      })
-        .sort({ createdAt: -1 })
-        .limit(100)
-        .lean(),
-      StoreUser.find({})
-        .select("id fullName email phone createdAt updatedAt")
-        .lean(),
-    ]);
-
-  const storeUserMap = new Map(
-    (storeUsers || []).map((user) => [String(user?.id || "").trim(), user]),
-  );
-  const storeAccountTraceMap = buildStoreAccountTraceMap(rawStoreOrders, storeUserMap);
-  const marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
-    datammoOrders,
-    datammoWarrantyCases,
-  );
-  const enrichedAccounts = sortAdminChatgptAccounts(
-    (accounts || []).map((account) => {
-      const normalizedAccount = {
-        ...account,
-        package2Shelf: normalizePackage2Shelf(
-          account?.package2Shelf,
-          CHATGPT_TOTAL_VALUE,
-        ),
-        storeTraceSummary:
-          storeAccountTraceMap.get(String(account?.id || "").trim()) || null,
-        marketplaceTraceSummary:
-          marketplaceAccountTraceMap.get(String(account?.id || "").trim()) || null,
-      };
-      return {
-        ...normalizedAccount,
-        package2Shelf: normalizeChatgptMarketAccountState(normalizedAccount),
-      };
-    }),
-  );
+  const {
+    enrichedAccounts,
+    totalPoolAccounts,
+    marketUnsoldAccounts,
+    marketSoldAccounts,
+    shortAccounts,
+  } = await getCachedChatgptAdminSnapshot();
   const isTrackedMarketplaceAccount = (account = {}) =>
     Number(account?.marketplaceTraceSummary?.orderCount || 0) > 0;
   const isMarketAccount = (account = {}) =>
@@ -4001,39 +4163,6 @@ const listAdminChatgptAccounts = async ({
   const isMarketSoldAccount = (account = {}, provider = "all") =>
     isTrackedMarketplaceAccount(account) &&
     accountMatchesSoldProvider(account, provider);
-  const buildSearchText = (account = {}) =>
-    normalizeAdminSearchText(
-      [
-        account?.username,
-        account?.password,
-        account?.note,
-        ...(Array.isArray(account?.users)
-          ? account.users.flatMap((user) => [user?.name, user?.joinedAt, user?.expiredAt])
-          : []),
-        account?.storeTraceSummary?.latestOrderId,
-        account?.storeTraceSummary?.latestCustomerName,
-        account?.storeTraceSummary?.latestCustomerEmail,
-        account?.marketplaceTraceSummary?.latestOrderId,
-        account?.marketplaceTraceSummary?.latestWarrantyOrderId,
-        account?.marketplaceTraceSummary?.latestProvider,
-      ]
-        .filter(Boolean)
-        .join(" "),
-    );
-
-  const totalPoolAccounts = enrichedAccounts.filter((account) => {
-    if (!supportsChatgptMarket(account?.type)) return false;
-    if (isTrackedMarketplaceAccount(account)) return false;
-    if (isMarketAccount(account)) return false;
-    if (isShortAccount(account)) return false;
-    return true;
-  });
-  const marketUnsoldAccounts = enrichedAccounts.filter((account) =>
-    isMarketUnsoldAccount(account),
-  );
-  const marketSoldAccounts = enrichedAccounts.filter((account) =>
-    isMarketSoldAccount(account),
-  );
   const filteredAccounts = enrichedAccounts
     .filter((account) => {
       if (normalizedSubTab === "market") {
@@ -4080,7 +4209,7 @@ const listAdminChatgptAccounts = async ({
     )
     .filter((account) => {
       if (!normalizedSearch) return true;
-      return buildSearchText(account).includes(normalizedSearch);
+      return buildAdminChatgptSearchText(account).includes(normalizedSearch);
     });
 
   const total = filteredAccounts.length;
@@ -4103,12 +4232,7 @@ const listAdminChatgptAccounts = async ({
         all: enrichedAccounts.length,
         total: totalPoolAccounts.length,
         market: marketUnsoldAccounts.length + marketSoldAccounts.length,
-        short: enrichedAccounts.filter(
-          (account) =>
-            supportsChatgptMarket(account?.type) &&
-            !isTrackedMarketplaceAccount(account) &&
-            isShortAccount(account),
-        ).length,
+        short: shortAccounts.length,
       },
       totalTypeTabs: {
         all: totalPoolAccounts.length,
@@ -7649,8 +7773,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
         const shouldLoadStoreUsers =
           sectionSet.has("storeUsers") ||
           sectionSet.has("storeVouchers") ||
-          sectionSet.has("storeOrders") ||
-          shouldLoadChatgpt;
+          sectionSet.has("storeOrders");
         const shouldLoadStoreVouchers = sectionSet.has("storeVouchers");
         const shouldLoadSupportConversations = sectionSet.has(
           "supportConversations",
@@ -7694,14 +7817,14 @@ app.get("/api/data", verifyToken, async (req, res) => {
                 .limit(100)
                 .lean()
             : Promise.resolve([]),
-          shouldLoadStoreUsers || shouldBuildChatgptTrace
+          shouldLoadStoreUsers
             ? StoreUser.find({})
                 .select(
                   "id fullName email phone authProviders googleId passwordHash createdAt updatedAt",
                 )
                 .lean()
             : Promise.resolve([]),
-          shouldLoadStoreUsers || shouldBuildChatgptTrace
+          shouldLoadStoreUsers
             ? StoreOrder.aggregate([
                 {
                   $group: {
@@ -7743,8 +7866,18 @@ app.get("/api/data", verifyToken, async (req, res) => {
             ? buildAdminDashboardSummary()
             : Promise.resolve(null),
         ]);
+        const traceStoreUsers =
+          !shouldLoadStoreUsers && shouldBuildChatgptTrace
+            ? await loadStoreUsersForTraceOrders(
+                rawStoreOrders,
+                CHATGPT_ADMIN_STORE_USER_TRACE_SELECT,
+              )
+            : [];
         const storeUserMap = new Map(
-          (storeUsers || []).map((user) => [String(user?.id || "").trim(), user]),
+          [...(storeUsers || []), ...(traceStoreUsers || [])].map((user) => [
+            String(user?.id || "").trim(),
+            user,
+          ]),
         );
         const storeUserStatsMap = new Map(
           (storeUserOrderStats || []).map((item) => [

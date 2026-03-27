@@ -394,6 +394,7 @@ function PublicStorefront() {
   const supportThreadAppliedSeqRef = useRef(0);
   const supportLastReadSignatureRef = useRef("");
   const supportLastReadAtRef = useRef(0);
+  const supportDraftInputRef = useRef(null);
   const supportScrollModeRef = useRef("");
   const supportPreviousScrollHeightRef = useRef(0);
   const supportPreviousScrollTopRef = useRef(0);
@@ -820,6 +821,15 @@ function PublicStorefront() {
       supportScrollModeRef.current = "";
     });
   }, [supportMessages, supportOpen]);
+
+  useEffect(() => {
+    resizeSupportDraftInput();
+  }, [supportDraft, supportOpen]);
+
+  useEffect(() => {
+    if (!supportOpen) return;
+    focusSupportDraftToEnd();
+  }, [supportOpen]);
 
   useEffect(() => {
     const onPopState = () => refreshRouteState();
@@ -1621,12 +1631,31 @@ function PublicStorefront() {
       );
       flushSupportScrollToBottom();
       setSupportDraft("");
+      focusSupportDraftToEnd();
       setMessage("Đã gửi tin nhắn cho admin.");
     } catch (supportError) {
       setError(supportError.message || "Không gửi được tin nhắn.");
     } finally {
       setSupportSending(false);
     }
+  };
+
+  const focusSupportDraftToEnd = () => {
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      const input = supportDraftInputRef.current;
+      if (!input) return;
+      input.focus();
+      const textLength = String(input.value || "").length;
+      input.setSelectionRange(textLength, textLength);
+    });
+  };
+
+  const resizeSupportDraftInput = () => {
+    const input = supportDraftInputRef.current;
+    if (!input) return;
+    input.style.height = "0px";
+    input.style.height = `${Math.min(input.scrollHeight, 88)}px`;
   };
 
   const copyText = async (value, successMessage) => {
@@ -2412,40 +2441,46 @@ function PublicStorefront() {
 
                 <form
                   onSubmit={handleSendSupportMessage}
-                  className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-1.5 pb-1 pt-1 sm:px-1.5 sm:pb-1.5"
+                  className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-2 pb-2 pt-2 sm:px-2.5"
                 >
-                  <div className="rounded-[12px] border border-slate-700/80 bg-slate-950/90 p-1">
+                  <div className="relative rounded-[18px] border border-slate-700/80 bg-white/[0.035] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                     <textarea
+                      ref={supportDraftInputRef}
                       value={supportDraft}
                       onChange={(event) => setSupportDraft(event.target.value)}
                       rows={1}
                       placeholder="Nhập tin nhắn..."
-                      className="min-h-[30px] max-h-[70px] w-full resize-none bg-transparent px-1 py-0 text-[11px] leading-4 text-white outline-none placeholder:text-slate-500"
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "Enter" &&
+                          !event.shiftKey &&
+                          supportDraft.trim() &&
+                          !supportSending
+                        ) {
+                          event.preventDefault();
+                          event.currentTarget.form?.requestSubmit();
+                        }
+                      }}
+                      className="min-h-[36px] max-h-[88px] w-full resize-none bg-transparent py-1 pl-1 pr-11 text-[12px] leading-5 text-white outline-none placeholder:text-slate-500"
                     />
-                    <div className="mt-1 flex flex-wrap items-center justify-between gap-1.5 border-t border-slate-800 pt-1">
-                      <div className="flex flex-wrap gap-1.5 text-[9px] text-slate-500">
-                        <span className="rounded-full border border-slate-700 bg-slate-900/85 px-1.5 py-0.5">
-                          {supportDraft.trim().length} ký tự
-                        </span>
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={supportSending || !supportDraft.trim()}
-                        className="inline-flex items-center gap-1 rounded-lg bg-cyan-600 px-1.5 py-0.5 text-[10px] font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {supportSending ? (
-                          <>
-                            <Loader2 size={12} className="animate-spin" />
-                            Đang gửi
-                          </>
-                        ) : (
-                          <>
-                            <SendHorizontal size={12} />
-                            Gửi
-                          </>
-                        )}
-                      </button>
-                    </div>
+                    <button
+                      type="submit"
+                      disabled={supportSending || !supportDraft.trim()}
+                      className="absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-[linear-gradient(135deg,#0891b2,#2563eb)] text-white shadow-[0_12px_24px_rgba(37,99,235,0.28)] transition-all hover:translate-y-[-1px] hover:shadow-[0_16px_28px_rgba(37,99,235,0.34)] disabled:cursor-not-allowed disabled:opacity-60"
+                      title="Gửi tin nhắn"
+                    >
+                      {supportSending ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <SendHorizontal size={14} />
+                      )}
+                    </button>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2 px-1 text-[9px] text-slate-500">
+                    <span className="rounded-full border border-slate-700 bg-slate-900/85 px-1.5 py-0.5">
+                      {supportDraft.trim().length} ký tự
+                    </span>
+                    <span className="hidden sm:inline">Enter để gửi, Shift+Enter xuống dòng</span>
                   </div>
                 </form>
               </div>
