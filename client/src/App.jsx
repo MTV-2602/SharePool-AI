@@ -12863,7 +12863,66 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                       )
                     : "Datammo + Shopmini";
                 return (
-                  <div id={`team-account-row-${acc.id}`} key={acc.id} className={`overflow-hidden rounded-xl border shadow-lg ${String(highlightedTeamAccountId || "") === String(acc.id || "") ? "ring-1 ring-cyan-500/50 bg-cyan-900/10" : ""} ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}>
+                  <details
+                    id={`team-account-row-${acc.id}`}
+                    key={acc.id}
+                    className={`overflow-hidden rounded-xl border shadow-lg ${String(highlightedTeamAccountId || "") === String(acc.id || "") ? "ring-1 ring-cyan-500/50 bg-cyan-900/10" : ""} ${isExpired ? "border-red-700 bg-red-950/20" : isNear ? "border-yellow-700 bg-yellow-950/10" : "border-slate-700 bg-slate-900"}`}
+                  >
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-slate-950/70 px-3 py-2 text-left [&::-webkit-details-marker]:hidden">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`inline-flex h-2.5 w-2.5 shrink-0 rounded-full ${
+                              isExpired
+                                ? "bg-red-500"
+                                : isNear
+                                  ? "bg-amber-400"
+                                  : "bg-emerald-400"
+                            }`}
+                          />
+                          <span className="truncate font-mono text-[12px] font-bold text-white">
+                            {acc.username}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
+                          <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-slate-200">
+                            {getTeamSaleModeLabel(saleMode)}
+                          </span>
+                          <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-slate-300">
+                            {getTeamWarehouseLabel(acc.warehouse)}
+                          </span>
+                          <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-sky-200">
+                            {usedSlots}/{customerCapacity} {isBusinessMode ? "khách" : "slot"}
+                          </span>
+                          {canOpenTeamWarranty ? (
+                            <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-cyan-200">
+                              Seller
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div
+                          className={`text-[10px] font-bold ${
+                            isExpired
+                              ? "text-red-400"
+                              : isNear
+                                ? "text-amber-300"
+                                : "text-emerald-300"
+                          }`}
+                        >
+                          {isExpired
+                            ? `HH ${Math.abs(expDays)} ngày`
+                            : expDays !== null
+                              ? `Còn ${expDays} ngày`
+                              : "Chưa rõ hạn"}
+                        </div>
+                        <div className="mt-1 text-[10px] text-slate-500">
+                          Bấm để mở
+                        </div>
+                      </div>
+                    </summary>
+                    <div className="border-t border-slate-800/70">
                     {/* Account header */}
                     <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-700 bg-indigo-900/40 px-2.5 py-2.5 sm:px-3">
                       <div className="flex items-start gap-2.5">
@@ -13267,7 +13326,8 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         Chưa có khách nào trong tài khoản này.
                       </div>
                     )}
-                  </div>
+                    </div>
+                  </details>
                 );
               })}
                       </div>
