@@ -3051,10 +3051,14 @@ const scheduleInventoryReconcile = () => {
   nextInventoryReconcileAtMs = now + 60 * 1000;
   inventoryReconcilePromise = (async () => {
     try {
-      await Promise.all([
+      const results = await Promise.all([
         reconcileChatgptMarketInventory(),
         reconcileTeamMarketInventory(),
       ]);
+      if (results.some(Boolean)) {
+        bumpDataVersion();
+        notifyClients();
+      }
     } catch (error) {
       console.error("Inventory reconcile failed:", error?.message || error);
     } finally {
@@ -3960,17 +3964,23 @@ const listAdminChatgptAccounts = async ({
     datammoWarrantyCases,
   );
   const enrichedAccounts = sortAdminChatgptAccounts(
-    (accounts || []).map((account) => ({
-      ...account,
-      package2Shelf: normalizePackage2Shelf(
-        account?.package2Shelf,
-        CHATGPT_TOTAL_VALUE,
-      ),
-      storeTraceSummary:
-        storeAccountTraceMap.get(String(account?.id || "").trim()) || null,
-      marketplaceTraceSummary:
-        marketplaceAccountTraceMap.get(String(account?.id || "").trim()) || null,
-    })),
+    (accounts || []).map((account) => {
+      const normalizedAccount = {
+        ...account,
+        package2Shelf: normalizePackage2Shelf(
+          account?.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        ),
+        storeTraceSummary:
+          storeAccountTraceMap.get(String(account?.id || "").trim()) || null,
+        marketplaceTraceSummary:
+          marketplaceAccountTraceMap.get(String(account?.id || "").trim()) || null,
+      };
+      return {
+        ...normalizedAccount,
+        package2Shelf: normalizeChatgptMarketAccountState(normalizedAccount),
+      };
+    }),
   );
   const isTrackedMarketplaceAccount = (account = {}) =>
     Number(account?.marketplaceTraceSummary?.orderCount || 0) > 0;
@@ -3982,6 +3992,15 @@ const listAdminChatgptAccounts = async ({
     supportsChatgptMarket(account?.type) &&
     normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
       CHATGPT_MANUAL_MARKET_VALUE;
+  const accountMatchesSoldProvider = (account = {}, provider = "all") => {
+    if (provider === "all") return true;
+    return (account?.marketplaceTraceSummary?.providers || []).includes(provider);
+  };
+  const isMarketUnsoldAccount = (account = {}) =>
+    !isTrackedMarketplaceAccount(account) && isMarketAccount(account);
+  const isMarketSoldAccount = (account = {}, provider = "all") =>
+    isTrackedMarketplaceAccount(account) &&
+    accountMatchesSoldProvider(account, provider);
   const buildSearchText = (account = {}) =>
     normalizeAdminSearchText(
       [
@@ -4009,28 +4028,19 @@ const listAdminChatgptAccounts = async ({
     if (isShortAccount(account)) return false;
     return true;
   });
-  const soldPackage2Accounts = enrichedAccounts.filter(
-    (account) =>
-      String(account?.type || "").trim() === "package2" &&
-      isTrackedMarketplaceAccount(account),
+  const marketUnsoldAccounts = enrichedAccounts.filter((account) =>
+    isMarketUnsoldAccount(account),
   );
-  const regularMarketPackage2Accounts = enrichedAccounts.filter(
-    (account) =>
-      String(account?.type || "").trim() === "package2" &&
-      !isTrackedMarketplaceAccount(account) &&
-      isMarketAccount(account),
+  const marketSoldAccounts = enrichedAccounts.filter((account) =>
+    isMarketSoldAccount(account),
   );
   const filteredAccounts = enrichedAccounts
     .filter((account) => {
       if (normalizedSubTab === "market") {
         if (normalizedPackage2ShelfTab === "sold") {
-          if (!isTrackedMarketplaceAccount(account)) return false;
-          if (normalizedSoldProvider === "all") return true;
-          return (account?.marketplaceTraceSummary?.providers || []).includes(
-            normalizedSoldProvider,
-          );
+          return isMarketSoldAccount(account, normalizedSoldProvider);
         }
-        return !isTrackedMarketplaceAccount(account) && isMarketAccount(account);
+        return isMarketUnsoldAccount(account);
       }
       if (normalizedSubTab === "short") {
         return !isTrackedMarketplaceAccount(account) && isShortAccount(account);
@@ -4092,7 +4102,7 @@ const listAdminChatgptAccounts = async ({
       tabs: {
         all: enrichedAccounts.length,
         total: totalPoolAccounts.length,
-        market: regularMarketPackage2Accounts.length + soldPackage2Accounts.length,
+        market: marketUnsoldAccounts.length + marketSoldAccounts.length,
         short: enrichedAccounts.filter(
           (account) =>
             supportsChatgptMarket(account?.type) &&
@@ -4114,13 +4124,13 @@ const listAdminChatgptAccounts = async ({
         ).length,
       },
       marketShelfTabs: {
-        all: regularMarketPackage2Accounts.length,
-        sold: soldPackage2Accounts.length,
-        soldDatammo: soldPackage2Accounts.filter((account) =>
-          (account?.marketplaceTraceSummary?.providers || []).includes("datammo"),
+        all: marketUnsoldAccounts.length,
+        sold: marketSoldAccounts.length,
+        soldDatammo: marketSoldAccounts.filter((account) =>
+          accountMatchesSoldProvider(account, "datammo"),
         ).length,
-        soldShopmini: soldPackage2Accounts.filter((account) =>
-          (account?.marketplaceTraceSummary?.providers || []).includes("shopmini"),
+        soldShopmini: marketSoldAccounts.filter((account) =>
+          accountMatchesSoldProvider(account, "shopmini"),
         ).length,
       },
     },
@@ -5005,7 +5015,7 @@ const reconcileTeamMarketInventory = async () => {
   const minExpiredAt = new Date(
     Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
   ).toISOString();
-  await TeamAccount.updateMany(
+  const moveManagedBusinessIntoMarket = await TeamAccount.updateMany(
     {
       warehouse: TEAM_WAREHOUSE_TOTAL,
       saleMode: TEAM_SALE_MODE_BUSINESS,
@@ -5024,7 +5034,7 @@ const reconcileTeamMarketInventory = async () => {
       },
     },
   );
-  await TeamAccount.updateMany(
+  const moveNearExpiryOutOfMarket = await TeamAccount.updateMany(
     {
       warehouse: TEAM_WAREHOUSE_MARKET,
       expiredAt: { $lte: minExpiredAt },
@@ -5036,7 +5046,7 @@ const reconcileTeamMarketInventory = async () => {
       },
     },
   );
-  await TeamAccount.updateMany(
+  const resetInvalidShortWarehouse = await TeamAccount.updateMany(
     {
       warehouse: TEAM_WAREHOUSE_SHORT,
       saleMode: { $ne: TEAM_SALE_MODE_BUSINESS },
@@ -5235,16 +5245,20 @@ const syncChatgptMarketStateIfNeeded = async (acc) => {
   return updated || acc;
 };
 const reconcileChatgptMarketInventory = async () => {
-  const minExpiredAt = new Date(
-    Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  await Account.updateMany(
-    {
-      type: { $in: CHATGPT_MARKET_SUPPORTED_TYPES },
-      package2Shelf: CHATGPT_MARKET_VALUE,
-      expiredAt: { $lte: minExpiredAt },
-      "users.0": { $exists: false },
-    },
+  const marketAccounts = await Account.find({
+    type: { $in: CHATGPT_MARKET_SUPPORTED_TYPES },
+    package2Shelf: CHATGPT_MARKET_VALUE,
+  }).lean();
+  const dirtyAccountIds = (Array.isArray(marketAccounts) ? marketAccounts : [])
+    .filter(
+      (account) =>
+        normalizeChatgptMarketAccountState(account) !== CHATGPT_MARKET_VALUE,
+    )
+    .map((account) => String(account?.id || "").trim())
+    .filter(Boolean);
+  if (dirtyAccountIds.length === 0) return false;
+  const result = await Account.updateMany(
+    { id: { $in: dirtyAccountIds } },
     {
       $set: {
         package2Shelf: CHATGPT_TOTAL_VALUE,
@@ -5252,6 +5266,7 @@ const reconcileChatgptMarketInventory = async () => {
       },
     },
   );
+  return Number(result?.modifiedCount || 0) > 0;
 };
 const normalizeMarketplaceProvider = (value, fallback = "datammo") => {
   const raw = String(value || "")
@@ -6451,6 +6466,11 @@ const rollbackStoreClaimedAccount = async (claim = null) => {
       },
     },
   );
+  return (
+    Number(moveManagedBusinessIntoMarket?.modifiedCount || 0) > 0 ||
+    Number(moveNearExpiryOutOfMarket?.modifiedCount || 0) > 0 ||
+    Number(resetInvalidShortWarehouse?.modifiedCount || 0) > 0
+  );
 };
 const restoreStoreAccountSnapshot = async (account = null) => {
   if (!account?.id) return;
@@ -7603,7 +7623,7 @@ const buildDefaultAdminDataSections = ({ omitChatgpt = false } = {}) => {
 
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
-    void scheduleInventoryReconcile();
+    await scheduleInventoryReconcile();
     void scheduleStoreMaintenance();
     const omitChatgpt = String(req.query?.omitChatgpt || "0").trim() === "1";
     const requestedSections = normalizeAdminDataSections(req.query?.sections);
@@ -7763,18 +7783,24 @@ app.get("/api/data", verifyToken, async (req, res) => {
           version: latestDataVersion,
         };
         if (shouldLoadChatgpt) {
-          response.chatgpt = accounts.map((acc) => ({
-            ...acc,
-            package2Shelf: normalizePackage2Shelf(
-              acc?.package2Shelf,
-              CHATGPT_TOTAL_VALUE,
-            ),
-            storeTraceSummary:
-              storeAccountTraceMap.get(String(acc?.id || "").trim()) || null,
-            marketplaceTraceSummary:
-              marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) ||
-              null,
-          }));
+          response.chatgpt = accounts.map((acc) => {
+            const normalizedAccount = {
+              ...acc,
+              package2Shelf: normalizePackage2Shelf(
+                acc?.package2Shelf,
+                CHATGPT_TOTAL_VALUE,
+              ),
+              storeTraceSummary:
+                storeAccountTraceMap.get(String(acc?.id || "").trim()) || null,
+              marketplaceTraceSummary:
+                marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) ||
+                null,
+            };
+            return {
+              ...normalizedAccount,
+              package2Shelf: normalizeChatgptMarketAccountState(normalizedAccount),
+            };
+          });
         }
         if (shouldLoadNetflix) {
           response.netflix = netflixAccs;
@@ -7856,6 +7882,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
 
 app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
   try {
+    await scheduleInventoryReconcile();
     const payload = await getCachedAdminRead(
       "admin:chatgpt-accounts",
       {
@@ -9482,10 +9509,7 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
           "Tài khoản này vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
       });
     }
-    const updatedShelf = normalizePackage2Shelf(
-      normalizedPayload.package2Shelf,
-      CHATGPT_TOTAL_VALUE,
-    );
+    const reconciled = await syncChatgptMarketStateIfNeeded(updated);
     const isPackage2Context =
       supportsChatgptMarket(existingAcc.type) || supportsChatgptMarket(targetType);
     const isManualShelfUpdateForResponse =
@@ -9496,10 +9520,14 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       requestKeys.length > 0 &&
       requestKeys.every((key) => key === "package2Shelf");
     if (isShelfOnlyUpdate && !isPackage2ShelfChanged) {
-      return res.json({ message: "Updated", account: updated, syncSkipped: true });
+      return res.json({
+        message: "Updated",
+        account: reconciled,
+        syncSkipped: true,
+      });
     }
 
-    res.json({ message: "Updated", account: updated });
+    res.json({ message: "Updated", account: reconciled });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }

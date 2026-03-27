@@ -32,8 +32,10 @@ import {
   Gift,
   MessageCircle,
   Phone,
+  Plus,
   Search,
   SendHorizontal,
+  Smile,
   ChevronLeft,
   ChevronUp,
 } from "lucide-react";
@@ -45,6 +47,13 @@ const SESSION_ROLE_STORAGE_KEY = "active_session_role";
 const DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE = 20;
 const DEFAULT_SUPPORT_PAGE_SIZE = 6;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
+const SUPPORT_QUICK_REPLY_SNIPPETS = [
+  "Chào bạn, mình đã nhận được yêu cầu và đang kiểm tra giúp bạn.",
+  "Bạn chờ mình 2-3 phút để mình rà lại tài khoản nhé.",
+  "Mình đã xử lý xong, bạn thử lại giúp mình nhé.",
+  "Nếu vẫn lỗi, bạn gửi thêm ảnh màn hình giúp mình.",
+];
+const SUPPORT_EMOJI_CHOICES = ["🙂", "👍", "🙏", "✅", "🔥", "🎯"];
 
 // Helper: Xóa dấu Tiếng Việt
 const toNonAccentVietnamese = (str) => {
@@ -1417,6 +1426,8 @@ function App() {
     useState("");
   const [supportReplyDraft, setSupportReplyDraft] = useState("");
   const [showSupportInfoPanel, setShowSupportInfoPanel] = useState(false);
+  const [showSupportQuickReplies, setShowSupportQuickReplies] = useState(false);
+  const [showSupportEmojiPicker, setShowSupportEmojiPicker] = useState(false);
   const [supportConversationQuery, setSupportConversationQuery] = useState("");
   const [supportConversationFilter, setSupportConversationFilter] =
     useState("all");
@@ -1543,6 +1554,8 @@ function App() {
   const isFetchingDataRef = useRef(false);
   const fetchDataPromiseRef = useRef(null);
   const chatgptPageEffectPrimedRef = useRef(false);
+  const chatgptListRequestSeqRef = useRef(0);
+  const chatgptListAppliedSeqRef = useRef(0);
   const skipNextAdminTabBootstrapRef = useRef(false);
   const seenDatammoOrderKeysRef = useRef(null);
   const seenStoreOrderKeysRef = useRef(null);
@@ -1552,6 +1565,7 @@ function App() {
   const selectedSupportConversationIdRef = useRef("");
   const supportMessageLoadSeqRef = useRef(0);
   const supportMessageAppliedSeqRef = useRef(0);
+  const supportReplyInputRef = useRef(null);
   const supportMessagesViewportRef = useRef(null);
   const supportScrollModeRef = useRef("");
   const supportPreviousScrollHeightRef = useRef(0);
@@ -1919,42 +1933,6 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (gptSubTab !== "market") return;
-    const marketSummary =
-      chatgptAdminPagination.summary?.marketShelfTabs ||
-      buildDefaultChatgptAdminPaginationState().summary.marketShelfTabs;
-    const unsoldCount = Math.max(0, Number(marketSummary?.all || 0));
-    const soldCount = Math.max(0, Number(marketSummary?.sold || 0));
-    if (package2ShelfTab === "all" && unsoldCount === 0 && soldCount > 0) {
-      setPackage2ShelfTab("sold");
-      return;
-    }
-    if (package2ShelfTab === "sold" && soldCount === 0 && unsoldCount > 0) {
-      setPackage2ShelfTab("all");
-      if (soldPackage2ProviderFilter !== "all") {
-        setSoldPackage2ProviderFilter("all");
-      }
-      return;
-    }
-    if (package2ShelfTab === "sold" && soldPackage2ProviderFilter !== "all") {
-      const providerCount =
-        soldPackage2ProviderFilter === "datammo"
-          ? Number(marketSummary?.soldDatammo || 0)
-          : soldPackage2ProviderFilter === "shopmini"
-            ? Number(marketSummary?.soldShopmini || 0)
-            : soldCount;
-      if (providerCount <= 0 && soldCount > 0) {
-        setSoldPackage2ProviderFilter("all");
-      }
-    }
-  }, [
-    chatgptAdminPagination.summary,
-    gptSubTab,
-    package2ShelfTab,
-    soldPackage2ProviderFilter,
-  ]);
-
-  useEffect(() => {
     if (!expandedChatgptAccountId) return;
     const stillVisible = (Array.isArray(accounts) ? accounts : []).some(
       (acc) =>
@@ -2207,6 +2185,8 @@ function App() {
       selectedSupportConversationId || "",
     ).trim();
     selectedSupportConversationIdRef.current = normalizedConversationId;
+    setShowSupportQuickReplies(false);
+    setShowSupportEmojiPicker(false);
     if (!normalizedConversationId) {
       supportMessageLoadSeqRef.current = 0;
       supportMessageAppliedSeqRef.current = 0;
@@ -3076,7 +3056,9 @@ function App() {
       } catch (error) {
         if (showLoader) {
           showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
-          setAccounts([]);
+          if (dataSectionSet.has("chatgpt") && !omitChatgpt) {
+            setAccounts([]);
+          }
         }
       } finally {
         if (showLoader) setLoading(false);
@@ -3142,6 +3124,8 @@ function App() {
     const safeLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(Number(limit))
       ? Number(limit)
       : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE;
+    const requestSeq = chatgptListRequestSeqRef.current + 1;
+    chatgptListRequestSeqRef.current = requestSeq;
     try {
       setChatgptAdminPageLoading(true);
       const response = await axios.get("/api/admin/chatgpt-accounts", {
@@ -3161,6 +3145,10 @@ function App() {
         timeout: 10000,
         skipGlobalLoading: silent,
       });
+      if (requestSeq !== chatgptListRequestSeqRef.current) {
+        return response?.data || null;
+      }
+      chatgptListAppliedSeqRef.current = requestSeq;
       setAccounts(
         Array.isArray(response?.data?.accounts) ? response.data.accounts : [],
       );
@@ -3182,6 +3170,9 @@ function App() {
       }));
       return response?.data || null;
     } catch (error) {
+      if (requestSeq !== chatgptListRequestSeqRef.current) {
+        return null;
+      }
       if (!silent) {
         showAlert(
           "Lỗi",
@@ -3191,7 +3182,9 @@ function App() {
       }
       return null;
     } finally {
-      setChatgptAdminPageLoading(false);
+      if (requestSeq === chatgptListRequestSeqRef.current) {
+        setChatgptAdminPageLoading(false);
+      }
     }
   };
 
@@ -3912,6 +3905,8 @@ function App() {
         );
       }
       setSupportReplyDraft("");
+      setShowSupportQuickReplies(false);
+      setShowSupportEmojiPicker(false);
       setToastMessage("Đã trả lời user");
       setTimeout(() => setToastMessage(""), 2000);
     } catch (error) {
@@ -3924,6 +3919,42 @@ function App() {
       setLoadingStates((prev) => ({ ...prev, sendSupportMessage: false }));
     }
   };
+
+  const focusSupportReplyInputToEnd = () => {
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      const input = supportReplyInputRef.current;
+      if (!input) return;
+      input.focus();
+      const textLength = String(input.value || "").length;
+      input.setSelectionRange(textLength, textLength);
+    });
+  };
+
+  const resizeSupportReplyInput = () => {
+    const input = supportReplyInputRef.current;
+    if (!input) return;
+    input.style.height = "0px";
+    input.style.height = `${Math.min(input.scrollHeight, 96)}px`;
+  };
+
+  const appendSupportReplyDraft = (
+    fragment = "",
+    { separator = "\n" } = {},
+  ) => {
+    const nextFragment = String(fragment || "").trim();
+    if (!nextFragment) return;
+    setSupportReplyDraft((prev) => {
+      const current = String(prev || "");
+      if (!current.trim()) return nextFragment;
+      return `${current}${separator}${nextFragment}`;
+    });
+    focusSupportReplyInputToEnd();
+  };
+
+  useEffect(() => {
+    resizeSupportReplyInput();
+  }, [supportReplyDraft]);
 
   useEffect(() => {
     if (activeTab !== "chatgpt" || !expandedStoreUserId) return;
@@ -5915,6 +5946,28 @@ function App() {
       summary: payload?.summary || null,
     });
   };
+  (Array.isArray(accounts) ? accounts : []).forEach((acc) => {
+    const traceSummary = acc?.marketplaceTraceSummary || null;
+    if (Number(traceSummary?.orderCount || 0) <= 0) return;
+    registerMarketplaceTrackedAccount(acc?.id, {
+      provider: traceSummary?.latestProvider,
+      orderId: traceSummary?.latestOrderId,
+      role: "sold",
+      label: acc?.username,
+      summary: traceSummary,
+    });
+  });
+  (Array.isArray(teamAccounts) ? teamAccounts : []).forEach((acc) => {
+    const traceSummary = acc?.marketplaceTraceSummary || null;
+    if (Number(traceSummary?.orderCount || 0) <= 0) return;
+    registerMarketplaceTrackedAccount(acc?.id, {
+      provider: traceSummary?.latestProvider,
+      orderId: traceSummary?.latestOrderId,
+      role: "sold",
+      label: acc?.username,
+      summary: traceSummary,
+    });
+  });
   marketplaceOrderSummaries.forEach((order) => {
     order.accountSummaries.forEach((item) => {
       if (normalizeMarketplaceScope(item?.scope) !== "chatgpt") {
@@ -8418,49 +8471,142 @@ function App() {
 
                         <form
                           onSubmit={handleSendSupportReply}
-                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/85 p-1.5"
+                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/90 px-2 py-2"
                         >
-                          <div className="rounded-[14px] border border-slate-700/80 bg-slate-950/90 p-1.5">
-                            <textarea
-                              rows={1}
-                              value={supportReplyDraft}
-                              onChange={(e) => setSupportReplyDraft(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (
-                                  (e.ctrlKey || e.metaKey) &&
-                                  e.key === "Enter" &&
-                                  supportReplyDraft.trim() &&
-                                  !loadingStates.sendSupportMessage
-                                ) {
-                                  e.preventDefault();
-                                  e.currentTarget.form?.requestSubmit();
-                                }
+                          {(showSupportQuickReplies || showSupportEmojiPicker) && (
+                            <div className="mb-2 rounded-2xl border border-slate-700/70 bg-slate-900/95 p-2 shadow-[0_18px_36px_rgba(2,6,23,0.28)]">
+                              {showSupportQuickReplies && (
+                                <div>
+                                  <div className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-sky-300">
+                                    Trả lời nhanh
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {SUPPORT_QUICK_REPLY_SNIPPETS.map((snippet) => (
+                                      <button
+                                        key={snippet}
+                                        type="button"
+                                        onClick={() => {
+                                          appendSupportReplyDraft(snippet, {
+                                            separator: "\n",
+                                          });
+                                          setShowSupportQuickReplies(false);
+                                        }}
+                                        className="rounded-full border border-slate-700 bg-slate-950/85 px-3 py-1.5 text-[11px] font-medium text-slate-200 transition-colors hover:border-sky-500/50 hover:bg-sky-500/10 hover:text-white"
+                                      >
+                                        {snippet}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {showSupportEmojiPicker && (
+                                <div className={showSupportQuickReplies ? "mt-3 border-t border-slate-800 pt-3" : ""}>
+                                  <div className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-amber-300">
+                                    Emoji nhanh
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {SUPPORT_EMOJI_CHOICES.map((emoji) => (
+                                      <button
+                                        key={emoji}
+                                        type="button"
+                                        onClick={() => {
+                                          appendSupportReplyDraft(emoji, {
+                                            separator: " ",
+                                          });
+                                          setShowSupportEmojiPicker(false);
+                                        }}
+                                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-950/85 text-base text-slate-100 transition-colors hover:border-amber-400/50 hover:bg-amber-500/10"
+                                      >
+                                        {emoji}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex items-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowSupportQuickReplies((prev) => !prev);
+                                setShowSupportEmojiPicker(false);
+                                focusSupportReplyInputToEnd();
                               }}
-                              placeholder="Trả lời user..."
-                              className="min-h-[34px] max-h-[74px] w-full resize-none bg-transparent px-1 py-0.5 text-[11px] leading-5 text-white outline-none placeholder:text-slate-500"
-                            />
-                            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-1.5">
-                              <div className="text-[9px] text-slate-500">
-                                {supportReplyDraft.trim().length} ký tự
-                              </div>
+                              className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                                showSupportQuickReplies
+                                  ? "border-sky-400/50 bg-sky-500/15 text-sky-200"
+                                  : "border-slate-700 bg-slate-900/90 text-slate-300 hover:border-slate-500 hover:text-white"
+                              }`}
+                              title="Mở trả lời nhanh"
+                            >
+                              <Plus size={17} />
+                            </button>
+
+                            <div className="relative flex-1 rounded-full border border-slate-700/80 bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                              <textarea
+                                ref={supportReplyInputRef}
+                                rows={1}
+                                value={supportReplyDraft}
+                                onChange={(e) => setSupportReplyDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (
+                                    e.key === "Enter" &&
+                                    !e.shiftKey &&
+                                    supportReplyDraft.trim() &&
+                                    !loadingStates.sendSupportMessage
+                                  ) {
+                                    e.preventDefault();
+                                    e.currentTarget.form?.requestSubmit();
+                                    return;
+                                  }
+                                  if (
+                                    (e.ctrlKey || e.metaKey) &&
+                                    e.key === "Enter" &&
+                                    supportReplyDraft.trim() &&
+                                    !loadingStates.sendSupportMessage
+                                  ) {
+                                    e.preventDefault();
+                                    e.currentTarget.form?.requestSubmit();
+                                  }
+                                }}
+                                placeholder="Trả lời user..."
+                                className="min-h-[40px] max-h-[96px] w-full resize-none bg-transparent py-2 pl-4 pr-12 text-[12px] leading-5 text-white outline-none placeholder:text-slate-500"
+                              />
                               <button
-                                type="submit"
-                                disabled={loadingStates.sendSupportMessage || !supportReplyDraft.trim()}
-                                className="inline-flex items-center gap-1 rounded-lg bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-2 py-1 text-[10px] font-semibold text-white shadow-[0_10px_18px_rgba(2,132,199,0.18)] transition-all hover:translate-y-[-1px] hover:shadow-[0_14px_24px_rgba(2,132,199,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
+                                type="button"
+                                onClick={() => {
+                                  setShowSupportEmojiPicker((prev) => !prev);
+                                  setShowSupportQuickReplies(false);
+                                  focusSupportReplyInputToEnd();
+                                }}
+                                className={`absolute bottom-1.5 right-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                                  showSupportEmojiPicker
+                                    ? "bg-amber-500/15 text-amber-200"
+                                    : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                                }`}
+                                title="Chèn emoji"
                               >
-                                {loadingStates.sendSupportMessage ? (
-                                  <>
-                                    <Loader2 size={12} className="animate-spin" />
-                                    Đang gửi
-                                  </>
-                                ) : (
-                                  <>
-                                    <SendHorizontal size={12} />
-                                    Gửi
-                                  </>
-                                )}
+                                <Smile size={15} />
                               </button>
                             </div>
+
+                            <button
+                              type="submit"
+                              disabled={
+                                loadingStates.sendSupportMessage ||
+                                !supportReplyDraft.trim()
+                              }
+                              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#0284c7,#38bdf8)] text-white shadow-[0_14px_24px_rgba(2,132,199,0.24)] transition-all hover:translate-y-[-1px] hover:shadow-[0_18px_28px_rgba(2,132,199,0.28)] disabled:cursor-not-allowed disabled:opacity-60"
+                              title="Gửi tin nhắn"
+                            >
+                              {loadingStates.sendSupportMessage ? (
+                                <Loader2 size={16} className="animate-spin" />
+                              ) : (
+                                <SendHorizontal size={16} />
+                              )}
+                            </button>
                           </div>
                         </form>
                       </div>
@@ -8929,7 +9075,10 @@ function App() {
                       key={t.key}
                       onClick={() => {
                         setGptSubTab(t.key);
-                        if (t.key !== "market") setPackage2ShelfTab("all");
+                        if (t.key !== "market") {
+                          setPackage2ShelfTab("all");
+                          setSoldPackage2ProviderFilter("all");
+                        }
                         if (t.key !== "total") setChatgptTotalTypeTab("all");
                       }}
                       className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full font-bold text-sm transition-all shadow-sm border ${gptSubTab === t.key
@@ -8996,7 +9145,12 @@ function App() {
                     {shelfTabs.map((t) => (
                       <button
                         key={t.key}
-                        onClick={() => setPackage2ShelfTab(t.key)}
+                        onClick={() => {
+                          setPackage2ShelfTab(t.key);
+                          if (t.key !== "sold") {
+                            setSoldPackage2ProviderFilter("all");
+                          }
+                        }}
                         className={`flex items-center gap-1.5 px-3 py-1 rounded-full font-bold text-xs transition-all border ${package2ShelfTab === t.key
                             ? `${t.color} text-white border-transparent`
                             : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
