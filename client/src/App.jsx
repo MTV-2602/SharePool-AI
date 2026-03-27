@@ -1623,6 +1623,8 @@ function App() {
 
   // TOAST MSG
   const [toastMessage, setToastMessage] = useState("");
+  const [supportRealtimeNotice, setSupportRealtimeNotice] = useState(null);
+  const [dismissedSupportNoticeKey, setDismissedSupportNoticeKey] = useState("");
   const [recentDatammoOrders, setRecentDatammoOrders] = useState([]);
   const [recentStoreOrders, setRecentStoreOrders] = useState([]);
   const [storeOrders, setStoreOrders] = useState([]);
@@ -1846,7 +1848,12 @@ function App() {
       refreshAdminSurface({ includeSummary: true }).catch(() => {});
     }, getRealtimeSafetySyncMs(adminRealtime, 90000));
     return () => window.clearInterval(intervalId);
-  }, [adminRealtime, isAuthenticated, activeTab, selectedSupportConversationId]);
+  }, [
+    adminRealtime,
+    isAuthenticated,
+    activeTab,
+    selectedSupportConversationId,
+  ]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -1968,7 +1975,78 @@ function App() {
           );
         }
         if (event === "support.message.created" || event === "support.thread.read") {
+          const selectedConversationId = String(
+            selectedSupportConversationId || "",
+          ).trim();
+          const messageSenderRole = String(
+            nextMessage?.senderRole || payload?.senderRole || "",
+          )
+            .trim()
+            .toLowerCase();
+          const isActiveSupportThread =
+            activeTab === "support" &&
+            payloadConversationId &&
+            payloadConversationId === selectedConversationId;
           loadDashboardSummary({ silent: true }).catch(() => {});
+          if (
+            event === "support.message.created" &&
+            messageSenderRole === "user" &&
+            !isActiveSupportThread
+          ) {
+            setSupportRealtimeNotice({
+              key: `support:${payloadConversationId || "new"}:${String(
+                nextMessage?.id || nextConversation?.updatedAt || Date.now(),
+              ).trim()}`,
+              conversationId: payloadConversationId,
+              displayName: nextConversation
+                ? getSupportConversationDisplayName(nextConversation)
+                : "User web",
+              preview: String(
+                nextMessage?.body ||
+                  nextConversation?.lastMessagePreview ||
+                  "User vừa nhắn hỗ trợ mới.",
+              ).trim(),
+              createdAt: String(
+                nextMessage?.createdAt ||
+                  nextConversation?.lastMessageAt ||
+                  new Date().toISOString(),
+              ).trim(),
+            });
+            setDismissedSupportNoticeKey("");
+          }
+          if (
+            event === "support.message.created" &&
+            messageSenderRole === "user" &&
+            !isActiveSupportThread &&
+            Number(nextConversation?.adminUnreadCount || 0) === 1
+          ) {
+            setDashboardSummary((prev) => ({
+              ...prev,
+              unreadSupportConversations:
+                Number(prev?.unreadSupportConversations || 0) + 1,
+            }));
+          }
+          if (
+            event === "support.thread.read" &&
+            String(payload?.senderRole || "").trim().toLowerCase() === "admin"
+          ) {
+            setDashboardSummary((prev) => ({
+              ...prev,
+              unreadSupportConversations: Math.max(
+                0,
+                Number(prev?.unreadSupportConversations || 0) - 1,
+              ),
+            }));
+            setSupportRealtimeNotice((prev) => {
+              if (
+                payloadConversationId &&
+                String(prev?.conversationId || "").trim() === payloadConversationId
+              ) {
+                return null;
+              }
+              return prev;
+            });
+          }
           if (
             selectedSupportConversationId &&
             payloadConversationId ===
@@ -2120,6 +2198,37 @@ function App() {
       supportScrollModeRef.current = "";
     });
   }, [selectedSupportConversationId, supportMessages]);
+
+  useEffect(() => {
+    const unreadSupportCount = Math.max(
+      supportConversations.filter(
+        (conversation) => Number(conversation?.adminUnreadCount || 0) > 0,
+      ).length,
+      Number(dashboardSummary?.unreadSupportConversations || 0),
+    );
+    if (!unreadSupportCount) {
+      setSupportRealtimeNotice(null);
+      setDismissedSupportNoticeKey("");
+    }
+  }, [dashboardSummary, supportConversations]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const baseTitle = "Quản Lý Tài Khoản";
+    const unreadSupportCount = Math.max(
+      supportConversations.filter(
+        (conversation) => Number(conversation?.adminUnreadCount || 0) > 0,
+      ).length,
+      Number(dashboardSummary?.unreadSupportConversations || 0),
+    );
+    document.title =
+      isAuthenticated && unreadSupportCount > 0
+        ? `(${unreadSupportCount}) Hỗ trợ mới - ${baseTitle}`
+        : baseTitle;
+    return () => {
+      document.title = baseTitle;
+    };
+  }, [dashboardSummary, isAuthenticated, supportConversations]);
 
   useEffect(() => {
     const validIds = new Set(accounts.map((acc) => acc.id));
@@ -3724,10 +3833,23 @@ function App() {
     setSupportReplyDraft("");
     setShowSupportInfoPanel(false);
     setSupportMessages([]);
+    setSupportRealtimeNotice(null);
     queueSupportScrollToBottom();
     await loadSupportConversationMessages(normalizedConversationId);
     queueSupportScrollToBottom();
     flushSupportScrollToBottom();
+  };
+
+  const handleOpenSupportNotice = async (conversationId = "") => {
+    const normalizedConversationId = String(conversationId || "").trim();
+    setDismissedSupportNoticeKey("");
+    setActiveTab("support");
+    if (normalizedConversationId) {
+      await handleSelectSupportConversation(normalizedConversationId);
+      return;
+    }
+    setSupportRealtimeNotice(null);
+    await loadSupportConversations({ silent: true, limit: 20 });
   };
 
   const handleSendSupportReply = async (e) => {
@@ -6073,6 +6195,46 @@ function App() {
   const supportUnreadConversationCount = supportConversations.filter(
     (conversation) => Number(conversation?.adminUnreadCount || 0) > 0,
   ).length;
+  const supportUnreadIndicatorCount = Math.max(
+    supportUnreadConversationCount,
+    Number(dashboardSummary?.unreadSupportConversations || 0),
+  );
+  const latestUnreadSupportConversation =
+    supportConversations.find(
+      (conversation) => Number(conversation?.adminUnreadCount || 0) > 0,
+    ) || null;
+  const activeSupportNotice =
+    supportRealtimeNotice && supportUnreadIndicatorCount > 0
+      ? {
+          ...supportRealtimeNotice,
+          unreadCount: supportUnreadIndicatorCount,
+        }
+      : supportUnreadIndicatorCount > 0
+        ? {
+            key: `support-unread:${supportUnreadIndicatorCount}:${String(
+              latestUnreadSupportConversation?.id || "all",
+            ).trim()}`,
+            conversationId: String(
+              latestUnreadSupportConversation?.id || "",
+            ).trim(),
+            displayName: latestUnreadSupportConversation
+              ? getSupportConversationDisplayName(latestUnreadSupportConversation)
+              : "Hỗ trợ web",
+            preview: String(
+              latestUnreadSupportConversation?.lastMessagePreview ||
+                `${supportUnreadIndicatorCount} hội thoại đang chờ admin xem.`,
+            ).trim(),
+            createdAt: String(
+              latestUnreadSupportConversation?.lastMessageAt || "",
+            ).trim(),
+            unreadCount: supportUnreadIndicatorCount,
+          }
+        : null;
+  const shouldShowSupportNotice =
+    !!activeSupportNotice &&
+    isAuthenticated &&
+    activeTab !== "support" &&
+    activeSupportNotice.key !== dismissedSupportNoticeKey;
   const normalizedSupportConversationQuery = toNonAccentVietnamese(
     String(supportConversationQuery || "").trim(),
   );
@@ -6471,6 +6633,60 @@ function App() {
             <div className="bg-emerald-500 rounded-full p-1"><CheckCircle size={16} /></div> {toastMessage}
           </div>
         )}
+        {shouldShowSupportNotice && (
+          <div className="fixed bottom-4 left-4 right-4 z-[9998] sm:left-6 sm:right-auto sm:max-w-sm">
+            <div className="w-full rounded-2xl border border-sky-400/30 bg-slate-900/95 p-3 text-left shadow-2xl backdrop-blur-md">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-200">
+                  <MessageCircle size={18} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-300">
+                    Hỗ trợ web realtime
+                  </div>
+                  <div className="mt-1 text-sm font-black text-white">
+                    {activeSupportNotice.conversationId
+                      ? `${activeSupportNotice.displayName || "User web"} vừa nhắn`
+                      : `Có ${supportUnreadIndicatorCount} hội thoại đang chờ`}
+                  </div>
+                  <div className="mt-1 line-clamp-2 text-xs text-slate-300">
+                    {activeSupportNotice.preview}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2 text-[11px]">
+                    <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-1 font-semibold text-amber-100">
+                      {supportUnreadIndicatorCount} chưa đọc
+                    </span>
+                    <span className="text-slate-400">
+                      Bấm để mở đúng hội thoại
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    void handleOpenSupportNotice(activeSupportNotice.conversationId)
+                  }
+                  className="inline-flex items-center rounded-full bg-sky-500 px-3 py-1.5 text-[12px] font-black text-white transition-colors hover:bg-sky-400"
+                >
+                  Mở hỗ trợ web
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDismissedSupportNoticeKey(activeSupportNotice.key);
+                    setSupportRealtimeNotice(null);
+                  }}
+                  className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
+                  title="Ẩn thông báo chat"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-700 max-w-full overflow-hidden">
           <div className="mb-4 md:mb-0">
             <h1
@@ -6509,9 +6725,9 @@ function App() {
               className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all inline-flex items-center ${activeTab === "support" ? "bg-sky-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Hỗ trợ web
-              {supportUnreadConversationCount > 0 ? (
+              {supportUnreadIndicatorCount > 0 ? (
                 <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-black text-white">
-                  {supportUnreadConversationCount}
+                  {supportUnreadIndicatorCount}
                 </span>
               ) : null}
             </button>
