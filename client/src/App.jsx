@@ -1354,7 +1354,7 @@ const buildDefaultChatgptAdminPaginationState = () => ({
   },
 });
 const ADMIN_TAB_DATA_SECTION_MAP = {
-  chatgpt: ["team", "datammo", "storeOrders", "storeUsers", "summary"],
+  chatgpt: ["team", "datammo", "storeOrders", "summary"],
   netflix: ["netflix", "summary"],
   capcut: ["capcut", "summary"],
   canva: ["canva", "summary"],
@@ -1782,7 +1782,7 @@ function App() {
       setIsAuthenticated(true);
       setTimeout(async () => {
         await fetchData({
-          showLoader: true,
+          showLoader: activeTab !== "chatgpt",
           syncChatgptPage: false,
         });
       }, 100);
@@ -2339,7 +2339,10 @@ function App() {
         writeStoredSessionRole("admin");
         skipNextAdminTabBootstrapRef.current = true;
         setIsAuthenticated(true);
-        fetchData({ showLoader: true, syncChatgptPage: false });
+        fetchData({
+          showLoader: activeTab !== "chatgpt",
+          syncChatgptPage: false,
+        });
         showAlert(
           "Xin chào",
           response.data.message || "Đăng nhập thành công! 👋",

@@ -3929,6 +3929,7 @@ const CHATGPT_ADMIN_STORE_ORDER_TRACE_SELECT = [
 ].join(" ");
 const CHATGPT_ADMIN_STORE_USER_TRACE_SELECT =
   "id fullName email phone createdAt updatedAt";
+const STORE_ORDER_USER_SELECT = "id fullName email phone createdAt updatedAt";
 const loadStoreUsersForTraceOrders = async (
   orders = [],
   select = CHATGPT_ADMIN_STORE_USER_TRACE_SELECT,
@@ -7770,16 +7771,16 @@ app.get("/api/data", verifyToken, async (req, res) => {
         const shouldLoadTeam = sectionSet.has("team");
         const shouldLoadDatammo = sectionSet.has("datammo");
         const shouldLoadStoreOrders = sectionSet.has("storeOrders");
-        const shouldLoadStoreUsers =
-          sectionSet.has("storeUsers") ||
-          sectionSet.has("storeVouchers") ||
-          sectionSet.has("storeOrders");
+        const shouldBuildChatgptTrace = shouldLoadChatgpt;
+        const shouldLoadStoreUsers = sectionSet.has("storeUsers");
+        const shouldLoadStoreUserStats = sectionSet.has("storeUsers");
+        const shouldLoadStoreOrderUsers =
+          shouldLoadStoreOrders || shouldBuildChatgptTrace;
         const shouldLoadStoreVouchers = sectionSet.has("storeVouchers");
         const shouldLoadSupportConversations = sectionSet.has(
           "supportConversations",
         );
         const shouldLoadSummary = sectionSet.has("summary");
-        const shouldBuildChatgptTrace = shouldLoadChatgpt;
         const [
           accounts,
           netflixAccs,
@@ -7824,7 +7825,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
                 )
                 .lean()
             : Promise.resolve([]),
-          shouldLoadStoreUsers
+          shouldLoadStoreUserStats
             ? StoreOrder.aggregate([
                 {
                   $group: {
@@ -7873,11 +7874,19 @@ app.get("/api/data", verifyToken, async (req, res) => {
                 CHATGPT_ADMIN_STORE_USER_TRACE_SELECT,
               )
             : [];
+        const storeOrderUsers =
+          !shouldLoadStoreUsers && shouldLoadStoreOrderUsers
+            ? await loadStoreUsersForTraceOrders(
+                rawStoreOrders,
+                STORE_ORDER_USER_SELECT,
+              )
+            : [];
         const storeUserMap = new Map(
-          [...(storeUsers || []), ...(traceStoreUsers || [])].map((user) => [
-            String(user?.id || "").trim(),
-            user,
-          ]),
+          [
+            ...(storeUsers || []),
+            ...(storeOrderUsers || []),
+            ...(traceStoreUsers || []),
+          ].map((user) => [String(user?.id || "").trim(), user]),
         );
         const storeUserStatsMap = new Map(
           (storeUserOrderStats || []).map((item) => [
@@ -7974,7 +7983,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
         if (shouldLoadStoreVouchers) {
           const voucherStatsMap = await buildStoreVoucherStatsMap(
             storeVouchers,
-            storeUsers,
+            shouldLoadStoreUsers ? storeUsers : [],
           );
           response.storeVouchers = (storeVouchers || [])
             .map((voucher) =>
