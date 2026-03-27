@@ -3,10 +3,13 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
+  Gift,
   Loader2,
   LogOut,
   Mail,
+  MessageCircle,
   Phone,
+  SendHorizontal,
   ShieldCheck,
   User,
 } from "lucide-react";
@@ -147,6 +150,33 @@ const formatDateTime = (value) => {
   if (Number.isNaN(time.getTime())) return "--";
   return time.toLocaleString("vi-VN");
 };
+const formatChatTime = (value) => {
+  const time = new Date(value || "");
+  if (Number.isNaN(time.getTime())) return "--";
+  return time.toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+  });
+};
+const getVoucherTypeLabel = (type, value) =>
+  String(type || "").trim().toLowerCase() === "fixed"
+    ? `${formatMoney(value)}`
+    : `${Number(value || 0)}%`;
+const buildVoucherPreviewFromOrder = (order = null) => {
+  if (!order || !String(order?.voucherCode || "").trim()) return null;
+  return {
+    id: String(order?.voucherId || "").trim(),
+    code: String(order?.voucherCode || "").trim(),
+    type: String(order?.voucherType || "").trim(),
+    value: Number(order?.voucherValue || 0),
+    description: String(order?.voucherDescription || "").trim(),
+    originalAmount: Number(order?.originalAmount || order?.amount || 0),
+    discountAmount: Number(order?.discountAmount || 0),
+    finalAmount: Number(order?.amount || 0),
+  };
+};
 
 const formatStatusLabel = (status) => {
   const normalized = String(status || "").trim().toLowerCase();
@@ -231,6 +261,15 @@ function PublicStorefront() {
   const [paymentPickerPackageCode, setPaymentPickerPackageCode] = useState("");
   const [paymentPreviewOrderId, setPaymentPreviewOrderId] = useState("");
   const [paymentPreviewOrderDraft, setPaymentPreviewOrderDraft] = useState(null);
+  const [voucherCodeInput, setVoucherCodeInput] = useState("");
+  const [voucherPreview, setVoucherPreview] = useState(null);
+  const [voucherLoading, setVoucherLoading] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportSending, setSupportSending] = useState(false);
+  const [supportConversation, setSupportConversation] = useState(null);
+  const [supportMessages, setSupportMessages] = useState([]);
+  const [supportDraft, setSupportDraft] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
@@ -248,6 +287,7 @@ function PublicStorefront() {
   const googleButtonRef = useRef(null);
   const authCardRef = useRef(null);
   const ordersSectionRef = useRef(null);
+  const supportPanelRef = useRef(null);
   const pendingReconcileRef = useRef(false);
   const purchaseLockRef = useRef(false);
   const storeOrdersSyncRef = useRef(false);
@@ -319,6 +359,99 @@ function PublicStorefront() {
     }
     const data = await apiRequest("/api/store/orders", { token: currentToken });
     setOrders(Array.isArray(data?.orders) ? data.orders : []);
+  };
+
+  const handleValidateVoucher = async ({
+    code = voucherCodeInput,
+    packageCode = paymentPickerPackageCode,
+    silent = false,
+  } = {}) => {
+    const normalizedCode = String(code || "").trim();
+    const normalizedPackageCode = String(packageCode || "").trim();
+    if (!normalizedPackageCode || !token) {
+      setVoucherPreview(null);
+      return null;
+    }
+    if (!normalizedCode) {
+      setVoucherPreview(null);
+      return null;
+    }
+    try {
+      setVoucherLoading(true);
+      const data = await apiRequest("/api/store/vouchers/validate", {
+        method: "POST",
+        token,
+        body: {
+          packageCode: normalizedPackageCode,
+          voucherCode: normalizedCode,
+        },
+      });
+      const preview = data?.voucher || null;
+      setVoucherPreview(preview);
+      if (!silent) {
+        setMessage("Voucher hợp lệ, hệ thống đã áp giá mới.");
+        setError("");
+      }
+      return preview;
+    } catch (voucherError) {
+      setVoucherPreview(null);
+      if (!silent) {
+        setMessage("");
+        setError(voucherError.message || "Voucher không hợp lệ.");
+      }
+      return null;
+    } finally {
+      setVoucherLoading(false);
+    }
+  };
+
+  const loadSupportThread = async ({
+    markRead = true,
+    silent = false,
+  } = {}) => {
+    if (!token || !user) {
+      setSupportConversation(null);
+      setSupportMessages([]);
+      return null;
+    }
+    try {
+      if (!silent) setSupportLoading(true);
+      const data = await apiRequest(
+        `/api/store/support/thread?markRead=${markRead ? "1" : "0"}`,
+        {
+          token,
+        },
+      );
+      setSupportConversation(data?.conversation || null);
+      setSupportMessages(Array.isArray(data?.messages) ? data.messages : []);
+      return data;
+    } catch (supportError) {
+      if (!silent) {
+        setError(supportError.message || "Không tải được chat hỗ trợ.");
+      }
+      return null;
+    } finally {
+      if (!silent) setSupportLoading(false);
+    }
+  };
+
+  const openSupportPanel = async () => {
+    if (!user) {
+      setMessage("");
+      setError("Đăng nhập user để chat trực tiếp với admin trên web.");
+      focusAuthCard("login");
+      return;
+    }
+    setSupportOpen(true);
+    await loadSupportThread({ markRead: true });
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        supportPanelRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+    }
   };
 
   useEffect(() => {
@@ -530,6 +663,34 @@ function PublicStorefront() {
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
     };
   }, [token, user]);
+
+  useEffect(() => {
+    if (!supportOpen || !token || !user) return undefined;
+    let cancelled = false;
+
+    const syncSupportThread = async () => {
+      if (cancelled) return;
+      await loadSupportThread({ markRead: true, silent: true });
+    };
+
+    syncSupportThread().catch(() => {});
+    const intervalId = window.setInterval(() => {
+      syncSupportThread().catch(() => {});
+    }, 7000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [supportOpen, token, user]);
+
+  useEffect(() => {
+    if (user) return;
+    setSupportOpen(false);
+    setSupportConversation(null);
+    setSupportMessages([]);
+    setSupportDraft("");
+  }, [user]);
 
   useEffect(() => {
     if (!config.googleClientId || !googleButtonRef.current) return;
@@ -751,7 +912,11 @@ function PublicStorefront() {
     }
   };
 
-  const handleCreatePayment = async (packageCode, paymentMethod) => {
+  const handleCreatePayment = async (
+    packageCode,
+    paymentMethod,
+    voucherCode = voucherCodeInput,
+  ) => {
     if (!user) {
       setError("Vui lòng đăng nhập trước khi mua.");
       return;
@@ -762,7 +927,11 @@ function PublicStorefront() {
       const data = await apiRequest("/api/store/orders/payment", {
         method: "POST",
         token,
-        body: { packageCode, paymentMethod },
+        body: {
+          packageCode,
+          paymentMethod,
+          voucherCode: String(voucherCode || "").trim(),
+        },
       });
       const payUrl = String(data?.payUrl || "").trim();
       if (!payUrl) {
@@ -772,6 +941,8 @@ function PublicStorefront() {
       const previewOrder = data?.order || null;
       setPaymentPreviewOrderId(String(previewOrder?.id || previewOrderId || "").trim());
       setPaymentPreviewOrderDraft(previewOrder);
+      setVoucherCodeInput(String(previewOrder?.voucherCode || voucherCode || "").trim());
+      setVoucherPreview(buildVoucherPreviewFromOrder(previewOrder));
       setMessage(
         paymentMethod === STORE_PAYMENT_METHOD_PAYOS
           ? "Đã tạo mã QR ngân hàng. Quét mã ngay trong popup để thanh toán."
@@ -890,12 +1061,16 @@ function PublicStorefront() {
     );
     setPaymentPreviewOrderId(String(existingPendingOrder?.id || "").trim());
     setPaymentPreviewOrderDraft(existingPendingOrder || null);
+    setVoucherCodeInput(String(existingPendingOrder?.voucherCode || "").trim());
+    setVoucherPreview(buildVoucherPreviewFromOrder(existingPendingOrder));
   };
 
   const closePaymentPicker = () => {
     setPaymentPickerPackageCode("");
     setPaymentPreviewOrderId("");
     setPaymentPreviewOrderDraft(null);
+    setVoucherCodeInput("");
+    setVoucherPreview(null);
   };
 
   const paymentPickerPackage = useMemo(
@@ -951,7 +1126,7 @@ function PublicStorefront() {
         setError("Kho hiện tại của gói này đã hết, nên hệ thống đã chặn không cho tạo thanh toán.");
         return;
       }
-      await handleCreatePayment(pkg.code, paymentMethod);
+      await handleCreatePayment(pkg.code, paymentMethod, voucherCodeInput);
     } finally {
       purchaseLockRef.current = false;
       setPurchaseLoadingCode("");
@@ -1002,6 +1177,32 @@ function PublicStorefront() {
     }
   };
 
+  const handleSendSupportMessage = async (event) => {
+    event.preventDefault();
+    const body = String(supportDraft || "").trim();
+    if (!body) return;
+    try {
+      setSupportSending(true);
+      setError("");
+      const data = await apiRequest("/api/store/support/thread/messages", {
+        method: "POST",
+        token,
+        body: { body },
+      });
+      const nextMessage = data?.message || null;
+      setSupportConversation(data?.conversation || supportConversation);
+      setSupportMessages((prev) =>
+        nextMessage ? [...prev, nextMessage] : prev,
+      );
+      setSupportDraft("");
+      setMessage("Đã gửi tin nhắn cho admin.");
+    } catch (supportError) {
+      setError(supportError.message || "Không gửi được tin nhắn.");
+    } finally {
+      setSupportSending(false);
+    }
+  };
+
   const copyText = async (value, successMessage) => {
     try {
       await navigator.clipboard.writeText(String(value || ""));
@@ -1016,6 +1217,12 @@ function PublicStorefront() {
     writeStoredSessionRole("");
     setUser(null);
     setOrders([]);
+    setSupportOpen(false);
+    setSupportConversation(null);
+    setSupportMessages([]);
+    setSupportDraft("");
+    setVoucherCodeInput("");
+    setVoucherPreview(null);
     setMessage("Đã đăng xuất");
   };
 
@@ -1350,6 +1557,12 @@ function PublicStorefront() {
                 <p className="mt-1 text-sm text-slate-400">
                   Đơn #{order.id} • {formatDateTime(order.createdAt)} • {order.paymentMethodLabel || getPaymentMethodLabel(order.paymentMethod)}
                 </p>
+                {order.voucherCode ? (
+                  <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                    <Gift size={14} />
+                    Voucher {order.voucherCode} • giảm {formatMoney(order.discountAmount)}
+                  </div>
+                ) : null}
               </div>
               <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-100">{formatStatusLabel(order.status)}</span>
             </div>
@@ -1357,6 +1570,11 @@ function PublicStorefront() {
               <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
                 <p className="text-slate-500">Giá tiền</p>
                 <p className="mt-1 break-words font-semibold text-white">{formatMoney(order.amount)}</p>
+                {order.discountAmount > 0 ? (
+                  <p className="mt-1 text-xs text-emerald-300">
+                    Gốc {formatMoney(order.originalAmount)} • giảm {formatMoney(order.discountAmount)}
+                  </p>
+                ) : null}
               </div>
               <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
                 <p className="text-slate-500">Mã thanh toán</p>
@@ -1535,6 +1753,132 @@ function PublicStorefront() {
                     <li>4. Gói 1 dùng nút Lấy mã để nhận mã đăng nhập.</li>
                   </ol>
                 </div>
+
+                <div
+                  ref={supportPanelRef}
+                  className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">
+                        Hỗ trợ nhanh
+                      </p>
+                      <h3 className="mt-2 text-lg font-semibold text-white">
+                        Liên hệ admin qua Zalo hoặc chat web
+                      </h3>
+                    </div>
+                    {supportConversation?.lastMessageAt ? (
+                      <div className="text-xs text-slate-500">
+                        Cập nhật {formatChatTime(supportConversation.lastMessageAt)}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <a
+                      href={config.contact?.zaloUrl || "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-4 py-3 font-semibold text-white transition hover:bg-sky-500"
+                    >
+                      <Phone size={16} />
+                      Mở Zalo admin
+                    </a>
+                    <button
+                      type="button"
+                      onClick={openSupportPanel}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-500"
+                    >
+                      <MessageCircle size={16} />
+                      {supportOpen ? "Làm mới chat web" : "Mở chat web"}
+                    </button>
+                  </div>
+
+                  {!supportOpen ? (
+                    <p className="mt-4 text-sm leading-6 text-slate-400">
+                      {user
+                        ? "Bấm Mở chat web để nhắn trực tiếp cho admin ngay trên website."
+                        : "Đăng nhập user để chat trực tiếp trên web. Nếu cần nhanh hơn, bạn vẫn có thể bấm Zalo."}
+                    </p>
+                  ) : (
+                    <div className="mt-5 space-y-4">
+                      <div className="max-h-[360px] space-y-3 overflow-y-auto rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
+                        {supportLoading ? (
+                          <div className="flex items-center gap-2 text-sm text-slate-400">
+                            <Loader2 size={16} className="animate-spin" />
+                            Đang tải hội thoại...
+                          </div>
+                        ) : supportMessages.length === 0 ? (
+                          <div className="text-sm text-slate-400">
+                            Chưa có tin nhắn nào. Bạn có thể nhắn nội dung cần hỗ trợ ở ô bên dưới.
+                          </div>
+                        ) : (
+                          supportMessages.map((chatMessage) => {
+                            const fromAdmin =
+                              String(chatMessage.senderRole || "").trim() === "admin";
+                            return (
+                              <div
+                                key={chatMessage.id}
+                                className={`flex ${fromAdmin ? "justify-start" : "justify-end"}`}
+                              >
+                                <div
+                                  className={`max-w-[88%] rounded-3xl px-4 py-3 text-sm leading-6 ${
+                                    fromAdmin
+                                      ? "bg-slate-800 text-slate-100"
+                                      : "bg-cyan-600 text-white"
+                                  }`}
+                                >
+                                  <div className="whitespace-pre-wrap break-words">
+                                    {chatMessage.body}
+                                  </div>
+                                  <div
+                                    className={`mt-2 text-[11px] ${
+                                      fromAdmin ? "text-slate-400" : "text-cyan-100"
+                                    }`}
+                                  >
+                                    {fromAdmin ? "Admin" : "Bạn"} • {formatChatTime(chatMessage.createdAt)}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      <form onSubmit={handleSendSupportMessage} className="space-y-3">
+                        <textarea
+                          value={supportDraft}
+                          onChange={(event) => setSupportDraft(event.target.value)}
+                          rows={4}
+                          placeholder="Nhập nội dung cần admin hỗ trợ..."
+                          className="w-full rounded-3xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-cyan-500"
+                        />
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-xs text-slate-500">
+                            Admin sẽ thấy và trả lời ngay trong mục hỗ trợ trên trang quản trị.
+                          </p>
+                          <button
+                            type="submit"
+                            disabled={supportSending || !supportDraft.trim()}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {supportSending ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" />
+                                Đang gửi
+                              </>
+                            ) : (
+                              <>
+                                <SendHorizontal size={16} />
+                                Gửi tin nhắn
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
+                </div>
               </div>
             </section>
           </>
@@ -1636,6 +1980,92 @@ function PublicStorefront() {
               )}
             </div>
 
+            <div className="mt-4 rounded-3xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-emerald-300">
+                    Voucher
+                  </p>
+                  <h4 className="mt-2 text-lg font-semibold text-white">
+                    Giảm giá trước khi thanh toán
+                  </h4>
+                  <p className="mt-1 text-sm text-slate-300">
+                    Nhập mã giảm giá nếu bạn có voucher từ admin.
+                  </p>
+                </div>
+                {voucherPreview?.code ? (
+                  <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                    {voucherPreview.code} • {getVoucherTypeLabel(voucherPreview.type, voucherPreview.value)}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                <input
+                  value={voucherCodeInput}
+                  onChange={(event) => {
+                    const nextCode = event.target.value;
+                    setVoucherCodeInput(nextCode);
+                    if (
+                      !nextCode.trim() ||
+                      String(voucherPreview?.code || "").trim().toUpperCase() !==
+                        nextCode.trim().toUpperCase()
+                    ) {
+                      setVoucherPreview(null);
+                    }
+                  }}
+                  placeholder="VD: GIAM50K"
+                  className="flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleValidateVoucher({
+                      code: voucherCodeInput,
+                      packageCode: paymentPickerPackage.code,
+                    })
+                  }
+                  disabled={voucherLoading || !voucherCodeInput.trim()}
+                  className="rounded-2xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {voucherLoading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 size={16} className="animate-spin" />
+                      Đang kiểm tra
+                    </span>
+                  ) : (
+                    "Áp voucher"
+                  )}
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-3">
+                <div className="rounded-2xl bg-slate-950/70 p-3">
+                  <p className="text-slate-500">Giá gốc</p>
+                  <p className="mt-1 font-semibold text-white">
+                    {formatMoney(voucherPreview?.originalAmount ?? paymentPickerPackage.price)}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-950/70 p-3">
+                  <p className="text-slate-500">Giảm giá</p>
+                  <p className="mt-1 font-semibold text-emerald-300">
+                    {formatMoney(voucherPreview?.discountAmount || 0)}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-950/70 p-3">
+                  <p className="text-slate-500">Cần thanh toán</p>
+                  <p className="mt-1 font-semibold text-white">
+                    {formatMoney(voucherPreview?.finalAmount ?? paymentPickerPackage.price)}
+                  </p>
+                </div>
+              </div>
+              {voucherCodeInput.trim() && !voucherPreview ? (
+                <p className="mt-3 text-xs text-slate-400">
+                  Nếu mã hợp lệ, hệ thống sẽ tự áp lúc bấm thanh toán.
+                </p>
+              ) : null}
+            </div>
+
             {paymentPreviewOrder ? (
               <div className="mt-4 rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1649,6 +2079,12 @@ function PublicStorefront() {
                     <p className="mt-2 text-sm text-slate-300">
                       {paymentPreviewOrder.paymentMethodLabel || getPaymentMethodLabel(paymentPreviewOrder.paymentMethod)} • {formatStatusLabel(paymentPreviewOrder.status)}
                     </p>
+                    {paymentPreviewOrder.voucherCode ? (
+                      <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                        <Gift size={14} />
+                        {paymentPreviewOrder.voucherCode} • giảm {formatMoney(paymentPreviewOrder.discountAmount)}
+                      </div>
+                    ) : null}
                   </div>
                   <button
                     type="button"
@@ -1679,6 +2115,11 @@ function PublicStorefront() {
                     <p className="mt-1 font-semibold text-white">
                       {formatMoney(paymentPreviewOrder.amount)}
                     </p>
+                    {paymentPreviewOrder.discountAmount > 0 ? (
+                      <p className="mt-1 text-xs text-emerald-300">
+                        Gốc {formatMoney(paymentPreviewOrder.originalAmount)} • giảm {formatMoney(paymentPreviewOrder.discountAmount)}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
                     <p className="text-slate-500">Hạn thanh toán</p>

@@ -24,7 +24,10 @@ import {
   ArrowRightLeft,
   RotateCw,
   Globe,
+  Gift,
+  MessageCircle,
   Phone,
+  SendHorizontal,
 } from "lucide-react";
 
 const ADMIN_TOKEN_STORAGE_KEY = "admin_token";
@@ -1208,6 +1211,31 @@ const buildMoveExpectedPayload = (payload = {}, fromRecord = {}, toRecord = {}) 
 };
 const getApiErrorMessage = (error, fallback) =>
   error?.response?.data?.error || error?.message || fallback;
+const buildStoreVoucherFormState = (voucher = null) => ({
+  id: String(voucher?.id || "").trim(),
+  code: String(voucher?.code || "").trim(),
+  type: String(voucher?.type || "percent").trim() || "percent",
+  value:
+    voucher?.value === null || voucher?.value === undefined
+      ? ""
+      : String(voucher.value),
+  description: String(voucher?.description || "").trim(),
+  isActive: voucher?.isActive === undefined ? true : !!voucher?.isActive,
+  maxUses:
+    voucher?.maxUses === null || voucher?.maxUses === undefined
+      ? "0"
+      : String(voucher.maxUses),
+  perUserLimit:
+    voucher?.perUserLimit === null || voucher?.perUserLimit === undefined
+      ? "0"
+      : String(voucher.perUserLimit),
+  minOrderAmount:
+    voucher?.minOrderAmount === null || voucher?.minOrderAmount === undefined
+      ? "0"
+      : String(voucher.minOrderAmount),
+  startsAt: String(voucher?.startsAt || "").trim().slice(0, 16),
+  endsAt: String(voucher?.endsAt || "").trim().slice(0, 16),
+});
 
 function App() {
   // LOGIN STATE
@@ -1220,6 +1248,15 @@ function App() {
   const [capcutAccounts, setCapcutAccounts] = useState([]);
   const [teamAccounts, setTeamAccounts] = useState([]);
   const [storeUsers, setStoreUsers] = useState([]);
+  const [storeVouchers, setStoreVouchers] = useState([]);
+  const [supportConversations, setSupportConversations] = useState([]);
+  const [supportMessages, setSupportMessages] = useState([]);
+  const [selectedSupportConversationId, setSelectedSupportConversationId] =
+    useState("");
+  const [supportReplyDraft, setSupportReplyDraft] = useState("");
+  const [voucherQuery, setVoucherQuery] = useState("");
+  const [showVoucherModal, setShowVoucherModal] = useState(false);
+  const [voucherForm, setVoucherForm] = useState(buildStoreVoucherFormState());
   const [datammoWarrantyCases, setDatammoWarrantyCases] = useState([]);
   const [datammoOrderHistory, setDatammoOrderHistory] = useState([]);
   const [showTeamAddModal, setShowTeamAddModal] = useState(false);
@@ -1310,9 +1347,13 @@ function App() {
     createStoreManualOrder: false,
     fetchStoreWarrantyCandidates: "",
     saveStoreWarranty: false,
+    saveVoucher: false,
     deleteStoreUser: "",
     deleteStoreOrder: "",
+    deleteVoucher: "",
     fetchStoreOrderOtp: "",
+    fetchSupportThread: "",
+    sendSupportMessage: false,
     deleteMarketplaceOrder: {},
     teamMode: {},
     changeTeamWarehouse: {},
@@ -2164,6 +2205,20 @@ function App() {
             return bTime - aTime;
           }),
         );
+        setStoreVouchers(
+          [...(res.data?.storeVouchers || [])].sort((a, b) => {
+            const aTime = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
+            const bTime = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
+            return bTime - aTime;
+          }),
+        );
+        setSupportConversations(
+          [...(res.data?.supportConversations || [])].sort((a, b) => {
+            const aTime = new Date(a?.lastMessageAt || a?.createdAt || 0).getTime();
+            const bTime = new Date(b?.lastMessageAt || b?.createdAt || 0).getTime();
+            return bTime - aTime;
+          }),
+        );
         setDatammoOrderHistory(
           normalizeDatammoOrders(res.data?.datammoOrders),
         );
@@ -2418,6 +2473,204 @@ function App() {
     }
   };
 
+  const openStoreVoucherCreateModal = () => {
+    setVoucherForm(buildStoreVoucherFormState());
+    setShowVoucherModal(true);
+  };
+
+  const openStoreVoucherEditModal = (voucher) => {
+    setVoucherForm(buildStoreVoucherFormState(voucher));
+    setShowVoucherModal(true);
+  };
+
+  const handleSaveStoreVoucher = async (e) => {
+    e.preventDefault();
+    const payload = {
+      code: String(voucherForm.code || "").trim(),
+      type: String(voucherForm.type || "percent").trim() || "percent",
+      value: Number(voucherForm.value || 0),
+      description: String(voucherForm.description || "").trim(),
+      isActive: !!voucherForm.isActive,
+      maxUses: Number(voucherForm.maxUses || 0),
+      perUserLimit: Number(voucherForm.perUserLimit || 0),
+      minOrderAmount: Number(voucherForm.minOrderAmount || 0),
+      startsAt: voucherForm.startsAt
+        ? new Date(voucherForm.startsAt).toISOString()
+        : "",
+      endsAt: voucherForm.endsAt ? new Date(voucherForm.endsAt).toISOString() : "",
+    };
+
+    if (!payload.code) {
+      showAlert("Thiếu dữ liệu", "Mã voucher không được để trống.", "warning");
+      return;
+    }
+    if (!Number.isFinite(payload.value) || payload.value <= 0) {
+      showAlert("Thiếu dữ liệu", "Giá trị voucher phải lớn hơn 0.", "warning");
+      return;
+    }
+
+    setLoadingStates((prev) => ({ ...prev, saveVoucher: true }));
+    try {
+      if (voucherForm.id) {
+        await axios.put(`/api/store-vouchers/${voucherForm.id}`, payload);
+      } else {
+        await axios.post("/api/store-vouchers", payload);
+      }
+      setShowVoucherModal(false);
+      setVoucherForm(buildStoreVoucherFormState());
+      await fetchData();
+      broadcastDataChange();
+      showAlert(
+        "Thành công",
+        voucherForm.id ? "Đã cập nhật voucher." : "Đã tạo voucher mới.",
+        "success",
+      );
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể lưu voucher."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, saveVoucher: false }));
+    }
+  };
+
+  const handleDeleteStoreVoucher = (voucher) => {
+    const voucherId = String(voucher?.id || "").trim();
+    if (!voucherId) {
+      showAlert("Lỗi", "Thiếu ID voucher.", "error");
+      return;
+    }
+    showConfirm(
+      "Xóa voucher",
+      `Bạn có chắc muốn xóa voucher ${voucher?.code || voucherId}?`,
+      async () => {
+        setLoadingStates((prev) => ({ ...prev, deleteVoucher: voucherId }));
+        try {
+          await axios.delete(`/api/store-vouchers/${voucherId}`);
+          await fetchData();
+          broadcastDataChange();
+          showAlert("Thành công", "Đã xóa voucher.", "success");
+        } catch (error) {
+          showAlert(
+            "Lỗi",
+            getApiErrorMessage(error, "Không thể xóa voucher."),
+            "error",
+          );
+        } finally {
+          setLoadingStates((prev) => ({ ...prev, deleteVoucher: "" }));
+        }
+      },
+    );
+  };
+
+  const loadSupportConversationMessages = async (
+    conversationId,
+    { silent = false } = {},
+  ) => {
+    const normalizedConversationId = String(conversationId || "").trim();
+    if (!normalizedConversationId) {
+      setSupportMessages([]);
+      return null;
+    }
+    if (!silent) {
+      setLoadingStates((prev) => ({
+        ...prev,
+        fetchSupportThread: normalizedConversationId,
+      }));
+    }
+    try {
+      const response = await axios.get(
+        `/api/store-support/conversations/${normalizedConversationId}/messages`,
+      );
+      if (response?.data?.conversation) {
+        const freshConversation = response.data.conversation;
+        setSupportConversations((prev) =>
+          [...(prev || [])]
+            .map((item) =>
+              String(item?.id || "").trim() === normalizedConversationId
+                ? { ...item, ...freshConversation, adminUnreadCount: 0 }
+                : item,
+            )
+            .sort((a, b) => {
+              const aTime = new Date(a?.lastMessageAt || a?.createdAt || 0).getTime();
+              const bTime = new Date(b?.lastMessageAt || b?.createdAt || 0).getTime();
+              return bTime - aTime;
+            }),
+        );
+      }
+      setSupportMessages(
+        Array.isArray(response?.data?.messages) ? response.data.messages : [],
+      );
+      return response?.data || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Không thể tải tin nhắn hỗ trợ web."),
+          "error",
+        );
+      }
+      return null;
+    } finally {
+      if (!silent) {
+        setLoadingStates((prev) => ({ ...prev, fetchSupportThread: "" }));
+      }
+    }
+  };
+
+  const handleSelectSupportConversation = async (conversationId) => {
+    const normalizedConversationId = String(conversationId || "").trim();
+    setSelectedSupportConversationId(normalizedConversationId);
+    setSupportReplyDraft("");
+    await loadSupportConversationMessages(normalizedConversationId);
+  };
+
+  const handleSendSupportReply = async (e) => {
+    e.preventDefault();
+    const conversationId = String(selectedSupportConversationId || "").trim();
+    const body = String(supportReplyDraft || "").trim();
+    if (!conversationId || !body) return;
+
+    setLoadingStates((prev) => ({ ...prev, sendSupportMessage: true }));
+    try {
+      const response = await axios.post(
+        `/api/store-support/conversations/${conversationId}/messages`,
+        { body },
+      );
+      const freshMessage = response?.data?.message || null;
+      const freshConversation = response?.data?.conversation || null;
+      setSupportMessages((prev) => (freshMessage ? [...prev, freshMessage] : prev));
+      if (freshConversation) {
+        setSupportConversations((prev) =>
+          [...(prev || [])]
+            .map((item) =>
+              String(item?.id || "").trim() === conversationId
+                ? { ...item, ...freshConversation }
+                : item,
+            )
+            .sort((a, b) => {
+              const aTime = new Date(a?.lastMessageAt || a?.createdAt || 0).getTime();
+              const bTime = new Date(b?.lastMessageAt || b?.createdAt || 0).getTime();
+              return bTime - aTime;
+            }),
+        );
+      }
+      setSupportReplyDraft("");
+      setToastMessage("Đã trả lời user");
+      setTimeout(() => setToastMessage(""), 2000);
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể gửi trả lời cho user."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, sendSupportMessage: false }));
+    }
+  };
+
   useEffect(() => {
     if (activeTab !== "chatgpt" || !expandedStoreUserId) return;
     const visibleOrders = (storeOrders || []).filter(
@@ -2446,6 +2699,39 @@ function App() {
     storeOrderOtpNowMs,
     loadingStates.fetchStoreOrderOtp,
   ]);
+
+  useEffect(() => {
+    if (activeTab !== "support") return undefined;
+    if (!selectedSupportConversationId) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      loadSupportConversationMessages(selectedSupportConversationId, {
+        silent: true,
+      }).catch(() => {});
+    }, 7000);
+
+    return () => window.clearInterval(intervalId);
+  }, [activeTab, selectedSupportConversationId]);
+
+  useEffect(() => {
+    if (!selectedSupportConversationId) return;
+    const stillExists = (supportConversations || []).some(
+      (conversation) =>
+        String(conversation?.id || "").trim() === selectedSupportConversationId,
+    );
+    if (stillExists) return;
+    setSelectedSupportConversationId("");
+    setSupportMessages([]);
+    setSupportReplyDraft("");
+  }, [selectedSupportConversationId, supportConversations]);
+
+  useEffect(() => {
+    if (activeTab !== "support") return;
+    if (selectedSupportConversationId) return;
+    const firstConversation = (supportConversations || [])[0];
+    if (!firstConversation?.id) return;
+    handleSelectSupportConversation(firstConversation.id).catch(() => {});
+  }, [activeTab, selectedSupportConversationId, supportConversations]);
 
   const handleCreateStoreManualOrder = async (e) => {
     e.preventDefault();
@@ -4725,6 +5011,48 @@ function App() {
       ? user.authProviders.includes("google")
       : false,
   ).length;
+  const filteredStoreVouchers = storeVouchers
+    .filter((voucher) => {
+      if (!voucherQuery.trim()) return true;
+      const queryNormalized = toNonAccentVietnamese(voucherQuery);
+      const searchIndex = toNonAccentVietnamese(
+        [
+          voucher?.code,
+          voucher?.description,
+          voucher?.type,
+          voucher?.displayValue,
+          ...(Array.isArray(voucher?.users)
+            ? voucher.users.flatMap((user) => [
+                user?.fullName,
+                user?.email,
+                user?.phone,
+              ])
+            : []),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+      return searchIndex.includes(queryNormalized);
+    })
+    .sort((a, b) => {
+      const aTime = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
+      const bTime = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+  const activeStoreVoucherCount = filteredStoreVouchers.filter(
+    (voucher) => !!voucher?.isActive,
+  ).length;
+  const usedStoreVoucherCount = filteredStoreVouchers.filter(
+    (voucher) => Number(voucher?.totalUses || 0) > 0,
+  ).length;
+  const supportUnreadConversationCount = supportConversations.filter(
+    (conversation) => Number(conversation?.adminUnreadCount || 0) > 0,
+  ).length;
+  const selectedSupportConversation =
+    supportConversations.find(
+      (conversation) =>
+        String(conversation?.id || "").trim() === selectedSupportConversationId,
+    ) || null;
   const storeOrdersByUserId = (() => {
     const grouped = new Map();
     (storeOrders || []).forEach((order) => {
@@ -5097,6 +5425,19 @@ function App() {
               className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "store-users" ? "bg-cyan-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               User web
+            </button>
+            <button
+              onClick={() => setActiveTab("store-vouchers")}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "store-vouchers" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+            >
+              Voucher
+            </button>
+            <button
+              onClick={() => setActiveTab("support")}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "support" ? "bg-sky-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+            >
+              Hỗ trợ web
+              {supportUnreadConversationCount > 0 ? ` (${supportUnreadConversationCount})` : ""}
             </button>
             <button
               onClick={() => setActiveTab("netflix")}
@@ -6026,6 +6367,420 @@ function App() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "store-vouchers" && (
+          <div className="space-y-6">
+            <div className="overflow-hidden rounded-[24px] border border-emerald-500/15 bg-slate-900/85 shadow-[0_18px_55px_rgba(8,15,40,0.38)]">
+              <div className="flex flex-col gap-4 border-b border-slate-800/80 p-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="text-[11px] font-black uppercase tracking-[0.34em] text-emerald-300/90">
+                    Voucher
+                  </div>
+                  <h2 className="mt-1.5 text-xl font-black text-white">
+                    Tạo voucher giảm giá theo % hoặc số tiền
+                  </h2>
+                  <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
+                    Admin có thể tạo, sửa, xóa voucher và theo dõi chính xác user nào đã dùng trên web.
+                  </p>
+                </div>
+                <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-4">
+                  {[
+                    {
+                      label: "Tổng voucher",
+                      value: filteredStoreVouchers.length,
+                      tone: "bg-emerald-500/15 border-emerald-500/30 text-emerald-200",
+                    },
+                    {
+                      label: "Đang bật",
+                      value: activeStoreVoucherCount,
+                      tone: "bg-cyan-500/15 border-cyan-500/30 text-cyan-200",
+                    },
+                    {
+                      label: "Đã có lượt dùng",
+                      value: usedStoreVoucherCount,
+                      tone: "bg-blue-500/15 border-blue-500/30 text-blue-200",
+                    },
+                    {
+                      label: "Có user dùng",
+                      value: filteredStoreVouchers.filter((voucher) => Number(voucher?.userCount || 0) > 0).length,
+                      tone: "bg-violet-500/15 border-violet-500/30 text-violet-200",
+                    },
+                  ].map((item) => (
+                    <div key={item.label} className={`rounded-2xl border px-3 py-2.5 ${item.tone}`}>
+                      <div className="text-[10px] uppercase tracking-[0.26em] opacity-80">
+                        {item.label}
+                      </div>
+                      <div className="mt-1 text-xl font-black">{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 border-b border-slate-800/80 p-4 lg:flex-row lg:items-center">
+                <input
+                  value={voucherQuery}
+                  onChange={(e) => setVoucherQuery(e.target.value)}
+                  placeholder="Tìm theo mã voucher, mô tả hoặc user đã dùng..."
+                  className="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={openStoreVoucherCreateModal}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-500 transition-colors"
+                >
+                  <Gift size={16} />
+                  Tạo voucher
+                </button>
+              </div>
+
+              <div className="p-4">
+                {filteredStoreVouchers.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-10 text-center text-slate-400">
+                    Chưa có voucher nào khớp điều kiện hiện tại.
+                  </div>
+                ) : (
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    {filteredStoreVouchers.map((voucher) => {
+                      const remainingUses =
+                        voucher?.remainingUses === null || voucher?.remainingUses === undefined
+                          ? "Không giới hạn"
+                          : `${Math.max(0, Number(voucher.remainingUses || 0))}`;
+                      return (
+                        <div
+                          key={voucher.id}
+                          className="rounded-[22px] border border-slate-800 bg-slate-950/70 p-4 shadow-xl shadow-slate-950/20"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-sm font-black uppercase tracking-[0.18em] text-emerald-200">
+                                  {voucher.code}
+                                </div>
+                                <div className="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-xs font-semibold text-slate-200">
+                                  {voucher.type === "fixed" ? "Giảm tiền" : "Giảm %"} • {voucher.displayValue}
+                                </div>
+                                <div className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.14em] ${
+                                  voucher.isActive
+                                    ? "border border-cyan-500/30 bg-cyan-500/15 text-cyan-200"
+                                    : "border border-slate-700 bg-slate-800 text-slate-400"
+                                }`}>
+                                  {voucher.isActive ? "Đang bật" : "Đang tắt"}
+                                </div>
+                              </div>
+                              <div className="mt-2 text-sm text-slate-300">
+                                {voucher.description || "Chưa có mô tả cho voucher này."}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openStoreVoucherEditModal(voucher)}
+                                className="inline-flex items-center gap-1 rounded-xl bg-blue-700 px-3 py-2 text-xs font-bold text-white hover:bg-blue-600"
+                              >
+                                <Pencil size={13} />
+                                Sửa
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteStoreVoucher(voucher)}
+                                disabled={loadingStates.deleteVoucher === voucher.id}
+                                className="inline-flex items-center gap-1 rounded-xl bg-red-700 px-3 py-2 text-xs font-bold text-white hover:bg-red-600 disabled:opacity-60"
+                              >
+                                <Trash2 size={13} />
+                                {loadingStates.deleteVoucher === voucher.id ? "Đang xóa" : "Xóa"}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            {[
+                              ["Tổng lượt", `${Number(voucher?.totalUses || 0)}`],
+                              ["Đơn đang giữ", `${Number(voucher?.activeUses || 0)}`],
+                              ["Đơn đã giao", `${Number(voucher?.fulfilledUses || 0)}`],
+                              ["Còn lại", remainingUses],
+                            ].map(([label, value]) => (
+                              <div
+                                key={`${voucher.id}-${label}`}
+                                className="rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-3"
+                              >
+                                <div className="text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                                  {label}
+                                </div>
+                                <div className="mt-1 text-base font-black text-white">{value}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+                              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                Điều kiện
+                              </div>
+                              <div className="mt-2 space-y-1.5">
+                                <div>Đơn tối thiểu: <span className="font-semibold text-white">{formatMoney(voucher?.minOrderAmount || 0)}</span></div>
+                                <div>Giới hạn tổng: <span className="font-semibold text-white">{Number(voucher?.maxUses || 0) > 0 ? `${voucher.maxUses} lượt` : "Không giới hạn"}</span></div>
+                                <div>Giới hạn / user: <span className="font-semibold text-white">{Number(voucher?.perUserLimit || 0) > 0 ? `${voucher.perUserLimit} lượt` : "Không giới hạn"}</span></div>
+                                <div>Bắt đầu: <span className="font-semibold text-white">{formatDateTime(voucher?.startsAt) || "--"}</span></div>
+                                <div>Kết thúc: <span className="font-semibold text-white">{formatDateTime(voucher?.endsAt) || "--"}</span></div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+                              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                User đã dùng
+                              </div>
+                              <div className="mt-2 space-y-2">
+                                {(voucher?.users || []).length === 0 ? (
+                                  <div className="text-slate-500">Chưa có user nào dùng voucher này.</div>
+                                ) : (
+                                  (voucher.users || []).slice(0, 5).map((userItem) => (
+                                    <div
+                                      key={`${voucher.id}-${userItem.userId || userItem.email || userItem.phone}`}
+                                      className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2"
+                                    >
+                                      <div className="font-semibold text-white">
+                                        {userItem.fullName || userItem.email || userItem.phone || userItem.userId}
+                                      </div>
+                                      <div className="mt-1 text-xs text-slate-400">
+                                        {userItem.email || "--"} · {userItem.phone || "--"}
+                                      </div>
+                                      <div className="mt-1 text-xs text-emerald-300">
+                                        {Number(userItem.totalUses || 0)} lượt • giảm {formatMoney(userItem.totalDiscountAmount || 0)}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {(voucher?.recentOrders || []).length > 0 ? (
+                            <details className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/50 px-4 py-3">
+                              <summary className="cursor-pointer list-none text-sm font-semibold text-slate-200">
+                                Xem các đơn gần nhất dùng voucher này
+                              </summary>
+                              <div className="mt-3 space-y-2">
+                                {(voucher.recentOrders || []).map((order) => (
+                                  <div
+                                    key={`${voucher.id}-${order.id}`}
+                                    className="rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-3 text-sm"
+                                  >
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div className="font-semibold text-white">
+                                        {order.customerName || order.customerEmail || order.customerPhone || order.userId || "Khách web"}
+                                      </div>
+                                      <div className="text-xs text-slate-400">
+                                        {order.packageName || order.packageCode || "Đơn web"} • {formatDateTime(order.createdAt)}
+                                      </div>
+                                    </div>
+                                    <div className="mt-2 text-xs text-slate-400">
+                                      #{order.id} • {getStoreOrderStatusLabel(order.status)} • Giảm {formatMoney(order.discountAmount || 0)} • Thanh toán {formatMoney(order.finalAmount || 0)}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "support" && (
+          <div className="grid gap-6 xl:grid-cols-[360px,1fr]">
+            <div className="overflow-hidden rounded-[24px] border border-sky-500/15 bg-slate-900/85 shadow-[0_18px_55px_rgba(8,15,40,0.38)]">
+              <div className="border-b border-slate-800/80 p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.34em] text-sky-300/90">
+                  Hỗ trợ web
+                </div>
+                <h2 className="mt-1.5 flex items-center gap-2 text-xl font-black text-white">
+                  <MessageCircle size={18} className="text-sky-300" />
+                  User chat trực tiếp với admin
+                </h2>
+                <p className="mt-1.5 text-sm leading-6 text-slate-400">
+                  Mở từng hội thoại để đọc và trả lời như chat thông thường.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  <div className="rounded-full border border-sky-500/25 bg-sky-500/10 px-3 py-1 text-sky-200">
+                    Tổng hội thoại: {supportConversations.length}
+                  </div>
+                  <div className="rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1 text-amber-200">
+                    Chưa đọc: {supportUnreadConversationCount}
+                  </div>
+                </div>
+              </div>
+
+              <div className="max-h-[760px] overflow-y-auto p-3">
+                {supportConversations.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-10 text-center text-slate-400">
+                    Chưa có user nào chat trên web.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {supportConversations.map((conversation) => {
+                      const selected =
+                        String(conversation?.id || "").trim() === selectedSupportConversationId;
+                      return (
+                        <button
+                          key={conversation.id}
+                          type="button"
+                          onClick={() => handleSelectSupportConversation(conversation.id)}
+                          className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${
+                            selected
+                              ? "border-sky-400 bg-sky-500/10"
+                              : "border-slate-800 bg-slate-950/70 hover:border-sky-500/40"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-semibold text-white">
+                                {conversation.userName || conversation.userEmail || conversation.userPhone || conversation.userId || "User web"}
+                              </div>
+                              <div className="mt-1 text-xs text-slate-400 break-all">
+                                {conversation.userEmail || "--"} · {conversation.userPhone || "--"}
+                              </div>
+                            </div>
+                            {Number(conversation?.adminUnreadCount || 0) > 0 ? (
+                              <div className="rounded-full bg-amber-500 px-2 py-1 text-[10px] font-black text-slate-950">
+                                {conversation.adminUnreadCount} mới
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="mt-3 text-sm text-slate-300 line-clamp-2">
+                            {conversation.lastMessagePreview || "Chưa có tin nhắn"}
+                          </div>
+                          <div className="mt-2 text-[11px] text-slate-500">
+                            {conversation.lastSenderRole === "admin" ? "Admin" : "User"} · {formatDateTime(conversation.lastMessageAt)}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-[24px] border border-sky-500/15 bg-slate-900/85 shadow-[0_18px_55px_rgba(8,15,40,0.38)]">
+              {!selectedSupportConversation ? (
+                <div className="flex min-h-[560px] items-center justify-center p-6 text-center text-slate-400">
+                  Chọn một hội thoại ở bên trái để xem tin nhắn và trả lời user.
+                </div>
+              ) : (
+                <>
+                  <div className="border-b border-slate-800/80 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] font-black uppercase tracking-[0.28em] text-sky-300">
+                          Hội thoại đang mở
+                        </div>
+                        <div className="mt-1 text-xl font-black text-white">
+                          {selectedSupportConversation.userName || selectedSupportConversation.userEmail || selectedSupportConversation.userPhone || selectedSupportConversation.userId || "User web"}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
+                          <span>{selectedSupportConversation.userEmail || "--"}</span>
+                          <span>{selectedSupportConversation.userPhone || "--"}</span>
+                          <span>{selectedSupportConversation.status || "open"}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => loadSupportConversationMessages(selectedSupportConversation.id)}
+                        disabled={loadingStates.fetchSupportThread === selectedSupportConversation.id}
+                        className="inline-flex items-center gap-2 rounded-2xl bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-700 disabled:opacity-60"
+                      >
+                        <RefreshCw size={14} className={loadingStates.fetchSupportThread === selectedSupportConversation.id ? "animate-spin" : ""} />
+                        Làm mới
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex min-h-[560px] flex-col">
+                    <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                      {loadingStates.fetchSupportThread === selectedSupportConversation.id &&
+                      supportMessages.length === 0 ? (
+                        <div className="flex items-center gap-2 text-sm text-slate-400">
+                          <Loader2 size={16} className="animate-spin" />
+                          Đang tải tin nhắn...
+                        </div>
+                      ) : supportMessages.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-10 text-center text-slate-400">
+                          Hội thoại này chưa có tin nhắn nào.
+                        </div>
+                      ) : (
+                        supportMessages.map((messageItem) => {
+                          const fromUser = String(messageItem?.senderRole || "").trim() === "user";
+                          return (
+                            <div
+                              key={messageItem.id}
+                              className={`flex ${fromUser ? "justify-start" : "justify-end"}`}
+                            >
+                              <div
+                                className={`max-w-[85%] rounded-[22px] px-4 py-3 text-sm leading-6 ${
+                                  fromUser
+                                    ? "border border-slate-700 bg-slate-950/80 text-slate-100"
+                                    : "bg-sky-600 text-white"
+                                }`}
+                              >
+                                <div className="whitespace-pre-wrap break-words">
+                                  {messageItem.body}
+                                </div>
+                                <div className={`mt-2 text-[11px] ${fromUser ? "text-slate-400" : "text-sky-100"}`}>
+                                  {fromUser ? "User" : "Admin"} • {formatDateTime(messageItem.createdAt)}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <form
+                      onSubmit={handleSendSupportReply}
+                      className="border-t border-slate-800/80 p-4"
+                    >
+                      <div className="grid gap-3">
+                        <textarea
+                          rows={4}
+                          value={supportReplyDraft}
+                          onChange={(e) => setSupportReplyDraft(e.target.value)}
+                          placeholder="Nhập nội dung trả lời cho user..."
+                          className="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-white outline-none transition focus:border-sky-500"
+                        />
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="text-xs text-slate-500">
+                            Trả lời ở đây sẽ hiện ngay trong khung chat web của user.
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={loadingStates.sendSupportMessage || !supportReplyDraft.trim()}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-3 text-sm font-bold text-white hover:bg-sky-500 disabled:opacity-60"
+                          >
+                            {loadingStates.sendSupportMessage ? (
+                              <>
+                                <Loader2 size={15} className="animate-spin" />
+                                Đang gửi
+                              </>
+                            ) : (
+                              <>
+                                <SendHorizontal size={15} />
+                                Gửi trả lời
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -11469,6 +12224,213 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         );
       })()}
 
+
+      {showVoucherModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSaveStoreVoucher}
+            className="w-full rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-2xl"
+            style={{ maxWidth: "560px" }}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-xl font-bold text-white">
+                <Gift size={20} className="text-emerald-400" />
+                {voucherForm.id ? "Sửa voucher" : "Tạo voucher mới"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowVoucherModal(false);
+                  setVoucherForm(buildStoreVoucherFormState());
+                }}
+                className="text-slate-400 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm text-slate-400">Mã voucher *</label>
+                  <input
+                    required
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-white uppercase"
+                    value={voucherForm.code}
+                    onChange={(e) =>
+                      setVoucherForm((prev) => ({
+                        ...prev,
+                        code: e.target.value.toUpperCase().replace(/\s+/g, ""),
+                      }))
+                    }
+                    placeholder="GIAM50K"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm text-slate-400">Loại voucher *</label>
+                  <select
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-white"
+                    value={voucherForm.type}
+                    onChange={(e) =>
+                      setVoucherForm((prev) => ({ ...prev, type: e.target.value }))
+                    }
+                  >
+                    <option value="percent">Giảm theo %</option>
+                    <option value="fixed">Giảm theo số tiền</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm text-slate-400">
+                    Giá trị {voucherForm.type === "fixed" ? "(VND)" : "(%)"} *
+                  </label>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    step={voucherForm.type === "fixed" ? "1000" : "1"}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-white"
+                    value={voucherForm.value}
+                    onChange={(e) =>
+                      setVoucherForm((prev) => ({ ...prev, value: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                    Trạng thái
+                  </div>
+                  <label className="mt-2 inline-flex items-center gap-2 text-sm text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={!!voucherForm.isActive}
+                      onChange={(e) =>
+                        setVoucherForm((prev) => ({
+                          ...prev,
+                          isActive: e.target.checked,
+                        }))
+                      }
+                    />
+                    Bật voucher ngay sau khi lưu
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm text-slate-400">Mô tả</label>
+                <textarea
+                  rows={3}
+                  className="w-full resize-none rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-white"
+                  value={voucherForm.description}
+                  onChange={(e) =>
+                    setVoucherForm((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
+                  placeholder="Ví dụ: Voucher khách cũ, sale cuối tuần..."
+                />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-sm text-slate-400">Giới hạn tổng lượt</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-white"
+                    value={voucherForm.maxUses}
+                    onChange={(e) =>
+                      setVoucherForm((prev) => ({ ...prev, maxUses: e.target.value }))
+                    }
+                    placeholder="0 = không giới hạn"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm text-slate-400">Giới hạn / user</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-white"
+                    value={voucherForm.perUserLimit}
+                    onChange={(e) =>
+                      setVoucherForm((prev) => ({
+                        ...prev,
+                        perUserLimit: e.target.value,
+                      }))
+                    }
+                    placeholder="0 = không giới hạn"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm text-slate-400">Đơn tối thiểu (VND)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-white"
+                    value={voucherForm.minOrderAmount}
+                    onChange={(e) =>
+                      setVoucherForm((prev) => ({
+                        ...prev,
+                        minOrderAmount: e.target.value,
+                      }))
+                    }
+                    placeholder="0 = không yêu cầu"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm text-slate-400">Bắt đầu</label>
+                  <input
+                    type="datetime-local"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-white"
+                    value={voucherForm.startsAt}
+                    onChange={(e) =>
+                      setVoucherForm((prev) => ({ ...prev, startsAt: e.target.value }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm text-slate-400">Kết thúc</label>
+                  <input
+                    type="datetime-local"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2.5 text-white"
+                    value={voucherForm.endsAt}
+                    onChange={(e) =>
+                      setVoucherForm((prev) => ({ ...prev, endsAt: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowVoucherModal(false);
+                  setVoucherForm(buildStoreVoucherFormState());
+                }}
+                className="flex-1 rounded-lg bg-slate-700 p-2 text-white hover:bg-slate-600"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={loadingStates.saveVoucher}
+                className="flex-1 rounded-lg bg-emerald-600 p-2 font-bold text-white hover:bg-emerald-500 disabled:opacity-60"
+              >
+                {loadingStates.saveVoucher ? "Đang lưu..." : voucherForm.id ? "Lưu cập nhật" : "Tạo voucher"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {showStoreOrderEditModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">

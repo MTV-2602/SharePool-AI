@@ -531,7 +531,14 @@ const storeOrderSchema = new mongoose.Schema({
   userId: { type: String, required: true, index: true },
   packageCode: { type: String, required: true, index: true },
   packageName: { type: String, required: true },
+  originalAmount: { type: Number, default: 0 },
+  discountAmount: { type: Number, default: 0 },
   amount: { type: Number, required: true },
+  voucherId: { type: String, default: "", index: true },
+  voucherCode: { type: String, default: "", index: true },
+  voucherType: { type: String, default: "" },
+  voucherValue: { type: Number, default: 0 },
+  voucherDescription: { type: String, default: "" },
   status: { type: String, default: "pending", index: true },
   paymentMethod: { type: String, default: "momo" },
   momoOrderId: { type: String, default: "", index: true },
@@ -579,6 +586,65 @@ const storeOrderSchema = new mongoose.Schema({
 const StoreOrder =
   mongoose.models.StoreOrder ||
   mongoose.model("StoreOrder", storeOrderSchema, "store_orders");
+
+const storeVoucherSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  code: { type: String, required: true, unique: true, index: true },
+  type: { type: String, default: "percent" },
+  value: { type: Number, default: 0 },
+  description: { type: String, default: "" },
+  isActive: { type: Boolean, default: true },
+  maxUses: { type: Number, default: 0 },
+  perUserLimit: { type: Number, default: 0 },
+  minOrderAmount: { type: Number, default: 0 },
+  startsAt: { type: String, default: "" },
+  endsAt: { type: String, default: "" },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+const StoreVoucher =
+  mongoose.models.StoreVoucher ||
+  mongoose.model("StoreVoucher", storeVoucherSchema, "store_vouchers");
+
+const storeSupportConversationSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  userId: { type: String, required: true, unique: true, index: true },
+  userName: { type: String, default: "" },
+  userEmail: { type: String, default: "" },
+  userPhone: { type: String, default: "" },
+  status: { type: String, default: "open", index: true },
+  lastMessageAt: { type: String, default: "" },
+  lastMessagePreview: { type: String, default: "" },
+  lastSenderRole: { type: String, default: "" },
+  adminUnreadCount: { type: Number, default: 0 },
+  userUnreadCount: { type: Number, default: 0 },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+const StoreSupportConversation =
+  mongoose.models.StoreSupportConversation ||
+  mongoose.model(
+    "StoreSupportConversation",
+    storeSupportConversationSchema,
+    "store_support_conversations",
+  );
+
+const storeSupportMessageSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  conversationId: { type: String, required: true, index: true },
+  senderRole: { type: String, required: true, index: true },
+  senderId: { type: String, default: "" },
+  body: { type: String, required: true },
+  createdAt: { type: String, default: () => new Date().toISOString(), index: true },
+  readAt: { type: String, default: "" },
+});
+const StoreSupportMessage =
+  mongoose.models.StoreSupportMessage ||
+  mongoose.model(
+    "StoreSupportMessage",
+    storeSupportMessageSchema,
+    "store_support_messages",
+  );
 
 // Middleware to ensure DB is connected before processing
 app.use(async (req, res, next) => {
@@ -948,6 +1014,110 @@ app.get("/api/store/orders", verifyStoreUserToken, async (req, res) => {
   }
 });
 
+app.post("/api/store/vouchers/validate", verifyStoreUserToken, async (req, res) => {
+  try {
+    const pricing = await resolveStoreVoucherPricing({
+      voucherCode: req.body?.voucherCode,
+      packageCode: req.body?.packageCode,
+      userId: req.storeUser.id,
+    });
+    return res.json({
+      success: true,
+      voucher: pricing?.voucher
+        ? sanitizeStoreVoucherForCheckout(pricing)
+        : null,
+      originalAmount: Number(pricing?.originalAmount || 0),
+      discountAmount: Number(pricing?.discountAmount || 0),
+      finalAmount: Number(pricing?.finalAmount || 0),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the kiem tra voucher.",
+    });
+  }
+});
+
+app.get("/api/store/support/thread", verifyStoreUserToken, async (req, res) => {
+  try {
+    const conversation = await getOrCreateStoreSupportConversation(req.storeUser);
+    const shouldMarkRead = String(req.query?.markRead || "0").trim() === "1";
+    if (shouldMarkRead) {
+      await markStoreSupportConversationRead({
+        conversationId: conversation.id,
+        readerRole: "user",
+      });
+    }
+    const [freshConversation, messages] = await Promise.all([
+      StoreSupportConversation.findOne({
+        id: String(conversation.id || "").trim(),
+      }).lean(),
+      listStoreSupportMessages(conversation.id),
+    ]);
+    return res.json({
+      success: true,
+      conversation: sanitizeStoreSupportConversationForUser(
+        freshConversation || conversation,
+      ),
+      messages: (messages || []).map((message) =>
+        sanitizeStoreSupportMessage(message),
+      ),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc khung chat ho tro.",
+    });
+  }
+});
+
+app.post("/api/store/support/thread/messages", verifyStoreUserToken, async (req, res) => {
+  try {
+    const conversation = await getOrCreateStoreSupportConversation(req.storeUser);
+    const message = await appendStoreSupportMessage({
+      conversationId: conversation.id,
+      senderRole: "user",
+      senderId: req.storeUser.id,
+      body: req.body?.body,
+    });
+    const freshConversation = await StoreSupportConversation.findOne({
+      id: String(conversation.id || "").trim(),
+    }).lean();
+    return res.json({
+      success: true,
+      conversation: sanitizeStoreSupportConversationForUser(
+        freshConversation || conversation,
+      ),
+      message: sanitizeStoreSupportMessage(message),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong gui duoc tin nhan.",
+    });
+  }
+});
+
+app.post("/api/store/support/thread/read", verifyStoreUserToken, async (req, res) => {
+  try {
+    const conversation = await getOrCreateStoreSupportConversation(req.storeUser);
+    await markStoreSupportConversationRead({
+      conversationId: conversation.id,
+      readerRole: "user",
+    });
+    const freshConversation = await StoreSupportConversation.findOne({
+      id: String(conversation.id || "").trim(),
+    }).lean();
+    return res.json({
+      success: true,
+      conversation: sanitizeStoreSupportConversationForUser(
+        freshConversation || conversation,
+      ),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong cap nhat duoc trang thai da doc.",
+    });
+  }
+});
+
 app.get("/api/store/orders/:id", verifyStoreUserToken, async (req, res) => {
   try {
     await expireStaleStoreOrders({ userId: req.storeUser.id });
@@ -1030,25 +1200,51 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => 
       userId: req.storeUser.id,
       packageCode: packageConfig.code,
     });
+    const pricing = await resolveStoreVoucherPricing({
+      voucherCode: req.body?.voucherCode,
+      packageCode: packageConfig.code,
+      userId: req.storeUser.id,
+      excludeOrderId: reusableOrder?.id,
+    });
     if (reusableOrder?.id) {
       const sameMethod =
         normalizeStorePaymentMethod(reusableOrder.paymentMethod) === paymentMethod;
+      const sameVoucher =
+        normalizeStoreVoucherCode(reusableOrder?.voucherCode) ===
+          normalizeStoreVoucherCode(pricing?.voucher?.code) &&
+        Number(reusableOrder?.amount || 0) === Number(pricing?.finalAmount || 0) &&
+        Number(reusableOrder?.discountAmount || 0) ===
+          Number(pricing?.discountAmount || 0);
       let workingOrder = reusableOrder;
-      if (!sameMethod) {
+      if (!sameMethod || !sameVoucher) {
         workingOrder = await StoreOrder.findOneAndUpdate(
           { id: reusableOrder.id },
           {
             $set: {
               paymentMethod,
+              originalAmount: Number(pricing?.originalAmount || packageConfig.price || 0),
+              discountAmount: Number(pricing?.discountAmount || 0),
+              amount: Number(pricing?.finalAmount || packageConfig.price || 0),
+              voucherId: String(pricing?.voucher?.id || "").trim(),
+              voucherCode: normalizeStoreVoucherCode(pricing?.voucher?.code),
+              voucherType: pricing?.voucher
+                ? normalizeStoreVoucherType(pricing?.voucher?.type)
+                : "",
+              voucherValue: Number(pricing?.voucher?.value || 0),
+              voucherDescription: String(
+                pricing?.voucher?.description || "",
+              ).trim(),
+              status: "pending_payment",
+              expiresAt: getStorePaymentExpiresAtIso(),
               ...(paymentMethod === STORE_PAYMENT_METHOD_MOMO
                 ? {
                     ...clearStorePayosPaymentFields(),
-                    momoOrderId:
-                      String(reusableOrder?.momoOrderId || "").trim() ||
-                      createStoreId("momo_order"),
+                    ...clearStoreMomoPaymentFields(),
+                    momoOrderId: createStoreId("momo_order"),
                   }
                 : {
                     ...clearStoreMomoPaymentFields(),
+                    ...clearStorePayosPaymentFields(),
                   }),
               updatedAt: new Date().toISOString(),
             },
@@ -1097,7 +1293,16 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, async (req, res) => 
       userId: req.storeUser.id,
       packageCode: packageConfig.code,
       packageName: packageConfig.name,
-      amount: packageConfig.price,
+      originalAmount: Number(pricing?.originalAmount || packageConfig.price || 0),
+      discountAmount: Number(pricing?.discountAmount || 0),
+      amount: Number(pricing?.finalAmount || packageConfig.price || 0),
+      voucherId: String(pricing?.voucher?.id || "").trim(),
+      voucherCode: normalizeStoreVoucherCode(pricing?.voucher?.code),
+      voucherType: pricing?.voucher
+        ? normalizeStoreVoucherType(pricing?.voucher?.type)
+        : "",
+      voucherValue: Number(pricing?.voucher?.value || 0),
+      voucherDescription: String(pricing?.voucher?.description || "").trim(),
       paymentMethod,
       status: "pending_payment",
       momoOrderId:
@@ -1558,6 +1763,215 @@ const sanitizeStoreUserForAdmin = (user, stats = {}) => {
     latestOrderAt: String(stats?.latestOrderAt || "").trim(),
   };
 };
+const normalizeStoreVoucherType = (value) =>
+  String(value || "").trim().toLowerCase() === "fixed" ? "fixed" : "percent";
+const normalizeStoreVoucherCode = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+const getStoreVoucherDisplayValue = (voucher = {}) => {
+  const type = normalizeStoreVoucherType(voucher?.type);
+  const value = Number(voucher?.value || 0);
+  if (type === "fixed") {
+    return new Intl.NumberFormat("vi-VN", {
+      style: "currency",
+      currency: "VND",
+      maximumFractionDigits: 0,
+    }).format(Math.max(0, value));
+  }
+  return `${Math.max(0, value)}%`;
+};
+const isStoreVoucherDateActive = (
+  voucher = {},
+  baseDate = new Date(),
+) => {
+  const nowMs = baseDate instanceof Date ? baseDate.getTime() : Date.now();
+  const startsAtMs = parseStoreDateMs(voucher?.startsAt);
+  const endsAtMs = parseStoreDateMs(voucher?.endsAt);
+  if (startsAtMs > 0 && startsAtMs > nowMs) return false;
+  if (endsAtMs > 0 && endsAtMs < nowMs) return false;
+  return true;
+};
+const sanitizeStoreVoucherUsageOrder = (order = {}, user = null) => ({
+  id: String(order?.id || "").trim(),
+  userId: String(order?.userId || "").trim(),
+  customerName: String(user?.fullName || "").trim(),
+  customerEmail: String(user?.email || "").trim(),
+  customerPhone: String(user?.phone || "").trim(),
+  packageCode: String(order?.packageCode || "").trim(),
+  packageName: String(
+    order?.packageName || STORE_PACKAGE_MAP[String(order?.packageCode || "").trim()]?.name || "",
+  ).trim(),
+  status: String(order?.status || "").trim(),
+  originalAmount: Number(order?.originalAmount || order?.amount || 0),
+  discountAmount: Number(order?.discountAmount || 0),
+  finalAmount: Number(order?.amount || 0),
+  createdAt: String(order?.createdAt || "").trim(),
+  paidAt: String(order?.paidAt || "").trim(),
+  fulfilledAt: String(order?.fulfilledAt || "").trim(),
+});
+const sanitizeStoreVoucherForAdmin = (voucher, stats = {}) => {
+  if (!voucher) return null;
+  const maxUses = Math.max(0, Number(voucher?.maxUses || 0));
+  const totalUses = Math.max(0, Number(stats?.totalUses || 0));
+  return {
+    id: String(voucher?.id || "").trim(),
+    code: normalizeStoreVoucherCode(voucher?.code),
+    type: normalizeStoreVoucherType(voucher?.type),
+    value: Number(voucher?.value || 0),
+    displayValue: getStoreVoucherDisplayValue(voucher),
+    description: String(voucher?.description || "").trim(),
+    isActive: !!voucher?.isActive,
+    maxUses,
+    perUserLimit: Math.max(0, Number(voucher?.perUserLimit || 0)),
+    minOrderAmount: Math.max(0, Number(voucher?.minOrderAmount || 0)),
+    startsAt: String(voucher?.startsAt || "").trim(),
+    endsAt: String(voucher?.endsAt || "").trim(),
+    createdAt: String(voucher?.createdAt || "").trim(),
+    updatedAt: String(voucher?.updatedAt || "").trim(),
+    totalUses,
+    activeUses: Math.max(0, Number(stats?.activeUses || 0)),
+    fulfilledUses: Math.max(0, Number(stats?.fulfilledUses || 0)),
+    userCount: Math.max(0, Number(stats?.userCount || 0)),
+    remainingUses: maxUses > 0 ? Math.max(0, maxUses - totalUses) : null,
+    users: Array.isArray(stats?.users) ? stats.users : [],
+    recentOrders: Array.isArray(stats?.recentOrders) ? stats.recentOrders : [],
+  };
+};
+const sanitizeStoreVoucherForCheckout = ({
+  voucher = null,
+  originalAmount = 0,
+  discountAmount = 0,
+  finalAmount = 0,
+} = {}) => {
+  if (!voucher) return null;
+  return {
+    id: String(voucher?.id || "").trim(),
+    code: normalizeStoreVoucherCode(voucher?.code),
+    type: normalizeStoreVoucherType(voucher?.type),
+    value: Number(voucher?.value || 0),
+    displayValue: getStoreVoucherDisplayValue(voucher),
+    description: String(voucher?.description || "").trim(),
+    originalAmount: Number(originalAmount || 0),
+    discountAmount: Number(discountAmount || 0),
+    finalAmount: Number(finalAmount || 0),
+  };
+};
+const sanitizeStoreSupportMessage = (message = {}) => ({
+  id: String(message?.id || "").trim(),
+  conversationId: String(message?.conversationId || "").trim(),
+  senderRole: String(message?.senderRole || "").trim(),
+  senderId: String(message?.senderId || "").trim(),
+  body: String(message?.body || "").trim(),
+  createdAt: String(message?.createdAt || "").trim(),
+  readAt: String(message?.readAt || "").trim(),
+});
+const sanitizeStoreSupportConversationForAdmin = (conversation = {}) => ({
+  id: String(conversation?.id || "").trim(),
+  userId: String(conversation?.userId || "").trim(),
+  userName: String(conversation?.userName || "").trim(),
+  userEmail: String(conversation?.userEmail || "").trim(),
+  userPhone: String(conversation?.userPhone || "").trim(),
+  status: String(conversation?.status || "open").trim(),
+  lastMessageAt: String(conversation?.lastMessageAt || "").trim(),
+  lastMessagePreview: String(conversation?.lastMessagePreview || "").trim(),
+  lastSenderRole: String(conversation?.lastSenderRole || "").trim(),
+  adminUnreadCount: Math.max(0, Number(conversation?.adminUnreadCount || 0)),
+  userUnreadCount: Math.max(0, Number(conversation?.userUnreadCount || 0)),
+  createdAt: String(conversation?.createdAt || "").trim(),
+  updatedAt: String(conversation?.updatedAt || "").trim(),
+});
+const sanitizeStoreSupportConversationForUser = (conversation = {}) => ({
+  id: String(conversation?.id || "").trim(),
+  status: String(conversation?.status || "open").trim(),
+  lastMessageAt: String(conversation?.lastMessageAt || "").trim(),
+  lastMessagePreview: String(conversation?.lastMessagePreview || "").trim(),
+  lastSenderRole: String(conversation?.lastSenderRole || "").trim(),
+  unreadCount: Math.max(0, Number(conversation?.userUnreadCount || 0)),
+  createdAt: String(conversation?.createdAt || "").trim(),
+  updatedAt: String(conversation?.updatedAt || "").trim(),
+});
+const buildStoreVoucherWritePayload = (body = {}, existingVoucher = null) => {
+  const code = normalizeStoreVoucherCode(body?.code || existingVoucher?.code);
+  const type = normalizeStoreVoucherType(body?.type || existingVoucher?.type);
+  const value = Number(body?.value ?? existingVoucher?.value ?? 0);
+  const description = String(
+    body?.description ?? existingVoucher?.description ?? "",
+  ).trim();
+  const isActive =
+    body?.isActive === undefined
+      ? !!existingVoucher?.isActive
+      : !!body?.isActive;
+  const maxUses = Math.max(
+    0,
+    Math.floor(Number(body?.maxUses ?? existingVoucher?.maxUses ?? 0) || 0),
+  );
+  const perUserLimit = Math.max(
+    0,
+    Math.floor(
+      Number(body?.perUserLimit ?? existingVoucher?.perUserLimit ?? 0) || 0,
+    ),
+  );
+  const minOrderAmount = Math.max(
+    0,
+    Math.round(
+      Number(body?.minOrderAmount ?? existingVoucher?.minOrderAmount ?? 0) || 0,
+    ),
+  );
+  const startsAtRaw = String(
+    body?.startsAt ?? existingVoucher?.startsAt ?? "",
+  ).trim();
+  const endsAtRaw = String(body?.endsAt ?? existingVoucher?.endsAt ?? "").trim();
+  const startsAt =
+    startsAtRaw && parseStoreDateMs(startsAtRaw)
+      ? new Date(startsAtRaw).toISOString()
+      : "";
+  const endsAt =
+    endsAtRaw && parseStoreDateMs(endsAtRaw)
+      ? new Date(endsAtRaw).toISOString()
+      : "";
+
+  if (!code) {
+    const error = new Error("Ma voucher khong duoc de trong.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!Number.isFinite(value) || value <= 0) {
+    const error = new Error("Gia tri voucher phai lon hon 0.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (type === "percent" && value > 99) {
+    const error = new Error("Voucher phan tram nen nho hon 100%.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (type === "fixed" && value < 1000) {
+    const error = new Error("Voucher so tien toi thieu la 1.000đ.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (startsAt && endsAt && parseStoreDateMs(startsAt) > parseStoreDateMs(endsAt)) {
+    const error = new Error("Thoi gian bat dau khong duoc lon hon thoi gian ket thuc.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    code,
+    type,
+    value: type === "fixed" ? Math.round(value) : Math.round(value * 100) / 100,
+    description,
+    isActive,
+    maxUses,
+    perUserLimit,
+    minOrderAmount,
+    startsAt,
+    endsAt,
+    updatedAt: new Date().toISOString(),
+  };
+};
 const buildStorePackage1UsageLeft = (order = {}) =>
   Math.max(
     0,
@@ -1885,6 +2299,426 @@ const cleanupOldStoreFailedOrders = async (extra = {}) => {
     ],
   });
 };
+const buildStoreVoucherUsageQuery = ({
+  voucherId = "",
+  voucherCode = "",
+  userId = "",
+  excludeOrderId = "",
+} = {}) => {
+  const conditions = [];
+  const normalizedVoucherId = String(voucherId || "").trim();
+  const normalizedVoucherCode = normalizeStoreVoucherCode(voucherCode);
+  if (normalizedVoucherId) conditions.push({ voucherId: normalizedVoucherId });
+  if (normalizedVoucherCode) conditions.push({ voucherCode: normalizedVoucherCode });
+  if (conditions.length === 0) {
+    return { id: "__no_store_voucher__" };
+  }
+  return {
+    ...(conditions.length === 1 ? conditions[0] : { $or: conditions }),
+    ...(userId ? { userId: String(userId || "").trim() } : {}),
+    ...(excludeOrderId ? { id: { $ne: String(excludeOrderId || "").trim() } } : {}),
+    status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+  };
+};
+const buildStoreVoucherStatsMap = async (
+  vouchers = [],
+  preloadedUsers = [],
+) => {
+  const safeVouchers = Array.isArray(vouchers) ? vouchers : [];
+  if (safeVouchers.length === 0) return new Map();
+
+  const voucherIds = safeVouchers
+    .map((voucher) => String(voucher?.id || "").trim())
+    .filter(Boolean);
+  const voucherCodes = safeVouchers
+    .map((voucher) => normalizeStoreVoucherCode(voucher?.code))
+    .filter(Boolean);
+  const orders = await StoreOrder.find({
+    status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+    $or: [
+      voucherIds.length > 0 ? { voucherId: { $in: voucherIds } } : null,
+      voucherCodes.length > 0 ? { voucherCode: { $in: voucherCodes } } : null,
+    ].filter(Boolean),
+  })
+    .sort({ createdAt: -1, id: -1 })
+    .lean();
+
+  const userIds = Array.from(
+    new Set(
+      (orders || [])
+        .map((order) => String(order?.userId || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const knownUsers = Array.isArray(preloadedUsers) ? preloadedUsers : [];
+  const missingUserIds = userIds.filter(
+    (userId) =>
+      !knownUsers.some((user) => String(user?.id || "").trim() === userId),
+  );
+  const fetchedUsers =
+    missingUserIds.length > 0
+      ? await StoreUser.find({ id: { $in: missingUserIds } })
+          .select("id fullName email phone")
+          .lean()
+      : [];
+  const userMap = new Map(
+    [...knownUsers, ...(fetchedUsers || [])].map((user) => [
+      String(user?.id || "").trim(),
+      user,
+    ]),
+  );
+
+  const statsMap = new Map();
+  safeVouchers.forEach((voucher) => {
+    statsMap.set(String(voucher?.id || "").trim(), {
+      totalUses: 0,
+      activeUses: 0,
+      fulfilledUses: 0,
+      userCount: 0,
+      users: [],
+      recentOrders: [],
+      _usersMap: new Map(),
+    });
+  });
+
+  (orders || []).forEach((order) => {
+    const matchedVoucher = safeVouchers.find((voucher) => {
+      const voucherId = String(voucher?.id || "").trim();
+      const voucherCode = normalizeStoreVoucherCode(voucher?.code);
+      return (
+        (!!voucherId && voucherId === String(order?.voucherId || "").trim()) ||
+        (!!voucherCode &&
+          voucherCode === normalizeStoreVoucherCode(order?.voucherCode))
+      );
+    });
+    if (!matchedVoucher) return;
+
+    const voucherKey = String(matchedVoucher?.id || "").trim();
+    const stats = statsMap.get(voucherKey);
+    if (!stats) return;
+
+    const normalizedStatus = normalizeStoreOrderStatusValue(order?.status);
+    const userId = String(order?.userId || "").trim();
+    const user = userMap.get(userId) || null;
+
+    stats.totalUses += 1;
+    if (["pending_payment", "awaiting_payment", "paid", "fulfilled"].includes(normalizedStatus)) {
+      stats.activeUses += 1;
+    }
+    if (normalizedStatus === "fulfilled") {
+      stats.fulfilledUses += 1;
+    }
+    if (stats.recentOrders.length < 10) {
+      stats.recentOrders.push(sanitizeStoreVoucherUsageOrder(order, user));
+    }
+
+    if (userId) {
+      if (!stats._usersMap.has(userId)) {
+        stats._usersMap.set(userId, {
+          userId,
+          fullName: String(user?.fullName || "").trim(),
+          email: String(user?.email || "").trim(),
+          phone: String(user?.phone || "").trim(),
+          totalUses: 0,
+          latestOrderAt: "",
+          totalDiscountAmount: 0,
+        });
+      }
+      const userStats = stats._usersMap.get(userId);
+      userStats.totalUses += 1;
+      userStats.totalDiscountAmount += Number(order?.discountAmount || 0);
+      const createdAt = String(order?.createdAt || "").trim();
+      if (
+        createdAt &&
+        (!userStats.latestOrderAt ||
+          parseStoreDateMs(createdAt) > parseStoreDateMs(userStats.latestOrderAt))
+      ) {
+        userStats.latestOrderAt = createdAt;
+      }
+    }
+  });
+
+  statsMap.forEach((stats) => {
+    stats.users = [...stats._usersMap.values()]
+      .sort(
+        (left, right) =>
+          parseStoreDateMs(right?.latestOrderAt) -
+          parseStoreDateMs(left?.latestOrderAt),
+      )
+      .slice(0, 15);
+    stats.userCount = stats._usersMap.size;
+    delete stats._usersMap;
+  });
+  return statsMap;
+};
+const resolveStoreVoucherPricing = async ({
+  voucherCode = "",
+  packageCode = "",
+  userId = "",
+  excludeOrderId = "",
+} = {}) => {
+  const normalizedPackageCode = String(packageCode || "").trim().toLowerCase();
+  const packageConfig = STORE_PACKAGE_MAP[normalizedPackageCode];
+  if (!packageConfig) {
+    const error = new Error("Goi khong hop le de ap voucher.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const originalAmount = Math.max(0, Number(packageConfig.price || 0));
+  const normalizedVoucherCode = normalizeStoreVoucherCode(voucherCode);
+  if (!normalizedVoucherCode) {
+    return {
+      voucher: null,
+      originalAmount,
+      discountAmount: 0,
+      finalAmount: originalAmount,
+    };
+  }
+
+  const voucher = await StoreVoucher.findOne({ code: normalizedVoucherCode }).lean();
+  if (!voucher) {
+    const error = new Error("Voucher khong ton tai.");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (!voucher.isActive) {
+    const error = new Error("Voucher da bi tat.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!isStoreVoucherDateActive(voucher)) {
+    const error = new Error("Voucher dang ngoai thoi gian su dung.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const minOrderAmount = Math.max(0, Number(voucher?.minOrderAmount || 0));
+  if (minOrderAmount > 0 && originalAmount < minOrderAmount) {
+    const error = new Error(
+      `Voucher chi ap dung cho don tu ${minOrderAmount.toLocaleString("vi-VN")}đ.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const usageQuery = buildStoreVoucherUsageQuery({
+    voucherId: voucher?.id,
+    voucherCode: voucher?.code,
+    excludeOrderId,
+  });
+  const userUsageQuery = buildStoreVoucherUsageQuery({
+    voucherId: voucher?.id,
+    voucherCode: voucher?.code,
+    userId,
+    excludeOrderId,
+  });
+  const [totalUses, userUses] = await Promise.all([
+    StoreOrder.countDocuments(usageQuery),
+    userId ? StoreOrder.countDocuments(userUsageQuery) : 0,
+  ]);
+
+  const maxUses = Math.max(0, Number(voucher?.maxUses || 0));
+  if (maxUses > 0 && totalUses >= maxUses) {
+    const error = new Error("Voucher da het luot su dung.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const perUserLimit = Math.max(0, Number(voucher?.perUserLimit || 0));
+  if (userId && perUserLimit > 0 && userUses >= perUserLimit) {
+    const error = new Error("Tai khoan cua ban da dung het luot voucher nay.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const voucherType = normalizeStoreVoucherType(voucher?.type);
+  const voucherValue = Math.max(0, Number(voucher?.value || 0));
+  if (voucherValue <= 0) {
+    const error = new Error("Voucher chua co gia tri giam hop le.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const rawDiscount =
+    voucherType === "fixed"
+      ? voucherValue
+      : Math.round((originalAmount * voucherValue) / 100);
+  const discountAmount = Math.min(originalAmount, Math.max(0, rawDiscount));
+  const finalAmount = Math.max(0, originalAmount - discountAmount);
+  if (discountAmount <= 0) {
+    const error = new Error("Voucher nay khong giam duoc gia tri don hang.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (finalAmount <= 0) {
+    const error = new Error(
+      "Voucher dang giam ve 0đ. Hay giam gia tri voucher hoac tao don thu cong.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    voucher,
+    originalAmount,
+    discountAmount,
+    finalAmount,
+    totalUses,
+    userUses,
+  };
+};
+const getOrCreateStoreSupportConversation = async (storeUserInput = null) => {
+  const storeUser =
+    storeUserInput && typeof storeUserInput.toObject === "function"
+      ? storeUserInput.toObject()
+      : { ...(storeUserInput || {}) };
+  const userId = String(storeUser?.id || "").trim();
+  if (!userId) {
+    const error = new Error("Khong tim thay user chat.");
+    error.statusCode = 400;
+    throw error;
+  }
+  let conversation = await StoreSupportConversation.findOne({ userId });
+  if (!conversation) {
+    conversation = await StoreSupportConversation.create({
+      id: createStoreId("support"),
+      userId,
+      userName: String(storeUser?.fullName || "").trim(),
+      userEmail: String(storeUser?.email || "").trim(),
+      userPhone: String(storeUser?.phone || "").trim(),
+      status: "open",
+    });
+    return conversation;
+  }
+
+  const nextUserName = String(storeUser?.fullName || "").trim();
+  const nextUserEmail = String(storeUser?.email || "").trim();
+  const nextUserPhone = String(storeUser?.phone || "").trim();
+  let didChange = false;
+  if (conversation.userName !== nextUserName) {
+    conversation.userName = nextUserName;
+    didChange = true;
+  }
+  if (conversation.userEmail !== nextUserEmail) {
+    conversation.userEmail = nextUserEmail;
+    didChange = true;
+  }
+  if (conversation.userPhone !== nextUserPhone) {
+    conversation.userPhone = nextUserPhone;
+    didChange = true;
+  }
+  if (didChange) {
+    conversation.updatedAt = new Date().toISOString();
+    await conversation.save();
+  }
+  return conversation;
+};
+const listStoreSupportMessages = async (
+  conversationId = "",
+  { limit = 100 } = {},
+) => {
+  const normalizedConversationId = String(conversationId || "").trim();
+  if (!normalizedConversationId) return [];
+  const safeLimit = Math.max(1, Math.min(200, Number(limit || 100)));
+  return StoreSupportMessage.find({ conversationId: normalizedConversationId })
+    .sort({ createdAt: 1, id: 1 })
+    .limit(safeLimit)
+    .lean();
+};
+const markStoreSupportConversationRead = async ({
+  conversationId = "",
+  readerRole = "",
+} = {}) => {
+  const normalizedConversationId = String(conversationId || "").trim();
+  const normalizedReaderRole = String(readerRole || "").trim().toLowerCase();
+  if (!normalizedConversationId || !["user", "admin"].includes(normalizedReaderRole)) {
+    return;
+  }
+  const targetSenderRole = normalizedReaderRole === "user" ? "admin" : "user";
+  const nowIso = new Date().toISOString();
+  await StoreSupportMessage.updateMany(
+    {
+      conversationId: normalizedConversationId,
+      senderRole: targetSenderRole,
+      $or: [{ readAt: "" }, { readAt: null }, { readAt: { $exists: false } }],
+    },
+    {
+      $set: {
+        readAt: nowIso,
+      },
+    },
+  );
+  await StoreSupportConversation.findOneAndUpdate(
+    { id: normalizedConversationId },
+    {
+      $set: {
+        ...(normalizedReaderRole === "user"
+          ? { userUnreadCount: 0 }
+          : { adminUnreadCount: 0 }),
+        updatedAt: nowIso,
+      },
+    },
+  );
+};
+const appendStoreSupportMessage = async ({
+  conversationId = "",
+  senderRole = "",
+  senderId = "",
+  body = "",
+} = {}) => {
+  const normalizedConversationId = String(conversationId || "").trim();
+  const normalizedSenderRole = String(senderRole || "").trim().toLowerCase();
+  const messageBody = String(body || "").trim();
+  if (!normalizedConversationId || !["user", "admin"].includes(normalizedSenderRole)) {
+    const error = new Error("Du lieu tin nhan khong hop le.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!messageBody) {
+    const error = new Error("Tin nhan khong duoc de trong.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (messageBody.length > 2000) {
+    const error = new Error("Tin nhan qua dai, vui long rut gon duoi 2000 ky tu.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const nowIso = new Date().toISOString();
+  const message = await StoreSupportMessage.create({
+    id: createStoreId("support_msg"),
+    conversationId: normalizedConversationId,
+    senderRole: normalizedSenderRole,
+    senderId: String(senderId || "").trim(),
+    body: messageBody,
+    createdAt: nowIso,
+    readAt: normalizedSenderRole === "admin" ? "" : "",
+  });
+  await StoreSupportConversation.findOneAndUpdate(
+    { id: normalizedConversationId },
+    {
+      $set: {
+        lastMessageAt: nowIso,
+        lastMessagePreview: messageBody.slice(0, 160),
+        lastSenderRole: normalizedSenderRole,
+        status: "open",
+        updatedAt: nowIso,
+      },
+      $inc:
+        normalizedSenderRole === "user"
+          ? { adminUnreadCount: 1 }
+          : { userUnreadCount: 1 },
+    },
+  );
+  if (normalizedSenderRole === "admin") {
+    await StoreSupportConversation.findOneAndUpdate(
+      { id: normalizedConversationId },
+      { $set: { adminUnreadCount: 0 } },
+    );
+  }
+  return message;
+};
 const loadVisibleStoreOrdersForUser = async (userId) => {
   await expireStaleStoreOrders({ userId });
   await cleanupOldStoreFailedOrders({ userId });
@@ -1968,7 +2802,16 @@ const sanitizeStoreOrder = (order) => {
     packageCode,
     packageName:
       String(order.packageName || STORE_PACKAGE_MAP[packageCode]?.name || ""),
+    originalAmount: Number(order.originalAmount || order.amount || 0),
+    discountAmount: Number(order.discountAmount || 0),
     amount: Number(order.amount || 0),
+    voucherId: String(order.voucherId || "").trim(),
+    voucherCode: normalizeStoreVoucherCode(order.voucherCode),
+    voucherType: String(order.voucherCode || "").trim()
+      ? normalizeStoreVoucherType(order.voucherType)
+      : "",
+    voucherValue: Number(order.voucherValue || 0),
+    voucherDescription: String(order.voucherDescription || "").trim(),
     status: String(order.status || "pending"),
     paymentMethod: normalizeStorePaymentMethod(order.paymentMethod),
     paymentMethodLabel: getStorePaymentMethodLabel(order.paymentMethod),
@@ -2057,7 +2900,16 @@ const sanitizeStoreOrderForAdmin = (order, user = null) => {
     packageName: String(
       order.packageName || STORE_PACKAGE_MAP[packageCode]?.name || "",
     ).trim(),
+    originalAmount: Number(order.originalAmount || order.amount || 0),
+    discountAmount: Number(order.discountAmount || 0),
     amount: Number(order.amount || 0),
+    voucherId: String(order.voucherId || "").trim(),
+    voucherCode: normalizeStoreVoucherCode(order.voucherCode),
+    voucherType: String(order.voucherCode || "").trim()
+      ? normalizeStoreVoucherType(order.voucherType)
+      : "",
+    voucherValue: Number(order.voucherValue || 0),
+    voucherDescription: String(order.voucherDescription || "").trim(),
     status: String(order.status || "").trim(),
     paymentMethod: normalizeStorePaymentMethod(order.paymentMethod),
     paymentMethodLabel: getStorePaymentMethodLabel(order.paymentMethod),
@@ -5278,6 +6130,8 @@ app.get("/api/data", verifyToken, async (req, res) => {
       rawStoreOrders,
       storeUsers,
       storeUserOrderStats,
+      storeVouchers,
+      storeSupportConversations,
     ] = await Promise.all([
       Account.find({}).lean(),
       Netflix.find({}).lean(),
@@ -5320,7 +6174,15 @@ app.get("/api/data", verifyToken, async (req, res) => {
           },
         },
       ]),
+      StoreVoucher.find({}).sort({ createdAt: -1, id: -1 }).lean(),
+      StoreSupportConversation.find({})
+        .sort({ lastMessageAt: -1, createdAt: -1, id: -1 })
+        .lean(),
     ]);
+    const voucherStatsMap = await buildStoreVoucherStatsMap(
+      storeVouchers,
+      storeUsers,
+    );
     const storeUserMap = new Map(
       (storeUsers || []).map((user) => [String(user?.id || "").trim(), user]),
     );
@@ -5387,10 +6249,200 @@ app.get("/api/data", verifyToken, async (req, res) => {
           ),
         )
         .filter(Boolean),
+      storeVouchers: (storeVouchers || [])
+        .map((voucher) =>
+          sanitizeStoreVoucherForAdmin(
+            voucher,
+            voucherStatsMap.get(String(voucher?.id || "").trim()) || null,
+          ),
+        )
+        .filter(Boolean),
+      supportConversations: (storeSupportConversations || [])
+        .map((conversation) =>
+          sanitizeStoreSupportConversationForAdmin(conversation),
+        )
+        .filter(Boolean),
       version: latestDataVersion,
     });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post("/api/store-vouchers", verifyToken, async (req, res) => {
+  try {
+    const payload = buildStoreVoucherWritePayload(req.body);
+    const existingCode = await StoreVoucher.findOne({ code: payload.code }).lean();
+    if (existingCode) {
+      return res.status(409).json({ error: "Ma voucher da ton tai." });
+    }
+    const voucher = await StoreVoucher.create({
+      id: createStoreId("voucher"),
+      ...payload,
+      createdAt: new Date().toISOString(),
+    });
+    const statsMap = await buildStoreVoucherStatsMap([voucher]);
+    return res.json({
+      success: true,
+      voucher: sanitizeStoreVoucherForAdmin(
+        voucher,
+        statsMap.get(String(voucher?.id || "").trim()) || null,
+      ),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tao duoc voucher.",
+    });
+  }
+});
+
+app.put("/api/store-vouchers/:id", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thieu ID voucher." });
+    }
+    const currentVoucher = await StoreVoucher.findOne({ id });
+    if (!currentVoucher) {
+      return res.status(404).json({ error: "Khong tim thay voucher." });
+    }
+    const payload = buildStoreVoucherWritePayload(req.body, currentVoucher);
+    const conflictVoucher = await StoreVoucher.findOne({
+      id: { $ne: id },
+      code: payload.code,
+    }).lean();
+    if (conflictVoucher) {
+      return res.status(409).json({ error: "Ma voucher da ton tai." });
+    }
+    Object.assign(currentVoucher, payload);
+    await currentVoucher.save();
+    const statsMap = await buildStoreVoucherStatsMap([currentVoucher]);
+    return res.json({
+      success: true,
+      voucher: sanitizeStoreVoucherForAdmin(
+        currentVoucher,
+        statsMap.get(String(currentVoucher?.id || "").trim()) || null,
+      ),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong cap nhat duoc voucher.",
+    });
+  }
+});
+
+app.delete("/api/store-vouchers/:id", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thieu ID voucher." });
+    }
+    const deleted = await StoreVoucher.findOneAndDelete({ id }).lean();
+    if (!deleted) {
+      return res.status(404).json({ error: "Khong tim thay voucher." });
+    }
+    return res.json({ success: true, id });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong xoa duoc voucher.",
+    });
+  }
+});
+
+app.get("/api/store-support/conversations/:id/messages", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thieu ID hoi thoai." });
+    }
+    const conversation = await StoreSupportConversation.findOne({ id }).lean();
+    if (!conversation) {
+      return res.status(404).json({ error: "Khong tim thay hoi thoai." });
+    }
+    await markStoreSupportConversationRead({
+      conversationId: id,
+      readerRole: "admin",
+    });
+    const [freshConversation, messages] = await Promise.all([
+      StoreSupportConversation.findOne({ id }).lean(),
+      listStoreSupportMessages(id),
+    ]);
+    return res.json({
+      success: true,
+      conversation: sanitizeStoreSupportConversationForAdmin(
+        freshConversation || conversation,
+      ),
+      messages: (messages || []).map((message) =>
+        sanitizeStoreSupportMessage(message),
+      ),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc tin nhan hoi thoai.",
+    });
+  }
+});
+
+app.post("/api/store-support/conversations/:id/messages", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thieu ID hoi thoai." });
+    }
+    const conversation = await StoreSupportConversation.findOne({ id }).lean();
+    if (!conversation) {
+      return res.status(404).json({ error: "Khong tim thay hoi thoai." });
+    }
+    const message = await appendStoreSupportMessage({
+      conversationId: id,
+      senderRole: "admin",
+      senderId: String(req.user?.email || "").trim(),
+      body: req.body?.body,
+    });
+    await markStoreSupportConversationRead({
+      conversationId: id,
+      readerRole: "admin",
+    });
+    const freshConversation = await StoreSupportConversation.findOne({ id }).lean();
+    return res.json({
+      success: true,
+      conversation: sanitizeStoreSupportConversationForAdmin(
+        freshConversation || conversation,
+      ),
+      message: sanitizeStoreSupportMessage(message),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong gui duoc tin nhan admin.",
+    });
+  }
+});
+
+app.post("/api/store-support/conversations/:id/read", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thieu ID hoi thoai." });
+    }
+    const conversation = await StoreSupportConversation.findOne({ id }).lean();
+    if (!conversation) {
+      return res.status(404).json({ error: "Khong tim thay hoi thoai." });
+    }
+    await markStoreSupportConversationRead({
+      conversationId: id,
+      readerRole: "admin",
+    });
+    const freshConversation = await StoreSupportConversation.findOne({ id }).lean();
+    return res.json({
+      success: true,
+      conversation: sanitizeStoreSupportConversationForAdmin(
+        freshConversation || conversation,
+      ),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong cap nhat duoc trang thai hoi thoai.",
+    });
   }
 });
 
