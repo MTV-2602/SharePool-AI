@@ -34,6 +34,7 @@ import {
   Phone,
   Search,
   SendHorizontal,
+  ChevronLeft,
   ChevronUp,
 } from "lucide-react";
 
@@ -41,7 +42,7 @@ const ADMIN_TOKEN_STORAGE_KEY = "admin_token";
 const ADMIN_TOKEN_EXPIRES_AT_STORAGE_KEY = "token_expires_at";
 const STORE_TOKEN_STORAGE_KEY = "store_user_token";
 const SESSION_ROLE_STORAGE_KEY = "active_session_role";
-const DEFAULT_SUPPORT_PAGE_SIZE = 8;
+const DEFAULT_SUPPORT_PAGE_SIZE = 6;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
 
 // Helper: Xóa dấu Tiếng Việt
@@ -1037,6 +1038,8 @@ const EXTEND_DURATION_OPTIONS = [
   { value: "1Y", label: "1 Năm" },
 ];
 const MARKETPLACE_ORDER_PAGE_SIZE = 5;
+const CHATGPT_ADMIN_PAGE_SIZE_OPTIONS = [5, 10];
+const DEFAULT_CHATGPT_ADMIN_PAGE_SIZE = 10;
 const clampMonthDay = (year, monthIndex, dayOfMonth) => {
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
   return Math.min(dayOfMonth, lastDay);
@@ -1281,6 +1284,18 @@ const buildDefaultSupportPaginationState = () => ({
   retainedAfter: "",
   retentionDays: DEFAULT_SUPPORT_RETENTION_DAYS,
 });
+const buildDefaultChatgptAdminPaginationState = () => ({
+  page: 1,
+  limit: DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
+  total: 0,
+  totalPages: 1,
+  hasMore: false,
+  summary: {
+    tabs: { all: 0, total: 0, market: 0, short: 0 },
+    totalTypeTabs: { all: 0, package1: 0, package2: 0, unassigned: 0 },
+    marketShelfTabs: { all: 0, sold: 0, soldDatammo: 0, soldShopmini: 0 },
+  },
+});
 
 function App() {
   // LOGIN STATE
@@ -1353,6 +1368,10 @@ function App() {
   const [soldPackage2ProviderFilter, setSoldPackage2ProviderFilter] =
     useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [chatgptAdminPagination, setChatgptAdminPagination] = useState(
+    buildDefaultChatgptAdminPaginationState(),
+  );
+  const [chatgptAdminPageLoading, setChatgptAdminPageLoading] = useState(false);
   const [highlightedChatgptAccountId, setHighlightedChatgptAccountId] =
     useState("");
   const [highlightedTeamAccountId, setHighlightedTeamAccountId] = useState("");
@@ -1424,6 +1443,7 @@ function App() {
   const dataVersionRef = useRef(0);
   const isFetchingDataRef = useRef(false);
   const fetchDataPromiseRef = useRef(null);
+  const chatgptPageEffectPrimedRef = useRef(false);
   const skipNextAdminTabBootstrapRef = useRef(false);
   const seenDatammoOrderKeysRef = useRef(null);
   const seenStoreOrderKeysRef = useRef(null);
@@ -1643,7 +1663,14 @@ function App() {
       writeStoredSessionRole("admin");
       skipNextAdminTabBootstrapRef.current = true;
       setIsAuthenticated(true);
-      setTimeout(() => fetchData(true), 100);
+      setTimeout(async () => {
+        await fetchData({
+          showLoader: true,
+          omitChatgpt: true,
+          syncChatgptPage: false,
+        });
+        await Promise.allSettled([loadDashboardSummary({ silent: true })]);
+      }, 100);
       return;
     }
 
@@ -1740,7 +1767,7 @@ function App() {
       return;
     }
     if (activeTab === "support") {
-      loadSupportConversations({ silent: true }).catch(() => {});
+      loadSupportConversations({ silent: true, limit: 20 }).catch(() => {});
       loadDashboardSummary({ silent: true }).catch(() => {});
       return;
     }
@@ -1749,6 +1776,46 @@ function App() {
       loadAdminStoreUsers({ silent: true }).catch(() => {});
       loadDashboardSummary({ silent: true }).catch(() => {});
     }
+  }, [activeTab, isAuthenticated]);
+
+  const chatgptListFilterKey = [
+    gptSubTab,
+    chatgptTotalTypeTab,
+    package2ShelfTab,
+    soldPackage2ProviderFilter,
+    chatgptCustomerFilter,
+    chatgptExpiryFilter,
+    chatgptExpiryMin,
+    chatgptExpiryMax,
+    searchQuery,
+  ].join("|");
+
+  useEffect(() => {
+    if (!isAuthenticated || activeTab !== "chatgpt") return;
+    if (chatgptAdminPagination.page !== 1) {
+      setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
+      return;
+    }
+    loadAdminChatgptAccounts({ silent: true }).catch(() => {});
+  }, [activeTab, chatgptListFilterKey, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeTab !== "chatgpt") return;
+    if (!chatgptPageEffectPrimedRef.current) {
+      chatgptPageEffectPrimedRef.current = true;
+      return;
+    }
+    loadAdminChatgptAccounts({ silent: true }).catch(() => {});
+  }, [
+    activeTab,
+    isAuthenticated,
+    chatgptAdminPagination.page,
+    chatgptAdminPagination.limit,
+  ]);
+
+  useEffect(() => {
+    if (isAuthenticated && activeTab === "chatgpt") return;
+    chatgptPageEffectPrimedRef.current = false;
   }, [activeTab, isAuthenticated]);
 
   useEffect(() => {
@@ -1836,6 +1903,15 @@ function App() {
             (activeTab === "coursera" &&
               ["", "all", "coursera"].includes(normalizedScope));
           if (!shouldRefreshInventorySurface) {
+            return;
+          }
+          if (activeTab === "chatgpt") {
+            fetchData({
+              showLoader: false,
+              omitChatgpt: true,
+              syncChatgptPage: false,
+            }).catch(() => {});
+            loadAdminChatgptAccounts({ silent: true }).catch(() => {});
             return;
           }
           fetchData(false).catch(() => {});
@@ -1975,7 +2051,7 @@ function App() {
         writeStoredSessionRole("admin");
         skipNextAdminTabBootstrapRef.current = true;
         setIsAuthenticated(true);
-        fetchData(true);
+        fetchData({ showLoader: true, syncChatgptPage: false });
         showAlert(
           "Xin chào",
           response.data.message || "Đăng nhập thành công! 👋",
@@ -2573,6 +2649,14 @@ function App() {
         ? options
         : { showLoader: !!options };
     const showLoader = !!resolvedOptions.showLoader;
+    const omitChatgpt =
+      typeof resolvedOptions.omitChatgpt === "boolean"
+        ? resolvedOptions.omitChatgpt
+        : activeTab === "chatgpt";
+    const syncChatgptPage =
+      omitChatgpt &&
+      activeTab === "chatgpt" &&
+      resolvedOptions.syncChatgptPage !== false;
     const requestLabel =
       String(resolvedOptions.requestLabel || "").trim() ||
       "Đang tải lại dữ liệu";
@@ -2584,6 +2668,7 @@ function App() {
       if (showLoader) setLoading(true);
       try {
         const res = await axios.get("/api/data", {
+          params: omitChatgpt ? { omitChatgpt: 1 } : undefined,
           timeout: 10000,
           headers: { "Cache-Control": "no-cache" },
           requestLabel,
@@ -2599,7 +2684,7 @@ function App() {
         syncDatammoOrderBanner(res.data?.datammoOrders);
         syncStoreOrderBanner(res.data?.storeOrders);
         setStoreOrders(normalizeStoreAdminOrders(res.data?.storeOrders));
-        if (res.data && res.data.chatgpt) {
+        if (!omitChatgpt && res.data && res.data.chatgpt) {
           const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
           const sortedGPT = [...res.data.chatgpt]
             .map((acc) => ({
@@ -2615,7 +2700,7 @@ function App() {
             return new Date(b.createdAt) - new Date(a.createdAt);
           });
           setAccounts(sortedGPT);
-        } else {
+        } else if (!omitChatgpt) {
           setAccounts([]);
         }
         const sortA = (arr) => [...(arr || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -2686,6 +2771,9 @@ function App() {
             ? res.data.storeVouchers.length
             : 0,
         });
+        if (syncChatgptPage) {
+          void loadAdminChatgptAccounts({ silent: true });
+        }
       } catch (error) {
         if (showLoader) {
           showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
@@ -2703,7 +2791,22 @@ function App() {
 
   const syncAdminDataAfterMutation = async (
     requestLabel = "Đang tải lại dữ liệu sau cập nhật",
-  ) => fetchData({ showLoader: true, requestLabel });
+  ) => {
+    if (activeTab === "chatgpt") {
+      await Promise.allSettled([
+        fetchData({
+          showLoader: true,
+          requestLabel,
+          omitChatgpt: true,
+          syncChatgptPage: false,
+        }),
+        loadAdminChatgptAccounts({ silent: true }),
+        loadDashboardSummary({ silent: true }),
+      ]);
+      return;
+    }
+    return fetchData({ showLoader: true, requestLabel });
+  };
 
   const loadDashboardSummary = async ({ silent = true } = {}) => {
     try {
@@ -2730,6 +2833,68 @@ function App() {
         );
       }
       return null;
+    }
+  };
+
+  const loadAdminChatgptAccounts = async ({
+    silent = true,
+    page = chatgptAdminPagination.page,
+    limit = chatgptAdminPagination.limit,
+  } = {}) => {
+    const safePage = Math.max(1, Number(page || 1));
+    const safeLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(Number(limit))
+      ? Number(limit)
+      : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE;
+    try {
+      setChatgptAdminPageLoading(true);
+      const response = await axios.get("/api/admin/chatgpt-accounts", {
+        params: {
+          page: safePage,
+          limit: safeLimit,
+          subTab: gptSubTab,
+          totalType: chatgptTotalTypeTab,
+          customerFilter: chatgptCustomerFilter,
+          expiryFilter: chatgptExpiryFilter,
+          expiryMin: chatgptExpiryMin,
+          expiryMax: chatgptExpiryMax,
+          search: searchQuery,
+          package2ShelfTab,
+          soldProviderFilter: soldPackage2ProviderFilter,
+        },
+        timeout: 10000,
+        skipGlobalLoading: silent,
+      });
+      setAccounts(
+        Array.isArray(response?.data?.accounts) ? response.data.accounts : [],
+      );
+      setChatgptAdminPagination((prev) => ({
+        ...prev,
+        page: Number(response?.data?.pagination?.page || safePage),
+        limit: Number(response?.data?.pagination?.limit || safeLimit),
+        total: Number(response?.data?.pagination?.total || 0),
+        totalPages: Math.max(
+          1,
+          Number(response?.data?.pagination?.totalPages || 1),
+        ),
+        hasMore: !!response?.data?.pagination?.hasMore,
+        summary:
+          response?.data?.summary &&
+          typeof response.data.summary === "object"
+            ? response.data.summary
+            : prev.summary,
+      }));
+      return response?.data || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Không thể tải danh sách ChatGPT."),
+          "error",
+        );
+      }
+      return null;
+    } finally {
+      setChatgptAdminPageLoading(false);
     }
   };
 
@@ -2851,7 +3016,7 @@ function App() {
 
     if (
       forceFull ||
-      ["chatgpt", "netflix", "capcut", "canva", "coursera"].includes(activeTab)
+      ["netflix", "capcut", "canva", "coursera"].includes(activeTab)
     ) {
       await fetchData(false);
       return;
@@ -2878,6 +3043,14 @@ function App() {
       }
     }
     if (activeTab === "chatgpt") {
+      tasks.push(
+        fetchData({
+          showLoader: false,
+          omitChatgpt: true,
+          syncChatgptPage: false,
+        }),
+      );
+      tasks.push(loadAdminChatgptAccounts({ silent: true }));
       tasks.push(loadAdminStoreOrders({ silent: true }));
       tasks.push(loadAdminStoreUsers({ silent: true }));
     }
@@ -5547,111 +5720,21 @@ function App() {
       )
       .join(" ");
   };
-  const filteredChatgptAccounts = accounts
-    .filter((acc) => {
-      if (gptSubTab === "total") {
-        return supportsChatgptMarketType(acc?.type);
-      }
-      if (gptSubTab === "market") {
-        return supportsChatgptMarketType(acc?.type);
-      }
-      if (gptSubTab === "short") {
-        return supportsChatgptMarketType(acc?.type);
-      }
-      return true;
-    })
-    .filter((acc) => {
-      const isSoldMarketplaceAccount = marketplaceTrackedAccountIds.has(
-        String(acc?.id || ""),
-      );
-      const isInMarketWarehouse = isChatgptMarketWarehouse(acc);
-      const isInShortDateWarehouse = isChatgptShortDateWarehouse(acc);
-      if (gptSubTab === "market") {
-        if (package2ShelfTab === "sold") {
-          if (!isSoldMarketplaceAccount) return false;
-          if (soldPackage2ProviderFilter === "all") return true;
-          return (
-            normalizeMarketplaceProvider(
-              marketplaceTrackedAccountMap.get(String(acc?.id || ""))?.provider,
-            ) === normalizeMarketplaceProvider(soldPackage2ProviderFilter)
-          );
-        }
-        return !isSoldMarketplaceAccount && isInMarketWarehouse;
-      }
-      if (gptSubTab === "short") {
-        if (isSoldMarketplaceAccount) return false;
-        return isInShortDateWarehouse;
-      }
-      if (gptSubTab === "total") {
-        if (isSoldMarketplaceAccount) return false;
-        return !isInMarketWarehouse && !isInShortDateWarehouse;
-      }
-      return true;
-    })
-    .filter((acc) => {
-      if (gptSubTab !== "total" || chatgptTotalTypeTab === "all") return true;
-      if (chatgptTotalTypeTab === "unassigned") {
-        return !acc?.type || acc?.type === "unassigned";
-      }
-      return acc.type === chatgptTotalTypeTab;
-    })
-    .filter((acc) =>
-      matchesCustomerFilter(
-        hasAssignedCustomer(acc) ||
-          isMarketplaceSoldAccountForScope(acc?.id, "chatgpt"),
-        chatgptCustomerFilter,
-      ),
-    )
-    .filter((acc) =>
-      matchesExpiryFilter(getAccountDaysRemaining(acc), chatgptExpiryFilter),
-    )
-    .filter((acc) =>
-      matchesExpiryRange(
-        getAccountDaysRemaining(acc),
-        chatgptExpiryMin,
-        chatgptExpiryMax,
-      ),
-    )
-    .filter((acc) => {
-      if (!searchQuery.trim()) return true;
-      const queryNormalized = toNonAccentVietnamese(searchQuery);
-      if (
-        acc.username &&
-        toNonAccentVietnamese(acc.username).includes(queryNormalized)
-      ) {
-        return true;
-      }
-      if (acc.users && acc.users.length > 0) {
-        return acc.users.some((user) => {
-          const name = typeof user === "object" ? user.name : user;
-          return (
-            name &&
-            toNonAccentVietnamese(name).includes(queryNormalized)
-          );
-        });
-      }
-      const marketplaceSearchText = getMarketplaceSearchTextForAccount(
-        acc?.id,
-        "chatgpt",
-      );
-      if (
-        marketplaceSearchText &&
-        toNonAccentVietnamese(marketplaceSearchText).includes(queryNormalized)
-      ) {
-        return true;
-      }
-      const storeOrderSearchText = getStoreOrderSearchTextForAccount(acc?.id);
-      if (
-        storeOrderSearchText &&
-        toNonAccentVietnamese(storeOrderSearchText).includes(queryNormalized)
-      ) {
-        return true;
-      }
-      return false;
-    });
+  const filteredChatgptAccounts = Array.isArray(accounts) ? accounts : [];
   const filteredChatgptIds = filteredChatgptAccounts.map((acc) =>
     String(acc.id || ""),
   );
+  const chatgptPageStart =
+    chatgptAdminPagination.total > 0
+      ? (chatgptAdminPagination.page - 1) * chatgptAdminPagination.limit + 1
+      : 0;
+  const chatgptPageEnd =
+    chatgptAdminPagination.total > 0
+      ? Math.min(
+          chatgptAdminPagination.total,
+          chatgptPageStart + filteredChatgptAccounts.length - 1,
+        )
+      : 0;
   const chatgptMarketplaceOrderSummaries = marketplaceOrderSummaries.filter(
     (order) => normalizeMarketplaceScope(order?.scope) === "chatgpt",
   );
@@ -7409,19 +7492,23 @@ function App() {
         )}
 
         {activeTab === "support" && (
-          <div className="grid gap-3 xl:grid-cols-[280px,minmax(0,1fr)] xl:items-stretch">
-            <div className="overflow-hidden rounded-[20px] border border-sky-400/15 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.1),_transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))] shadow-[0_16px_40px_rgba(2,8,23,0.38)] lg:flex lg:h-[min(70vh,34rem)] lg:flex-col">
-              <div className="border-b border-slate-800/80 p-3.5">
+          <div className="grid gap-3 xl:grid-cols-[240px,minmax(0,1fr)] xl:items-stretch">
+            <div
+              className={`overflow-hidden rounded-[20px] border border-sky-400/15 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.1),_transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))] shadow-[0_16px_40px_rgba(2,8,23,0.38)] flex-col lg:h-[min(62vh,30rem)] ${
+                selectedSupportConversation ? "hidden xl:flex" : "flex"
+              }`}
+            >
+              <div className="border-b border-slate-800/80 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-[0.3em] text-sky-300/90">
                       Hỗ trợ web
                     </div>
-                    <h2 className="mt-1.5 flex items-center gap-2 text-lg font-black text-white">
-                      <MessageCircle size={16} className="text-sky-300" />
+                    <h2 className="mt-1 flex items-center gap-2 text-base font-black text-white">
+                      <MessageCircle size={15} className="text-sky-300" />
                       Hộp thư user
                     </h2>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                    <p className="mt-1 text-[11px] leading-5 text-slate-400">
                       Danh sách gọn để mở và trả lời nhanh.
                     </p>
                   </div>
@@ -7430,20 +7517,20 @@ function App() {
                   </div>
                 </div>
 
-                <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
-                  <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2.5 py-1 text-slate-200">
+                <div className="mt-2.5 flex flex-wrap gap-1.5 text-[10px]">
+                  <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2 py-0.5 text-slate-200">
                     {supportConversations.length} hội thoại
                   </span>
-                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2.5 py-1 text-amber-100">
+                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-amber-100">
                     {supportUnreadConversationCount} chưa đọc
                   </span>
-                  <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-emerald-100">
+                  <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-emerald-100">
                     {supportOpenConversationCount} đang mở
                   </span>
                 </div>
 
-                <div className="mt-3 rounded-[18px] border border-slate-700/80 bg-slate-950/65 p-2.5">
-                  <label className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2">
+                <div className="mt-2.5 rounded-[16px] border border-slate-700/80 bg-slate-950/65 p-2">
+                  <label className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/80 px-2.5 py-2">
                     <Search size={14} className="text-slate-500" />
                     <input
                       type="text"
@@ -7464,7 +7551,7 @@ function App() {
                     ) : null}
                   </label>
 
-                  <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  <div className="mt-2 flex flex-wrap gap-1.5">
                     {[
                       { key: "all", label: "Tất cả", count: supportConversations.length },
                       { key: "unread", label: "Chưa đọc", count: supportUnreadConversationCount },
@@ -7503,7 +7590,7 @@ function App() {
                     Không có hội thoại nào khớp với bộ lọc hiện tại.
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {filteredSupportConversations.map((conversation) => {
                       const selected =
                         String(conversation?.id || "").trim() === selectedSupportConversationId;
@@ -7518,7 +7605,7 @@ function App() {
                           key={conversation.id}
                           type="button"
                           onClick={() => handleSelectSupportConversation(conversation.id)}
-                          className={`group relative w-full overflow-hidden rounded-[18px] border p-2.5 text-left transition-all ${
+                          className={`group relative w-full overflow-hidden rounded-[16px] border p-2 text-left transition-all ${
                             selected
                               ? "border-sky-400/60 bg-sky-500/12 shadow-[0_16px_35px_rgba(14,165,233,0.12)]"
                               : "border-slate-800 bg-slate-950/78 hover:-translate-y-0.5 hover:border-sky-500/30 hover:bg-slate-950/92"
@@ -7529,9 +7616,9 @@ function App() {
                               selected ? "bg-sky-400" : unreadCount > 0 ? "bg-amber-400/80" : "bg-transparent"
                             }`}
                           />
-                          <div className="flex items-start gap-3">
+                          <div className="flex items-start gap-2.5">
                             <div
-                              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-black ${
+                              className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-[10px] font-black ${
                                 selected
                                   ? "bg-sky-400/20 text-sky-100"
                                   : "bg-slate-800 text-slate-200"
@@ -7541,7 +7628,7 @@ function App() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
-                                <div className="truncate text-[13px] font-black text-white">
+                                <div className="truncate text-[12px] font-black text-white">
                                   {displayName}
                                 </div>
                                 <div
@@ -7556,11 +7643,11 @@ function App() {
                                 ) : null}
                               </div>
 
-                              <div className="mt-1.5 line-clamp-2 text-[12px] leading-5 text-slate-300">
+                              <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-300">
                                 {conversation.lastMessagePreview || "Chưa có tin nhắn"}
                               </div>
 
-                              <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px]">
+                              <div className="mt-1 flex items-center justify-between gap-3 text-[10px]">
                                 <span className="font-semibold text-slate-500">
                                   {conversation.lastSenderRole === "admin"
                                     ? "Admin vừa trả lời"
@@ -7581,7 +7668,11 @@ function App() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-[20px] border border-sky-400/20 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.1),_transparent_30%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.95))] shadow-[0_16px_40px_rgba(2,8,23,0.4)] lg:flex lg:h-[min(70vh,34rem)] lg:flex-col">
+            <div
+              className={`overflow-hidden rounded-[20px] border border-sky-400/20 bg-[radial-gradient(circle_at_top_right,_rgba(56,189,248,0.1),_transparent_30%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.95))] shadow-[0_16px_40px_rgba(2,8,23,0.4)] flex-col lg:h-[min(62vh,30rem)] ${
+                selectedSupportConversation ? "flex" : "hidden xl:flex"
+              }`}
+            >
               {!selectedSupportConversation ? (
                 <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center lg:min-h-0 lg:flex-1">
                   <div className="flex h-14 w-14 items-center justify-center rounded-[20px] border border-sky-400/25 bg-sky-500/10 text-sky-200">
@@ -7598,18 +7689,28 @@ function App() {
                 </div>
               ) : (
                 <>
-                  <div className="flex h-full min-h-0 flex-col p-3.5">
-                    <div className="shrink-0 border-b border-slate-800/80 pb-2.5">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="min-w-0 flex items-start gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] bg-sky-500/15 text-sm font-black text-sky-100 ring-1 ring-sky-400/20">
+                  <div className="flex h-full min-h-0 flex-col p-2.5">
+                    <div className="shrink-0 border-b border-slate-800/80 pb-2">
+                      <div className="mb-2 xl:hidden">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSupportConversationId("")}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/90 px-2.5 py-1 text-[10px] font-semibold text-slate-200"
+                        >
+                          <ChevronLeft size={12} />
+                          Danh sách
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex items-start gap-2.5">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] bg-sky-500/15 text-xs font-black text-sky-100 ring-1 ring-sky-400/20">
                           {selectedSupportConversationDisplayName.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate text-[18px] font-black text-white">
+                          <div className="truncate text-[16px] font-black text-white">
                             {selectedSupportConversationDisplayName}
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                          <div className="mt-1.5 flex flex-wrap gap-1.5 text-[10px]">
                             <div
                               className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] ${selectedSupportConversationStatusMeta.badgeClass}`}
                             >
@@ -7630,20 +7731,20 @@ function App() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-1.5">
                         <button
                           type="button"
                           onClick={() =>
                             setShowSupportInfoPanel((prev) => !prev)
                           }
-                          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                          className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-semibold transition-colors ${
                             showSupportInfoPanel
                               ? "border-sky-400/50 bg-sky-500/12 text-sky-100"
                               : "border-slate-700 bg-slate-900/90 text-slate-100 hover:border-slate-500 hover:text-white"
                           }`}
                         >
-                          <Info size={13} />
-                          Info
+                          <Info size={12} />
+                          <span className="hidden sm:inline">Info</span>
                         </button>
                         <button
                           type="button"
@@ -7658,10 +7759,10 @@ function App() {
                           disabled={
                             loadingStates.fetchSupportThread === selectedSupportConversation.id
                           }
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-sky-500 disabled:opacity-60"
+                          className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-2 py-1 text-[10px] font-semibold text-white transition-colors hover:bg-sky-500 disabled:opacity-60"
                         >
                           <RefreshCw
-                            size={13}
+                            size={12}
                             className={
                               loadingStates.fetchSupportThread ===
                               selectedSupportConversation.id
@@ -7669,7 +7770,7 @@ function App() {
                                 : ""
                             }
                           />
-                          Làm mới
+                          <span className="hidden sm:inline">Làm mới</span>
                         </button>
                       </div>
                     </div>
@@ -7715,21 +7816,21 @@ function App() {
                       </div>
                     ) : null}
 
-                    <div className="mt-2.5 flex flex-1 min-h-0 flex-col">
+                    <div className="mt-2 flex flex-1 min-h-0 flex-col">
                       <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-slate-700/70 bg-slate-950/55">
-                        <div className="border-b border-slate-800/80 px-3 py-2">
+                        <div className="border-b border-slate-800/80 px-2.5 py-2">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
                               <div className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-300">
                                 Chat trực tiếp
                               </div>
-                              <p className="mt-0.5 text-[11px] text-slate-500">
-                                Mới nhất ở dưới, kéo lên để xem cũ hơn.
+                              <p className="mt-0.5 text-[10px] text-slate-500">
+                                Chỉ hiện vài tin gần nhất trước.
                               </p>
                             </div>
-                            <div className="flex flex-wrap gap-2 text-[11px]">
+                            <div className="flex flex-wrap gap-1.5 text-[10px]">
                               <span className="rounded-full border border-slate-700 bg-slate-900/85 px-2 py-0.5 text-slate-300">
-                                {supportMessages.length} tin gần nhất
+                                {supportMessages.length} tin
                               </span>
                             </div>
                           </div>
@@ -7748,9 +7849,9 @@ function App() {
                             }
                             handleLoadOlderSupportMessages().catch(() => {});
                           }}
-                          className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] px-2.5 py-2.5 md:px-3"
+                          className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(180deg,rgba(2,6,23,0.08),rgba(2,6,23,0.24))] px-2 py-2 md:px-2.5"
                         >
-                          <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-2.5">
+                          <div className="mx-auto flex min-h-full max-w-3xl flex-col gap-2">
                             {supportPagination.hasMore ? (
                               <div className="flex justify-center">
                                 <button
@@ -7788,7 +7889,7 @@ function App() {
                                 Hội thoại này chưa có tin nhắn nào.
                               </div>
                             ) : (
-                              <div className="mt-auto space-y-2">
+                              <div className="mt-auto space-y-1.5">
                                 {supportMessages.map((messageItem, index) => {
                                   const previousMessage = supportMessages[index - 1] || null;
                                   const fromUser =
@@ -7813,9 +7914,9 @@ function App() {
                                           fromUser ? "justify-start" : "justify-end"
                                         }`}
                                       >
-                                        <div className="max-w-[92%] sm:max-w-[68%]">
+                                        <div className="max-w-[92%] sm:max-w-[64%]">
                                           <div
-                                            className={`rounded-[18px] px-3 py-2.5 shadow-[0_14px_24px_rgba(2,6,23,0.16)] ${
+                                            className={`rounded-[16px] px-2.5 py-2 shadow-[0_12px_20px_rgba(2,6,23,0.16)] ${
                                               fromUser
                                                 ? "border border-slate-700/90 bg-slate-950/95 text-slate-100"
                                                 : "bg-[linear-gradient(135deg,#0284c7,#38bdf8)] text-white"
@@ -7843,7 +7944,7 @@ function App() {
                                                 )}
                                               </span>
                                             </div>
-                                            <div className="whitespace-pre-wrap break-words text-[13px] font-medium leading-5">
+                                            <div className="whitespace-pre-wrap break-words text-[12px] font-medium leading-5">
                                               {messageItem.body}
                                             </div>
                                           </div>
@@ -7859,9 +7960,9 @@ function App() {
 
                         <form
                           onSubmit={handleSendSupportReply}
-                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/85 p-2.5"
+                          className="shrink-0 border-t border-slate-800/80 bg-slate-950/85 p-2"
                         >
-                          <div className="rounded-[18px] border border-slate-700/80 bg-slate-950/90 p-2.5">
+                          <div className="rounded-[16px] border border-slate-700/80 bg-slate-950/90 p-2">
                             <textarea
                               rows={2}
                               value={supportReplyDraft}
@@ -7877,17 +7978,17 @@ function App() {
                                   e.currentTarget.form?.requestSubmit();
                                 }
                               }}
-                              placeholder="Nhập câu trả lời cho user..."
-                              className="min-h-[64px] w-full resize-none bg-transparent px-1.5 py-1.5 text-[13px] text-white outline-none placeholder:text-slate-500"
+                              placeholder="Trả lời user..."
+                              className="min-h-[54px] w-full resize-none bg-transparent px-1 py-1 text-[12px] text-white outline-none placeholder:text-slate-500"
                             />
-                            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-2.5">
+                            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-2">
                               <div className="text-[10px] text-slate-500">
                                 {supportReplyDraft.trim().length} ký tự
                               </div>
                               <button
                                 type="submit"
                                 disabled={loadingStates.sendSupportMessage || !supportReplyDraft.trim()}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_10px_18px_rgba(2,132,199,0.18)] transition-all hover:translate-y-[-1px] hover:shadow-[0_14px_24px_rgba(2,132,199,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-[linear-gradient(135deg,#0284c7,#38bdf8)] px-2.5 py-1.5 text-[10px] font-semibold text-white shadow-[0_10px_18px_rgba(2,132,199,0.18)] transition-all hover:translate-y-[-1px] hover:shadow-[0_14px_24px_rgba(2,132,199,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {loadingStates.sendSupportMessage ? (
                                   <>
@@ -8326,33 +8427,90 @@ function App() {
               </div>
             </div>
 
+            <div className="mb-3 flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/55 px-3 py-2.5 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5">
+                  Tổng {chatgptAdminPagination.total} acc
+                </span>
+                <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5">
+                  {chatgptPageStart > 0
+                    ? `${chatgptPageStart}-${chatgptPageEnd}`
+                    : "0"}{" "}
+                  / {chatgptAdminPagination.total}
+                </span>
+                <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5">
+                  Trang {chatgptAdminPagination.page}/{chatgptAdminPagination.totalPages}
+                </span>
+                {chatgptAdminPageLoading ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-2 py-0.5 text-cyan-100">
+                    <Loader2 size={11} className="animate-spin" />
+                    Đang tải
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-300">
+                  <span>Mỗi trang</span>
+                  <select
+                    value={chatgptAdminPagination.limit}
+                    onChange={(event) =>
+                      setChatgptAdminPagination((prev) => ({
+                        ...prev,
+                        page: 1,
+                        limit: Number(event.target.value || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE),
+                      }))
+                    }
+                    className="bg-transparent font-semibold text-white outline-none"
+                  >
+                    {CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.map((option) => (
+                      <option key={option} value={option} className="bg-slate-900">
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setChatgptAdminPagination((prev) => ({
+                      ...prev,
+                      page: Math.max(1, prev.page - 1),
+                    }))
+                  }
+                  disabled={chatgptAdminPagination.page <= 1 || chatgptAdminPageLoading}
+                  className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Trang trước
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setChatgptAdminPagination((prev) => ({
+                      ...prev,
+                      page: Math.min(prev.totalPages, prev.page + 1),
+                    }))
+                  }
+                  disabled={
+                    chatgptAdminPagination.page >= chatgptAdminPagination.totalPages ||
+                    chatgptAdminPageLoading
+                  }
+                  className="rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-[11px] font-semibold text-sky-100 transition hover:border-sky-400 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Trang sau
+                </button>
+              </div>
+            </div>
+
             {/* SUB-TABS: Tat ca / Kho tong / Kho market */}
             {(() => {
-              const totalPoolAccounts = accounts.filter(
-                (a) =>
-                  supportsChatgptMarketType(a?.type) &&
-                  !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
-                  !isChatgptMarketWarehouse(a) &&
-                  !isChatgptShortDateWarehouse(a),
-              );
-              const totalCount = totalPoolAccounts.length;
-              const marketCount = accounts.filter(
-                (a) =>
-                  (supportsChatgptMarketType(a?.type) &&
-                    isChatgptMarketWarehouse(a)) ||
-                  marketplaceTrackedAccountIds.has(String(a?.id || "")),
-              ).length;
-              const shortDateCount = accounts.filter(
-                (a) =>
-                  supportsChatgptMarketType(a?.type) &&
-                  !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
-                  isChatgptShortDateWarehouse(a),
-              ).length;
+              const summaryTabs =
+                chatgptAdminPagination.summary?.tabs ||
+                buildDefaultChatgptAdminPaginationState().summary.tabs;
               const tabs = [
-                { key: "all", label: "Tat ca", count: accounts.length, color: "bg-slate-600" },
-                { key: "total", label: "Kho tong", count: totalCount, color: "bg-blue-600" },
-                { key: "market", label: "Kho market", count: marketCount, color: "bg-emerald-600" },
-                { key: "short", label: "Kho duoi 25", count: shortDateCount, color: "bg-amber-600" },
+                { key: "all", label: "Tat ca", count: summaryTabs.all, color: "bg-slate-600" },
+                { key: "total", label: "Kho tong", count: summaryTabs.total, color: "bg-blue-600" },
+                { key: "market", label: "Kho market", count: summaryTabs.market, color: "bg-emerald-600" },
+                { key: "short", label: "Kho duoi 25", count: summaryTabs.short, color: "bg-amber-600" },
               ];
               return (
                 <div className="flex gap-2 flex-wrap mb-4">
@@ -8379,18 +8537,14 @@ function App() {
             })()}
 
             {gptSubTab === "total" && (() => {
-              const totalPoolAccounts = accounts.filter(
-                (a) =>
-                  supportsChatgptMarketType(a?.type) &&
-                  !marketplaceTrackedAccountIds.has(String(a?.id || "")) &&
-                  !isChatgptMarketWarehouse(a) &&
-                  !isChatgptShortDateWarehouse(a),
-              );
+              const totalTypeSummary =
+                chatgptAdminPagination.summary?.totalTypeTabs ||
+                buildDefaultChatgptAdminPaginationState().summary.totalTypeTabs;
               const totalTypeTabs = [
-                { key: "all", label: "Tat ca", count: totalPoolAccounts.length, color: "bg-slate-600" },
-                { key: "package1", label: "Goi 1", count: totalPoolAccounts.filter((a) => a.type === "package1").length, color: "bg-blue-600" },
-                { key: "package2", label: "Goi 2", count: totalPoolAccounts.filter((a) => a.type === "package2").length, color: "bg-purple-600" },
-                { key: "unassigned", label: "Chua chon", count: totalPoolAccounts.filter((a) => !a?.type || a?.type === "unassigned").length, color: "bg-slate-700" },
+                { key: "all", label: "Tat ca", count: totalTypeSummary.all, color: "bg-slate-600" },
+                { key: "package1", label: "Goi 1", count: totalTypeSummary.package1, color: "bg-blue-600" },
+                { key: "package2", label: "Goi 2", count: totalTypeSummary.package2, color: "bg-purple-600" },
+                { key: "unassigned", label: "Chua chon", count: totalTypeSummary.unassigned, color: "bg-slate-700" },
               ];
               return (
                 <div className="mb-4">
@@ -8419,32 +8573,12 @@ function App() {
             })()}
 
             {gptSubTab === "market" && (() => {
-              const package2Accs = accounts.filter((a) =>
-                supportsChatgptMarketType(a?.type),
-              );
-              const soldPackage2Accs = package2Accs.filter((acc) =>
-                marketplaceTrackedAccountIds.has(String(acc?.id || "")),
-              );
-              const regularPackage2Accs = package2Accs.filter(
-                (acc) =>
-                  !marketplaceTrackedAccountIds.has(String(acc?.id || "")) &&
-                  isChatgptMarketWarehouse(acc),
-              );
-              const soldDatammoCount = soldPackage2Accs.filter(
-                (acc) =>
-                  normalizeMarketplaceProvider(
-                    marketplaceTrackedAccountMap.get(String(acc?.id || ""))?.provider,
-                  ) === "datammo",
-              ).length;
-              const soldShopminiCount = soldPackage2Accs.filter(
-                (acc) =>
-                  normalizeMarketplaceProvider(
-                    marketplaceTrackedAccountMap.get(String(acc?.id || ""))?.provider,
-                  ) === "shopmini",
-              ).length;
+              const marketSummary =
+                chatgptAdminPagination.summary?.marketShelfTabs ||
+                buildDefaultChatgptAdminPaginationState().summary.marketShelfTabs;
               const shelfTabs = [
-                { key: "all", label: "Chua ban", count: regularPackage2Accs.length, color: "bg-emerald-600" },
-                { key: "sold", label: "Da ban", count: soldPackage2Accs.length, color: "bg-amber-600" },
+                { key: "all", label: "Chua ban", count: marketSummary.all, color: "bg-emerald-600" },
+                { key: "sold", label: "Da ban", count: marketSummary.sold, color: "bg-amber-600" },
               ];
               return (
                 <div className="mb-4 space-y-3">
@@ -8470,17 +8604,17 @@ function App() {
                         {
                           key: "all",
                           label: "Tất cả nguồn",
-                          count: soldPackage2Accs.length,
+                          count: marketSummary.sold,
                         },
                         {
                           key: "datammo",
                           label: "Datammo",
-                          count: soldDatammoCount,
+                          count: marketSummary.soldDatammo,
                         },
                         {
                           key: "shopmini",
                           label: "Shopmini",
-                          count: soldShopminiCount,
+                          count: marketSummary.soldShopmini,
                         },
                       ].map((option) => (
                         <button

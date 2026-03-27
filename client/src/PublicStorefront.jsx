@@ -26,7 +26,7 @@ const ADMIN_TOKEN_EXPIRES_AT_KEY = "token_expires_at";
 const SESSION_ROLE_KEY = "active_session_role";
 const STORE_PAYMENT_METHOD_MOMO = "momo";
 const STORE_PAYMENT_METHOD_PAYOS = "payos";
-const DEFAULT_SUPPORT_PAGE_SIZE = 8;
+const DEFAULT_SUPPORT_PAGE_SIZE = 6;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
 
 const getPaymentMethodLabel = (method) =>
@@ -2090,6 +2090,26 @@ function PublicStorefront() {
     </div>
   );
 
+  const supportRetentionDays = Math.max(
+    1,
+    Number(
+      supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS,
+    ),
+  );
+  const supportAdminSeenLabel = !supportConversation?.id
+    ? "Chưa có chat"
+    : supportConversation?.adminHasSeenLatest
+      ? supportConversation?.adminSeenAt
+        ? `Admin đã xem ${formatChatTime(supportConversation.adminSeenAt)}`
+        : "Admin đã xem"
+      : "Admin chưa xem";
+  const supportAdminSeenClass =
+    !supportConversation?.id
+      ? "border-slate-700 bg-slate-900/85 text-slate-300"
+      : supportConversation?.adminHasSeenLatest
+        ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-100"
+        : "border-amber-400/25 bg-amber-500/10 text-amber-100";
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -2199,44 +2219,44 @@ function PublicStorefront() {
                       <p className="text-[10px] uppercase tracking-[0.3em] text-cyan-400">
                         Hỗ trợ nhanh
                       </p>
-                      <h3 className="mt-1.5 text-base font-semibold text-white">
+                      <h3 className="mt-1 text-base font-semibold text-white">
                         Liên hệ admin
                       </h3>
-                      <p className="mt-1 text-xs text-slate-400">
-                        Chat mở bằng nút nổi góc phải, nhấn vào là vào thẳng đoạn mới nhất.
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Chat mở bằng nút nổi góc phải.
                       </p>
                     </div>
-                    {supportConversation?.lastMessageAt ? (
-                      <div className="text-[11px] text-slate-500">
-                        Cập nhật {formatChatTime(supportConversation.lastMessageAt)}
-                      </div>
-                    ) : null}
+                    <div
+                      className={`rounded-full border px-2 py-0.5 text-[10px] ${supportAdminSeenClass}`}
+                    >
+                      {supportAdminSeenLabel}
+                    </div>
                   </div>
 
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
                     <a
                       href={config.contact?.zaloUrl || "#"}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-sky-500"
                     >
-                      <Phone size={16} />
+                      <Phone size={15} />
                       Mở Zalo admin
                     </a>
                     <button
                       type="button"
                       onClick={openSupportPanel}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500"
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-emerald-500"
                     >
-                      <MessageCircle size={16} />
+                      <MessageCircle size={15} />
                       {supportOpen ? "Làm mới chat web" : "Mở chat web"}
                     </button>
                   </div>
 
-                  <div className="mt-3 text-xs leading-5 text-slate-500">
-                    Widget chat sẽ mở ở góc dưới phải và giữ ô nhập luôn ở dưới cùng.
+                  <div className="mt-2.5 text-[11px] leading-5 text-slate-500">
+                    Chat chỉ hiện vài tin gần nhất trước, kéo lên để xem cũ hơn.
                     {supportOpen ? (
-                      <div className="mt-3 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-emerald-100">
+                      <div className="mt-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-emerald-100">
                         Khung chat đang mở ở góc dưới phải. Bạn có thể nhắn tiếp ngay tại đó.
                       </div>
                     ) : null}
@@ -2257,15 +2277,12 @@ function PublicStorefront() {
                 onClick={() => setSupportOpen(false)}
                 className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm sm:hidden"
               />
-              <div className="pointer-events-auto fixed inset-x-2 bottom-2 top-16 flex flex-col overflow-hidden rounded-[22px] border border-slate-800 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.1),_transparent_34%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(2,6,23,0.95))] shadow-[0_24px_60px_rgba(2,6,23,0.58)] sm:inset-auto sm:bottom-20 sm:right-3 sm:top-auto sm:h-[min(60vh,31rem)] sm:w-[min(18.75rem,calc(100vw-1rem))]">
-                <div className="shrink-0 border-b border-slate-800/80 bg-[linear-gradient(135deg,#0891b2,#2563eb)] px-3 py-2 text-white sm:px-3.5">
+              <div className="pointer-events-auto fixed inset-x-2 bottom-2 top-20 flex flex-col overflow-hidden rounded-[22px] border border-slate-800 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.1),_transparent_34%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(2,6,23,0.95))] shadow-[0_24px_60px_rgba(2,6,23,0.58)] sm:inset-auto sm:bottom-16 sm:right-3 sm:top-auto sm:h-[min(56vh,28rem)] sm:w-[min(17rem,calc(100vw-1rem))]">
+                <div className="shrink-0 border-b border-slate-800/80 bg-[linear-gradient(135deg,#0891b2,#2563eb)] px-2.5 py-2 text-white sm:px-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm font-black">
-                        Chat admin
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-cyan-50/80">
-                        Mới nhất ở dưới
+                        Hỗ trợ nhanh
                       </div>
                     </div>
                     <button
@@ -2276,9 +2293,16 @@ function PublicStorefront() {
                       <X size={14} />
                     </button>
                   </div>
-                  <div className="mt-1.5 flex items-center gap-2 text-[10px] text-cyan-50/85">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-cyan-50/85">
+                    <span className={`rounded-full border px-2 py-0.5 ${supportAdminSeenClass}`}>
+                      {supportConversation?.id
+                        ? supportConversation?.adminHasSeenLatest
+                          ? "Đã xem"
+                          : "Chưa xem"
+                        : "Chưa có chat"}
+                    </span>
                     <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5">
-                      Lưu {Math.max(1, Number(supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS))} ngày
+                      Lưu {supportRetentionDays} ngày
                     </span>
                   </div>
                 </div>
@@ -2296,9 +2320,9 @@ function PublicStorefront() {
                     }
                     loadOlderSupportMessages().catch(() => {});
                   }}
-                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-2 sm:px-3"
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2 sm:px-2.5"
                 >
-                  <div className="flex min-h-full flex-col gap-2">
+                  <div className="flex min-h-full flex-col gap-1.5">
                     {supportPagination.hasMore ? (
                       <div className="flex justify-center">
                         <button
@@ -2361,7 +2385,7 @@ function PublicStorefront() {
                                 }`}
                               >
                                 <div
-                                  className={`max-w-[84%] rounded-[18px] px-3 py-2 text-[13px] leading-5 shadow-[0_10px_18px_rgba(2,6,23,0.16)] sm:max-w-[76%] ${
+                                  className={`max-w-[84%] rounded-[16px] px-2.5 py-2 text-[12px] leading-5 shadow-[0_10px_18px_rgba(2,6,23,0.16)] sm:max-w-[76%] ${
                                     fromAdmin
                                       ? "border border-slate-700 bg-slate-900 text-slate-100"
                                       : "bg-cyan-600 text-white"
@@ -2389,15 +2413,15 @@ function PublicStorefront() {
 
                 <form
                   onSubmit={handleSendSupportMessage}
-                  className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-2.5 pb-2.5 pt-2 sm:px-3 sm:pb-3"
+                  className="shrink-0 border-t border-slate-800/80 bg-slate-950/92 px-2 pb-2 pt-2 sm:px-2.5 sm:pb-2.5"
                 >
-                  <div className="rounded-[18px] border border-slate-700/80 bg-slate-950/90 p-2">
+                  <div className="rounded-[16px] border border-slate-700/80 bg-slate-950/90 p-2">
                     <textarea
                       value={supportDraft}
                       onChange={(event) => setSupportDraft(event.target.value)}
                       rows={2}
                       placeholder="Nhập tin nhắn..."
-                      className="min-h-[56px] w-full resize-none bg-transparent px-1.5 py-1 text-[13px] text-white outline-none placeholder:text-slate-500"
+                      className="min-h-[50px] w-full resize-none bg-transparent px-1 py-1 text-[12px] text-white outline-none placeholder:text-slate-500"
                     />
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2">
                       <div className="flex flex-wrap gap-2 text-[10px] text-slate-500">
@@ -2408,7 +2432,7 @@ function PublicStorefront() {
                       <button
                         type="submit"
                         disabled={supportSending || !supportDraft.trim()}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {supportSending ? (
                           <>
@@ -2435,7 +2459,7 @@ function PublicStorefront() {
               onClick={() => {
                 openSupportPanel().catch(() => {});
               }}
-              className="pointer-events-auto relative inline-flex h-12 w-12 items-center justify-center rounded-full bg-[linear-gradient(135deg,#4f46e5,#2563eb)] text-white shadow-[0_18px_36px_rgba(37,99,235,0.32)] transition hover:translate-y-[-1px] hover:shadow-[0_22px_44px_rgba(37,99,235,0.4)]"
+              className="pointer-events-auto relative inline-flex h-11 w-11 items-center justify-center rounded-full bg-[linear-gradient(135deg,#4f46e5,#2563eb)] text-white shadow-[0_18px_36px_rgba(37,99,235,0.32)] transition hover:translate-y-[-1px] hover:shadow-[0_22px_44px_rgba(37,99,235,0.4)]"
             >
               {Math.max(0, Number(supportConversation?.unreadCount || 0)) > 0 ? (
                 <span className="absolute -left-1 -top-1 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-black text-white ring-4 ring-slate-950">
