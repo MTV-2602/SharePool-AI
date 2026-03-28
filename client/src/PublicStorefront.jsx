@@ -9,6 +9,7 @@ import {
   Mail,
   MessageCircle,
   Phone,
+  Search,
   SendHorizontal,
   ShieldCheck,
   User,
@@ -420,6 +421,8 @@ function PublicStorefront() {
   const [otpResults, setOtpResults] = useState({});
   const [otpNowMs, setOtpNowMs] = useState(() => Date.now());
   const [ordersPage, setOrdersPage] = useState(1);
+  const [orderSearchInput, setOrderSearchInput] = useState("");
+  const [orderSearchQuery, setOrderSearchQuery] = useState("");
   const googleButtonRef = useRef(null);
   const authCardRef = useRef(null);
   const ordersSectionRef = useRef(null);
@@ -1886,6 +1889,8 @@ function PublicStorefront() {
     setUser(null);
     setOrders([]);
     setOrdersPage(1);
+    setOrderSearchInput("");
+    setOrderSearchQuery("");
     storeOrdersSyncRef.current = false;
     supportThreadSyncRef.current = false;
     storeOrdersLoadPromiseRef.current = null;
@@ -2241,23 +2246,44 @@ function PublicStorefront() {
     });
   }, [orders]);
 
+  const filteredOrders = useMemo(() => {
+    const normalizedQuery = String(orderSearchQuery || "").trim().toLowerCase();
+    if (!normalizedQuery) return sortedOrders;
+    return sortedOrders.filter((order) => {
+      const haystack = [
+        order?.id,
+        order?.packageName,
+        order?.packageCode,
+        order?.assignedUsername,
+        order?.paymentOrderId,
+        order?.momoOrderId,
+        order?.voucherCode,
+        order?.paymentStatusText,
+        order?.momoMessage,
+      ]
+        .map((value) => String(value || "").trim().toLowerCase())
+        .join(" ");
+      return haystack.includes(normalizedQuery);
+    });
+  }, [orderSearchQuery, sortedOrders]);
+
   const totalOrderPages = Math.max(
     1,
-    Math.ceil(sortedOrders.length / STORE_ORDERS_PER_PAGE),
+    Math.ceil(filteredOrders.length / STORE_ORDERS_PER_PAGE),
   );
-  const orderPageStart = sortedOrders.length
+  const orderPageStart = filteredOrders.length
     ? (ordersPage - 1) * STORE_ORDERS_PER_PAGE + 1
     : 0;
-  const orderPageEnd = sortedOrders.length
-    ? Math.min(sortedOrders.length, ordersPage * STORE_ORDERS_PER_PAGE)
+  const orderPageEnd = filteredOrders.length
+    ? Math.min(filteredOrders.length, ordersPage * STORE_ORDERS_PER_PAGE)
     : 0;
   const visibleOrders = useMemo(() => {
     const pageStartIndex = Math.max(0, (ordersPage - 1) * STORE_ORDERS_PER_PAGE);
-    return sortedOrders.slice(
+    return filteredOrders.slice(
       pageStartIndex,
       pageStartIndex + STORE_ORDERS_PER_PAGE,
     );
-  }, [ordersPage, sortedOrders]);
+  }, [filteredOrders, ordersPage]);
 
   useEffect(() => {
     setOrdersPage((currentPage) => Math.min(Math.max(currentPage, 1), totalOrderPages));
@@ -2266,6 +2292,10 @@ function PublicStorefront() {
   useEffect(() => {
     setOrdersPage(1);
   }, [user?.id]);
+
+  useEffect(() => {
+    setOrdersPage(1);
+  }, [orderSearchQuery]);
 
   const handleOrderPageChange = (nextPage) => {
     const normalizedNextPage = Math.min(
@@ -2284,18 +2314,27 @@ function PublicStorefront() {
     }
   };
 
+  const handleOrderSearchSubmit = (event) => {
+    event.preventDefault();
+    setOrderSearchQuery(String(orderSearchInput || "").trim());
+  };
+
   const orderCards = (
     <div className="space-y-4">
-      {sortedOrders.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/60 p-8 text-center text-slate-400">Chưa có đơn hàng nào.</div>
+      {filteredOrders.length === 0 ? (
+        <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/60 p-8 text-center text-slate-400">
+          {orderSearchQuery
+            ? `Không tìm thấy đơn nào với từ khóa "${orderSearchQuery}".`
+            : "Chưa có đơn hàng nào."}
+        </div>
       ) : (
         <>
           <div className="flex flex-wrap gap-2 text-[11px]">
             <span className="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-slate-200">
-              Tổng {sortedOrders.length} đơn
+              Tổng {filteredOrders.length} đơn
             </span>
             <span className="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-slate-200">
-              {orderPageStart}-{orderPageEnd}/{sortedOrders.length}
+              {orderPageStart}-{orderPageEnd}/{filteredOrders.length}
             </span>
             <span className="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-slate-200">
               Trang {ordersPage}/{totalOrderPages}
@@ -2303,6 +2342,11 @@ function PublicStorefront() {
             <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-cyan-200">
               5 đơn gần nhất / trang
             </span>
+            {orderSearchQuery ? (
+              <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-emerald-200">
+                Tìm: {orderSearchQuery}
+              </span>
+            ) : null}
           </div>
 
           {visibleOrders.map((order) => {
@@ -2444,7 +2488,7 @@ function PublicStorefront() {
           {totalOrderPages > 1 ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-2.5">
               <p className="text-xs text-slate-400">
-                Đang hiện {orderPageStart}-{orderPageEnd} / {sortedOrders.length} đơn
+                Đang hiện {orderPageStart}-{orderPageEnd} / {filteredOrders.length} đơn
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -2568,6 +2612,53 @@ function PublicStorefront() {
                     Đơn mới nhất hiển thị trước, 5 đơn mỗi trang.
                   </p>
                 </div>
+                {user ? (
+                  <form
+                    onSubmit={handleOrderSearchSubmit}
+                    className="mb-4 flex flex-col gap-2 sm:flex-row"
+                  >
+                    <label className="relative flex-1">
+                      <Search
+                        size={15}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                      />
+                      <input
+                        type="text"
+                        value={orderSearchInput}
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setOrderSearchInput(nextValue);
+                          if (!String(nextValue || "").trim()) {
+                            setOrderSearchQuery("");
+                          }
+                        }}
+                        placeholder="Tìm theo mã đơn, tài khoản, mã thanh toán..."
+                        className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 py-2.5 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-500"
+                      />
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-500"
+                      >
+                        <Search size={15} />
+                        Tìm
+                      </button>
+                      {orderSearchQuery ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOrderSearchInput("");
+                            setOrderSearchQuery("");
+                          }}
+                          className="rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+                        >
+                          Xóa
+                        </button>
+                      ) : null}
+                    </div>
+                  </form>
+                ) : null}
                 {user ? orderCards : sessionLoading ? sessionLoadingPanel : guestOrdersPanel}
                 {route.view === "payment-result" ? (
                   <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-900/80 p-6">
