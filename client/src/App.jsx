@@ -1368,6 +1368,7 @@ const buildDefaultChatgptAdminPaginationState = () => ({
   },
 });
 const ADMIN_AUTO_REFRESH_CACHE_MS = 30000;
+const ADMIN_SUPPORT_NOTICE_SYNC_MS = 4000;
 const ADMIN_TAB_DATA_SECTION_MAP = {
   chatgpt: ["team", "datammo", "storeOrders", "summary"],
   netflix: ["netflix", "summary"],
@@ -1599,6 +1600,10 @@ function App() {
   const supportMessageLoadSeqRef = useRef(0);
   const supportMessageAppliedSeqRef = useRef(0);
   const supportToastTimeoutRef = useRef(null);
+  const supportConversationLoadPromiseRef = useRef(null);
+  const supportConversationLastLoadedAtRef = useRef(0);
+  const supportConversationNoticePrimedRef = useRef(false);
+  const supportLastNoticeSignatureRef = useRef("");
   const supportReplyInputRef = useRef(null);
   const supportMessagesViewportRef = useRef(null);
   const supportScrollModeRef = useRef("");
@@ -1733,6 +1738,78 @@ function App() {
 
   const refreshApiOverlay = () => {
     setApiOverlay(buildApiOverlayState(apiRequestsRef.current));
+  };
+
+  const queueSupportAdminNotice = ({ conversation = null, message = null } = {}) => {
+    const safeConversation =
+      conversation && typeof conversation === "object" ? conversation : null;
+    const safeMessage = message && typeof message === "object" ? message : null;
+    const conversationId = String(
+      safeConversation?.id || safeMessage?.conversationId || "",
+    ).trim();
+    if (!conversationId) return;
+    const senderRole = String(
+      safeMessage?.senderRole || safeConversation?.lastSenderRole || "",
+    )
+      .trim()
+      .toLowerCase();
+    const unreadCount = Math.max(
+      0,
+      Number(safeConversation?.adminUnreadCount || 0),
+    );
+    if (senderRole !== "user" || unreadCount <= 0) return;
+    const signature = [
+      conversationId,
+      String(safeConversation?.lastMessageAt || safeMessage?.createdAt || "").trim(),
+      String(safeMessage?.id || "").trim(),
+      unreadCount,
+    ].join(":");
+    if (supportLastNoticeSignatureRef.current === signature) return;
+    supportLastNoticeSignatureRef.current = signature;
+    const selectedConversationId = String(
+      selectedSupportConversationIdRef.current || "",
+    ).trim();
+    const isActiveSupportThread =
+      activeTab === "support" &&
+      conversationId &&
+      conversationId === selectedConversationId;
+    if (isActiveSupportThread) return;
+    const displayName = String(
+      safeConversation?.userName ||
+        safeConversation?.userEmail ||
+        safeConversation?.userPhone ||
+        safeConversation?.userId ||
+        "User web",
+    ).trim();
+    const preview = String(
+      safeMessage?.body ||
+        safeConversation?.lastMessagePreview ||
+        "User vừa nhắn hỗ trợ mới.",
+    ).trim();
+    setSupportRealtimeNotice({
+      key: `support:${conversationId}:${String(
+        safeMessage?.id || safeConversation?.lastMessageAt || Date.now(),
+      ).trim()}`,
+      conversationId,
+      displayName,
+      preview,
+      createdAt: String(
+        safeMessage?.createdAt ||
+          safeConversation?.lastMessageAt ||
+          new Date().toISOString(),
+      ).trim(),
+      unreadCount: Math.max(1, unreadCount),
+      receivedAt: Date.now(),
+    });
+    setDismissedSupportNoticeKey("");
+    setToastMessage(`${displayName} vừa nhắn hỗ trợ web`);
+    if (supportToastTimeoutRef.current) {
+      window.clearTimeout(supportToastTimeoutRef.current);
+    }
+    supportToastTimeoutRef.current = window.setTimeout(() => {
+      setToastMessage("");
+      supportToastTimeoutRef.current = null;
+    }, 3500);
   };
 
   useEffect(() => {
@@ -1952,6 +2029,38 @@ function App() {
     }
   }, [activeTab, isAuthenticated]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+
+    const syncSupportNoticeSurface = () => {
+      if (document.hidden) return;
+      if (supportConversationLoadPromiseRef.current) return;
+      const lastLoadedAt = Number(supportConversationLastLoadedAtRef.current || 0);
+      if (Date.now() - lastLoadedAt < ADMIN_SUPPORT_NOTICE_SYNC_MS - 500) {
+        return;
+      }
+      loadSupportConversations({
+        silent: true,
+        limit: 20,
+      }).catch(() => {});
+    };
+
+    syncSupportNoticeSurface();
+    window.addEventListener("focus", syncSupportNoticeSurface);
+    window.addEventListener("online", syncSupportNoticeSurface);
+    document.addEventListener("visibilitychange", syncSupportNoticeSurface);
+    const intervalId = window.setInterval(
+      syncSupportNoticeSurface,
+      ADMIN_SUPPORT_NOTICE_SYNC_MS,
+    );
+    return () => {
+      window.removeEventListener("focus", syncSupportNoticeSurface);
+      window.removeEventListener("online", syncSupportNoticeSurface);
+      document.removeEventListener("visibilitychange", syncSupportNoticeSurface);
+      window.clearInterval(intervalId);
+    };
+  }, [isAuthenticated]);
+
   const chatgptListFilterKey = [
     gptSubTab,
     chatgptTotalTypeTab,
@@ -2057,47 +2166,16 @@ function App() {
             payloadConversationId &&
             payloadConversationId === selectedConversationId;
           loadDashboardSummary({ silent: true }).catch(() => {});
+          loadSupportConversations({ silent: true, limit: 20 }).catch(() => {});
           if (
             event === "support.message.created" &&
             messageSenderRole === "user" &&
             !isActiveSupportThread
           ) {
-            const nextDisplayName = nextConversation
-              ? getSupportConversationDisplayName(nextConversation)
-              : "User web";
-            const nextPreview = String(
-              nextMessage?.body ||
-                nextConversation?.lastMessagePreview ||
-                "User vừa nhắn hỗ trợ mới.",
-            ).trim();
-            const nextUnreadCount = Math.max(
-              1,
-              Number(nextConversation?.adminUnreadCount || 0),
-            );
-            setSupportRealtimeNotice({
-              key: `support:${payloadConversationId || "new"}:${String(
-                nextMessage?.id || nextConversation?.updatedAt || Date.now(),
-              ).trim()}`,
-              conversationId: payloadConversationId,
-              displayName: nextDisplayName,
-              preview: nextPreview,
-              createdAt: String(
-                nextMessage?.createdAt ||
-                  nextConversation?.lastMessageAt ||
-                  new Date().toISOString(),
-              ).trim(),
-              unreadCount: nextUnreadCount,
-              receivedAt: Date.now(),
+            queueSupportAdminNotice({
+              conversation: nextConversation,
+              message: nextMessage,
             });
-            setDismissedSupportNoticeKey("");
-            setToastMessage(`${nextDisplayName} vừa nhắn hỗ trợ web`);
-            if (supportToastTimeoutRef.current) {
-              window.clearTimeout(supportToastTimeoutRef.current);
-            }
-            supportToastTimeoutRef.current = window.setTimeout(() => {
-              setToastMessage("");
-              supportToastTimeoutRef.current = null;
-            }, 3500);
           }
           if (
             event === "support.message.created" &&
@@ -2476,6 +2554,10 @@ function App() {
     seenStoreOrderKeysRef.current = null;
     hasInitializedDatammoOrdersRef.current = false;
     hasInitializedStoreOrdersRef.current = false;
+    supportConversationLoadPromiseRef.current = null;
+    supportConversationLastLoadedAtRef.current = 0;
+    supportConversationNoticePrimedRef.current = false;
+    supportLastNoticeSignatureRef.current = "";
   };
 
   // HELPER SHOW ALERT / CONFIRM
@@ -3520,68 +3602,132 @@ function App() {
     ) {
       return null;
     }
+    if (!append && supportConversationLoadPromiseRef.current) {
+      return supportConversationLoadPromiseRef.current;
+    }
     if (append) {
       setSupportConversationPagination((prev) => ({
         ...prev,
         loadingMore: true,
       }));
     }
-    try {
-      const response = await axios.get("/api/store-support/conversations", {
-        params: {
-          limit: safeLimit,
-          page: safePage,
-        },
-        timeout: 10000,
-        skipGlobalLoading: silent,
-      });
-      if (!append && safePage === 1) {
-        const nextVersion = Number(
-          response?.data?.version || dataVersionRef.current || 0,
-        );
-        if (Number.isFinite(nextVersion) && nextVersion > 0) {
-          dataVersionRef.current = nextVersion;
+    const runRequest = (async () => {
+      try {
+        const response = await axios.get("/api/store-support/conversations", {
+          params: {
+            limit: safeLimit,
+            page: safePage,
+          },
+          timeout: 10000,
+          skipGlobalLoading: silent,
+        });
+        if (!append && safePage === 1) {
+          const nextVersion = Number(
+            response?.data?.version || dataVersionRef.current || 0,
+          );
+          if (Number.isFinite(nextVersion) && nextVersion > 0) {
+            dataVersionRef.current = nextVersion;
+          }
+          markAdminSectionsCached(
+            ["supportConversations"],
+            nextVersion,
+          );
         }
-        markAdminSectionsCached(
-          ["supportConversations"],
-          nextVersion,
+        const incomingConversations = sortAdminSupportConversationsForUi(
+          response?.data?.conversations,
         );
-      }
-      const incomingConversations = sortAdminSupportConversationsForUi(
-        response?.data?.conversations,
-      );
-      setSupportConversations((prev) => {
-        const baseItems = append ? prev : prev.length > 0 ? prev : [];
-        return incomingConversations.reduce(
-          (items, conversation) =>
-            mergeSupportConversationItem(items, conversation),
-          baseItems,
+        const previousConversationMap = new Map(
+          (Array.isArray(supportConversations) ? supportConversations : []).map((item) => [
+            String(item?.id || "").trim(),
+            item,
+          ]),
         );
-      });
-      setSupportConversationPagination((prev) => ({
-        ...prev,
-        page: Number(response?.data?.pagination?.page || safePage),
-        limit: Number(response?.data?.pagination?.limit || safeLimit),
-        total: Number(response?.data?.pagination?.total || 0),
-        hasMore: !!response?.data?.pagination?.hasMore,
-        loadingMore: false,
-      }));
-      return response?.data || null;
-    } catch (error) {
-      if (append) {
+        if (!append && safePage === 1) {
+          supportConversationLastLoadedAtRef.current = Date.now();
+          if (supportConversationNoticePrimedRef.current) {
+            const noticeCandidate = incomingConversations.find((conversation) => {
+              const conversationId = String(conversation?.id || "").trim();
+              if (!conversationId) return false;
+              if (
+                String(conversation?.lastSenderRole || "").trim().toLowerCase() !==
+                "user"
+              ) {
+                return false;
+              }
+              const nextUnreadCount = Math.max(
+                0,
+                Number(conversation?.adminUnreadCount || 0),
+              );
+              if (nextUnreadCount <= 0) return false;
+              const previousConversation =
+                previousConversationMap.get(conversationId) || null;
+              const previousUnreadCount = Math.max(
+                0,
+                Number(previousConversation?.adminUnreadCount || 0),
+              );
+              const previousLastMessageAt = String(
+                previousConversation?.lastMessageAt || "",
+              ).trim();
+              const nextLastMessageAt = String(
+                conversation?.lastMessageAt || "",
+              ).trim();
+              return (
+                nextUnreadCount > previousUnreadCount ||
+                (nextLastMessageAt &&
+                  nextLastMessageAt !== previousLastMessageAt &&
+                  previousUnreadCount > 0)
+              );
+            });
+            if (noticeCandidate) {
+              queueSupportAdminNotice({ conversation: noticeCandidate });
+            }
+          } else {
+            supportConversationNoticePrimedRef.current = true;
+          }
+        }
+        setSupportConversations((prev) => {
+          const baseItems = append ? prev : prev.length > 0 ? prev : [];
+          return incomingConversations.reduce(
+            (items, conversation) =>
+              mergeSupportConversationItem(items, conversation),
+            baseItems,
+          );
+        });
         setSupportConversationPagination((prev) => ({
           ...prev,
+          page: Number(response?.data?.pagination?.page || safePage),
+          limit: Number(response?.data?.pagination?.limit || safeLimit),
+          total: Number(response?.data?.pagination?.total || 0),
+          hasMore: !!response?.data?.pagination?.hasMore,
           loadingMore: false,
         }));
+        return response?.data || null;
+      } catch (error) {
+        if (append) {
+          setSupportConversationPagination((prev) => ({
+            ...prev,
+            loadingMore: false,
+          }));
+        }
+        if (!silent) {
+          showAlert(
+            "Lỗi",
+            getApiErrorMessage(error, "Không thể tải danh sách hội thoại."),
+            "error",
+          );
+        }
+        return null;
       }
-      if (!silent) {
-        showAlert(
-          "Lỗi",
-          getApiErrorMessage(error, "Không thể tải danh sách hội thoại."),
-          "error",
-        );
+    })();
+    if (!append) {
+      supportConversationLoadPromiseRef.current = runRequest;
+    }
+    try {
+      return await runRequest;
+    } finally {
+      if (supportConversationLoadPromiseRef.current === runRequest) {
+        supportConversationLoadPromiseRef.current = null;
       }
-      return null;
     }
   };
 
