@@ -4076,6 +4076,7 @@ const getCachedChatgptAdminSnapshot = async (
     const shortAccounts = enrichedAccounts.filter(
       (account) => !isTrackedMarketplaceAccount(account) && isShortAccount(account),
     );
+    const storeWarehouseSummary = await buildStoreChatgptWarehouseSummary();
 
     return {
       enrichedAccounts,
@@ -4083,6 +4084,7 @@ const getCachedChatgptAdminSnapshot = async (
       marketUnsoldAccounts,
       marketSoldAccounts,
       shortAccounts,
+      storeWarehouseSummary,
     };
   })()
     .then((value) => {
@@ -4144,6 +4146,7 @@ const listAdminChatgptAccounts = async ({
     marketUnsoldAccounts,
     marketSoldAccounts,
     shortAccounts,
+    storeWarehouseSummary,
   } = await getCachedChatgptAdminSnapshot();
   const isTrackedMarketplaceAccount = (account = {}) =>
     Number(account?.marketplaceTraceSummary?.orderCount || 0) > 0;
@@ -4258,6 +4261,7 @@ const listAdminChatgptAccounts = async ({
           accountMatchesSoldProvider(account, "shopmini"),
         ).length,
       },
+      storeWarehouse: storeWarehouseSummary,
     },
   };
 };
@@ -6177,6 +6181,13 @@ const findStorePackage1ExistingTarget = async ({
   }
   return null;
 };
+const findStorePackage2ExistingTarget = async ({ excludeAccountIds = [] } = {}) =>
+  Account.findOne(
+    buildStorePackage2ExistingReplacementFilter(excludeAccountIds),
+  )
+    .sort({ createdAt: 1, id: 1 })
+    .select("id username createdAt")
+    .lean();
 const findStoreConvertibleTarget = async ({ excludeAccountIds = [] } = {}) =>
   Account.findOne(
     buildStorePackage2ConvertibleFilter(excludeAccountIds),
@@ -6217,14 +6228,76 @@ const selectStorePackage2ReservationTarget = async ({ excludeOrderId = "" } = {}
     getBusyChatgptAccountIdsForStoreOrders(),
     buildStoreReservationSnapshot({ excludeOrderId }),
   ]);
+  const excludeAccountIds = [
+    ...new Set([...busyIds, ...Array.from(reservationSnapshot.reservedAccountIds)]),
+  ];
+  const existingTarget = await findStorePackage2ExistingTarget({
+    excludeAccountIds,
+  });
+  if (existingTarget?.id) {
+    return {
+      reservationType: "package2_existing",
+      reservedAccountId: String(existingTarget.id || "").trim(),
+      reservedAccountUsername: String(existingTarget.username || "").trim(),
+    };
+  }
   const convertibleTarget = await findStoreConvertibleTarget({
-    excludeAccountIds: [...new Set([...busyIds, ...Array.from(reservationSnapshot.reservedAccountIds)])],
+    excludeAccountIds,
   });
   if (!convertibleTarget?.id) return null;
   return {
     reservationType: "package2_convertible",
     reservedAccountId: String(convertibleTarget.id || "").trim(),
     reservedAccountUsername: String(convertibleTarget.username || "").trim(),
+  };
+};
+const buildStoreChatgptWarehouseSummary = async () => {
+  const [excludeIds, reservationSnapshot] = await Promise.all([
+    getBusyChatgptAccountIdsForStoreOrders(),
+    buildStoreReservationSnapshot(),
+  ]);
+  const reservedAccountIds = Array.from(
+    reservationSnapshot?.reservedAccountIds || [],
+  );
+  const convertibleExcludeIds = [
+    ...new Set([...excludeIds, ...reservedAccountIds]),
+  ];
+  const [sharedAccounts, convertibleCount, package2ExistingCount] =
+    await Promise.all([
+      Account.find(buildStorePackage1ExistingFilter(excludeIds))
+        .select("id users")
+        .lean(),
+      Account.countDocuments(
+        buildStorePackage2ConvertibleFilter(convertibleExcludeIds),
+      ),
+      Account.countDocuments(
+        buildStorePackage2ExistingReplacementFilter(convertibleExcludeIds),
+      ),
+    ]);
+
+  const sharedSlots = sharedAccounts.reduce((sum, acc) => {
+    const used = Array.isArray(acc?.users) ? acc.users.length : 0;
+    const reserved = Number(
+      reservationSnapshot?.package1ExistingCounts?.get(
+        String(acc?.id || "").trim(),
+      ) || 0,
+    );
+    return sum + Math.max(0, 3 - used - reserved);
+  }, 0);
+
+  return {
+    package1: {
+      sharedAccounts: sharedAccounts.length,
+      sharedSlots,
+      convertibleAccounts: Number(convertibleCount || 0),
+      availableNow: sharedSlots + Number(convertibleCount || 0) * 3,
+    },
+    package2: {
+      existingAccounts: Number(package2ExistingCount || 0),
+      convertibleAccounts: Number(convertibleCount || 0),
+      availableNow:
+        Number(package2ExistingCount || 0) + Number(convertibleCount || 0),
+    },
   };
 };
 const countStorePackage1Stock = async () => {
@@ -6258,11 +6331,16 @@ const countStorePackage2Stock = async () => {
     getBusyChatgptAccountIdsForStoreOrders(),
     buildStoreReservationSnapshot(),
   ]);
-  return Account.countDocuments(
-    buildStorePackage2ConvertibleFilter([
-      ...new Set([...excludeIds, ...Array.from(reservationSnapshot.reservedAccountIds)]),
-    ]),
-  );
+  const excludeAccountIds = [
+    ...new Set([...excludeIds, ...Array.from(reservationSnapshot.reservedAccountIds)]),
+  ];
+  const [existingCount, convertibleCount] = await Promise.all([
+    Account.countDocuments(
+      buildStorePackage2ExistingReplacementFilter(excludeAccountIds),
+    ),
+    Account.countDocuments(buildStorePackage2ConvertibleFilter(excludeAccountIds)),
+  ]);
+  return Number(existingCount || 0) + Number(convertibleCount || 0);
 };
 const buildStoreCatalog = async () => {
   const [package1Stock, package2Stock] = await Promise.all([
@@ -6396,8 +6474,25 @@ const claimStorePackage1AccountForOrder = async ({ order, user }) => {
 const claimStorePackage2AccountForOrder = async ({ order, user }) => {
   const customer = buildStoreCustomerRecord(user);
   const reservedAccountId = String(order?.reservedAccountId || "").trim();
+  const reservationType = String(order?.reservationType || "").trim();
   let oldAcc = null;
-  if (reservedAccountId) {
+  if (reservedAccountId && reservationType === "package2_existing") {
+    oldAcc = await Account.findOneAndUpdate(
+      { id: reservedAccountId, ...buildStorePackage2ExistingReplacementFilter() },
+      {
+        $set: {
+          users: [customer],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { new: false },
+    );
+  }
+  if (
+    reservedAccountId &&
+    (!reservationType || reservationType === "package2_convertible") &&
+    !oldAcc
+  ) {
     oldAcc = await Account.findOneAndUpdate(
       { id: reservedAccountId, ...buildStorePackage2ConvertibleFilter() },
       {
@@ -6414,7 +6509,30 @@ const claimStorePackage2AccountForOrder = async ({ order, user }) => {
     const fallbackTarget = await selectStorePackage2ReservationTarget({
       excludeOrderId: String(order?.id || "").trim(),
     });
-    if (fallbackTarget?.reservedAccountId) {
+    if (
+      fallbackTarget?.reservedAccountId &&
+      fallbackTarget.reservationType === "package2_existing"
+    ) {
+      oldAcc = await Account.findOneAndUpdate(
+        {
+          id: fallbackTarget.reservedAccountId,
+          ...buildStorePackage2ExistingReplacementFilter(),
+        },
+        {
+          $set: {
+            users: [customer],
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        { new: false },
+      );
+    }
+    if (
+      fallbackTarget?.reservedAccountId &&
+      (!fallbackTarget.reservationType ||
+        fallbackTarget.reservationType === "package2_convertible") &&
+      !oldAcc
+    ) {
       oldAcc = await Account.findOneAndUpdate(
         { id: fallbackTarget.reservedAccountId, ...buildStorePackage2ConvertibleFilter() },
         {
@@ -6718,7 +6836,11 @@ const cleanupStoreAssignedAccountForOrder = async (
     const reservationType = String(order?.reservationType || "").trim();
     if (
       finalUsers.length === 0 &&
-      (packageCode === "package2" || reservationType === "package1_convertible")
+      (
+        reservationType === "package1_convertible" ||
+        reservationType === "package2_convertible" ||
+        (packageCode === "package2" && !reservationType)
+      )
     ) {
       return "unassigned";
     }

@@ -1352,6 +1352,19 @@ const buildDefaultChatgptAdminPaginationState = () => ({
     tabs: { all: 0, total: 0, market: 0, short: 0 },
     totalTypeTabs: { all: 0, package1: 0, package2: 0, unassigned: 0 },
     marketShelfTabs: { all: 0, sold: 0, soldDatammo: 0, soldShopmini: 0 },
+    storeWarehouse: {
+      package1: {
+        sharedAccounts: 0,
+        sharedSlots: 0,
+        convertibleAccounts: 0,
+        availableNow: 0,
+      },
+      package2: {
+        existingAccounts: 0,
+        convertibleAccounts: 0,
+        availableNow: 0,
+      },
+    },
   },
 });
 const ADMIN_AUTO_REFRESH_CACHE_MS = 30000;
@@ -6834,75 +6847,33 @@ function App() {
       statusLabel: getStoreOrderStatusLabel(matchedOrder?.status),
     };
   };
-  const storeManualOrderSourceSummary = (() => {
-    const totalWarehouseAccounts = (Array.isArray(accounts) ? accounts : []).filter(
-      (acc) => normalizePackage2Shelf(acc?.package2Shelf) === "none",
-    );
-    const hasBlockingTrace = (acc = {}) => {
-      const storeTraceSummary = acc?.storeTraceSummary || null;
-      const marketplaceTraceSummary = acc?.marketplaceTraceSummary || null;
-      return (
-        getActiveStoreReservationCount(acc) > 0 ||
-        Number(marketplaceTraceSummary?.orderCount || 0) > 0 ||
-        Number(marketplaceTraceSummary?.warrantyCount || 0) > 0
-      );
-    };
-    const isOverStoreMinDays = (acc = {}) => {
-      const daysLeft = getDaysUntilExpiry(acc?.expiredAt);
-      return Number.isFinite(daysLeft) && daysLeft > 20;
-    };
-    const eligibleSharedAccounts = totalWarehouseAccounts.filter((acc) => {
-      if (String(acc?.type || "").trim() !== "package1") return false;
-      if (!isOverStoreMinDays(acc)) return false;
-      if (hasBlockingTrace(acc)) return false;
-      const usedSlots = Array.isArray(acc?.users) ? acc.users.length : 0;
-      return Math.max(0, 3 - usedSlots) > 0;
-    });
-    const eligibleSharedSlots = eligibleSharedAccounts.reduce((sum, acc) => {
-      const usedSlots = Array.isArray(acc?.users) ? acc.users.length : 0;
-      return sum + Math.max(0, 3 - usedSlots);
-    }, 0);
-    const eligibleConvertibleAccounts = totalWarehouseAccounts.filter((acc) => {
-      const accountType = String(acc?.type || "").trim();
-      if (accountType && accountType !== "unassigned") return false;
-      if (!isOverStoreMinDays(acc)) return false;
-      if (hasBlockingTrace(acc)) return false;
-      return (Array.isArray(acc?.users) ? acc.users.length : 0) === 0;
-    });
-    return {
-      totalWarehouseAccounts: totalWarehouseAccounts.length,
-      eligibleSharedAccounts: eligibleSharedAccounts.length,
-      eligibleSharedSlots,
-      eligibleConvertibleAccounts: eligibleConvertibleAccounts.length,
-      estimatedPackage1Supply:
-        eligibleSharedSlots + eligibleConvertibleAccounts.length * 3,
-      estimatedPackage2Supply: eligibleConvertibleAccounts.length,
-    };
-  })();
+  const storeManualOrderSourceSummary =
+    chatgptAdminPagination.summary?.storeWarehouse ||
+    buildDefaultChatgptAdminPaginationState().summary.storeWarehouse;
   const storeManualOrderWarehouseHint =
     String(storeManualOrderForm?.packageCode || "").trim() === "package2"
       ? {
           title: "Kho tổng",
-          summary: `${storeManualOrderSourceSummary.estimatedPackage2Supply} nick cấp ngay`,
+          summary: `${storeManualOrderSourceSummary.package2?.availableNow || 0} nick cấp ngay`,
           chips: [
-            `Chưa chọn: ${storeManualOrderSourceSummary.eligibleConvertibleAccounts}`,
-            `Tổng acc: ${storeManualOrderSourceSummary.totalWarehouseAccounts}`,
+            `Nick riêng trống: ${storeManualOrderSourceSummary.package2?.existingAccounts || 0}`,
+            `Chưa chọn: ${storeManualOrderSourceSummary.package2?.convertibleAccounts || 0}`,
           ],
           toneClass:
-            storeManualOrderSourceSummary.estimatedPackage2Supply > 0
+            (storeManualOrderSourceSummary.package2?.availableNow || 0) > 0
               ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-100"
               : "border-red-500/30 bg-red-500/10 text-red-100",
         }
       : {
           title: "Kho tổng",
-          summary: `${storeManualOrderSourceSummary.estimatedPackage1Supply} slot cấp ngay`,
+          summary: `${storeManualOrderSourceSummary.package1?.availableNow || 0} slot cấp ngay`,
           chips: [
-            `Slot trống: ${storeManualOrderSourceSummary.eligibleSharedSlots}`,
-            `Nick share: ${storeManualOrderSourceSummary.eligibleSharedAccounts}`,
-            `Chưa chọn: ${storeManualOrderSourceSummary.eligibleConvertibleAccounts}`,
+            `Slot trống: ${storeManualOrderSourceSummary.package1?.sharedSlots || 0}`,
+            `Nick share: ${storeManualOrderSourceSummary.package1?.sharedAccounts || 0}`,
+            `Chưa chọn: ${storeManualOrderSourceSummary.package1?.convertibleAccounts || 0}`,
           ],
           toneClass:
-            storeManualOrderSourceSummary.estimatedPackage1Supply > 0
+            (storeManualOrderSourceSummary.package1?.availableNow || 0) > 0
               ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
               : "border-red-500/30 bg-red-500/10 text-red-100",
         };
