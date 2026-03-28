@@ -5128,12 +5128,12 @@ const syncTeamWarehouseStateIfNeeded = async (account) => {
   );
   const nextWarehouse = normalizeTeamWarehouseState(account);
   if (currentWarehouse === nextWarehouse) return account;
+  // Derived warehouse reconciliation should not trip optimistic-concurrency checks.
   const updated = await TeamAccount.findOneAndUpdate(
     { id: account.id },
     {
       $set: {
         warehouse: nextWarehouse,
-        updatedAt: new Date().toISOString(),
       },
     },
     { new: true },
@@ -5159,7 +5159,6 @@ const reconcileTeamMarketInventory = async () => {
     {
       $set: {
         warehouse: TEAM_WAREHOUSE_MARKET,
-        updatedAt: new Date().toISOString(),
       },
     },
   );
@@ -5171,7 +5170,6 @@ const reconcileTeamMarketInventory = async () => {
     {
       $set: {
         warehouse: TEAM_WAREHOUSE_TOTAL,
-        updatedAt: new Date().toISOString(),
       },
     },
   );
@@ -5183,7 +5181,6 @@ const reconcileTeamMarketInventory = async () => {
     {
       $set: {
         warehouse: TEAM_WAREHOUSE_TOTAL,
-        updatedAt: new Date().toISOString(),
       },
     },
   );
@@ -5361,12 +5358,12 @@ const syncChatgptMarketStateIfNeeded = async (acc) => {
     CHATGPT_TOTAL_VALUE,
   );
   if (nextWarehouse === currentWarehouse) return acc;
+  // Derived market shelf reconciliation should not look like a manual admin edit.
   const updated = await Account.findOneAndUpdate(
     { id: acc.id },
     {
       $set: {
         package2Shelf: nextWarehouse,
-        updatedAt: new Date().toISOString(),
       },
     },
     { new: true },
@@ -5391,7 +5388,6 @@ const reconcileChatgptMarketInventory = async () => {
     {
       $set: {
         package2Shelf: CHATGPT_TOTAL_VALUE,
-        updatedAt: new Date().toISOString(),
       },
     },
   );
