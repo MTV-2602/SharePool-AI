@@ -1795,6 +1795,30 @@ function PublicStorefront() {
     }
   };
 
+  const renderOrderLoginGuide = (steps = [], note = "") => (
+    <div className="mt-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+      <div className="flex items-center gap-2 text-white">
+        <ShieldCheck size={16} className="text-cyan-300" />
+        <p className="text-sm font-semibold">Hướng dẫn đăng nhập</p>
+      </div>
+      <ol className="mt-3 space-y-2 text-sm leading-6 text-slate-200">
+        {steps.map((step, index) => (
+          <li key={`${index}-${step}`} className="flex items-start gap-3">
+            <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan-500/15 text-[11px] font-semibold text-cyan-200">
+              {index + 1}
+            </span>
+            <span>{step}</span>
+          </li>
+        ))}
+      </ol>
+      {note ? (
+        <p className="mt-3 rounded-2xl border border-cyan-400/15 bg-slate-950/60 px-3 py-2 text-xs leading-5 text-cyan-100/90">
+          {note}
+        </p>
+      ) : null}
+    </div>
+  );
+
   const handleLogout = () => {
     setSessionToken("");
     writeStoredSessionRole("");
@@ -2051,6 +2075,13 @@ function PublicStorefront() {
       : package1OtpExpired
         ? "Mã đã hết hạn"
         : "Bấm Lấy mã để hiện mã đăng nhập";
+    const package1LoginSteps = [
+      "Vào ChatGPT và chọn Đăng nhập bằng Email.",
+      "Nhập tài khoản và mật khẩu ở trên.",
+      "Khi ChatGPT yêu cầu mã xác minh, bấm Lấy mã đăng nhập trên web này.",
+      "Nhập 6 số vừa hiện trong vòng 30 giây để hoàn tất đăng nhập.",
+    ];
+    const package1Note = `Tài khoản share không cấp 2FA gốc. Đơn này còn ${Math.max(0, Number(order.package1UsageLeft || 0))} lượt lấy mã trên web.`;
     return (
       <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
         <div className="space-y-3">
@@ -2072,6 +2103,7 @@ function PublicStorefront() {
             </div>
           ))}
         </div>
+        {renderOrderLoginGuide(package1LoginSteps, package1Note)}
         <p className="mt-3 text-sm text-slate-400">Mã để đăng nhập. Còn {Math.max(0, Number(order.package1UsageLeft || 0))} lần sử dụng.</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {otpSecondsLeft > 0 ? (
@@ -2096,6 +2128,14 @@ function PublicStorefront() {
   const renderPackage2Order = (order) => {
     const otp = otpResults[order.id] || { code: "------", expiresIn: 0 };
     const otpSecondsLeft = getOtpSecondsRemaining(otp, otpNowMs);
+    const package2LoginSteps = [
+      "Vào ChatGPT và chọn Đăng nhập bằng Email.",
+      "Nhập tài khoản và mật khẩu ở trên.",
+      "Khi hệ thống yêu cầu xác minh, dùng mã 6 số đang hiện trên web này hoặc dùng mã 2FA ở trên.",
+      "Nhập mã 6 số để hoàn tất đăng nhập. Nếu mã hết hạn, chờ mã mới tự làm mới.",
+    ];
+    const package2Note =
+      "Gói 2 có thể lấy mã bất cứ lúc nào trên web này. Mã 2FA hiện tại tự động đổi mới mỗi 30 giây.";
     return (
       <div className="mt-4 space-y-3 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
         {[
@@ -2113,6 +2153,7 @@ function PublicStorefront() {
             ) : null}
           </div>
         ))}
+        {renderOrderLoginGuide(package2LoginSteps, package2Note)}
         <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4">
           <p className="text-sm text-slate-300">Mã 2FA hiện tại tự làm mới mỗi 30 giây, không cần nhập lại secret.</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -2264,13 +2305,6 @@ function PublicStorefront() {
       supportPagination?.retentionDays || DEFAULT_SUPPORT_RETENTION_DAYS,
     ),
   );
-  const supportAdminSeenLabel = !supportConversation?.id
-    ? "Chưa có chat"
-    : supportConversation?.adminHasSeenLatest
-      ? supportConversation?.adminSeenAt
-        ? `Admin đã xem ${formatChatTime(supportConversation.adminSeenAt)}`
-        : "Admin đã xem"
-      : "Admin chưa xem";
   const supportAdminSeenClass =
     !supportConversation?.id
       ? "border-slate-700 bg-slate-900/85 text-slate-300"
@@ -2381,53 +2415,30 @@ function PublicStorefront() {
                   </ol>
                 </div>
 
-                <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-[0.3em] text-cyan-400">
-                        Hỗ trợ nhanh
-                      </p>
-                      <h3 className="mt-1 text-base font-semibold text-white">
-                        Liên hệ admin
-                      </h3>
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        Chat mở bằng nút nổi góc phải.
-                      </p>
+                <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-3.5 sm:p-4">
+                  <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="text-sm font-semibold text-white sm:text-base">
+                      Liên hệ admin
+                    </h3>
+                    <div className="grid gap-2 sm:min-w-[19rem] sm:grid-cols-2">
+                      <a
+                        href={config.contact?.zaloUrl || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-sky-500"
+                      >
+                        <Phone size={15} />
+                        Zalo admin
+                      </a>
+                      <button
+                        type="button"
+                        onClick={openSupportPanel}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-emerald-500"
+                      >
+                        <MessageCircle size={15} />
+                        Chat web
+                      </button>
                     </div>
-                    <div
-                      className={`rounded-full border px-2 py-0.5 text-[10px] ${supportAdminSeenClass}`}
-                    >
-                      {supportAdminSeenLabel}
-                    </div>
-                  </div>
-
-                  <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
-                    <a
-                      href={config.contact?.zaloUrl || "#"}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-sky-500"
-                    >
-                      <Phone size={15} />
-                      Mở Zalo admin
-                    </a>
-                    <button
-                      type="button"
-                      onClick={openSupportPanel}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-emerald-500"
-                    >
-                      <MessageCircle size={15} />
-                      {supportOpen ? "Làm mới chat web" : "Mở chat web"}
-                    </button>
-                  </div>
-
-                  <div className="mt-2.5 text-[11px] leading-5 text-slate-500">
-                    Chat chỉ hiện vài tin gần nhất trước, kéo lên để xem cũ hơn.
-                    {supportOpen ? (
-                      <div className="mt-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-emerald-100">
-                        Khung chat đang mở ở góc dưới phải. Bạn có thể nhắn tiếp ngay tại đó.
-                      </div>
-                    ) : null}
                   </div>
                 </div>
               </div>
