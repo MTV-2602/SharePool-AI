@@ -28,6 +28,7 @@ const STORE_PAYMENT_METHOD_MOMO = "momo";
 const STORE_PAYMENT_METHOD_PAYOS = "payos";
 const DEFAULT_SUPPORT_PAGE_SIZE = 6;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
+const STORE_ORDERS_PER_PAGE = 5;
 const STORE_ORDER_REFRESH_GRACE_MS = 5000;
 const STORE_SUPPORT_THREAD_REFRESH_GRACE_MS = 5000;
 const STORE_CATALOG_REFRESH_GRACE_MS = 8000;
@@ -160,6 +161,16 @@ const formatDateTime = (value) => {
   const time = new Date(value || "");
   if (Number.isNaN(time.getTime())) return "--";
   return time.toLocaleString("vi-VN");
+};
+const formatCompactDateTime = (value) => {
+  const time = new Date(value || "");
+  if (Number.isNaN(time.getTime())) return "--";
+  return time.toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+  });
 };
 const formatChatTime = (value) => {
   const time = new Date(value || "");
@@ -310,6 +321,30 @@ const isPendingStorePayment = (status) =>
   ["pending_payment", "awaiting_payment"].includes(
     String(status || "").trim().toLowerCase(),
   );
+const getOrderSortTimestamp = (order = {}) => {
+  const candidates = [order?.createdAt, order?.updatedAt, order?.expiresAt];
+  for (const candidate of candidates) {
+    const parsed = new Date(candidate || "").getTime();
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return 0;
+};
+const getOrderStatusClass = (status = "") => {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "fulfilled") {
+    return "border-emerald-400/20 bg-emerald-500/10 text-emerald-200";
+  }
+  if (normalized === "paid") {
+    return "border-cyan-400/20 bg-cyan-500/10 text-cyan-200";
+  }
+  if (isPendingStorePayment(normalized)) {
+    return "border-amber-400/20 bg-amber-500/10 text-amber-100";
+  }
+  if (["payment_failed", "payment_expired", "fulfillment_failed"].includes(normalized)) {
+    return "border-rose-400/20 bg-rose-500/10 text-rose-200";
+  }
+  return "border-slate-700 bg-slate-900/85 text-slate-200";
+};
 
 const packageFeatureMap = {
   package1: [
@@ -384,6 +419,7 @@ function PublicStorefront() {
   const [resetPassword, setResetPassword] = useState("");
   const [otpResults, setOtpResults] = useState({});
   const [otpNowMs, setOtpNowMs] = useState(() => Date.now());
+  const [ordersPage, setOrdersPage] = useState(1);
   const googleButtonRef = useRef(null);
   const authCardRef = useRef(null);
   const ordersSectionRef = useRef(null);
@@ -1507,6 +1543,7 @@ function PublicStorefront() {
           ? "Đã tạo mã QR ngân hàng. Quét mã ngay trong popup để thanh toán."
           : "Đã tạo thanh toán MoMo. Hoàn tất ngay trong popup này.",
       );
+      setOrdersPage(1);
       loadOrders(token, { force: true }).catch(() => {});
       const hasInlineMomoAction =
         paymentMethod === STORE_PAYMENT_METHOD_MOMO &&
@@ -1796,15 +1833,18 @@ function PublicStorefront() {
   };
 
   const renderOrderLoginGuide = (steps = [], note = "") => (
-    <div className="mt-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
-      <div className="flex items-center gap-2 text-white">
-        <ShieldCheck size={16} className="text-cyan-300" />
-        <p className="text-sm font-semibold">Hướng dẫn đăng nhập</p>
-      </div>
-      <ol className="mt-3 space-y-2 text-sm leading-6 text-slate-200">
+    <details className="mt-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2.5">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+        <span className="inline-flex items-center gap-2 text-xs font-semibold text-cyan-200">
+          <ShieldCheck size={14} className="text-cyan-300" />
+          Hướng dẫn đăng nhập
+        </span>
+        <span className="text-[11px] text-slate-400">Bấm để xem</span>
+      </summary>
+      <ol className="mt-3 space-y-2 text-xs leading-5 text-slate-200">
         {steps.map((step, index) => (
-          <li key={`${index}-${step}`} className="flex items-start gap-3">
-            <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan-500/15 text-[11px] font-semibold text-cyan-200">
+          <li key={`${index}-${step}`} className="flex items-start gap-2.5">
+            <span className="mt-0.5 inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-cyan-500/15 text-[10px] font-semibold text-cyan-200">
               {index + 1}
             </span>
             <span>{step}</span>
@@ -1812,10 +1852,31 @@ function PublicStorefront() {
         ))}
       </ol>
       {note ? (
-        <p className="mt-3 rounded-2xl border border-cyan-400/15 bg-slate-950/60 px-3 py-2 text-xs leading-5 text-cyan-100/90">
+        <p className="mt-3 rounded-2xl border border-cyan-400/15 bg-slate-950/60 px-3 py-2 text-[11px] leading-5 text-cyan-100/90">
           {note}
         </p>
       ) : null}
+    </details>
+  );
+
+  const renderOrderCredentialRows = (rows = []) => (
+    <div className="mt-3 space-y-2 rounded-2xl border border-slate-800 bg-slate-950/75 p-3">
+      {rows.map(([label, value]) => (
+        <div key={label} className="grid gap-2 sm:grid-cols-[72px,1fr,auto] sm:items-center">
+          <span className="text-xs text-slate-500">{label}</span>
+          <code className="min-w-0 break-all rounded-xl bg-slate-900 px-3 py-2 text-[13px] text-white">
+            {value || "--"}
+          </code>
+          {value ? (
+            <button
+              onClick={() => copyText(value, `Đã sao chép ${label}`)}
+              className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 transition hover:bg-slate-700"
+            >
+              Sao chép
+            </button>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 
@@ -1824,6 +1885,7 @@ function PublicStorefront() {
     writeStoredSessionRole("");
     setUser(null);
     setOrders([]);
+    setOrdersPage(1);
     storeOrdersSyncRef.current = false;
     supportThreadSyncRef.current = false;
     storeOrdersLoadPromiseRef.current = null;
@@ -2083,44 +2145,37 @@ function PublicStorefront() {
     ];
     const package1Note = `Tài khoản share không cấp 2FA gốc. Đơn này còn ${Math.max(0, Number(order.package1UsageLeft || 0))} lượt lấy mã trên web.`;
     return (
-      <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-        <div className="space-y-3">
-          {[
-            ["Tài khoản", order.assignedUsername],
-            ["Mật khẩu", order.assignedPassword],
-          ].map(([label, value]) => (
-            <div key={label} className="flex flex-wrap items-center gap-3">
-              <span className="min-w-24 text-sm text-slate-400">{label}</span>
-              <code className="flex-1 break-all rounded-xl bg-slate-900 px-3 py-2 text-sm text-white">{value || "--"}</code>
-              {value ? (
-                <button
-                  onClick={() => copyText(value, `Đã sao chép ${label}`)}
-                  className="rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-200"
-                >
-                  Sao chép
-                </button>
-              ) : null}
-            </div>
-          ))}
-        </div>
-        {renderOrderLoginGuide(package1LoginSteps, package1Note)}
-        <p className="mt-3 text-sm text-slate-400">Mã để đăng nhập. Còn {Math.max(0, Number(order.package1UsageLeft || 0))} lần sử dụng.</p>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="mt-3">
+        {renderOrderCredentialRows([
+          ["Tài khoản", order.assignedUsername],
+          ["Mật khẩu", order.assignedPassword],
+        ])}
+        <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950/75 p-3">
+          <div className="flex flex-wrap items-center gap-2">
           {otpSecondsLeft > 0 ? (
             <button
               onClick={() => copyText(package1OtpDisplay, "Đã sao chép mã đăng nhập")}
-              className="rounded-2xl bg-slate-800 px-4 py-3 font-semibold text-slate-100 hover:bg-slate-700"
+              className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-slate-700"
             >
               Sao chép mã
             </button>
           ) : (
-            <button onClick={() => handleGeneratePackage1Code(order)} disabled={loading || order.package1UsageLeft <= 0} className="rounded-2xl bg-cyan-600 px-4 py-3 font-semibold text-white hover:bg-cyan-500 disabled:opacity-50">
+            <button onClick={() => handleGeneratePackage1Code(order)} disabled={loading || order.package1UsageLeft <= 0} className="rounded-xl bg-cyan-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-cyan-500 disabled:opacity-50">
               {order.package1UsageLeft > 0 ? "Lấy mã đăng nhập" : "Đã hết lượt"}
             </button>
           )}
-          <div className={`rounded-2xl px-4 py-3 text-2xl font-bold tracking-[0.3em] ${otpSecondsLeft > 0 ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border border-slate-700 bg-slate-900 text-slate-500"}`}>{package1OtpDisplay}</div>
-          <span className={`text-sm ${package1OtpExpired ? "text-amber-300" : "text-slate-400"}`}>{package1OtpStatusText}</span>
+            <div className={`rounded-xl px-3 py-2 text-lg font-bold tracking-[0.28em] ${otpSecondsLeft > 0 ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border border-slate-700 bg-slate-900 text-slate-500"}`}>
+              {package1OtpDisplay}
+            </div>
+            <span className={`text-xs ${package1OtpExpired ? "text-amber-300" : "text-slate-400"}`}>
+              {package1OtpStatusText}
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Còn {Math.max(0, Number(order.package1UsageLeft || 0))} lượt lấy mã đăng nhập.
+          </p>
         </div>
+        {renderOrderLoginGuide(package1LoginSteps, package1Note)}
       </div>
     );
   };
@@ -2137,26 +2192,14 @@ function PublicStorefront() {
     const package2Note =
       "Gói 2 có thể lấy mã bất cứ lúc nào trên web này. Mã 2FA hiện tại tự động đổi mới mỗi 30 giây.";
     return (
-      <div className="mt-4 space-y-3 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-        {[
+      <div className="mt-3">
+        {renderOrderCredentialRows([
           ["Tài khoản", order.assignedUsername],
           ["Mật khẩu", order.assignedPassword],
           ["Mã 2FA", order.assignedOtpSecret],
-        ].map(([label, value]) => (
-          <div key={label} className="flex flex-wrap items-center gap-3">
-            <span className="min-w-24 text-sm text-slate-400">{label}</span>
-            <code className="flex-1 break-all rounded-xl bg-slate-900 px-3 py-2 text-sm text-white">{value || "--"}</code>
-            {value ? (
-              <button onClick={() => copyText(value, `Đã sao chép ${label}`)} className="rounded-xl bg-slate-800 px-3 py-2 text-sm text-slate-200">
-                Sao chép
-              </button>
-            ) : null}
-          </div>
-        ))}
-        {renderOrderLoginGuide(package2LoginSteps, package2Note)}
-        <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4">
-          <p className="text-sm text-slate-300">Mã 2FA hiện tại tự làm mới mỗi 30 giây, không cần nhập lại secret.</p>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
+        ])}
+        <div className="mt-3 rounded-2xl border border-blue-500/30 bg-blue-500/10 p-3">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() =>
                 copyText(
@@ -2169,132 +2212,261 @@ function PublicStorefront() {
                   "Đã sao chép nhanh thông tin tài khoản",
                 )
               }
-              className="rounded-2xl bg-slate-800 px-4 py-3 font-semibold text-slate-100 hover:bg-slate-700"
+              className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-slate-700"
             >
               Copy nhanh
             </button>
-            <div className="rounded-2xl bg-slate-900 px-4 py-3 text-2xl font-bold tracking-[0.3em] text-cyan-300">{otp.code || "------"}</div>
-            <span className="text-sm text-slate-400">{otpSecondsLeft > 0 ? `Hết hạn sau ${otpSecondsLeft}s` : "Đang đợi mã"}</span>
+            <div className="rounded-xl bg-slate-900 px-3 py-2 text-lg font-bold tracking-[0.28em] text-cyan-300">
+              {otp.code || "------"}
+            </div>
+            <span className="text-xs text-slate-400">
+              {otpSecondsLeft > 0 ? `Hết hạn sau ${otpSecondsLeft}s` : "Đang đợi mã"}
+            </span>
           </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Mã 2FA hiện tại tự làm mới mỗi 30 giây, không cần nhập lại secret.
+          </p>
         </div>
+        {renderOrderLoginGuide(package2LoginSteps, package2Note)}
       </div>
     );
   };
 
+  const sortedOrders = useMemo(() => {
+    const nextOrders = Array.isArray(orders) ? [...orders] : [];
+    return nextOrders.sort((left, right) => {
+      const timeDiff = getOrderSortTimestamp(right) - getOrderSortTimestamp(left);
+      if (timeDiff !== 0) return timeDiff;
+      return String(right?.id || "").localeCompare(String(left?.id || ""), "vi");
+    });
+  }, [orders]);
+
+  const totalOrderPages = Math.max(
+    1,
+    Math.ceil(sortedOrders.length / STORE_ORDERS_PER_PAGE),
+  );
+  const orderPageStart = sortedOrders.length
+    ? (ordersPage - 1) * STORE_ORDERS_PER_PAGE + 1
+    : 0;
+  const orderPageEnd = sortedOrders.length
+    ? Math.min(sortedOrders.length, ordersPage * STORE_ORDERS_PER_PAGE)
+    : 0;
+  const visibleOrders = useMemo(() => {
+    const pageStartIndex = Math.max(0, (ordersPage - 1) * STORE_ORDERS_PER_PAGE);
+    return sortedOrders.slice(
+      pageStartIndex,
+      pageStartIndex + STORE_ORDERS_PER_PAGE,
+    );
+  }, [ordersPage, sortedOrders]);
+
+  useEffect(() => {
+    setOrdersPage((currentPage) => Math.min(Math.max(currentPage, 1), totalOrderPages));
+  }, [totalOrderPages]);
+
+  useEffect(() => {
+    setOrdersPage(1);
+  }, [user?.id]);
+
+  const handleOrderPageChange = (nextPage) => {
+    const normalizedNextPage = Math.min(
+      totalOrderPages,
+      Math.max(1, Number(nextPage || 1)),
+    );
+    if (normalizedNextPage === ordersPage) return;
+    setOrdersPage(normalizedNextPage);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        ordersSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+  };
+
   const orderCards = (
-    <div className="space-y-5">
-      {orders.length === 0 ? (
+    <div className="space-y-4">
+      {sortedOrders.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/60 p-8 text-center text-slate-400">Chưa có đơn hàng nào.</div>
       ) : (
-        orders.map((order) => (
-          <div key={order.id} className="rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-white">{order.packageName}</h3>
-                <p className="mt-1 text-sm text-slate-400">
-                  Đơn #{order.id} • {formatDateTime(order.createdAt)} • {order.paymentMethodLabel || getPaymentMethodLabel(order.paymentMethod)}
-                </p>
-                {order.voucherCode ? (
-                  <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                    <Gift size={14} />
-                    Voucher {order.voucherCode} • giảm {formatMoney(order.discountAmount)}
-                  </div>
-                ) : null}
-              </div>
-              <span className="rounded-full bg-slate-800 px-3 py-1 text-sm text-slate-100">{formatStatusLabel(order.status)}</span>
-            </div>
-            <div className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
-                <p className="text-slate-500">Giá tiền</p>
-                <p className="mt-1 break-words font-semibold text-white">{formatMoney(order.amount)}</p>
-                {order.discountAmount > 0 ? (
-                  <p className="mt-1 text-xs text-emerald-300">
-                    Gốc {formatMoney(order.originalAmount)} • giảm {formatMoney(order.discountAmount)}
-                  </p>
-                ) : null}
-              </div>
-              <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
-                <p className="text-slate-500">Mã thanh toán</p>
-                <p className="mt-1 break-all font-semibold leading-6 text-white">{order.paymentOrderId || order.momoOrderId || "--"}</p>
-              </div>
-              <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
-                <p className="text-slate-500">Trạng thái thanh toán</p>
-                <p className="mt-1 break-words font-semibold leading-6 text-white">{order.paymentStatusText || order.momoMessage || "--"}</p>
-              </div>
-              <div className="min-w-0 rounded-2xl bg-slate-950/70 p-3">
-                <p className="text-slate-500">Hạn thanh toán</p>
-                <p className="mt-1 break-words font-semibold leading-6 text-white">{order.expiresAt ? formatDateTime(order.expiresAt) : "--"}</p>
-              </div>
-            </div>
-            {isPendingStorePayment(order.status) ? (
-              <div className="mt-4 space-y-4">
-                <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                  <p className="text-sm text-amber-200">
-                    Nick đang được giữ riêng cho đơn này đến {order.expiresAt ? formatDateTime(order.expiresAt) : "--"}.
-                  </p>
-                  <button
-                    onClick={() => handleReconcileOrderPayment(order.id)}
-                    disabled={loading}
-                    className="inline-flex items-center justify-center rounded-2xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {reconcileLoadingOrderId === order.id ? (
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 size={14} className="animate-spin" />
-                        Đang kiểm tra...
+        <>
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <span className="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-slate-200">
+              Tổng {sortedOrders.length} đơn
+            </span>
+            <span className="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-slate-200">
+              {orderPageStart}-{orderPageEnd}/{sortedOrders.length}
+            </span>
+            <span className="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1 text-slate-200">
+              Trang {ordersPage}/{totalOrderPages}
+            </span>
+            <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-cyan-200">
+              5 đơn gần nhất / trang
+            </span>
+          </div>
+
+          {visibleOrders.map((order) => {
+            const paymentLabel =
+              order.paymentMethodLabel || getPaymentMethodLabel(order.paymentMethod);
+            const pendingPayment = isPendingStorePayment(order.status);
+            const isFulfilled =
+              String(order.status || "").trim().toLowerCase() === "fulfilled";
+            const paymentStatusText =
+              String(order.paymentStatusText || order.momoMessage || "").trim() ||
+              formatStatusLabel(order.status);
+
+            return (
+              <div key={order.id} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3.5 sm:p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold text-white">{order.packageName}</h3>
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getOrderStatusClass(order.status)}`}
+                      >
+                        {formatStatusLabel(order.status)}
                       </span>
-                    ) : (
-                      "Kiểm tra thanh toán"
-                    )}
-                  </button>
-                  {order.paymentUrl ? (
-                    <a
-                      href={order.paymentUrl}
-                      className="inline-flex items-center justify-center rounded-2xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white"
-                    >
-                      Tiếp tục thanh toán
-                    </a>
-                  ) : null}
-                </div>
-                {String(order.paymentMethod || "").trim().toLowerCase() === STORE_PAYMENT_METHOD_PAYOS &&
-                String(order.paymentQrCode || "").trim() ? (
-                  <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3">
-                    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-4">
-                      <div className="rounded-2xl bg-white p-3 shadow-lg shadow-slate-950/20">
-                        <img
-                          src={buildQrImageUrl(order.paymentQrCode, 260)}
-                          alt={`QR thanh toán ${order.id}`}
-                          className="h-28 w-28 rounded-xl object-contain sm:h-36 sm:w-36"
-                        />
-                      </div>
-                      <div className="w-full min-w-0 flex-1 space-y-3 text-center sm:min-w-[220px] sm:text-left">
-                        <div>
-                          <p className="text-sm font-semibold text-cyan-300">Quét QR thanh toán</p>
-                          <p className="mt-1 text-sm text-slate-300">
-                            Quét mã bằng app ngân hàng để thanh toán.
-                          </p>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-1">
-                          {order.paymentUrl ? (
-                            <a
-                              href={order.paymentUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                            className="rounded-2xl bg-slate-800 px-4 py-3 text-center text-sm font-semibold text-slate-100 hover:bg-slate-700"
-                          >
-                              Mở ngân hàng
-                            </a>
-                          ) : null}
-                        </div>
-                      </div>
+                    </div>
+                    <p className="mt-1 break-all text-xs text-slate-500">Đơn #{order.id}</p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                      <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-slate-100">
+                        {formatMoney(order.amount)}
+                      </span>
+                      <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-slate-300">
+                        {paymentLabel}
+                      </span>
+                      <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-slate-300">
+                        {formatCompactDateTime(order.createdAt)}
+                      </span>
+                      {order.voucherCode ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-emerald-200">
+                          <Gift size={11} />
+                          {order.voucherCode}
+                          {order.discountAmount > 0
+                            ? ` • -${formatMoney(order.discountAmount)}`
+                            : ""}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
+                </div>
+
+                {pendingPayment ? (
+                  <div className="mt-3 rounded-2xl border border-amber-500/15 bg-amber-500/5 p-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-amber-100">
+                          Nick đang được giữ riêng đến{" "}
+                          {order.expiresAt ? formatCompactDateTime(order.expiresAt) : "--"}.
+                        </p>
+                        <p className="mt-1 break-all text-xs text-slate-400">
+                          {order.paymentOrderId || order.momoOrderId || "--"} • {paymentStatusText}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleReconcileOrderPayment(order.id)}
+                          disabled={loading}
+                          className="inline-flex items-center justify-center rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 transition disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {reconcileLoadingOrderId === order.id ? (
+                            <span className="inline-flex items-center gap-2">
+                              <Loader2 size={12} className="animate-spin" />
+                              Đang kiểm tra
+                            </span>
+                          ) : (
+                            "Kiểm tra"
+                          )}
+                        </button>
+                        {order.paymentUrl ? (
+                          <a
+                            href={order.paymentUrl}
+                            className="inline-flex items-center justify-center rounded-xl bg-cyan-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-cyan-500"
+                          >
+                            Tiếp tục thanh toán
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                    {String(order.paymentMethod || "").trim().toLowerCase() ===
+                    STORE_PAYMENT_METHOD_PAYOS &&
+                    String(order.paymentQrCode || "").trim() ? (
+                      <div className="mt-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3">
+                        <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
+                          <div className="rounded-2xl bg-white p-2.5 shadow-lg shadow-slate-950/20">
+                            <img
+                              src={buildQrImageUrl(order.paymentQrCode, 220)}
+                              alt={`QR thanh toán ${order.id}`}
+                              className="h-24 w-24 rounded-xl object-contain sm:h-28 sm:w-28"
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1 text-center sm:text-left">
+                            <p className="text-sm font-semibold text-cyan-300">
+                              Quét QR để thanh toán
+                            </p>
+                            <p className="mt-1 text-xs text-slate-300">
+                              Dùng app ngân hàng để quét mã và hoàn tất đơn.
+                            </p>
+                            {order.paymentUrl ? (
+                              <a
+                                href={order.paymentUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-3 inline-flex items-center justify-center rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-slate-700"
+                              >
+                                Mở ngân hàng
+                              </a>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
+
+                {!pendingPayment && !isFulfilled ? (
+                  <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950/75 p-3 text-xs text-slate-300">
+                    <p>{paymentStatusText}</p>
+                    {(order.paymentOrderId || order.momoOrderId) ? (
+                      <p className="mt-1 break-all text-slate-500">
+                        Mã thanh toán: {order.paymentOrderId || order.momoOrderId}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {order.packageCode === "package1" && isFulfilled ? renderPackage1Order(order) : null}
+                {order.packageCode === "package2" && isFulfilled ? renderPackage2Order(order) : null}
               </div>
-            ) : null}
-            {order.packageCode === "package1" && order.status === "fulfilled" ? renderPackage1Order(order) : null}
-            {order.packageCode === "package2" && order.status === "fulfilled" ? renderPackage2Order(order) : null}
-          </div>
-        ))
+            );
+          })}
+
+          {totalOrderPages > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-2.5">
+              <p className="text-xs text-slate-400">
+                Đang hiện {orderPageStart}-{orderPageEnd} / {sortedOrders.length} đơn
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOrderPageChange(ordersPage - 1)}
+                  disabled={ordersPage <= 1}
+                  className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 transition disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Trang trước
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOrderPageChange(ordersPage + 1)}
+                  disabled={ordersPage >= totalOrderPages}
+                  className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Trang sau
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );
@@ -2392,6 +2564,9 @@ function PublicStorefront() {
                 <div className="mb-4">
                   <p className="text-xs uppercase tracking-[0.35em] text-cyan-400">Đơn hàng</p>
                   <h2 className="mt-2 text-2xl font-bold text-white">Tài khoản đã mua</h2>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Đơn mới nhất hiển thị trước, 5 đơn mỗi trang.
+                  </p>
                 </div>
                 {user ? orderCards : sessionLoading ? sessionLoadingPanel : guestOrdersPanel}
                 {route.view === "payment-result" ? (
