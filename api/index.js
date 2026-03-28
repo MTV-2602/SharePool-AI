@@ -8112,6 +8112,7 @@ app.get("/api/admin/store-orders", verifyToken, async (req, res) => {
             total: data.total,
             hasMore: data.hasMore,
           },
+          version: latestDataVersion,
         };
       },
     );
@@ -8144,6 +8145,7 @@ app.get("/api/admin/store-users", verifyToken, async (req, res) => {
             total: data.total,
             hasMore: data.hasMore,
           },
+          version: latestDataVersion,
         };
       },
     );
@@ -8176,6 +8178,7 @@ app.get("/api/admin/store-vouchers", verifyToken, async (req, res) => {
             total: data.total,
             hasMore: data.hasMore,
           },
+          version: latestDataVersion,
         };
       },
     );
@@ -8272,20 +8275,34 @@ app.delete("/api/store-vouchers/:id", verifyToken, async (req, res) => {
 
 app.get("/api/store-support/conversations", verifyToken, async (req, res) => {
   try {
-    const data = await listAdminStoreSupportConversations({
-      page: req.query?.page,
-      limit: req.query?.limit,
-    });
-    return res.json({
-      success: true,
-      conversations: data.conversations,
-      pagination: {
-        page: data.page,
-        limit: data.limit,
-        total: data.total,
-        hasMore: data.hasMore,
+    const safePage = parsePositivePage(req.query?.page, 1);
+    const safeLimit = parsePositiveLimit(
+      req.query?.limit,
+      20,
+      100,
+    );
+    const payload = await getCachedAdminRead(
+      "admin:store-support-conversations",
+      { page: safePage, limit: safeLimit },
+      async () => {
+        const data = await listAdminStoreSupportConversations({
+          page: safePage,
+          limit: safeLimit,
+        });
+        return {
+          success: true,
+          conversations: data.conversations,
+          pagination: {
+            page: data.page,
+            limit: data.limit,
+            total: data.total,
+            hasMore: data.hasMore,
+          },
+          version: latestDataVersion,
+        };
       },
-    });
+    );
+    return res.json(payload);
   } catch (error) {
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong tai duoc danh sach hoi thoai.",

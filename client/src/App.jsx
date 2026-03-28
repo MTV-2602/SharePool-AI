@@ -1327,6 +1327,7 @@ const buildDefaultDashboardSummary = () => ({
   openSupportConversations: 0,
   totalVouchers: 0,
 });
+const SUPPORT_NOTICE_GRACE_MS = 10000;
 const buildDefaultSupportPaginationState = () => ({
   nextCursor: "",
   hasMore: false,
@@ -1379,6 +1380,16 @@ const resolveAdminDataSectionsForTab = (
     ),
   );
 };
+const CHATGPT_AUXILIARY_DATA_SECTIONS = Array.from(
+  new Set(
+    ADMIN_TAB_DATA_SECTION_MAP.chatgpt || [
+      "team",
+      "datammo",
+      "storeOrders",
+      "summary",
+    ],
+  ),
+);
 const sortAdminCreatedAtDesc = (items = []) =>
   [...(items || [])].sort(
     (a, b) =>
@@ -1574,6 +1585,7 @@ function App() {
   const selectedSupportConversationIdRef = useRef("");
   const supportMessageLoadSeqRef = useRef(0);
   const supportMessageAppliedSeqRef = useRef(0);
+  const supportToastTimeoutRef = useRef(null);
   const supportReplyInputRef = useRef(null);
   const supportMessagesViewportRef = useRef(null);
   const supportScrollModeRef = useRef("");
@@ -1896,6 +1908,10 @@ function App() {
       skipNextAdminTabBootstrapRef.current = false;
       return;
     }
+    if (activeTab === "chatgpt") {
+      loadChatgptAuxiliaryData({ allowCached: true }).catch(() => {});
+      return;
+    }
     if (
       ["netflix", "capcut", "canva", "coursera", "store-users"].includes(
         activeTab,
@@ -1941,19 +1957,7 @@ function App() {
       setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
       return;
     }
-    loadAdminChatgptAccounts({ silent: true, allowCached: true })
-      .catch(() => {})
-      .finally(() => {
-        fetchData({
-          showLoader: false,
-          syncChatgptPage: false,
-          allowCached: true,
-          omitChatgpt: true,
-          sections: resolveAdminDataSectionsForTab("chatgpt", {
-            omitChatgpt: true,
-          }),
-        }).catch(() => {});
-      });
+    loadAdminChatgptAccounts({ silent: true, allowCached: true }).catch(() => {});
   }, [activeTab, chatgptListFilterKey, isAuthenticated]);
 
   useEffect(() => {
@@ -1962,19 +1966,7 @@ function App() {
       chatgptPageEffectPrimedRef.current = true;
       return;
     }
-    loadAdminChatgptAccounts({ silent: true, allowCached: true })
-      .catch(() => {})
-      .finally(() => {
-        fetchData({
-          showLoader: false,
-          syncChatgptPage: false,
-          allowCached: true,
-          omitChatgpt: true,
-          sections: resolveAdminDataSectionsForTab("chatgpt", {
-            omitChatgpt: true,
-          }),
-        }).catch(() => {});
-      });
+    loadAdminChatgptAccounts({ silent: true, allowCached: true }).catch(() => {});
   }, [
     activeTab,
     isAuthenticated,
@@ -2057,26 +2049,42 @@ function App() {
             messageSenderRole === "user" &&
             !isActiveSupportThread
           ) {
+            const nextDisplayName = nextConversation
+              ? getSupportConversationDisplayName(nextConversation)
+              : "User web";
+            const nextPreview = String(
+              nextMessage?.body ||
+                nextConversation?.lastMessagePreview ||
+                "User vừa nhắn hỗ trợ mới.",
+            ).trim();
+            const nextUnreadCount = Math.max(
+              1,
+              Number(nextConversation?.adminUnreadCount || 0),
+            );
             setSupportRealtimeNotice({
               key: `support:${payloadConversationId || "new"}:${String(
                 nextMessage?.id || nextConversation?.updatedAt || Date.now(),
               ).trim()}`,
               conversationId: payloadConversationId,
-              displayName: nextConversation
-                ? getSupportConversationDisplayName(nextConversation)
-                : "User web",
-              preview: String(
-                nextMessage?.body ||
-                  nextConversation?.lastMessagePreview ||
-                  "User vừa nhắn hỗ trợ mới.",
-              ).trim(),
+              displayName: nextDisplayName,
+              preview: nextPreview,
               createdAt: String(
                 nextMessage?.createdAt ||
                   nextConversation?.lastMessageAt ||
                   new Date().toISOString(),
               ).trim(),
+              unreadCount: nextUnreadCount,
+              receivedAt: Date.now(),
             });
             setDismissedSupportNoticeKey("");
+            setToastMessage(`${nextDisplayName} vừa nhắn hỗ trợ web`);
+            if (supportToastTimeoutRef.current) {
+              window.clearTimeout(supportToastTimeoutRef.current);
+            }
+            supportToastTimeoutRef.current = window.setTimeout(() => {
+              setToastMessage("");
+              supportToastTimeoutRef.current = null;
+            }, 3500);
           }
           if (
             event === "support.message.created" &&
@@ -2212,10 +2220,13 @@ function App() {
             return;
           }
           if (activeTab === "chatgpt") {
-            fetchData({
-              showLoader: false,
-              syncChatgptPage: true,
-            }).catch(() => {});
+            Promise.allSettled([
+              loadAdminChatgptAccounts({ silent: true }),
+              loadChatgptAuxiliaryData({
+                silent: true,
+                force: true,
+              }),
+            ]).catch(() => {});
             return;
           }
           fetchData(false).catch(() => {});
@@ -2270,11 +2281,27 @@ function App() {
       ).length,
       Number(dashboardSummary?.unreadSupportConversations || 0),
     );
-    if (!unreadSupportCount) {
+    if (unreadSupportCount > 0) {
+      return undefined;
+    }
+    if (!supportRealtimeNotice) {
       setSupportRealtimeNotice(null);
       setDismissedSupportNoticeKey("");
+      return undefined;
     }
-  }, [dashboardSummary, supportConversations]);
+    const receivedAt = Number(supportRealtimeNotice?.receivedAt || 0);
+    const elapsedMs = receivedAt > 0 ? Date.now() - receivedAt : SUPPORT_NOTICE_GRACE_MS;
+    if (elapsedMs >= SUPPORT_NOTICE_GRACE_MS) {
+      setSupportRealtimeNotice(null);
+      setDismissedSupportNoticeKey("");
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setSupportRealtimeNotice(null);
+      setDismissedSupportNoticeKey("");
+    }, SUPPORT_NOTICE_GRACE_MS - elapsedMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [dashboardSummary, supportConversations, supportRealtimeNotice]);
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
@@ -2284,6 +2311,7 @@ function App() {
         (conversation) => Number(conversation?.adminUnreadCount || 0) > 0,
       ).length,
       Number(dashboardSummary?.unreadSupportConversations || 0),
+      Number(supportRealtimeNotice?.unreadCount || 0),
     );
     document.title =
       isAuthenticated && unreadSupportCount > 0
@@ -2292,7 +2320,14 @@ function App() {
     return () => {
       document.title = baseTitle;
     };
-  }, [dashboardSummary, isAuthenticated, supportConversations]);
+  }, [dashboardSummary, isAuthenticated, supportConversations, supportRealtimeNotice]);
+
+  useEffect(() => () => {
+    if (supportToastTimeoutRef.current) {
+      window.clearTimeout(supportToastTimeoutRef.current);
+      supportToastTimeoutRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     const validIds = new Set(accounts.map((acc) => acc.id));
@@ -3346,6 +3381,25 @@ function App() {
     }
   };
 
+  const loadChatgptAuxiliaryData = async ({
+    silent = true,
+    allowCached = false,
+    force = false,
+    includeSummary = true,
+  } = {}) => {
+    const sections = includeSummary
+      ? CHATGPT_AUXILIARY_DATA_SECTIONS
+      : CHATGPT_AUXILIARY_DATA_SECTIONS.filter((section) => section !== "summary");
+    return fetchData({
+      showLoader: !silent,
+      syncChatgptPage: false,
+      allowCached: allowCached && !force,
+      omitChatgpt: true,
+      sections,
+      requestLabel: "Đang cập nhật dữ liệu ChatGPT",
+    });
+  };
+
   const loadAdminStoreOrders = async ({ silent = true, limit = 100 } = {}) => {
     try {
       const response = await axios.get("/api/admin/store-orders", {
@@ -3353,6 +3407,11 @@ function App() {
         timeout: 10000,
         skipGlobalLoading: silent,
       });
+      const nextVersion = Number(response?.data?.version || dataVersionRef.current || 0);
+      if (Number.isFinite(nextVersion) && nextVersion > 0) {
+        dataVersionRef.current = nextVersion;
+      }
+      markAdminSectionsCached(["storeOrders"], nextVersion);
       const nextOrders = normalizeStoreAdminOrders(response?.data?.orders);
       syncStoreOrderBanner(nextOrders);
       setStoreOrders(nextOrders);
@@ -3376,6 +3435,11 @@ function App() {
         timeout: 10000,
         skipGlobalLoading: silent,
       });
+      const nextVersion = Number(response?.data?.version || dataVersionRef.current || 0);
+      if (Number.isFinite(nextVersion) && nextVersion > 0) {
+        dataVersionRef.current = nextVersion;
+      }
+      markAdminSectionsCached(["storeUsers"], nextVersion);
       setStoreUsers(sortAdminStoreUsersForUi(response?.data?.users));
       return response?.data || null;
     } catch (error) {
@@ -3530,10 +3594,27 @@ function App() {
     if (!isAuthenticated) return;
 
     const tasks = [];
+    if (activeTab === "chatgpt") {
+      tasks.push(
+        loadAdminChatgptAccounts({
+          silent: true,
+          allowCached: !forceFull,
+        }),
+      );
+      tasks.push(
+        loadChatgptAuxiliaryData({
+          silent: true,
+          allowCached: !forceFull,
+          force: forceFull,
+          includeSummary,
+        }),
+      );
+      await Promise.allSettled(tasks);
+      return;
+    }
     const usesSectionFetch =
       forceFull ||
       [
-        "chatgpt",
         "netflix",
         "capcut",
         "canva",
@@ -3563,9 +3644,6 @@ function App() {
           }),
         );
       }
-    }
-    if (activeTab === "chatgpt" && !usesSectionFetch) {
-      tasks.push(loadAdminChatgptAccounts({ silent: true }));
     }
     if (tasks.length === 0) {
       tasks.push(loadDashboardSummary({ silent: true }));
@@ -6313,6 +6391,79 @@ function App() {
           chatgptPageStart + filteredChatgptAccounts.length - 1,
         )
       : 0;
+  const chatgptAdminPaginationControls = (
+    <div className="mb-3 flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/55 px-3 py-2.5 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+        <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5">
+          Tổng {chatgptAdminPagination.total} acc
+        </span>
+        <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5">
+          {chatgptPageStart > 0 ? `${chatgptPageStart}-${chatgptPageEnd}` : "0"} /{" "}
+          {chatgptAdminPagination.total}
+        </span>
+        <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5">
+          Trang {chatgptAdminPagination.page}/{chatgptAdminPagination.totalPages}
+        </span>
+        {chatgptAdminPageLoading ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-2 py-0.5 text-cyan-100">
+            <Loader2 size={11} className="animate-spin" />
+            Đang tải
+          </span>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-300">
+          <span>Mỗi trang</span>
+          <select
+            value={chatgptAdminPagination.limit}
+            onChange={(event) =>
+              setChatgptAdminPagination((prev) => ({
+                ...prev,
+                page: 1,
+                limit: Number(event.target.value || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE),
+              }))
+            }
+            className="bg-transparent font-semibold text-white outline-none"
+          >
+            {CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.map((option) => (
+              <option key={option} value={option} className="bg-slate-900">
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={() =>
+            setChatgptAdminPagination((prev) => ({
+              ...prev,
+              page: Math.max(1, prev.page - 1),
+            }))
+          }
+          disabled={chatgptAdminPagination.page <= 1 || chatgptAdminPageLoading}
+          className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Trang trước
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            setChatgptAdminPagination((prev) => ({
+              ...prev,
+              page: Math.min(prev.totalPages, prev.page + 1),
+            }))
+          }
+          disabled={
+            chatgptAdminPagination.page >= chatgptAdminPagination.totalPages ||
+            chatgptAdminPageLoading
+          }
+          className="rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-[11px] font-semibold text-sky-100 transition hover:border-sky-400 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Trang sau
+        </button>
+      </div>
+    </div>
+  );
   const chatgptMarketplaceOrderSummaries = marketplaceOrderSummaries.filter(
     (order) => normalizeMarketplaceScope(order?.scope) === "chatgpt",
   );
@@ -6476,15 +6627,23 @@ function App() {
     supportUnreadConversationCount,
     Number(dashboardSummary?.unreadSupportConversations || 0),
   );
+  const visibleSupportUnreadIndicatorCount = Math.max(
+    supportUnreadIndicatorCount,
+    Number(supportRealtimeNotice?.unreadCount || 0),
+  );
   const latestUnreadSupportConversation =
     supportConversations.find(
       (conversation) => Number(conversation?.adminUnreadCount || 0) > 0,
     ) || null;
   const activeSupportNotice =
-    supportRealtimeNotice && supportUnreadIndicatorCount > 0
+    supportRealtimeNotice
       ? {
           ...supportRealtimeNotice,
-          unreadCount: supportUnreadIndicatorCount,
+          unreadCount: Math.max(
+            1,
+            Number(supportRealtimeNotice?.unreadCount || 0),
+            supportUnreadIndicatorCount,
+          ),
         }
       : supportUnreadIndicatorCount > 0
         ? {
@@ -6505,6 +6664,7 @@ function App() {
               latestUnreadSupportConversation?.lastMessageAt || "",
             ).trim(),
             unreadCount: supportUnreadIndicatorCount,
+            receivedAt: Date.now(),
           }
         : null;
   const shouldShowSupportNotice =
@@ -6924,14 +7084,14 @@ function App() {
                   <div className="mt-1 text-sm font-black text-white">
                     {activeSupportNotice.conversationId
                       ? `${activeSupportNotice.displayName || "User web"} vừa nhắn`
-                      : `Có ${supportUnreadIndicatorCount} hội thoại đang chờ`}
+                      : `Có ${activeSupportNotice.unreadCount} hội thoại đang chờ`}
                   </div>
                   <div className="mt-1 line-clamp-2 text-xs text-slate-300">
                     {activeSupportNotice.preview}
                   </div>
                   <div className="mt-2 flex items-center gap-2 text-[11px]">
                     <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-1 font-semibold text-amber-100">
-                      {supportUnreadIndicatorCount} chưa đọc
+                      {activeSupportNotice.unreadCount} chưa đọc
                     </span>
                     <span className="text-slate-400">
                       Bấm để mở đúng hội thoại
@@ -7002,9 +7162,9 @@ function App() {
               className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all inline-flex items-center ${activeTab === "support" ? "bg-sky-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Hỗ trợ web
-              {supportUnreadIndicatorCount > 0 ? (
+              {visibleSupportUnreadIndicatorCount > 0 ? (
                 <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-black text-white">
-                  {supportUnreadIndicatorCount}
+                  {visibleSupportUnreadIndicatorCount}
                 </span>
               ) : null}
             </button>
@@ -9172,79 +9332,7 @@ function App() {
               </div>
             </div>
 
-            <div className="mb-3 flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/55 px-3 py-2.5 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-                <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5">
-                  Tổng {chatgptAdminPagination.total} acc
-                </span>
-                <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5">
-                  {chatgptPageStart > 0
-                    ? `${chatgptPageStart}-${chatgptPageEnd}`
-                    : "0"}{" "}
-                  / {chatgptAdminPagination.total}
-                </span>
-                <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5">
-                  Trang {chatgptAdminPagination.page}/{chatgptAdminPagination.totalPages}
-                </span>
-                {chatgptAdminPageLoading ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-2 py-0.5 text-cyan-100">
-                    <Loader2 size={11} className="animate-spin" />
-                    Đang tải
-                  </span>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-300">
-                  <span>Mỗi trang</span>
-                  <select
-                    value={chatgptAdminPagination.limit}
-                    onChange={(event) =>
-                      setChatgptAdminPagination((prev) => ({
-                        ...prev,
-                        page: 1,
-                        limit: Number(event.target.value || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE),
-                      }))
-                    }
-                    className="bg-transparent font-semibold text-white outline-none"
-                  >
-                    {CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.map((option) => (
-                      <option key={option} value={option} className="bg-slate-900">
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setChatgptAdminPagination((prev) => ({
-                      ...prev,
-                      page: Math.max(1, prev.page - 1),
-                    }))
-                  }
-                  disabled={chatgptAdminPagination.page <= 1 || chatgptAdminPageLoading}
-                  className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Trang trước
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setChatgptAdminPagination((prev) => ({
-                      ...prev,
-                      page: Math.min(prev.totalPages, prev.page + 1),
-                    }))
-                  }
-                  disabled={
-                    chatgptAdminPagination.page >= chatgptAdminPagination.totalPages ||
-                    chatgptAdminPageLoading
-                  }
-                  className="rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-[11px] font-semibold text-sky-100 transition hover:border-sky-400 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Trang sau
-                </button>
-              </div>
-            </div>
+            {gptSubTab !== "market" ? chatgptAdminPaginationControls : null}
 
             {/* SUB-TABS: Tat ca / Kho tong / Kho market */}
             {(() => {
@@ -9688,6 +9776,8 @@ function App() {
                 </div>
               </div>
             )}
+
+            {gptSubTab === "market" ? chatgptAdminPaginationControls : null}
 
             <div
               style={{

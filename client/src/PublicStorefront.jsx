@@ -28,6 +28,9 @@ const STORE_PAYMENT_METHOD_MOMO = "momo";
 const STORE_PAYMENT_METHOD_PAYOS = "payos";
 const DEFAULT_SUPPORT_PAGE_SIZE = 6;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
+const STORE_ORDER_REFRESH_GRACE_MS = 5000;
+const STORE_SUPPORT_THREAD_REFRESH_GRACE_MS = 5000;
+const STORE_CATALOG_REFRESH_GRACE_MS = 8000;
 
 const getPaymentMethodLabel = (method) =>
   String(method || "").trim().toLowerCase() === STORE_PAYMENT_METHOD_PAYOS
@@ -389,6 +392,16 @@ function PublicStorefront() {
   const purchaseLockRef = useRef(false);
   const storeOrdersSyncRef = useRef(false);
   const supportThreadSyncRef = useRef(false);
+  const storeOrdersLastLoadedAtRef = useRef(0);
+  const storeOrdersLoadPromiseRef = useRef(null);
+  const storeOrdersReloadQueuedRef = useRef(false);
+  const catalogLastLoadedAtRef = useRef(0);
+  const catalogLoadPromiseRef = useRef(null);
+  const catalogReloadQueuedRef = useRef(false);
+  const supportThreadLastLoadedAtRef = useRef(0);
+  const supportThreadReloadQueuedRef = useRef(false);
+  const supportThreadQueuedMarkReadRef = useRef(false);
+  const supportThreadQueuedForceRef = useRef(false);
   const supportConversationRef = useRef(null);
   const supportThreadLoadSeqRef = useRef(0);
   const supportThreadAppliedSeqRef = useRef(0);
@@ -509,18 +522,49 @@ function PublicStorefront() {
     return normalizedConfig;
   };
 
-  const loadCatalog = async () => {
-    setCatalogLoading(true);
+  const loadCatalog = async ({ force = false } = {}) => {
+    if (catalogLoadPromiseRef.current) {
+      if (force) {
+        catalogReloadQueuedRef.current = true;
+      }
+      return catalogLoadPromiseRef.current;
+    }
+    if (
+      !force &&
+      Number(catalogLastLoadedAtRef.current || 0) > 0 &&
+      Date.now() - Number(catalogLastLoadedAtRef.current || 0) <=
+        STORE_CATALOG_REFRESH_GRACE_MS
+    ) {
+      return Array.isArray(config?.packages) ? config.packages : [];
+    }
+    const runRequest = (async () => {
+      setCatalogLoading(true);
+      try {
+        const data = await apiRequest("/api/store/catalog");
+        const nextPackages = Array.isArray(data?.packages) ? data.packages : [];
+        setConfig((prev) => ({
+          ...prev,
+          packages: nextPackages.length ? nextPackages : prev.packages,
+        }));
+        catalogLastLoadedAtRef.current = Date.now();
+        return nextPackages;
+      } finally {
+        setCatalogLoading(false);
+      }
+    })();
+    catalogLoadPromiseRef.current = runRequest;
     try {
-      const data = await apiRequest("/api/store/catalog");
-      const nextPackages = Array.isArray(data?.packages) ? data.packages : [];
-      setConfig((prev) => ({
-        ...prev,
-        packages: nextPackages.length ? nextPackages : prev.packages,
-      }));
-      return nextPackages;
+      return await runRequest;
     } finally {
-      setCatalogLoading(false);
+      if (catalogLoadPromiseRef.current === runRequest) {
+        catalogLoadPromiseRef.current = null;
+      }
+      if (catalogReloadQueuedRef.current) {
+        catalogReloadQueuedRef.current = false;
+        queueMicrotask(() => {
+          loadCatalog({ force: true }).catch(() => {});
+        });
+      }
     }
   };
 
@@ -528,21 +572,58 @@ function PublicStorefront() {
     if (!currentToken) {
       setUser(null);
       setOrders([]);
+      storeOrdersLastLoadedAtRef.current = 0;
       return { user: null, orders: [] };
     }
     const data = await apiRequest("/api/store/auth/me", { token: currentToken });
     setUser(data?.user || null);
     setOrders(Array.isArray(data?.orders) ? data.orders : []);
+    storeOrdersLastLoadedAtRef.current = Date.now();
     return data;
   };
 
-  const loadOrders = async (currentToken = token) => {
+  const loadOrders = async (currentToken = token, { force = false } = {}) => {
     if (!currentToken) {
       setOrders([]);
-      return;
+      storeOrdersLastLoadedAtRef.current = 0;
+      return { orders: [] };
     }
-    const data = await apiRequest("/api/store/orders", { token: currentToken });
-    setOrders(Array.isArray(data?.orders) ? data.orders : []);
+    if (storeOrdersLoadPromiseRef.current) {
+      if (force) {
+        storeOrdersReloadQueuedRef.current = true;
+      }
+      return storeOrdersLoadPromiseRef.current;
+    }
+    if (
+      !force &&
+      Number(storeOrdersLastLoadedAtRef.current || 0) > 0 &&
+      Date.now() - Number(storeOrdersLastLoadedAtRef.current || 0) <=
+        STORE_ORDER_REFRESH_GRACE_MS
+    ) {
+      return { orders };
+    }
+    storeOrdersSyncRef.current = true;
+    const runRequest = (async () => {
+      const data = await apiRequest("/api/store/orders", { token: currentToken });
+      setOrders(Array.isArray(data?.orders) ? data.orders : []);
+      storeOrdersLastLoadedAtRef.current = Date.now();
+      return data;
+    })();
+    storeOrdersLoadPromiseRef.current = runRequest;
+    try {
+      return await runRequest;
+    } finally {
+      storeOrdersSyncRef.current = false;
+      if (storeOrdersLoadPromiseRef.current === runRequest) {
+        storeOrdersLoadPromiseRef.current = null;
+      }
+      if (storeOrdersReloadQueuedRef.current) {
+        storeOrdersReloadQueuedRef.current = false;
+        queueMicrotask(() => {
+          loadOrders(currentToken, { force: true }).catch(() => {});
+        });
+      }
+    }
   };
 
   const handleValidateVoucher = async ({
@@ -672,6 +753,9 @@ function PublicStorefront() {
         }
         return mergeRealtimeSupportMessageBatch(prev, nextMessages);
       });
+      if (!isLoadingOlder) {
+        supportThreadLastLoadedAtRef.current = Date.now();
+      }
       return data;
     } catch (supportError) {
       if (isLoadingOlder) {
@@ -702,24 +786,52 @@ function PublicStorefront() {
     });
   };
 
-  const syncOrdersSilently = async () => {
-    if (!token || !user || storeOrdersSyncRef.current) return;
+  const syncOrdersSilently = async ({ force = false } = {}) => {
+    if (!token || !user) return;
     if (typeof document !== "undefined" && document.hidden) return;
-    storeOrdersSyncRef.current = true;
-    try {
-      await loadOrders(token);
-    } finally {
-      storeOrdersSyncRef.current = false;
-    }
+    await loadOrders(token, { force });
   };
 
-  const syncSupportThreadSilently = async ({ markRead = false } = {}) => {
-    if (!token || !user || supportThreadSyncRef.current) return;
+  const syncSupportThreadSilently = async ({
+    markRead = false,
+    force = false,
+  } = {}) => {
+    if (!token || !user) return;
+    if (
+      !force &&
+      !markRead &&
+      Number(supportThreadLastLoadedAtRef.current || 0) > 0 &&
+      Date.now() - Number(supportThreadLastLoadedAtRef.current || 0) <=
+        STORE_SUPPORT_THREAD_REFRESH_GRACE_MS
+    ) {
+      return;
+    }
+    if (supportThreadSyncRef.current) {
+      supportThreadReloadQueuedRef.current = true;
+      supportThreadQueuedMarkReadRef.current =
+        supportThreadQueuedMarkReadRef.current || markRead;
+      supportThreadQueuedForceRef.current =
+        supportThreadQueuedForceRef.current || force;
+      return;
+    }
     supportThreadSyncRef.current = true;
     try {
       await loadSupportThread({ markRead, silent: true });
     } finally {
       supportThreadSyncRef.current = false;
+      if (supportThreadReloadQueuedRef.current) {
+        const nextMarkRead = supportThreadQueuedMarkReadRef.current;
+        const nextForce = supportThreadQueuedForceRef.current;
+        supportThreadReloadQueuedRef.current = false;
+        supportThreadQueuedMarkReadRef.current = false;
+        supportThreadQueuedForceRef.current = false;
+        queueMicrotask(() => {
+          syncSupportThreadSilently({
+            markRead: nextMarkRead,
+            force: nextForce,
+          }).catch(() => {});
+        });
+      }
     }
   };
 
@@ -777,6 +889,7 @@ function PublicStorefront() {
     setSupportOpen(true);
     supportLastReadSignatureRef.current = "";
     supportLastReadAtRef.current = 0;
+    supportThreadLastLoadedAtRef.current = 0;
     setSupportMessages([]);
     setSupportPagination(buildDefaultSupportPaginationState());
     queueSupportScrollToBottom();
@@ -947,7 +1060,7 @@ function PublicStorefront() {
         });
       } catch {}
       if (!cancelled) {
-        loadSession(token).catch(() => {});
+        loadOrders(token, { force: true }).catch(() => {});
       }
     })();
     return () => {
@@ -983,7 +1096,7 @@ function PublicStorefront() {
           } catch {}
         }
         if (!cancelled && shouldReload) {
-          await loadSession(token);
+          await loadOrders(token, { force: true });
         }
       } finally {
         pendingReconcileRef.current = false;
@@ -1068,17 +1181,17 @@ function PublicStorefront() {
       topic: user.realtimeTopic,
       onMessage: ({ event, payload }) => {
         if (event === "order.updated") {
-          syncOrdersSilently().catch(() => {});
+          syncOrdersSilently({ force: true }).catch(() => {});
           return;
         }
         if (event === "stock.updated") {
-          loadCatalog().catch(() => {});
+          loadCatalog({ force: true }).catch(() => {});
           return;
         }
         if (event === "support.message.created" || event === "support.thread.read") {
           const { handled } = applyRealtimeSupportPayload({ event, payload });
           if (!handled) {
-            syncSupportThreadSilently({ markRead: false }).catch(() => {});
+            syncSupportThreadSilently({ markRead: false, force: true }).catch(() => {});
           }
         }
       },
@@ -1104,7 +1217,10 @@ function PublicStorefront() {
         const { handled } = applyRealtimeSupportPayload({ event, payload });
         if (!handled) {
           const shouldMarkRead = shouldMarkSupportThreadRead();
-          syncSupportThreadSilently({ markRead: shouldMarkRead }).catch(() => {});
+          syncSupportThreadSilently({
+            markRead: shouldMarkRead,
+            force: true,
+          }).catch(() => {});
         }
       },
     });
@@ -1115,8 +1231,19 @@ function PublicStorefront() {
     supportConversationRef.current = null;
     supportLastReadSignatureRef.current = "";
     supportLastReadAtRef.current = 0;
+    supportThreadSyncRef.current = false;
+    storeOrdersSyncRef.current = false;
+    storeOrdersLoadPromiseRef.current = null;
+    catalogLoadPromiseRef.current = null;
+    storeOrdersLastLoadedAtRef.current = 0;
+    supportThreadLastLoadedAtRef.current = 0;
     supportThreadLoadSeqRef.current = 0;
     supportThreadAppliedSeqRef.current = 0;
+    storeOrdersReloadQueuedRef.current = false;
+    catalogReloadQueuedRef.current = false;
+    supportThreadReloadQueuedRef.current = false;
+    supportThreadQueuedMarkReadRef.current = false;
+    supportThreadQueuedForceRef.current = false;
     setSupportPagination(buildDefaultSupportPaginationState());
     setSupportOpen(false);
     setSupportConversation(null);
@@ -1380,7 +1507,7 @@ function PublicStorefront() {
           ? "Đã tạo mã QR ngân hàng. Quét mã ngay trong popup để thanh toán."
           : "Đã tạo thanh toán MoMo. Hoàn tất ngay trong popup này.",
       );
-      loadSession(token).catch(() => {});
+      loadOrders(token, { force: true }).catch(() => {});
       const hasInlineMomoAction =
         paymentMethod === STORE_PAYMENT_METHOD_MOMO &&
         !!(
@@ -1409,7 +1536,7 @@ function PublicStorefront() {
     } catch (paymentError) {
       try {
         await loadConfig();
-        await loadSession(token);
+        await loadOrders(token, { force: true });
       } catch {}
       setError(paymentError.message || "Không tạo được đơn thanh toán.");
     } finally {
@@ -1583,7 +1710,7 @@ function PublicStorefront() {
           usageLeft: Number(data?.usageLeft || 0),
         },
       }));
-      await loadSession(token);
+      await loadOrders(token, { force: true });
     } catch (otpError) {
       setError(otpError.message || "Không lấy được mã đăng nhập");
     }
@@ -1599,7 +1726,7 @@ function PublicStorefront() {
         method: "POST",
         token,
       });
-      await loadSession(token);
+      await loadOrders(token, { force: true });
       setMessage("Đã kiểm tra lại trạng thái thanh toán.");
     } catch (reconcileError) {
       setError(reconcileError.message || "Không thể kiểm tra trạng thái thanh toán.");
@@ -1629,6 +1756,7 @@ function PublicStorefront() {
       setSupportMessages((prev) =>
         nextMessage ? mergeRealtimeSupportMessages(prev, nextMessage) : prev,
       );
+      supportThreadLastLoadedAtRef.current = Date.now();
       flushSupportScrollToBottom();
       setSupportDraft("");
       focusSupportDraftToEnd();
@@ -1672,6 +1800,18 @@ function PublicStorefront() {
     writeStoredSessionRole("");
     setUser(null);
     setOrders([]);
+    storeOrdersSyncRef.current = false;
+    supportThreadSyncRef.current = false;
+    storeOrdersLoadPromiseRef.current = null;
+    catalogLoadPromiseRef.current = null;
+    storeOrdersLastLoadedAtRef.current = 0;
+    catalogLastLoadedAtRef.current = 0;
+    supportThreadLastLoadedAtRef.current = 0;
+    storeOrdersReloadQueuedRef.current = false;
+    catalogReloadQueuedRef.current = false;
+    supportThreadReloadQueuedRef.current = false;
+    supportThreadQueuedMarkReadRef.current = false;
+    supportThreadQueuedForceRef.current = false;
     setSupportOpen(false);
     setSupportConversation(null);
     setSupportMessages([]);
