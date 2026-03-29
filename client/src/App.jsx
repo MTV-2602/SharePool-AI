@@ -1972,7 +1972,8 @@ function App() {
     channelRef.current = channel;
     channel.onmessage = () => {
       if (!isAuthenticated) return;
-      refreshAdminSurface({ includeSummary: true }).catch(() => {});
+      invalidateAdminCaches();
+      refreshAdminSurface({ includeSummary: true, forceFull: true }).catch(() => {});
     };
     return () => {
       if (channelRef.current === channel) {
@@ -2188,6 +2189,10 @@ function App() {
       config: adminRealtime,
       topic: adminRealtime.adminTopic,
       onMessage: ({ event, payload }) => {
+        const realtimeVersion = Number(payload?.version || 0);
+        if (Number.isFinite(realtimeVersion) && realtimeVersion > 0) {
+          invalidateAdminCaches(realtimeVersion);
+        }
         const nextConversation =
           payload?.adminConversation && typeof payload.adminConversation === "object"
             ? payload.adminConversation
@@ -3214,6 +3219,21 @@ function App() {
     ...(chatgptAdminQueryRef.current || buildDefaultChatgptAdminQueryState()),
     ...(overrides || {}),
   });
+  const invalidateAdminCaches = (nextVersion = 0) => {
+    const normalizedVersion = Number(nextVersion || 0);
+    if (Number.isFinite(normalizedVersion) && normalizedVersion > 0) {
+      dataVersionRef.current = normalizedVersion;
+    }
+    adminSectionCacheRef.current = new Map();
+    chatgptListCacheRef.current = {
+      key: "",
+      version: 0,
+      loadedAt: 0,
+    };
+    chatgptListRequestSeqRef.current += 1;
+    chatgptListAppliedSeqRef.current = 0;
+    chatgptListInFlightRef.current = { key: "", promise: null };
+  };
 
   const fetchData = async (options = true) => {
     const resolvedOptions =
@@ -5169,7 +5189,7 @@ function App() {
           acc,
         ),
       );
-      fetchData();
+      await syncAdminDataAfterMutation("Đang đồng bộ loại gói ChatGPT");
       broadcastDataChange();
     } catch (error) {
       const msg = error?.response?.data?.error || "Lỗi đổi gói";
@@ -5231,7 +5251,7 @@ function App() {
       changeShelf: { ...prev.changeShelf, [acc.id]: true },
     }));
     try {
-      const response = await axios.put(
+      await axios.put(
         `/api/chatgpt/${acc.id}`,
         withExpectedUpdatedAt(
           {
@@ -5240,22 +5260,7 @@ function App() {
           acc,
         ),
       );
-      const updatedAcc = response?.data?.account;
-      if (updatedAcc?.id) {
-        setAccounts((prev) =>
-          prev.map((item) =>
-            item.id === updatedAcc.id
-              ? {
-                ...item,
-                ...updatedAcc,
-                package2Shelf: normalizePackage2Shelf(updatedAcc.package2Shelf),
-              }
-              : item,
-          ),
-        );
-      } else {
-        await fetchData();
-      }
+      await syncAdminDataAfterMutation("Đang đồng bộ kho ChatGPT");
       broadcastDataChange();
     } catch (error) {
       const msg = error?.response?.data?.error || "Lỗi đổi kệ gói 2";
@@ -5351,7 +5356,7 @@ function App() {
       `Se chuyen ${targets.length} tai khoan da chon sang ${targetLabel}.`,
       async () => {
         setLoadingStates((prev) => ({ ...prev, bulkWarehouseMove: true }));
-        const updatedMap = new Map();
+        const updatedIds = new Set();
         const failedLabels = [];
         let success = 0;
         let failed = 0;
@@ -5372,14 +5377,7 @@ function App() {
                   skipGlobalLoading: true,
                 },
               );
-              const updatedAcc = response?.data?.account;
-              if (updatedAcc?.id) {
-                updatedMap.set(String(updatedAcc.id), {
-                  ...acc,
-                  ...updatedAcc,
-                  package2Shelf: normalizePackage2Shelf(updatedAcc.package2Shelf),
-                });
-              }
+              updatedIds.add(String(response?.data?.account?.id || acc?.id || ""));
               success += 1;
             } catch (error) {
               failed += 1;
@@ -5391,21 +5389,12 @@ function App() {
               );
             }
           }
-
-          if (updatedMap.size > 0) {
-            setAccounts((prev) =>
-              prev.map((acc) => updatedMap.get(String(acc.id || "")) || acc),
-            );
-          } else {
-            await fetchData();
-          }
-
-          if (updatedMap.size !== targets.length) {
-            await fetchData();
+          if (success > 0) {
+            await syncAdminDataAfterMutation("Đang đồng bộ kho ChatGPT");
           }
 
           setSelectedChatgptIds((prev) =>
-            prev.filter((id) => !updatedMap.has(String(id || ""))),
+            prev.filter((id) => !updatedIds.has(String(id || ""))),
           );
           broadcastDataChange();
 
