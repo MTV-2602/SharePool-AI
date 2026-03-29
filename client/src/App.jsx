@@ -2038,6 +2038,9 @@ function App() {
     if (!isAuthenticated) return;
     if (skipNextAdminTabBootstrapRef.current) {
       skipNextAdminTabBootstrapRef.current = false;
+      if (activeTab === "chatgpt") {
+        loadChatgptAuxiliaryData({ allowCached: true }).catch(() => {});
+      }
       return;
     }
     if (activeTab === "chatgpt") {
