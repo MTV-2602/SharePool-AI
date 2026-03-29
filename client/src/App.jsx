@@ -1784,6 +1784,11 @@ function App() {
   const [movingSlot, setMovingSlot] = useState(null); // { fromAccId, userIndex, name, joinedAt }
   const [destinationAccId, setDestinationAccId] = useState("");
   const [moveDestinationSearch, setMoveDestinationSearch] = useState("");
+  const [moveUserSourceRecord, setMoveUserSourceRecord] = useState(null);
+  const [moveUserCandidateAccounts, setMoveUserCandidateAccounts] = useState([]);
+  const [moveUserCandidatesLoading, setMoveUserCandidatesLoading] =
+    useState(false);
+  const [moveUserCandidatesError, setMoveUserCandidatesError] = useState("");
   const [moveSlotDestinationSearch, setMoveSlotDestinationSearch] = useState("");
 
   // Orphaned Users Modal (when deleting account with active users)
@@ -4999,6 +5004,17 @@ function App() {
   };
 
   // MOVE USER LOGIC
+  const resetMoveUserModalState = () => {
+    setShowMoveUserModal(false);
+    setMovingUser(null);
+    setDestinationAccId("");
+    setMoveDestinationSearch("");
+    setMoveUserSourceRecord(null);
+    setMoveUserCandidateAccounts([]);
+    setMoveUserCandidatesError("");
+    setMoveUserCandidatesLoading(false);
+  };
+
   const openMoveUserModal = (accId, index, userData, platform = "chatgpt") => {
     if (platform === "chatgpt") {
       if (isDatammoManagedUser(userData)) {
@@ -5010,11 +5026,73 @@ function App() {
         return;
       }
     }
+    setMoveUserSourceRecord(null);
+    setMoveUserCandidateAccounts([]);
+    setMoveUserCandidatesError("");
+    setMoveUserCandidatesLoading(false);
     setMovingUser({ fromAccId: accId, userIndex: index, platform, ...userData });
     setDestinationAccId("");
     setMoveDestinationSearch("");
     setShowMoveUserModal(true);
   };
+
+  useEffect(() => {
+    if (!showMoveUserModal || !movingUser || movingUser.platform !== "chatgpt") {
+      setMoveUserSourceRecord(null);
+      setMoveUserCandidateAccounts([]);
+      setMoveUserCandidatesError("");
+      setMoveUserCandidatesLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setMoveUserCandidatesLoading(true);
+    setMoveUserCandidatesError("");
+    setMoveUserCandidateAccounts([]);
+
+    axios
+      .get(`/api/chatgpt/${movingUser.fromAccId}/move-candidates`, {
+        timeout: 10000,
+        skipGlobalLoading: true,
+        signal: controller.signal,
+      })
+      .then((response) => {
+        if (cancelled) return;
+        setMoveUserSourceRecord(
+          response?.data?.source && typeof response.data.source === "object"
+            ? response.data.source
+            : null,
+        );
+        setMoveUserCandidateAccounts(
+          Array.isArray(response?.data?.candidates)
+            ? response.data.candidates
+            : [],
+        );
+      })
+      .catch((error) => {
+        if (cancelled || error?.code === "ERR_CANCELED") return;
+        setMoveUserCandidatesError(
+          getApiErrorMessage(
+            error,
+            "Không thể tải tài khoản đích trong kho tổng.",
+          ),
+        );
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setMoveUserCandidatesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [
+    showMoveUserModal,
+    movingUser?.fromAccId,
+    movingUser?.platform,
+  ]);
 
   const handleSubmitMoveUser = async (e) => {
     e.preventDefault();
@@ -5025,7 +5103,8 @@ function App() {
     try {
       const fromRecord =
         movingUser.platform === "chatgpt"
-          ? accounts.find((acc) => acc.id === movingUser.fromAccId)
+          ? moveUserSourceRecord ||
+            accounts.find((acc) => acc.id === movingUser.fromAccId)
           : (
               {
                 netflix: netflixAccounts,
@@ -5035,7 +5114,8 @@ function App() {
             ).find((acc) => acc.id === movingUser.fromAccId);
       const toRecord =
         movingUser.platform === "chatgpt"
-          ? accounts.find((acc) => acc.id === destinationAccId)
+          ? moveUserCandidateAccounts.find((acc) => acc.id === destinationAccId) ||
+            accounts.find((acc) => acc.id === destinationAccId)
           : (
               {
                 netflix: netflixAccounts,
@@ -5043,6 +5123,9 @@ function App() {
                 canva: canvaAccounts,
               }[movingUser.platform] || []
             ).find((acc) => acc.id === destinationAccId);
+      if (!fromRecord || !toRecord) {
+        throw new Error("Không tìm thấy dữ liệu tài khoản nguồn hoặc đích mới nhất.");
+      }
       if (movingUser.platform === "chatgpt") {
         await axios.post(
           "/api/move-user",
@@ -5067,12 +5150,10 @@ function App() {
             },
             fromRecord,
             toRecord,
-          ),
+            ),
         );
       }
-      setShowMoveUserModal(false);
-      setMovingUser(null);
-      setMoveDestinationSearch("");
+      resetMoveUserModalState();
       await syncAdminDataAfterMutation("Đang đồng bộ chuyển khách");
       broadcastDataChange();
       showAlert("Thành Công", `Đã chuyển khách sang tài khoản mới!`, "success");
@@ -12022,7 +12103,11 @@ function App() {
                 else if (movingUser.platform === "capcut") sourceList = capcutAccounts;
                 else if (movingUser.platform === "canva") sourceList = canvaAccounts;
 
-                const sourceAcc = sourceList.find((a) => a.id === movingUser.fromAccId);
+                const sourceAcc =
+                  movingUser.platform === "chatgpt"
+                    ? moveUserSourceRecord ||
+                      sourceList.find((a) => a.id === movingUser.fromAccId)
+                    : sourceList.find((a) => a.id === movingUser.fromAccId);
                 const sourceType = sourceAcc?.type || "unassigned";
 
                 if (movingUser.platform !== "chatgpt") {
@@ -12046,47 +12131,25 @@ function App() {
                 else if (movingUser.platform === "capcut") sourceList = capcutAccounts;
                 else if (movingUser.platform === "canva") sourceList = canvaAccounts;
 
-                const sourceAcc = sourceList.find((a) => a.id === movingUser.fromAccId);
-                const sourceType = sourceAcc?.type || "unassigned";
-                const sourceWarehouse =
+                const sourceAcc =
                   movingUser.platform === "chatgpt"
-                    ? normalizePackage2Shelf(sourceAcc?.package2Shelf)
-                    : "none";
+                    ? moveUserSourceRecord ||
+                      sourceList.find((a) => a.id === movingUser.fromAccId)
+                    : sourceList.find((a) => a.id === movingUser.fromAccId);
+                const sourceType = sourceAcc?.type || "unassigned";
+                const destinationAccounts =
+                  movingUser.platform === "chatgpt"
+                    ? moveUserCandidateAccounts
+                    : sourceList.filter((a) => {
+                        if (a.id === movingUser.fromAccId) return false;
+                        if (a.expiredAt && new Date(a.expiredAt) < new Date()) {
+                          return false;
+                        }
+                        const users = a.users?.length || 0;
+                        return users < 1;
+                      });
 
-                const destinationOptions = sourceList
-                  .filter((a) => {
-                    if (a.id === movingUser.fromAccId) return false;
-                    if (a.expiredAt && new Date(a.expiredAt) < new Date()) return false;
-                    const users = a.users?.length || 0;
-
-                    if (movingUser.platform !== "chatgpt") {
-                      return users < 1;
-                    }
-
-                    const destinationWarehouse = normalizePackage2Shelf(
-                      a?.package2Shelf,
-                    );
-                    if (marketplaceTrackedAccountIds.has(String(a?.id || ""))) {
-                      return false;
-                    }
-                    if (
-                      destinationWarehouse !== sourceWarehouse &&
-                      destinationWarehouse !== "none"
-                    ) {
-                      return false;
-                    }
-
-                    if (a.type === sourceType) {
-                      if (sourceType === "package1") return users < 3;
-                      if (sourceType === "package2") return users < 1;
-                    }
-                    if (a.type === "unassigned") {
-                      if (sourceType === "package2") return users < 1;
-                      if (sourceType === "package1") return users < 3;
-                      return true;
-                    }
-                    return false;
-                  })
+                const destinationOptions = destinationAccounts
                   .map((a) => {
                     const usedSlots = a.users?.length || 0;
                     let maxSlots = 1;
@@ -12137,6 +12200,17 @@ function App() {
                         .join(" "),
                     ).includes(query);
                   });
+                const helperText =
+                  movingUser.platform === "chatgpt"
+                    ? moveUserCandidatesLoading
+                      ? "Đang tải tài khoản đích trong kho tổng..."
+                      : moveUserCandidatesError
+                        ? moveUserCandidatesError
+                        : `Đang hiện ${destinationOptions.length} tài khoản đích hợp lệ trong kho tổng`
+                    : `Đang hiện ${destinationOptions.length} tài khoản đích hợp lệ`;
+                const helperTextClass = moveUserCandidatesError
+                  ? "mt-1 text-[11px] text-rose-300"
+                  : "mt-1 text-[11px] text-slate-400";
 
                 return (
                   <>
@@ -12149,12 +12223,21 @@ function App() {
                         placeholder="Tìm nhanh theo email, loại acc, kho..."
                         className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-orange-500"
                       />
-                      <div className="mt-1 text-[11px] text-slate-400">
-                        Đang hiện {destinationOptions.length} tài khoản đích hợp lệ
+                      <div className={helperTextClass}>
+                        {helperText}
                       </div>
                     </div>
                     <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900/60 p-2">
-                      {destinationOptions.length > 0 ? (
+                      {movingUser.platform === "chatgpt" && moveUserCandidatesLoading ? (
+                        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-800/60 px-3 py-4 text-sm text-slate-400">
+                          Đang tải danh sách tài khoản đích từ kho tổng...
+                        </div>
+                      ) : movingUser.platform === "chatgpt" &&
+                        moveUserCandidatesError ? (
+                        <div className="rounded-xl border border-dashed border-rose-500/30 bg-rose-500/10 px-3 py-4 text-sm text-rose-200">
+                          {moveUserCandidatesError}
+                        </div>
+                      ) : destinationOptions.length > 0 ? (
                         destinationOptions.map((option) => {
                           const selected = destinationAccId === option.id;
                           return (
@@ -12213,18 +12296,15 @@ function App() {
               })()}
               {movingUser.platform === "chatgpt" && (
                 <p className="text-xs text-slate-500 mt-2 italic">
-                  * Cùng loại gói hoặc tài khoản chưa phân loại (tự đổi loại sau khi nhận khách).
+                  * Chỉ hiện acc trong kho tổng, cùng loại gói hoặc tài khoản chưa phân loại.
                 </p>
               )}
             </div>
 
-            <div class="flex justify-end gap-3 mt-6">
+            <div className="flex justify-end gap-3 mt-6">
               <button
                 type="button"
-                onClick={() => {
-                  setShowMoveUserModal(false);
-                  setMoveDestinationSearch("");
-                }}
+                onClick={resetMoveUserModalState}
                 className="btn-secondary"
                 disabled={loadingStates.moveUser}
               >
@@ -12233,7 +12313,10 @@ function App() {
               <button
                 type="submit"
                 className="btn-primary bg-orange-600 hover:bg-orange-500 flex items-center gap-2"
-                disabled={loadingStates.moveUser}
+                disabled={
+                  loadingStates.moveUser ||
+                  (movingUser.platform === "chatgpt" && moveUserCandidatesLoading)
+                }
               >
                 {loadingStates.moveUser ? (
                   <>

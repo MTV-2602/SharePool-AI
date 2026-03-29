@@ -6040,6 +6040,113 @@ const sanitizeStoreWarrantyCandidate = (account = {}) => ({
   expiredAt: String(account?.expiredAt || "").trim(),
   createdAt: String(account?.createdAt || "").trim(),
 });
+const sanitizeChatgptMoveCandidate = (account = {}) => ({
+  id: String(account?.id || "").trim(),
+  username: String(account?.username || "").trim(),
+  type: String(account?.type || "").trim(),
+  package2Shelf: normalizePackage2Shelf(
+    account?.package2Shelf,
+    CHATGPT_TOTAL_VALUE,
+  ),
+  users: Array.isArray(account?.users)
+    ? account.users.map((user) => ({
+        name: String(user?.name || "").trim(),
+        joinedAt: String(user?.joinedAt || "").trim(),
+        expiredAt: String(user?.expiredAt || "").trim(),
+      }))
+    : [],
+  expiredAt: String(account?.expiredAt || "").trim(),
+  createdAt: String(account?.createdAt || "").trim(),
+  updatedAt: String(account?.updatedAt || "").trim(),
+});
+const getTrackedMarketplaceChatgptAccountIds = async () => {
+  const [orders, warrantyCases] = await Promise.all([
+    DatammoOrder.find({ scope: "chatgpt" })
+      .select("accounts.accountId")
+      .lean(),
+    DatammoWarrantyCase.find({ scope: "chatgpt" })
+      .select("rootAccountId currentAccountId rounds.fromAccountId rounds.toAccountId")
+      .lean(),
+  ]);
+  const ids = new Set();
+  (Array.isArray(orders) ? orders : []).forEach((order) => {
+    (Array.isArray(order?.accounts) ? order.accounts : []).forEach((item) => {
+      const accountId = String(item?.accountId || "").trim();
+      if (accountId) ids.add(accountId);
+    });
+  });
+  (Array.isArray(warrantyCases) ? warrantyCases : []).forEach((item) => {
+    const rootId = String(item?.rootAccountId || "").trim();
+    const currentId = String(item?.currentAccountId || "").trim();
+    if (rootId) ids.add(rootId);
+    if (currentId) ids.add(currentId);
+    (Array.isArray(item?.rounds) ? item.rounds : []).forEach((round) => {
+      const fromId = String(round?.fromAccountId || "").trim();
+      const toId = String(round?.toAccountId || "").trim();
+      if (fromId) ids.add(fromId);
+      if (toId) ids.add(toId);
+    });
+  });
+  return Array.from(ids);
+};
+const hasTrackedMarketplaceChatgptAccount = async (accountId = "") => {
+  const normalizedId = String(accountId || "").trim();
+  if (!normalizedId) return false;
+  const [order, warrantyCase] = await Promise.all([
+    DatammoOrder.findOne({
+      scope: "chatgpt",
+      "accounts.accountId": normalizedId,
+    })
+      .select("_id")
+      .lean(),
+    DatammoWarrantyCase.findOne({
+      scope: "chatgpt",
+      $or: [
+        { rootAccountId: normalizedId },
+        { currentAccountId: normalizedId },
+        { "rounds.fromAccountId": normalizedId },
+        { "rounds.toAccountId": normalizedId },
+      ],
+    })
+      .select("_id")
+      .lean(),
+  ]);
+  return !!(order || warrantyCase);
+};
+const listChatgptMoveCandidates = async (sourceAccount = {}) => {
+  const sourceId = String(sourceAccount?.id || "").trim();
+  const sourceType = String(sourceAccount?.type || "").trim();
+  const allowedTypes =
+    sourceType === "package1" || sourceType === "package2"
+      ? [sourceType, "unassigned"]
+      : sourceType
+        ? [sourceType, "unassigned"]
+        : ["unassigned"];
+  const trackedIds = new Set(await getTrackedMarketplaceChatgptAccountIds());
+  const candidates = await Account.find({
+    id: { $ne: sourceId },
+    type: { $in: allowedTypes },
+    package2Shelf: CHATGPT_TOTAL_VALUE,
+    $expr: {
+      $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
+    },
+  })
+    .sort({ createdAt: 1, id: 1 })
+    .select("id username type package2Shelf users expiredAt createdAt updatedAt")
+    .lean();
+  return (Array.isArray(candidates) ? candidates : [])
+    .filter((account) => {
+      const accountId = String(account?.id || "").trim();
+      if (!accountId) return false;
+      if (trackedIds.has(accountId)) return false;
+      const expiredAt = String(account?.expiredAt || "").trim();
+      if (expiredAt && new Date(expiredAt).getTime() <= Date.now()) {
+        return false;
+      }
+      return true;
+    })
+    .map(sanitizeChatgptMoveCandidate);
+};
 const getBusyChatgptAccountIdsForStoreOrders = async () => {
   const [marketplaceOrders, activeCases] = await Promise.all([
     DatammoOrder.find({ scope: "chatgpt" })
@@ -9665,6 +9772,33 @@ app.post("/api/chatgpt-public", async (req, res) => {
 });
 
 // 3. UPDATE ACCOUNT
+app.get("/api/chatgpt/:id/move-candidates", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiếu ID tài khoản nguồn." });
+    }
+
+    const source = await Account.findOne({ id })
+      .select("id username type package2Shelf users expiredAt createdAt updatedAt")
+      .lean();
+    if (!source) {
+      return res.status(404).json({ error: "Không tìm thấy tài khoản nguồn." });
+    }
+
+    const candidates = await listChatgptMoveCandidates(source);
+    return res.json({
+      success: true,
+      source: sanitizeChatgptMoveCandidate(source),
+      candidates,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Không thể tải tài khoản đích để chuyển khách.",
+    });
+  }
+});
+
 app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -10512,22 +10646,22 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
 
     const sourceType = fromAcc.type; // Loại gói nguồn
     const currentUsers = toAcc.users?.length || 0;
-    const sourceWarehouse = normalizePackage2Shelf(
-      fromAcc.package2Shelf,
-      CHATGPT_TOTAL_VALUE,
-    );
     const destinationWarehouse = normalizePackage2Shelf(
       toAcc.package2Shelf,
       CHATGPT_TOTAL_VALUE,
     );
 
-    if (
-      destinationWarehouse !== CHATGPT_TOTAL_VALUE &&
-      destinationWarehouse !== sourceWarehouse
-    ) {
+    if (destinationWarehouse !== CHATGPT_TOTAL_VALUE) {
+      return res.status(400).json({
+        error: "Chi duoc chuyen khach vao tai khoan dich trong kho tong.",
+      });
+    }
+    const destinationHasMarketplaceTrace =
+      await hasTrackedMarketplaceChatgptAccount(toAccId);
+    if (destinationHasMarketplaceTrace) {
       return res.status(400).json({
         error:
-          "Chi duoc chuyen khach sang tai khoan cung kho voi tai khoan nguon hoac ve kho tong.",
+          "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",
       });
     }
 
