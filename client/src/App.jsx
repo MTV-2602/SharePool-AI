@@ -1367,6 +1367,19 @@ const buildDefaultChatgptAdminPaginationState = () => ({
     },
   },
 });
+const buildDefaultChatgptAdminQueryState = () => ({
+  page: 1,
+  limit: DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
+  subTab: "all",
+  totalType: "all",
+  package2ShelfTab: "all",
+  soldProviderFilter: "all",
+  customerFilter: "all",
+  expiryFilter: "all",
+  expiryMin: "",
+  expiryMax: "",
+  search: "",
+});
 const ADMIN_AUTO_REFRESH_CACHE_MS = 30000;
 const ADMIN_SUPPORT_NOTICE_SYNC_MS = 4000;
 const ADMIN_TAB_DATA_SECTION_MAP = {
@@ -1584,12 +1597,12 @@ function App() {
     loadedAt: 0,
   });
   const lastAutoRefreshAtRef = useRef(0);
-  const isFetchingDataRef = useRef(false);
-  const fetchDataPromiseRef = useRef(null);
+  const fetchDataInFlightRef = useRef(new Map());
   const chatgptPageEffectPrimedRef = useRef(false);
   const chatgptListRequestSeqRef = useRef(0);
   const chatgptListAppliedSeqRef = useRef(0);
   const chatgptListInFlightRef = useRef({ key: "", promise: null });
+  const chatgptAdminQueryRef = useRef(buildDefaultChatgptAdminQueryState());
   const skipNextAdminTabBootstrapRef = useRef(false);
   const seenDatammoOrderKeysRef = useRef(null);
   const seenStoreOrderKeysRef = useRef(null);
@@ -1609,6 +1622,19 @@ function App() {
   const supportScrollModeRef = useRef("");
   const supportPreviousScrollHeightRef = useRef(0);
   const supportPreviousScrollTopRef = useRef(0);
+  chatgptAdminQueryRef.current = {
+    page: Number(chatgptAdminPagination.page || 1),
+    limit: Number(chatgptAdminPagination.limit || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE),
+    subTab: gptSubTab,
+    totalType: chatgptTotalTypeTab,
+    package2ShelfTab,
+    soldProviderFilter: soldPackage2ProviderFilter,
+    customerFilter: chatgptCustomerFilter,
+    expiryFilter: chatgptExpiryFilter,
+    expiryMin: chatgptExpiryMin,
+    expiryMax: chatgptExpiryMax,
+    search: searchQuery,
+  };
 
   // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
@@ -3155,6 +3181,10 @@ function App() {
       ADMIN_AUTO_REFRESH_CACHE_MS
     );
   };
+  const getCurrentChatgptAdminQuery = (overrides = {}) => ({
+    ...(chatgptAdminQueryRef.current || buildDefaultChatgptAdminQueryState()),
+    ...(overrides || {}),
+  });
 
   const fetchData = async (options = true) => {
     const resolvedOptions =
@@ -3186,10 +3216,22 @@ function App() {
     if (allowCached && hasFreshAdminSectionsCached(dataSections)) {
       return null;
     }
-    if (isFetchingDataRef.current && fetchDataPromiseRef.current) {
-      return fetchDataPromiseRef.current;
+    const requestSignature = JSON.stringify({
+      omitChatgpt: omitChatgpt ? 1 : 0,
+      sections: [...dataSections].sort(),
+    });
+    const existingFetchPromise = fetchDataInFlightRef.current.get(requestSignature);
+    if (existingFetchPromise) {
+      if (!showLoader) {
+        return existingFetchPromise;
+      }
+      setLoading(true);
+      try {
+        return await existingFetchPromise;
+      } finally {
+        setLoading(false);
+      }
     }
-    isFetchingDataRef.current = true;
     const runFetch = (async () => {
       if (showLoader) setLoading(true);
       try {
@@ -3287,18 +3329,23 @@ function App() {
         }
       } catch (error) {
         if (showLoader) {
-          showAlert("Lỗi", "Không thể tải dữ liệu. Vui lòng thử lại.", "error");
+          showAlert(
+            "Lỗi",
+            getApiErrorMessage(error, "Không thể tải dữ liệu. Vui lòng thử lại."),
+            "error",
+          );
           if (dataSectionSet.has("chatgpt") && !omitChatgpt) {
             setAccounts([]);
           }
         }
       } finally {
         if (showLoader) setLoading(false);
-        isFetchingDataRef.current = false;
-        fetchDataPromiseRef.current = null;
+        if (fetchDataInFlightRef.current.get(requestSignature) === runFetch) {
+          fetchDataInFlightRef.current.delete(requestSignature);
+        }
       }
     })();
-    fetchDataPromiseRef.current = runFetch;
+    fetchDataInFlightRef.current.set(requestSignature, runFetch);
     return runFetch;
   };
 
@@ -3360,26 +3407,29 @@ function App() {
 
   const loadAdminChatgptAccounts = async ({
     silent = true,
-    page = chatgptAdminPagination.page,
-    limit = chatgptAdminPagination.limit,
+    page,
+    limit,
     allowCached = false,
   } = {}) => {
-    const safePage = Math.max(1, Number(page || 1));
-    const safeLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(Number(limit))
-      ? Number(limit)
+    const querySnapshot = getCurrentChatgptAdminQuery({ page, limit });
+    const safePage = Math.max(1, Number(querySnapshot.page || 1));
+    const safeLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(
+      Number(querySnapshot.limit),
+    )
+      ? Number(querySnapshot.limit)
       : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE;
     const requestKey = [
       safePage,
       safeLimit,
-      gptSubTab,
-      chatgptTotalTypeTab,
-      package2ShelfTab,
-      soldPackage2ProviderFilter,
-      chatgptCustomerFilter,
-      chatgptExpiryFilter,
-      chatgptExpiryMin,
-      chatgptExpiryMax,
-      searchQuery,
+      querySnapshot.subTab,
+      querySnapshot.totalType,
+      querySnapshot.package2ShelfTab,
+      querySnapshot.soldProviderFilter,
+      querySnapshot.customerFilter,
+      querySnapshot.expiryFilter,
+      querySnapshot.expiryMin,
+      querySnapshot.expiryMax,
+      querySnapshot.search,
     ].join("|");
     if (allowCached && hasFreshChatgptListCached(requestKey)) {
       return null;
@@ -3399,15 +3449,15 @@ function App() {
         params: {
           page: safePage,
           limit: safeLimit,
-          subTab: gptSubTab,
-          totalType: chatgptTotalTypeTab,
-          customerFilter: chatgptCustomerFilter,
-          expiryFilter: chatgptExpiryFilter,
-          expiryMin: chatgptExpiryMin,
-          expiryMax: chatgptExpiryMax,
-          search: searchQuery,
-          package2ShelfTab,
-          soldProviderFilter: soldPackage2ProviderFilter,
+          subTab: querySnapshot.subTab,
+          totalType: querySnapshot.totalType,
+          customerFilter: querySnapshot.customerFilter,
+          expiryFilter: querySnapshot.expiryFilter,
+          expiryMin: querySnapshot.expiryMin,
+          expiryMax: querySnapshot.expiryMax,
+          search: querySnapshot.search,
+          package2ShelfTab: querySnapshot.package2ShelfTab,
+          soldProviderFilter: querySnapshot.soldProviderFilter,
         },
         timeout: 10000,
         skipGlobalLoading: silent,
