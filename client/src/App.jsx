@@ -1382,6 +1382,7 @@ const buildDefaultChatgptAdminQueryState = () => ({
 });
 const ADMIN_AUTO_REFRESH_CACHE_MS = 30000;
 const ADMIN_SUPPORT_NOTICE_SYNC_MS = 4000;
+const ADMIN_SUPPORT_FALLBACK_SYNC_MS = 12000;
 const ADMIN_TAB_DATA_SECTION_MAP = {
   chatgpt: ["team", "datammo", "storeOrders", "summary"],
   netflix: ["netflix", "summary"],
@@ -1993,11 +1994,9 @@ function App() {
       refreshAdminSurface({ includeSummary: true }).catch(() => {});
     };
 
-    window.addEventListener("focus", handleVisibilityChange);
     window.addEventListener("online", handleVisibilityChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
-      window.removeEventListener("focus", handleVisibilityChange);
       window.removeEventListener("online", handleVisibilityChange);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
@@ -2057,12 +2056,23 @@ function App() {
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
+    const hasReliableSupportRealtime =
+      !!adminRealtime?.adminTopic && canUseRealtimeRuntime(adminRealtime);
+    const shouldPollSupportSurface =
+      activeTab === "support" || !hasReliableSupportRealtime;
+    if (!shouldPollSupportSurface) {
+      return undefined;
+    }
 
     const syncSupportNoticeSurface = () => {
       if (document.hidden) return;
       if (supportConversationLoadPromiseRef.current) return;
       const lastLoadedAt = Number(supportConversationLastLoadedAtRef.current || 0);
-      if (Date.now() - lastLoadedAt < ADMIN_SUPPORT_NOTICE_SYNC_MS - 500) {
+      const minSpacingMs =
+        activeTab === "support"
+          ? ADMIN_SUPPORT_NOTICE_SYNC_MS
+          : ADMIN_SUPPORT_FALLBACK_SYNC_MS;
+      if (Date.now() - lastLoadedAt < minSpacingMs - 500) {
         return;
       }
       loadSupportConversations({
@@ -2072,20 +2082,20 @@ function App() {
     };
 
     syncSupportNoticeSurface();
-    window.addEventListener("focus", syncSupportNoticeSurface);
     window.addEventListener("online", syncSupportNoticeSurface);
     document.addEventListener("visibilitychange", syncSupportNoticeSurface);
     const intervalId = window.setInterval(
       syncSupportNoticeSurface,
-      ADMIN_SUPPORT_NOTICE_SYNC_MS,
+      activeTab === "support"
+        ? ADMIN_SUPPORT_NOTICE_SYNC_MS
+        : ADMIN_SUPPORT_FALLBACK_SYNC_MS,
     );
     return () => {
-      window.removeEventListener("focus", syncSupportNoticeSurface);
       window.removeEventListener("online", syncSupportNoticeSurface);
       document.removeEventListener("visibilitychange", syncSupportNoticeSurface);
       window.clearInterval(intervalId);
     };
-  }, [isAuthenticated]);
+  }, [activeTab, adminRealtime, isAuthenticated]);
 
   const chatgptListFilterKey = [
     gptSubTab,
@@ -2191,8 +2201,11 @@ function App() {
             activeTab === "support" &&
             payloadConversationId &&
             payloadConversationId === selectedConversationId;
-          loadDashboardSummary({ silent: true }).catch(() => {});
-          loadSupportConversations({ silent: true, limit: 20 }).catch(() => {});
+          const shouldReloadSupportSurface =
+            activeTab === "support" || !nextConversation;
+          if (shouldReloadSupportSurface) {
+            loadSupportConversations({ silent: true, limit: 20 }).catch(() => {});
+          }
           if (
             event === "support.message.created" &&
             messageSenderRole === "user" &&
