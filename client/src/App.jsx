@@ -1440,6 +1440,44 @@ const sortAdminCreatedAtDesc = (items = []) =>
       new Date(b?.createdAt || b?.updatedAt || 0).getTime() -
       new Date(a?.createdAt || a?.updatedAt || 0).getTime(),
   );
+const hasAdminSectionPayload = (
+  responseData = {},
+  section = "",
+  { omitChatgpt = false } = {},
+) => {
+  const normalizedSection = String(section || "").trim();
+  if (normalizedSection === "summary") {
+    return !!responseData?.summary && typeof responseData.summary === "object";
+  }
+  if (normalizedSection === "chatgpt") {
+    return !omitChatgpt && Array.isArray(responseData?.chatgpt);
+  }
+  if (normalizedSection === "team") {
+    return Array.isArray(responseData?.team);
+  }
+  if (normalizedSection === "datammo") {
+    return (
+      Array.isArray(responseData?.datammoOrders) &&
+      Array.isArray(responseData?.datammoWarrantyCases)
+    );
+  }
+  if (normalizedSection === "storeOrders") {
+    return Array.isArray(responseData?.storeOrders);
+  }
+  if (normalizedSection === "storeUsers") {
+    return Array.isArray(responseData?.storeUsers);
+  }
+  if (normalizedSection === "storeVouchers") {
+    return Array.isArray(responseData?.storeVouchers);
+  }
+  if (normalizedSection === "supportConversations") {
+    return Array.isArray(responseData?.supportConversations);
+  }
+  if (["netflix", "canva", "capcut"].includes(normalizedSection)) {
+    return Array.isArray(responseData?.[normalizedSection]);
+  }
+  return false;
+};
 const sortAdminStoreUsersForUi = (items = []) =>
   [...(items || [])].sort((a, b) => {
     const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
@@ -3301,29 +3339,42 @@ function App() {
           requestLabel,
           skipGlobalLoading: !showLoader,
         });
+        const responseData =
+          res?.data && typeof res.data === "object" ? res.data : {};
         const nextVersion = Number(res.data?.version || 0);
         if (Number.isFinite(nextVersion) && nextVersion > 0) {
           dataVersionRef.current = nextVersion;
         }
-        markAdminSectionsCached(dataSections, nextVersion);
-        if (res.data?.realtime) {
-          setAdminRealtime(normalizeAdminRealtimeConfig(res.data.realtime));
+        if (responseData?.realtime) {
+          setAdminRealtime(normalizeAdminRealtimeConfig(responseData.realtime));
         }
-        if (dataSectionSet.has("datammo")) {
-          syncDatammoOrderBanner(res.data?.datammoOrders);
-          setDatammoOrderHistory(normalizeDatammoOrders(res.data?.datammoOrders));
+        const appliedSections = [];
+        if (
+          dataSectionSet.has("datammo") &&
+          hasAdminSectionPayload(responseData, "datammo", { omitChatgpt })
+        ) {
+          syncDatammoOrderBanner(responseData?.datammoOrders);
+          setDatammoOrderHistory(normalizeDatammoOrders(responseData?.datammoOrders));
           setDatammoWarrantyCases(
-            normalizeDatammoWarrantyCases(res.data?.datammoWarrantyCases),
+            normalizeDatammoWarrantyCases(responseData?.datammoWarrantyCases),
           );
+          appliedSections.push("datammo");
         }
-        if (dataSectionSet.has("storeOrders")) {
-          const nextStoreOrders = normalizeStoreAdminOrders(res.data?.storeOrders);
+        if (
+          dataSectionSet.has("storeOrders") &&
+          hasAdminSectionPayload(responseData, "storeOrders", { omitChatgpt })
+        ) {
+          const nextStoreOrders = normalizeStoreAdminOrders(responseData?.storeOrders);
           syncStoreOrderBanner(nextStoreOrders);
           setStoreOrders(nextStoreOrders);
+          appliedSections.push("storeOrders");
         }
-        if (dataSectionSet.has("chatgpt") && !omitChatgpt && res.data?.chatgpt) {
+        if (
+          dataSectionSet.has("chatgpt") &&
+          hasAdminSectionPayload(responseData, "chatgpt", { omitChatgpt })
+        ) {
           const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
-          const sortedGPT = [...res.data.chatgpt]
+          const sortedGPT = [...responseData.chatgpt]
             .map((acc) => ({
               ...acc,
               package2Shelf: supportsChatgptMarketType(acc.type)
@@ -3337,48 +3388,83 @@ function App() {
             return new Date(b.createdAt) - new Date(a.createdAt);
           });
           setAccounts(sortedGPT);
-        } else if (dataSectionSet.has("chatgpt") && !omitChatgpt) {
-          setAccounts([]);
+          appliedSections.push("chatgpt");
         }
-        if (dataSectionSet.has("netflix")) {
-          setNetflixAccounts(sortAdminCreatedAtDesc(res.data?.netflix));
+        if (
+          dataSectionSet.has("netflix") &&
+          hasAdminSectionPayload(responseData, "netflix", { omitChatgpt })
+        ) {
+          setNetflixAccounts(sortAdminCreatedAtDesc(responseData?.netflix));
+          appliedSections.push("netflix");
         }
-        if (dataSectionSet.has("canva")) {
-          setCanvaAccounts(sortAdminCreatedAtDesc(res.data?.canva));
+        if (
+          dataSectionSet.has("canva") &&
+          hasAdminSectionPayload(responseData, "canva", { omitChatgpt })
+        ) {
+          setCanvaAccounts(sortAdminCreatedAtDesc(responseData?.canva));
+          appliedSections.push("canva");
         }
-        if (dataSectionSet.has("capcut")) {
-          setCapcutAccounts(sortAdminCreatedAtDesc(res.data?.capcut));
+        if (
+          dataSectionSet.has("capcut") &&
+          hasAdminSectionPayload(responseData, "capcut", { omitChatgpt })
+        ) {
+          setCapcutAccounts(sortAdminCreatedAtDesc(responseData?.capcut));
+          appliedSections.push("capcut");
         }
-        if (dataSectionSet.has("team")) {
+        if (
+          dataSectionSet.has("team") &&
+          hasAdminSectionPayload(responseData, "team", { omitChatgpt })
+        ) {
           setTeamAccounts(
-            sortAdminCreatedAtDesc(res.data?.team).map((acc) =>
+            sortAdminCreatedAtDesc(responseData?.team).map((acc) =>
               normalizeTeamAccountForUi(acc),
             ),
           );
+          appliedSections.push("team");
         }
-        if (dataSectionSet.has("storeUsers")) {
-          setStoreUsers(sortAdminStoreUsersForUi(res.data?.storeUsers));
+        if (
+          dataSectionSet.has("storeUsers") &&
+          hasAdminSectionPayload(responseData, "storeUsers", { omitChatgpt })
+        ) {
+          setStoreUsers(sortAdminStoreUsersForUi(responseData?.storeUsers));
+          appliedSections.push("storeUsers");
         }
-        if (dataSectionSet.has("storeVouchers")) {
-          setStoreVouchers(sortAdminStoreVouchersForUi(res.data?.storeVouchers));
+        if (
+          dataSectionSet.has("storeVouchers") &&
+          hasAdminSectionPayload(responseData, "storeVouchers", { omitChatgpt })
+        ) {
+          setStoreVouchers(sortAdminStoreVouchersForUi(responseData?.storeVouchers));
+          appliedSections.push("storeVouchers");
         }
-        if (dataSectionSet.has("supportConversations")) {
+        if (
+          dataSectionSet.has("supportConversations") &&
+          hasAdminSectionPayload(responseData, "supportConversations", {
+            omitChatgpt,
+          })
+        ) {
           setSupportConversations(
-            sortAdminSupportConversationsForUi(res.data?.supportConversations),
+            sortAdminSupportConversationsForUi(responseData?.supportConversations),
           );
+          appliedSections.push("supportConversations");
         }
-        if (dataSectionSet.has("summary") && res.data?.summary) {
+        if (
+          dataSectionSet.has("summary") &&
+          hasAdminSectionPayload(responseData, "summary", { omitChatgpt })
+        ) {
           setDashboardSummary({
             ...buildDefaultDashboardSummary(),
-            ...res.data.summary,
+            ...responseData.summary,
           });
+          appliedSections.push("summary");
         }
+        markAdminSectionsCached(appliedSections, nextVersion);
         if (syncChatgptPage) {
           void loadAdminChatgptAccounts({
             silent: true,
             allowCached,
           });
         }
+        return responseData;
       } catch (error) {
         if (showLoader) {
           showAlert(
@@ -3386,10 +3472,8 @@ function App() {
             getApiErrorMessage(error, "Không thể tải dữ liệu. Vui lòng thử lại."),
             "error",
           );
-          if (dataSectionSet.has("chatgpt") && !omitChatgpt) {
-            setAccounts([]);
-          }
         }
+        return null;
       } finally {
         if (showLoader) setLoading(false);
         if (fetchDataInFlightRef.current.get(requestSignature) === runFetch) {
@@ -3579,13 +3663,30 @@ function App() {
     const sections = includeSummary
       ? CHATGPT_AUXILIARY_DATA_SECTIONS
       : CHATGPT_AUXILIARY_DATA_SECTIONS.filter((section) => section !== "summary");
-    return fetchData({
+    const canUseFreshCache =
+      !force && allowCached && hasFreshAdminSectionsCached(sections);
+    if (canUseFreshCache) {
+      return null;
+    }
+    const response = await fetchData({
       showLoader: !silent,
       syncChatgptPage: false,
       allowCached: allowCached && !force,
       omitChatgpt: true,
       sections,
       requestLabel: "Đang cập nhật dữ liệu ChatGPT",
+    });
+    if (response || !sections.includes("team")) {
+      return response;
+    }
+    const fallbackSections = includeSummary ? ["team", "summary"] : ["team"];
+    return fetchData({
+      showLoader: false,
+      syncChatgptPage: false,
+      allowCached: false,
+      omitChatgpt: true,
+      sections: fallbackSections,
+      requestLabel: "Đang tải lại dữ liệu Team",
     });
   };
 
