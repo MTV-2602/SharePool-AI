@@ -1380,6 +1380,22 @@ const buildDefaultChatgptAdminQueryState = () => ({
   expiryMax: "",
   search: "",
 });
+const buildChatgptAdminRequestKey = (query = {}) =>
+  [
+    Math.max(1, Number(query?.page || 1)),
+    CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(Number(query?.limit))
+      ? Number(query?.limit)
+      : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
+    String(query?.subTab || "all").trim(),
+    String(query?.totalType || "all").trim(),
+    String(query?.package2ShelfTab || "all").trim(),
+    String(query?.soldProviderFilter || "all").trim(),
+    String(query?.customerFilter || "all").trim(),
+    String(query?.expiryFilter || "all").trim(),
+    String(query?.expiryMin || "").trim(),
+    String(query?.expiryMax || "").trim(),
+    String(query?.search || "").trim(),
+  ].join("|");
 const ADMIN_AUTO_REFRESH_CACHE_MS = 30000;
 const ADMIN_SUPPORT_NOTICE_SYNC_MS = 4000;
 const ADMIN_SUPPORT_FALLBACK_SYNC_MS = 12000;
@@ -2351,7 +2367,7 @@ function App() {
           }
           if (activeTab === "chatgpt") {
             Promise.allSettled([
-              loadAdminChatgptAccounts({ silent: true }),
+              loadAdminChatgptAccounts({ silent: true, force: true }),
               loadChatgptAuxiliaryData({
                 silent: true,
                 force: true,
@@ -3372,7 +3388,7 @@ function App() {
           requestLabel,
           syncChatgptPage: false,
         }),
-        loadAdminChatgptAccounts({ silent: true }),
+        loadAdminChatgptAccounts({ silent: true, force: true }),
       ]);
       return;
     }
@@ -3423,31 +3439,19 @@ function App() {
     page,
     limit,
     allowCached = false,
+    force = false,
   } = {}) => {
     const querySnapshot = getCurrentChatgptAdminQuery({ page, limit });
+    const requestKey = buildChatgptAdminRequestKey(querySnapshot);
     const safePage = Math.max(1, Number(querySnapshot.page || 1));
-    const safeLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(
-      Number(querySnapshot.limit),
-    )
+    const safeLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(Number(querySnapshot.limit))
       ? Number(querySnapshot.limit)
       : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE;
-    const requestKey = [
-      safePage,
-      safeLimit,
-      querySnapshot.subTab,
-      querySnapshot.totalType,
-      querySnapshot.package2ShelfTab,
-      querySnapshot.soldProviderFilter,
-      querySnapshot.customerFilter,
-      querySnapshot.expiryFilter,
-      querySnapshot.expiryMin,
-      querySnapshot.expiryMax,
-      querySnapshot.search,
-    ].join("|");
-    if (allowCached && hasFreshChatgptListCached(requestKey)) {
+    if (!force && allowCached && hasFreshChatgptListCached(requestKey)) {
       return null;
     }
     if (
+      !force &&
       chatgptListInFlightRef.current.promise &&
       chatgptListInFlightRef.current.key === requestKey
     ) {
@@ -3480,6 +3484,10 @@ function App() {
         dataVersionRef.current = nextVersion;
       }
       if (requestSeq !== chatgptListRequestSeqRef.current) {
+        return response?.data || null;
+      }
+      const activeRequestKey = buildChatgptAdminRequestKey(getCurrentChatgptAdminQuery());
+      if (requestKey !== activeRequestKey) {
         return response?.data || null;
       }
       chatgptListAppliedSeqRef.current = requestSeq;
@@ -3821,6 +3829,7 @@ function App() {
         loadAdminChatgptAccounts({
           silent: true,
           allowCached: !forceFull,
+          force: forceFull,
         }),
       );
       tasks.push(
@@ -9531,6 +9540,7 @@ function App() {
                     <button
                       key={t.key}
                       onClick={() => {
+                        setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
                         setGptSubTab(t.key);
                         if (t.key !== "market") {
                           setPackage2ShelfTab("all");
@@ -9568,7 +9578,10 @@ function App() {
                     {totalTypeTabs.map((t) => (
                       <button
                         key={t.key}
-                        onClick={() => setChatgptTotalTypeTab(t.key)}
+                        onClick={() => {
+                          setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
+                          setChatgptTotalTypeTab(t.key);
+                        }}
                         className={`flex items-center gap-1.5 px-3 py-1 rounded-full font-bold text-xs transition-all border ${
                           chatgptTotalTypeTab === t.key
                             ? `${t.color} text-white border-transparent`
@@ -9603,6 +9616,7 @@ function App() {
                       <button
                         key={t.key}
                         onClick={() => {
+                          setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
                           setPackage2ShelfTab(t.key);
                           if (t.key !== "sold") {
                             setSoldPackage2ProviderFilter("all");
