@@ -47,6 +47,12 @@ const SESSION_ROLE_STORAGE_KEY = "active_session_role";
 const DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE = 20;
 const DEFAULT_SUPPORT_PAGE_SIZE = 6;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
+const WEB_ADMIN_TABS = [
+  "store-users",
+  "store-config",
+  "store-vouchers",
+  "support",
+];
 const SUPPORT_QUICK_REPLY_SNIPPETS = [
   "Chào bạn, mình đã nhận được yêu cầu và đang kiểm tra giúp bạn.",
   "Bạn chờ mình 2-3 phút để mình rà lại tài khoản nhé.",
@@ -7211,6 +7217,7 @@ function App() {
     supportUnreadIndicatorCount,
     Number(supportRealtimeNotice?.unreadCount || 0),
   );
+  const isActiveWebTab = WEB_ADMIN_TABS.includes(activeTab);
   const latestUnreadSupportConversation =
     supportConversations.find(
       (conversation) => Number(conversation?.adminUnreadCount || 0) > 0,
@@ -7684,28 +7691,12 @@ function App() {
               ChatGPT
             </button>
             <button
-              onClick={() => setActiveTab("store-users")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "store-users" ? "bg-cyan-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              onClick={() =>
+                setActiveTab(isActiveWebTab ? activeTab : "store-users")
+              }
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all inline-flex items-center ${isActiveWebTab ? "bg-cyan-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
-              User web
-            </button>
-            <button
-              onClick={() => setActiveTab("store-config")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "store-config" ? "bg-amber-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
-            >
-              Giá web
-            </button>
-            <button
-              onClick={() => setActiveTab("store-vouchers")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "store-vouchers" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
-            >
-              Voucher
-            </button>
-            <button
-              onClick={() => setActiveTab("support")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all inline-flex items-center ${activeTab === "support" ? "bg-sky-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
-            >
-              Hỗ trợ web
+              Web
               {visibleSupportUnreadIndicatorCount > 0 ? (
                 <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-black text-white">
                   {visibleSupportUnreadIndicatorCount}
@@ -7948,6 +7939,64 @@ function App() {
                     +{filteredStoreOrderResults.length - 5} đơn web nữa khớp với từ khóa này.
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isActiveWebTab && (
+          <div className="mb-6 rounded-[22px] border border-cyan-500/15 bg-slate-900/70 p-3 shadow-[0_14px_40px_rgba(8,15,40,0.28)]">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-[0.3em] text-cyan-300/90">
+                  Web
+                </div>
+                <div className="mt-1 text-sm text-slate-400">
+                  Gom toàn bộ phần user, giá, voucher và hỗ trợ web vào một khu cho gọn hơn.
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  {
+                    key: "store-users",
+                    label: "User",
+                    activeClass: "bg-cyan-600 text-white shadow-lg",
+                  },
+                  {
+                    key: "store-config",
+                    label: "Giá",
+                    activeClass: "bg-amber-600 text-white shadow-lg",
+                  },
+                  {
+                    key: "store-vouchers",
+                    label: "Voucher",
+                    activeClass: "bg-emerald-600 text-white shadow-lg",
+                  },
+                  {
+                    key: "support",
+                    label: "Hỗ trợ",
+                    activeClass: "bg-sky-600 text-white shadow-lg",
+                    badge: visibleSupportUnreadIndicatorCount,
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setActiveTab(item.key)}
+                    className={`inline-flex items-center rounded-2xl px-4 py-2 text-sm font-bold transition-all ${
+                      activeTab === item.key
+                        ? item.activeClass
+                        : "bg-slate-950/70 text-slate-300 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    {item.label}
+                    {Number(item.badge || 0) > 0 ? (
+                      <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-black text-white">
+                        {item.badge}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
