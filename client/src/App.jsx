@@ -1304,6 +1304,30 @@ const buildStoreVoucherFormState = (voucher = null) => ({
   startsAt: String(voucher?.startsAt || "").trim().slice(0, 16),
   endsAt: String(voucher?.endsAt || "").trim().slice(0, 16),
 });
+const STORE_PACKAGE_PRICE_CODES = ["package1", "package2", "package3"];
+const buildDefaultStoreConfigState = () => ({
+  id: "",
+  packages: [],
+  updatedAt: "",
+});
+const normalizeStoreConfigForUi = (config = null) => ({
+  ...buildDefaultStoreConfigState(),
+  ...(config && typeof config === "object" ? config : {}),
+  packages: Array.isArray(config?.packages) ? config.packages : [],
+  updatedAt: String(config?.updatedAt || "").trim(),
+});
+const buildStorePricingFormState = (config = null) => {
+  const normalizedConfig = normalizeStoreConfigForUi(config);
+  const packageMap = new Map(
+    normalizedConfig.packages.map((item) => [String(item?.code || "").trim(), item]),
+  );
+  return STORE_PACKAGE_PRICE_CODES.reduce((result, code) => {
+    const item = packageMap.get(code);
+    result[code] =
+      item?.price === null || item?.price === undefined ? "" : String(item.price);
+    return result;
+  }, {});
+};
 const buildDefaultAdminRealtimeConfig = () => ({
   enabled: false,
   url: "",
@@ -1406,6 +1430,7 @@ const ADMIN_TAB_DATA_SECTION_MAP = {
   canva: ["canva", "summary"],
   coursera: ["summary"],
   "store-users": ["storeUsers", "storeOrders", "summary"],
+  "store-config": ["summary"],
   "store-vouchers": ["storeVouchers", "summary"],
   support: ["supportConversations", "summary"],
 };
@@ -1509,6 +1534,11 @@ function App() {
   const [teamAccounts, setTeamAccounts] = useState([]);
   const [storeUsers, setStoreUsers] = useState([]);
   const [storeVouchers, setStoreVouchers] = useState([]);
+  const [storeConfig, setStoreConfig] = useState(buildDefaultStoreConfigState());
+  const [storePricingForm, setStorePricingForm] = useState(
+    buildStorePricingFormState(),
+  );
+  const [storeConfigLoading, setStoreConfigLoading] = useState(false);
   const [supportConversations, setSupportConversations] = useState([]);
   const [supportMessages, setSupportMessages] = useState([]);
   const [supportPagination, setSupportPagination] = useState(
@@ -1629,6 +1659,7 @@ function App() {
     fetchStoreWarrantyCandidates: "",
     saveStoreWarranty: false,
     saveVoucher: false,
+    saveStoreConfig: false,
     deleteStoreUser: "",
     deleteStoreOrder: "",
     deleteVoucher: "",
@@ -2104,6 +2135,11 @@ function App() {
     }
     if (activeTab === "store-vouchers") {
       loadAdminStoreVouchers({ silent: true, allowCached: true }).catch(() => {});
+      loadDashboardSummary({ silent: true, allowCached: true }).catch(() => {});
+      return;
+    }
+    if (activeTab === "store-config") {
+      loadAdminStoreConfig({ silent: true }).catch(() => {});
       loadDashboardSummary({ silent: true, allowCached: true }).catch(() => {});
       return;
     }
@@ -3782,6 +3818,35 @@ function App() {
     }
   };
 
+  const loadAdminStoreConfig = async ({ silent = true } = {}) => {
+    try {
+      setStoreConfigLoading(true);
+      const response = await axios.get("/api/admin/store-config", {
+        timeout: 10000,
+        skipGlobalLoading: silent,
+      });
+      const nextVersion = Number(response?.data?.version || dataVersionRef.current || 0);
+      if (Number.isFinite(nextVersion) && nextVersion > 0) {
+        dataVersionRef.current = nextVersion;
+      }
+      const nextConfig = normalizeStoreConfigForUi(response?.data?.config);
+      setStoreConfig(nextConfig);
+      setStorePricingForm(buildStorePricingFormState(nextConfig));
+      return response?.data || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Không thể tải cấu hình giá gói web."),
+          "error",
+        );
+      }
+      return null;
+    } finally {
+      setStoreConfigLoading(false);
+    }
+  };
+
   const loadSupportConversations = async ({
     silent = true,
     limit = DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE,
@@ -4304,6 +4369,48 @@ function App() {
       );
     } finally {
       setLoadingStates((prev) => ({ ...prev, saveVoucher: false }));
+    }
+  };
+
+  const handleSaveStoreConfig = async (e) => {
+    e.preventDefault();
+    const normalizedConfig = normalizeStoreConfigForUi(storeConfig);
+    const packagePrices = {};
+
+    for (const code of STORE_PACKAGE_PRICE_CODES) {
+      const rawValue = String(storePricingForm?.[code] || "").trim();
+      const parsed = Number(rawValue);
+      if (!rawValue || !Number.isFinite(parsed) || parsed < 0) {
+        const packageName =
+          normalizedConfig.packages.find((item) => item?.code === code)?.name || code;
+        showAlert(
+          "Giá chưa hợp lệ",
+          `${packageName} phải là số lớn hơn hoặc bằng 0.`,
+          "warning",
+        );
+        return;
+      }
+      packagePrices[code] = Math.round(parsed);
+    }
+
+    setLoadingStates((prev) => ({ ...prev, saveStoreConfig: true }));
+    try {
+      const response = await axios.put("/api/admin/store-config", {
+        packagePrices,
+      });
+      const nextConfig = normalizeStoreConfigForUi(response?.data?.config);
+      setStoreConfig(nextConfig);
+      setStorePricingForm(buildStorePricingFormState(nextConfig));
+      broadcastDataChange();
+      showAlert("Thành công", "Đã cập nhật giá các gói web.", "success");
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể lưu giá các gói web."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, saveStoreConfig: false }));
     }
   };
 
@@ -7515,6 +7622,12 @@ function App() {
               User web
             </button>
             <button
+              onClick={() => setActiveTab("store-config")}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "store-config" ? "bg-amber-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+            >
+              Giá web
+            </button>
+            <button
               onClick={() => setActiveTab("store-vouchers")}
               className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "store-vouchers" ? "bg-emerald-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
@@ -8462,6 +8575,157 @@ function App() {
             </div>
           </div>
         )}
+
+        {activeTab === "store-config" && (() => {
+          const normalizedStoreConfig = normalizeStoreConfigForUi(storeConfig);
+          const packageList = normalizedStoreConfig.packages;
+          return (
+            <div className="space-y-6">
+              <div className="overflow-hidden rounded-[24px] border border-amber-500/15 bg-slate-900/85 shadow-[0_18px_55px_rgba(8,15,40,0.38)]">
+                <div className="flex flex-col gap-4 border-b border-slate-800/80 p-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-[11px] font-black uppercase tracking-[0.34em] text-amber-300/90">
+                      Giá gói web
+                    </div>
+                    <h2 className="mt-1.5 text-xl font-black text-white">
+                      Sửa giá 3 gói bán trên web
+                    </h2>
+                    <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
+                      Giá mới sẽ áp dụng cho card bán hàng, kiểm tra voucher, link thanh toán và đơn tay tạo sau thời điểm lưu. Đơn cũ đã tạo trước đó vẫn giữ nguyên số tiền cũ.
+                    </p>
+                  </div>
+                  <div className="grid min-w-0 grid-cols-2 gap-2 md:grid-cols-4">
+                    {[
+                      {
+                        label: "Tổng gói",
+                        value: packageList.length,
+                        tone: "bg-amber-500/15 border-amber-500/30 text-amber-200",
+                      },
+                      {
+                        label: "Gói tự động",
+                        value: packageList.filter((item) => !!item?.automated).length,
+                        tone: "bg-cyan-500/15 border-cyan-500/30 text-cyan-200",
+                      },
+                      {
+                        label: "Giá tuỳ chỉnh",
+                        value: packageList.filter((item) => !!item?.isCustomPrice).length,
+                        tone: "bg-violet-500/15 border-violet-500/30 text-violet-200",
+                      },
+                      {
+                        label: "Cập nhật",
+                        value: formatDateTime(normalizedStoreConfig.updatedAt) || "--",
+                        tone: "bg-emerald-500/15 border-emerald-500/30 text-emerald-200",
+                      },
+                    ].map((item) => (
+                      <div key={item.label} className={`rounded-2xl border px-3 py-2.5 ${item.tone}`}>
+                        <div className="text-[10px] uppercase tracking-[0.26em] opacity-80">
+                          {item.label}
+                        </div>
+                        <div className="mt-1 text-base font-black md:text-xl">{item.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveStoreConfig} className="p-4">
+                  {storeConfigLoading && packageList.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-10 text-center text-slate-400">
+                      Đang tải cấu hình giá gói web...
+                    </div>
+                  ) : packageList.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-10 text-center text-slate-400">
+                      Chưa tải được cấu hình giá gói web.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid gap-4 xl:grid-cols-3">
+                        {packageList.map((pkg) => (
+                          <div
+                            key={pkg.code}
+                            className="rounded-[22px] border border-slate-800 bg-slate-950/70 p-4 shadow-xl shadow-slate-950/20"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-black uppercase tracking-[0.26em] text-amber-300/90">
+                                  {pkg.code}
+                                </div>
+                                <div className="mt-1 text-lg font-black text-white">
+                                  {pkg.name}
+                                </div>
+                              </div>
+                              <span
+                                className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
+                                  pkg.isCustomPrice
+                                    ? "border-violet-500/30 bg-violet-500/15 text-violet-200"
+                                    : "border-slate-700 bg-slate-800 text-slate-300"
+                                }`}
+                              >
+                                {pkg.isCustomPrice ? "Giá riêng" : "Giá mặc định"}
+                              </span>
+                            </div>
+
+                            <label className="mt-4 block text-sm font-semibold text-slate-300">
+                              Giá hiện tại (VND)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1000"
+                              value={storePricingForm?.[pkg.code] || ""}
+                              onChange={(e) =>
+                                setStorePricingForm((prev) => ({
+                                  ...prev,
+                                  [pkg.code]: e.target.value,
+                                }))
+                              }
+                              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-amber-500"
+                              placeholder="Nhập giá mới"
+                              disabled={loadingStates.saveStoreConfig}
+                            />
+
+                            <div className="mt-4 space-y-1 text-sm text-slate-400">
+                              <div>
+                                Giá đang bán: <span className="font-semibold text-white">{formatMoney(Number(storePricingForm?.[pkg.code] || 0))}</span>
+                              </div>
+                              <div>
+                                Giá mặc định: <span className="font-semibold text-slate-200">{formatMoney(Number(pkg.defaultPrice || 0))}</span>
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {pkg.automated
+                                  ? "Gói này đang hỗ trợ mua tự động."
+                                  : "Gói này hiện vẫn là gói xử lý thủ công."}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="text-sm leading-6 text-slate-400">
+                          Nếu muốn quay về giá env mặc định, chỉ cần nhập lại đúng mức mặc định hiển thị ở từng gói rồi bấm lưu.
+                        </div>
+                        <button
+                          type="submit"
+                          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-amber-600 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={loadingStates.saveStoreConfig || storeConfigLoading}
+                        >
+                          {loadingStates.saveStoreConfig ? (
+                            <>
+                              <Loader2 size={16} className="animate-spin" />
+                              Đang lưu
+                            </>
+                          ) : (
+                            "Lưu giá gói"
+                          )}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </form>
+              </div>
+            </div>
+          );
+        })()}
 
         {activeTab === "store-vouchers" && (
           <div className="space-y-6">

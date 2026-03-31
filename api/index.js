@@ -616,6 +616,20 @@ const StoreVoucher =
   mongoose.models.StoreVoucher ||
   mongoose.model("StoreVoucher", storeVoucherSchema, "store_vouchers");
 
+const storeConfigSchema = new mongoose.Schema({
+  id: { type: String, unique: true, default: "default" },
+  packagePrices: {
+    package1: { type: Number, default: null },
+    package2: { type: Number, default: null },
+    package3: { type: Number, default: null },
+  },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+const StoreConfig =
+  mongoose.models.StoreConfig ||
+  mongoose.model("StoreConfig", storeConfigSchema, "store_configs");
+
 const storeSupportConversationSchema = new mongoose.Schema({
   id: { type: String, unique: true },
   userId: { type: String, required: true, unique: true, index: true },
@@ -980,12 +994,13 @@ const DEFAULT_STORE_CONTACT_ZALO_URL = "https://zalo.me/0345440153";
 
 app.get("/api/store/config", async (req, res) => {
   try {
+    const packageMap = await getStorePackageMap();
     res.setHeader(
       "Cache-Control",
       "public, s-maxage=60, stale-while-revalidate=300",
     );
     res.json({
-      packages: Object.values(STORE_PACKAGE_MAP).map((pkg) => ({
+      packages: buildStorePackageList(packageMap).map((pkg) => ({
         ...pkg,
         available: pkg.automated ? null : null,
         purchasable: false,
@@ -1457,7 +1472,8 @@ app.post("/api/store/orders/:id/reconcile", verifyStoreUserToken, async (req, re
 app.post("/api/store/orders/payment", verifyStoreUserToken, storeOrderPaymentRateLimit, async (req, res) => {
   try {
     const packageCode = String(req.body?.packageCode || "").trim().toLowerCase();
-    const packageConfig = STORE_PACKAGE_MAP[packageCode];
+    const packageMap = await getStorePackageMap();
+    const packageConfig = packageMap[packageCode];
     const paymentMethod = normalizeStorePaymentMethod(req.body?.paymentMethod);
     if (!packageConfig || packageCode === "package3") {
       return res.status(400).json({ error: "Gói này chưa hỗ trợ mua tự động" });
@@ -1656,7 +1672,8 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, storeOrderPaymentRat
 app.post("/api/store/orders/payment-legacy-disabled", verifyStoreUserToken, async (req, res) => {
   try {
     const packageCode = String(req.body?.packageCode || "").trim().toLowerCase();
-    const packageConfig = STORE_PACKAGE_MAP[packageCode];
+    const packageMap = await getStorePackageMap();
+    const packageConfig = packageMap[packageCode];
     if (!packageConfig || packageCode === "package3") {
       return res.status(400).json({ error: "Gói này chưa hỗ trợ mua tự động" });
     }
@@ -1999,6 +2016,110 @@ const STORE_PACKAGE_MAP = {
     price: STORE_PACKAGE3_PRICE,
     automated: false,
   },
+};
+const STORE_CONFIG_DOCUMENT_ID = "default";
+const STORE_PACKAGE_CODES = Object.keys(STORE_PACKAGE_MAP);
+const normalizeStorePackagePrice = (value, fallback = 0) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return Math.max(0, Number(fallback || 0));
+  }
+  return Math.round(parsed);
+};
+const buildStorePackageMap = (packagePrices = {}) => {
+  const overrides =
+    packagePrices && typeof packagePrices === "object" ? packagePrices : {};
+  return STORE_PACKAGE_CODES.reduce((result, code) => {
+    const basePackage = STORE_PACKAGE_MAP[code];
+    result[code] = {
+      ...basePackage,
+      price: normalizeStorePackagePrice(overrides?.[code], basePackage?.price || 0),
+    };
+    return result;
+  }, {});
+};
+const buildStorePackageList = (
+  packageMap = STORE_PACKAGE_MAP,
+  { includeDefaults = false } = {},
+) =>
+  STORE_PACKAGE_CODES.map((code) => {
+    const currentPackage = packageMap?.[code] || STORE_PACKAGE_MAP[code];
+    const fallbackPackage = STORE_PACKAGE_MAP[code];
+    const item = {
+      ...currentPackage,
+      price: normalizeStorePackagePrice(
+        currentPackage?.price,
+        fallbackPackage?.price || 0,
+      ),
+    };
+    if (includeDefaults) {
+      item.defaultPrice = normalizeStorePackagePrice(fallbackPackage?.price, 0);
+      item.isCustomPrice = Number(item.price || 0) !== Number(item.defaultPrice || 0);
+    }
+    return item;
+  });
+let storeConfigCacheData = null;
+let storeConfigCacheExpiresAt = 0;
+let storeConfigCachePromise = null;
+const STORE_CONFIG_CACHE_TTL_MS = 30000;
+const clearStoreConfigCache = () => {
+  storeConfigCacheData = null;
+  storeConfigCacheExpiresAt = 0;
+  storeConfigCachePromise = null;
+};
+const getCachedStoreConfig = async ({ force = false } = {}) => {
+  const now = Date.now();
+  if (!force && storeConfigCacheData && storeConfigCacheExpiresAt > now) {
+    return storeConfigCacheData;
+  }
+  if (!force && storeConfigCachePromise) {
+    return storeConfigCachePromise;
+  }
+  const runRequest = (async () => {
+    const config =
+      (await StoreConfig.findOne({ id: STORE_CONFIG_DOCUMENT_ID }).lean()) || null;
+    storeConfigCacheData = config;
+    storeConfigCacheExpiresAt = Date.now() + STORE_CONFIG_CACHE_TTL_MS;
+    return config;
+  })();
+  storeConfigCachePromise = runRequest;
+  try {
+    return await runRequest;
+  } finally {
+    if (storeConfigCachePromise === runRequest) {
+      storeConfigCachePromise = null;
+    }
+  }
+};
+const getStorePackageMap = async ({ force = false } = {}) => {
+  const config = await getCachedStoreConfig({ force });
+  return buildStorePackageMap(config?.packagePrices || {});
+};
+const sanitizeStoreConfigForAdmin = (
+  config = null,
+  packageMap = STORE_PACKAGE_MAP,
+) => ({
+  id: String(config?.id || STORE_CONFIG_DOCUMENT_ID).trim(),
+  packages: buildStorePackageList(packageMap, { includeDefaults: true }),
+  updatedAt: String(config?.updatedAt || "").trim(),
+});
+const buildStorePackagePriceUpdatePayload = (body = {}) => {
+  const rawPrices =
+    body?.packagePrices && typeof body.packagePrices === "object"
+      ? body.packagePrices
+      : body;
+  const nextPrices = {};
+  STORE_PACKAGE_CODES.forEach((code) => {
+    const rawValue = rawPrices?.[code];
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      const error = new Error(`Gia ${code} khong hop le.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    nextPrices[code] = Math.round(parsed);
+  });
+  return nextPrices;
 };
 const normalizeEmailLower = (value) => String(value || "").trim().toLowerCase();
 const normalizePhoneValue = (value) => {
@@ -3232,7 +3353,8 @@ const resolveStoreVoucherPricing = async ({
   excludeOrderId = "",
 } = {}) => {
   const normalizedPackageCode = String(packageCode || "").trim().toLowerCase();
-  const packageConfig = STORE_PACKAGE_MAP[normalizedPackageCode];
+  const packageMap = await getStorePackageMap();
+  const packageConfig = packageMap[normalizedPackageCode];
   if (!packageConfig) {
     const error = new Error("Goi khong hop le de ap voucher.");
     error.statusCode = 400;
@@ -6463,23 +6585,24 @@ const countStorePackage2Stock = async () => {
   return Number(existingCount || 0) + Number(convertibleCount || 0);
 };
 const buildStoreCatalog = async () => {
+  const packageMap = await getStorePackageMap();
   const [package1Stock, package2Stock] = await Promise.all([
     countStorePackage1Stock(),
     countStorePackage2Stock(),
   ]);
   return [
     {
-      ...STORE_PACKAGE_MAP.package1,
+      ...packageMap.package1,
       available: package1Stock,
       purchasable: package1Stock > 0,
     },
     {
-      ...STORE_PACKAGE_MAP.package2,
+      ...packageMap.package2,
       available: package2Stock,
       purchasable: package2Stock > 0,
     },
     {
-      ...STORE_PACKAGE_MAP.package3,
+      ...packageMap.package3,
       available: null,
       purchasable: false,
     },
@@ -6489,6 +6612,11 @@ const STORE_CATALOG_CACHE_TTL_MS = 10000;
 let storeCatalogCacheData = null;
 let storeCatalogCacheExpiresAt = 0;
 let storeCatalogCachePromise = null;
+const clearStoreCatalogCache = () => {
+  storeCatalogCacheData = null;
+  storeCatalogCacheExpiresAt = 0;
+  storeCatalogCachePromise = null;
+};
 const getCachedStoreCatalog = async ({ force = false } = {}) => {
   const now = Date.now();
   if (!force && storeCatalogCacheData && storeCatalogCacheExpiresAt > now) {
@@ -8432,6 +8560,58 @@ app.get("/api/admin/store-vouchers", verifyToken, async (req, res) => {
   }
 });
 
+app.get("/api/admin/store-config", verifyToken, async (req, res) => {
+  try {
+    const [config, packageMap] = await Promise.all([
+      getCachedStoreConfig(),
+      getStorePackageMap(),
+    ]);
+    return res.json({
+      success: true,
+      config: sanitizeStoreConfigForAdmin(config, packageMap),
+      version: latestDataVersion,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc cau hinh gia goi web.",
+    });
+  }
+});
+
+app.put("/api/admin/store-config", verifyToken, async (req, res) => {
+  try {
+    const packagePrices = buildStorePackagePriceUpdatePayload(req.body);
+    const nowIso = new Date().toISOString();
+    const config = await StoreConfig.findOneAndUpdate(
+      { id: STORE_CONFIG_DOCUMENT_ID },
+      {
+        $set: {
+          packagePrices,
+          updatedAt: nowIso,
+        },
+        $setOnInsert: {
+          id: STORE_CONFIG_DOCUMENT_ID,
+          createdAt: nowIso,
+        },
+      },
+      { upsert: true, new: true },
+    ).lean();
+    clearStoreConfigCache();
+    clearStoreCatalogCache();
+    bumpDataVersion();
+    const packageMap = await getStorePackageMap({ force: true });
+    return res.json({
+      success: true,
+      config: sanitizeStoreConfigForAdmin(config, packageMap),
+      version: latestDataVersion,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong luu duoc cau hinh gia goi web.",
+    });
+  }
+});
+
 app.post("/api/store-vouchers", verifyToken, async (req, res) => {
   try {
     const payload = buildStoreVoucherWritePayload(req.body);
@@ -8874,7 +9054,8 @@ app.post("/api/store-orders/admin", verifyToken, async (req, res) => {
     let password = String(req.body?.password || "").trim();
     const phoneNormalized = normalizePhoneValue(phone);
     const emailLower = normalizeEmailLower(email);
-    const packageConfig = STORE_PACKAGE_MAP[packageCode];
+    const packageMap = await getStorePackageMap();
+    const packageConfig = packageMap[packageCode];
 
     if (!["package1", "package2"].includes(packageCode) || !packageConfig?.automated) {
       return res.status(400).json({ error: "Chỉ hỗ trợ tạo đơn tay cho Gói 1 hoặc Gói 2." });
