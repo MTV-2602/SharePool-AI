@@ -6113,6 +6113,23 @@ const hasTrackedMarketplaceChatgptAccount = async (accountId = "") => {
   ]);
   return !!(order || warrantyCase);
 };
+const canChatgptAccountReceiveMovedUser = (account = {}, sourceType = "") => {
+  const destinationType = String(account?.type || "").trim();
+  const currentUsers = Array.isArray(account?.users) ? account.users.length : 0;
+
+  if (destinationType === sourceType) {
+    if (sourceType === "package1") return currentUsers < 3;
+    if (sourceType === "package2") return currentUsers < 1;
+  }
+
+  if (destinationType === "unassigned") {
+    if (sourceType === "package1") return currentUsers < 3;
+    if (sourceType === "package2") return currentUsers < 1;
+    return currentUsers < 1;
+  }
+
+  return false;
+};
 const listChatgptMoveCandidates = async (sourceAccount = {}) => {
   const sourceId = String(sourceAccount?.id || "").trim();
   const sourceType = String(sourceAccount?.type || "").trim();
@@ -6127,9 +6144,6 @@ const listChatgptMoveCandidates = async (sourceAccount = {}) => {
     id: { $ne: sourceId },
     type: { $in: allowedTypes },
     package2Shelf: CHATGPT_TOTAL_VALUE,
-    $expr: {
-      $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
-    },
   })
     .sort({ createdAt: 1, id: 1 })
     .select("id username type package2Shelf users expiredAt createdAt updatedAt")
@@ -6141,6 +6155,9 @@ const listChatgptMoveCandidates = async (sourceAccount = {}) => {
       if (trackedIds.has(accountId)) return false;
       const expiredAt = String(account?.expiredAt || "").trim();
       if (expiredAt && new Date(expiredAt).getTime() <= Date.now()) {
+        return false;
+      }
+      if (!canChatgptAccountReceiveMovedUser(account, sourceType)) {
         return false;
       }
       return true;
