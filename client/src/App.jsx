@@ -346,6 +346,45 @@ const buildAccountTraceAlertMessage = (diagnostics = {}) => {
   }
   return parts.join(" | ");
 };
+const buildAccountTraceDiagnosticsFromAccount = (account = {}) => {
+  const storeTraceSummary = account?.storeTraceSummary || null;
+  const marketplaceTraceSummary = account?.marketplaceTraceSummary || null;
+  const latestStoreTrace =
+    Array.isArray(storeTraceSummary?.traces) && storeTraceSummary.traces.length > 0
+      ? storeTraceSummary.traces[0]
+      : null;
+  return {
+    storeOrders: latestStoreTrace
+      ? [
+          {
+            id: String(latestStoreTrace?.orderId || "").trim(),
+            status: String(latestStoreTrace?.status || "").trim(),
+          },
+        ]
+      : [],
+    marketplaceOrders:
+      Number(marketplaceTraceSummary?.orderCount || 0) > 0
+        ? [
+            {
+              orderId: String(marketplaceTraceSummary?.latestOrderId || "").trim(),
+              provider: String(marketplaceTraceSummary?.latestProvider || "").trim(),
+            },
+          ]
+        : [],
+    marketplaceWarrantyCases:
+      Number(marketplaceTraceSummary?.warrantyCount || 0) > 0
+        ? [
+            {
+              orderId: String(
+                marketplaceTraceSummary?.latestWarrantyOrderId || "",
+              ).trim(),
+              provider: String(marketplaceTraceSummary?.latestProvider || "").trim(),
+            },
+          ]
+        : [],
+    users: Array.isArray(account?.users) ? account.users : [],
+  };
+};
 const normalizeStoreAdminOrders = (orders = []) =>
   [...(Array.isArray(orders) ? orders : [])]
     .map((order) => ({
@@ -1279,6 +1318,15 @@ const buildMoveExpectedPayload = (payload = {}, fromRecord = {}, toRecord = {}) 
 };
 const getApiErrorMessage = (error, fallback) =>
   error?.response?.data?.error || error?.message || fallback;
+const getApiErrorMessageWithDiagnostics = (error, fallback) => {
+  const baseMessage = getApiErrorMessage(error, fallback);
+  const diagnosticsMessage = buildAccountTraceAlertMessage(
+    error?.response?.data?.diagnostics,
+  );
+  return diagnosticsMessage
+    ? `${baseMessage}\n\n${diagnosticsMessage}`
+    : baseMessage;
+};
 const buildStoreVoucherFormState = (voucher = null) => ({
   id: String(voucher?.id || "").trim(),
   code: String(voucher?.code || "").trim(),
@@ -5267,7 +5315,7 @@ function App() {
     } catch (error) {
       showAlert(
         "Lỗi",
-        getApiErrorMessage(error, "Lỗi khi chuyển khách"),
+        getApiErrorMessageWithDiagnostics(error, "Lỗi khi chuyển khách"),
         "error",
       );
     } finally {
@@ -5484,7 +5532,7 @@ function App() {
       await syncAdminDataAfterMutation("Đang đồng bộ loại gói ChatGPT");
       broadcastDataChange();
     } catch (error) {
-      const msg = error?.response?.data?.error || "Lỗi đổi gói";
+      const msg = getApiErrorMessageWithDiagnostics(error, "Lỗi đổi gói");
       showAlert("Chặn Thao Tác", msg, "error");
       // Reset dropdown về giá trị gói cũ
       const selectElement = document.getElementById(`select-type-${acc.id}`);
@@ -5503,9 +5551,14 @@ function App() {
       return;
     }
     if (marketplaceTrackedAccountIds.has(String(acc?.id || ""))) {
+      const diagnosticsMessage = buildAccountTraceAlertMessage(
+        buildAccountTraceDiagnosticsFromAccount(acc),
+      );
       showAlert(
         "Khong the chuyen kho",
-        "Acc da ban qua san khong duoc doi kho tay. Neu can doi acc, hay dung Bao hanh.",
+        diagnosticsMessage
+          ? `Acc da ban qua san khong duoc doi kho tay. Neu can doi acc, hay dung Bao hanh.\n\n${diagnosticsMessage}`
+          : "Acc da ban qua san khong duoc doi kho tay. Neu can doi acc, hay dung Bao hanh.",
         "warning",
       );
       return;
@@ -5555,7 +5608,7 @@ function App() {
       await syncAdminDataAfterMutation("Đang đồng bộ kho ChatGPT");
       broadcastDataChange();
     } catch (error) {
-      const msg = error?.response?.data?.error || "Lỗi đổi kệ gói 2";
+      const msg = getApiErrorMessageWithDiagnostics(error, "Lỗi đổi kệ gói 2");
       showAlert("Lỗi", msg, "error");
     } finally {
       setLoadingStates((prev) => ({

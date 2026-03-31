@@ -4943,6 +4943,13 @@ const buildChatgptAccountAdminDiagnostics = async (accountId = "") => {
     })),
   };
 };
+const buildChatgptTraceBlockedResponse = async (
+  accountId = "",
+  errorMessage = "",
+) => ({
+  error: String(errorMessage || "").trim() || "Tai khoan nay dang bi khoa thao tac.",
+  diagnostics: await buildChatgptAccountAdminDiagnostics(accountId),
+});
 const issueStoreUserJwt = (user) =>
   jwt.sign(
     {
@@ -10029,10 +10036,12 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     // ===== BACKEND GUARD: Chặn đổi gói khi đang có khách =====
     if (normalizedPayload.type && normalizedPayload.type !== existingAcc.type) {
       if (trackedMarketplaceOrder) {
-        return res.status(400).json({
-          error:
+        return res.status(400).json(
+          await buildChatgptTraceBlockedResponse(
+            id,
             "Acc da ban qua san khong duoc doi goi tay. Neu can doi acc, hay dung Bao hanh.",
-        });
+          ),
+        );
       }
       const currentUsers = existingAcc.users || [];
       if (currentUsers.length > 0) {
@@ -10063,10 +10072,12 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       isPackage2ShelfChanged &&
       trackedMarketplaceOrder
     ) {
-      return res.status(400).json({
-        error:
+      return res.status(400).json(
+        await buildChatgptTraceBlockedResponse(
+          id,
           "Acc da ban qua san khong duoc doi kho tay. Neu can doi acc, hay dung Bao hanh.",
-      });
+        ),
+      );
     }
     if (
       isManualShelfUpdate &&
@@ -10829,10 +10840,12 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
         !isPlaceholderMarketplaceManagedUser(sourceUserToMove)) ||
       destinationMarketplaceOrder
     ) {
-      return res.status(400).json({
-        error:
+      return res.status(400).json(
+        await buildChatgptTraceBlockedResponse(
+          destinationMarketplaceOrder ? toAccId : fromAccId,
           "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",
-      });
+        ),
+      );
     }
 
     // STRICT RULE: Cannot transfer to Expired Account
@@ -10857,10 +10870,12 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     const destinationHasMarketplaceTrace =
       await hasTrackedMarketplaceChatgptAccount(toAccId);
     if (destinationHasMarketplaceTrace) {
-      return res.status(400).json({
-        error:
+      return res.status(400).json(
+        await buildChatgptTraceBlockedResponse(
+          toAccId,
           "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",
-      });
+        ),
+      );
     }
 
     if (toAcc.type === sourceType) {
