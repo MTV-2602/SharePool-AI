@@ -385,6 +385,9 @@ const buildAccountTraceDiagnosticsFromAccount = (account = {}) => {
     users: Array.isArray(account?.users) ? account.users : [],
   };
 };
+const hasMarketplaceTraceSummaryForUi = (summary = {}) =>
+  Number(summary?.orderCount || 0) > 0 ||
+  Number(summary?.warrantyCount || 0) > 0;
 const normalizeStoreAdminOrders = (orders = []) =>
   [...(Array.isArray(orders) ? orders : [])]
     .map((order) => ({
@@ -6780,22 +6783,34 @@ function App() {
   };
   (Array.isArray(accounts) ? accounts : []).forEach((acc) => {
     const traceSummary = acc?.marketplaceTraceSummary || null;
-    if (Number(traceSummary?.orderCount || 0) <= 0) return;
+    if (!hasMarketplaceTraceSummaryForUi(traceSummary)) return;
     registerMarketplaceTrackedAccount(acc?.id, {
       provider: traceSummary?.latestProvider,
-      orderId: traceSummary?.latestOrderId,
-      role: "sold",
+      orderId:
+        traceSummary?.latestOrderId || traceSummary?.latestWarrantyOrderId,
+      role:
+        Number(traceSummary?.orderCount || 0) > 0
+          ? "sold"
+          : Number(traceSummary?.warrantyCount || 0) > 0
+            ? "history"
+            : "sold",
       label: acc?.username,
       summary: traceSummary,
     });
   });
   (Array.isArray(teamAccounts) ? teamAccounts : []).forEach((acc) => {
     const traceSummary = acc?.marketplaceTraceSummary || null;
-    if (Number(traceSummary?.orderCount || 0) <= 0) return;
+    if (!hasMarketplaceTraceSummaryForUi(traceSummary)) return;
     registerMarketplaceTrackedAccount(acc?.id, {
       provider: traceSummary?.latestProvider,
-      orderId: traceSummary?.latestOrderId,
-      role: "sold",
+      orderId:
+        traceSummary?.latestOrderId || traceSummary?.latestWarrantyOrderId,
+      role:
+        Number(traceSummary?.orderCount || 0) > 0
+          ? "sold"
+          : Number(traceSummary?.warrantyCount || 0) > 0
+            ? "history"
+            : "sold",
       label: acc?.username,
       summary: traceSummary,
     });

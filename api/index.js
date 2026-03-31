@@ -4122,19 +4122,16 @@ const getCachedChatgptAdminSnapshot = async (
         Account.find({}).select(CHATGPT_ADMIN_ACCOUNT_SELECT).lean(),
         DatammoOrder.find({})
           .sort({ createdAt: -1 })
-          .limit(100)
           .select(CHATGPT_ADMIN_MARKETPLACE_ORDER_TRACE_SELECT)
           .lean(),
         DatammoWarrantyCase.find({})
           .sort({ updatedAt: -1 })
-          .limit(100)
           .select(CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT)
           .lean(),
         StoreOrder.find({
           status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
         })
           .sort({ createdAt: -1 })
-          .limit(100)
           .select(CHATGPT_ADMIN_STORE_ORDER_TRACE_SELECT)
           .lean(),
       ]);
@@ -4172,7 +4169,7 @@ const getCachedChatgptAdminSnapshot = async (
       }),
     );
     const isTrackedMarketplaceAccount = (account = {}) =>
-      Number(account?.marketplaceTraceSummary?.orderCount || 0) > 0;
+      hasMarketplaceTraceSummary(account?.marketplaceTraceSummary);
     const isMarketAccount = (account = {}) =>
       supportsChatgptMarket(account?.type) &&
       normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
@@ -4271,7 +4268,7 @@ const listAdminChatgptAccounts = async ({
     storeWarehouseSummary,
   } = await getCachedChatgptAdminSnapshot();
   const isTrackedMarketplaceAccount = (account = {}) =>
-    Number(account?.marketplaceTraceSummary?.orderCount || 0) > 0;
+    hasMarketplaceTraceSummary(account?.marketplaceTraceSummary);
   const isMarketAccount = (account = {}) =>
     supportsChatgptMarket(account?.type) &&
     normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
@@ -4863,6 +4860,9 @@ const buildMarketplaceAccountTraceMap = (
 
   return map;
 };
+const hasMarketplaceTraceSummary = (summary = {}) =>
+  Number(summary?.orderCount || 0) > 0 ||
+  Number(summary?.warrantyCount || 0) > 0;
 const buildChatgptAccountAdminDiagnostics = async (accountId = "") => {
   const normalizedId = String(accountId || "").trim();
   if (!normalizedId) return null;
