@@ -1336,6 +1336,21 @@ const getApiErrorMessageWithDiagnostics = (error, fallback) => {
     ? `${baseMessage}\n\n${diagnosticsMessage}`
     : baseMessage;
 };
+const isAdminVersionConflictError = (error) => {
+  const statusCode = Number(
+    error?.response?.status || error?.status || error?.statusCode || 0,
+  );
+  if (statusCode === 409) return true;
+  const normalizedMessage = toNonAccentVietnamese(
+    String(getApiErrorMessage(error, "") || "").toLowerCase(),
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  return (
+    normalizedMessage.includes("vua duoc admin khac cap nhat") ||
+    normalizedMessage.includes("tai lai du lieu roi thu lai")
+  );
+};
 const buildStoreVoucherFormState = (voucher = null) => ({
   id: String(voucher?.id || "").trim(),
   code: String(voucher?.code || "").trim(),
@@ -5712,6 +5727,7 @@ function App() {
         setLoadingStates((prev) => ({ ...prev, bulkWarehouseMove: true }));
         const updatedIds = new Set();
         const failedLabels = [];
+        let hasVersionConflict = false;
         let success = 0;
         let failed = 0;
 
@@ -5735,6 +5751,9 @@ function App() {
               success += 1;
             } catch (error) {
               failed += 1;
+              if (isAdminVersionConflictError(error)) {
+                hasVersionConflict = true;
+              }
               failedLabels.push(
                 `${acc.username || acc.id}: ${getApiErrorMessage(
                   error,
@@ -5743,7 +5762,11 @@ function App() {
               );
             }
           }
-          if (success > 0) {
+          if (hasVersionConflict) {
+            await Promise.allSettled([
+              refreshAdminSurface({ includeSummary: true, forceFull: true }),
+            ]);
+          } else if (success > 0) {
             await syncAdminDataAfterMutation("Đang đồng bộ kho ChatGPT");
           }
 
@@ -5758,6 +5781,9 @@ function App() {
           if (nearExpiryAccounts.length) skippedLines.push(`Da bo qua acc duoi 25 ngay: ${nearExpiryAccounts.length}`);
           if (unsupported.length) skippedLines.push(`Da bo qua acc sai loai: ${unsupported.length}`);
           if (unchangedAccounts.length) skippedLines.push(`Da bo qua acc da o ${targetLabel}: ${unchangedAccounts.length}`);
+          if (hasVersionConflict) {
+            skippedLines.push("Da tu tai lai du lieu moi vi co admin khac vua cap nhat.");
+          }
           const failedPreview = failedLabels.slice(0, 5);
           const hiddenFailed = Math.max(0, failedLabels.length - failedPreview.length);
           if (hiddenFailed > 0) {
@@ -6057,6 +6083,7 @@ function App() {
     let unsupported = 0;
     let nearExpiry = 0;
     let unchanged = 0;
+    let hasVersionConflict = false;
     const failedLabels = [];
 
     setLoadingStates((prev) => ({ ...prev, bulkWarehouseMove: true }));
@@ -6096,6 +6123,9 @@ function App() {
           success += 1;
         } catch (error) {
           failed += 1;
+          if (isAdminVersionConflictError(error)) {
+            hasVersionConflict = true;
+          }
           failedLabels.push(
             `${acc.username}: ${getApiErrorMessage(
               error,
@@ -6105,7 +6135,13 @@ function App() {
         }
       }
 
-      await syncAdminDataAfterMutation("Đang đồng bộ Team");
+      if (hasVersionConflict) {
+        await Promise.allSettled([
+          refreshAdminSurface({ includeSummary: true, forceFull: true }),
+        ]);
+      } else {
+        await syncAdminDataAfterMutation("Đang đồng bộ Team");
+      }
       broadcastDataChange();
       setSelectedTeamIds([]);
 
@@ -6113,6 +6149,9 @@ function App() {
         `Thanh cong: ${success}`,
         `That bai: ${failed}`,
       ];
+      if (hasVersionConflict) {
+        summaryLines.push("Da tu tai lai du lieu moi vi co admin khac vua cap nhat.");
+      }
       if (occupied > 0) {
         summaryLines.push(`Bo qua Team dang co khach: ${occupied}`);
       }
