@@ -4494,6 +4494,78 @@ const buildAdminDashboardSummary = async () => {
     totalVouchers: Number(totalVouchers || 0),
   };
 };
+const getChatgptUserRemainingDays = (user, duration = "1M") => {
+  if (!user) return null;
+  const now = new Date();
+  if (user.expiredAt) {
+    return Math.ceil(
+      (new Date(user.expiredAt) - now) / (1000 * 60 * 60 * 24),
+    );
+  }
+  if (user.joinedAt) {
+    const fallbackExpiry = addDurationToDate(user.joinedAt, duration);
+    return Math.ceil((fallbackExpiry - now) / (1000 * 60 * 60 * 24));
+  }
+  return null;
+};
+const buildChatgptPublicStatsSummary = async () => {
+  const accounts = await Account.find({})
+    .select("type users expiredAt duration")
+    .lean();
+  const now = new Date();
+  const summary = {
+    totalAccounts: 0,
+    shared: { total: 0, full: 0, partial: 0, empty: 0 },
+    private: { total: 0, used: 0, empty: 0 },
+    unassigned: 0,
+    users: { total: 0, active: 0, expired: 0 },
+    expiry: { expired: 0, within3Days: 0, within7Days: 0 },
+  };
+
+  (Array.isArray(accounts) ? accounts : []).forEach((account) => {
+    const type = String(account?.type || "unassigned").trim() || "unassigned";
+    const users = Array.isArray(account?.users) ? account.users : [];
+    const userCount = users.length;
+    summary.totalAccounts += 1;
+
+    if (type === "package1") {
+      summary.shared.total += 1;
+      if (userCount >= 3) summary.shared.full += 1;
+      else if (userCount > 0) summary.shared.partial += 1;
+      else summary.shared.empty += 1;
+    } else if (type === "package2") {
+      summary.private.total += 1;
+      if (userCount > 0) summary.private.used += 1;
+      else summary.private.empty += 1;
+    } else {
+      summary.unassigned += 1;
+    }
+
+    summary.users.total += userCount;
+    users.forEach((user) => {
+      const remaining = getChatgptUserRemainingDays(
+        user,
+        account?.duration || "1M",
+      );
+      if (remaining === null || remaining > 0) summary.users.active += 1;
+      else summary.users.expired += 1;
+    });
+
+    const expiredAt = String(account?.expiredAt || "").trim();
+    if (!expiredAt) return;
+    const daysLeft = Math.ceil(
+      (new Date(expiredAt) - now) / (1000 * 60 * 60 * 24),
+    );
+    if (daysLeft < 0) summary.expiry.expired += 1;
+    if (daysLeft >= 0 && daysLeft <= 3) summary.expiry.within3Days += 1;
+    if (daysLeft >= 0 && daysLeft <= 7) summary.expiry.within7Days += 1;
+  });
+
+  return {
+    ...summary,
+    updatedAt: new Date().toISOString(),
+  };
+};
 const buildStoreReservationSnapshot = async ({ excludeOrderId = "" } = {}) => {
   const activeOrders = await StoreOrder.find(
     buildStoreActivePendingOrderQuery({
@@ -9605,6 +9677,26 @@ app.get("/api/data-public", async (req, res) => {
     });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.get("/api/chatgpt/stats-public", async (req, res) => {
+  try {
+    const payload = await getCachedAdminRead(
+      "public:chatgpt-stats",
+      {},
+      async () => ({
+        success: true,
+        summary: await buildChatgptPublicStatsSummary(),
+        version: latestDataVersion,
+      }),
+      30000,
+    );
+    return res.json(payload);
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc thong ke ChatGPT.",
+    });
   }
 });
 

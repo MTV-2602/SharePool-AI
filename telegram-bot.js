@@ -95,6 +95,32 @@ const getUserRemainingDays = (user, duration = '1M') => {
   }
   return null;
 };
+const formatCompactStatsMessage = (summary = {}) => {
+  const shared = summary?.shared || {};
+  const privateStats = summary?.private || {};
+  const users = summary?.users || {};
+  const expiry = summary?.expiry || {};
+  const updatedAt = summary?.updatedAt
+    ? new Date(summary.updatedAt)
+    : new Date();
+  const updatedLabel = Number.isNaN(updatedAt.getTime())
+    ? new Date().toLocaleString('vi-VN')
+    : updatedAt.toLocaleString('vi-VN');
+
+  return [
+    'CHATGPT STATS',
+    '',
+    `Accounts: ${Number(summary?.totalAccounts || 0)}`,
+    `Shared: ${Number(shared.total || 0)} (full ${Number(shared.full || 0)} / partial ${Number(shared.partial || 0)} / empty ${Number(shared.empty || 0)})`,
+    `Private: ${Number(privateStats.total || 0)} (used ${Number(privateStats.used || 0)} / empty ${Number(privateStats.empty || 0)})`,
+    `Unassigned: ${Number(summary?.unassigned || 0)}`,
+    '',
+    `Users: ${Number(users.total || 0)} (active ${Number(users.active || 0)} / expired ${Number(users.expired || 0)})`,
+    `Expiry: expired ${Number(expiry.expired || 0)} / <=3d ${Number(expiry.within3Days || 0)} / <=7d ${Number(expiry.within7Days || 0)}`,
+    '',
+    `Updated: ${updatedLabel}`,
+  ].join('\n');
+};
 
 // Command: /start
 bot.onText(/\/start/, (msg) => {
@@ -178,6 +204,11 @@ bot.onText(/\/stats/, async (msg) => {
   }
 
   try {
+    bot.sendMessage(chatId, 'Dang tai stats...');
+    const summaryResponse = await axios.get(`${API_URL}/api/chatgpt/stats-public`);
+    const summary = summaryResponse?.data?.summary || {};
+    bot.sendMessage(chatId, formatCompactStatsMessage(summary));
+    return;
     bot.sendMessage(chatId, '⏳ Đang tính toán...');
 
     const response = await axios.get(`${API_URL}/api/data`);
