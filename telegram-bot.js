@@ -25,10 +25,6 @@ const checkPermission = (msg) => {
 
 const TELEGRAM_EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 const TELEGRAM_OTP_REGEX = /\b[A-Z2-7]{16,}\b/i;
-const extractOtpFrom2faLiveUrl = (value = '') => {
-  const match = String(value || '').match(/\/tok\/([^/?#]+)/i)?.[1];
-  return match ? decodeURIComponent(match) : '';
-};
 const normalizeTelegramAccountText = (rawText, { requireTeamPrefix = false } = {}) => {
   if (!rawText) return '';
   let cleanedText = String(rawText).replace(/^\[.*?\]/, '').trim();
@@ -38,96 +34,26 @@ const normalizeTelegramAccountText = (rawText, { requireTeamPrefix = false } = {
   }
   return cleanedText.replace(/[｜¦┃]/g, '|').replace(/\t+/g, '|');
 };
-const parseTelegramCredentialInput = (rawText, { requireTeamPrefix = false, linkKeys = [] } = {}) => {
+const parseTelegramCredentialInput = (rawText, { requireTeamPrefix = false } = {}) => {
   const normalizedInput = normalizeTelegramAccountText(rawText, { requireTeamPrefix });
   if (!normalizedInput) return null;
 
-  const lines = normalizedInput.replace(/\r/g, '').split('\n').map((line) => line.trim()).filter(Boolean);
-  const labeledCandidate = {};
-  const labeledLinkKeys = new Set(
-    ['link', 'link mail', 'mail link', 'recovery', 'recovery link', 'link lay ma']
-      .concat(Array.isArray(linkKeys) ? linkKeys : [])
-  );
+  if (normalizedInput.includes('---')) return null;
 
-  lines
-    .flatMap((line) => (line.includes('|') ? line.split(/\s*\|\s*/).map((part) => part.trim()) : [line]))
-    .filter(Boolean)
-    .forEach((segment) => {
-      const separatorIndex = segment.indexOf(':');
-      if (separatorIndex === -1) return;
-      const key = String(segment.slice(0, separatorIndex) || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[đĐ]/g, 'd')
-        .replace(/\s+/g, ' ')
-        .trim();
-      const value = segment.slice(separatorIndex + 1).trim();
-      if (!value) return;
-
-      if (/^(tk|tai khoan|tai khoan dang nhap|username|email)$/.test(key)) {
-        labeledCandidate.username = value;
-      } else if (/^(mk|mat khau|password|pass|gptpass)$/.test(key)) {
-        labeledCandidate.password = value;
-      } else if (/^(ma 2fa|2fa|otp|ma otp)$/.test(key)) {
-        labeledCandidate.otpSecret = value;
-      } else if (/^(2fa.live|2fa live)$/.test(key)) {
-        if (!labeledCandidate.otpSecret) {
-          labeledCandidate.otpSecret = extractOtpFrom2faLiveUrl(value);
-        }
-      } else if (labeledLinkKeys.has(key)) {
-        labeledCandidate.link = value;
-      }
-    });
-
-  if (labeledCandidate.username && labeledCandidate.password) {
-    return {
-      email: String(labeledCandidate.username || '').trim(),
-      password: String(labeledCandidate.password || '').trim(),
-      otpSecret: String(labeledCandidate.otpSecret || '').trim(),
-      link: String(labeledCandidate.link || '').trim(),
-    };
-  }
-
-  const flatInput = normalizedInput.replace(/-{3,}/g, '|').replace(/\n+/g, '|');
+  const flatInput = normalizedInput.replace(/\r/g, '').replace(/\n+/g, '|');
   const parts = flatInput.split(/\s*\|\s*/).map((part) => String(part || '').trim()).filter(Boolean);
-  if (parts.length < 2) return null;
+  if (parts.length !== 3) return null;
 
-  const emailIndex = parts.findIndex((part) => TELEGRAM_EMAIL_REGEX.test(part));
-  if (emailIndex === -1 || emailIndex >= parts.length - 1) return null;
-
-  const email = String(parts[emailIndex] || '').trim();
-  const password = String(parts[emailIndex + 1] || '').trim();
-  if (!email || !password) return null;
-
-  let otpSecret = '';
-  let link = '';
-  parts.slice(emailIndex + 2).forEach((part) => {
-    if (!part) return;
-    if (/^https?:\/\/2fa\.live\/tok\//i.test(part)) {
-      if (!otpSecret) otpSecret = extractOtpFrom2faLiveUrl(part);
-      return;
-    }
-    if (/^https?:\/\//i.test(part)) {
-      if (!link) link = part;
-      return;
-    }
-    if (!otpSecret && TELEGRAM_OTP_REGEX.test(part)) {
-      otpSecret = part;
-      return;
-    }
-    if (!otpSecret) {
-      otpSecret = part;
-    } else if (!link) {
-      link = part;
-    }
-  });
+  const [email, password, otpSecret] = parts;
+  if (!TELEGRAM_EMAIL_REGEX.test(email)) return null;
+  if (!password || !otpSecret) return null;
+  if (!TELEGRAM_OTP_REGEX.test(otpSecret)) return null;
 
   return {
-    email,
-    password,
+    email: String(email || '').trim(),
+    password: String(password || '').trim(),
     otpSecret: String(otpSecret || '').trim(),
-    link: String(link || '').trim(),
+    link: '',
   };
 };
 const parseTeamAccountInput = (rawText) =>
@@ -135,7 +61,6 @@ const parseTeamAccountInput = (rawText) =>
 const parseChatgptAccountInput = (rawText) =>
   parseTelegramCredentialInput(rawText, {
     requireTeamPrefix: false,
-    linkKeys: ['link khoi phuc', 'link lay mail', 'link email'],
   });
 const clampMonthDay = (year, monthIndex, dayOfMonth) => {
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
@@ -194,12 +119,12 @@ bot.onText(/\/start/, (msg) => {
 
 *ChatGPT:* Paste format:
 \`\`\`
-email|password|2FA_SECRET|link
+email|password|2FA_SECRET
 \`\`\`
 
 *Team:* Paste format:
 \`\`\`
-team email|password|2FA_SECRET|link
+team email|password|2FA_SECRET
 \`\`\`
 
 *Coursera:* Paste format:
@@ -419,7 +344,14 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
 💡 *Tip:* Paste tiếp format \`team email----pass----link\` để thêm nhanh!
       `;
 
-      bot.sendMessage(chatId, successMessage, { parse_mode: 'Markdown' });
+      const compactSuccessMessage = [
+        'âœ… *Tá»° Äá»˜NG THÃŠM TEAM THÃ€NH CÃ”NG!*',
+        '',
+        `ðŸ“§ *Email:* \`${email}\``,
+        `ðŸ”‘ *GPT Password:* \`${password}\``,
+        `ðŸ” *2FA:* \`${otpSecret}\``,
+      ].join('\n');
+      bot.sendMessage(chatId, compactSuccessMessage, { parse_mode: 'Markdown' });
     } catch (error) {
       console.error('Auto-add team error:', error.response?.data || error.message);
       bot.sendMessage(chatId, `❌ Lỗi khi thêm team account: ${error.response?.data?.error || error.message}`);
@@ -477,7 +409,14 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
 💡 *Tip:* Paste format tiếp theo để thêm nhanh!
           `;
 
-          bot.sendMessage(chatId, successMessage, { parse_mode: 'Markdown' });
+          const compactSuccessMessage = [
+            'âœ… *Tá»° Äá»˜NG THÃŠM THÃ€NH CÃ”NG!*',
+            '',
+            `ðŸ“§ *Email:* \`${email}\``,
+            `ðŸ”‘ *Password:* \`${password}\``,
+            `ðŸ” *2FA:* \`${otpSecret}\``,
+          ].join('\n');
+          bot.sendMessage(chatId, compactSuccessMessage, { parse_mode: 'Markdown' });
 
         } catch (error) {
           console.error('Auto-add error:', error.response?.data || error.message);

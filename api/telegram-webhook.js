@@ -49,110 +49,32 @@ const normalizeTelegramAccountText = (rawText, { requireTeamPrefix = false } = {
 };
 const parseTelegramCredentialInput = (
   rawText,
-  { requireTeamPrefix = false, linkKeys = [] } = {},
+  { requireTeamPrefix = false } = {},
 ) => {
   const normalizedInput = normalizeTelegramAccountText(rawText, {
     requireTeamPrefix,
   });
   if (!normalizedInput) return null;
 
-  const lines = normalizedInput
-    .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const labeledCandidate = {};
-  const labeledLinkKeys = new Set(
-    ["link", "link mail", "mail link", "recovery", "recovery link", "link lay ma"]
-      .concat(Array.isArray(linkKeys) ? linkKeys : []),
-  );
+  if (normalizedInput.includes("---")) return null;
 
-  lines
-    .flatMap((line) =>
-      line.includes("|") ? line.split(/\s*\|\s*/).map((part) => part.trim()) : [line],
-    )
-    .filter(Boolean)
-    .forEach((segment) => {
-      const separatorIndex = segment.indexOf(":");
-      if (separatorIndex === -1) return;
-      const key = String(segment.slice(0, separatorIndex) || "")
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[đĐ]/g, "d")
-        .replace(/\s+/g, " ")
-        .trim();
-      const value = segment.slice(separatorIndex + 1).trim();
-      if (!value) return;
-
-      if (/^(tk|tai khoan|tai khoan dang nhap|username|email)$/.test(key)) {
-        labeledCandidate.username = value;
-      } else if (/^(mk|mat khau|password|pass|gptpass)$/.test(key)) {
-        labeledCandidate.password = value;
-      } else if (/^(ma 2fa|2fa|otp|ma otp)$/.test(key)) {
-        labeledCandidate.otpSecret = value;
-      } else if (/^(2fa.live|2fa live)$/.test(key)) {
-        if (!labeledCandidate.otpSecret) {
-          labeledCandidate.otpSecret = extractOtpFrom2faLiveUrl(value);
-        }
-      } else if (labeledLinkKeys.has(key)) {
-        labeledCandidate.link = value;
-      }
-    });
-
-  if (labeledCandidate.username && labeledCandidate.password) {
-    return {
-      email: String(labeledCandidate.username || "").trim(),
-      password: String(labeledCandidate.password || "").trim(),
-      otpSecret: String(labeledCandidate.otpSecret || "").trim(),
-      link: String(labeledCandidate.link || "").trim(),
-    };
-  }
-
-  const flatInput = normalizedInput.replace(/-{3,}/g, "|").replace(/\n+/g, "|");
+  const flatInput = normalizedInput.replace(/\r/g, "").replace(/\n+/g, "|");
   const parts = flatInput
     .split(/\s*\|\s*/)
     .map((part) => String(part || "").trim())
     .filter(Boolean);
-  if (parts.length < 2) return null;
+  if (parts.length !== 3) return null;
 
-  const emailIndex = parts.findIndex((part) => TELEGRAM_EMAIL_REGEX.test(part));
-  if (emailIndex === -1 || emailIndex >= parts.length - 1) return null;
-
-  const email = String(parts[emailIndex] || "").trim();
-  const password = String(parts[emailIndex + 1] || "").trim();
-  if (!email || !password) return null;
-
-  let otpSecret = "";
-  let link = "";
-  parts.slice(emailIndex + 2).forEach((part) => {
-    if (!part) return;
-    if (/^https?:\/\/2fa\.live\/tok\//i.test(part)) {
-      if (!otpSecret) {
-        otpSecret = extractOtpFrom2faLiveUrl(part);
-      }
-      return;
-    }
-    if (/^https?:\/\//i.test(part)) {
-      if (!link) link = part;
-      return;
-    }
-    if (!otpSecret && TELEGRAM_OTP_REGEX.test(part)) {
-      otpSecret = part;
-      return;
-    }
-    if (!otpSecret) {
-      otpSecret = part;
-    } else if (!link) {
-      link = part;
-    }
-  });
+  const [email, password, otpSecret] = parts;
+  if (!TELEGRAM_EMAIL_REGEX.test(email)) return null;
+  if (!password || !otpSecret) return null;
+  if (!TELEGRAM_OTP_REGEX.test(otpSecret)) return null;
 
   return {
-    email,
-    password,
+    email: String(email || "").trim(),
+    password: String(password || "").trim(),
     otpSecret: String(otpSecret || "").trim(),
-    link: String(link || "").trim(),
+    link: "",
   };
 };
 const parseTeamAccountInput = (rawText) =>
@@ -162,7 +84,6 @@ const parseTeamAccountInput = (rawText) =>
 const parseChatgptAccountInput = (rawText) =>
   parseTelegramCredentialInput(rawText, {
     requireTeamPrefix: false,
-    linkKeys: ["link khoi phuc", "link lay mail", "link email"],
   });
 const extractTelegramSearchEmail = (rawText) => {
   if (!rawText) return "";
@@ -280,12 +201,12 @@ module.exports = async (req, res) => {
 
 *ChatGPT:* Paste format:
 \`\`\`
-email|password|2FA_SECRET|link
+email|password|2FA_SECRET
 \`\`\`
 
 *Team:* Paste format:
 \`\`\`
-team email|password|2FA_SECRET|link
+team email|password|2FA_SECRET
 \`\`\`
 
 *Coursera:* Paste format:
@@ -765,7 +686,14 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
 💡 *Tip:* Paste tiếp format \`team email----pass----link\` để thêm nhanh!
               `;
 
-          await sendMessage(chatId, successMessage);
+          const compactSuccessMessage = [
+            "âœ… *Tá»° Äá»˜NG THÃŠM TEAM THÃ€NH CÃ”NG!*",
+            "",
+            `ðŸ“§ *Email:* \`${email}\``,
+            `ðŸ”‘ *GPT Password:* \`${password}\``,
+            `ðŸ” *2FA:* \`${otpSecret}\``,
+          ].join("\n");
+          await sendMessage(chatId, compactSuccessMessage);
         } catch (error) {
           console.error(
             "Auto-add team error:",
@@ -819,7 +747,14 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
 💡 *Tip:* Paste format tiếp theo để thêm nhanh!
               `;
 
-              await sendMessage(chatId, successMessage);
+              const compactSuccessMessage = [
+                "âœ… *Tá»° Äá»˜NG THÃŠM THÃ€NH CÃ”NG!*",
+                "",
+                `ðŸ“§ *Email:* \`${email}\``,
+                `ðŸ”‘ *Password:* \`${password}\``,
+                `ðŸ” *2FA:* \`${otpSecret}\``,
+              ].join("\n");
+              await sendMessage(chatId, compactSuccessMessage);
             } catch (error) {
               console.error(
                 "Auto-add error:",
