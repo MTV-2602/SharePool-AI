@@ -7157,10 +7157,43 @@ function App() {
           chatgptPageStart + filteredChatgptAccounts.length - 1,
         )
       : 0;
-  const chatgptAdminPageNumbers = Array.from(
-    { length: Math.max(1, Number(chatgptAdminPagination.totalPages || 1)) },
-    (_, index) => index + 1,
-  );
+  const chatgptAdminVisiblePages = (() => {
+    const totalPages = Math.max(
+      1,
+      Number(chatgptAdminPagination.totalPages || 1),
+    );
+    const currentPage = Math.max(
+      1,
+      Math.min(totalPages, Number(chatgptAdminPagination.page || 1)),
+    );
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, index) => index + 1);
+    }
+    const visiblePages = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
+    if (currentPage <= 3) {
+      visiblePages.add(2);
+      visiblePages.add(3);
+      visiblePages.add(4);
+    }
+    if (currentPage >= totalPages - 2) {
+      visiblePages.add(totalPages - 1);
+      visiblePages.add(totalPages - 2);
+      visiblePages.add(totalPages - 3);
+    }
+    const sortedPages = Array.from(visiblePages)
+      .filter((pageNumber) => pageNumber >= 1 && pageNumber <= totalPages)
+      .sort((left, right) => left - right);
+    const items = [];
+    let previousPage = 0;
+    sortedPages.forEach((pageNumber) => {
+      if (previousPage > 0 && pageNumber - previousPage > 1) {
+        items.push(`ellipsis-${previousPage}-${pageNumber}`);
+      }
+      items.push(pageNumber);
+      previousPage = pageNumber;
+    });
+    return items;
+  })();
   const chatgptAdminPaginationControls = (
     <div className="mb-3 flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/55 px-3 py-2.5 md:flex-row md:items-center md:justify-between">
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
@@ -7216,7 +7249,18 @@ function App() {
           Trang trước
         </button>
         <div className="flex flex-wrap items-center gap-1.5">
-          {chatgptAdminPageNumbers.map((pageNumber) => {
+          {chatgptAdminVisiblePages.map((pageItem) => {
+            if (typeof pageItem === "string") {
+              return (
+                <span
+                  key={pageItem}
+                  className="inline-flex min-w-[34px] items-center justify-center px-1 text-[11px] font-semibold text-slate-500"
+                >
+                  ...
+                </span>
+              );
+            }
+            const pageNumber = Number(pageItem);
             const isActivePage = pageNumber === chatgptAdminPagination.page;
             return (
               <button
