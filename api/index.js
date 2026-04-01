@@ -27,6 +27,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // --- MONGODB CONNECTION ---
 // Cache connection to avoid reconnecting on every request (Vercel specific)
 let isConnected = false;
+let connectPromise = null;
 let didCleanupLegacyTeamEmailPassword = false;
 let didCleanupLegacyChatgptMarketKeys = false;
 let didMigrateLegacyCollections = false;
@@ -313,48 +314,80 @@ const normalizeLegacyDatammoCustomersIfNeeded = async () => {
 };
 
 const connectDB = async () => {
-  if (isConnected) return;
-  try {
-    await mongoose.connect(process.env.MONGO_URI, MONGO_CONNECT_OPTIONS);
-    isConnected = true;
-    await migrateLegacyCollectionsIfNeeded();
-    await normalizeLegacyDatammoCustomersIfNeeded();
-    await dropLegacyCollectionsIfSafe();
-    if (!didCleanupLegacyTeamEmailPassword) {
-      await TeamAccount.updateMany(
-        { emailPassword: { $exists: true } },
-        { $unset: { emailPassword: "" } },
-      );
-      didCleanupLegacyTeamEmailPassword = true;
-    }
-    if (!didCleanupLegacyChatgptMarketKeys) {
-      await Account.updateMany(
-        {
-          $or: [
-            { package2DatammoKey: { $exists: true } },
-            { package2DatammoKeysUsed: { $exists: true } },
-          ],
-        },
-        {
-          $unset: {
-            package2DatammoKey: "",
-            package2DatammoKeysUsed: "",
-          },
-        },
-      );
-      const legacyRegistryCollections = await mongoose.connection.db
-        .listCollections({ name: "marketplace_key_registries" })
-        .toArray();
-      if (legacyRegistryCollections.length > 0) {
-        await mongoose.connection.db.dropCollection("marketplace_key_registries");
-      }
-      didCleanupLegacyChatgptMarketKeys = true;
-    }
-    console.log("MongoDB Connected via Vercel");
-  } catch (error) {
-    console.error("MongoDB Connection Error:", error);
+  if (isConnected && mongoose.connection?.readyState === 1) {
+    return mongoose.connection;
   }
+  if (connectPromise) {
+    return connectPromise;
+  }
+  connectPromise = (async () => {
+    try {
+      const readyState = Number(mongoose.connection?.readyState || 0);
+      if (readyState !== 0 && readyState !== 1) {
+        try {
+          await mongoose.disconnect();
+        } catch (disconnectError) {
+          console.error(
+            "MongoDB Disconnect Before Reconnect Error:",
+            disconnectError,
+          );
+        }
+      }
+      await mongoose.connect(process.env.MONGO_URI, MONGO_CONNECT_OPTIONS);
+      isConnected = mongoose.connection?.readyState === 1;
+      await migrateLegacyCollectionsIfNeeded();
+      await normalizeLegacyDatammoCustomersIfNeeded();
+      await dropLegacyCollectionsIfSafe();
+      if (!didCleanupLegacyTeamEmailPassword) {
+        await TeamAccount.updateMany(
+          { emailPassword: { $exists: true } },
+          { $unset: { emailPassword: "" } },
+        );
+        didCleanupLegacyTeamEmailPassword = true;
+      }
+      if (!didCleanupLegacyChatgptMarketKeys) {
+        await Account.updateMany(
+          {
+            $or: [
+              { package2DatammoKey: { $exists: true } },
+              { package2DatammoKeysUsed: { $exists: true } },
+            ],
+          },
+          {
+            $unset: {
+              package2DatammoKey: "",
+              package2DatammoKeysUsed: "",
+            },
+          },
+        );
+        const legacyRegistryCollections = await mongoose.connection.db
+          .listCollections({ name: "marketplace_key_registries" })
+          .toArray();
+        if (legacyRegistryCollections.length > 0) {
+          await mongoose.connection.db.dropCollection("marketplace_key_registries");
+        }
+        didCleanupLegacyChatgptMarketKeys = true;
+      }
+      console.log("MongoDB Connected via Vercel");
+      return mongoose.connection;
+    } catch (error) {
+      isConnected = false;
+      console.error("MongoDB Connection Error:", error);
+      throw error;
+    } finally {
+      connectPromise = null;
+    }
+  })();
+  return connectPromise;
 };
+
+mongoose.connection.on("disconnected", () => {
+  isConnected = false;
+});
+
+mongoose.connection.on("error", () => {
+  isConnected = false;
+});
 
 // Define Schema
 const accountSchema = new mongoose.Schema({
@@ -678,8 +711,15 @@ const StoreSupportMessage =
 
 // Middleware to ensure DB is connected before processing
 app.use(async (req, res, next) => {
-  await connectDB();
-  next();
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    return res.status(503).json({
+      error:
+        "Khong the ket noi du lieu tam thoi. Vui long thu lai sau vai giay.",
+    });
+  }
 });
 
 // Middleware to verify token (MUST BE DEFINED BEFORE ROUTES)
@@ -4097,6 +4137,19 @@ const sortAdminChatgptAccounts = (items = []) => {
     );
   });
 };
+const buildEmptyStoreChatgptWarehouseSummary = () => ({
+  package1: {
+    sharedAccounts: 0,
+    sharedSlots: 0,
+    convertibleAccounts: 0,
+    availableNow: 0,
+  },
+  package2: {
+    existingAccounts: 0,
+    convertibleAccounts: 0,
+    availableNow: 0,
+  },
+});
 const getCachedChatgptAdminSnapshot = async (
   ttlMs = chatgptAdminSnapshotCacheTtlMs,
 ) => {
@@ -4140,14 +4193,30 @@ const getCachedChatgptAdminSnapshot = async (
     const storeUserMap = new Map(
       (storeUsers || []).map((user) => [String(user?.id || "").trim(), user]),
     );
-    const storeAccountTraceMap = buildStoreAccountTraceMap(
-      rawStoreOrders,
-      storeUserMap,
-    );
-    const marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
-      datammoOrders,
-      datammoWarrantyCases,
-    );
+    let storeAccountTraceMap = new Map();
+    try {
+      storeAccountTraceMap = buildStoreAccountTraceMap(
+        rawStoreOrders,
+        storeUserMap,
+      );
+    } catch (traceError) {
+      console.error(
+        "Admin ChatGPT store trace snapshot failed:",
+        traceError,
+      );
+    }
+    let marketplaceAccountTraceMap = new Map();
+    try {
+      marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
+        datammoOrders,
+        datammoWarrantyCases,
+      );
+    } catch (traceError) {
+      console.error(
+        "Admin ChatGPT marketplace trace snapshot failed:",
+        traceError,
+      );
+    }
     const enrichedAccounts = sortAdminChatgptAccounts(
       (accounts || []).map((account) => {
         const normalizedAccount = {
@@ -4195,7 +4264,15 @@ const getCachedChatgptAdminSnapshot = async (
     const shortAccounts = enrichedAccounts.filter(
       (account) => !isTrackedMarketplaceAccount(account) && isShortAccount(account),
     );
-    const storeWarehouseSummary = await buildStoreChatgptWarehouseSummary();
+    let storeWarehouseSummary = buildEmptyStoreChatgptWarehouseSummary();
+    try {
+      storeWarehouseSummary = await buildStoreChatgptWarehouseSummary();
+    } catch (summaryError) {
+      console.error(
+        "Admin ChatGPT warehouse summary snapshot failed:",
+        summaryError,
+      );
+    }
 
     return {
       enrichedAccounts,
@@ -6098,6 +6175,9 @@ const getStoreWarrantyRelatedAccountIds = (order = {}) => {
 };
 const buildStoreTotalMinExpiredAtIso = () =>
   new Date(Date.now() + STORE_TOTAL_MIN_DAYS * 24 * 60 * 60 * 1000).toISOString();
+const buildMongoSafeUsersArrayExpr = () => ({
+  $cond: [{ $isArray: "$users" }, "$users", []],
+});
 const buildStorePackage1ExistingFilter = (excludeIds = []) => ({
   type: "package1",
   package2Shelf: CHATGPT_TOTAL_VALUE,
@@ -6107,7 +6187,7 @@ const buildStorePackage1ExistingFilter = (excludeIds = []) => ({
     ? { id: { $nin: excludeIds } }
     : {}),
   $expr: {
-    $lt: [{ $size: { $ifNull: ["$users", []] } }, 3],
+    $lt: [{ $size: buildMongoSafeUsersArrayExpr() }, 3],
   },
 });
 const buildStorePackage1ExistingReplacementFilter = (excludeIds = []) => ({
@@ -6119,7 +6199,7 @@ const buildStorePackage1ExistingReplacementFilter = (excludeIds = []) => ({
     ? { id: { $nin: excludeIds } }
     : {}),
   $expr: {
-    $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
+    $eq: [{ $size: buildMongoSafeUsersArrayExpr() }, 0],
   },
 });
 const buildStorePackage1ConvertibleFilter = (excludeIds = []) => ({
@@ -6131,7 +6211,7 @@ const buildStorePackage1ConvertibleFilter = (excludeIds = []) => ({
     ? { id: { $nin: excludeIds } }
     : {}),
   $expr: {
-    $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
+    $eq: [{ $size: buildMongoSafeUsersArrayExpr() }, 0],
   },
 });
 const buildStorePackage2ConvertibleFilter = (excludeIds = []) => ({
@@ -6143,7 +6223,7 @@ const buildStorePackage2ConvertibleFilter = (excludeIds = []) => ({
     ? { id: { $nin: excludeIds } }
     : {}),
   $expr: {
-    $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
+    $eq: [{ $size: buildMongoSafeUsersArrayExpr() }, 0],
   },
 });
 const buildStorePackage2ExistingReplacementFilter = (excludeIds = []) => ({
@@ -6155,7 +6235,7 @@ const buildStorePackage2ExistingReplacementFilter = (excludeIds = []) => ({
     ? { id: { $nin: excludeIds } }
     : {}),
   $expr: {
-    $eq: [{ $size: { $ifNull: ["$users", []] } }, 0],
+    $eq: [{ $size: buildMongoSafeUsersArrayExpr() }, 0],
   },
 });
 const sanitizeStoreWarrantyCandidate = (account = {}) => ({
@@ -8241,7 +8321,13 @@ app.get("/api/data", verifyToken, async (req, res) => {
                 .lean()
             : Promise.resolve([]),
           shouldLoadSummary
-            ? buildAdminDashboardSummary()
+            ? buildAdminDashboardSummary().catch((summaryError) => {
+                console.error(
+                  "Admin summary section build failed:",
+                  summaryError,
+                );
+                return null;
+              })
             : Promise.resolve(null),
         ]);
         const traceStoreUsers =
@@ -8395,6 +8481,7 @@ app.get("/api/data", verifyToken, async (req, res) => {
     );
     res.json(payload);
   } catch (error) {
+    console.error("Admin /api/data failed:", error);
     res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
@@ -8442,6 +8529,7 @@ app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
     );
     return res.json(payload);
   } catch (error) {
+    console.error("Admin /api/admin/chatgpt-accounts failed:", error);
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong tai duoc danh sach ChatGPT admin.",
     });
@@ -8462,6 +8550,7 @@ app.get("/api/admin/dashboard/summary", verifyToken, async (req, res) => {
     );
     return res.json(payload);
   } catch (error) {
+    console.error("Admin /api/admin/dashboard/summary failed:", error);
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong tai duoc tong quan admin.",
     });
