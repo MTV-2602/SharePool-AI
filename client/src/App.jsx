@@ -1325,8 +1325,22 @@ const buildMoveExpectedPayload = (payload = {}, fromRecord = {}, toRecord = {}) 
     ...(toExpectedUpdatedAt ? { toExpectedUpdatedAt } : {}),
   };
 };
-const getApiErrorMessage = (error, fallback) =>
-  error?.response?.data?.error || error?.message || fallback;
+const getApiErrorMessage = (error, fallback) => {
+  const rawMessage = error?.response?.data?.error || error?.message || fallback;
+  const normalizedMessage = toNonAccentVietnamese(
+    String(rawMessage || "").toLowerCase(),
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  if (
+    normalizedMessage.includes("ssl routines") ||
+    normalizedMessage.includes("tlsv1 alert internal error") ||
+    normalizedMessage.includes("ssl alert number 80")
+  ) {
+    return "Ket noi bao mat toi server tam thoi loi. Du lieu khong bi hong, ban thu lai sau vai giay.";
+  }
+  return rawMessage;
+};
 const getApiErrorMessageWithDiagnostics = (error, fallback) => {
   const baseMessage = getApiErrorMessage(error, fallback);
   const diagnosticsMessage = buildAccountTraceAlertMessage(
