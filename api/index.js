@@ -4516,7 +4516,14 @@ const getChatgptUserRemainingDays = (user, duration = "1M") => {
   return null;
 };
 const buildChatgptPublicStatsSummary = async () => {
-  const [accounts, teamAccounts, marketplaceOrders, marketplaceWarrantyCases, webSummary] =
+  const [
+    accounts,
+    teamAccounts,
+    marketplaceOrders,
+    marketplaceWarrantyCases,
+    webSummary,
+    chatgptSnapshot,
+  ] =
     await Promise.all([
       Account.find({}).select("type users expiredAt duration").lean(),
       TeamAccount.find({})
@@ -4529,8 +4536,33 @@ const buildChatgptPublicStatsSummary = async () => {
         .select("scope provider")
         .lean(),
       buildAdminDashboardSummary(),
+      getCachedChatgptAdminSnapshot(),
     ]);
   const now = new Date();
+  const safeChatgptSnapshot = chatgptSnapshot || {};
+  const chatgptEnrichedAccounts = Array.isArray(safeChatgptSnapshot.enrichedAccounts)
+    ? safeChatgptSnapshot.enrichedAccounts
+    : [];
+  const chatgptTotalPoolAccounts = Array.isArray(safeChatgptSnapshot.totalPoolAccounts)
+    ? safeChatgptSnapshot.totalPoolAccounts
+    : [];
+  const chatgptMarketUnsoldAccounts = Array.isArray(
+    safeChatgptSnapshot.marketUnsoldAccounts,
+  )
+    ? safeChatgptSnapshot.marketUnsoldAccounts
+    : [];
+  const chatgptMarketSoldAccounts = Array.isArray(
+    safeChatgptSnapshot.marketSoldAccounts,
+  )
+    ? safeChatgptSnapshot.marketSoldAccounts
+    : [];
+  const chatgptShortAccounts = Array.isArray(safeChatgptSnapshot.shortAccounts)
+    ? safeChatgptSnapshot.shortAccounts
+    : [];
+  const accountMatchesSoldProvider = (account = {}, provider = "all") => {
+    if (provider === "all") return true;
+    return (account?.marketplaceTraceSummary?.providers || []).includes(provider);
+  };
   const summary = {
     totalAccounts: 0,
     shared: { total: 0, full: 0, partial: 0, empty: 0 },
@@ -4538,6 +4570,30 @@ const buildChatgptPublicStatsSummary = async () => {
     unassigned: 0,
     users: { total: 0, active: 0, expired: 0 },
     expiry: { expired: 0, within3Days: 0, within7Days: 0 },
+    chatgpt: {
+      warehouseTabs: {
+        all: chatgptEnrichedAccounts.length,
+        total: chatgptTotalPoolAccounts.length,
+        market: chatgptMarketUnsoldAccounts.length + chatgptMarketSoldAccounts.length,
+        short: chatgptShortAccounts.length,
+      },
+      totalTypeTabs: {
+        all: chatgptTotalPoolAccounts.length,
+        package1: 0,
+        package2: 0,
+        unassigned: 0,
+      },
+      marketShelfTabs: {
+        all: chatgptMarketUnsoldAccounts.length,
+        sold: chatgptMarketSoldAccounts.length,
+        soldDatammo: chatgptMarketSoldAccounts.filter((account) =>
+          accountMatchesSoldProvider(account, "datammo"),
+        ).length,
+        soldShopmini: chatgptMarketSoldAccounts.filter((account) =>
+          accountMatchesSoldProvider(account, "shopmini"),
+        ).length,
+      },
+    },
     team: {
       totalAccounts: 0,
       slotAccounts: 0,
@@ -4547,6 +4603,7 @@ const buildChatgptPublicStatsSummary = async () => {
       emptyAccounts: 0,
       marketReady: 0,
       warehouses: { total: 0, market: 0, short: 0 },
+      totalWarehouseModes: { slot: 0, business: 0 },
       expiry: { expired: 0, within3Days: 0, within7Days: 0 },
     },
     marketplace: {
@@ -4608,6 +4665,13 @@ const buildChatgptPublicStatsSummary = async () => {
     if (daysLeft >= 0 && daysLeft <= 7) summary.expiry.within7Days += 1;
   });
 
+  chatgptTotalPoolAccounts.forEach((account) => {
+    const type = String(account?.type || "unassigned").trim() || "unassigned";
+    if (type === "package1") summary.chatgpt.totalTypeTabs.package1 += 1;
+    else if (type === "package2") summary.chatgpt.totalTypeTabs.package2 += 1;
+    else summary.chatgpt.totalTypeTabs.unassigned += 1;
+  });
+
   (Array.isArray(teamAccounts) ? teamAccounts : []).forEach((account) => {
     summary.team.totalAccounts += 1;
     const saleMode = normalizeTeamSaleMode(account?.saleMode);
@@ -4620,7 +4684,14 @@ const buildChatgptPublicStatsSummary = async () => {
     else summary.team.slotAccounts += 1;
     if (warehouse === TEAM_WAREHOUSE_MARKET) summary.team.warehouses.market += 1;
     else if (warehouse === TEAM_WAREHOUSE_SHORT) summary.team.warehouses.short += 1;
-    else summary.team.warehouses.total += 1;
+    else {
+      summary.team.warehouses.total += 1;
+      if (saleMode === TEAM_SALE_MODE_BUSINESS) {
+        summary.team.totalWarehouseModes.business += 1;
+      } else {
+        summary.team.totalWarehouseModes.slot += 1;
+      }
+    }
     summary.team.activeCustomers += activeCustomers;
     if (activeCustomers > 0) summary.team.usedAccounts += 1;
     else summary.team.emptyAccounts += 1;
