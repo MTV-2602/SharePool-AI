@@ -7157,6 +7157,10 @@ function App() {
           chatgptPageStart + filteredChatgptAccounts.length - 1,
         )
       : 0;
+  const chatgptAdminPageNumbers = Array.from(
+    { length: Math.max(1, Number(chatgptAdminPagination.totalPages || 1)) },
+    (_, index) => index + 1,
+  );
   const chatgptAdminPaginationControls = (
     <div className="mb-3 flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-900/55 px-3 py-2.5 md:flex-row md:items-center md:justify-between">
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
@@ -7211,6 +7215,29 @@ function App() {
         >
           Trang trước
         </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {chatgptAdminPageNumbers.map((pageNumber) => {
+            const isActivePage = pageNumber === chatgptAdminPagination.page;
+            return (
+              <button
+                key={pageNumber}
+                type="button"
+                onClick={() =>
+                  void requestChatgptAdminPage({ page: pageNumber })
+                }
+                disabled={isActivePage || chatgptAdminPageLoading}
+                aria-current={isActivePage ? "page" : undefined}
+                className={`min-w-[34px] rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                  isActivePage
+                    ? "cursor-default border-violet-400/60 bg-violet-500/20 text-violet-100"
+                    : "border-slate-700 bg-slate-900/85 text-slate-200 hover:border-slate-500 hover:text-white"
+                } disabled:cursor-not-allowed disabled:opacity-60`}
+              >
+                {pageNumber}
+              </button>
+            );
+          })}
+        </div>
         <button
           type="button"
           onClick={() =>
