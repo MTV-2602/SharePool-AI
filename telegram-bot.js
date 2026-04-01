@@ -351,7 +351,14 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
         `ðŸ”‘ *GPT Password:* \`${password}\``,
         `ðŸ” *2FA:* \`${otpSecret}\``,
       ].join('\n');
-      bot.sendMessage(chatId, compactSuccessMessage, { parse_mode: 'Markdown' });
+      const displayMessage = [
+        '*THEM TEAM THANH CONG!*',
+        '',
+        `Email: \`${email}\``,
+        `Password: \`${password}\``,
+        `2FA: \`${otpSecret}\``,
+      ].join('\n');
+      bot.sendMessage(chatId, displayMessage, { parse_mode: 'Markdown' });
     } catch (error) {
       console.error('Auto-add team error:', error.response?.data || error.message);
       bot.sendMessage(chatId, `❌ Lỗi khi thêm team account: ${error.response?.data?.error || error.message}`);
@@ -416,7 +423,14 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
             `ðŸ”‘ *Password:* \`${password}\``,
             `ðŸ” *2FA:* \`${otpSecret}\``,
           ].join('\n');
-          bot.sendMessage(chatId, compactSuccessMessage, { parse_mode: 'Markdown' });
+          const displayMessage = [
+            '*THEM ACCOUNT THANH CONG!*',
+            '',
+            `Email: \`${email}\``,
+            `Password: \`${password}\``,
+            `2FA: \`${otpSecret}\``,
+          ].join('\n');
+          bot.sendMessage(chatId, displayMessage, { parse_mode: 'Markdown' });
 
         } catch (error) {
           console.error('Auto-add error:', error.response?.data || error.message);

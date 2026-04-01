@@ -693,7 +693,14 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
             `ðŸ”‘ *GPT Password:* \`${password}\``,
             `ðŸ” *2FA:* \`${otpSecret}\``,
           ].join("\n");
-          await sendMessage(chatId, compactSuccessMessage);
+          const displayMessage = [
+            "*THEM TEAM THANH CONG!*",
+            "",
+            `Email: \`${email}\``,
+            `Password: \`${password}\``,
+            `2FA: \`${otpSecret}\``,
+          ].join("\n");
+          await sendMessage(chatId, displayMessage);
         } catch (error) {
           console.error(
             "Auto-add team error:",
@@ -754,7 +761,14 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
                 `ðŸ”‘ *Password:* \`${password}\``,
                 `ðŸ” *2FA:* \`${otpSecret}\``,
               ].join("\n");
-              await sendMessage(chatId, compactSuccessMessage);
+              const displayMessage = [
+                "*THEM ACCOUNT THANH CONG!*",
+                "",
+                `Email: \`${email}\``,
+                `Password: \`${password}\``,
+                `2FA: \`${otpSecret}\``,
+              ].join("\n");
+              await sendMessage(chatId, displayMessage);
             } catch (error) {
               console.error(
                 "Auto-add error:",
