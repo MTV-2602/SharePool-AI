@@ -4516,9 +4516,20 @@ const getChatgptUserRemainingDays = (user, duration = "1M") => {
   return null;
 };
 const buildChatgptPublicStatsSummary = async () => {
-  const accounts = await Account.find({})
-    .select("type users expiredAt duration")
-    .lean();
+  const [accounts, teamAccounts, marketplaceOrders, marketplaceWarrantyCases, webSummary] =
+    await Promise.all([
+      Account.find({}).select("type users expiredAt duration").lean(),
+      TeamAccount.find({})
+        .select("saleMode warehouse slots expiredAt")
+        .lean(),
+      DatammoOrder.find({})
+        .select("scope provider")
+        .lean(),
+      DatammoWarrantyCase.find({})
+        .select("scope provider")
+        .lean(),
+      buildAdminDashboardSummary(),
+    ]);
   const now = new Date();
   const summary = {
     totalAccounts: 0,
@@ -4527,6 +4538,35 @@ const buildChatgptPublicStatsSummary = async () => {
     unassigned: 0,
     users: { total: 0, active: 0, expired: 0 },
     expiry: { expired: 0, within3Days: 0, within7Days: 0 },
+    team: {
+      totalAccounts: 0,
+      slotAccounts: 0,
+      businessAccounts: 0,
+      activeCustomers: 0,
+      usedAccounts: 0,
+      emptyAccounts: 0,
+      marketReady: 0,
+      warehouses: { total: 0, market: 0, short: 0 },
+      expiry: { expired: 0, within3Days: 0, within7Days: 0 },
+    },
+    marketplace: {
+      chatgptOrders: 0,
+      teamOrders: 0,
+      chatgptWarranty: 0,
+      teamWarranty: 0,
+      providers: {
+        datammoOrders: 0,
+        shopminiOrders: 0,
+        datammoWarranty: 0,
+        shopminiWarranty: 0,
+      },
+    },
+    web: {
+      totalUsers: Number(webSummary?.totalStoreUsers || 0),
+      totalOrders: Number(webSummary?.totalStoreOrders || 0),
+      fulfilledOrders: Number(webSummary?.fulfilledStoreOrders || 0),
+      pendingOrders: Number(webSummary?.pendingStoreOrders || 0),
+    },
   };
 
   (Array.isArray(accounts) ? accounts : []).forEach((account) => {
@@ -4567,6 +4607,51 @@ const buildChatgptPublicStatsSummary = async () => {
     if (daysLeft >= 0 && daysLeft <= 3) summary.expiry.within3Days += 1;
     if (daysLeft >= 0 && daysLeft <= 7) summary.expiry.within7Days += 1;
   });
+
+  (Array.isArray(teamAccounts) ? teamAccounts : []).forEach((account) => {
+    summary.team.totalAccounts += 1;
+    const saleMode = normalizeTeamSaleMode(account?.saleMode);
+    const warehouse = normalizeTeamWarehouse(
+      account?.warehouse,
+      TEAM_WAREHOUSE_TOTAL,
+    );
+    const activeCustomers = countActiveTeamCustomers(account?.slots);
+    if (saleMode === TEAM_SALE_MODE_BUSINESS) summary.team.businessAccounts += 1;
+    else summary.team.slotAccounts += 1;
+    if (warehouse === TEAM_WAREHOUSE_MARKET) summary.team.warehouses.market += 1;
+    else if (warehouse === TEAM_WAREHOUSE_SHORT) summary.team.warehouses.short += 1;
+    else summary.team.warehouses.total += 1;
+    summary.team.activeCustomers += activeCustomers;
+    if (activeCustomers > 0) summary.team.usedAccounts += 1;
+    else summary.team.emptyAccounts += 1;
+    if (isEligibleForTeamMarketSale(account)) summary.team.marketReady += 1;
+    const daysLeft = getTeamDaysLeft(account);
+    if (!Number.isFinite(daysLeft)) return;
+    if (daysLeft < 0) summary.team.expiry.expired += 1;
+    if (daysLeft >= 0 && daysLeft <= 3) summary.team.expiry.within3Days += 1;
+    if (daysLeft >= 0 && daysLeft <= 7) summary.team.expiry.within7Days += 1;
+  });
+
+  (Array.isArray(marketplaceOrders) ? marketplaceOrders : []).forEach((order) => {
+    const scope = normalizeMarketplaceScope(order?.scope, "chatgpt");
+    const provider = normalizeMarketplaceProvider(order?.provider, "datammo");
+    if (scope === "team") summary.marketplace.teamOrders += 1;
+    else summary.marketplace.chatgptOrders += 1;
+    if (provider === "shopmini") summary.marketplace.providers.shopminiOrders += 1;
+    else summary.marketplace.providers.datammoOrders += 1;
+  });
+
+  (Array.isArray(marketplaceWarrantyCases) ? marketplaceWarrantyCases : []).forEach(
+    (item) => {
+      const scope = normalizeMarketplaceScope(item?.scope, "chatgpt");
+      const provider = normalizeMarketplaceProvider(item?.provider, "datammo");
+      if (scope === "team") summary.marketplace.teamWarranty += 1;
+      else summary.marketplace.chatgptWarranty += 1;
+      if (provider === "shopmini")
+        summary.marketplace.providers.shopminiWarranty += 1;
+      else summary.marketplace.providers.datammoWarranty += 1;
+    },
+  );
 
   return {
     ...summary,

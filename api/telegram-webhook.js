@@ -135,6 +135,12 @@ const formatCompactStatsMessage = (summary = {}) => {
   const privateStats = summary?.private || {};
   const users = summary?.users || {};
   const expiry = summary?.expiry || {};
+  const team = summary?.team || {};
+  const teamWarehouses = team?.warehouses || {};
+  const teamExpiry = team?.expiry || {};
+  const market = summary?.marketplace || {};
+  const providers = market?.providers || {};
+  const web = summary?.web || {};
   const updatedAt = summary?.updatedAt
     ? new Date(summary.updatedAt)
     : new Date();
@@ -143,15 +149,19 @@ const formatCompactStatsMessage = (summary = {}) => {
     : updatedAt.toLocaleString("vi-VN");
 
   return [
-    "CHATGPT STATS",
+    "SYSTEM STATS",
     "",
-    `Accounts: ${Number(summary?.totalAccounts || 0)}`,
-    `Shared: ${Number(shared.total || 0)} (full ${Number(shared.full || 0)} / partial ${Number(shared.partial || 0)} / empty ${Number(shared.empty || 0)})`,
-    `Private: ${Number(privateStats.total || 0)} (used ${Number(privateStats.used || 0)} / empty ${Number(privateStats.empty || 0)})`,
-    `Unassigned: ${Number(summary?.unassigned || 0)}`,
+    `ChatGPT: ${Number(summary?.totalAccounts || 0)} | shared ${Number(shared.total || 0)} | private ${Number(privateStats.total || 0)} | unassigned ${Number(summary?.unassigned || 0)}`,
+    `ChatGPT use: active ${Number(users.active || 0)} / expired ${Number(users.expired || 0)} | acc exp ${Number(expiry.expired || 0)} / <=3d ${Number(expiry.within3Days || 0)} / <=7d ${Number(expiry.within7Days || 0)}`,
     "",
-    `Users: ${Number(users.total || 0)} (active ${Number(users.active || 0)} / expired ${Number(users.expired || 0)})`,
-    `Expiry: expired ${Number(expiry.expired || 0)} / <=3d ${Number(expiry.within3Days || 0)} / <=7d ${Number(expiry.within7Days || 0)}`,
+    `Team: ${Number(team.totalAccounts || 0)} | slot ${Number(team.slotAccounts || 0)} | business ${Number(team.businessAccounts || 0)}`,
+    `Team use: customers ${Number(team.activeCustomers || 0)} | used ${Number(team.usedAccounts || 0)} | empty ${Number(team.emptyAccounts || 0)} | ready ${Number(team.marketReady || 0)}`,
+    `Team kho: total ${Number(teamWarehouses.total || 0)} | market ${Number(teamWarehouses.market || 0)} | short ${Number(teamWarehouses.short || 0)} | exp ${Number(teamExpiry.expired || 0)}`,
+    "",
+    `Market: GPT orders ${Number(market.chatgptOrders || 0)} / warranty ${Number(market.chatgptWarranty || 0)} | Team orders ${Number(market.teamOrders || 0)} / warranty ${Number(market.teamWarranty || 0)}`,
+    `Providers: DM ${Number(providers.datammoOrders || 0)}/${Number(providers.datammoWarranty || 0)} | SM ${Number(providers.shopminiOrders || 0)}/${Number(providers.shopminiWarranty || 0)}`,
+    "",
+    `Web: users ${Number(web.totalUsers || 0)} | orders ${Number(web.totalOrders || 0)} | pending ${Number(web.pendingOrders || 0)} | fulfilled ${Number(web.fulfilledOrders || 0)}`,
     "",
     `Updated: ${updatedLabel}`,
   ].join("\n");
