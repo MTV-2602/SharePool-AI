@@ -62,6 +62,15 @@ const parseTeamAccountInput = (rawText) => {
 
   return { email, password, recoveryUrl };
 };
+const extractTelegramSearchEmail = (rawText) => {
+  if (!rawText) return "";
+  const cleanedText = String(rawText)
+    .replace(/^\[.*?\]/, "")
+    .replace(/^team\s+/i, "")
+    .trim();
+  const match = cleanedText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? String(match[0] || "").trim().toLowerCase() : "";
+};
 const clampMonthDay = (year, monthIndex, dayOfMonth) => {
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
   return Math.min(dayOfMonth, lastDay);
@@ -454,8 +463,9 @@ email,password,courseCode
 
       // SEARCH CHATGPT ACCOUNT: Just email input (no format)
       // Check if it's a simple email search (contains @ but no special format)
-      if (text.includes("@") && !text.includes("---") && !text.includes(",")) {
-        const searchEmail = text.trim().toLowerCase();
+      const extractedSearchEmail = extractTelegramSearchEmail(text);
+      if (extractedSearchEmail && !text.includes("---") && !text.includes(",")) {
+        const searchEmail = extractedSearchEmail;
 
         try {
           await sendMessage(chatId, "🔍 Đang tìm tài khoản...");
