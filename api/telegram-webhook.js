@@ -457,6 +457,7 @@ email,password,courseCode
                       userName: user.name,
                       accEmail: acc.username,
                       accPassword: acc.password,
+                      accOtpSecret: acc.otpSecret,
                       accType: acc.type,
                       accLink: acc.link,
                       joinedAt: user.joinedAt,
@@ -505,6 +506,8 @@ email,password,courseCode
               message += `${typeEmoji} ${r.accType} | 📅 ${joinedDate} (${daysUsed}d)\n`;
               message += `\`\`\`\n${r.accEmail}\n\`\`\`\n`;
               message += `\`\`\`\n${r.accPassword}\n\`\`\`\n`;
+              if (r.accOtpSecret)
+                message += `\`\`\`\n${r.accOtpSecret}\n\`\`\`\n`;
               if (r.accLink) message += `${r.accLink}\n`;
               message += `\n`;
             });
@@ -570,6 +573,9 @@ email,password,courseCode
             message += `👥 ${found.users?.length || 0} khách | 📅 ${expiredAt} (${daysLeft}d)\n\n`;
             message += `\`\`\`\n${found.username}\n\`\`\`\n`;
             message += `\`\`\`\n${found.password}\n\`\`\`\n`;
+            if (found.otpSecret) {
+              message += `\`\`\`\n${found.otpSecret}\n\`\`\`\n`;
+            }
             if (found.link) message += `${found.link}\n\n`;
             else message += `\n`;
 
