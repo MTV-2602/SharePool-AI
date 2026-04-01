@@ -437,40 +437,19 @@ email,password,courseCode
       // If no @, no ---, no comma -> search customer name
       if (!text.includes("@") && !text.includes("---") && !text.includes(",")) {
         const searchName = text.trim();
-        const normalizedSearch = normalizeVietnamese(searchName);
 
         try {
           await sendMessage(chatId, "🔍 Đang tìm khách hàng...");
 
-          const response = await axios.get(`${API_URL}/api/data-public`);
-          const data = response.data;
-          const accounts = data.chatgpt || data || [];
-
-          let results = [];
-          accounts.forEach((acc) => {
-            if (acc.users && acc.users.length > 0) {
-              acc.users.forEach((user, idx) => {
-                if (user.name) {
-                  const normalizedUserName = normalizeVietnamese(user.name);
-                  if (normalizedUserName.includes(normalizedSearch)) {
-                    results.push({
-                      userName: user.name,
-                      accEmail: acc.username,
-                      accPassword: acc.password,
-                      accOtpSecret: acc.otpSecret,
-                      accType: acc.type,
-                      accLink: acc.link,
-                      accMarketplaceTraceSummary: acc.marketplaceTraceSummary,
-                      joinedAt: user.joinedAt,
-                      expiredAt: user.expiredAt,
-                      accDuration: acc.duration || "1M",
-                      userIndex: idx,
-                    });
-                  }
-                }
-              });
-            }
-          });
+          const response = await axios.get(
+            `${API_URL}/api/chatgpt/customer-search-public`,
+            {
+              params: { q: searchName },
+            },
+          );
+          let results = Array.isArray(response?.data?.results)
+            ? response.data.results
+            : [];
 
           if (results.length === 0) {
             await sendMessage(
@@ -551,13 +530,13 @@ email,password,courseCode
         try {
           await sendMessage(chatId, "🔍 Đang tìm tài khoản...");
 
-          const response = await axios.get(`${API_URL}/api/data-public`);
-          const data = response.data;
-          const accounts = data.chatgpt || data || [];
-
-          const found = accounts.find(
-            (acc) => acc.username && acc.username.toLowerCase() === searchEmail,
+          const response = await axios.get(
+            `${API_URL}/api/chatgpt/account-public`,
+            {
+              params: { email: searchEmail },
+            },
           );
+          const found = response?.data?.account || null;
 
           if (!found) {
             await sendMessage(

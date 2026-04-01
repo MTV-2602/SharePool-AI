@@ -84,6 +84,13 @@ const appendLegacyMigrationNote = (note, lines = []) => {
   if (extras.length === 0) return current;
   return [current, ...extras].filter(Boolean).join("\n");
 };
+const normalizeVietnameseForSearch = (value = "") =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .toLowerCase();
 
 const transformLegacyChatgptAccountForMigration = (doc = {}) => {
   const migrated = { ...doc };
@@ -4565,6 +4572,32 @@ const buildChatgptPublicStatsSummary = async () => {
     ...summary,
     updatedAt: new Date().toISOString(),
   };
+};
+const buildMarketplaceTraceMapForAccountIds = async (accountIds = []) => {
+  const normalizedIds = Array.from(
+    new Set(
+      (Array.isArray(accountIds) ? accountIds : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (normalizedIds.length === 0) return new Map();
+  const [orders, warrantyCases] = await Promise.all([
+    DatammoOrder.find({
+      scope: "chatgpt",
+      "accounts.accountId": { $in: normalizedIds },
+    }).lean(),
+    DatammoWarrantyCase.find({
+      scope: "chatgpt",
+      $or: [
+        { rootAccountId: { $in: normalizedIds } },
+        { currentAccountId: { $in: normalizedIds } },
+        { "rounds.fromAccountId": { $in: normalizedIds } },
+        { "rounds.toAccountId": { $in: normalizedIds } },
+      ],
+    }).lean(),
+  ]);
+  return buildMarketplaceAccountTraceMap(orders, warrantyCases);
 };
 const buildStoreReservationSnapshot = async ({ excludeOrderId = "" } = {}) => {
   const activeOrders = await StoreOrder.find(
@@ -9711,6 +9744,108 @@ app.get("/api/chatgpt/stats-public", async (req, res) => {
   } catch (error) {
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong tai duoc thong ke ChatGPT.",
+    });
+  }
+});
+
+app.get("/api/chatgpt/account-public", async (req, res) => {
+  try {
+    const email = String(req.query?.email || "")
+      .trim()
+      .toLowerCase();
+    if (!email) {
+      return res.status(400).json({ error: "Thieu email." });
+    }
+    const account = await Account.findOne({
+      username: new RegExp(`^${escapeRegex(email)}$`, "i"),
+    }).lean();
+    if (!account) {
+      return res.json({ success: true, account: null });
+    }
+    const traceMap = await buildMarketplaceTraceMapForAccountIds([account.id]);
+    return res.json({
+      success: true,
+      account: {
+        ...account,
+        package2Shelf: normalizePackage2Shelf(
+          account?.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        ),
+        marketplaceTraceSummary:
+          traceMap.get(String(account?.id || "").trim()) || null,
+      },
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tim duoc tai khoan.",
+    });
+  }
+});
+
+app.get("/api/chatgpt/customer-search-public", async (req, res) => {
+  try {
+    const keyword = String(req.query?.q || "").trim();
+    if (!keyword) {
+      return res.status(400).json({ error: "Thieu tu khoa." });
+    }
+    const normalizedKeyword = normalizeVietnameseForSearch(keyword);
+    const directRegex = new RegExp(escapeRegex(keyword), "i");
+    let accounts = await Account.find({
+      "users.0": { $exists: true },
+      "users.name": directRegex,
+    })
+      .select("id username password otpSecret type link users duration")
+      .lean();
+
+    let results = [];
+    const collectResults = (items = []) => {
+      const next = [];
+      (Array.isArray(items) ? items : []).forEach((acc) => {
+        const users = Array.isArray(acc?.users) ? acc.users : [];
+        users.forEach((user, idx) => {
+          const normalizedUserName = normalizeVietnameseForSearch(user?.name);
+          if (!normalizedUserName.includes(normalizedKeyword)) return;
+          next.push({
+            accountId: String(acc?.id || "").trim(),
+            userName: String(user?.name || "").trim(),
+            accEmail: String(acc?.username || "").trim(),
+            accPassword: String(acc?.password || "").trim(),
+            accOtpSecret: String(acc?.otpSecret || "").trim(),
+            accType: String(acc?.type || "").trim(),
+            accLink: String(acc?.link || "").trim(),
+            joinedAt: String(user?.joinedAt || "").trim(),
+            expiredAt: String(user?.expiredAt || "").trim(),
+            accDuration: String(acc?.duration || "1M").trim() || "1M",
+            userIndex: idx,
+          });
+        });
+      });
+      return next;
+    };
+
+    results = collectResults(accounts);
+    if (results.length === 0) {
+      accounts = await Account.find({
+        "users.0": { $exists: true },
+      })
+        .select("id username password otpSecret type link users duration")
+        .lean();
+      results = collectResults(accounts);
+    }
+
+    const traceMap = await buildMarketplaceTraceMapForAccountIds(
+      results.map((item) => item.accountId),
+    );
+    return res.json({
+      success: true,
+      results: results.slice(0, 20).map((item) => ({
+        ...item,
+        accMarketplaceTraceSummary: traceMap.get(item.accountId) || null,
+      })),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tim duoc khach hang.",
     });
   }
 });
