@@ -460,6 +460,7 @@ email,password,courseCode
                       accOtpSecret: acc.otpSecret,
                       accType: acc.type,
                       accLink: acc.link,
+                      accMarketplaceTraceSummary: acc.marketplaceTraceSummary,
                       joinedAt: user.joinedAt,
                       expiredAt: user.expiredAt,
                       accDuration: acc.duration || "1M",
@@ -509,6 +510,18 @@ email,password,courseCode
               if (r.accOtpSecret)
                 message += `\`\`\`\n${r.accOtpSecret}\n\`\`\`\n`;
               if (r.accLink) message += `${r.accLink}\n`;
+              if (
+                Number(r.accMarketplaceTraceSummary?.orderCount || 0) > 0 ||
+                Number(r.accMarketplaceTraceSummary?.warrantyCount || 0) > 0
+              ) {
+                message += `Market: ${(r.accMarketplaceTraceSummary?.providers || []).join(", ") || "datammo"} | orders ${Number(r.accMarketplaceTraceSummary?.orderCount || 0)} | warranty ${Number(r.accMarketplaceTraceSummary?.warrantyCount || 0)}\n`;
+                if (r.accMarketplaceTraceSummary?.latestOrderId) {
+                  message += `Order: \`${r.accMarketplaceTraceSummary.latestOrderId}\`\n`;
+                }
+                if (r.accMarketplaceTraceSummary?.latestWarrantyOrderId) {
+                  message += `Warranty: \`${r.accMarketplaceTraceSummary.latestWarrantyOrderId}\`\n`;
+                }
+              }
               message += `\n`;
             });
 
@@ -575,6 +588,18 @@ email,password,courseCode
             message += `\`\`\`\n${found.password}\n\`\`\`\n`;
             if (found.otpSecret) {
               message += `\`\`\`\n${found.otpSecret}\n\`\`\`\n`;
+            }
+            if (
+              Number(found.marketplaceTraceSummary?.orderCount || 0) > 0 ||
+              Number(found.marketplaceTraceSummary?.warrantyCount || 0) > 0
+            ) {
+              message += `Market: ${(found.marketplaceTraceSummary?.providers || []).join(", ") || "datammo"} | orders ${Number(found.marketplaceTraceSummary?.orderCount || 0)} | warranty ${Number(found.marketplaceTraceSummary?.warrantyCount || 0)}\n`;
+              if (found.marketplaceTraceSummary?.latestOrderId) {
+                message += `Order: \`${found.marketplaceTraceSummary.latestOrderId}\`\n`;
+              }
+              if (found.marketplaceTraceSummary?.latestWarrantyOrderId) {
+                message += `Warranty: \`${found.marketplaceTraceSummary.latestWarrantyOrderId}\`\n`;
+              }
             }
             if (found.link) message += `${found.link}\n\n`;
             else message += `\n`;

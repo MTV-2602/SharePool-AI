@@ -9665,7 +9665,20 @@ app.get("/api/data-public", async (req, res) => {
   try {
     await reconcileChatgptMarketInventory();
     await reconcileTeamMarketInventory();
-    const accounts = await Account.find({}).lean();
+    const [accounts, datammoOrders, datammoWarrantyCases] = await Promise.all([
+      Account.find({}).lean(),
+      DatammoOrder.find({ scope: "chatgpt" }).lean(),
+      DatammoWarrantyCase.find({ scope: "chatgpt" }).lean(),
+    ]);
+    let marketplaceAccountTraceMap = new Map();
+    try {
+      marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
+        datammoOrders,
+        datammoWarrantyCases,
+      );
+    } catch (traceError) {
+      console.error("Public ChatGPT marketplace trace snapshot failed:", traceError);
+    }
     res.json({
       chatgpt: accounts.map((acc) => ({
         ...acc,
@@ -9673,6 +9686,8 @@ app.get("/api/data-public", async (req, res) => {
           acc?.package2Shelf,
           CHATGPT_TOTAL_VALUE,
         ),
+        marketplaceTraceSummary:
+          marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) || null,
       })),
     });
   } catch (error) {
