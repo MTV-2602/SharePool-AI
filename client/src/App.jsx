@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
+import { startTransition } from "react";
 import {
   canUseRealtimeRuntime,
   getRealtimeSafetySyncMs,
@@ -1763,14 +1764,11 @@ function App() {
   const channelRef = useRef(null);
   const dataVersionRef = useRef(0);
   const adminSectionCacheRef = useRef(new Map());
-  const chatgptListCacheRef = useRef({
-    key: "",
-    version: 0,
-    loadedAt: 0,
-  });
+  const chatgptListCacheRef = useRef(new Map());
   const lastAutoRefreshAtRef = useRef(0);
   const fetchDataInFlightRef = useRef(new Map());
   const chatgptPageEffectPrimedRef = useRef(false);
+  const skipNextChatgptPageEffectRef = useRef(false);
   const chatgptListRequestSeqRef = useRef(0);
   const chatgptListAppliedSeqRef = useRef(0);
   const chatgptListInFlightRef = useRef({ key: "", promise: null });
@@ -2305,6 +2303,10 @@ function App() {
 
   useEffect(() => {
     if (!isAuthenticated || activeTab !== "chatgpt") return;
+    if (skipNextChatgptPageEffectRef.current) {
+      skipNextChatgptPageEffectRef.current = false;
+      return;
+    }
     if (!chatgptPageEffectPrimedRef.current) {
       chatgptPageEffectPrimedRef.current = true;
       return;
@@ -2342,6 +2344,7 @@ function App() {
   useEffect(() => {
     if (isAuthenticated && activeTab === "chatgpt") return;
     chatgptPageEffectPrimedRef.current = false;
+    skipNextChatgptPageEffectRef.current = false;
   }, [activeTab, isAuthenticated]);
 
   useEffect(() => {
@@ -3372,16 +3375,94 @@ function App() {
     });
   };
 
-  const hasFreshChatgptListCached = (requestKey = "") => {
+  const getFreshChatgptListCacheEntry = (requestKey = "") => {
     const currentVersion = Number(dataVersionRef.current || 0);
-    if (!currentVersion) return false;
-    const cacheEntry = chatgptListCacheRef.current || {};
-    if (String(cacheEntry.key || "") !== String(requestKey || "")) return false;
-    if (Number(cacheEntry.version || 0) !== currentVersion) return false;
-    return (
-      Date.now() - Number(cacheEntry.loadedAt || 0) <=
+    if (!currentVersion) return null;
+    const normalizedKey = String(requestKey || "").trim();
+    if (!normalizedKey) return null;
+    const cacheMap = chatgptListCacheRef.current;
+    if (!(cacheMap instanceof Map)) return null;
+    const cacheEntry = cacheMap.get(normalizedKey);
+    if (!cacheEntry) return null;
+    if (Number(cacheEntry.version || 0) !== currentVersion) return null;
+    if (
+      Date.now() - Number(cacheEntry.loadedAt || 0) >
       ADMIN_AUTO_REFRESH_CACHE_MS
+    ) {
+      cacheMap.delete(normalizedKey);
+      return null;
+    }
+    return cacheEntry;
+  };
+  const trimChatgptListCache = () => {
+    const cacheMap = chatgptListCacheRef.current;
+    if (!(cacheMap instanceof Map) || cacheMap.size <= 8) return;
+    const entries = Array.from(cacheMap.entries()).sort(
+      (left, right) =>
+        Number(left?.[1]?.loadedAt || 0) - Number(right?.[1]?.loadedAt || 0),
     );
+    while (entries.length > 8) {
+      const oldest = entries.shift();
+      if (oldest) cacheMap.delete(oldest[0]);
+    }
+  };
+  const applyChatgptAdminListPayload = (
+    payload = {},
+    {
+      requestKey = "",
+      requestSeq = null,
+      safePage = 1,
+      safeLimit = DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
+    } = {},
+  ) => {
+    if (
+      Number.isFinite(Number(requestSeq)) &&
+      Number(requestSeq) !== chatgptListRequestSeqRef.current
+    ) {
+      return false;
+    }
+    const nextVersion = Number(payload?.version || dataVersionRef.current || 0);
+    if (Number.isFinite(nextVersion) && nextVersion > 0) {
+      dataVersionRef.current = nextVersion;
+    }
+    const normalizedPayload = {
+      accounts: Array.isArray(payload?.accounts) ? payload.accounts : [],
+      pagination:
+        payload?.pagination && typeof payload.pagination === "object"
+          ? payload.pagination
+          : {},
+      summary:
+        payload?.summary && typeof payload.summary === "object"
+          ? payload.summary
+          : null,
+      version: nextVersion,
+    };
+    const normalizedRequestKey = String(requestKey || "").trim();
+    if (normalizedRequestKey && chatgptListCacheRef.current instanceof Map) {
+      chatgptListCacheRef.current.set(normalizedRequestKey, {
+        version: nextVersion,
+        loadedAt: Date.now(),
+        data: normalizedPayload,
+      });
+      trimChatgptListCache();
+    }
+    if (Number.isFinite(Number(requestSeq))) {
+      chatgptListAppliedSeqRef.current = Number(requestSeq);
+    }
+    setAccounts(normalizedPayload.accounts);
+    setChatgptAdminPagination((prev) => ({
+      ...prev,
+      page: Number(normalizedPayload.pagination?.page || safePage),
+      limit: Number(normalizedPayload.pagination?.limit || safeLimit),
+      total: Number(normalizedPayload.pagination?.total || 0),
+      totalPages: Math.max(
+        1,
+        Number(normalizedPayload.pagination?.totalPages || 1),
+      ),
+      hasMore: !!normalizedPayload.pagination?.hasMore,
+      summary: normalizedPayload.summary || prev.summary,
+    }));
+    return true;
   };
   const getCurrentChatgptAdminQuery = (overrides = {}) => ({
     ...(chatgptAdminQueryRef.current || buildDefaultChatgptAdminQueryState()),
@@ -3393,11 +3474,7 @@ function App() {
       dataVersionRef.current = normalizedVersion;
     }
     adminSectionCacheRef.current = new Map();
-    chatgptListCacheRef.current = {
-      key: "",
-      version: 0,
-      loadedAt: 0,
-    };
+    chatgptListCacheRef.current = new Map();
     chatgptListRequestSeqRef.current += 1;
     chatgptListAppliedSeqRef.current = 0;
     chatgptListInFlightRef.current = { key: "", promise: null };
@@ -3674,6 +3751,7 @@ function App() {
     limit,
     allowCached = false,
     force = false,
+    showError = !silent,
   } = {}) => {
     const querySnapshot = getCurrentChatgptAdminQuery({ page, limit });
     const requestKey = buildChatgptAdminRequestKey(querySnapshot);
@@ -3681,8 +3759,16 @@ function App() {
     const safeLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(Number(querySnapshot.limit))
       ? Number(querySnapshot.limit)
       : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE;
-    if (!force && allowCached && hasFreshChatgptListCached(requestKey)) {
-      return null;
+    if (!force && allowCached) {
+      const cachedEntry = getFreshChatgptListCacheEntry(requestKey);
+      if (cachedEntry?.data) {
+        applyChatgptAdminListPayload(cachedEntry.data, {
+          requestKey,
+          safePage,
+          safeLimit,
+        });
+        return cachedEntry.data;
+      }
     }
     if (
       !force &&
@@ -3695,77 +3781,56 @@ function App() {
     chatgptListRequestSeqRef.current = requestSeq;
     const runRequest = (async () => {
       try {
-      setChatgptAdminPageLoading(true);
-      const response = await axios.get("/api/admin/chatgpt-accounts", {
-        params: {
-          page: safePage,
-          limit: safeLimit,
-          subTab: querySnapshot.subTab,
-          totalType: querySnapshot.totalType,
-          customerFilter: querySnapshot.customerFilter,
-          expiryFilter: querySnapshot.expiryFilter,
-          expiryMin: querySnapshot.expiryMin,
-          expiryMax: querySnapshot.expiryMax,
-          search: querySnapshot.search,
-          package2ShelfTab: querySnapshot.package2ShelfTab,
-          soldProviderFilter: querySnapshot.soldProviderFilter,
-        },
-        timeout: 10000,
-        skipGlobalLoading: silent,
-      });
-      const nextVersion = Number(response?.data?.version || 0);
-      if (Number.isFinite(nextVersion) && nextVersion > 0) {
-        dataVersionRef.current = nextVersion;
-      }
-      if (requestSeq !== chatgptListRequestSeqRef.current) {
-        return response?.data || null;
-      }
-      const activeRequestKey = buildChatgptAdminRequestKey(getCurrentChatgptAdminQuery());
-      if (requestKey !== activeRequestKey) {
-        return response?.data || null;
-      }
-      chatgptListAppliedSeqRef.current = requestSeq;
-      chatgptListCacheRef.current = {
-        key: requestKey,
-        version: Number(response?.data?.version || dataVersionRef.current || 0),
-        loadedAt: Date.now(),
-      };
-      setAccounts(
-        Array.isArray(response?.data?.accounts) ? response.data.accounts : [],
-      );
-      setChatgptAdminPagination((prev) => ({
-        ...prev,
-        page: Number(response?.data?.pagination?.page || safePage),
-        limit: Number(response?.data?.pagination?.limit || safeLimit),
-        total: Number(response?.data?.pagination?.total || 0),
-        totalPages: Math.max(
-          1,
-          Number(response?.data?.pagination?.totalPages || 1),
-        ),
-        hasMore: !!response?.data?.pagination?.hasMore,
-        summary:
-          response?.data?.summary &&
-          typeof response.data.summary === "object"
-            ? response.data.summary
-            : prev.summary,
-      }));
-      return response?.data || null;
-    } catch (error) {
-      if (requestSeq !== chatgptListRequestSeqRef.current) {
-        return null;
-      }
-      if (!silent) {
-        showAlert(
-          "Lỗi",
-          getApiErrorMessage(error, "Không thể tải danh sách ChatGPT."),
-          "error",
+        setChatgptAdminPageLoading(true);
+        const response = await axios.get("/api/admin/chatgpt-accounts", {
+          params: {
+            page: safePage,
+            limit: safeLimit,
+            subTab: querySnapshot.subTab,
+            totalType: querySnapshot.totalType,
+            customerFilter: querySnapshot.customerFilter,
+            expiryFilter: querySnapshot.expiryFilter,
+            expiryMin: querySnapshot.expiryMin,
+            expiryMax: querySnapshot.expiryMax,
+            search: querySnapshot.search,
+            package2ShelfTab: querySnapshot.package2ShelfTab,
+            soldProviderFilter: querySnapshot.soldProviderFilter,
+          },
+          timeout: 30000,
+          skipGlobalLoading: true,
+        });
+        if (requestSeq !== chatgptListRequestSeqRef.current) {
+          return response?.data || null;
+        }
+        const activeRequestKey = buildChatgptAdminRequestKey(
+          getCurrentChatgptAdminQuery(),
         );
-      }
-      return null;
-    } finally {
-      if (requestSeq === chatgptListRequestSeqRef.current) {
-        setChatgptAdminPageLoading(false);
-      }
+        if (requestKey !== activeRequestKey) {
+          return response?.data || null;
+        }
+        applyChatgptAdminListPayload(response?.data || {}, {
+          requestKey,
+          requestSeq,
+          safePage,
+          safeLimit,
+        });
+        return response?.data || null;
+      } catch (error) {
+        if (requestSeq !== chatgptListRequestSeqRef.current) {
+          return null;
+        }
+        if (showError) {
+          showAlert(
+            "Lỗi",
+            getApiErrorMessage(error, "Không thể tải danh sách ChatGPT."),
+            "error",
+          );
+        }
+        return null;
+      } finally {
+        if (requestSeq === chatgptListRequestSeqRef.current) {
+          setChatgptAdminPageLoading(false);
+        }
       }
     })();
     chatgptListInFlightRef.current = {
@@ -3779,6 +3844,68 @@ function App() {
         chatgptListInFlightRef.current = { key: "", promise: null };
       }
     }
+  };
+
+  const requestChatgptAdminPage = async ({
+    page,
+    limit = chatgptAdminPagination.limit,
+  } = {}) => {
+    const currentPage = Math.max(1, Number(chatgptAdminPagination.page || 1));
+    const currentLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(
+      Number(chatgptAdminPagination.limit),
+    )
+      ? Number(chatgptAdminPagination.limit)
+      : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE;
+    const nextLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(Number(limit))
+      ? Number(limit)
+      : currentLimit;
+    const nextPage = Math.max(
+      1,
+      Math.min(
+        Math.max(1, Number(chatgptAdminPagination.totalPages || 1)),
+        Number(page || currentPage),
+      ),
+    );
+    if (nextPage === currentPage && nextLimit === currentLimit) {
+      return;
+    }
+    skipNextChatgptPageEffectRef.current = true;
+    setChatgptAdminPageLoading(true);
+    startTransition(() => {
+      setChatgptAdminPagination((prev) => ({
+        ...prev,
+        page: nextPage,
+        limit: nextLimit,
+      }));
+    });
+    const requestKey = buildChatgptAdminRequestKey(
+      getCurrentChatgptAdminQuery({ page: nextPage, limit: nextLimit }),
+    );
+    const cachedEntry = getFreshChatgptListCacheEntry(requestKey);
+    if (cachedEntry?.data) {
+      applyChatgptAdminListPayload(cachedEntry.data, {
+        requestKey,
+        safePage: nextPage,
+        safeLimit: nextLimit,
+      });
+      setChatgptAdminPageLoading(false);
+      return;
+    }
+    const responseData = await loadAdminChatgptAccounts({
+      silent: true,
+      showError: true,
+      allowCached: true,
+      page: nextPage,
+      limit: nextLimit,
+    });
+    if (responseData) return;
+    startTransition(() => {
+      setChatgptAdminPagination((prev) => ({
+        ...prev,
+        page: currentPage,
+        limit: currentLimit,
+      }));
+    });
   };
 
   const loadChatgptAuxiliaryData = async ({
@@ -7056,11 +7183,12 @@ function App() {
           <select
             value={chatgptAdminPagination.limit}
             onChange={(event) =>
-              setChatgptAdminPagination((prev) => ({
-                ...prev,
+              void requestChatgptAdminPage({
                 page: 1,
-                limit: Number(event.target.value || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE),
-              }))
+                limit: Number(
+                  event.target.value || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
+                ),
+              })
             }
             className="bg-transparent font-semibold text-white outline-none"
           >
@@ -7074,10 +7202,9 @@ function App() {
         <button
           type="button"
           onClick={() =>
-            setChatgptAdminPagination((prev) => ({
-              ...prev,
-              page: Math.max(1, prev.page - 1),
-            }))
+            void requestChatgptAdminPage({
+              page: Math.max(1, chatgptAdminPagination.page - 1),
+            })
           }
           disabled={chatgptAdminPagination.page <= 1 || chatgptAdminPageLoading}
           className="rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -7087,10 +7214,12 @@ function App() {
         <button
           type="button"
           onClick={() =>
-            setChatgptAdminPagination((prev) => ({
-              ...prev,
-              page: Math.min(prev.totalPages, prev.page + 1),
-            }))
+            void requestChatgptAdminPage({
+              page: Math.min(
+                chatgptAdminPagination.totalPages,
+                chatgptAdminPagination.page + 1,
+              ),
+            })
           }
           disabled={
             chatgptAdminPagination.page >= chatgptAdminPagination.totalPages ||
@@ -10591,7 +10720,11 @@ function App() {
                 overflow: "hidden",
               }}
             >
-              <div className="overflow-x-auto w-full">
+              <div
+                className={`overflow-x-auto w-full transition-opacity ${
+                  chatgptAdminPageLoading ? "opacity-60" : "opacity-100"
+                }`}
+              >
                 <table className="legacy-table w-full border-collapse min-w-[720px]">
                   <thead>
                     <tr style={{ background: "rgba(15, 23, 42, 0.6)" }}>
