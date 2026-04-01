@@ -672,7 +672,7 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
             otpSecret,
             recoveryUrl,
             note: "",
-            saleMode: "slot",
+            saleMode: "business",
           });
 
           const successMessage = `
@@ -699,6 +699,7 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
             `Email: \`${email}\``,
             `Password: \`${password}\``,
             `2FA: \`${otpSecret}\``,
+            "Mode: `business`",
           ].join("\n");
           await sendMessage(chatId, displayMessage);
         } catch (error) {

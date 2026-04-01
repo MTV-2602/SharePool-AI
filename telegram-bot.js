@@ -328,7 +328,7 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
         otpSecret,
         recoveryUrl,
         note: '',
-        saleMode: 'slot',
+        saleMode: 'business',
         expiredAt: expiredAtStr
       });
 
@@ -357,6 +357,7 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
         `Email: \`${email}\``,
         `Password: \`${password}\``,
         `2FA: \`${otpSecret}\``,
+        'Mode: `business`',
       ].join('\n');
       bot.sendMessage(chatId, displayMessage, { parse_mode: 'Markdown' });
     } catch (error) {
