@@ -756,6 +756,74 @@ const verifyToken = (req, res, next) => {
   }
 };
 
+const BOT_INTERNAL_TOKEN = String(process.env.BOT_INTERNAL_TOKEN || "").trim();
+const TELEGRAM_WEBHOOK_SECRET = String(
+  process.env.TELEGRAM_WEBHOOK_SECRET || "",
+).trim();
+
+const safeCompareSecret = (left = "", right = "") => {
+  const leftBuffer = Buffer.from(String(left || ""), "utf8");
+  const rightBuffer = Buffer.from(String(right || ""), "utf8");
+  if (leftBuffer.length === 0 || rightBuffer.length === 0) return false;
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+};
+
+const getBotInternalTokenFromReq = (req) =>
+  String(
+    req.headers["x-bot-internal-token"] ||
+      req.headers["x-internal-bot-token"] ||
+      "",
+  ).trim();
+
+const verifyBotInternalToken = (req, res, next) => {
+  if (!BOT_INTERNAL_TOKEN) {
+    return res.status(503).json({
+      error: "Bot internal token chua duoc cau hinh.",
+    });
+  }
+  const token = getBotInternalTokenFromReq(req);
+  if (!token) {
+    return res.status(401).json({
+      error: "Bot internal token required.",
+    });
+  }
+  if (!safeCompareSecret(token, BOT_INTERNAL_TOKEN)) {
+    return res.status(403).json({
+      error: "Bot internal token invalid.",
+    });
+  }
+  req.botInternal = { authorized: true };
+  return next();
+};
+
+const verifyAdminOrBotInternalToken = (req, res, next) => {
+  const adminToken = String(
+    req.headers.authorization?.replace("Bearer ", "") || "",
+  ).trim();
+  if (adminToken) {
+    return verifyToken(req, res, next);
+  }
+  return verifyBotInternalToken(req, res, next);
+};
+
+const verifyTelegramWebhookSecret = (req, res, next) => {
+  if (!TELEGRAM_WEBHOOK_SECRET) {
+    return res.status(503).json({
+      error: "Telegram webhook secret chua duoc cau hinh.",
+    });
+  }
+  const requestSecret = String(
+    req.headers["x-telegram-bot-api-secret-token"] || "",
+  ).trim();
+  if (!safeCompareSecret(requestSecret, TELEGRAM_WEBHOOK_SECRET)) {
+    return res.status(401).json({
+      error: "Unauthorized telegram webhook.",
+    });
+  }
+  return next();
+};
+
 const getRequestIp = (req) => {
   const forwarded = String(req.headers["x-forwarded-for"] || "")
     .split(",")[0]
@@ -9850,7 +9918,7 @@ app.delete("/api/marketplace-order", verifyToken, async (req, res) => {
 });
 
 // 1.5 GET ALL DATA (Public - for Telegram bot)
-app.get("/api/data-public", async (req, res) => {
+app.get("/api/data-public", verifyBotInternalToken, async (req, res) => {
   try {
     await reconcileChatgptMarketInventory();
     await reconcileTeamMarketInventory();
@@ -9884,7 +9952,7 @@ app.get("/api/data-public", async (req, res) => {
   }
 });
 
-app.get("/api/chatgpt/stats-public", async (req, res) => {
+app.get("/api/chatgpt/stats-public", verifyBotInternalToken, async (req, res) => {
   try {
     const payload = await getCachedAdminRead(
       "public:chatgpt-stats",
@@ -9904,7 +9972,7 @@ app.get("/api/chatgpt/stats-public", async (req, res) => {
   }
 });
 
-app.get("/api/chatgpt/account-public", async (req, res) => {
+app.get("/api/chatgpt/account-public", verifyBotInternalToken, async (req, res) => {
   try {
     const email = String(req.query?.email || "")
       .trim()
@@ -9938,7 +10006,10 @@ app.get("/api/chatgpt/account-public", async (req, res) => {
   }
 });
 
-app.get("/api/chatgpt/customer-search-public", async (req, res) => {
+app.get(
+  "/api/chatgpt/customer-search-public",
+  verifyBotInternalToken,
+  async (req, res) => {
   try {
     const keyword = String(req.query?.q || "").trim();
     if (!keyword) {
@@ -10004,7 +10075,8 @@ app.get("/api/chatgpt/customer-search-public", async (req, res) => {
       error: error.message || "Khong tim duoc khach hang.",
     });
   }
-});
+  },
+);
 
 // Datammo Partner Standard: GET stock
 app.get(
@@ -10442,7 +10514,7 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
 });
 
 // 2.5 ADD ACCOUNT (Public - for Telegram bot)
-app.post("/api/chatgpt-public", async (req, res) => {
+app.post("/api/chatgpt-public", verifyBotInternalToken, async (req, res) => {
   try {
     const now = new Date();
     const expiredDate = new Date(now);
@@ -11676,7 +11748,7 @@ app.post("/api/team", verifyToken, async (req, res) => {
 });
 
 // POST add team account (Public - for Telegram bot)
-app.post("/api/team-public", async (req, res) => {
+app.post("/api/team-public", verifyBotInternalToken, async (req, res) => {
   try {
     const now = new Date();
     const expiredDate = new Date(now);
@@ -11895,7 +11967,7 @@ makeSingleUserRoutes(app, Canva, "canva");
 makeSingleUserRoutes(app, Capcut, "capcut");
 
 // 5. PROXY GOOGLE SHEET
-app.post("/api/proxy-sheet", async (req, res) => {
+app.post("/api/proxy-sheet", verifyAdminOrBotInternalToken, async (req, res) => {
   try {
     const { scriptUrl, sheetName, data } = req.body;
     const response = await axios.post(
@@ -11980,7 +12052,7 @@ app.post("/api/login", loginRateLimit, async (req, res) => {
 
 // 7. TELEGRAM WEBHOOK
 const telegramWebhook = require("./telegram-webhook");
-app.post("/api/telegram-webhook", telegramWebhook);
+app.post("/api/telegram-webhook", verifyTelegramWebhookSecret, telegramWebhook);
 
 // Helper for Vercel
 module.exports = app;

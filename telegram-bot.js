@@ -3,15 +3,72 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
 // Telegram Bot Token (lấy từ @BotFather)
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
+const TELEGRAM_BOT_TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
 
 // API URL (production hoặc localhost)
-const API_URL = process.env.API_URL || 'http://localhost:3000';
+const API_URL =
+  String(process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || '').trim() ||
+  'http://localhost:3000';
 
 // Telegram User ID được phép dùng bot (bảo mật)
 const ALLOWED_USER_IDS = process.env.ALLOWED_USER_IDS
   ? process.env.ALLOWED_USER_IDS.split(',').map(id => parseInt(id))
   : []; // Để trống = cho phép tất cả users
+
+const BOT_INTERNAL_TOKEN = String(process.env.BOT_INTERNAL_TOKEN || '').trim();
+const parseTelegramIdEnv = (...keys) =>
+  Array.from(
+    new Set(
+      keys.flatMap((key) =>
+        String(process.env[key] || '')
+          .split(',')
+          .map((item) => Number.parseInt(String(item || '').trim(), 10))
+          .filter((value) => Number.isInteger(value) && value > 0),
+      ),
+    ),
+  );
+const TELEGRAM_ALLOWED_USER_IDS = parseTelegramIdEnv(
+  'ALLOWED_USER_IDS',
+  'TELEGRAM_ALLOWED_USER_IDS',
+);
+const TELEGRAM_ALLOWED_CHAT_IDS = parseTelegramIdEnv(
+  'ALLOWED_CHAT_IDS',
+  'TELEGRAM_ALLOWED_CHAT_IDS',
+);
+const hasTelegramAcl =
+  TELEGRAM_ALLOWED_USER_IDS.length > 0 || TELEGRAM_ALLOWED_CHAT_IDS.length > 0;
+const getBotSecurityConfigError = () => {
+  if (!TELEGRAM_BOT_TOKEN) return 'TELEGRAM_BOT_TOKEN chua duoc cau hinh.';
+  if (!BOT_INTERNAL_TOKEN) return 'BOT_INTERNAL_TOKEN chua duoc cau hinh.';
+  if (!hasTelegramAcl)
+    return 'ALLOWED_USER_IDS hoac ALLOWED_CHAT_IDS chua duoc cau hinh.';
+  return '';
+};
+const botSecurityConfigError = getBotSecurityConfigError();
+if (botSecurityConfigError) {
+  throw new Error(`Telegram bot security config error: ${botSecurityConfigError}`);
+}
+const buildInternalApiConfig = (config = {}) => ({
+  ...(config || {}),
+  headers: {
+    ...(config?.headers || {}),
+    'x-bot-internal-token': BOT_INTERNAL_TOKEN,
+  },
+});
+const isAuthorizedTelegramMessage = (msg) => {
+  if (!hasTelegramAcl) return false;
+  const userId = Number.parseInt(msg?.from?.id, 10);
+  const chatId = Number.parseInt(msg?.chat?.id, 10);
+  if (Number.isInteger(userId) && TELEGRAM_ALLOWED_USER_IDS.includes(userId)) {
+    return true;
+  }
+  if (Number.isInteger(chatId) && TELEGRAM_ALLOWED_CHAT_IDS.includes(chatId)) {
+    return true;
+  }
+  return false;
+};
+
+axios.defaults.headers.common['x-bot-internal-token'] = BOT_INTERNAL_TOKEN;
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 
@@ -150,7 +207,7 @@ const formatCompactStatsMessage = (summary = {}) => {
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
 
-  if (!checkPermission(msg)) {
+  if (!isAuthorizedTelegramMessage(msg)) {
     bot.sendMessage(chatId, '❌ Bạn không có quyền sử dụng bot này!');
     return;
   }
@@ -192,7 +249,7 @@ email,password,courseCode
 bot.onText(/\/help/, (msg) => {
   const chatId = msg.chat.id;
 
-  if (!checkPermission(msg)) {
+  if (!isAuthorizedTelegramMessage(msg)) {
     bot.sendMessage(chatId, '❌ Bạn không có quyền sử dụng bot này!');
     return;
   }
@@ -222,14 +279,17 @@ bot.onText(/\/help/, (msg) => {
 bot.onText(/\/stats/, async (msg) => {
   const chatId = msg.chat.id;
 
-  if (!checkPermission(msg)) {
+  if (!isAuthorizedTelegramMessage(msg)) {
     bot.sendMessage(chatId, '❌ Bạn không có quyền sử dụng bot này!');
     return;
   }
 
   try {
     bot.sendMessage(chatId, 'Dang tai stats...');
-    const summaryResponse = await axios.get(`${API_URL}/api/chatgpt/stats-public`);
+    const summaryResponse = await axios.get(
+      `${API_URL}/api/chatgpt/stats-public`,
+      buildInternalApiConfig(),
+    );
     const summary = summaryResponse?.data?.summary || {};
     bot.sendMessage(chatId, formatCompactStatsMessage(summary));
     return;
@@ -314,7 +374,7 @@ bot.on('message', async (msg) => {
   const text = msg.text?.trim();
 
   if (!text) return;
-  if (!checkPermission(msg)) return;
+  if (!isAuthorizedTelegramMessage(msg)) return;
 
   // COURSERA AUTO-DETECT: email,password,courseCode format
   if (text.includes(',') && text.includes('@') && !text.includes('---')) {
@@ -450,7 +510,7 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
           const expiredAt = addMonthsClamped(new Date(), 1);
           const expiredAtStr = expiredAt.toISOString();
 
-          await axios.post(`${API_URL}/api/chatgpt`, {
+          await axios.post(`${API_URL}/api/chatgpt-public`, {
             username: email,
             password,
             otpSecret,

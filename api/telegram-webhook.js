@@ -18,18 +18,69 @@ const connectDB = async () => {
 
 // No need for Account model anymore - using API instead
 const TELEGRAM_BOT_TOKEN =
-  process.env.TELEGRAM_BOT_TOKEN ||
-  "8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA";
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://vinhaccplus.vercel.app";
+  String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
+const API_URL =
+  String(process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || "").trim() ||
+  "https://vinhaccplus.vercel.app";
+const BOT_INTERNAL_TOKEN = String(process.env.BOT_INTERNAL_TOKEN || "").trim();
 
-// Allowed user IDs (optional)
-const ALLOWED_USER_IDS = process.env.ALLOWED_USER_IDS
-  ? process.env.ALLOWED_USER_IDS.split(",").map((id) => parseInt(id))
-  : [];
+const parseTelegramIdEnv = (...keys) =>
+  Array.from(
+    new Set(
+      keys
+        .flatMap((key) =>
+          String(process.env[key] || "")
+            .split(",")
+            .map((item) => Number.parseInt(String(item || "").trim(), 10))
+            .filter((value) => Number.isInteger(value) && value > 0),
+        ),
+    ),
+  );
 
-const checkPermission = (userId) => {
-  if (ALLOWED_USER_IDS.length === 0) return true;
-  return ALLOWED_USER_IDS.includes(userId);
+const ALLOWED_USER_IDS = parseTelegramIdEnv(
+  "ALLOWED_USER_IDS",
+  "TELEGRAM_ALLOWED_USER_IDS",
+);
+const ALLOWED_CHAT_IDS = parseTelegramIdEnv(
+  "ALLOWED_CHAT_IDS",
+  "TELEGRAM_ALLOWED_CHAT_IDS",
+);
+const hasTelegramAcl = ALLOWED_USER_IDS.length > 0 || ALLOWED_CHAT_IDS.length > 0;
+
+const getBotSecurityConfigError = () => {
+  if (!TELEGRAM_BOT_TOKEN) return "TELEGRAM_BOT_TOKEN chua duoc cau hinh.";
+  if (!BOT_INTERNAL_TOKEN) return "BOT_INTERNAL_TOKEN chua duoc cau hinh.";
+  if (!hasTelegramAcl)
+    return "ALLOWED_USER_IDS hoac ALLOWED_CHAT_IDS chua duoc cau hinh.";
+  return "";
+};
+
+const checkPermission = ({ userId, chatId }) => {
+  if (!hasTelegramAcl) return false;
+  const normalizedUserId = Number.parseInt(userId, 10);
+  const normalizedChatId = Number.parseInt(chatId, 10);
+  if (
+    Number.isInteger(normalizedUserId) &&
+    ALLOWED_USER_IDS.includes(normalizedUserId)
+  ) {
+    return true;
+  }
+  if (
+    Number.isInteger(normalizedChatId) &&
+    ALLOWED_CHAT_IDS.includes(normalizedChatId)
+  ) {
+    return true;
+  }
+  return false;
+};
+
+const buildInternalApiConfig = (config = {}) => {
+  const nextConfig = { ...(config || {}) };
+  nextConfig.headers = {
+    ...(config?.headers || {}),
+    "x-bot-internal-token": BOT_INTERNAL_TOKEN,
+  };
+  return nextConfig;
 };
 
 const TELEGRAM_EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
@@ -219,6 +270,11 @@ module.exports = async (req, res) => {
   }
 
   try {
+    const configError = getBotSecurityConfigError();
+    if (configError) {
+      console.error("Telegram webhook config error:", configError);
+      return res.status(503).json({ error: configError });
+    }
     const { message } = req.body;
 
     if (!message) {
@@ -234,7 +290,7 @@ module.exports = async (req, res) => {
     }
 
     // Check permission
-    if (!checkPermission(userId)) {
+    if (!checkPermission({ userId, chatId })) {
       await sendMessage(chatId, "❌ Bạn không có quyền sử dụng bot này!");
       return res.status(200).json({ ok: true });
     }
@@ -276,6 +332,7 @@ email,password,courseCode
         await sendMessage(chatId, "Dang tai stats...");
         const summaryResponse = await axios.get(
           `${API_URL}/api/chatgpt/stats-public`,
+          buildInternalApiConfig(),
         );
         const summary = summaryResponse?.data?.summary || {};
         await sendMessage(chatId, formatCompactStatsMessage(summary));
@@ -467,9 +524,9 @@ email,password,courseCode
 
           const response = await axios.get(
             `${API_URL}/api/chatgpt/customer-search-public`,
-            {
+            buildInternalApiConfig({
               params: { q: searchName },
-            },
+            }),
           );
           let results = Array.isArray(response?.data?.results)
             ? response.data.results
@@ -556,9 +613,9 @@ email,password,courseCode
 
           const response = await axios.get(
             `${API_URL}/api/chatgpt/account-public`,
-            {
+            buildInternalApiConfig({
               params: { email: searchEmail },
-            },
+            }),
           );
           const found = response?.data?.account || null;
 
@@ -684,9 +741,9 @@ email,password,courseCode
                 sheetName: "",
                 data: sheetData,
               },
-              {
+              buildInternalApiConfig({
                 timeout: 30000,
-              },
+              }),
             );
 
             if (totalAccounts === 1) {
@@ -733,14 +790,18 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
         try {
           await sendMessage(chatId, "⏳ Đang thêm team account...");
 
-          await axios.post(`${API_URL}/api/team-public`, {
-            username: email,
-            password,
-            otpSecret,
-            recoveryUrl,
-            note: "",
-            saleMode: "business",
-          });
+          await axios.post(
+            `${API_URL}/api/team-public`,
+            {
+              username: email,
+              password,
+              otpSecret,
+              recoveryUrl,
+              note: "",
+              saleMode: "business",
+            },
+            buildInternalApiConfig(),
+          );
 
           const successMessage = `
 ✅ *TỰ ĐỘNG THÊM TEAM THÀNH CÔNG!*
@@ -802,14 +863,18 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
               await sendMessage(chatId, "⏳ Đang thêm account...");
 
               // Call public API endpoint
-              await axios.post(`${API_URL}/api/chatgpt-public`, {
-                username: email,
-                password,
-                otpSecret,
-                link: recoveryMailUrl,
-                type: "unassigned",
-                note: "",
-              });
+              await axios.post(
+                `${API_URL}/api/chatgpt-public`,
+                {
+                  username: email,
+                  password,
+                  otpSecret,
+                  link: recoveryMailUrl,
+                  type: "unassigned",
+                  note: "",
+                },
+                buildInternalApiConfig(),
+              );
 
               const successMessage = `
 ✅ *TỰ ĐỘNG THÊM THÀNH CÔNG!*
