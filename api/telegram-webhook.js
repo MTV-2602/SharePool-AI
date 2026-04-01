@@ -32,36 +32,138 @@ const checkPermission = (userId) => {
   return ALLOWED_USER_IDS.includes(userId);
 };
 
-const parseTeamAccountInput = (rawText) => {
-  if (!rawText) return null;
+const TELEGRAM_EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+const TELEGRAM_OTP_REGEX = /\b[A-Z2-7]{16,}\b/i;
+const extractOtpFrom2faLiveUrl = (value = "") => {
+  const match = String(value || "").match(/\/tok\/([^/?#]+)/i)?.[1];
+  return match ? decodeURIComponent(match) : "";
+};
+const normalizeTelegramAccountText = (rawText, { requireTeamPrefix = false } = {}) => {
+  if (!rawText) return "";
+  let cleanedText = String(rawText).replace(/^\[.*?\]/, "").trim();
+  if (requireTeamPrefix) {
+    if (!/^team\b/i.test(cleanedText)) return "";
+    cleanedText = cleanedText.replace(/^team\b[:\s-]*/i, "").trim();
+  }
+  return cleanedText.replace(/[｜¦┃]/g, "|").replace(/\t+/g, "|");
+};
+const parseTelegramCredentialInput = (
+  rawText,
+  { requireTeamPrefix = false, linkKeys = [] } = {},
+) => {
+  const normalizedInput = normalizeTelegramAccountText(rawText, {
+    requireTeamPrefix,
+  });
+  if (!normalizedInput) return null;
 
-  const cleanedText = rawText.replace(/^\[.*?\]/, "").trim();
-  if (!/^team\b/i.test(cleanedText)) return null;
-
-  const lines = cleanedText
-    .split(/\r?\n/)
+  const lines = normalizedInput
+    .replace(/\r/g, "")
+    .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-  const sourceLine = lines.find((line) => /-{3,}/.test(line)) || cleanedText;
-  const normalized = sourceLine.replace(/^team\s+/i, "").trim();
-  const parts = normalized
-    .split(/-{3,}/)
-    .map((part) => part.trim())
+  const labeledCandidate = {};
+  const labeledLinkKeys = new Set(
+    ["link", "link mail", "mail link", "recovery", "recovery link", "link lay ma"]
+      .concat(Array.isArray(linkKeys) ? linkKeys : []),
+  );
+
+  lines
+    .flatMap((line) =>
+      line.includes("|") ? line.split(/\s*\|\s*/).map((part) => part.trim()) : [line],
+    )
+    .filter(Boolean)
+    .forEach((segment) => {
+      const separatorIndex = segment.indexOf(":");
+      if (separatorIndex === -1) return;
+      const key = String(segment.slice(0, separatorIndex) || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[đĐ]/g, "d")
+        .replace(/\s+/g, " ")
+        .trim();
+      const value = segment.slice(separatorIndex + 1).trim();
+      if (!value) return;
+
+      if (/^(tk|tai khoan|tai khoan dang nhap|username|email)$/.test(key)) {
+        labeledCandidate.username = value;
+      } else if (/^(mk|mat khau|password|pass|gptpass)$/.test(key)) {
+        labeledCandidate.password = value;
+      } else if (/^(ma 2fa|2fa|otp|ma otp)$/.test(key)) {
+        labeledCandidate.otpSecret = value;
+      } else if (/^(2fa.live|2fa live)$/.test(key)) {
+        if (!labeledCandidate.otpSecret) {
+          labeledCandidate.otpSecret = extractOtpFrom2faLiveUrl(value);
+        }
+      } else if (labeledLinkKeys.has(key)) {
+        labeledCandidate.link = value;
+      }
+    });
+
+  if (labeledCandidate.username && labeledCandidate.password) {
+    return {
+      email: String(labeledCandidate.username || "").trim(),
+      password: String(labeledCandidate.password || "").trim(),
+      otpSecret: String(labeledCandidate.otpSecret || "").trim(),
+      link: String(labeledCandidate.link || "").trim(),
+    };
+  }
+
+  const flatInput = normalizedInput.replace(/-{3,}/g, "|").replace(/\n+/g, "|");
+  const parts = flatInput
+    .split(/\s*\|\s*/)
+    .map((part) => String(part || "").trim())
     .filter(Boolean);
+  if (parts.length < 2) return null;
 
-  if (parts.length < 3) return null;
+  const emailIndex = parts.findIndex((part) => TELEGRAM_EMAIL_REGEX.test(part));
+  if (emailIndex === -1 || emailIndex >= parts.length - 1) return null;
 
-  const [email, password, thirdPart = "", fourthPart = ""] = parts;
-  const fallbackRecoveryMatch = rawText.match(/https?:\/\/\S+/i);
-  const recoveryUrl =
-    fourthPart ||
-    (/^https?:\/\//i.test(thirdPart) ? thirdPart : "") ||
-    (fallbackRecoveryMatch ? fallbackRecoveryMatch[0].trim() : "");
+  const email = String(parts[emailIndex] || "").trim();
+  const password = String(parts[emailIndex + 1] || "").trim();
+  if (!email || !password) return null;
 
-  if (!email || !password || !email.includes("@")) return null;
+  let otpSecret = "";
+  let link = "";
+  parts.slice(emailIndex + 2).forEach((part) => {
+    if (!part) return;
+    if (/^https?:\/\/2fa\.live\/tok\//i.test(part)) {
+      if (!otpSecret) {
+        otpSecret = extractOtpFrom2faLiveUrl(part);
+      }
+      return;
+    }
+    if (/^https?:\/\//i.test(part)) {
+      if (!link) link = part;
+      return;
+    }
+    if (!otpSecret && TELEGRAM_OTP_REGEX.test(part)) {
+      otpSecret = part;
+      return;
+    }
+    if (!otpSecret) {
+      otpSecret = part;
+    } else if (!link) {
+      link = part;
+    }
+  });
 
-  return { email, password, recoveryUrl };
+  return {
+    email,
+    password,
+    otpSecret: String(otpSecret || "").trim(),
+    link: String(link || "").trim(),
+  };
 };
+const parseTeamAccountInput = (rawText) =>
+  parseTelegramCredentialInput(rawText, {
+    requireTeamPrefix: true,
+  });
+const parseChatgptAccountInput = (rawText) =>
+  parseTelegramCredentialInput(rawText, {
+    requireTeamPrefix: false,
+    linkKeys: ["link khoi phuc", "link lay mail", "link email"],
+  });
 const extractTelegramSearchEmail = (rawText) => {
   if (!rawText) return "";
   const cleanedText = String(rawText)
@@ -178,12 +280,12 @@ module.exports = async (req, res) => {
 
 *ChatGPT:* Paste format:
 \`\`\`
-email---password---recoveryUrl
+email|password|2FA_SECRET|link
 \`\`\`
 
 *Team:* Paste format:
 \`\`\`
-team email----gptpass----recoveryUrl
+team email|password|2FA_SECRET|link
 \`\`\`
 
 *Coursera:* Paste format:
@@ -461,10 +563,19 @@ email,password,courseCode
         return res.status(200).json({ ok: true });
       }
 
+      const parsedInlineTeamAccount = parseTeamAccountInput(text);
+      const parsedInlineChatgptAccount = parseChatgptAccountInput(text);
+
       // SEARCH CHATGPT ACCOUNT: Just email input (no format)
-      // Check if it's a simple email search (contains @ but no special format)
       const extractedSearchEmail = extractTelegramSearchEmail(text);
-      if (extractedSearchEmail && !text.includes("---") && !text.includes(",")) {
+      if (
+        extractedSearchEmail &&
+        !text.includes("---") &&
+        !text.includes(",") &&
+        !/[|｜¦┃]/.test(text) &&
+        !parsedInlineTeamAccount &&
+        !parsedInlineChatgptAccount
+      ) {
         const searchEmail = extractedSearchEmail;
 
         try {
@@ -627,9 +738,9 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
         }
       }
 
-      const parsedTeamAccount = parseTeamAccountInput(text);
+      const parsedTeamAccount = parsedInlineTeamAccount;
       if (parsedTeamAccount) {
-        const { email, password, recoveryUrl } = parsedTeamAccount;
+        const { email, password, otpSecret, link: recoveryUrl } = parsedTeamAccount;
 
         try {
           await sendMessage(chatId, "⏳ Đang thêm team account...");
@@ -637,6 +748,7 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
           await axios.post(`${API_URL}/api/team-public`, {
             username: email,
             password,
+            otpSecret,
             recoveryUrl,
             note: "",
             saleMode: "slot",
@@ -667,24 +779,20 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
         return res.status(200).json({ ok: true });
       }
 
-      // CHATGPT AUTO-DETECT: email---password---recoveryUrl format
-      const hasChinesePrefix = text.match(/^\[.*?\]/);
-      const hasDelimiters = text.includes("---") || text.includes("----");
+      // CHATGPT AUTO-DETECT: email|password|2fa|link or legacy --- format
+      const hasDelimiters =
+        text.includes("---") || text.includes("----") || /[|｜¦┃]/.test(text);
       const hasAtSign = text.includes("@");
 
       if (hasDelimiters && hasAtSign) {
-        let input = text;
-
-        // Remove Chinese prefix
-        input = input.replace(/^\[.*?\]/, "").trim();
-
-        // Normalize: convert ---- to ---
-        input = input.replace(/----/g, "---");
-
-        const parts = input.split("---").map((p) => p.trim());
-
-        if (parts.length === 3) {
-          const [email, password, recoveryMailUrl] = parts;
+        const parsedChatgptAccount = parsedInlineChatgptAccount;
+        if (parsedChatgptAccount) {
+          const {
+            email,
+            password,
+            otpSecret,
+            link: recoveryMailUrl,
+          } = parsedChatgptAccount;
 
           if (email && password) {
             try {
@@ -694,6 +802,7 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
               await axios.post(`${API_URL}/api/chatgpt-public`, {
                 username: email,
                 password,
+                otpSecret,
                 link: recoveryMailUrl,
                 type: "unassigned",
                 note: "",
