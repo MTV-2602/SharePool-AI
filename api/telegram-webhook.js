@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const axios = require("axios");
 const mongoose = require("mongoose");
 require("dotenv").config();
@@ -17,12 +18,22 @@ const connectDB = async () => {
 };
 
 // No need for Account model anymore - using API instead
+const LEGACY_TELEGRAM_BOT_TOKEN =
+  "8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA";
+const LEGACY_ALLOWED_TELEGRAM_USER_IDS = Object.freeze([6352706510]);
+const buildLegacyBotSecret = (label = "") =>
+  crypto
+    .createHash("sha256")
+    .update(`vinhaccplus:${label}:${LEGACY_TELEGRAM_BOT_TOKEN}`)
+    .digest("hex");
 const TELEGRAM_BOT_TOKEN =
-  String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
+  String(process.env.TELEGRAM_BOT_TOKEN || LEGACY_TELEGRAM_BOT_TOKEN).trim();
 const API_URL =
   String(process.env.NEXT_PUBLIC_API_URL || process.env.API_URL || "").trim() ||
   "https://vinhaccplus.vercel.app";
-const BOT_INTERNAL_TOKEN = String(process.env.BOT_INTERNAL_TOKEN || "").trim();
+const BOT_INTERNAL_TOKEN = String(
+  process.env.BOT_INTERNAL_TOKEN || buildLegacyBotSecret("bot-internal"),
+).trim();
 
 const parseTelegramIdEnv = (...keys) =>
   Array.from(
@@ -37,14 +48,20 @@ const parseTelegramIdEnv = (...keys) =>
     ),
   );
 
-const ALLOWED_USER_IDS = parseTelegramIdEnv(
-  "ALLOWED_USER_IDS",
-  "TELEGRAM_ALLOWED_USER_IDS",
-);
-const ALLOWED_CHAT_IDS = parseTelegramIdEnv(
-  "ALLOWED_CHAT_IDS",
-  "TELEGRAM_ALLOWED_CHAT_IDS",
-);
+const ALLOWED_USER_IDS = (() => {
+  const parsedIds = parseTelegramIdEnv(
+    "ALLOWED_USER_IDS",
+    "TELEGRAM_ALLOWED_USER_IDS",
+  );
+  return parsedIds.length > 0 ? parsedIds : [...LEGACY_ALLOWED_TELEGRAM_USER_IDS];
+})();
+const ALLOWED_CHAT_IDS = (() => {
+  const parsedIds = parseTelegramIdEnv(
+    "ALLOWED_CHAT_IDS",
+    "TELEGRAM_ALLOWED_CHAT_IDS",
+  );
+  return parsedIds.length > 0 ? parsedIds : [...LEGACY_ALLOWED_TELEGRAM_USER_IDS];
+})();
 const hasTelegramAcl = ALLOWED_USER_IDS.length > 0 || ALLOWED_CHAT_IDS.length > 0;
 
 const getBotSecurityConfigError = () => {

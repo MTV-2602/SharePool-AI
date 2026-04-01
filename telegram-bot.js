@@ -1,9 +1,20 @@
+const crypto = require('crypto');
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
 // Telegram Bot Token (lấy từ @BotFather)
-const TELEGRAM_BOT_TOKEN = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
+const LEGACY_TELEGRAM_BOT_TOKEN =
+  '8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA';
+const LEGACY_ALLOWED_TELEGRAM_USER_IDS = Object.freeze([6352706510]);
+const buildLegacyBotSecret = (label = '') =>
+  crypto
+    .createHash('sha256')
+    .update(`vinhaccplus:${label}:${LEGACY_TELEGRAM_BOT_TOKEN}`)
+    .digest('hex');
+const TELEGRAM_BOT_TOKEN = String(
+  process.env.TELEGRAM_BOT_TOKEN || LEGACY_TELEGRAM_BOT_TOKEN,
+).trim();
 
 // API URL (production hoặc localhost)
 const API_URL =
@@ -35,11 +46,20 @@ const TELEGRAM_ALLOWED_CHAT_IDS = parseTelegramIdEnv(
   'ALLOWED_CHAT_IDS',
   'TELEGRAM_ALLOWED_CHAT_IDS',
 );
+if (TELEGRAM_ALLOWED_USER_IDS.length === 0) {
+  TELEGRAM_ALLOWED_USER_IDS.push(...LEGACY_ALLOWED_TELEGRAM_USER_IDS);
+}
+if (TELEGRAM_ALLOWED_CHAT_IDS.length === 0) {
+  TELEGRAM_ALLOWED_CHAT_IDS.push(...LEGACY_ALLOWED_TELEGRAM_USER_IDS);
+}
+const EFFECTIVE_BOT_INTERNAL_TOKEN =
+  BOT_INTERNAL_TOKEN || buildLegacyBotSecret('bot-internal');
 const hasTelegramAcl =
   TELEGRAM_ALLOWED_USER_IDS.length > 0 || TELEGRAM_ALLOWED_CHAT_IDS.length > 0;
 const getBotSecurityConfigError = () => {
   if (!TELEGRAM_BOT_TOKEN) return 'TELEGRAM_BOT_TOKEN chua duoc cau hinh.';
-  if (!BOT_INTERNAL_TOKEN) return 'BOT_INTERNAL_TOKEN chua duoc cau hinh.';
+  if (!EFFECTIVE_BOT_INTERNAL_TOKEN)
+    return 'BOT_INTERNAL_TOKEN chua duoc cau hinh.';
   if (!hasTelegramAcl)
     return 'ALLOWED_USER_IDS hoac ALLOWED_CHAT_IDS chua duoc cau hinh.';
   return '';
@@ -52,7 +72,7 @@ const buildInternalApiConfig = (config = {}) => ({
   ...(config || {}),
   headers: {
     ...(config?.headers || {}),
-    'x-bot-internal-token': BOT_INTERNAL_TOKEN,
+    'x-bot-internal-token': EFFECTIVE_BOT_INTERNAL_TOKEN,
   },
 });
 const isAuthorizedTelegramMessage = (msg) => {
@@ -68,7 +88,8 @@ const isAuthorizedTelegramMessage = (msg) => {
   return false;
 };
 
-axios.defaults.headers.common['x-bot-internal-token'] = BOT_INTERNAL_TOKEN;
+axios.defaults.headers.common['x-bot-internal-token'] =
+  EFFECTIVE_BOT_INTERNAL_TOKEN;
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 

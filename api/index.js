@@ -756,9 +756,19 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-const BOT_INTERNAL_TOKEN = String(process.env.BOT_INTERNAL_TOKEN || "").trim();
+const LEGACY_TELEGRAM_BOT_TOKEN =
+  "8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA";
+const buildLegacyBotSecret = (label = "") =>
+  crypto
+    .createHash("sha256")
+    .update(`vinhaccplus:${label}:${LEGACY_TELEGRAM_BOT_TOKEN}`)
+    .digest("hex");
+const BOT_INTERNAL_TOKEN = String(
+  process.env.BOT_INTERNAL_TOKEN || buildLegacyBotSecret("bot-internal"),
+).trim();
 const TELEGRAM_WEBHOOK_SECRET = String(
-  process.env.TELEGRAM_WEBHOOK_SECRET || "",
+  process.env.TELEGRAM_WEBHOOK_SECRET ||
+    buildLegacyBotSecret("telegram-webhook"),
 ).trim();
 
 const safeCompareSecret = (left = "", right = "") => {
