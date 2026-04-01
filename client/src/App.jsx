@@ -16582,6 +16582,42 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
             toNonAccentVietnamese(warrantyReplacementSearch),
           );
         });
+        const replacementWarehouseSummary = eligibleReplacementAccounts.reduce(
+          (summary, acc) => {
+            const normalizedWarehouse = isTeamWarranty
+              ? normalizeTeamWarehouse(acc?.warehouse)
+              : normalizePackage2Shelf(acc?.package2Shelf);
+            const key = String(normalizedWarehouse || "all").trim() || "all";
+            return {
+              ...summary,
+              [key]: Number(summary[key] || 0) + 1,
+            };
+          },
+          {},
+        );
+        const filteredWarehouseCandidateCount =
+          warrantyWarehouseFilter === "all"
+            ? eligibleReplacementAccounts.length
+            : Number(
+                replacementWarehouseSummary[warrantyWarehouseFilter] || 0,
+              );
+        const availableWarehouseHints = (
+          isTeamWarranty
+            ? [
+                { key: "total", label: "Kho tong" },
+                { key: "market", label: "Kho market" },
+                { key: "short", label: "Kho duoi 25 ngay" },
+              ]
+            : [
+                { key: "none", label: "Kho tong" },
+                { key: "cheap", label: "Kho market" },
+                { key: "main", label: "Kho duoi 25 ngay" },
+              ]
+        ).filter(
+          (item) =>
+            item.key !== warrantyWarehouseFilter &&
+            Number(replacementWarehouseSummary[item.key] || 0) > 0,
+        );
         const hasVisibleReplacementSelected = filteredReplacementAccounts.some(
           (acc) => String(acc?.id || "") === String(warrantyReplacementId || ""),
         );
@@ -16717,6 +16753,24 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         : "Khong co acc trong 100% phu hop de bao hanh."}
                     </div>
                   )}
+                  {filteredReplacementAccounts.length === 0 &&
+                    eligibleReplacementAccounts.length > 0 &&
+                    warrantyWarehouseFilter !== "all" && (
+                      <div className="mt-2 text-xs text-sky-300 leading-relaxed">
+                        {filteredWarehouseCandidateCount === 0
+                          ? `Kho dang chon hien khong co acc sach. Thu doi sang ${
+                              availableWarehouseHints.length > 0
+                                ? availableWarehouseHints
+                                    .map(
+                                      (item) =>
+                                        `${item.label} (${replacementWarehouseSummary[item.key]})`,
+                                    )
+                                    .join(", ")
+                                : "Tat ca kho"
+                            }.`
+                          : null}
+                      </div>
+                    )}
                 </div>
 
                 <div>
