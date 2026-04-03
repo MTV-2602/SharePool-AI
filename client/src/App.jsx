@@ -48,6 +48,8 @@ const SESSION_ROLE_STORAGE_KEY = "active_session_role";
 const DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE = 20;
 const DEFAULT_SUPPORT_PAGE_SIZE = 6;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
+const ADMIN_HEAVY_REQUEST_TIMEOUT_MS = 30000;
+const ADMIN_MEDIUM_REQUEST_TIMEOUT_MS = 20000;
 const WEB_ADMIN_TABS = [
   "store-users",
   "store-config",
@@ -3543,7 +3545,7 @@ function App() {
         }
         const res = await axios.get("/api/data", {
           params: Object.keys(queryParams).length > 0 ? queryParams : undefined,
-          timeout: 10000,
+          timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS,
           headers: { "Cache-Control": "no-cache" },
           requestLabel,
           skipGlobalLoading: !showLoader,
@@ -3720,7 +3722,7 @@ function App() {
     }
     try {
       const response = await axios.get("/api/admin/dashboard/summary", {
-        timeout: 10000,
+        timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
         skipGlobalLoading: silent,
       });
       const nextVersion = Number(response?.data?.version || dataVersionRef.current || 0);
@@ -4101,7 +4103,7 @@ function App() {
             limit: safeLimit,
             page: safePage,
           },
-          timeout: 10000,
+          timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS,
           skipGlobalLoading: silent,
         });
         if (!append && safePage === 1) {
