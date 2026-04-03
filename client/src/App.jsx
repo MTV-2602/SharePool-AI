@@ -4911,35 +4911,6 @@ function App() {
   }, [supportReplyDraft]);
 
   useEffect(() => {
-    if (activeTab !== "chatgpt" || !expandedStoreUserId) return;
-    const visibleOrders = (storeOrders || []).filter(
-      (order) =>
-        String(order?.userId || "").trim() === expandedStoreUserId &&
-        String(order?.packageCode || "").trim() === "package2" &&
-        String(order?.status || "").trim() === "fulfilled",
-    );
-    visibleOrders.forEach((order) => {
-      const orderId = String(order?.id || "").trim();
-      if (!orderId) return;
-      const orderOtp = storeOrderOtpResults[orderId] || {};
-      const otpSecondsLeft = getStoreOrderOtpSecondsRemaining(
-        orderOtp,
-        storeOrderOtpNowMs,
-      );
-      if (otpSecondsLeft > 0) return;
-      if (loadingStates.fetchStoreOrderOtp === orderId) return;
-      handleFetchStoreOrderOtp(order, { silent: true });
-    });
-  }, [
-    activeTab,
-    expandedStoreUserId,
-    storeOrders,
-    storeOrderOtpResults,
-    storeOrderOtpNowMs,
-    loadingStates.fetchStoreOrderOtp,
-  ]);
-
-  useEffect(() => {
     if (activeTab !== "support") return undefined;
     if (!selectedSupportConversationId) return undefined;
 
@@ -8606,8 +8577,8 @@ function App() {
                                         : isPackage1
                                           ? "Bấm Lấy mã OTP để xem 6 số nhanh"
                                           : loadingStates.fetchStoreOrderOtp === orderId
-                                            ? "Đang làm mới mã 2FA..."
-                                            : "Mã 2FA sẽ tự hiện khi tải xong";
+                                            ? "Đang lấy mã 2FA..."
+                                            : "Bấm Lấy mã 2FA khi cần";
                                     const warrantyRounds = Array.isArray(order?.warrantyRounds)
                                       ? order.warrantyRounds
                                       : [];
@@ -8617,8 +8588,8 @@ function App() {
                                       "--";
                                     const currentAccountDisplay =
                                       order?.assignedUsername || "--";
-                                    const showPackage1FetchButton =
-                                      isPackage1 &&
+                                    const showOtpFetchButton =
+                                      (isPackage1 || isPackage2) &&
                                       (!Boolean(orderOtp?.code) || otpSecondsLeft <= 0);
                                     const canMarkStoreOrderFulfilled =
                                       !isFulfilledStoreOrder &&
@@ -8900,10 +8871,10 @@ function App() {
                                           <div className="mt-2 text-sm text-slate-300">
                                             {isPackage1
                                               ? "Admin bấm để hiện ngay mã đăng nhập 6 số hỗ trợ khách. Khi mã còn hiệu lực thì chỉ cần sao chép."
-                                              : "Mã 2FA luôn tự hiện và tự làm mới. Admin chỉ cần sao chép khi cần."}
+                                              : "Admin chỉ lấy mã 2FA khi cần. Hệ thống không tự làm mới ngầm nữa."}
                                           </div>
                                           <div className="mt-3 flex flex-wrap items-center gap-3">
-                                            {showPackage1FetchButton ? (
+                                            {showOtpFetchButton ? (
                                               <button
                                                 type="button"
                                                 onClick={() => handleFetchStoreOrderOtp(order)}
@@ -8915,7 +8886,7 @@ function App() {
                                                 ) : (
                                                   <RotateCw size={16} />
                                                 )}
-                                                Lấy mã đăng nhập
+                                                {isPackage1 ? "Lấy mã đăng nhập" : "Lấy mã 2FA"}
                                               </button>
                                             ) : (
                                               <button
@@ -8931,7 +8902,7 @@ function App() {
                                             <div className={`rounded-2xl px-4 py-3 text-2xl font-bold tracking-[0.3em] ${otpSecondsLeft > 0 ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border border-slate-700 bg-slate-900 text-slate-500"}`}>
                                               {otpDisplay}
                                             </div>
-                                            {!showPackage1FetchButton ? null : (
+                                            {!showOtpFetchButton ? null : (
                                               <button
                                                 type="button"
                                                 onClick={() => handleCopy(otpDisplay, isPackage1 ? "Đã copy mã đăng nhập" : "Đã copy mã 2FA")}
