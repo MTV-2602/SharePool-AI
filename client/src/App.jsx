@@ -1182,6 +1182,64 @@ const EXPIRY_FILTER_OPTIONS = [
 ];
 const getAccountUsers = (account = {}) =>
   Array.isArray(account?.users) ? account.users : [];
+const STORE_WARRANTY_HOLD_NOTE_REGEX = /\[StoreWarrantyHold\b/i;
+const getStoreWarrantyHoldInfo = (account = {}) => {
+  if (!STORE_WARRANTY_HOLD_NOTE_REGEX.test(String(account?.note || "").trim())) {
+    return null;
+  }
+  const summary =
+    account?.storeTraceSummary && typeof account.storeTraceSummary === "object"
+      ? account.storeTraceSummary
+      : null;
+  const traces = Array.isArray(summary?.traces) ? summary.traces : [];
+  const holdTrace =
+    traces.find((trace) => {
+      const role = String(trace?.role || "").trim();
+      return (
+        role === "warranty_from" &&
+        (String(trace?.customerName || "").trim() ||
+          String(trace?.customerEmail || "").trim() ||
+          String(trace?.orderId || "").trim())
+      );
+    }) ||
+    traces.find((trace) => {
+      const role = String(trace?.role || "").trim();
+      return (
+        (role === "root" || role === "assigned") &&
+        (String(trace?.customerName || "").trim() ||
+          String(trace?.customerEmail || "").trim() ||
+          String(trace?.orderId || "").trim())
+      );
+    }) ||
+    traces[0] ||
+    null;
+  const customerName = String(
+    holdTrace?.customerName || summary?.latestCustomerName || "",
+  ).trim();
+  const customerEmail = String(
+    holdTrace?.customerEmail || summary?.latestCustomerEmail || "",
+  ).trim();
+  const orderId = String(holdTrace?.orderId || summary?.latestOrderId || "").trim();
+  const packageName = String(
+    holdTrace?.packageName || summary?.latestPackageName || "",
+  ).trim();
+  const status = String(holdTrace?.status || summary?.latestStatus || "").trim();
+  const createdAt = String(
+    holdTrace?.createdAt || holdTrace?.fulfilledAt || holdTrace?.paidAt || "",
+  ).trim();
+  if (!customerName && !customerEmail && !orderId) {
+    return null;
+  }
+  return {
+    customerName,
+    customerEmail,
+    orderId,
+    packageName,
+    status,
+    statusLabel: status ? getStoreOrderStatusLabel(status) : "",
+    createdAt,
+  };
+};
 const hasAssignedCustomer = (account = {}) =>
   getAccountUsers(account).some((user) => {
     if (typeof user === "string") return String(user).trim().length > 0;
@@ -1189,7 +1247,7 @@ const hasAssignedCustomer = (account = {}) =>
       return String(user.name || "").trim().length > 0;
     }
     return false;
-  });
+  }) || !!getStoreWarrantyHoldInfo(account);
 const hasAssignedTeamCustomer = (account = {}) =>
   getActiveTeamCustomers(account).length > 0;
 const matchesCustomerFilter = (hasCustomer, filterValue = "all") => {
@@ -10895,6 +10953,7 @@ function App() {
                         const activeStoreReservationTraces = getActiveStoreReservationTraces(acc);
                         const activeStoreReservationCount = getActiveStoreReservationCount(acc);
                         const latestStoreReservationTrace = getLatestStoreReservationTrace(acc);
+                        const storeWarrantyHoldInfo = getStoreWarrantyHoldInfo(acc);
                         const hasActiveStoreReservation = activeStoreReservationCount > 0;
                         const activeStoreReservationPackageName = String(
                           latestStoreReservationTrace?.packageName || "",
@@ -10914,6 +10973,10 @@ function App() {
                           latestStoreReservationTrace?.expiresAt,
                         );
                         const isAccountLockedByStoreOrder = hasActiveStoreReservation;
+                        const isAccountLockedByStoreWarrantyHold =
+                          !!storeWarrantyHoldInfo && !hasActiveStoreReservation;
+                        const isAccountLockedFromManualSale =
+                          isAccountLockedByStoreOrder || isAccountLockedByStoreWarrantyHold;
                         const isChatgptRowExpanded =
                           String(expandedChatgptAccountId || "").trim() ===
                           String(acc?.id || "").trim();
@@ -10976,11 +11039,11 @@ function App() {
                               }
                               disabled={
                                 loadingStates.changeType[acc.id] ||
-                                isAccountLockedByStoreOrder
+                                isAccountLockedFromManualSale
                               }
                               className={`
                                             ${gptSubTab === "market" ? "hidden" : "w-full"} rounded-md px-2 py-1.5 text-[10px] outline-none font-bold border cursor-pointer appearance-none text-center
-                                            ${loadingStates.changeType[acc.id] || isAccountLockedByStoreOrder ? "opacity-50 cursor-not-allowed" : ""}
+                                            ${loadingStates.changeType[acc.id] || isAccountLockedFromManualSale ? "opacity-50 cursor-not-allowed" : ""}
                                             ${acc.type === "package1"
                                   ? "bg-blue-900/40 text-blue-400 border-blue-700/50"
                                   : acc.type === "package2"
@@ -11007,6 +11070,10 @@ function App() {
                                   <div className="w-full rounded-md px-2 py-1.5 text-center text-[10px] font-semibold border bg-cyan-900/40 text-cyan-200 border-cyan-700/60">
                                     Don web dang giu cho
                                   </div>
+                                ) : isAccountLockedByStoreWarrantyHold ? (
+                                  <div className="w-full rounded-md px-2 py-1.5 text-center text-[10px] font-semibold border bg-amber-900/40 text-amber-200 border-amber-700/60">
+                                    Giu bao hanh web
+                                  </div>
                                 ) : (
                                   <select
                                     value={normalizePackage2Shelf(acc.package2Shelf)}
@@ -11022,7 +11089,7 @@ function App() {
                                       loadingStates.changeType[acc.id] ||
                                       loadingStates.changeShelf[acc.id] ||
                                       hasAssignedCustomer(acc) ||
-                                      isAccountLockedByStoreOrder
+                                      isAccountLockedFromManualSale
                                     }
                                     className={`
                                       w-full rounded-md px-2 py-1.5 text-[10px] outline-none font-semibold border text-center
@@ -11560,6 +11627,7 @@ function App() {
                               </div>
                             ) : acc.type === "package2" ||
                               hasActiveStoreReservation ||
+                              !!getStoreWarrantyHoldInfo(acc) ||
                               isChatgptMarketWarehouse(acc) ||
                               isChatgptShortDateWarehouse(acc) ||
                               marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
@@ -11576,6 +11644,10 @@ function App() {
                                 const storeTraceSummary = acc?.storeTraceSummary || null;
                                 const marketplaceTraceSummary =
                                   acc?.marketplaceTraceSummary || null;
+                                const isLockedByStoreWarrantyHold =
+                                  !!storeWarrantyHoldInfo &&
+                                  !u &&
+                                  !hasActiveStoreReservation;
                                 const isInMarketWarehouse = package2Shelf === "cheap";
                                 const isOnDatammoShelf = isInMarketWarehouse;
                                 const legacyMarketplaceInfo =
@@ -11650,6 +11722,15 @@ function App() {
                                   ? u
                                   : hasActualManagedMarketplaceUser
                                     ? u
+                                    : storeWarrantyHoldInfo
+                                      ? {
+                                          name:
+                                            storeWarrantyHoldInfo.customerName ||
+                                            storeWarrantyHoldInfo.customerEmail ||
+                                            `Don ${storeWarrantyHoldInfo.orderId || "bao-hanh"}`,
+                                          joinedAt: storeWarrantyHoldInfo.createdAt || "",
+                                          expiredAt: acc?.expiredAt || "",
+                                        }
                                     : showMarketplaceManagementCard
                                       ? {
                                           name:
@@ -11684,12 +11765,26 @@ function App() {
                                     : null;
                                 const displayMarketplacePrimaryLabel = String(
                                   displayMarketplaceName ||
+                                    storeWarrantyHoldInfo?.customerName ||
+                                    storeWarrantyHoldInfo?.customerEmail ||
+                                    (storeWarrantyHoldInfo?.orderId
+                                      ? `Don ${storeWarrantyHoldInfo.orderId}`
+                                      : "") ||
                                     linkedStoreOrderForDisplayUser?.customerName ||
                                     linkedStoreOrderForDisplayUser?.orderId ||
                                     "",
                                 ).trim();
                                 const displayMarketplaceSecondaryLabel = String(
-                                  linkedStoreOrderForDisplayUser?.orderId ||
+                                  (storeWarrantyHoldInfo
+                                    ? [
+                                        storeWarrantyHoldInfo.orderId,
+                                        storeWarrantyHoldInfo.statusLabel,
+                                        storeWarrantyHoldInfo.packageName,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" · ")
+                                    : "") ||
+                                    linkedStoreOrderForDisplayUser?.orderId ||
                                     linkedStoreOrderForDisplayUser?.contact ||
                                     "",
                                 ).trim();
@@ -11926,7 +12021,9 @@ function App() {
                                   ? warrantyInfo?.role === "current"
                                     ? "Dang bao hanh"
                                     : "Lich su bao hanh"
-                                  : "Da ban";
+                                  : isLockedByStoreWarrantyHold
+                                    ? "Giu bao hanh"
+                                    : "Da ban";
 
                                 return (
                                   <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
@@ -12235,7 +12332,8 @@ function App() {
                                                 <RotateCw size={14} />
                                               </button>
                                             )}
-                                            {!showMarketplaceManagementCard ? (
+                                            {!showMarketplaceManagementCard &&
+                                            !isLockedByStoreWarrantyHold ? (
                                               !isExpired ? (
                                                 <button
                                                   type="button"
@@ -12262,12 +12360,17 @@ function App() {
                                             ) : (
                                               <span
                                                 className="text-slate-500 cursor-not-allowed"
-                                                title="Acc da ban qua san khong duoc chuyen tay"
+                                                title={
+                                                  isLockedByStoreWarrantyHold
+                                                    ? "Acc dang duoc giu cho khach bao hanh"
+                                                    : "Acc da ban qua san khong duoc chuyen tay"
+                                                }
                                               >
                                                 <ArrowRightLeft size={14} />
                                               </span>
                                             )}
-                                            {!showMarketplaceManagementCard && (
+                                            {!showMarketplaceManagementCard &&
+                                              !isLockedByStoreWarrantyHold && (
                                               <>
                                                 <button
                                                   type="button"
@@ -12412,7 +12515,23 @@ function App() {
                                             </div>
                                           );
                                         })()}
-                                        {hasActiveStoreReservation ? null : isOnDatammoShelf ? (
+                                        {hasActiveStoreReservation ? null : isLockedByStoreWarrantyHold ? (
+                                          <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                                            <div className="font-bold uppercase tracking-[0.08em] text-amber-200">
+                                              Giu cho khach bao hanh
+                                            </div>
+                                            <div className="mt-1 break-all text-slate-200">
+                                              {storeWarrantyHoldInfo?.customerName ||
+                                                storeWarrantyHoldInfo?.customerEmail ||
+                                                "Khach bao hanh"}
+                                            </div>
+                                            <div className="mt-1 text-[10px] text-slate-300">
+                                              {[storeWarrantyHoldInfo?.orderId, storeWarrantyHoldInfo?.statusLabel]
+                                                .filter(Boolean)
+                                                .join(" · ") || "Acc nay dang bi khoa de tranh ban nham"}
+                                            </div>
+                                          </div>
+                                        ) : isOnDatammoShelf ? (
                                           <div className="flex gap-1">
                                             <button
                                               type="button"
@@ -12512,15 +12631,17 @@ function App() {
                                   });
                                   setShowEditModal(true);
                                 }}
-                                disabled={isAccountLockedByStoreOrder}
+                                disabled={isAccountLockedFromManualSale}
                                 className={`rounded-md p-1.5 transition-colors ${
-                                  isAccountLockedByStoreOrder
+                                  isAccountLockedFromManualSale
                                     ? "bg-slate-800 text-slate-500 cursor-not-allowed"
                                     : "bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white"
                                 }`}
                                 title={
-                                  isAccountLockedByStoreOrder
-                                    ? "Acc dang bi don web giu cho"
+                                  isAccountLockedFromManualSale
+                                    ? isAccountLockedByStoreWarrantyHold
+                                      ? "Acc dang duoc giu cho khach bao hanh"
+                                      : "Acc dang bi don web giu cho"
                                     : "Sửa Tài Khoản"
                                 }
                               >
@@ -12532,15 +12653,17 @@ function App() {
                                   setDeletingId(acc.id);
                                   setShowDeleteModal(true);
                                 }}
-                                disabled={isAccountLockedByStoreOrder}
+                                disabled={isAccountLockedFromManualSale}
                                 className={`rounded-md p-1.5 transition-colors ${
-                                  isAccountLockedByStoreOrder
+                                  isAccountLockedFromManualSale
                                     ? "bg-slate-800 text-slate-500 cursor-not-allowed"
                                     : "bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white"
                                 }`}
                                 title={
-                                  isAccountLockedByStoreOrder
-                                    ? "Acc dang bi don web giu cho"
+                                  isAccountLockedFromManualSale
+                                    ? isAccountLockedByStoreWarrantyHold
+                                      ? "Acc dang duoc giu cho khach bao hanh"
+                                      : "Acc dang bi don web giu cho"
                                     : "Xóa Tài Khoản"
                                 }
                               >
