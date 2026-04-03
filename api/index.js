@@ -5015,6 +5015,83 @@ const sanitizeStoreOrder = (order) => {
   }
   return base;
 };
+const completeStoreOrderManualFulfillment = async (order = {}) => {
+  const normalizedOrderId = String(order?.id || "").trim();
+  if (!normalizedOrderId) {
+    const error = new Error("Thiếu ID đơn web.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const normalizedStatus = normalizeStoreOrderStatusValue(order?.status);
+  if (normalizedStatus === "fulfilled") {
+    return StoreOrder.findOne({ id: normalizedOrderId });
+  }
+  const assignedAccountId = String(
+    order?.assignedAccountId || order?.rootAssignedAccountId || "",
+  ).trim();
+  if (!assignedAccountId) {
+    const error = new Error("Đơn này chưa có nick hiện tại để xác nhận giao tay.");
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const account = await Account.findOne({ id: assignedAccountId }).lean();
+  if (!account) {
+    const error = new Error("Không tìm thấy acc hiện tại của đơn để xác nhận giao tay.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const currentUser = Array.isArray(account?.users) ? account.users[0] || null : null;
+  const nowIso = new Date().toISOString();
+
+  await StoreOrder.findOneAndUpdate(
+    { id: normalizedOrderId },
+    {
+      $set: {
+        status: "fulfilled",
+        assignedAccountId,
+        assignedUsername: String(
+          order?.assignedUsername || account?.username || "",
+        ).trim(),
+        assignedPassword: String(
+          order?.assignedPassword || account?.password || "",
+        ).trim(),
+        assignedOtpSecret: String(
+          order?.assignedOtpSecret || account?.otpSecret || "",
+        ).trim(),
+        assignedLink: String(order?.assignedLink || account?.link || "").trim(),
+        assignedType: String(order?.assignedType || account?.type || "").trim(),
+        assignedWarehouse: normalizePackage2Shelf(
+          order?.assignedWarehouse || account?.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        ),
+        assignedCustomerName: String(
+          order?.assignedCustomerName || currentUser?.name || "",
+        ).trim(),
+        assignedCustomerJoinedAt: String(
+          order?.assignedCustomerJoinedAt || currentUser?.joinedAt || "",
+        ).trim(),
+        assignedCustomerExpiredAt: String(
+          order?.assignedCustomerExpiredAt || currentUser?.expiredAt || "",
+        ).trim(),
+        rootAssignedAccountId: String(
+          order?.rootAssignedAccountId || assignedAccountId,
+        ).trim(),
+        rootAssignedUsername: String(
+          order?.rootAssignedUsername ||
+            order?.assignedUsername ||
+            account?.username ||
+            "",
+        ).trim(),
+        fulfilledAt: String(order?.fulfilledAt || "").trim() || nowIso,
+        updatedAt: nowIso,
+      },
+    },
+    { new: false },
+  );
+  return StoreOrder.findOne({ id: normalizedOrderId });
+};
 const sanitizeStoreOrderForAdmin = (order, user = null) => {
   if (!order) return null;
   const packageCode = String(order.packageCode || "").trim();
@@ -9445,6 +9522,36 @@ app.put("/api/store-orders/:id", verifyToken, async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ error: "Không thể cập nhật đơn web." });
+  }
+});
+
+app.post("/api/store-orders/:id/mark-fulfilled", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiếu ID đơn web." });
+    }
+
+    const order = await StoreOrder.findOne({ id });
+    if (!order) {
+      return res.status(404).json({ error: "Không tìm thấy đơn web." });
+    }
+
+    const updatedOrder = await completeStoreOrderManualFulfillment(order);
+    await emitStoreOrderRealtimeUpdate(updatedOrder, { includeStock: true });
+
+    const storeUser = updatedOrder?.userId
+      ? await StoreUser.findOne({ id: String(updatedOrder.userId || "").trim() }).lean()
+      : null;
+
+    return res.json({
+      success: true,
+      order: sanitizeStoreOrderForAdmin(updatedOrder, storeUser),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Không thể xác nhận đơn đã giao tay.",
+    });
   }
 });
 

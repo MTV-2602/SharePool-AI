@@ -226,6 +226,7 @@ const normalizeStoreOrderStatus = (value) =>
 const getStoreOrderStatusLabel = (value) => {
   const normalized = normalizeStoreOrderStatus(value);
   if (normalized === "fulfilled") return "Đã giao nick";
+  if (normalized === "fulfillment_failed") return "Cần xử lý thủ công";
   if (normalized === "paid") return "Đã thanh toán";
   if (normalized === "awaiting_payment" || normalized === "pending_payment") {
     return "Đang chờ thanh toán";
@@ -1750,6 +1751,7 @@ function App() {
     saveStoreConfig: false,
     deleteStoreUser: "",
     deleteStoreOrder: "",
+    markStoreOrderFulfilled: "",
     deleteVoucher: "",
     fetchStoreOrderOtp: "",
     fetchSupportThread: "",
@@ -5099,6 +5101,33 @@ function App() {
         }
       },
     );
+  };
+
+  const handleMarkStoreOrderFulfilled = async (order = {}) => {
+    const orderId = String(order?.id || "").trim();
+    if (!orderId) {
+      showAlert("Lỗi", "Thiếu ID đơn web.", "error");
+      return;
+    }
+    setLoadingStates((prev) => ({ ...prev, markStoreOrderFulfilled: orderId }));
+    try {
+      await axios.post(`/api/store-orders/${orderId}/mark-fulfilled`);
+      await syncAdminDataAfterMutation("Đang đồng bộ đơn web sau khi xác nhận giao tay");
+      broadcastDataChange();
+      showAlert(
+        "Thành công",
+        "Đơn đã được đánh dấu giao xong. User sẽ nhận được nick như đơn fulfilled bình thường.",
+        "success",
+      );
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể xác nhận đơn đã giao tay."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, markStoreOrderFulfilled: "" }));
+    }
   };
 
   const handleAddAccount = async (e) => {
@@ -8589,6 +8618,9 @@ function App() {
                                     const showPackage1FetchButton =
                                       isPackage1 &&
                                       (!Boolean(orderOtp?.code) || otpSecondsLeft <= 0);
+                                    const canMarkStoreOrderFulfilled =
+                                      !isFulfilledStoreOrder &&
+                                      !!String(order?.assignedAccountId || "").trim();
                                     return (
                                     <div
                                       key={buildStoreOrderKey(order)}
@@ -8615,6 +8647,19 @@ function App() {
                                           <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1 text-xs font-bold text-cyan-200">
                                             {formatMoney(order?.amount)}
                                           </span>
+                                          {canMarkStoreOrderFulfilled ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleMarkStoreOrderFulfilled(order)}
+                                              disabled={loadingStates.markStoreOrderFulfilled === order.id}
+                                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition-colors disabled:opacity-60"
+                                            >
+                                              <CheckCircle size={14} />
+                                              {loadingStates.markStoreOrderFulfilled === order.id
+                                                ? "Đang xác nhận..."
+                                                : "Đã giao tay"}
+                                            </button>
+                                          ) : null}
                                           {order?.assignedAccountId ? (
                                             <button
                                               type="button"
