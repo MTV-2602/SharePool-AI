@@ -1740,6 +1740,7 @@ function App() {
     editAccount: false,
     deleteAccount: false,
     warranty: false,
+    fetchWarrantyCandidates: "",
     saveStoreUser: false,
     saveStoreOrder: false,
     createStoreManualOrder: false,
@@ -1854,6 +1855,8 @@ function App() {
   const [showWarrantyModal, setShowWarrantyModal] = useState(false);
   const [warrantySourceAcc, setWarrantySourceAcc] = useState(null);
   const [warrantySourceScope, setWarrantySourceScope] = useState("chatgpt");
+  const [warrantyReplacementCandidates, setWarrantyReplacementCandidates] =
+    useState([]);
   const [warrantyReplacementId, setWarrantyReplacementId] = useState("");
   const [warrantyReason, setWarrantyReason] = useState("");
   const [warrantyReplacementSearch, setWarrantyReplacementSearch] = useState("");
@@ -6330,14 +6333,60 @@ function App() {
       .replace(/\s{2,}/g, " ")
       .trim();
 
-  const openWarrantyModal = (acc, scope = "chatgpt") => {
+  const closeWarrantyModal = () => {
+    setShowWarrantyModal(false);
+    setWarrantySourceAcc(null);
+    setWarrantyReplacementCandidates([]);
+    setWarrantyReplacementId("");
+    setWarrantyReason("");
+    setWarrantyReplacementSearch("");
+    setWarrantyWarehouseFilter("all");
+  };
+
+  const openWarrantyModal = async (acc, scope = "chatgpt") => {
+    const normalizedScope = normalizeMarketplaceScope(scope);
     setWarrantySourceAcc(acc);
-    setWarrantySourceScope(normalizeMarketplaceScope(scope));
+    setWarrantySourceScope(normalizedScope);
+    setWarrantyReplacementCandidates([]);
     setWarrantyReplacementId("");
     setWarrantyReason("");
     setWarrantyReplacementSearch("");
     setWarrantyWarehouseFilter("all");
     setShowWarrantyModal(true);
+    if (normalizedScope !== "chatgpt") {
+      return;
+    }
+    const sourceId = String(acc?.id || "").trim();
+    if (!sourceId) {
+      showAlert("Lỗi", "Thiếu ID tài khoản lỗi.", "error");
+      closeWarrantyModal();
+      return;
+    }
+    setLoadingStates((prev) => ({
+      ...prev,
+      fetchWarrantyCandidates: sourceId,
+    }));
+    try {
+      const response = await axios.get(`/api/chatgpt/${sourceId}/warranty-candidates`);
+      if (response?.data?.source) {
+        setWarrantySourceAcc(response.data.source);
+      }
+      setWarrantyReplacementCandidates(
+        Array.isArray(response?.data?.candidates) ? response.data.candidates : [],
+      );
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể tải acc thay thế để bảo hành."),
+        "error",
+      );
+      closeWarrantyModal();
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        fetchWarrantyCandidates: "",
+      }));
+    }
   };
 
   const focusChatgptAccountFromMarketplace = (accountId, label = "") => {
@@ -6552,7 +6601,7 @@ function App() {
         ? teamAccounts.find(
             (acc) => String(acc.id || "") === String(warrantyReplacementId || ""),
           )
-        : accounts.find(
+        : warrantyReplacementCandidates.find(
             (acc) => String(acc.id || "") === String(warrantyReplacementId || ""),
           );
     if (!replacementAcc) {
@@ -6593,6 +6642,7 @@ function App() {
       );
       setShowWarrantyModal(false);
       setWarrantySourceAcc(null);
+      setWarrantyReplacementCandidates([]);
       setWarrantyReplacementId("");
       setWarrantyReason("");
       setWarrantyReplacementSearch("");
@@ -16500,6 +16550,10 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
       {showWarrantyModal && warrantySourceAcc && (() => {
         const sourceScope = normalizeMarketplaceScope(warrantySourceScope);
         const isTeamWarranty = sourceScope === "team";
+        const isFetchingWarrantyCandidates =
+          !isTeamWarranty &&
+          loadingStates.fetchWarrantyCandidates ===
+            String(warrantySourceAcc?.id || "").trim();
         const getWarrantyRemainingDaysLabel = (isoString) => {
           const status = getExpiryStatus(isoString);
           return status?.text || "Khong co han";
@@ -16518,7 +16572,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
             "",
         ).trim();
         const eligibleReplacementAccounts = (
-          isTeamWarranty ? teamAccounts : accounts
+          isTeamWarranty ? teamAccounts : warrantyReplacementCandidates
         ).filter((acc) => {
           if (String(acc?.id || "") === String(warrantySourceAcc?.id || "")) {
             return false;
@@ -16537,22 +16591,6 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
               return false;
             }
             return true;
-          }
-          if (!["package2", "unassigned"].includes(String(acc?.type || "").trim())) {
-            return false;
-          }
-          if (Array.isArray(acc?.users) && acc.users.length > 0) return false;
-          if (isMarketplaceSoldAccountForScope(acc?.id, "chatgpt")) return false;
-          if (
-            isAccountBusyInDatammoWarranty(acc?.id, datammoWarrantyCases, "chatgpt")
-          ) {
-            return false;
-          }
-          if (
-            acc?.expiredAt &&
-            new Date(acc.expiredAt).getTime() <= Date.now()
-          ) {
-            return false;
           }
           return true;
         });
@@ -16653,12 +16691,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                 </h2>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowWarrantyModal(false);
-                    setWarrantyReplacementSearch("");
-                    setWarrantyWarehouseFilter("all");
-                    setWarrantyReplacementId("");
-                  }}
+                  onClick={closeWarrantyModal}
                   className="text-slate-400 hover:text-white"
                 >
                   <X size={20} />
@@ -16698,6 +16731,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         setWarrantyReplacementSearch(e.target.value);
                         setWarrantyReplacementId("");
                       }}
+                      disabled={isFetchingWarrantyCandidates}
                       placeholder={
                         isTeamWarranty
                           ? "Tim Team thay the..."
@@ -16711,6 +16745,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         setWarrantyWarehouseFilter(e.target.value);
                         setWarrantyReplacementId("");
                       }}
+                      disabled={isFetchingWarrantyCandidates}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
                     >
                       <option value="all">Tat ca kho</option>
@@ -16723,12 +16758,15 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                     required
                     value={hasVisibleReplacementSelected ? warrantyReplacementId : ""}
                     onChange={(e) => setWarrantyReplacementId(e.target.value)}
+                    disabled={isFetchingWarrantyCandidates}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all"
                   >
                     <option value="">
                       {isTeamWarranty
                         ? "Chọn Team Business trống..."
-                        : "Chọn acc trống..."}
+                        : isFetchingWarrantyCandidates
+                          ? "Dang tai acc thay the..."
+                          : "Chọn acc trống..."}
                     </option>
                     {filteredReplacementAccounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
@@ -16739,7 +16777,9 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                     ))}
                   </select>
                   <div className="mt-2 text-[11px] text-cyan-300">
-                    Hien {filteredReplacementAccounts.length}/{eligibleReplacementAccounts.length} acc sach
+                    {isFetchingWarrantyCandidates
+                      ? "Dang tai acc sach tu toan bo kho..."
+                      : `Hien ${filteredReplacementAccounts.length}/${eligibleReplacementAccounts.length} acc sach`}
                   </div>
                   <div className="mt-2 text-[11px] text-slate-400 leading-relaxed">
                     {isTeamWarranty
@@ -16790,12 +16830,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
               <div className="flex gap-3 mt-6">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowWarrantyModal(false);
-                    setWarrantyReplacementSearch("");
-                    setWarrantyWarehouseFilter("all");
-                    setWarrantyReplacementId("");
-                  }}
+                  onClick={closeWarrantyModal}
                   className="flex-1 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors"
                 >
                   Hủy
@@ -16803,6 +16838,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                 <button
                   type="submit"
                   disabled={
+                    isFetchingWarrantyCandidates ||
                     loadingStates.warranty ||
                     filteredReplacementAccounts.length === 0 ||
                     !hasVisibleReplacementSelected

@@ -6757,6 +6757,32 @@ const listChatgptMoveCandidates = async (sourceAccount = {}) => {
     })
     .map(sanitizeChatgptMoveCandidate);
 };
+const listChatgptWarrantyCandidates = async (sourceAccount = {}) => {
+  const sourceId = String(sourceAccount?.id || "").trim();
+  const busyIds = new Set(await getBusyChatgptAccountIdsForStoreOrders());
+  const candidates = await Account.find({
+    id: { $ne: sourceId },
+    type: { $in: ["package2", "unassigned"] },
+  })
+    .sort({ createdAt: 1, id: 1 })
+    .select("id username type package2Shelf users expiredAt createdAt updatedAt")
+    .lean();
+  return (Array.isArray(candidates) ? candidates : [])
+    .filter((account) => {
+      const accountId = String(account?.id || "").trim();
+      if (!accountId) return false;
+      if (busyIds.has(accountId)) return false;
+      if (Array.isArray(account?.users) && account.users.length > 0) {
+        return false;
+      }
+      const expiredAt = String(account?.expiredAt || "").trim();
+      if (expiredAt && new Date(expiredAt).getTime() <= Date.now()) {
+        return false;
+      }
+      return true;
+    })
+    .map(sanitizeChatgptMoveCandidate);
+};
 const getBusyChatgptAccountIdsForStoreOrders = async () => {
   const [marketplaceOrders, activeCases] = await Promise.all([
     DatammoOrder.find({ scope: "chatgpt" })
@@ -10614,6 +10640,33 @@ app.get("/api/chatgpt/:id/move-candidates", verifyToken, async (req, res) => {
   } catch (error) {
     return res.status(error.statusCode || 500).json({
       error: error.message || "Không thể tải tài khoản đích để chuyển khách.",
+    });
+  }
+});
+
+app.get("/api/chatgpt/:id/warranty-candidates", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "Thiáº¿u ID tÃ i khoáº£n lá»—i." });
+    }
+
+    const source = await Account.findOne({ id })
+      .select("id username type package2Shelf users expiredAt createdAt updatedAt")
+      .lean();
+    if (!source) {
+      return res.status(404).json({ error: "KhÃ´ng tÃ¬m tháº¥y tÃ i khoáº£n lá»—i." });
+    }
+
+    const candidates = await listChatgptWarrantyCandidates(source);
+    return res.json({
+      success: true,
+      source: sanitizeChatgptMoveCandidate(source),
+      candidates,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "KhÃ´ng thá»ƒ táº£i tÃ i khoáº£n thay tháº¿ Ä‘á»ƒ báº£o hÃ nh.",
     });
   }
 });
