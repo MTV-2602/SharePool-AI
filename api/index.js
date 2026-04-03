@@ -28,6 +28,8 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Cache connection to avoid reconnecting on every request (Vercel specific)
 let isConnected = false;
 let connectPromise = null;
+let lastDbConnectError = "";
+let lastDbConnectErrorAt = "";
 let didCleanupLegacyTeamEmailPassword = false;
 let didCleanupLegacyChatgptMarketKeys = false;
 let didMigrateLegacyCollections = false;
@@ -48,6 +50,28 @@ const MONGO_CONNECT_OPTIONS = {
   ),
   socketTimeoutMS: toPositiveInt(process.env.MONGO_SOCKET_TIMEOUT_MS, 20000),
 };
+
+const getMongoReadyStateLabel = (readyState) => {
+  switch (Number(readyState || 0)) {
+    case 1:
+      return "connected";
+    case 2:
+      return "connecting";
+    case 3:
+      return "disconnecting";
+    default:
+      return "disconnected";
+  }
+};
+
+const getDbHealthSnapshot = () => ({
+  connected: !!(isConnected && mongoose.connection?.readyState === 1),
+  readyState: Number(mongoose.connection?.readyState || 0),
+  readyStateLabel: getMongoReadyStateLabel(mongoose.connection?.readyState),
+  hasMongoUri: !!process.env.MONGO_URI,
+  lastErrorAt: lastDbConnectErrorAt,
+  lastErrorMessage: lastDbConnectError,
+});
 
 const getLegacyMigrationUserName = (user) => {
   if (typeof user === "string") return user;
@@ -342,6 +366,8 @@ const connectDB = async () => {
       }
       await mongoose.connect(process.env.MONGO_URI, MONGO_CONNECT_OPTIONS);
       isConnected = mongoose.connection?.readyState === 1;
+      lastDbConnectError = "";
+      lastDbConnectErrorAt = "";
       await migrateLegacyCollectionsIfNeeded();
       await normalizeLegacyDatammoCustomersIfNeeded();
       await dropLegacyCollectionsIfSafe();
@@ -379,6 +405,10 @@ const connectDB = async () => {
       return mongoose.connection;
     } catch (error) {
       isConnected = false;
+      lastDbConnectError = String(
+        error?.reason?.message || error?.message || "Unknown MongoDB error",
+      ).trim();
+      lastDbConnectErrorAt = new Date().toISOString();
       console.error("MongoDB Connection Error:", error);
       throw error;
     } finally {
@@ -718,11 +748,16 @@ const StoreSupportMessage =
 
 // Middleware to ensure DB is connected before processing
 app.use(async (req, res, next) => {
+  const path = String(req.path || "").trim();
+  if (path === "/api/test" || path === "/api/healthz") {
+    return next();
+  }
   try {
     await connectDB();
     next();
   } catch (error) {
     return res.status(503).json({
+      code: "db_unavailable",
       error:
         "Khong the ket noi du lieu tam thoi. Vui long thu lai sau vai giay.",
     });
@@ -1107,11 +1142,21 @@ app.get("/api/test", (req, res) => {
     status: "OK",
     timestamp: new Date().toISOString(),
     env: {
-      hasMongoUri: !!process.env.MONGO_URI,
       hasAdminEmail: !!process.env.ADMIN_EMAIL,
       hasAdminPassword: !!process.env.ADMIN_PASSWORD,
       adminEmail: process.env.ADMIN_EMAIL || "NOT SET",
     },
+    db: getDbHealthSnapshot(),
+  });
+});
+
+app.get("/api/healthz", (req, res) => {
+  const db = getDbHealthSnapshot();
+  const statusCode = db.connected ? 200 : 503;
+  return res.status(statusCode).json({
+    ok: db.connected,
+    timestamp: new Date().toISOString(),
+    db,
   });
 });
 
