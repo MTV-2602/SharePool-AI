@@ -419,6 +419,7 @@ function PublicStorefront() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [otpResults, setOtpResults] = useState({});
+  const [package2OtpLoadingOrderId, setPackage2OtpLoadingOrderId] = useState("");
   const [otpNowMs, setOtpNowMs] = useState(() => Date.now());
   const [ordersPage, setOrdersPage] = useState(1);
   const [orderSearchInput, setOrderSearchInput] = useState("");
@@ -1346,74 +1347,26 @@ function PublicStorefront() {
   }, [config.googleClientId]);
 
   useEffect(() => {
-    const package2Orders = orders.filter(
-      (order) =>
-        order.packageCode === "package2" &&
-        order.status === "fulfilled" &&
-        String(order.assignedOtpSecret || "").trim(),
+    const validPackage2OrderIds = new Set(
+      orders
+        .filter(
+          (order) =>
+            order.packageCode === "package2" &&
+            order.status === "fulfilled" &&
+            String(order.assignedOtpSecret || "").trim(),
+        )
+        .map((order) => String(order.id || "").trim())
+        .filter(Boolean),
     );
-    if (package2Orders.length === 0) {
-      setOtpResults((prev) =>
-        Object.fromEntries(
-          Object.entries(prev || {}).filter(
-            ([, value]) => String(value?.kind || "").trim() !== "package2",
-          ),
-        ),
-      );
-      return undefined;
-    }
-
-    let cancelled = false;
-    let timeoutId = null;
-    const refreshCodes = async () => {
-      const entries = {};
-      let nextRefreshIn = 30;
-      for (const order of package2Orders) {
-        try {
-          const data = await apiRequest("/api/store/totp/generate", {
-            method: "POST",
-            body: { secret: order.assignedOtpSecret },
-          });
-          const expiresIn = Number(data?.expiresIn || 0);
-          if (expiresIn > 0) {
-            nextRefreshIn = Math.min(nextRefreshIn, expiresIn);
-          }
-          entries[order.id] = buildOtpDisplayState({
-            code: data?.code,
-            expiresIn,
-            extra: { kind: "package2" },
-          });
-        } catch {
-          entries[order.id] = buildOtpDisplayState({
-            code: "------",
-            expiresIn: 0,
-            extra: { kind: "package2" },
-          });
-        }
-      }
-      if (!cancelled) {
-        setOtpResults((prev) => {
-          const preservedEntries = Object.fromEntries(
-            Object.entries(prev || {}).filter(
-              ([, value]) => String(value?.kind || "").trim() !== "package2",
-            ),
-          );
-          return { ...preservedEntries, ...entries };
-        });
-      }
-      if (!cancelled) {
-        timeoutId = window.setTimeout(
-          refreshCodes,
-          Math.max(1000, Math.min(nextRefreshIn, 30) * 1000 + 250),
-        );
-      }
-    };
-
-    refreshCodes();
-    return () => {
-      cancelled = true;
-      if (timeoutId) window.clearTimeout(timeoutId);
-    };
+    setOtpResults((prev) =>
+      Object.fromEntries(
+        Object.entries(prev || {}).filter(([orderId, value]) => {
+          const kind = String(value?.kind || "").trim();
+          if (kind !== "package2") return true;
+          return validPackage2OrderIds.has(String(orderId || "").trim());
+        }),
+      ),
+    );
   }, [orders]);
 
   const currentPaymentOrder = useMemo(
@@ -1773,6 +1726,35 @@ function PublicStorefront() {
     } finally {
       setReconcileLoadingOrderId("");
       setLoading(false);
+    }
+  };
+
+  const handleGeneratePackage2Code = async (order) => {
+    const orderId = String(order?.id || "").trim();
+    const otpSecret = String(order?.assignedOtpSecret || "").trim();
+    if (!orderId || !otpSecret) {
+      setError("Đơn này chưa có mã 2FA để lấy nhanh.");
+      return;
+    }
+    try {
+      setError("");
+      setPackage2OtpLoadingOrderId(orderId);
+      const data = await apiRequest("/api/store/totp/generate", {
+        method: "POST",
+        body: { secret: otpSecret },
+      });
+      setOtpResults((prev) => ({
+        ...prev,
+        [orderId]: buildOtpDisplayState({
+          code: data?.code,
+          expiresIn: Number(data?.expiresIn || 0),
+          extra: { kind: "package2" },
+        }),
+      }));
+    } catch (otpError) {
+      setError(otpError.message || "Không lấy được mã 2FA");
+    } finally {
+      setPackage2OtpLoadingOrderId("");
     }
   };
 
@@ -2188,14 +2170,21 @@ function PublicStorefront() {
   const renderPackage2Order = (order) => {
     const otp = otpResults[order.id] || { code: "------", expiresIn: 0 };
     const otpSecondsLeft = getOtpSecondsRemaining(otp, otpNowMs);
+    const package2OtpExpired = Boolean(otp.code) && otpSecondsLeft <= 0;
+    const package2OtpDisplay = otpSecondsLeft > 0 ? otp.code || "------" : "------";
+    const package2OtpStatusText = otpSecondsLeft > 0
+      ? `Mã hết hạn sau ${otpSecondsLeft}s`
+      : package2OtpExpired
+        ? "Mã đã hết hạn, bấm lấy mã mới"
+        : "Bấm Lấy mã 2FA để hiện mã xác minh";
     const package2LoginSteps = [
       "Vào ChatGPT và chọn Đăng nhập bằng Email.",
       "Nhập tài khoản và mật khẩu ở trên.",
-      "Khi hệ thống yêu cầu xác minh, dùng mã 6 số đang hiện trên web này hoặc dùng mã 2FA ở trên.",
-      "Nhập mã 6 số để hoàn tất đăng nhập. Nếu mã hết hạn, chờ mã mới tự làm mới.",
+      "Khi hệ thống yêu cầu xác minh, bấm Lấy mã 2FA trên web này hoặc dùng mã 2FA ở trên.",
+      "Nhập mã 6 số vừa lấy để hoàn tất đăng nhập. Nếu mã hết hạn, bấm lấy mã mới.",
     ];
     const package2Note =
-      "Gói 2 có thể lấy mã bất cứ lúc nào trên web này. Mã 2FA hiện tại tự động đổi mới mỗi 30 giây.";
+      "Gói 2 chỉ lấy mã khi bạn bấm, không còn tự làm mới liên tục để tiết kiệm tài nguyên.";
     return (
       <div className="mt-3">
         {renderOrderCredentialRows([
@@ -2212,7 +2201,7 @@ function PublicStorefront() {
                     username: order.assignedUsername,
                     password: order.assignedPassword,
                     otpSecret: order.assignedOtpSecret,
-                    otpCode: otp.code || "",
+                    otpCode: package2OtpDisplay !== "------" ? package2OtpDisplay : "",
                   }),
                   "Đã sao chép nhanh thông tin tài khoản",
                 )
@@ -2221,15 +2210,32 @@ function PublicStorefront() {
             >
               Copy nhanh
             </button>
-            <div className="rounded-xl bg-slate-900 px-3 py-2 text-lg font-bold tracking-[0.28em] text-cyan-300">
-              {otp.code || "------"}
+            {otpSecondsLeft > 0 ? (
+              <button
+                onClick={() => copyText(package2OtpDisplay, "Đã sao chép mã 2FA")}
+                className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-slate-700"
+              >
+                Sao chép mã
+              </button>
+            ) : (
+              <button
+                onClick={() => handleGeneratePackage2Code(order)}
+                disabled={package2OtpLoadingOrderId === order.id}
+                className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-cyan-500 disabled:opacity-60"
+              >
+                {package2OtpLoadingOrderId === order.id ? <Loader2 size={14} className="animate-spin" /> : null}
+                {package2OtpLoadingOrderId === order.id ? "Đang lấy mã..." : "Lấy mã 2FA"}
+              </button>
+            )}
+            <div className={`rounded-xl px-3 py-2 text-lg font-bold tracking-[0.28em] ${otpSecondsLeft > 0 ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border border-slate-700 bg-slate-900 text-slate-500"}`}>
+              {package2OtpDisplay}
             </div>
             <span className="text-xs text-slate-400">
-              {otpSecondsLeft > 0 ? `Hết hạn sau ${otpSecondsLeft}s` : "Đang đợi mã"}
+              {package2OtpStatusText}
             </span>
           </div>
           <p className="mt-2 text-xs text-slate-400">
-            Mã 2FA hiện tại tự làm mới mỗi 30 giây, không cần nhập lại secret.
+            Khi cần mã đăng nhập 6 số, bấm Lấy mã 2FA. Secret 2FA gốc vẫn nằm ở trên để bạn dùng thủ công nếu muốn.
           </p>
         </div>
         {renderOrderLoginGuide(package2LoginSteps, package2Note)}
