@@ -6753,6 +6753,28 @@ const buildStorePackage2ExistingReplacementFilter = (excludeIds = []) => ({
     $eq: [{ $size: buildMongoSafeUsersArrayExpr() }, 0],
   },
 });
+const buildStoreReservedFulfillmentFilter = ({
+  accountId = "",
+  maxUsers = 0,
+  allowUnderCapacity = false,
+} = {}) => {
+  const normalizedId = String(accountId || "").trim();
+  if (!normalizedId) {
+    return { id: "__missing_reserved_store_account__" };
+  }
+  return {
+    id: normalizedId,
+    note: { $not: STORE_WARRANTY_HOLD_NOTE_REGEX },
+    expiredAt: { $gt: new Date().toISOString() },
+    $expr: allowUnderCapacity
+      ? {
+          $lt: [{ $size: buildMongoSafeUsersArrayExpr() }, Math.max(1, Number(maxUsers || 0))],
+        }
+      : {
+          $eq: [{ $size: buildMongoSafeUsersArrayExpr() }, Math.max(0, Number(maxUsers || 0))],
+        },
+  };
+};
 const sanitizeStoreWarrantyCandidate = (account = {}) => ({
   id: String(account?.id || "").trim(),
   username: String(account?.username || "").trim(),
@@ -7272,20 +7294,32 @@ const claimStorePackage1AccountForOrder = async ({ order, user }) => {
   let convertedFromUnassigned = false;
   if (reservedAccountId && reservationType === "package1_existing") {
     oldAcc = await Account.findOneAndUpdate(
-      { id: reservedAccountId, ...buildStorePackage1ExistingFilter() },
+      buildStoreReservedFulfillmentFilter({
+        accountId: reservedAccountId,
+        maxUsers: 3,
+        allowUnderCapacity: true,
+      }),
       {
         $push: { users: customer },
-        $set: { updatedAt: new Date().toISOString() },
+        $set: {
+          type: "package1",
+          package2Shelf: CHATGPT_TOTAL_VALUE,
+          updatedAt: new Date().toISOString(),
+        },
       },
       { new: false },
     );
   }
   if (reservedAccountId && reservationType === "package1_convertible" && !oldAcc) {
     oldAcc = await Account.findOneAndUpdate(
-      { id: reservedAccountId, ...buildStorePackage1ConvertibleFilter() },
+      buildStoreReservedFulfillmentFilter({
+        accountId: reservedAccountId,
+        maxUsers: 0,
+      }),
       {
         $set: {
           type: "package1",
+          package2Shelf: CHATGPT_TOTAL_VALUE,
           users: [customer],
           updatedAt: new Date().toISOString(),
         },
@@ -7306,7 +7340,11 @@ const claimStorePackage1AccountForOrder = async ({ order, user }) => {
         { id: fallbackTarget.reservedAccountId, ...buildStorePackage1ExistingFilter() },
         {
           $push: { users: customer },
-          $set: { updatedAt: new Date().toISOString() },
+          $set: {
+            type: "package1",
+            package2Shelf: CHATGPT_TOTAL_VALUE,
+            updatedAt: new Date().toISOString(),
+          },
         },
         { new: false },
       );
@@ -7321,6 +7359,7 @@ const claimStorePackage1AccountForOrder = async ({ order, user }) => {
         {
           $set: {
             type: "package1",
+            package2Shelf: CHATGPT_TOTAL_VALUE,
             users: [customer],
             updatedAt: new Date().toISOString(),
           },
@@ -7354,9 +7393,14 @@ const claimStorePackage2AccountForOrder = async ({ order, user }) => {
   let oldAcc = null;
   if (reservedAccountId && reservationType === "package2_existing") {
     oldAcc = await Account.findOneAndUpdate(
-      { id: reservedAccountId, ...buildStorePackage2ExistingReplacementFilter() },
+      buildStoreReservedFulfillmentFilter({
+        accountId: reservedAccountId,
+        maxUsers: 0,
+      }),
       {
         $set: {
+          type: "package2",
+          package2Shelf: CHATGPT_TOTAL_VALUE,
           users: [customer],
           updatedAt: new Date().toISOString(),
         },
@@ -7370,10 +7414,14 @@ const claimStorePackage2AccountForOrder = async ({ order, user }) => {
     !oldAcc
   ) {
     oldAcc = await Account.findOneAndUpdate(
-      { id: reservedAccountId, ...buildStorePackage2ConvertibleFilter() },
+      buildStoreReservedFulfillmentFilter({
+        accountId: reservedAccountId,
+        maxUsers: 0,
+      }),
       {
         $set: {
           type: "package2",
+          package2Shelf: CHATGPT_TOTAL_VALUE,
           users: [customer],
           updatedAt: new Date().toISOString(),
         },
@@ -7396,6 +7444,8 @@ const claimStorePackage2AccountForOrder = async ({ order, user }) => {
         },
         {
           $set: {
+            type: "package2",
+            package2Shelf: CHATGPT_TOTAL_VALUE,
             users: [customer],
             updatedAt: new Date().toISOString(),
           },
@@ -7414,6 +7464,7 @@ const claimStorePackage2AccountForOrder = async ({ order, user }) => {
         {
           $set: {
             type: "package2",
+            package2Shelf: CHATGPT_TOTAL_VALUE,
             users: [customer],
             updatedAt: new Date().toISOString(),
           },
