@@ -11071,8 +11071,11 @@ function App() {
                                     Don web dang giu cho
                                   </div>
                                 ) : isAccountLockedByStoreWarrantyHold ? (
-                                  <div className="w-full rounded-md px-2 py-1.5 text-center text-[10px] font-semibold border bg-amber-900/40 text-amber-200 border-amber-700/60">
-                                    Giu bao hanh web
+                                  <div
+                                    className="w-full rounded-md px-2 py-1.5 text-center text-[10px] font-semibold border bg-amber-900/40 text-amber-200 border-amber-700/60"
+                                    title="Nick loi dang duoc giu lai de doi chieu lich su bao hanh web"
+                                  >
+                                    Nick loi bao hanh
                                   </div>
                                 ) : (
                                   <select

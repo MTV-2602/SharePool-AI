@@ -7782,7 +7782,10 @@ const findStoreAssignedUserRemovalIndex = ({
 };
 const cleanupStoreAssignedAccountForOrder = async (
   order = {},
-  { forceClearIfNoRemainingStoreTrace = false } = {},
+  {
+    forceClearIfNoRemainingStoreTrace = false,
+    preserveExistingTypeOnClear = false,
+  } = {},
 ) => {
   const accountId = String(order?.assignedAccountId || "").trim();
   if (!accountId) return;
@@ -7817,6 +7820,9 @@ const cleanupStoreAssignedAccountForOrder = async (
   const finalUsers = canForceClearResidualUser ? [] : nextUsers;
 
   const nextType = (() => {
+    if (preserveExistingTypeOnClear && finalUsers.length === 0) {
+      return String(account?.type || "unassigned").trim() || "unassigned";
+    }
     const packageCode = String(order?.packageCode || "").trim();
     const reservationType = String(order?.reservationType || "").trim();
     if (
@@ -7949,6 +7955,7 @@ const warrantyStoreOrderForAdmin = async (
 
     await cleanupStoreAssignedAccountForOrder(order, {
       forceClearIfNoRemainingStoreTrace: true,
+      preserveExistingTypeOnClear: true,
     });
     await Account.findOneAndUpdate(
       { id: currentAssignedId },
