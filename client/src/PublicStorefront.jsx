@@ -346,6 +346,11 @@ const getOrderStatusClass = (status = "") => {
   }
   return "border-slate-700 bg-slate-900/85 text-slate-200";
 };
+const getLatestWarrantyRound = (order = {}) => {
+  const rounds = Array.isArray(order?.warrantyRounds) ? order.warrantyRounds : [];
+  if (rounds.length === 0) return null;
+  return rounds[rounds.length - 1] || null;
+};
 
 const packageFeatureMap = {
   package1: [
@@ -2115,6 +2120,7 @@ function PublicStorefront() {
   );
 
   const renderPackage1Order = (order) => {
+    const latestWarrantyRound = getLatestWarrantyRound(order);
     const otp = otpResults[order.id] || {};
     const otpSecondsLeft = getOtpSecondsRemaining(otp, otpNowMs);
     const package1OtpExpired = Boolean(otp.code) && otpSecondsLeft <= 0;
@@ -2133,6 +2139,22 @@ function PublicStorefront() {
     const package1Note = `Tài khoản share không cấp 2FA gốc. Đơn này còn ${Math.max(0, Number(order.package1UsageLeft || 0))} lượt lấy mã trên web.`;
     return (
       <div className="mt-3">
+        {latestWarrantyRound ? (
+          <div className="mb-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-xs text-amber-100">
+            <p className="font-semibold text-amber-200">
+              Tài khoản này đã được bảo hành sang acc mới.
+            </p>
+            <p className="mt-1 leading-5 text-amber-100/90">
+              Đổi từ <span className="font-semibold">{latestWarrantyRound.fromUsername || "--"}</span> sang{" "}
+              <span className="font-semibold">{latestWarrantyRound.toUsername || order.assignedUsername || "--"}</span>
+              {latestWarrantyRound.createdAt ? ` lúc ${formatDateTime(latestWarrantyRound.createdAt)}` : ""}.
+            </p>
+            <p className="mt-1 leading-5 text-amber-100/80">
+              Hạn sử dụng vẫn giữ đến{" "}
+              <span className="font-semibold">{formatDateTime(order.assignedCustomerExpiredAt)}</span>, không reset lại như đơn mua mới.
+            </p>
+          </div>
+        ) : null}
         {renderOrderCredentialRows([
           ["Tài khoản", order.assignedUsername],
           ["Mật khẩu", order.assignedPassword],
@@ -2168,6 +2190,7 @@ function PublicStorefront() {
   };
 
   const renderPackage2Order = (order) => {
+    const latestWarrantyRound = getLatestWarrantyRound(order);
     const otp = otpResults[order.id] || { code: "------", expiresIn: 0 };
     const otpSecondsLeft = getOtpSecondsRemaining(otp, otpNowMs);
     const package2OtpExpired = Boolean(otp.code) && otpSecondsLeft <= 0;
@@ -2187,6 +2210,22 @@ function PublicStorefront() {
       "Gói 2 chỉ lấy mã khi bạn bấm, không còn tự làm mới liên tục để tiết kiệm tài nguyên.";
     return (
       <div className="mt-3">
+        {latestWarrantyRound ? (
+          <div className="mb-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-xs text-amber-100">
+            <p className="font-semibold text-amber-200">
+              Tài khoản này đã được bảo hành sang acc mới.
+            </p>
+            <p className="mt-1 leading-5 text-amber-100/90">
+              Đổi từ <span className="font-semibold">{latestWarrantyRound.fromUsername || "--"}</span> sang{" "}
+              <span className="font-semibold">{latestWarrantyRound.toUsername || order.assignedUsername || "--"}</span>
+              {latestWarrantyRound.createdAt ? ` lúc ${formatDateTime(latestWarrantyRound.createdAt)}` : ""}.
+            </p>
+            <p className="mt-1 leading-5 text-amber-100/80">
+              Hạn sử dụng vẫn giữ đến{" "}
+              <span className="font-semibold">{formatDateTime(order.assignedCustomerExpiredAt)}</span>, không reset lại như đơn mua mới.
+            </p>
+          </div>
+        ) : null}
         {renderOrderCredentialRows([
           ["Tài khoản", order.assignedUsername],
           ["Mật khẩu", order.assignedPassword],
@@ -2376,6 +2415,11 @@ function PublicStorefront() {
                       >
                         {formatStatusLabel(order.status)}
                       </span>
+                      {Number(order.warrantyCount || 0) > 0 ? (
+                        <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+                          Đã bảo hành {Number(order.warrantyCount || 0)} lần
+                        </span>
+                      ) : null}
                     </div>
                     <p className="mt-1 break-all text-xs text-slate-500">Đơn #{order.id}</p>
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
