@@ -4944,6 +4944,38 @@ const buildStoreReservationSnapshot = async ({ excludeOrderId = "" } = {}) => {
     package1ExistingCounts,
   };
 };
+const findActivePendingStoreReservationByAccountId = async (
+  accountId = "",
+  { excludeOrderId = "" } = {},
+) => {
+  const normalizedAccountId = String(accountId || "").trim();
+  if (!normalizedAccountId) return null;
+  const extra = { reservedAccountId: normalizedAccountId };
+  if (excludeOrderId) {
+    extra.id = { $ne: String(excludeOrderId || "").trim() };
+  }
+  return StoreOrder.findOne(buildStoreActivePendingOrderQuery(extra))
+    .select("id packageCode packageName userId createdAt expiresAt")
+    .lean();
+};
+const listActivePendingStoreReservedAccountIds = async ({
+  excludeOrderId = "",
+} = {}) => {
+  const extra = {};
+  if (excludeOrderId) {
+    extra.id = { $ne: String(excludeOrderId || "").trim() };
+  }
+  const orders = await StoreOrder.find(buildStoreActivePendingOrderQuery(extra))
+    .select("reservedAccountId")
+    .lean();
+  return Array.from(
+    new Set(
+      (Array.isArray(orders) ? orders : [])
+        .map((order) => String(order?.reservedAccountId || "").trim())
+        .filter(Boolean),
+    ),
+  );
+};
 const sanitizeStoreOrder = (order) => {
   if (!order) return null;
   const packageCode = String(order.packageCode || "");
@@ -6885,7 +6917,12 @@ const listChatgptMoveCandidates = async (sourceAccount = {}) => {
       : sourceType
         ? [sourceType, "unassigned"]
         : ["unassigned"];
-  const trackedIds = new Set(await getTrackedMarketplaceChatgptAccountIds());
+  const [trackedIdsRaw, pendingReservedIdsRaw] = await Promise.all([
+    getTrackedMarketplaceChatgptAccountIds(),
+    listActivePendingStoreReservedAccountIds(),
+  ]);
+  const trackedIds = new Set(trackedIdsRaw);
+  const pendingReservedIds = new Set(pendingReservedIdsRaw);
   const candidates = await Account.find({
     id: { $ne: sourceId },
     type: { $in: allowedTypes },
@@ -6899,6 +6936,7 @@ const listChatgptMoveCandidates = async (sourceAccount = {}) => {
       const accountId = String(account?.id || "").trim();
       if (!accountId) return false;
       if (trackedIds.has(accountId)) return false;
+      if (pendingReservedIds.has(accountId)) return false;
       const expiredAt = String(account?.expiredAt || "").trim();
       if (expiredAt && new Date(expiredAt).getTime() <= Date.now()) {
         return false;
@@ -6912,7 +6950,12 @@ const listChatgptMoveCandidates = async (sourceAccount = {}) => {
 };
 const listChatgptWarrantyCandidates = async (sourceAccount = {}) => {
   const sourceId = String(sourceAccount?.id || "").trim();
-  const busyIds = new Set(await getBusyChatgptAccountIdsForStoreOrders());
+  const [busyIdsRaw, pendingReservedIdsRaw] = await Promise.all([
+    getBusyChatgptAccountIdsForStoreOrders(),
+    listActivePendingStoreReservedAccountIds(),
+  ]);
+  const busyIds = new Set(busyIdsRaw);
+  const pendingReservedIds = new Set(pendingReservedIdsRaw);
   const candidates = await Account.find({
     id: { $ne: sourceId },
     type: { $in: ["package2", "unassigned"] },
@@ -6925,6 +6968,7 @@ const listChatgptWarrantyCandidates = async (sourceAccount = {}) => {
       const accountId = String(account?.id || "").trim();
       if (!accountId) return false;
       if (busyIds.has(accountId)) return false;
+      if (pendingReservedIds.has(accountId)) return false;
       if (Array.isArray(account?.users) && account.users.length > 0) {
         return false;
       }
@@ -7328,6 +7372,13 @@ const claimStorePackage1AccountForOrder = async ({ order, user }) => {
     );
     convertedFromUnassigned = !!oldAcc;
   }
+  if (reservedAccountId && !oldAcc) {
+    const error = new Error(
+      "Nick da giu cho don nay khong con hop le de giao tu dong. Khong doi sang nick khac de tranh giao nham.",
+    );
+    error.statusCode = 409;
+    throw error;
+  }
   if (!oldAcc) {
     const fallbackTarget = await selectStorePackage1ReservationTarget({
       excludeOrderId: String(order?.id || "").trim(),
@@ -7428,6 +7479,13 @@ const claimStorePackage2AccountForOrder = async ({ order, user }) => {
       },
       { new: false },
     );
+  }
+  if (reservedAccountId && !oldAcc) {
+    const error = new Error(
+      "Nick da giu cho don nay khong con hop le de giao tu dong. Khong doi sang nick khac de tranh giao nham.",
+    );
+    error.statusCode = 409;
+    throw error;
   }
   if (!oldAcc) {
     const fallbackTarget = await selectStorePackage2ReservationTarget({
@@ -10943,6 +11001,13 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
     if (!existingAcc) {
       return res.status(404).json({ error: "Khong tim thay account" });
     }
+    const activePendingReservation =
+      await findActivePendingStoreReservationByAccountId(id);
+    if (activePendingReservation) {
+      return res.status(409).json({
+        error: `Acc nay dang duoc giu cho don web ${String(activePendingReservation?.id || "").trim()}. Khong duoc sua tay trong luc cho thanh toan.`,
+      });
+    }
     ensureCurrentVersion(existingAcc, expectedUpdatedAt, "Tai khoan nay");
 
     // Validate package2: chỉ được tối đa 1 khách hàng
@@ -11087,6 +11152,13 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
     const expectedUpdatedAt = getExpectedUpdatedAtValue(
       req.body?.expectedUpdatedAt || req.query?.expectedUpdatedAt,
     );
+    const activePendingReservation =
+      await findActivePendingStoreReservationByAccountId(id);
+    if (activePendingReservation) {
+      return res.status(409).json({
+        error: `Acc nay dang duoc giu cho don web ${String(activePendingReservation?.id || "").trim()}. Khong duoc xoa trong luc cho thanh toan.`,
+      });
+    }
     const existing = await Account.findOneAndDelete(
       buildConditionalUpdateFilter(id, expectedUpdatedAt),
     );
@@ -11121,6 +11193,13 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
 
     const sourceAcc = await Account.findOne({ id: req.params.id });
     const replacementAcc = await Account.findOne({ id: replacementAccountId });
+    const replacementPendingReservation =
+      await findActivePendingStoreReservationByAccountId(replacementAccountId);
+    if (replacementPendingReservation) {
+      return res.status(409).json({
+        error: `Tai khoan thay the dang duoc giu cho don web ${String(replacementPendingReservation?.id || "").trim()}. Khong duoc dung de bao hanh trong luc cho thanh toan.`,
+      });
+    }
 
     if (!sourceAcc || !replacementAcc) {
       return res.status(404).json({ error: "Không tìm thấy tài khoản bảo hành" });
@@ -11761,6 +11840,8 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     }
     const destinationMarketplaceOrder =
       await findLatestMarketplaceOrderForAccount(toAccId, "", "chatgpt");
+    const destinationPendingReservation =
+      await findActivePendingStoreReservationByAccountId(toAccId);
     const sourceUserToMove = fromAcc.users[userIndex];
     if (
       (isDatammoManagedUser(sourceUserToMove) &&
@@ -11773,6 +11854,11 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
           "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",
         ),
       );
+    }
+    if (destinationPendingReservation) {
+      return res.status(409).json({
+        error: `Acc dich dang duoc giu cho don web ${String(destinationPendingReservation?.id || "").trim()}. Khong duoc chuyen khach tay vao trong luc cho thanh toan.`,
+      });
     }
 
     // STRICT RULE: Cannot transfer to Expired Account
