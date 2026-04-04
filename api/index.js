@@ -1588,10 +1588,14 @@ app.post(
 app.get("/api/store/orders/:id", verifyStoreUserToken, async (req, res) => {
   try {
     await expireStaleStoreOrders({ userId: req.storeUser.id });
-    const order = await StoreOrder.findOne({
+    let order = await StoreOrder.findOne({
       id: String(req.params?.id || "").trim(),
       userId: req.storeUser.id,
-    }).lean();
+    });
+    if (order && canRetryStoreFailedFulfillment(order)) {
+      order = await retryFailedStoreOrderFulfillment(order, { emitRealtime: true });
+    }
+    order = order && typeof order.toObject === "function" ? order.toObject() : order;
     if (
       !order ||
       STORE_HIDDEN_ORDER_STATUSES.has(
@@ -1615,6 +1619,9 @@ app.post("/api/store/orders/:id/reconcile", verifyStoreUserToken, async (req, re
     });
     if (!order) {
       return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+    }
+    if (canRetryStoreFailedFulfillment(order)) {
+      order = await retryFailedStoreOrderFulfillment(order, { emitRealtime: true });
     }
     order = await reconcileStoreOrderPaymentStatus(order);
     if (!order) {
@@ -3881,12 +3888,28 @@ const appendStoreSupportMessage = async ({
 const loadVisibleStoreOrdersForUser = async (userId) => {
   await expireStaleStoreOrders({ userId });
   await cleanupOldStoreFailedOrders({ userId });
-  const orders = await StoreOrder.find({
+  let orders = await StoreOrder.find({
     userId,
     status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
   })
     .sort({ createdAt: -1 })
     .lean();
+  const failedAutoOrders = (orders || []).filter((order) =>
+    canRetryStoreFailedFulfillment(order),
+  );
+  if (failedAutoOrders.length > 0) {
+    await Promise.all(
+      failedAutoOrders.map((order) =>
+        retryFailedStoreOrderFulfillment(order, { emitRealtime: true }),
+      ),
+    );
+    orders = await StoreOrder.find({
+      userId,
+      status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
   const assignedAccountIds = Array.from(
     new Set(
       (orders || [])
@@ -3987,7 +4010,7 @@ const listAdminStoreOrders = async ({ page = 1, limit = 100 } = {}) => {
   const filter = {
     status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
   };
-  const [total, rawOrders] = await Promise.all([
+  const [total, initialOrders] = await Promise.all([
     StoreOrder.countDocuments(filter),
     StoreOrder.find(filter)
       .sort({ createdAt: -1, id: -1 })
@@ -3995,6 +4018,22 @@ const listAdminStoreOrders = async ({ page = 1, limit = 100 } = {}) => {
       .limit(safeLimit)
       .lean(),
   ]);
+  let rawOrders = initialOrders;
+  const failedAutoOrders = (rawOrders || []).filter((order) =>
+    canRetryStoreFailedFulfillment(order),
+  );
+  if (failedAutoOrders.length > 0) {
+    await Promise.all(
+      failedAutoOrders.map((order) =>
+        retryFailedStoreOrderFulfillment(order, { emitRealtime: true }),
+      ),
+    );
+    rawOrders = await StoreOrder.find(filter)
+      .sort({ createdAt: -1, id: -1 })
+      .skip(skip)
+      .limit(safeLimit)
+      .lean();
+  }
   const userIds = Array.from(
     new Set(
       (rawOrders || [])
@@ -7965,6 +8004,54 @@ const fulfillStoreOrder = async (order) => {
     );
     throw error;
   }
+};
+const STORE_FULFILLMENT_RETRY_COOLDOWN_MS = 15000;
+const canRetryStoreFailedFulfillment = (order = {}) => {
+  const packageCode = String(order?.packageCode || "").trim().toLowerCase();
+  const status = normalizeStoreOrderStatusValue(order?.status);
+  if (status !== "fulfillment_failed") return false;
+  if (!["package1", "package2"].includes(packageCode)) return false;
+  if (!String(order?.paidAt || "").trim()) return false;
+  const updatedAtMs = new Date(
+    String(order?.updatedAt || order?.createdAt || "").trim(),
+  ).getTime();
+  if (!Number.isFinite(updatedAtMs)) return true;
+  return Date.now() - updatedAtMs >= STORE_FULFILLMENT_RETRY_COOLDOWN_MS;
+};
+const retryFailedStoreOrderFulfillment = async (
+  orderInput = null,
+  { emitRealtime = false } = {},
+) => {
+  const order =
+    orderInput && typeof orderInput.save === "function"
+      ? orderInput
+      : await StoreOrder.findOne({
+          id: String(orderInput?.id || orderInput || "").trim(),
+        });
+  if (!order) return null;
+  if (!canRetryStoreFailedFulfillment(order)) return order;
+
+  let updatedOrder = null;
+  try {
+    const assignedAccountId = String(
+      order?.assignedAccountId || order?.rootAssignedAccountId || "",
+    ).trim();
+    if (assignedAccountId) {
+      updatedOrder = await completeStoreOrderManualFulfillment(order);
+    } else {
+      order.status = "paid";
+      order.updatedAt = new Date().toISOString();
+      await order.save();
+      updatedOrder = await fulfillStoreOrder(order);
+    }
+  } catch (error) {
+    updatedOrder = await StoreOrder.findOne({ id: String(order?.id || "").trim() });
+  }
+
+  if (emitRealtime && String(updatedOrder?.status || "").trim().toLowerCase() === "fulfilled") {
+    await emitStoreOrderRealtimeUpdate(updatedOrder, { includeStock: true });
+  }
+  return updatedOrder || order;
 };
 const createMomoPaymentForStoreOrder = async (req, order) => {
   const partnerCode = MOMO_PARTNER_CODE;
