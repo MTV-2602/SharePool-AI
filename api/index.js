@@ -5068,8 +5068,9 @@ const completeStoreOrderManualFulfillment = async (order = {}) => {
   const paymentMethod = normalizeStorePaymentMethod(order?.paymentMethod);
   const hasPaidTimestamp = !!String(order?.paidAt || "").trim();
   const isPaymentConfirmed =
-    hasPaidTimestamp &&
-    (normalizedStatus === "paid" || normalizedStatus === "fulfillment_failed");
+    paymentMethod === "admin_manual" ||
+    (hasPaidTimestamp &&
+      (normalizedStatus === "paid" || normalizedStatus === "fulfillment_failed"));
   if (!isPaymentConfirmed) {
     const error = new Error(
       paymentMethod === "admin_manual"
