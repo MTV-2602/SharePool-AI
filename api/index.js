@@ -6086,6 +6086,9 @@ const normalizeChatgptMarketAccountState = (acc = {}) => {
   if (!acc || !supportsChatgptMarket(acc?.type)) {
     return CHATGPT_TOTAL_VALUE;
   }
+  if (hasStoreWarrantyHoldNote(acc?.note)) {
+    return CHATGPT_TOTAL_VALUE;
+  }
   const currentValue = normalizePackage2Shelf(
     acc?.package2Shelf,
     CHATGPT_TOTAL_VALUE,
@@ -7960,6 +7963,7 @@ const warrantyStoreOrderForAdmin = async (
             orderId,
             new Date().toISOString(),
           ),
+          package2Shelf: CHATGPT_TOTAL_VALUE,
           updatedAt: new Date().toISOString(),
         },
       },
