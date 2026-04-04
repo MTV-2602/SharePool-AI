@@ -5065,6 +5065,20 @@ const completeStoreOrderManualFulfillment = async (order = {}) => {
   if (normalizedStatus === "fulfilled") {
     return StoreOrder.findOne({ id: normalizedOrderId });
   }
+  const paymentMethod = normalizeStorePaymentMethod(order?.paymentMethod);
+  const hasPaidTimestamp = !!String(order?.paidAt || "").trim();
+  const isPaymentConfirmed =
+    hasPaidTimestamp &&
+    (normalizedStatus === "paid" || normalizedStatus === "fulfillment_failed");
+  if (!isPaymentConfirmed) {
+    const error = new Error(
+      paymentMethod === "admin_manual"
+        ? "Đơn tay này chưa được xác nhận thanh toán nên chưa thể chốt đã giao."
+        : "Đơn web chưa thanh toán thành công nên không được giao nick.",
+    );
+    error.statusCode = 409;
+    throw error;
+  }
   const assignedAccountId = String(
     order?.assignedAccountId || order?.rootAssignedAccountId || "",
   ).trim();
