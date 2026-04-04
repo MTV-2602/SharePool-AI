@@ -2305,6 +2305,7 @@ function PublicStorefront() {
         order?.voucherCode,
         order?.paymentStatusText,
         order?.momoMessage,
+        order?.fulfillmentReason,
       ]
         .map((value) => String(value || "").trim().toLowerCase())
         .join(" ");
@@ -2403,6 +2404,7 @@ function PublicStorefront() {
             const paymentStatusText =
               String(order.paymentStatusText || order.momoMessage || "").trim() ||
               formatStatusLabel(order.status);
+            const fulfillmentReason = String(order.fulfillmentReason || "").trim();
 
             return (
               <div key={order.id} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3.5 sm:p-4">
@@ -2521,6 +2523,11 @@ function PublicStorefront() {
                 {!pendingPayment && !isFulfilled ? (
                   <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950/75 p-3 text-xs text-slate-300">
                     <p>{paymentStatusText}</p>
+                    {fulfillmentReason ? (
+                      <p className="mt-1 leading-5 text-rose-200">
+                        Lý do: {fulfillmentReason}
+                      </p>
+                    ) : null}
                     {(order.paymentOrderId || order.momoOrderId) ? (
                       <p className="mt-1 break-all text-slate-500">
                         Mã thanh toán: {order.paymentOrderId || order.momoOrderId}

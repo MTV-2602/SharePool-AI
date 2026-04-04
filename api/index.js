@@ -638,6 +638,8 @@ const storeOrderSchema = new mongoose.Schema({
   reservedAccountId: { type: String, default: "" },
   reservedAccountUsername: { type: String, default: "" },
   reservationType: { type: String, default: "" },
+  reservationState: { type: String, default: "" },
+  reservedAccountSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   assignedAccountId: { type: String, default: "" },
   assignedUsername: { type: String, default: "" },
   assignedPassword: { type: String, default: "" },
@@ -656,6 +658,8 @@ const storeOrderSchema = new mongoose.Schema({
   package1UsedCount: { type: Number, default: 0 },
   package1LastCodeAt: { type: String, default: "" },
   package1LastCode: { type: String, default: "" },
+  fulfillmentState: { type: String, default: "" },
+  fulfillmentReason: { type: String, default: "" },
   fulfilledAt: { type: String, default: "" },
   paidAt: { type: String, default: "" },
   createdAt: { type: String, default: () => new Date().toISOString() },
@@ -1604,7 +1608,7 @@ app.get("/api/store/orders/:id", verifyStoreUserToken, async (req, res) => {
     ) {
       return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
     }
-    res.json({ order: sanitizeStoreOrder(order) });
+    res.json({ order: await sanitizeSingleStoreOrderWithOperationalState(order) });
   } catch (error) {
     res.status(500).json({ error: error.message || "Không tải được đơn hàng" });
   }
@@ -1635,7 +1639,7 @@ app.post("/api/store/orders/:id/reconcile", verifyStoreUserToken, async (req, re
       includeStock: normalizedStatus === "fulfilled",
     });
     res.json({
-      order: sanitizeStoreOrder(
+      order: await sanitizeSingleStoreOrderWithOperationalState(
         typeof order?.toObject === "function" ? order.toObject() : order,
       ),
     });
@@ -1713,6 +1717,13 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, storeOrderPaymentRat
                 pricing?.voucher?.description || "",
               ).trim(),
               status: "pending_payment",
+              reservationState: String(
+                reusableOrder?.reservedAccountId
+                  ? "reserved_for_pending_store_order"
+                  : "",
+              ).trim(),
+              fulfillmentState: "awaiting_payment",
+              fulfillmentReason: "",
               expiresAt: getStorePaymentExpiresAtIso(),
               ...(paymentMethod === STORE_PAYMENT_METHOD_MOMO
                 ? {
@@ -1744,7 +1755,7 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, storeOrderPaymentRat
         success: true,
         reused: true,
         payUrl,
-        order: sanitizeStoreOrder(freshOrder),
+        order: await sanitizeSingleStoreOrderWithOperationalState(freshOrder),
       });
     }
 
@@ -1792,6 +1803,17 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, storeOrderPaymentRat
       reservedAccountId: reservation.reservedAccountId,
       reservedAccountUsername: reservation.reservedAccountUsername,
       reservationType: reservation.reservationType,
+      reservationState: "reserved_for_pending_store_order",
+      reservedAccountSnapshot: {
+        accountId: String(reservation.reservedAccountId || "").trim(),
+        username: String(reservation.reservedAccountUsername || "").trim(),
+        reservationType: String(reservation.reservationType || "").trim(),
+        packageCode: packageConfig.code,
+        warehouse: CHATGPT_TOTAL_VALUE,
+        reservedAt: nowIso,
+      },
+      fulfillmentState: "awaiting_payment",
+      fulfillmentReason: "",
       createdAt: nowIso,
       updatedAt: nowIso,
     });
@@ -1808,6 +1830,8 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, storeOrderPaymentRat
         {
           $set: {
             status: "awaiting_payment",
+            reservationState: "reserved_for_pending_store_order",
+            fulfillmentState: "awaiting_payment",
             updatedAt: new Date().toISOString(),
           },
         },
@@ -1832,12 +1856,15 @@ app.post("/api/store/orders/payment", verifyStoreUserToken, storeOrderPaymentRat
 
     await emitStoreOrderRealtimeUpdate(freshOrder, {
       kind: "created",
-      adminOrder: sanitizeStoreOrderForAdmin(freshOrder, req.storeUser),
+      adminOrder: await sanitizeSingleStoreOrderForAdminWithOperationalState(
+        freshOrder,
+        req.storeUser,
+      ),
     });
     return res.json({
       success: true,
       payUrl,
-      order: sanitizeStoreOrder(freshOrder),
+      order: await sanitizeSingleStoreOrderWithOperationalState(freshOrder),
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
@@ -1888,7 +1915,7 @@ app.post("/api/store/orders/payment-legacy-disabled", verifyStoreUserToken, asyn
     res.json({
       success: true,
       payUrl,
-      order: sanitizeStoreOrder(freshOrder),
+      order: await sanitizeSingleStoreOrderWithOperationalState(freshOrder),
     });
   } catch (error) {
     res.status(error.statusCode || 500).json({
@@ -3202,6 +3229,16 @@ const removeStoreWarrantyHoldNote = (note = "", orderId = "") => {
     .join("\n")
     .trim();
 };
+const extractStoreWarrantyHoldOrderIds = (note = "") =>
+  String(note || "")
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trim())
+    .filter((line) => STORE_WARRANTY_HOLD_NOTE_REGEX.test(line))
+    .map((line) => {
+      const match = line.match(/\border=([^\]\s]+)/i);
+      return String(match?.[1] || "").trim();
+    })
+    .filter(Boolean);
 const parseStoreDateMs = (value) => {
   const ts = new Date(String(value || "").trim()).getTime();
   return Number.isFinite(ts) ? ts : 0;
@@ -3926,7 +3963,7 @@ const loadVisibleStoreOrdersForUser = async (userId) => {
   const accountMap = new Map(
     (accounts || []).map((acc) => [String(acc?.id || "").trim(), acc]),
   );
-  return (orders || []).map((order) => {
+  const hydratedOrders = (orders || []).map((order) => {
     const linkedAcc = accountMap.get(String(order?.assignedAccountId || "").trim());
     if (!linkedAcc) return order;
     return {
@@ -3937,6 +3974,7 @@ const loadVisibleStoreOrdersForUser = async (userId) => {
       assignedLink: String(order?.assignedLink || linkedAcc?.link || "").trim(),
     };
   });
+  return attachStoreOrdersOperationalState(hydratedOrders);
 };
 
 const parsePositivePage = (value, fallback = 1) => {
@@ -4049,8 +4087,9 @@ const listAdminStoreOrders = async ({ page = 1, limit = 100 } = {}) => {
   const userMap = new Map(
     (users || []).map((user) => [String(user?.id || "").trim(), user]),
   );
+  const operationalOrders = await attachStoreOrdersOperationalState(rawOrders);
   return {
-    orders: (rawOrders || [])
+    orders: (operationalOrders || [])
       .map((order) =>
         sanitizeStoreOrderForAdmin(
           order,
@@ -4401,8 +4440,10 @@ const getCachedChatgptAdminSnapshot = async (
             null,
         };
         return {
-          ...normalizedAccount,
-          package2Shelf: normalizeChatgptMarketAccountState(normalizedAccount),
+          ...enrichChatgptAccountWithOperationalState({
+            ...normalizedAccount,
+            package2Shelf: normalizeChatgptMarketAccountState(normalizedAccount),
+          }),
         };
       }),
     );
@@ -4981,6 +5022,7 @@ const sanitizeStoreOrder = (order) => {
   const packageCode = String(order.packageCode || "");
   const isFulfilled =
     normalizeStoreOrderStatusValue(order?.status) === "fulfilled";
+  const operationalState = buildStoreOrderOperationalState(order);
   const warrantyRounds = Array.isArray(order?.warrantyRounds)
     ? order.warrantyRounds
         .map((round) => ({
@@ -5038,6 +5080,14 @@ const sanitizeStoreOrder = (order) => {
     updatedAt: String(order.updatedAt || ""),
     paidAt: String(order.paidAt || ""),
     fulfilledAt: String(order.fulfilledAt || ""),
+    reservationState: String(operationalState?.reservationState || "").trim(),
+    fulfillmentState: String(operationalState?.fulfillmentState || "").trim(),
+    fulfillmentReason: String(operationalState?.fulfillmentReason || "").trim(),
+    currentAccountState:
+      operationalState?.currentAccountState &&
+      typeof operationalState.currentAccountState === "object"
+        ? operationalState.currentAccountState
+        : null,
     warrantyCount: warrantyRounds.length,
     warrantyRounds,
   };
@@ -5170,6 +5220,11 @@ const completeStoreOrderManualFulfillment = async (order = {}) => {
             account?.username ||
             "",
         ).trim(),
+        reservationState: String(order?.reservedAccountId || "").trim()
+          ? "consumed"
+          : "none",
+        fulfillmentState: "fulfilled",
+        fulfillmentReason: "",
         fulfilledAt: String(order?.fulfilledAt || "").trim() || nowIso,
         updatedAt: nowIso,
       },
@@ -5181,6 +5236,7 @@ const completeStoreOrderManualFulfillment = async (order = {}) => {
 const sanitizeStoreOrderForAdmin = (order, user = null) => {
   if (!order) return null;
   const packageCode = String(order.packageCode || "").trim();
+  const operationalState = buildStoreOrderOperationalState(order);
   const warrantyRounds = Array.isArray(order?.warrantyRounds)
     ? order.warrantyRounds
         .map((round) => ({
@@ -5237,7 +5293,16 @@ const sanitizeStoreOrderForAdmin = (order, user = null) => {
     fulfilledAt: String(order.fulfilledAt || "").trim(),
     expiresAt: String(order.expiresAt || "").trim(),
     reservationType: String(order.reservationType || "").trim(),
+    reservationState: String(operationalState?.reservationState || "").trim(),
     reservedAccountId: String(order.reservedAccountId || "").trim(),
+    reservedAccountUsername: String(order.reservedAccountUsername || "").trim(),
+    reservedAccountSnapshot:
+      operationalState?.reservedAccountSnapshot &&
+      typeof operationalState.reservedAccountSnapshot === "object"
+        ? operationalState.reservedAccountSnapshot
+        : null,
+    fulfillmentState: String(operationalState?.fulfillmentState || "").trim(),
+    fulfillmentReason: String(operationalState?.fulfillmentReason || "").trim(),
     assignedAccountId: String(order.assignedAccountId || "").trim(),
     assignedUsername: String(order.assignedUsername || "").trim(),
     assignedPassword: String(order.assignedPassword || "").trim(),
@@ -5255,6 +5320,11 @@ const sanitizeStoreOrderForAdmin = (order, user = null) => {
     package1MaxUsage: Number(order.package1MaxUsage || STORE_PACKAGE1_MAX_OTP_USES),
     package1UsedCount: Number(order.package1UsedCount || 0),
     package1UsageLeft: buildStorePackage1UsageLeft(order),
+    currentAccountState:
+      operationalState?.currentAccountState &&
+      typeof operationalState.currentAccountState === "object"
+        ? operationalState.currentAccountState
+        : null,
     customerName: String(user?.fullName || "").trim(),
     customerEmail: String(user?.email || "").trim(),
     customerPhone: String(user?.phone || "").trim(),
@@ -5487,6 +5557,676 @@ const buildMarketplaceAccountTraceMap = (
 const hasMarketplaceTraceSummary = (summary = {}) =>
   Number(summary?.orderCount || 0) > 0 ||
   Number(summary?.warrantyCount || 0) > 0;
+const buildStoreWarrantyHoldTraceInfo = (account = {}) => {
+  if (!hasStoreWarrantyHoldNote(account?.note)) return null;
+  const summary =
+    account?.storeTraceSummary && typeof account.storeTraceSummary === "object"
+      ? account.storeTraceSummary
+      : null;
+  const traces = Array.isArray(summary?.traces) ? summary.traces : [];
+  const holdTrace =
+    traces.find((trace) => String(trace?.role || "").trim() === "warranty_from") ||
+    traces.find((trace) => {
+      const role = String(trace?.role || "").trim();
+      return role === "assigned" || role === "root";
+    }) ||
+    traces[0] ||
+    null;
+  const orderId = String(holdTrace?.orderId || summary?.latestOrderId || "").trim();
+  const packageName = String(
+    holdTrace?.packageName || summary?.latestPackageName || "",
+  ).trim();
+  const customerName = String(
+    holdTrace?.customerName || summary?.latestCustomerName || "",
+  ).trim();
+  const customerEmail = String(
+    holdTrace?.customerEmail || summary?.latestCustomerEmail || "",
+  ).trim();
+  const createdAt = String(
+    holdTrace?.createdAt || holdTrace?.fulfilledAt || holdTrace?.paidAt || "",
+  ).trim();
+  return {
+    orderId,
+    packageName,
+    customerName,
+    customerEmail,
+    createdAt,
+  };
+};
+const buildChatgptAccountCurrentState = (account = {}) => {
+  const users = Array.isArray(account?.users) ? account.users : [];
+  const userCount = users.length;
+  const expiredAt = String(account?.expiredAt || "").trim();
+  const expiredAtMs = new Date(expiredAt).getTime();
+  const isExpired = !!expiredAt && Number.isFinite(expiredAtMs) && expiredAtMs <= Date.now();
+  const storeTraceSummary = account?.storeTraceSummary || null;
+  const marketplaceTraceSummary = account?.marketplaceTraceSummary || null;
+  const traces = Array.isArray(storeTraceSummary?.traces)
+    ? storeTraceSummary.traces
+    : [];
+  const latestAssignedTrace =
+    traces.find((trace) => String(trace?.role || "").trim() === "assigned") ||
+    traces.find((trace) => String(trace?.role || "").trim() === "root") ||
+    null;
+  const latestWarrantyToTrace =
+    traces.find((trace) => String(trace?.role || "").trim() === "warranty_to") ||
+    null;
+  const latestActiveReservation =
+    storeTraceSummary?.latestActiveReservation ||
+    (Array.isArray(storeTraceSummary?.activeReservationTraces)
+      ? storeTraceSummary.activeReservationTraces[0]
+      : null) ||
+    null;
+  const warrantyHoldInfo = buildStoreWarrantyHoldTraceInfo(account);
+  const hasManagedMarketplaceUser = users.some((user) =>
+    isActiveMarketplaceManagedUser(user),
+  );
+  const hasMarketplaceBusy =
+    hasMarketplaceTraceSummary(marketplaceTraceSummary) || hasManagedMarketplaceUser;
+
+  let availabilityState = "sellable";
+  let busyReason = "";
+  let busyOrderId = "";
+  let busySource = "";
+  let busySince = "";
+
+  if (isExpired) {
+    availabilityState = "expired_unusable";
+    busyReason = "Tài khoản đã hết hạn nên không thể bán, giữ chỗ hay bảo hành.";
+    busySource = "expiry";
+    busySince = expiredAt;
+  } else if (latestActiveReservation) {
+    availabilityState = "reserved_for_pending_store_order";
+    busyOrderId = String(latestActiveReservation?.orderId || "").trim();
+    busySource = "store_order";
+    busySince = String(
+      latestActiveReservation?.createdAt ||
+        latestActiveReservation?.paidAt ||
+        latestActiveReservation?.fulfilledAt ||
+        "",
+    ).trim();
+    busyReason = busyOrderId
+      ? `Đang giữ cho đơn web ${busyOrderId}.`
+      : "Đang giữ cho đơn web chờ thanh toán.";
+  } else if (warrantyHoldInfo) {
+    availabilityState = "warranty_hold_source";
+    busyOrderId = String(warrantyHoldInfo?.orderId || "").trim();
+    busySource = "store_warranty";
+    busySince = String(warrantyHoldInfo?.createdAt || "").trim();
+    busyReason = busyOrderId
+      ? `Nick lỗi đang được giữ cho bảo hành của đơn ${busyOrderId}.`
+      : "Nick lỗi đang được giữ cho luồng bảo hành web.";
+  } else if (hasMarketplaceBusy) {
+    availabilityState = "busy_in_marketplace";
+    busyOrderId =
+      String(marketplaceTraceSummary?.latestWarrantyOrderId || "").trim() ||
+      String(marketplaceTraceSummary?.latestOrderId || "").trim();
+    busySource = Number(marketplaceTraceSummary?.warrantyCount || 0) > 0
+      ? "marketplace_warranty"
+      : "marketplace_order";
+    busyReason =
+      Number(marketplaceTraceSummary?.warrantyCount || 0) > 0
+        ? `Nick đang dính bảo hành sàn ${busyOrderId || ""}.`.trim()
+        : `Nick đã từng bán qua ${getMarketplaceProviderLabel(
+            marketplaceTraceSummary?.latestProvider,
+          )} ${busyOrderId || ""}.`.trim();
+  } else if (latestWarrantyToTrace) {
+    availabilityState = "busy_in_warranty_replacement";
+    busyOrderId = String(latestWarrantyToTrace?.orderId || "").trim();
+    busySource = "store_warranty";
+    busySince = String(
+      latestWarrantyToTrace?.createdAt ||
+        latestWarrantyToTrace?.fulfilledAt ||
+        latestWarrantyToTrace?.paidAt ||
+        "",
+    ).trim();
+    busyReason = busyOrderId
+      ? `Nick đang là acc thay thế của đơn web ${busyOrderId}.`
+      : "Nick đang là acc thay thế của một đơn web.";
+  } else if (userCount > 0 || latestAssignedTrace) {
+    availabilityState = "assigned_to_store_order";
+    busyOrderId = String(latestAssignedTrace?.orderId || "").trim();
+    busySource = "account_users";
+    busySince = String(
+      latestAssignedTrace?.fulfilledAt ||
+        latestAssignedTrace?.paidAt ||
+        latestAssignedTrace?.createdAt ||
+        users?.[0]?.joinedAt ||
+        "",
+    ).trim();
+    const visibleNames = users
+      .map((item) => String(item?.name || "").trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    busyReason = visibleNames.length
+      ? `Khách còn trên nick: ${visibleNames.join(", ")}.`
+      : busyOrderId
+        ? `Nick đang gắn với đơn web ${busyOrderId}.`
+        : "Nick đang có khách trên tài khoản.";
+  }
+
+  return {
+    availabilityState,
+    busyReason,
+    busyOrderId,
+    busySource,
+    busySince,
+    isSellable:
+      availabilityState === "sellable" &&
+      userCount === 0 &&
+      !hasMarketplaceBusy &&
+      !latestActiveReservation &&
+      !warrantyHoldInfo &&
+      !latestWarrantyToTrace &&
+      !isExpired,
+    isWarrantyHold: availabilityState === "warranty_hold_source",
+    isReservedForWeb: availabilityState === "reserved_for_pending_store_order",
+    isBusyInMarketplace: availabilityState === "busy_in_marketplace",
+    isBusyInWarrantyReplacement:
+      availabilityState === "busy_in_warranty_replacement",
+    hasAssignedUsers: userCount > 0,
+    userCount,
+    activeReservationOrderId: String(latestActiveReservation?.orderId || "").trim(),
+    holdOrderId: String(warrantyHoldInfo?.orderId || "").trim(),
+    warehouse: normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE),
+  };
+};
+const pickChatgptCurrentStatePayload = (account = {}) => {
+  const currentState =
+    account?.currentAccountState && typeof account.currentAccountState === "object"
+      ? account.currentAccountState
+      : buildChatgptAccountCurrentState(account);
+  return {
+    availabilityState: String(currentState?.availabilityState || "").trim(),
+    busyReason: String(currentState?.busyReason || "").trim(),
+    busyOrderId: String(currentState?.busyOrderId || "").trim(),
+    busySource: String(currentState?.busySource || "").trim(),
+    busySince: String(currentState?.busySince || "").trim(),
+    isSellable: !!currentState?.isSellable,
+    isWarrantyHold: !!currentState?.isWarrantyHold,
+    isReservedForWeb: !!currentState?.isReservedForWeb,
+    isBusyInMarketplace: !!currentState?.isBusyInMarketplace,
+    isBusyInWarrantyReplacement: !!currentState?.isBusyInWarrantyReplacement,
+    hasAssignedUsers: !!currentState?.hasAssignedUsers,
+    userCount: Number(currentState?.userCount || 0),
+    activeReservationOrderId: String(
+      currentState?.activeReservationOrderId || "",
+    ).trim(),
+    holdOrderId: String(currentState?.holdOrderId || "").trim(),
+    warehouse: normalizePackage2Shelf(
+      currentState?.warehouse,
+      normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE),
+    ),
+  };
+};
+const enrichChatgptAccountWithOperationalState = (account = {}) => {
+  const currentAccountState = pickChatgptCurrentStatePayload(account);
+  return {
+    ...account,
+    currentAccountState,
+    availabilityState: currentAccountState.availabilityState,
+    busyReason: currentAccountState.busyReason,
+    busyOrderId: currentAccountState.busyOrderId,
+    busySource: currentAccountState.busySource,
+    busySince: currentAccountState.busySince,
+    isSellable: currentAccountState.isSellable,
+    isWarrantyHold: currentAccountState.isWarrantyHold,
+    isReservedForWeb: currentAccountState.isReservedForWeb,
+    activeReservationOrderId: currentAccountState.activeReservationOrderId,
+    holdOrderId: currentAccountState.holdOrderId,
+  };
+};
+const buildStoreOrderReservedSnapshot = (order = {}) => {
+  const raw =
+    order?.reservedAccountSnapshot &&
+    typeof order.reservedAccountSnapshot === "object"
+      ? order.reservedAccountSnapshot
+      : null;
+  return {
+    accountId: String(
+      raw?.accountId || raw?.id || order?.reservedAccountId || "",
+    ).trim(),
+    username: String(
+      raw?.username || order?.reservedAccountUsername || "",
+    ).trim(),
+    reservationType: String(
+      raw?.reservationType || order?.reservationType || "",
+    ).trim(),
+    packageCode: String(raw?.packageCode || order?.packageCode || "").trim(),
+    warehouse: normalizePackage2Shelf(
+      raw?.warehouse || order?.assignedWarehouse || CHATGPT_TOTAL_VALUE,
+      CHATGPT_TOTAL_VALUE,
+    ),
+    reservedAt: String(raw?.reservedAt || order?.createdAt || "").trim(),
+  };
+};
+const buildStoreOrderOperationalState = (
+  order = {},
+  { accountStateMap = new Map() } = {},
+) => {
+  const normalizedStatus = normalizeStoreOrderStatusValue(order?.status);
+  const reservedSnapshot = buildStoreOrderReservedSnapshot(order);
+  const currentAccountId = String(
+    order?.assignedAccountId || order?.rootAssignedAccountId || "",
+  ).trim();
+  const currentAccount =
+    accountStateMap instanceof Map ? accountStateMap.get(currentAccountId) : null;
+  const embeddedCurrentAccountState =
+    order?.currentAccountState &&
+    typeof order.currentAccountState === "object"
+      ? order.currentAccountState
+      : null;
+  const currentAccountState = currentAccount
+    ? pickChatgptCurrentStatePayload(currentAccount)
+    : embeddedCurrentAccountState
+      ? pickChatgptCurrentStatePayload({
+          id: currentAccountId,
+          currentAccountState: embeddedCurrentAccountState,
+        })
+      : null;
+
+  let reservationState = String(order?.reservationState || "").trim();
+  if (!reservationState) {
+    if (!reservedSnapshot.accountId) {
+      reservationState = "none";
+    } else if (isStorePendingPaymentStatus(normalizedStatus)) {
+      reservationState = "reserved_for_pending_store_order";
+    } else if (normalizedStatus === "paid") {
+      reservationState = "reserved_ready_for_fulfillment";
+    } else if (normalizedStatus === "fulfilled") {
+      reservationState = "consumed";
+    } else if (normalizedStatus === "fulfillment_failed") {
+      reservationState = "blocked";
+    } else if (STORE_HIDDEN_ORDER_STATUSES.has(normalizedStatus)) {
+      reservationState = "released";
+    } else {
+      reservationState = "reserved";
+    }
+  }
+
+  let fulfillmentState = String(order?.fulfillmentState || "").trim();
+  if (!fulfillmentState) {
+    if (normalizedStatus === "fulfilled") {
+      fulfillmentState = "fulfilled";
+    } else if (normalizedStatus === "fulfillment_failed") {
+      fulfillmentState = "failed";
+    } else if (normalizedStatus === "paid") {
+      fulfillmentState = "ready_for_fulfillment";
+    } else if (isStorePendingPaymentStatus(normalizedStatus)) {
+      fulfillmentState = "awaiting_payment";
+    } else if (STORE_HIDDEN_ORDER_STATUSES.has(normalizedStatus)) {
+      fulfillmentState = "cancelled";
+    } else {
+      fulfillmentState = normalizedStatus || "unknown";
+    }
+  }
+
+  const fulfillmentReason = String(
+    order?.fulfillmentReason ||
+      (normalizedStatus === "fulfillment_failed" ? order?.momoMessage : "") ||
+      "",
+  ).trim();
+
+  return {
+    reservationState,
+    reservedAccountSnapshot: reservedSnapshot.accountId ? reservedSnapshot : null,
+    fulfillmentState,
+    fulfillmentReason,
+    currentAccountState,
+  };
+};
+const resolveStoreWarrantyReplacementAction = ({
+  packageCode = "",
+  destinationType = "",
+} = {}) => {
+  const normalizedPackageCode = String(packageCode || "").trim();
+  const normalizedDestinationType =
+    String(destinationType || "unassigned").trim() || "unassigned";
+  if (normalizedPackageCode === "package1") {
+    return normalizedDestinationType === "package1"
+      ? "store_package1_existing_replacement"
+      : "store_package1_convertible_replacement";
+  }
+  if (normalizedPackageCode === "package2") {
+    return normalizedDestinationType === "package2"
+      ? "store_package2_existing_replacement"
+      : "store_package2_convertible_replacement";
+  }
+  return "";
+};
+const attachStoreOrdersOperationalState = async (orders = []) => {
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  if (safeOrders.length === 0) return [];
+  const accountIds = Array.from(
+    new Set(
+      safeOrders
+        .flatMap((order) => [
+          order?.reservedAccountId,
+          order?.assignedAccountId,
+          order?.rootAssignedAccountId,
+        ])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const accountStateMap = await loadChatgptAccountOperationalStateMap(accountIds);
+  return safeOrders.map((order) => ({
+    ...(order || {}),
+    ...buildStoreOrderOperationalState(order, { accountStateMap }),
+  }));
+};
+const sanitizeSingleStoreOrderWithOperationalState = async (order = null) => {
+  const [operationalOrder] = await attachStoreOrdersOperationalState(order ? [order] : []);
+  return sanitizeStoreOrder(operationalOrder || order);
+};
+const sanitizeSingleStoreOrderForAdminWithOperationalState = async (
+  order = null,
+  user = null,
+) => {
+  const [operationalOrder] = await attachStoreOrdersOperationalState(order ? [order] : []);
+  return sanitizeStoreOrderForAdmin(operationalOrder || order, user);
+};
+const buildStoreOrderTraceAccountQuery = (accountIds = [], { excludeOrderId = "" } = {}) => {
+  const normalizedIds = Array.from(
+    new Set(
+      (Array.isArray(accountIds) ? accountIds : [accountIds])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (normalizedIds.length === 0) return { id: "__missing_chatgpt_trace_account__" };
+  return {
+    ...(excludeOrderId ? { id: { $ne: String(excludeOrderId || "").trim() } } : {}),
+    status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+    $or: [
+      { reservedAccountId: { $in: normalizedIds } },
+      { assignedAccountId: { $in: normalizedIds } },
+      { rootAssignedAccountId: { $in: normalizedIds } },
+      { "warrantyRounds.fromAccountId": { $in: normalizedIds } },
+      { "warrantyRounds.toAccountId": { $in: normalizedIds } },
+    ],
+  };
+};
+const decorateChatgptAccountsWithOperationalState = async (
+  accounts = [],
+  { excludeStoreOrderId = "" } = {},
+) => {
+  const safeAccounts = Array.isArray(accounts) ? accounts : [];
+  if (safeAccounts.length === 0) return [];
+  const accountIds = safeAccounts
+    .map((account) => String(account?.id || "").trim())
+    .filter(Boolean);
+  if (accountIds.length === 0) return safeAccounts;
+  const [storeOrders, marketplaceOrders, marketplaceWarrantyCases] =
+    await Promise.all([
+      StoreOrder.find(
+        buildStoreOrderTraceAccountQuery(accountIds, {
+          excludeOrderId: excludeStoreOrderId,
+        }),
+      )
+        .select(CHATGPT_ADMIN_STORE_ORDER_TRACE_SELECT)
+        .lean(),
+      DatammoOrder.find({
+        scope: "chatgpt",
+        "accounts.accountId": { $in: accountIds },
+      })
+        .select(CHATGPT_ADMIN_MARKETPLACE_ORDER_TRACE_SELECT)
+        .lean(),
+      DatammoWarrantyCase.find({
+        scope: "chatgpt",
+        $or: [
+          { rootAccountId: { $in: accountIds } },
+          { currentAccountId: { $in: accountIds } },
+          { "rounds.fromAccountId": { $in: accountIds } },
+          { "rounds.toAccountId": { $in: accountIds } },
+        ],
+      })
+        .select(CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT)
+        .lean(),
+    ]);
+  const storeUsers = await loadStoreUsersForTraceOrders(storeOrders);
+  const storeUserMap = new Map(
+    (Array.isArray(storeUsers) ? storeUsers : []).map((user) => [
+      String(user?.id || "").trim(),
+      user,
+    ]),
+  );
+  const storeTraceMap = buildStoreAccountTraceMap(storeOrders, storeUserMap);
+  const marketplaceTraceMap = buildMarketplaceAccountTraceMap(
+    marketplaceOrders,
+    marketplaceWarrantyCases,
+  );
+  return safeAccounts.map((account) => {
+    const normalizedAccount = {
+      ...account,
+      package2Shelf: normalizePackage2Shelf(
+        account?.package2Shelf,
+        CHATGPT_TOTAL_VALUE,
+      ),
+      storeTraceSummary:
+        storeTraceMap.get(String(account?.id || "").trim()) || null,
+      marketplaceTraceSummary:
+        marketplaceTraceMap.get(String(account?.id || "").trim()) || null,
+    };
+    const reconciledAccount = {
+      ...normalizedAccount,
+      package2Shelf: normalizeChatgptMarketAccountState(normalizedAccount),
+    };
+    return enrichChatgptAccountWithOperationalState(reconciledAccount);
+  });
+};
+const loadChatgptAccountOperationalStateMap = async (
+  accountIds = [],
+  options = {},
+) => {
+  const normalizedIds = Array.from(
+    new Set(
+      (Array.isArray(accountIds) ? accountIds : [accountIds])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (normalizedIds.length === 0) return new Map();
+  const accounts = await Account.find({ id: { $in: normalizedIds } })
+    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .lean();
+  const decorated = await decorateChatgptAccountsWithOperationalState(
+    accounts,
+    options,
+  );
+  return new Map(
+    decorated.map((account) => [String(account?.id || "").trim(), account]),
+  );
+};
+const buildChatgptActionDecision = (account = {}, action = "", options = {}) => {
+  const currentState = pickChatgptCurrentStatePayload(account);
+  const reasons = [];
+  const sourceType = String(options?.sourceType || "").trim();
+  const destinationType = String(account?.type || "unassigned").trim() || "unassigned";
+  const userCount = Number(currentState?.userCount || 0);
+  const warehouse = normalizePackage2Shelf(
+    account?.package2Shelf,
+    CHATGPT_TOTAL_VALUE,
+  );
+  const minExpiryMs = new Date(buildStoreTotalMinExpiredAtIso()).getTime();
+  const expiryMs = new Date(String(account?.expiredAt || "").trim()).getTime();
+
+  const pushReason = (code, message, statusCode = 409) => {
+    reasons.push({ code, message, statusCode });
+  };
+
+  if (String(options?.sourceId || "").trim() === String(account?.id || "").trim()) {
+    pushReason("same_source_account", "Không thể chọn chính tài khoản nguồn.", 400);
+  }
+  if (currentState.isReservedForWeb) {
+    pushReason(
+      "reserved_for_pending_store_order",
+      currentState.busyReason || "Nick đang được giữ cho đơn web chờ thanh toán.",
+    );
+  }
+  if (currentState.isWarrantyHold) {
+    pushReason(
+      "warranty_hold_source",
+      currentState.busyReason || "Nick lỗi đang được giữ cho luồng bảo hành.",
+    );
+  }
+  if (currentState.isBusyInWarrantyReplacement) {
+    pushReason(
+      "busy_in_warranty_replacement",
+      currentState.busyReason || "Nick đang là acc thay thế của đơn/web warranty khác.",
+    );
+  }
+  if (currentState.isBusyInMarketplace) {
+    pushReason(
+      "busy_in_marketplace",
+      currentState.busyReason || "Nick đang dính order/bảo hành sàn.",
+      400,
+    );
+  }
+  if (currentState.availabilityState === "expired_unusable") {
+    pushReason(
+      "expired_unusable",
+      currentState.busyReason || "Tài khoản đã hết hạn.",
+      400,
+    );
+  }
+
+  const requireTotalWarehouse = [
+    "store_package1_existing_sale",
+    "store_package1_convertible_sale",
+    "store_package2_existing_sale",
+    "store_package2_convertible_sale",
+    "store_package1_existing_replacement",
+    "store_package1_convertible_replacement",
+    "store_package2_existing_replacement",
+    "store_package2_convertible_replacement",
+    "move_destination",
+  ].includes(action);
+  if (requireTotalWarehouse && warehouse !== CHATGPT_TOTAL_VALUE) {
+    pushReason("not_in_total_pool", "Tài khoản này không nằm trong kho tổng.", 400);
+  }
+
+  const requireLongEnoughExpiry = action.startsWith("store_");
+  if (
+    requireLongEnoughExpiry &&
+    Number.isFinite(expiryMs) &&
+    expiryMs <= minExpiryMs
+  ) {
+    pushReason(
+      "near_expiry_unusable",
+      "Tài khoản không đủ số ngày tối thiểu để dùng cho bán/bảo hành web.",
+      400,
+    );
+  }
+
+  if (action === "move_destination") {
+    if (destinationType === sourceType) {
+      if (sourceType === "package1" && userCount >= 3) {
+        pushReason("destination_full", "Tài khoản Shared đích đã đầy (3/3).", 400);
+      }
+      if (sourceType === "package2" && userCount >= 1) {
+        pushReason("destination_full", "Tài khoản Private đích đã đầy (1/1).", 400);
+      }
+    } else if (destinationType === "unassigned") {
+      if (sourceType === "package1" && userCount >= 3) {
+        pushReason("destination_full", "Tài khoản đích đã đầy slot.", 400);
+      }
+      if (sourceType === "package2" && userCount >= 1) {
+        pushReason("destination_full", "Tài khoản đích đã có người dùng.", 400);
+      }
+    } else {
+      pushReason(
+        "type_mismatch",
+        "Chỉ được chuyển vào gói cùng loại hoặc tài khoản chưa phân loại.",
+        400,
+      );
+    }
+  }
+
+  if (action === "chatgpt_warranty_replacement") {
+    if (!supportsChatgptWarrantyReplacement(destinationType)) {
+      pushReason(
+        "type_mismatch",
+        "Bảo hành seller chỉ nhận acc Private hoặc acc chưa chọn.",
+        400,
+      );
+    }
+    if (userCount > 0) {
+      pushReason("has_existing_customer", "Tài khoản thay thế đang có khách.", 400);
+    }
+  }
+
+  if (action === "store_package1_existing_sale") {
+    if (destinationType !== "package1") {
+      pushReason("type_mismatch", "Acc này không phải Gói 1 đang bán.", 400);
+    }
+    if (userCount >= 3) {
+      pushReason("destination_full", "Acc Shared này đã đầy slot.", 400);
+    }
+  }
+  if (action === "store_package1_convertible_sale") {
+    if (destinationType !== "unassigned") {
+      pushReason("type_mismatch", "Acc này không phải acc chưa chọn.", 400);
+    }
+    if (userCount > 0) {
+      pushReason("has_existing_customer", "Acc chưa chọn này đang có khách.", 400);
+    }
+  }
+  if (action === "store_package2_existing_sale") {
+    if (destinationType !== "package2") {
+      pushReason("type_mismatch", "Acc này không phải Gói 2 đang bán.", 400);
+    }
+    if (userCount > 0) {
+      pushReason("has_existing_customer", "Acc Gói 2 này đang có khách.", 400);
+    }
+  }
+  if (action === "store_package2_convertible_sale") {
+    if (destinationType !== "unassigned") {
+      pushReason("type_mismatch", "Acc này không phải acc chưa chọn.", 400);
+    }
+    if (userCount > 0) {
+      pushReason("has_existing_customer", "Acc chưa chọn này đang có khách.", 400);
+    }
+  }
+  if (action === "store_package1_existing_replacement") {
+    if (destinationType !== "package1") {
+      pushReason("type_mismatch", "Acc thay thế này không phải Gói 1.", 400);
+    }
+    if (userCount > 0) {
+      pushReason("has_existing_customer", "Acc thay thế đang có khách.", 400);
+    }
+  }
+  if (action === "store_package1_convertible_replacement") {
+    if (destinationType !== "unassigned") {
+      pushReason("type_mismatch", "Acc thay thế này không phải acc chưa chọn.", 400);
+    }
+    if (userCount > 0) {
+      pushReason("has_existing_customer", "Acc thay thế đang có khách.", 400);
+    }
+  }
+  if (action === "store_package2_existing_replacement") {
+    if (destinationType !== "package2") {
+      pushReason("type_mismatch", "Acc thay thế này không phải Gói 2.", 400);
+    }
+    if (userCount > 0) {
+      pushReason("has_existing_customer", "Acc thay thế đang có khách.", 400);
+    }
+  }
+  if (action === "store_package2_convertible_replacement") {
+    if (destinationType !== "unassigned") {
+      pushReason("type_mismatch", "Acc thay thế này không phải acc chưa chọn.", 400);
+    }
+    if (userCount > 0) {
+      pushReason("has_existing_customer", "Acc thay thế đang có khách.", 400);
+    }
+  }
+
+  return {
+    allowed: reasons.length === 0,
+    primaryReason: reasons[0] || null,
+    reasons,
+  };
+};
 const buildChatgptAccountAdminDiagnostics = async (accountId = "") => {
   const normalizedId = String(accountId || "").trim();
   if (!normalizedId) return null;
@@ -5574,6 +6314,304 @@ const buildChatgptTraceBlockedResponse = async (
   error: String(errorMessage || "").trim() || "Tai khoan nay dang bi khoa thao tac.",
   diagnostics: await buildChatgptAccountAdminDiagnostics(accountId),
 });
+const buildChatgptActionBlockedResponse = async ({
+  sourceAccount = null,
+  candidateAccount = null,
+  action = "",
+  options = {},
+  fallbackMessage = "",
+} = {}) => {
+  const decision = buildChatgptActionDecision(
+    candidateAccount || {},
+    action,
+    options,
+  );
+  if (decision.allowed) return null;
+  const primaryReason = decision.primaryReason || null;
+  return {
+    statusCode: Number(primaryReason?.statusCode || 409),
+    payload: {
+      error: String(
+        primaryReason?.message ||
+          fallbackMessage ||
+          "Tai khoan nay dang khong san sang cho thao tac nay.",
+      ).trim(),
+      excludedReason:
+        primaryReason && typeof primaryReason === "object"
+          ? primaryReason
+          : null,
+      sourceState:
+        sourceAccount && typeof sourceAccount === "object"
+          ? pickChatgptCurrentStatePayload(sourceAccount)
+          : null,
+      candidateState:
+        candidateAccount && typeof candidateAccount === "object"
+          ? pickChatgptCurrentStatePayload(candidateAccount)
+          : null,
+      diagnostics: candidateAccount?.id
+        ? await buildChatgptAccountAdminDiagnostics(candidateAccount.id)
+        : null,
+    },
+  };
+};
+const isStoreOrderRelatedToChatgptAccount = (order = {}, accountId = "") => {
+  const normalizedId = String(accountId || "").trim();
+  if (!normalizedId) return false;
+  if (String(order?.reservedAccountId || "").trim() === normalizedId) return true;
+  if (String(order?.assignedAccountId || "").trim() === normalizedId) return true;
+  if (String(order?.rootAssignedAccountId || "").trim() === normalizedId) return true;
+  return (Array.isArray(order?.warrantyRounds) ? order.warrantyRounds : []).some(
+    (round) =>
+      String(round?.fromAccountId || "").trim() === normalizedId ||
+      String(round?.toAccountId || "").trim() === normalizedId,
+  );
+};
+const auditStoreOrderAccountConsistency = async ({ repair = false } = {}) => {
+  const checkedAt = new Date().toISOString();
+  const [orders, accounts] = await Promise.all([
+    StoreOrder.find({}).lean(),
+    Account.find({}).select(CHATGPT_ADMIN_ACCOUNT_SELECT).lean(),
+  ]);
+  const decoratedAccounts = await decorateChatgptAccountsWithOperationalState(accounts);
+  const accountMap = new Map(
+    decoratedAccounts.map((account) => [String(account?.id || "").trim(), account]),
+  );
+  const orderMap = new Map(
+    (Array.isArray(orders) ? orders : []).map((order) => [
+      String(order?.id || "").trim(),
+      order,
+    ]),
+  );
+  const findings = {
+    orphanReservedAccounts: [],
+    orphanAssignedAccounts: [],
+    orphanWarrantyHoldNotes: [],
+    warrantyHoldOutsideTotal: [],
+    busyAccountsStillInMarket: [],
+    fulfilledWithoutPaidAt: [],
+    fulfilledBeforePaidAt: [],
+    ordersMissingOperationalFields: [],
+  };
+  const repairs = [];
+
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const orderId = String(order?.id || "").trim();
+    const normalizedStatus = normalizeStoreOrderStatusValue(order?.status);
+    const reservedAccountId = String(order?.reservedAccountId || "").trim();
+    const assignedAccountId = String(order?.assignedAccountId || "").trim();
+    const rootAssignedAccountId = String(order?.rootAssignedAccountId || "").trim();
+    const operationalState = buildStoreOrderOperationalState(order, {
+      accountStateMap: accountMap,
+    });
+    const missingFields = [];
+    if (
+      String(order?.reservationState || "").trim() !==
+      String(operationalState?.reservationState || "").trim()
+    ) {
+      missingFields.push("reservationState");
+    }
+    if (
+      String(order?.fulfillmentState || "").trim() !==
+      String(operationalState?.fulfillmentState || "").trim()
+    ) {
+      missingFields.push("fulfillmentState");
+    }
+    if (
+      String(order?.fulfillmentReason || "").trim() !==
+      String(operationalState?.fulfillmentReason || "").trim()
+    ) {
+      missingFields.push("fulfillmentReason");
+    }
+    if (
+      operationalState?.reservedAccountSnapshot?.accountId &&
+      !String(order?.reservedAccountSnapshot?.accountId || "").trim()
+    ) {
+      missingFields.push("reservedAccountSnapshot");
+    }
+    if (missingFields.length > 0) {
+      findings.ordersMissingOperationalFields.push({
+        orderId,
+        status: normalizedStatus,
+        missingFields,
+      });
+      if (repair) {
+        const nextSet = {
+          reservationState: String(
+            operationalState?.reservationState || "none",
+          ).trim(),
+          fulfillmentState: String(
+            operationalState?.fulfillmentState || "unknown",
+          ).trim(),
+          fulfillmentReason: String(
+            operationalState?.fulfillmentReason || "",
+          ).trim(),
+          updatedAt: new Date().toISOString(),
+        };
+        if (operationalState?.reservedAccountSnapshot?.accountId) {
+          nextSet.reservedAccountSnapshot = operationalState.reservedAccountSnapshot;
+        }
+        await StoreOrder.updateOne({ id: orderId }, { $set: nextSet });
+        repairs.push({
+          type: "backfill_order_operational_fields",
+          orderId,
+          fields: missingFields,
+        });
+      }
+    }
+    if (reservedAccountId && !accountMap.has(reservedAccountId)) {
+      findings.orphanReservedAccounts.push({
+        orderId,
+        reservedAccountId,
+        status: normalizedStatus,
+      });
+    }
+    const missingAssignedIds = [assignedAccountId, rootAssignedAccountId]
+      .filter(Boolean)
+      .filter((accountId) => !accountMap.has(accountId));
+    if (missingAssignedIds.length > 0) {
+      findings.orphanAssignedAccounts.push({
+        orderId,
+        accountIds: Array.from(new Set(missingAssignedIds)),
+        status: normalizedStatus,
+      });
+    }
+    if (
+      normalizedStatus === "fulfilled" &&
+      normalizeStorePaymentMethod(order?.paymentMethod) !== "admin_manual" &&
+      !String(order?.paidAt || "").trim()
+    ) {
+      findings.fulfilledWithoutPaidAt.push({ orderId, paymentMethod: order?.paymentMethod });
+    }
+    const fulfilledAtMs = parseStoreDateMs(order?.fulfilledAt);
+    const paidAtMs = parseStoreDateMs(order?.paidAt);
+    if (
+      normalizedStatus === "fulfilled" &&
+      normalizeStorePaymentMethod(order?.paymentMethod) !== "admin_manual" &&
+      fulfilledAtMs > 0 &&
+      paidAtMs > 0 &&
+      fulfilledAtMs < paidAtMs
+    ) {
+      findings.fulfilledBeforePaidAt.push({
+        orderId,
+        fulfilledAt: String(order?.fulfilledAt || "").trim(),
+        paidAt: String(order?.paidAt || "").trim(),
+      });
+    }
+  }
+
+  for (const account of decoratedAccounts) {
+    const accountId = String(account?.id || "").trim();
+    const warehouse = normalizePackage2Shelf(
+      account?.package2Shelf,
+      CHATGPT_TOTAL_VALUE,
+    );
+    const holdOrderIds = extractStoreWarrantyHoldOrderIds(account?.note);
+    const orphanHoldOrderIds = holdOrderIds.filter((orderId) => {
+      const relatedOrder = orderMap.get(String(orderId || "").trim());
+      return !relatedOrder || !isStoreOrderRelatedToChatgptAccount(relatedOrder, accountId);
+    });
+    if (orphanHoldOrderIds.length > 0) {
+      findings.orphanWarrantyHoldNotes.push({
+        accountId,
+        username: String(account?.username || "").trim(),
+        orderIds: orphanHoldOrderIds,
+      });
+      if (repair) {
+        let nextNote = String(account?.note || "").trim();
+        orphanHoldOrderIds.forEach((orderId) => {
+          nextNote = removeStoreWarrantyHoldNote(nextNote, orderId);
+        });
+        await Account.updateOne(
+          { id: accountId },
+          {
+            $set: {
+              note: nextNote,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        );
+        repairs.push({
+          type: "remove_orphan_warranty_hold_note",
+          accountId,
+          orderIds: orphanHoldOrderIds,
+        });
+      }
+    }
+
+    if (account?.isWarrantyHold && warehouse !== CHATGPT_TOTAL_VALUE) {
+      findings.warrantyHoldOutsideTotal.push({
+        accountId,
+        username: String(account?.username || "").trim(),
+        warehouse,
+        holdOrderId: String(account?.holdOrderId || "").trim(),
+      });
+      if (repair) {
+        await Account.updateOne(
+          { id: accountId },
+          {
+            $set: {
+              package2Shelf: CHATGPT_TOTAL_VALUE,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        );
+        repairs.push({
+          type: "move_warranty_hold_back_to_total",
+          accountId,
+        });
+      }
+    }
+
+    if (
+      warehouse === CHATGPT_MARKET_VALUE &&
+      [
+        "reserved_for_pending_store_order",
+        "assigned_to_store_order",
+        "warranty_hold_source",
+        "busy_in_warranty_replacement",
+      ].includes(String(account?.availabilityState || "").trim())
+    ) {
+      findings.busyAccountsStillInMarket.push({
+        accountId,
+        username: String(account?.username || "").trim(),
+        availabilityState: String(account?.availabilityState || "").trim(),
+        busyOrderId: String(account?.busyOrderId || "").trim(),
+      });
+      if (repair) {
+        await Account.updateOne(
+          { id: accountId },
+          {
+            $set: {
+              package2Shelf: CHATGPT_TOTAL_VALUE,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        );
+        repairs.push({
+          type: "move_busy_account_back_to_total",
+          accountId,
+        });
+      }
+    }
+  }
+
+  return {
+    checkedAt,
+    summary: {
+      orphanReservedAccounts: findings.orphanReservedAccounts.length,
+      orphanAssignedAccounts: findings.orphanAssignedAccounts.length,
+      orphanWarrantyHoldNotes: findings.orphanWarrantyHoldNotes.length,
+      warrantyHoldOutsideTotal: findings.warrantyHoldOutsideTotal.length,
+      busyAccountsStillInMarket: findings.busyAccountsStillInMarket.length,
+      fulfilledWithoutPaidAt: findings.fulfilledWithoutPaidAt.length,
+      fulfilledBeforePaidAt: findings.fulfilledBeforePaidAt.length,
+      ordersMissingOperationalFields: findings.ordersMissingOperationalFields.length,
+      repairsApplied: repairs.length,
+    },
+    findings,
+    repairs,
+  };
+};
 const issueStoreUserJwt = (user) =>
   jwt.sign(
     {
@@ -6086,7 +7124,15 @@ const normalizeChatgptMarketAccountState = (acc = {}) => {
   if (!acc || !supportsChatgptMarket(acc?.type)) {
     return CHATGPT_TOTAL_VALUE;
   }
-  if (hasStoreWarrantyHoldNote(acc?.note)) {
+  const currentState = pickChatgptCurrentStatePayload(acc);
+  if (
+    currentState.isReservedForWeb ||
+    currentState.isWarrantyHold ||
+    currentState.isBusyInWarrantyReplacement ||
+    currentState.isBusyInMarketplace ||
+    currentState.hasAssignedUsers ||
+    currentState.availabilityState === "expired_unusable"
+  ) {
     return CHATGPT_TOTAL_VALUE;
   }
   const currentValue = normalizePackage2Shelf(
@@ -6820,6 +7866,11 @@ const sanitizeStoreWarrantyCandidate = (account = {}) => ({
   ),
   expiredAt: String(account?.expiredAt || "").trim(),
   createdAt: String(account?.createdAt || "").trim(),
+  candidateState: pickChatgptCurrentStatePayload(account),
+  excludedReason:
+    account?.excludedReason && typeof account.excludedReason === "object"
+      ? account.excludedReason
+      : null,
 });
 const sanitizeChatgptMoveCandidate = (account = {}) => ({
   id: String(account?.id || "").trim(),
@@ -6839,6 +7890,11 @@ const sanitizeChatgptMoveCandidate = (account = {}) => ({
   expiredAt: String(account?.expiredAt || "").trim(),
   createdAt: String(account?.createdAt || "").trim(),
   updatedAt: String(account?.updatedAt || "").trim(),
+  candidateState: pickChatgptCurrentStatePayload(account),
+  excludedReason:
+    account?.excludedReason && typeof account.excludedReason === "object"
+      ? account.excludedReason
+      : null,
 });
 const getTrackedMarketplaceChatgptAccountIds = async () => {
   const [orders, warrantyCases] = await Promise.all([
@@ -6934,20 +7990,22 @@ const listChatgptMoveCandidates = async (sourceAccount = {}) => {
     .sort({ createdAt: 1, id: 1 })
     .select("id username type package2Shelf users expiredAt createdAt updatedAt")
     .lean();
-  return (Array.isArray(candidates) ? candidates : [])
+  const decoratedCandidates = await decorateChatgptAccountsWithOperationalState(
+    candidates,
+  );
+  return (Array.isArray(decoratedCandidates) ? decoratedCandidates : [])
     .filter((account) => {
       const accountId = String(account?.id || "").trim();
       if (!accountId) return false;
       if (trackedIds.has(accountId)) return false;
       if (pendingReservedIds.has(accountId)) return false;
-      const expiredAt = String(account?.expiredAt || "").trim();
-      if (expiredAt && new Date(expiredAt).getTime() <= Date.now()) {
-        return false;
-      }
       if (!canChatgptAccountReceiveMovedUser(account, sourceType)) {
         return false;
       }
-      return true;
+      return buildChatgptActionDecision(account, "move_destination", {
+        sourceId,
+        sourceType,
+      }).allowed;
     })
     .map(sanitizeChatgptMoveCandidate);
 };
@@ -6961,19 +8019,19 @@ const listChatgptWarrantyCandidates = async (sourceAccount = {}) => {
     .sort({ createdAt: 1, id: 1 })
     .select("id username type package2Shelf users expiredAt createdAt updatedAt")
     .lean();
-  return (Array.isArray(candidates) ? candidates : [])
+  const decoratedCandidates = await decorateChatgptAccountsWithOperationalState(
+    candidates,
+  );
+  return (Array.isArray(decoratedCandidates) ? decoratedCandidates : [])
     .filter((account) => {
       const accountId = String(account?.id || "").trim();
       if (!accountId) return false;
       if (busyIds.has(accountId)) return false;
-      if (Array.isArray(account?.users) && account.users.length > 0) {
-        return false;
-      }
-      const expiredAt = String(account?.expiredAt || "").trim();
-      if (expiredAt && new Date(expiredAt).getTime() <= Date.now()) {
-        return false;
-      }
-      return true;
+      return buildChatgptActionDecision(
+        account,
+        "chatgpt_warranty_replacement",
+        { sourceId },
+      ).allowed;
     })
     .map(sanitizeChatgptMoveCandidate);
 };
@@ -7065,9 +8123,20 @@ const listStoreWarrantyCandidates = async (order = {}) => {
         .select("id username type package2Shelf expiredAt createdAt")
         .lean(),
     ]);
-    return [...existingAccounts, ...convertibleAccounts].map(
-      sanitizeStoreWarrantyCandidate,
-    );
+    const decoratedCandidates = await decorateChatgptAccountsWithOperationalState([
+      ...existingAccounts,
+      ...convertibleAccounts,
+    ]);
+    return decoratedCandidates
+      .filter((account) =>
+        buildChatgptActionDecision(
+          account,
+          String(account?.type || "").trim() === "package1"
+            ? "store_package1_existing_replacement"
+            : "store_package1_convertible_replacement",
+        ).allowed,
+      )
+      .map(sanitizeStoreWarrantyCandidate);
   }
   const [existingAccounts, convertibleAccounts] = await Promise.all([
     Account.find(buildStorePackage2ExistingReplacementFilter(excludeIds))
@@ -7079,9 +8148,20 @@ const listStoreWarrantyCandidates = async (order = {}) => {
       .select("id username type package2Shelf expiredAt createdAt")
       .lean(),
   ]);
-  return [...existingAccounts, ...convertibleAccounts].map(
-    sanitizeStoreWarrantyCandidate,
-  );
+  const decoratedCandidates = await decorateChatgptAccountsWithOperationalState([
+    ...existingAccounts,
+    ...convertibleAccounts,
+  ]);
+  return decoratedCandidates
+    .filter((account) =>
+      buildChatgptActionDecision(
+        account,
+        String(account?.type || "").trim() === "package2"
+          ? "store_package2_existing_replacement"
+          : "store_package2_convertible_replacement",
+      ).allowed,
+    )
+    .map(sanitizeStoreWarrantyCandidate);
 };
 const getStoreReusablePendingOrder = async ({ userId, packageCode }) => {
   await expireStaleStoreOrders({ userId });
@@ -7098,14 +8178,20 @@ const findStorePackage1ExistingTarget = async ({
   excludeAccountIds = [],
   reservationSnapshot = null,
 } = {}) => {
-  const accounts = await Account.find(
+  const rawAccounts = await Account.find(
     buildStorePackage1ExistingFilter(excludeAccountIds),
   )
     .sort({ createdAt: 1, id: 1 })
-    .select("id username users createdAt")
+    .select("id username type package2Shelf users expiredAt note createdAt updatedAt")
     .lean();
+  const accounts = await decorateChatgptAccountsWithOperationalState(rawAccounts);
   const reservedCounts = reservationSnapshot?.package1ExistingCounts || new Map();
   for (const account of accounts) {
+    const decision = buildChatgptActionDecision(
+      account,
+      "store_package1_existing_sale",
+    );
+    if (!decision.allowed) continue;
     const usedSlots = Array.isArray(account?.users) ? account.users.length : 0;
     const reservedSlots = Number(reservedCounts.get(String(account?.id || "").trim()) || 0);
     if (Math.max(0, 3 - usedSlots - reservedSlots) > 0) {
@@ -7115,19 +8201,38 @@ const findStorePackage1ExistingTarget = async ({
   return null;
 };
 const findStorePackage2ExistingTarget = async ({ excludeAccountIds = [] } = {}) =>
-  Account.findOne(
-    buildStorePackage2ExistingReplacementFilter(excludeAccountIds),
-  )
-    .sort({ createdAt: 1, id: 1 })
-    .select("id username createdAt")
-    .lean();
-const findStoreConvertibleTarget = async ({ excludeAccountIds = [] } = {}) =>
-  Account.findOne(
-    buildStorePackage2ConvertibleFilter(excludeAccountIds),
-  )
-    .sort({ createdAt: 1, id: 1 })
-    .select("id username createdAt")
-    .lean();
+  (async () => {
+    const rawAccounts = await Account.find(
+      buildStorePackage2ExistingReplacementFilter(excludeAccountIds),
+    )
+      .sort({ createdAt: 1, id: 1 })
+      .select("id username type package2Shelf users expiredAt note createdAt updatedAt")
+      .lean();
+    const accounts = await decorateChatgptAccountsWithOperationalState(rawAccounts);
+    return (
+      accounts.find((account) =>
+        buildChatgptActionDecision(account, "store_package2_existing_sale").allowed,
+      ) || null
+    );
+  })();
+const findStoreConvertibleTarget = async ({
+  excludeAccountIds = [],
+  action = "store_package2_convertible_sale",
+} = {}) =>
+  (async () => {
+    const rawAccounts = await Account.find(
+      buildStorePackage2ConvertibleFilter(excludeAccountIds),
+    )
+      .sort({ createdAt: 1, id: 1 })
+      .select("id username type package2Shelf users expiredAt note createdAt updatedAt")
+      .lean();
+    const accounts = await decorateChatgptAccountsWithOperationalState(rawAccounts);
+    return (
+      accounts.find((account) =>
+        buildChatgptActionDecision(account, action).allowed,
+      ) || null
+    );
+  })();
 const selectStorePackage1ReservationTarget = async ({ excludeOrderId = "" } = {}) => {
   const [busyIds, reservationSnapshot] = await Promise.all([
     getBusyChatgptAccountIdsForStoreOrders(),
@@ -7146,6 +8251,7 @@ const selectStorePackage1ReservationTarget = async ({ excludeOrderId = "" } = {}
   }
   const convertibleTarget = await findStoreConvertibleTarget({
     excludeAccountIds: [...new Set([...busyIds, ...Array.from(reservationSnapshot.reservedAccountIds)])],
+    action: "store_package1_convertible_sale",
   });
   if (convertibleTarget?.id) {
     return {
@@ -7176,6 +8282,7 @@ const selectStorePackage2ReservationTarget = async ({ excludeOrderId = "" } = {}
   }
   const convertibleTarget = await findStoreConvertibleTarget({
     excludeAccountIds,
+    action: "store_package2_convertible_sale",
   });
   if (!convertibleTarget?.id) return null;
   return {
@@ -7556,6 +8663,31 @@ const claimStorePackage1WarrantyReplacement = async ({
       error.statusCode = 409;
       throw error;
     }
+    const targetStateMap = await loadChatgptAccountOperationalStateMap(
+      [targetId],
+      { excludeStoreOrderId: String(order?.id || "").trim() },
+    );
+    const decoratedTarget = targetStateMap.get(targetId) || null;
+    const replacementAction = resolveStoreWarrantyReplacementAction({
+      packageCode: "package1",
+      destinationType: String(decoratedTarget?.type || "unassigned").trim(),
+    });
+    const replacementDecision = buildChatgptActionDecision(
+      decoratedTarget || { id: targetId },
+      replacementAction,
+    );
+    if (!replacementDecision.allowed) {
+      const error = new Error(
+        String(
+          replacementDecision.primaryReason?.message ||
+            "Acc thay the nay khong con hop le de bao hanh.",
+        ).trim(),
+      );
+      error.statusCode = Number(
+        replacementDecision.primaryReason?.statusCode || 409,
+      );
+      throw error;
+    }
     oldAcc = await Account.findOneAndUpdate(
       { id: targetId, ...buildStorePackage1ExistingReplacementFilter() },
       {
@@ -7621,6 +8753,31 @@ const claimStorePackage2WarrantyReplacement = async ({
     if (excludeIds.includes(targetId)) {
       const error = new Error("Acc thay thế này không còn hợp lệ để bảo hành.");
       error.statusCode = 409;
+      throw error;
+    }
+    const targetStateMap = await loadChatgptAccountOperationalStateMap(
+      [targetId],
+      { excludeStoreOrderId: String(order?.id || "").trim() },
+    );
+    const decoratedTarget = targetStateMap.get(targetId) || null;
+    const replacementAction = resolveStoreWarrantyReplacementAction({
+      packageCode: "package2",
+      destinationType: String(decoratedTarget?.type || "unassigned").trim(),
+    });
+    const replacementDecision = buildChatgptActionDecision(
+      decoratedTarget || { id: targetId },
+      replacementAction,
+    );
+    if (!replacementDecision.allowed) {
+      const error = new Error(
+        String(
+          replacementDecision.primaryReason?.message ||
+            "Acc thay the nay khong con hop le de bao hanh.",
+        ).trim(),
+      );
+      error.statusCode = Number(
+        replacementDecision.primaryReason?.statusCode || 409,
+      );
       throw error;
     }
     oldAcc = await Account.findOneAndUpdate(
@@ -8076,7 +9233,12 @@ const fulfillStoreOrder = async (order) => {
             assignedWarehouse: CHATGPT_TOTAL_VALUE,
             assignedCustomerName: String(claim?.customer?.name || ""),
             assignedCustomerJoinedAt: String(claim?.customer?.joinedAt || ""),
-            assignedCustomerExpiredAt: String(claim?.customer?.expiredAt || ""),
+          assignedCustomerExpiredAt: String(claim?.customer?.expiredAt || ""),
+            reservationState: String(safeOrder?.reservedAccountId || "").trim()
+              ? "consumed"
+              : "none",
+            fulfillmentState: "fulfilled",
+            fulfillmentReason: "",
             package1AccessToken: String(claim?.package1AccessToken || ""),
             package1MaxUsage: STORE_PACKAGE1_MAX_OTP_USES,
             package1UsedCount: 0,
@@ -8109,6 +9271,11 @@ const fulfillStoreOrder = async (order) => {
             assignedCustomerName: String(claim?.customer?.name || ""),
             assignedCustomerJoinedAt: String(claim?.customer?.joinedAt || ""),
             assignedCustomerExpiredAt: String(claim?.customer?.expiredAt || ""),
+            reservationState: String(safeOrder?.reservedAccountId || "").trim()
+              ? "consumed"
+              : "none",
+            fulfillmentState: "fulfilled",
+            fulfillmentReason: "",
             fulfilledAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           },
@@ -8126,6 +9293,11 @@ const fulfillStoreOrder = async (order) => {
       {
         $set: {
           status: "fulfillment_failed",
+          reservationState: String(safeOrder?.reservedAccountId || "").trim()
+            ? "blocked"
+            : "none",
+          fulfillmentState: "failed",
+          fulfillmentReason: String(error?.message || "Fulfillment error").trim(),
           momoMessage: error.message || "Fulfillment error",
           updatedAt: new Date().toISOString(),
         },
@@ -8169,6 +9341,8 @@ const retryFailedStoreOrderFulfillment = async (
       updatedOrder = await completeStoreOrderManualFulfillment(order);
     } else {
       order.status = "paid";
+      order.fulfillmentState = "ready_for_fulfillment";
+      order.fulfillmentReason = "";
       order.updatedAt = new Date().toISOString();
       await order.save();
       updatedOrder = await fulfillStoreOrder(order);
@@ -8429,6 +9603,8 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
         order.paidAt = nowIso;
       }
       order.status = "paid";
+      order.fulfillmentState = "ready_for_fulfillment";
+      order.fulfillmentReason = "";
       await order.save();
       try {
         await fulfillStoreOrder(order);
@@ -8444,6 +9620,8 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
     if (payosResponseCode === "00" && normalizedStatus === "paid") {
       order.status = getStorePendingStatusFromExistingPayment(order);
       order.paidAt = "";
+      order.fulfillmentState = "awaiting_payment";
+      order.fulfillmentReason = "";
     }
     await order.save();
     return order;
@@ -8467,6 +9645,8 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
       order.paidAt = nowIso;
     }
     order.status = "paid";
+    order.fulfillmentState = "ready_for_fulfillment";
+    order.fulfillmentReason = "";
     await order.save();
     try {
       await fulfillStoreOrder(order);
@@ -8478,6 +9658,8 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
   if (!Number.isNaN(resultCode) && normalizedStatus === "paid") {
     order.status = getStorePendingStatusFromExistingPayment(order);
     order.paidAt = "";
+    order.fulfillmentState = "awaiting_payment";
+    order.fulfillmentReason = "";
   }
   await order.save();
   return order;
@@ -9105,8 +10287,10 @@ app.get("/api/data", verifyToken, async (req, res) => {
                 null,
             };
             return {
-              ...normalizedAccount,
-              package2Shelf: normalizeChatgptMarketAccountState(normalizedAccount),
+              ...enrichChatgptAccountWithOperationalState({
+                ...normalizedAccount,
+                package2Shelf: normalizeChatgptMarketAccountState(normalizedAccount),
+              }),
             };
           });
         }
@@ -9127,7 +10311,19 @@ app.get("/api/data", verifyToken, async (req, res) => {
           response.datammoWarrantyCases = datammoWarrantyCases;
         }
         if (shouldLoadStoreOrders) {
+          const operationalStoreOrders =
+            await attachStoreOrdersOperationalState(rawStoreOrders);
+          const operationalStoreOrderMap = new Map(
+            (operationalStoreOrders || []).map((item) => [
+              String(item?.id || "").trim(),
+              item,
+            ]),
+          );
           response.storeOrders = rawStoreOrders
+            .map(
+              (order) =>
+                operationalStoreOrderMap.get(String(order?.id || "").trim()) || order,
+            )
             .map((order) =>
               sanitizeStoreOrderForAdmin(
                 order,
@@ -9734,7 +10930,10 @@ app.put("/api/store-orders/:id", verifyToken, async (req, res) => {
 
     return res.json({
       success: true,
-      order: sanitizeStoreOrderForAdmin(order, storeUser),
+      order: await sanitizeSingleStoreOrderForAdminWithOperationalState(
+        order,
+        storeUser,
+      ),
     });
   } catch (error) {
     return res.status(500).json({ error: "Không thể cập nhật đơn web." });
@@ -9762,7 +10961,10 @@ app.post("/api/store-orders/:id/mark-fulfilled", verifyToken, async (req, res) =
 
     return res.json({
       success: true,
-      order: sanitizeStoreOrderForAdmin(updatedOrder, storeUser),
+      order: await sanitizeSingleStoreOrderForAdminWithOperationalState(
+        updatedOrder,
+        storeUser,
+      ),
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
@@ -9830,7 +11032,23 @@ app.get("/api/store-orders/:id/warranty-candidates", verifyToken, async (req, re
 
     return res.json({
       success: true,
-      order: sanitizeStoreOrderForAdmin(order, storeUser),
+      order: await sanitizeSingleStoreOrderForAdminWithOperationalState(
+        order,
+        storeUser,
+      ),
+      sourceState: pickChatgptCurrentStatePayload({
+        id: String(order?.assignedAccountId || order?.rootAssignedAccountId || "").trim(),
+        currentAccountState:
+          (
+            await loadChatgptAccountOperationalStateMap([
+              String(
+                order?.assignedAccountId || order?.rootAssignedAccountId || "",
+              ).trim(),
+            ])
+          ).get(
+            String(order?.assignedAccountId || order?.rootAssignedAccountId || "").trim(),
+          )?.currentAccountState || null,
+      }),
       candidates,
     });
   } catch (error) {
@@ -9865,7 +11083,10 @@ app.post("/api/store-orders/:id/warranty", verifyToken, async (req, res) => {
 
     return res.json({
       success: true,
-      order: sanitizeStoreOrderForAdmin(updatedOrder, storeUser),
+      order: await sanitizeSingleStoreOrderForAdminWithOperationalState(
+        updatedOrder,
+        storeUser,
+      ),
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
@@ -9873,6 +11094,36 @@ app.post("/api/store-orders/:id/warranty", verifyToken, async (req, res) => {
     });
   }
 });
+
+app.get("/api/admin/store-order-state-audit", verifyToken, async (req, res) => {
+  try {
+    const audit = await auditStoreOrderAccountConsistency({ repair: false });
+    return res.json({ success: true, audit });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the audit state don web/account.",
+    });
+  }
+});
+
+app.post(
+  "/api/admin/store-order-state-audit/repair",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const audit = await auditStoreOrderAccountConsistency({ repair: true });
+      if (Number(audit?.summary?.repairsApplied || 0) > 0) {
+        bumpDataVersion();
+        notifyClients();
+      }
+      return res.json({ success: true, audit });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong the repair state don web/account.",
+      });
+    }
+  },
+);
 
 app.post("/api/store-orders/admin", verifyToken, async (req, res) => {
   try {
@@ -9966,6 +11217,9 @@ app.post("/api/store-orders/admin", verifyToken, async (req, res) => {
       status: "paid",
       paymentMethod: "admin_manual",
       momoOrderId: "",
+      reservationState: "none",
+      fulfillmentState: "ready_for_fulfillment",
+      fulfillmentReason: "",
       momoMessage: "Admin tạo đơn thủ công",
       paidAt: nowIso,
       createdAt: nowIso,
@@ -9985,7 +11239,10 @@ app.post("/api/store-orders/admin", verifyToken, async (req, res) => {
       success: true,
       generatedPassword,
       user: sanitizeStoreUserForAdmin(user),
-      order: sanitizeStoreOrderForAdmin(fulfilledOrder, user),
+      order: await sanitizeSingleStoreOrderForAdminWithOperationalState(
+        fulfilledOrder,
+        user,
+      ),
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
@@ -10954,10 +12211,14 @@ app.get("/api/chatgpt/:id/move-candidates", verifyToken, async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy tài khoản nguồn." });
     }
 
+    const [decoratedSource] = await decorateChatgptAccountsWithOperationalState([
+      source,
+    ]);
     const candidates = await listChatgptMoveCandidates(source);
     return res.json({
       success: true,
-      source: sanitizeChatgptMoveCandidate(source),
+      source: sanitizeChatgptMoveCandidate(decoratedSource || source),
+      sourceState: pickChatgptCurrentStatePayload(decoratedSource || source),
       candidates,
     });
   } catch (error) {
@@ -10981,10 +12242,14 @@ app.get("/api/chatgpt/:id/warranty-candidates", verifyToken, async (req, res) =>
       return res.status(404).json({ error: "KhÃ´ng tÃ¬m tháº¥y tÃ i khoáº£n lá»—i." });
     }
 
+    const [decoratedSource] = await decorateChatgptAccountsWithOperationalState([
+      source,
+    ]);
     const candidates = await listChatgptWarrantyCandidates(source);
     return res.json({
       success: true,
-      source: sanitizeChatgptMoveCandidate(source),
+      source: sanitizeChatgptMoveCandidate(decoratedSource || source),
+      sourceState: pickChatgptCurrentStatePayload(decoratedSource || source),
       candidates,
     });
   } catch (error) {
@@ -11014,6 +12279,9 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       });
     }
     ensureCurrentVersion(existingAcc, expectedUpdatedAt, "Tai khoan nay");
+    const [decoratedExistingAcc] =
+      await decorateChatgptAccountsWithOperationalState([existingSnapshot]);
+    const safeExistingAcc = decoratedExistingAcc || existingSnapshot;
 
     // Validate package2: chỉ được tối đa 1 khách hàng
     const normalizedPayload = normalizeChatgptPayload(req.body, existingAcc);
@@ -11028,6 +12296,27 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       if (targetType === "package2" && normalizedPayload.users.length > 1) {
         return res.status(400).json({ error: "Gói Private (Gói 2) chỉ được tối đa 1 khách hàng" });
       }
+    }
+
+    const isChangingType =
+      normalizedPayload.type !== undefined &&
+      String(normalizedPayload.type || "").trim() !== String(existingAcc.type || "").trim();
+    const isChangingShelf =
+      req.body.package2Shelf !== undefined &&
+      normalizePackage2Shelf(req.body.package2Shelf, existingAcc.package2Shelf) !==
+        normalizePackage2Shelf(existingAcc.package2Shelf, CHATGPT_TOTAL_VALUE);
+    if (
+      (isChangingType || isChangingShelf) &&
+      (safeExistingAcc?.isWarrantyHold ||
+        safeExistingAcc?.isBusyInWarrantyReplacement)
+    ) {
+      return res.status(409).json({
+        error:
+          String(safeExistingAcc?.busyReason || "").trim() ||
+          "Tai khoan nay dang trong luong bao hanh nen khong duoc doi goi/doi kho tay.",
+        sourceState: pickChatgptCurrentStatePayload(safeExistingAcc),
+        diagnostics: await buildChatgptAccountAdminDiagnostics(id),
+      });
     }
 
     // ===== BACKEND GUARD: Chặn đổi gói khi đang có khách =====
@@ -11164,6 +12453,30 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
         error: `Acc nay dang duoc giu cho don web ${String(activePendingReservation?.id || "").trim()}. Khong duoc xoa trong luc cho thanh toan.`,
       });
     }
+    const existingForGuard = await Account.findOne({ id })
+      .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+      .lean();
+    const [decoratedExisting] = await decorateChatgptAccountsWithOperationalState(
+      existingForGuard ? [existingForGuard] : [],
+    );
+    const currentState = decoratedExisting
+      ? pickChatgptCurrentStatePayload(decoratedExisting)
+      : null;
+    if (
+      currentState &&
+      (currentState.hasAssignedUsers ||
+        currentState.isWarrantyHold ||
+        currentState.isBusyInWarrantyReplacement ||
+        currentState.isBusyInMarketplace)
+    ) {
+      return res.status(409).json({
+        error:
+          String(currentState?.busyReason || "").trim() ||
+          "Tai khoan nay dang ban hoac dang bi giu nen khong duoc xoa.",
+        sourceState: currentState,
+        diagnostics: await buildChatgptAccountAdminDiagnostics(id),
+      });
+    }
     const existing = await Account.findOneAndDelete(
       buildConditionalUpdateFilter(id, expectedUpdatedAt),
     );
@@ -11215,6 +12528,27 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       replacementExpectedUpdatedAt,
       "Tài khoản thay thế",
     );
+
+    const [decoratedSourceAcc, decoratedReplacementAcc] =
+      await decorateChatgptAccountsWithOperationalState([
+        snapshotDocument(sourceAcc),
+        snapshotDocument(replacementAcc),
+      ]);
+    const safeSourceAcc = decoratedSourceAcc || snapshotDocument(sourceAcc);
+    const safeReplacementAcc =
+      decoratedReplacementAcc || snapshotDocument(replacementAcc);
+    const replacementDecision = await buildChatgptActionBlockedResponse({
+      sourceAccount: safeSourceAcc,
+      candidateAccount: safeReplacementAcc,
+      action: "chatgpt_warranty_replacement",
+      options: { sourceId: String(sourceAcc?.id || "").trim() },
+      fallbackMessage: "Tai khoan thay the khong con hop le de bao hanh seller.",
+    });
+    if (replacementDecision) {
+      return res
+        .status(replacementDecision.statusCode)
+        .json(replacementDecision.payload);
+    }
 
     if (sourceAcc.id === replacementAcc.id) {
       return res.status(400).json({
@@ -11852,146 +13186,113 @@ app.post("/api/move-user", verifyToken, async (req, res) => {
     if (!fromAcc.users || !fromAcc.users[userIndex]) {
       return res.status(400).json({ error: "User not found in source account" });
     }
-    const destinationMarketplaceOrder =
-      await findLatestMarketplaceOrderForAccount(toAccId, "", "chatgpt");
-    const destinationPendingReservation =
-      await findActivePendingStoreReservationByAccountId(toAccId);
+    const [decoratedFromAcc, decoratedToAcc] =
+      await decorateChatgptAccountsWithOperationalState([
+        snapshotDocument(fromAcc),
+        snapshotDocument(toAcc),
+      ]);
+    const safeFromAcc = decoratedFromAcc || snapshotDocument(fromAcc);
+    const safeToAcc = decoratedToAcc || snapshotDocument(toAcc);
     const sourceUserToMove = fromAcc.users[userIndex];
     if (
-      (isDatammoManagedUser(sourceUserToMove) &&
-        !isPlaceholderMarketplaceManagedUser(sourceUserToMove)) ||
-      destinationMarketplaceOrder
+      isDatammoManagedUser(sourceUserToMove) &&
+      !isPlaceholderMarketplaceManagedUser(sourceUserToMove)
     ) {
       return res.status(400).json(
         await buildChatgptTraceBlockedResponse(
-          destinationMarketplaceOrder ? toAccId : fromAccId,
+          fromAccId,
           "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",
         ),
       );
     }
-    if (destinationPendingReservation) {
-      return res.status(409).json({
-        error: `Acc dich dang duoc giu cho don web ${String(destinationPendingReservation?.id || "").trim()}. Khong duoc chuyen khach tay vao trong luc cho thanh toan.`,
+    {
+      const resolvedSourceType = String(fromAcc.type || "").trim();
+      const destinationDecision = await buildChatgptActionBlockedResponse({
+        sourceAccount: safeFromAcc,
+        candidateAccount: safeToAcc,
+        action: "move_destination",
+        options: {
+          sourceId: String(fromAccId || "").trim(),
+          sourceType: resolvedSourceType,
+        },
+        fallbackMessage: "Tai khoan dich khong con hop le de chuyen khach vao.",
       });
-    }
-
-    // STRICT RULE: Cannot transfer to Expired Account
-    if (toAcc.expiredAt && new Date(toAcc.expiredAt) < new Date()) {
-      return res.status(400).json({
-        error: "Tài khoản đích ĐÃ HẾT HẠN. Không thể chuyển khách vào!",
-      });
-    }
-
-    const sourceType = fromAcc.type; // Loại gói nguồn
-    const currentUsers = toAcc.users?.length || 0;
-    const destinationWarehouse = normalizePackage2Shelf(
-      toAcc.package2Shelf,
-      CHATGPT_TOTAL_VALUE,
-    );
-
-    if (destinationWarehouse !== CHATGPT_TOTAL_VALUE) {
-      return res.status(400).json({
-        error: "Chi duoc chuyen khach vao tai khoan dich trong kho tong.",
-      });
-    }
-    const destinationHasMarketplaceTrace =
-      await hasTrackedMarketplaceChatgptAccount(toAccId);
-    if (destinationHasMarketplaceTrace) {
-      return res.status(400).json(
-        await buildChatgptTraceBlockedResponse(
-          toAccId,
-          "Acc da ban qua san khong duoc chuyen khach tay. Neu can doi acc, hay dung Bao hanh.",
-        ),
-      );
-    }
-
-    if (toAcc.type === sourceType) {
-      // Cùng loại gói: kiểm tra slot
-      if (sourceType === "package1" && currentUsers >= 3) {
-        return res.status(400).json({ error: "Tài khoản Shared đích đã đầy (3/3)" });
+      if (destinationDecision) {
+        return res
+          .status(destinationDecision.statusCode)
+          .json(destinationDecision.payload);
       }
-      if (sourceType === "package2" && currentUsers >= 1) {
-        return res.status(400).json({ error: "Tài khoản Private đích đã có người dùng (1/1)" });
+
+      const destinationType =
+        String(safeToAcc?.type || "unassigned").trim() || "unassigned";
+      if (destinationType === "unassigned") {
+        toAcc.type = resolvedSourceType;
       }
-    } else if (toAcc.type === "unassigned") {
-      // Đích là unassigned: tự động đổi type sang loại của nguồn
-      if (sourceType === "package2" && currentUsers >= 1) {
-        return res.status(400).json({ error: "Tài khoản đích đã có người dùng" });
-      }
-      if (sourceType === "package1" && currentUsers >= 3) {
-        return res.status(400).json({ error: "Tài khoản đích đã đầy slot" });
-      }
-      // Tự động đổi type của tài khoản đích theo loại nguồn
-      toAcc.type = sourceType;
-    } else {
-      // Khác loại và không phải unassigned -> từ chối
-      const typeLabel = sourceType === "package1" ? "Chia Sẻ" : "Private";
-      return res.status(400).json({
-        error: `Chỉ được chuyển vào gói cùng loại (${typeLabel}) hoặc tài khoản chưa phân loại`,
-      });
-    }
 
-    const userToMove = fromAcc.users[userIndex];
+      const moveUser = fromAcc.users[userIndex];
+      const originalFromAcc = JSON.parse(JSON.stringify(fromAcc));
+      const originalToAcc = JSON.parse(JSON.stringify(toAcc));
 
-    // Tạo bản sao trước khi Move để Datammo Check
-    const originalFromAcc = JSON.parse(JSON.stringify(fromAcc));
-    const originalToAcc = JSON.parse(JSON.stringify(toAcc));
+      if (!toAcc.users) toAcc.users = [];
+      toAcc.users.push(moveUser);
+      fromAcc.users.splice(userIndex, 1);
 
-    if (!toAcc.users) toAcc.users = [];
-    toAcc.users.push(userToMove);
-    fromAcc.users.splice(userIndex, 1);
-
-    if (toAcc.type === "package2") {
-      if (hasRegularPackage2Customer(toAcc.users)) {
+      if (toAcc.type === "package2" && hasRegularPackage2Customer(toAcc.users)) {
         toAcc.package2Shelf = CHATGPT_TOTAL_VALUE;
       }
-    }
-    if (fromAcc.type === "package2" && (!fromAcc.users || fromAcc.users.length === 0)) {
-      if (hasRegularPackage2Customer(originalFromAcc.users)) {
+      if (
+        fromAcc.type === "package2" &&
+        (!fromAcc.users || fromAcc.users.length === 0) &&
+        hasRegularPackage2Customer(originalFromAcc.users)
+      ) {
         fromAcc.package2Shelf = CHATGPT_TOTAL_VALUE;
       }
-    }
 
-    const toPersisted = await Account.updateOne(
-      buildConditionalUpdateFilter(toAccId, toExpectedUpdatedAt),
-      {
-        $set: {
-          users: toAcc.users || [],
-          type: toAcc.type,
-          package2Shelf: toAcc.package2Shelf,
-          updatedAt: new Date().toISOString(),
+      const toPersisted = await Account.updateOne(
+        buildConditionalUpdateFilter(toAccId, toExpectedUpdatedAt),
+        {
+          $set: {
+            users: toAcc.users || [],
+            type: toAcc.type,
+            package2Shelf: toAcc.package2Shelf,
+            updatedAt: new Date().toISOString(),
+          },
         },
-      },
-    );
-    if ((toPersisted.matchedCount || 0) !== 1) {
-      return res.status(409).json({
-        error:
-          "Tài khoản đích vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
+      );
+      if ((toPersisted.matchedCount || 0) !== 1) {
+        return res.status(409).json({
+          error:
+            "Tai khoan dich vua duoc admin khac cap nhat. Vui long tai lai du lieu roi thu lai.",
+        });
+      }
+
+      const fromPersisted = await Account.updateOne(
+        buildConditionalUpdateFilter(fromAccId, fromExpectedUpdatedAt),
+        {
+          $set: {
+            users: fromAcc.users || [],
+            type: fromAcc.type,
+            package2Shelf: fromAcc.package2Shelf,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      );
+      if ((fromPersisted.matchedCount || 0) !== 1) {
+        await restoreDocumentSnapshot(Account, toAccId, originalToAcc);
+        return res.status(409).json({
+          error:
+            "Tai khoan nguon vua duoc admin khac cap nhat. Vui long tai lai du lieu roi thu lai.",
+        });
+      }
+
+      const persistedFrom = await Account.findOne({ id: fromAccId });
+      const persistedTo = await Account.findOne({ id: toAccId });
+      return res.json({
+        message: "Moved user successfully",
+        from: persistedFrom,
+        to: persistedTo,
       });
     }
-
-    const fromPersisted = await Account.updateOne(
-      buildConditionalUpdateFilter(fromAccId, fromExpectedUpdatedAt),
-      {
-        $set: {
-          users: fromAcc.users || [],
-          type: fromAcc.type,
-          package2Shelf: fromAcc.package2Shelf,
-          updatedAt: new Date().toISOString(),
-        },
-      },
-    );
-    if ((fromPersisted.matchedCount || 0) !== 1) {
-      await restoreDocumentSnapshot(Account, toAccId, originalToAcc);
-      return res.status(409).json({
-        error:
-          "Tài khoản nguồn vừa được admin khác cập nhật. Vui lòng tải lại dữ liệu rồi thử lại.",
-      });
-    }
-
-    const persistedFrom = await Account.findOne({ id: fromAccId });
-    const persistedTo = await Account.findOne({ id: toAccId });
-    res.json({ message: "Moved user successfully", from: persistedFrom, to: persistedTo });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }

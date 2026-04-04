@@ -39,6 +39,8 @@ import {
   Smile,
   ChevronLeft,
   ChevronUp,
+  ShieldCheck,
+  Wrench,
 } from "lucide-react";
 
 const ADMIN_TOKEN_STORAGE_KEY = "admin_token";
@@ -235,6 +237,54 @@ const getStoreOrderStatusLabel = (value) => {
   }
   if (normalized === "payment_failed") return "Thanh toán thất bại";
   return String(value || "Không rõ");
+};
+const getStoreReservationStateLabel = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "reserved_for_pending_store_order") return "Đang giữ chỗ";
+  if (normalized === "reserved_ready_for_fulfillment") return "Chờ giao nick";
+  if (normalized === "consumed") return "Đã dùng nick giữ chỗ";
+  if (normalized === "blocked") return "Giữ chỗ bị lỗi";
+  if (normalized === "released") return "Đã nhả giữ chỗ";
+  if (normalized === "none") return "Không giữ chỗ";
+  return normalized || "Không rõ";
+};
+const getStoreFulfillmentStateLabel = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "awaiting_payment") return "Đang chờ thanh toán";
+  if (normalized === "ready_for_fulfillment") return "Sẵn sàng giao";
+  if (normalized === "fulfilled") return "Đã giao";
+  if (normalized === "failed") return "Giao thất bại";
+  if (normalized === "cancelled") return "Đã hủy";
+  return normalized || "Không rõ";
+};
+const buildStoreOrderAuditSummary = (audit = {}, { repaired = false } = {}) => {
+  const findings = audit?.findings && typeof audit.findings === "object" ? audit.findings : {};
+  const repairs = Array.isArray(audit?.repairs) ? audit.repairs : [];
+  const findingEntries = Object.entries(findings).filter(([, items]) =>
+    Array.isArray(items) ? items.length > 0 : false,
+  );
+  const totalIssues = findingEntries.reduce(
+    (sum, [, items]) => sum + (Array.isArray(items) ? items.length : 0),
+    0,
+  );
+  const lines = [
+    repaired ? "Đã rà và sửa state web/account." : "Đã rà state web/account.",
+    `Tổng vấn đề: ${totalIssues}`,
+  ];
+  if (findingEntries.length > 0) {
+    findingEntries.forEach(([key, items]) => {
+      lines.push(`- ${key}: ${Array.isArray(items) ? items.length : 0}`);
+    });
+  } else {
+    lines.push("- Không phát hiện lệch state nào.");
+  }
+  if (repaired) {
+    lines.push(`Số mục đã sửa: ${repairs.length}`);
+  }
+  if (audit?.checkedAt) {
+    lines.push(`Thời điểm: ${formatDateTime(audit.checkedAt)}`);
+  }
+  return lines.join("\n");
 };
 const isStoreReservationLockStatus = (value) => {
   const normalized = normalizeStoreOrderStatus(value);
@@ -1807,6 +1857,8 @@ function App() {
     createStoreManualOrder: false,
     fetchStoreWarrantyCandidates: "",
     saveStoreWarranty: false,
+    auditStoreOrderState: false,
+    repairStoreOrderState: false,
     saveVoucher: false,
     saveStoreConfig: false,
     deleteStoreUser: "",
@@ -4473,6 +4525,34 @@ function App() {
       );
     } finally {
       setLoadingStates((prev) => ({ ...prev, saveStoreWarranty: false }));
+    }
+  };
+
+  const handleStoreOrderStateAudit = async ({ repair = false } = {}) => {
+    const loadingKey = repair ? "repairStoreOrderState" : "auditStoreOrderState";
+    setLoadingStates((prev) => ({ ...prev, [loadingKey]: true }));
+    try {
+      const response = repair
+        ? await axios.post("/api/admin/store-order-state-audit/repair")
+        : await axios.get("/api/admin/store-order-state-audit");
+      const audit = response?.data?.audit || {};
+      if (repair) {
+        await syncAdminDataAfterMutation("Đang đồng bộ sau khi sửa state web");
+        broadcastDataChange();
+      }
+      showAlert(
+        repair ? "Đã sửa state web" : "Audit state web",
+        buildStoreOrderAuditSummary(audit, { repaired: repair }),
+        repair ? "success" : "info",
+      );
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, repair ? "Không thể sửa state web." : "Không thể audit state web."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, [loadingKey]: false }));
     }
   };
 
@@ -8424,14 +8504,34 @@ function App() {
                     placeholder="Tìm theo tên user, SĐT hoặc email..."
                     className="flex-1 rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-2.5 text-white placeholder:text-slate-500 outline-none transition-all focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30"
                   />
-                  <button
-                    type="button"
-                    onClick={() => openStoreManualOrder()}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 font-bold text-white transition-colors hover:bg-emerald-500 lg:w-auto lg:self-start"
-                  >
-                    <UserPlus size={16} />
-                    Tạo đơn thủ công
-                  </button>
+                  <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:self-start">
+                    <button
+                      type="button"
+                      onClick={() => handleStoreOrderStateAudit({ repair: false })}
+                      disabled={loadingStates.auditStoreOrderState || loadingStates.repairStoreOrderState}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 font-bold text-cyan-100 transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
+                    >
+                      <ShieldCheck size={16} />
+                      {loadingStates.auditStoreOrderState ? "Đang audit..." : "Audit state web"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStoreOrderStateAudit({ repair: true })}
+                      disabled={loadingStates.auditStoreOrderState || loadingStates.repairStoreOrderState}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 font-bold text-amber-100 transition-colors hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
+                    >
+                      <Wrench size={16} />
+                      {loadingStates.repairStoreOrderState ? "Đang sửa..." : "Sửa lệch state"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openStoreManualOrder()}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 font-bold text-white transition-colors hover:bg-emerald-500 lg:w-auto"
+                    >
+                      <UserPlus size={16} />
+                      Tạo đơn thủ công
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -8777,6 +8877,40 @@ function App() {
                                         ))}
                                       </div>
 
+                                      {order?.fulfillmentReason ? (
+                                        <div className="mt-3 rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-xs text-rose-100">
+                                          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-rose-300">
+                                            Lý do xử lý
+                                          </div>
+                                          <div className="mt-1 leading-5">
+                                            {order.fulfillmentReason}
+                                          </div>
+                                        </div>
+                                      ) : null}
+
+                                      {(order?.currentAccountState?.busyReason ||
+                                        order?.reservedAccountSnapshot?.username) ? (
+                                        <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-100">
+                                          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">
+                                            Trạng thái vận hành
+                                          </div>
+                                          {order?.reservedAccountSnapshot?.username ? (
+                                            <div className="mt-1">
+                                              Nick giữ chỗ:{" "}
+                                              <span className="font-semibold text-white">
+                                                {order.reservedAccountSnapshot.username}
+                                              </span>{" "}
+                                              · {getStoreReservationStateLabel(order?.reservationState)}
+                                            </div>
+                                          ) : null}
+                                          {order?.currentAccountState?.busyReason ? (
+                                            <div className="mt-1 leading-5">
+                                              {order.currentAccountState.busyReason}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      ) : null}
+
                                       <details className="mt-3 rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-3">
                                         <summary className="cursor-pointer list-none text-sm font-semibold text-slate-200">
                                           Chi tiết đơn
@@ -8845,6 +8979,34 @@ function App() {
                                           <div className="mt-1 text-slate-200">
                                             {formatDateTime(order?.updatedAt) || "--"}
                                           </div>
+                                        </div>
+                                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                            Giữ chỗ
+                                          </div>
+                                          <div className="mt-1 text-slate-200">
+                                            {getStoreReservationStateLabel(order?.reservationState)}
+                                          </div>
+                                          {order?.reservedAccountSnapshot?.username ? (
+                                            <div className="mt-1 break-all text-xs text-slate-400">
+                                              Nick giữ: {order.reservedAccountSnapshot.username}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                        <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+                                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                            Giao hàng
+                                          </div>
+                                          <div className="mt-1 text-slate-200">
+                                            {getStoreFulfillmentStateLabel(
+                                              order?.fulfillmentState || order?.status,
+                                            )}
+                                          </div>
+                                          {order?.fulfillmentReason ? (
+                                            <div className="mt-1 text-xs leading-5 text-rose-200">
+                                              {order.fulfillmentReason}
+                                            </div>
+                                          ) : null}
                                         </div>
                                       </div>
 
