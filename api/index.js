@@ -6950,12 +6950,7 @@ const listChatgptMoveCandidates = async (sourceAccount = {}) => {
 };
 const listChatgptWarrantyCandidates = async (sourceAccount = {}) => {
   const sourceId = String(sourceAccount?.id || "").trim();
-  const [busyIdsRaw, pendingReservedIdsRaw] = await Promise.all([
-    getBusyChatgptAccountIdsForStoreOrders(),
-    listActivePendingStoreReservedAccountIds(),
-  ]);
-  const busyIds = new Set(busyIdsRaw);
-  const pendingReservedIds = new Set(pendingReservedIdsRaw);
+  const busyIds = new Set(await getBusyChatgptAccountIdsForStoreWarranty());
   const candidates = await Account.find({
     id: { $ne: sourceId },
     type: { $in: ["package2", "unassigned"] },
@@ -6968,7 +6963,6 @@ const listChatgptWarrantyCandidates = async (sourceAccount = {}) => {
       const accountId = String(account?.id || "").trim();
       if (!accountId) return false;
       if (busyIds.has(accountId)) return false;
-      if (pendingReservedIds.has(accountId)) return false;
       if (Array.isArray(account?.users) && account.users.length > 0) {
         return false;
       }
@@ -11319,6 +11313,15 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       return res.status(400).json({
         error:
           "Tai khoan thay the nay dang nam trong mot luong bao hanh khac",
+      });
+    }
+    const replacementBusyIds = new Set(
+      await getBusyChatgptAccountIdsForStoreWarranty(),
+    );
+    if (replacementBusyIds.has(String(replacementAcc?.id || "").trim())) {
+      return res.status(400).json({
+        error:
+          "Tai khoan thay the nay dang nam trong don web/bao hanh khac, khong the dung de bao hanh",
       });
     }
 
