@@ -1232,6 +1232,16 @@ const EXPIRY_FILTER_OPTIONS = [
 ];
 const getAccountUsers = (account = {}) =>
   Array.isArray(account?.users) ? account.users : [];
+const getAccountUserDisplayName = (user) =>
+  typeof user === "object" && user !== null
+    ? String(user.name || "").trim()
+    : String(user || "").trim();
+const getVisibleAccountUserEntries = (account = {}) =>
+  getAccountUsers(account).reduce((entries, user, index) => {
+    if (!getAccountUserDisplayName(user)) return entries;
+    entries.push({ user, index, name: getAccountUserDisplayName(user) });
+    return entries;
+  }, []);
 const STORE_WARRANTY_HOLD_NOTE_REGEX = /\[StoreWarrantyHold\b/i;
 const getStoreWarrantyHoldInfo = (account = {}) => {
   if (!STORE_WARRANTY_HOLD_NOTE_REGEX.test(String(account?.note || "").trim())) {
@@ -1291,13 +1301,7 @@ const getStoreWarrantyHoldInfo = (account = {}) => {
   };
 };
 const hasAssignedCustomer = (account = {}) =>
-  getAccountUsers(account).some((user) => {
-    if (typeof user === "string") return String(user).trim().length > 0;
-    if (user && typeof user === "object") {
-      return String(user.name || "").trim().length > 0;
-    }
-    return false;
-  }) || !!getStoreWarrantyHoldInfo(account);
+  getVisibleAccountUserEntries(account).length > 0 || !!getStoreWarrantyHoldInfo(account);
 const hasAssignedTeamCustomer = (account = {}) =>
   getActiveTeamCustomers(account).length > 0;
 const matchesCustomerFilter = (hasCustomer, filterValue = "all") => {
@@ -2933,7 +2937,7 @@ function App() {
   };
 
   // Helper to safely get user name
-  const getUserName = (u) => (typeof u === "object" && u !== null ? u.name : u);
+  const getUserName = (u) => getAccountUserDisplayName(u);
   const renderCustomerFilterButtons = (value, onChange) => (
     <div className="flex flex-wrap gap-1.5">
       {CUSTOMER_FILTER_OPTIONS.map((option) => (
@@ -5690,35 +5694,35 @@ function App() {
     // Check if account has active users (not expired)
     const accToDelete = accounts.find((a) => a.id === deletingId);
 
-    if (accToDelete && accToDelete.users && accToDelete.users.length > 0) {
-      const activeUsers = [];
-
-      accToDelete.users.forEach((u, idx) => {
-        // Check if user object has name (valid user)
-        if (typeof u === "object" && u !== null && u.name) {
+    if (accToDelete && getVisibleAccountUserEntries(accToDelete).length > 0) {
+      const activeUsers = getVisibleAccountUserEntries(accToDelete).reduce(
+        (list, entry) => {
+          const u = entry.user;
           const days = getDaysUsed(u);
           const daysRemaining = getDaysRemaining(u);
-
-          // User còn hạn nếu:
-          // - Có expiry còn thời hạn
-          // - Hoặc không có joinedAt (mới thêm, chưa set ngày) -> coi như còn hạn
+          const isLegacyStringUser = typeof u === "string";
           const isActive =
+            isLegacyStringUser ||
             (daysRemaining !== null && daysRemaining > 0) ||
-            u.joinedAt === null ||
-            u.joinedAt === undefined;
+            (typeof u === "object" &&
+              u !== null &&
+              (u.joinedAt === null || u.joinedAt === undefined));
 
-          if (isActive) {
-            activeUsers.push({
-              ...u,
-              fromAccId: accToDelete.id,
-              userIndex: idx,
-              accountUsername: accToDelete.username,
-              daysUsed: days !== null ? days : 0,
-              daysRemaining: daysRemaining !== null ? daysRemaining : null,
-            });
-          }
-        }
-      });
+          if (!isActive) return list;
+
+          list.push({
+            ...(typeof u === "object" && u !== null ? u : { name: entry.name }),
+            name: entry.name,
+            fromAccId: accToDelete.id,
+            userIndex: entry.index,
+            accountUsername: accToDelete.username,
+            daysUsed: days !== null ? days : 0,
+            daysRemaining: daysRemaining !== null ? daysRemaining : null,
+          });
+          return list;
+        },
+        [],
+      );
 
       if (activeUsers.length > 0) {
         // Có user còn hạn - không cho xóa, hiện modal
@@ -11116,6 +11120,20 @@ function App() {
                         const activeStoreReservationCount = getActiveStoreReservationCount(acc);
                         const latestStoreReservationTrace = getLatestStoreReservationTrace(acc);
                         const storeWarrantyHoldInfo = getStoreWarrantyHoldInfo(acc);
+                        const visibleChatgptUserEntries = getVisibleAccountUserEntries(acc);
+                        const visibleChatgptUsers = visibleChatgptUserEntries.map(
+                          (entry) => entry.user,
+                        );
+                        const primaryVisibleChatgptUserEntry =
+                          visibleChatgptUserEntries[0] || null;
+                        const effectiveChatgptCustomerViewType =
+                          acc?.type === "unassigned" || !String(acc?.type || "").trim()
+                            ? visibleChatgptUsers.length > 1
+                              ? "package1"
+                              : visibleChatgptUsers.length === 1
+                                ? "package2"
+                                : "unassigned"
+                            : acc.type;
                         const hasActiveStoreReservation = activeStoreReservationCount > 0;
                         const activeStoreReservationPackageName = String(
                           latestStoreReservationTrace?.packageName || "",
@@ -11142,13 +11160,10 @@ function App() {
                         const isChatgptRowExpanded =
                           String(expandedChatgptAccountId || "").trim() ===
                           String(acc?.id || "").trim();
-                        const previewChatgptUsers = Array.isArray(acc?.users)
-                          ? acc.users.slice(0, 2)
-                          : [];
+                        const previewChatgptUsers = visibleChatgptUsers.slice(0, 2);
                         const hiddenPreviewChatgptUserCount = Math.max(
                           0,
-                          (Array.isArray(acc?.users) ? acc.users.length : 0) -
-                            previewChatgptUsers.length,
+                          visibleChatgptUsers.length - previewChatgptUsers.length,
                         );
                         const accountExpiryStatus = acc?.expiredAt
                           ? getExpiryStatus(acc.expiredAt)
@@ -11459,13 +11474,12 @@ function App() {
                             )}
                           </td>
                           <td>
-                            {acc.type === "package1" ? (
+                            {effectiveChatgptCustomerViewType === "package1" ? (
                               <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
                                 <div className="flex justify-between items-center text-xs mb-2 pb-1 border-b border-slate-700/50">
                                   {(() => {
-                                    const currentUserCount = Array.isArray(acc.users)
-                                      ? acc.users.length
-                                      : 0;
+                                    const currentUserCount =
+                                      visibleChatgptUserEntries.length;
                                     const reservedSlotCount =
                                       activeStoreReservationCount;
                                     const occupiedSlotCount =
@@ -11589,7 +11603,7 @@ function App() {
                                   </div>
                                 )}
                                 <div className="space-y-1">
-                                  {acc.users?.map((u, index) => {
+                                  {visibleChatgptUserEntries.map(({ user: u, index }) => {
                                     const name = getUserName(u);
                                     const dateStr = getUserDate(u);
                                     const daysRemaining = getDaysRemaining(u);
@@ -11790,14 +11804,18 @@ function App() {
                                   </>
                                 )}
                               </div>
-                            ) : acc.type === "package2" ||
+                            ) : effectiveChatgptCustomerViewType === "package2" ||
                               hasActiveStoreReservation ||
                               !!getStoreWarrantyHoldInfo(acc) ||
                               isChatgptMarketWarehouse(acc) ||
                               isChatgptShortDateWarehouse(acc) ||
                               marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
                               (() => {
-                                const u = acc.users?.[0];
+                                const u =
+                                  primaryVisibleChatgptUserEntry?.user ||
+                                  (Array.isArray(acc.users) ? acc.users[0] : null);
+                                const primaryUserIndex =
+                                  primaryVisibleChatgptUserEntry?.index ?? 0;
                                 const package2Shelf = normalizePackage2Shelf(acc.package2Shelf);
                                 const package2ShelfLabel = getChatgptWarehouseLabel(package2Shelf);
                                 const isTrackedMarketplaceAccount =
@@ -12404,7 +12422,11 @@ function App() {
                                               <button
                                                 type="button"
                                                 onClick={() =>
-                                                  handleExtendUser(acc.id, 0, u)
+                                                  handleExtendUser(
+                                                    acc.id,
+                                                    primaryUserIndex,
+                                                    u,
+                                                  )
                                                 }
                                                 className="rounded-lg bg-emerald-700 hover:bg-emerald-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
                                                 title="Gia hạn"
@@ -12489,7 +12511,11 @@ function App() {
                                               <button
                                                 type="button"
                                                 onClick={() =>
-                                                  handleExtendUser(acc.id, 0, u)
+                                                  handleExtendUser(
+                                                    acc.id,
+                                                    primaryUserIndex,
+                                                    u,
+                                                  )
                                                 }
                                                 className="text-green-400 hover:text-white"
                                                 title="Gia hạn"
@@ -12505,7 +12531,7 @@ function App() {
                                                   onClick={() =>
                                                     openMoveUserModal(
                                                       acc.id,
-                                                      0,
+                                                      primaryUserIndex,
                                                       displayMarketplaceUser,
                                                     )
                                                   }
@@ -12542,7 +12568,7 @@ function App() {
                                                   onClick={() =>
                                                     openEditUserModal(
                                                       acc.id,
-                                                      0,
+                                                      primaryUserIndex,
                                                       displayMarketplaceUser,
                                                     )
                                                   }
@@ -12556,7 +12582,7 @@ function App() {
                                                   onClick={() =>
                                                     handleDeleteUser(
                                                       acc.id,
-                                                      0,
+                                                      primaryUserIndex,
                                                       getUserName(displayMarketplaceUser),
                                                     )
                                                   }
