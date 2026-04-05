@@ -7629,6 +7629,8 @@ const isPlaceholderMarketplaceManagedUser = (user) => {
   const info = getMarketplaceOrderInfoFromUser(user);
   return !!String(info?.orderId || "").trim() && isPlaceholderLikeValue(info.orderId);
 };
+const isActiveMarketplaceManagedUser = (user) =>
+  isDatammoManagedUser(user) && !isPlaceholderMarketplaceManagedUser(user);
 const buildPackage2SaleFilter = () => {
   const minExpiredAt = new Date(
     Date.now() + PACKAGE2_MIN_DAYS_FOR_SALE * 24 * 60 * 60 * 1000,
