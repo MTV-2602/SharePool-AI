@@ -351,6 +351,15 @@ const getLatestWarrantyRound = (order = {}) => {
   if (rounds.length === 0) return null;
   return rounds[rounds.length - 1] || null;
 };
+const getWarrantySearchTerms = (order = {}) => {
+  const rounds = Array.isArray(order?.warrantyRounds) ? order.warrantyRounds : [];
+  return rounds.flatMap((round) => [
+    round?.fromUsername,
+    round?.toUsername,
+    round?.fromAccountId,
+    round?.toAccountId,
+  ]);
+};
 
 const packageFeatureMap = {
   package1: [
@@ -2300,6 +2309,7 @@ function PublicStorefront() {
         order?.packageName,
         order?.packageCode,
         order?.assignedUsername,
+        ...getWarrantySearchTerms(order),
         order?.paymentOrderId,
         order?.momoOrderId,
         order?.voucherCode,
@@ -2405,6 +2415,7 @@ function PublicStorefront() {
               String(order.paymentStatusText || order.momoMessage || "").trim() ||
               formatStatusLabel(order.status);
             const fulfillmentReason = String(order.fulfillmentReason || "").trim();
+            const latestWarrantyRound = getLatestWarrantyRound(order);
 
             return (
               <div key={order.id} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3.5 sm:p-4">
@@ -2424,6 +2435,30 @@ function PublicStorefront() {
                       ) : null}
                     </div>
                     <p className="mt-1 break-all text-xs text-slate-500">Đơn #{order.id}</p>
+                    {latestWarrantyRound ? (
+                      <div className="mt-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                        <div className="font-semibold text-amber-200">
+                          Acc hiện tại sau bảo hành:
+                          {" "}
+                          <span className="text-white">
+                            {latestWarrantyRound.toUsername || order.assignedUsername || "--"}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-amber-100/90">
+                          Đổi từ{" "}
+                          <span className="font-semibold text-white">
+                            {latestWarrantyRound.fromUsername || "--"}
+                          </span>
+                          {" "}sang{" "}
+                          <span className="font-semibold text-white">
+                            {latestWarrantyRound.toUsername || order.assignedUsername || "--"}
+                          </span>
+                          {latestWarrantyRound.createdAt
+                            ? ` lúc ${formatCompactDateTime(latestWarrantyRound.createdAt)}`
+                            : ""}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
                       <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-slate-100">
                         {formatMoney(order.amount)}
