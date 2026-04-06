@@ -92,6 +92,35 @@ axios.defaults.headers.common['x-bot-internal-token'] =
   EFFECTIVE_BOT_INTERNAL_TOKEN;
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+const TELEGRAM_WELCOME_MESSAGE = [
+  '*CHATGPT & COURSERA MANAGER BOT*',
+  '',
+  '*Lenh:*',
+  '/stats - thong ke tong quan',
+  '/help - huong dan',
+  '',
+  '*Nhap Plus:*',
+  '```',
+  'email|password|2FA_SECRET',
+  '```',
+  '',
+  '*Nhap Team:*',
+  '```',
+  'team email|password|2FA_SECRET',
+  '```',
+  '',
+  '*Nhap nhanh hang loat:*',
+  '```',
+  'email1|password1|2FA1',
+  'email2|password2|2FA2',
+  'team team1@domain.com|password3|2FA3',
+  '```',
+  '',
+  '*Coursera:*',
+  '```',
+  'email,password,courseCode',
+  '```',
+].join('\n');
 
 console.log('🤖 Telegram Bot đang chạy...');
 
@@ -140,6 +169,130 @@ const parseChatgptAccountInput = (rawText) =>
   parseTelegramCredentialInput(rawText, {
     requireTeamPrefix: false,
   });
+const splitTelegramBatchLines = (rawText) =>
+  String(rawText || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => String(line || '').trim())
+    .filter(Boolean);
+const isPotentialTelegramCredentialLine = (line = '') => {
+  const normalizedLine = String(line || '').trim();
+  if (!normalizedLine) return false;
+  if (/^team\b/i.test(normalizedLine)) return true;
+  return (
+    /[|ï½œÂ¦â”ƒ]/.test(normalizedLine) &&
+    !normalizedLine.includes(',') &&
+    !normalizedLine.includes('---')
+  );
+};
+const parseTelegramCredentialBatch = (rawText) => {
+  const lines = splitTelegramBatchLines(rawText);
+  if (
+    lines.length < 2 ||
+    !lines.some((line) => isPotentialTelegramCredentialLine(line)) ||
+    !lines.every((line) => isPotentialTelegramCredentialLine(line))
+  ) {
+    return null;
+  }
+
+  const items = [];
+  const errors = [];
+  const seenKeys = new Set();
+
+  lines.forEach((line, index) => {
+    const lineNumber = index + 1;
+    const kind = /^team\b/i.test(line) ? 'team' : 'plus';
+    const parsed =
+      kind === 'team'
+        ? parseTeamAccountInput(line)
+        : parseChatgptAccountInput(line);
+
+    if (!parsed) {
+      errors.push({
+        lineNumber,
+        rawLine: line,
+        kind,
+        reason:
+          kind === 'team'
+            ? 'Sai format. Dung: team email|password|2fa'
+            : 'Sai format. Dung: email|password|2fa',
+      });
+      return;
+    }
+
+    const dedupeKey = [
+      kind,
+      String(parsed.email || '').trim().toLowerCase(),
+      String(parsed.password || '').trim(),
+      String(parsed.otpSecret || '').trim(),
+    ].join('|');
+    if (seenKeys.has(dedupeKey)) {
+      errors.push({
+        lineNumber,
+        rawLine: line,
+        kind,
+        reason: 'Trung voi dong truoc trong cung message',
+      });
+      return;
+    }
+
+    seenKeys.add(dedupeKey);
+    items.push({
+      ...parsed,
+      kind,
+      rawLine: line,
+      lineNumber,
+    });
+  });
+
+  return {
+    totalLines: lines.length,
+    items,
+    errors,
+  };
+};
+const buildTelegramBatchSummaryMessage = ({
+  totalLines = 0,
+  successes = [],
+  errors = [],
+}) => {
+  const plusSuccesses = successes.filter((item) => item.kind === 'plus');
+  const teamSuccesses = successes.filter((item) => item.kind === 'team');
+  const successPreview = successes.slice(0, 8);
+  const errorPreview = errors.slice(0, 8);
+  const lines = [
+    '*KET QUA NHAP NHANH TELEGRAM*',
+    '',
+    `Tong dong: ${totalLines}`,
+    `Plus thanh cong: ${plusSuccesses.length}`,
+    `Team thanh cong: ${teamSuccesses.length}`,
+    `Dong loi: ${errors.length}`,
+  ];
+
+  if (successPreview.length > 0) {
+    lines.push('', '*Thanh cong:*');
+    successPreview.forEach((item) => {
+      lines.push(
+        `${item.lineNumber}. [${item.kind === 'team' ? 'Team' : 'Plus'}] \`${item.email}\``,
+      );
+    });
+    if (successes.length > successPreview.length) {
+      lines.push(`+${successes.length - successPreview.length} dong thanh cong nua`);
+    }
+  }
+
+  if (errorPreview.length > 0) {
+    lines.push('', '*Dong loi:*');
+    errorPreview.forEach((item) => {
+      lines.push(`${item.lineNumber}. ${item.reason}`);
+    });
+    if (errors.length > errorPreview.length) {
+      lines.push(`+${errors.length - errorPreview.length} dong loi nua`);
+    }
+  }
+
+  return lines.join('\n');
+};
 const clampMonthDay = (year, monthIndex, dayOfMonth) => {
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
   return Math.min(dayOfMonth, lastDay);
@@ -233,6 +386,9 @@ bot.onText(/\/start/, (msg) => {
     return;
   }
 
+  bot.sendMessage(chatId, TELEGRAM_WELCOME_MESSAGE, { parse_mode: 'Markdown' });
+  return;
+
   const welcomeMessage = `
 🤖 *ChatGPT & Coursera Manager Bot*
 
@@ -274,6 +430,9 @@ bot.onText(/\/help/, (msg) => {
     bot.sendMessage(chatId, '❌ Bạn không có quyền sử dụng bot này!');
     return;
   }
+
+  bot.sendMessage(chatId, TELEGRAM_WELCOME_MESSAGE, { parse_mode: 'Markdown' });
+  return;
 
   const helpMessage = `
 🤖 *ChatGPT & Coursera Manager Bot*
@@ -446,6 +605,82 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
         }
       }
     }
+  }
+
+  const parsedBatchCredentials = parseTelegramCredentialBatch(text);
+  if (parsedBatchCredentials) {
+    const { totalLines, items, errors: initialErrors } = parsedBatchCredentials;
+    const batchErrors = [...initialErrors];
+    const batchSuccesses = [];
+    const totalAccounts = items.length;
+
+    try {
+      if (totalAccounts > 0) {
+        bot.sendMessage(
+          chatId,
+          totalAccounts > 1
+            ? `Dang them hang loat ${totalAccounts} acc...`
+            : items[0]?.kind === 'team'
+              ? 'Dang them team account...'
+              : 'Dang them account...',
+        );
+      }
+
+      for (const item of items) {
+        try {
+          if (item.kind === 'team') {
+            const expiredAt = addMonthsClamped(new Date(), 1);
+            await axios.post(`${API_URL}/api/team-public`, {
+              username: item.email,
+              password: item.password,
+              otpSecret: item.otpSecret,
+              recoveryUrl: '',
+              note: '',
+              saleMode: 'business',
+              expiredAt: expiredAt.toISOString(),
+            });
+          } else {
+            const expiredAt = addMonthsClamped(new Date(), 1);
+            await axios.post(`${API_URL}/api/chatgpt-public`, {
+              username: item.email,
+              password: item.password,
+              otpSecret: item.otpSecret,
+              link: '',
+              type: 'unassigned',
+              expiredAt: expiredAt.toISOString(),
+              note: '',
+            });
+          }
+          batchSuccesses.push(item);
+        } catch (error) {
+          batchErrors.push({
+            ...item,
+            reason:
+              error.response?.data?.error ||
+              error.response?.data?.message ||
+              error.message ||
+              'Khong the them acc',
+          });
+        }
+      }
+
+      bot.sendMessage(
+        chatId,
+        buildTelegramBatchSummaryMessage({
+          totalLines,
+          successes: batchSuccesses,
+          errors: batchErrors,
+        }),
+        { parse_mode: 'Markdown' },
+      );
+    } catch (error) {
+      console.error('Telegram batch add error:', error.response?.data || error.message);
+      bot.sendMessage(
+        chatId,
+        `❌ Loi khi them hang loat: ${error.response?.data?.error || error.message}`,
+      );
+    }
+    return;
   }
 
   const parsedTeamAccount = parseTeamAccountInput(text);
