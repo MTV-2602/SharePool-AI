@@ -855,6 +855,18 @@ const verifyAdminOrBotInternalToken = (req, res, next) => {
   }
   return verifyBotInternalToken(req, res, next);
 };
+const verifyCronSecret = (req, res, next) => {
+  const configuredCronSecret = String(process.env.CRON_SECRET || "").trim();
+  const authorization = String(req.headers.authorization || "").trim();
+  if (
+    configuredCronSecret &&
+    safeCompareSecret(authorization, `Bearer ${configuredCronSecret}`)
+  ) {
+    req.cronAuthorized = true;
+    return next();
+  }
+  return verifyBotInternalToken(req, res, next);
+};
 
 const verifyTelegramWebhookSecret = (req, res, next) => {
   if (!TELEGRAM_WEBHOOK_SECRET) {
@@ -987,6 +999,10 @@ const adminReadCacheTtlMs = toPositiveInt(
   process.env.ADMIN_READ_CACHE_TTL_MS,
   60000,
 );
+const partnerStockCacheTtlMs = toPositiveInt(
+  process.env.PARTNER_STOCK_CACHE_TTL_MS,
+  10000,
+);
 const adminReadCache = new Map();
 const chatgptAdminSnapshotCacheTtlMs = toPositiveInt(
   process.env.CHATGPT_ADMIN_SNAPSHOT_CACHE_TTL_MS,
@@ -1058,6 +1074,13 @@ const getCachedAdminRead = async (
   });
   return loadPromise;
 };
+const getCachedPartnerRead = async (
+  name = "",
+  params = {},
+  loader = async () => null,
+  ttlMs = partnerStockCacheTtlMs,
+) =>
+  getCachedAdminRead(`partner:${String(name || "").trim()}`, params, loader, ttlMs);
 
 const notifyClients = () => {
   if (!ENABLE_SSE || sseClients.length === 0) return;
@@ -1126,18 +1149,6 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use((req, res, next) => {
-  const path = String(req.path || "").trim();
-  if (
-    path === "/api/data" ||
-    path.startsWith("/api/store/") ||
-    path.startsWith("/api/store-support/")
-  ) {
-    void scheduleStoreMaintenance();
-  }
-  next();
-});
-
 // --- API ROUTES ---
 
 // TEST ENDPOINT
@@ -1163,6 +1174,65 @@ app.get("/api/healthz", (req, res) => {
     db,
   });
 });
+
+app.get(
+  "/api/internal/cron/store-maintenance",
+  verifyCronSecret,
+  async (req, res) => {
+    try {
+      const startedAt = Date.now();
+      await Promise.all([
+        expireStaleStoreOrders(),
+        cleanupOldStoreFailedOrders(),
+        cleanupOldStoreSupportMessages(),
+      ]);
+      return res.json({
+        ok: true,
+        task: "store-maintenance",
+        durationMs: Date.now() - startedAt,
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        ok: false,
+        task: "store-maintenance",
+        error: error.message || "Store maintenance failed.",
+      });
+    }
+  },
+);
+
+app.get(
+  "/api/internal/cron/inventory-reconcile",
+  verifyCronSecret,
+  async (req, res) => {
+    try {
+      const startedAt = Date.now();
+      const results = await Promise.all([
+        reconcileChatgptMarketInventory(),
+        reconcileTeamMarketInventory(),
+      ]);
+      const changed = results.some(Boolean);
+      if (changed) {
+        bumpDataVersion();
+        notifyClients();
+      }
+      return res.json({
+        ok: true,
+        task: "inventory-reconcile",
+        changed,
+        durationMs: Date.now() - startedAt,
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        ok: false,
+        task: "inventory-reconcile",
+        error: error.message || "Inventory reconcile failed.",
+      });
+    }
+  },
+);
 
 const DEFAULT_STORE_CONTACT_ZALO_URL = "https://zalo.me/0345440153";
 
@@ -3360,53 +3430,6 @@ const cleanupOldStoreFailedOrders = async (extra = {}) => {
       },
     ],
   });
-};
-let nextStoreMaintenanceAtMs = 0;
-let storeMaintenancePromise = null;
-const scheduleStoreMaintenance = () => {
-  const now = Date.now();
-  if (storeMaintenancePromise) return storeMaintenancePromise;
-  if (nextStoreMaintenanceAtMs > now) return null;
-  nextStoreMaintenanceAtMs = now + 60 * 1000;
-  storeMaintenancePromise = (async () => {
-    try {
-      await Promise.all([
-        expireStaleStoreOrders(),
-        cleanupOldStoreFailedOrders(),
-        cleanupOldStoreSupportMessages(),
-      ]);
-    } catch (error) {
-      console.error("Store maintenance failed:", error?.message || error);
-    } finally {
-      storeMaintenancePromise = null;
-    }
-  })();
-  return storeMaintenancePromise;
-};
-let nextInventoryReconcileAtMs = 0;
-let inventoryReconcilePromise = null;
-const scheduleInventoryReconcile = () => {
-  const now = Date.now();
-  if (inventoryReconcilePromise) return inventoryReconcilePromise;
-  if (nextInventoryReconcileAtMs > now) return null;
-  nextInventoryReconcileAtMs = now + 60 * 1000;
-  inventoryReconcilePromise = (async () => {
-    try {
-      const results = await Promise.all([
-        reconcileChatgptMarketInventory(),
-        reconcileTeamMarketInventory(),
-      ]);
-      if (results.some(Boolean)) {
-        bumpDataVersion();
-        notifyClients();
-      }
-    } catch (error) {
-      console.error("Inventory reconcile failed:", error?.message || error);
-    } finally {
-      inventoryReconcilePromise = null;
-    }
-  })();
-  return inventoryReconcilePromise;
 };
 const buildStoreVoucherUsageQuery = ({
   voucherId = "",
@@ -10092,8 +10115,6 @@ const buildDefaultAdminDataSections = ({ omitChatgpt = false } = {}) => {
 
 app.get("/api/data", verifyToken, async (req, res) => {
   try {
-    void scheduleInventoryReconcile();
-    void scheduleStoreMaintenance();
     const omitChatgpt = String(req.query?.omitChatgpt || "0").trim() === "1";
     const requestedSections = normalizeAdminDataSections(req.query?.sections);
     const sections =
@@ -10389,7 +10410,6 @@ app.get("/api/data", verifyToken, async (req, res) => {
 
 app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
   try {
-    void scheduleInventoryReconcile();
     const payload = await getCachedAdminRead(
       "admin:chatgpt-accounts",
       {
@@ -11583,33 +11603,40 @@ app.delete("/api/marketplace-order", verifyToken, async (req, res) => {
 // 1.5 GET ALL DATA (Public - for Telegram bot)
 app.get("/api/data-public", verifyBotInternalToken, async (req, res) => {
   try {
-    await reconcileChatgptMarketInventory();
-    await reconcileTeamMarketInventory();
-    const [accounts, datammoOrders, datammoWarrantyCases] = await Promise.all([
-      Account.find({}).lean(),
-      DatammoOrder.find({ scope: "chatgpt" }).lean(),
-      DatammoWarrantyCase.find({ scope: "chatgpt" }).lean(),
-    ]);
-    let marketplaceAccountTraceMap = new Map();
-    try {
-      marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
-        datammoOrders,
-        datammoWarrantyCases,
-      );
-    } catch (traceError) {
-      console.error("Public ChatGPT marketplace trace snapshot failed:", traceError);
-    }
-    res.json({
-      chatgpt: accounts.map((acc) => ({
-        ...acc,
-        package2Shelf: normalizePackage2Shelf(
-          acc?.package2Shelf,
-          CHATGPT_TOTAL_VALUE,
-        ),
-        marketplaceTraceSummary:
-          marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) || null,
-      })),
-    });
+    const payload = await getCachedAdminRead(
+      "public:data",
+      {},
+      async () => {
+        const [accounts, datammoOrders, datammoWarrantyCases] = await Promise.all([
+          Account.find({}).lean(),
+          DatammoOrder.find({ scope: "chatgpt" }).lean(),
+          DatammoWarrantyCase.find({ scope: "chatgpt" }).lean(),
+        ]);
+        let marketplaceAccountTraceMap = new Map();
+        try {
+          marketplaceAccountTraceMap = buildMarketplaceAccountTraceMap(
+            datammoOrders,
+            datammoWarrantyCases,
+          );
+        } catch (traceError) {
+          console.error("Public ChatGPT marketplace trace snapshot failed:", traceError);
+        }
+        return {
+          chatgpt: accounts.map((acc) => ({
+            ...acc,
+            package2Shelf: normalizePackage2Shelf(
+              acc?.package2Shelf,
+              CHATGPT_TOTAL_VALUE,
+            ),
+            marketplaceTraceSummary:
+              marketplaceAccountTraceMap.get(String(acc?.id || "").trim()) || null,
+          })),
+          version: latestDataVersion,
+        };
+      },
+      15000,
+    );
+    res.json(payload);
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -11747,17 +11774,21 @@ app.get(
   verifyDatammoPartnerToken,
   async (req, res) => {
     try {
-      await reconcileChatgptMarketInventory();
-      const stock = await Account.countDocuments(buildPackage2SaleFilter());
-      const mainPrice = Number(process.env.DATAMMO_PACKAGE2_MAIN_PRICE || 0);
-      const cheapPrice = Number(process.env.DATAMMO_PACKAGE2_CHEAP_PRICE || 0);
-      const selectedPrice = cheapPrice > 0 ? cheapPrice : mainPrice;
-
-      const payload = { stock };
-      if (Number.isFinite(selectedPrice) && selectedPrice > 0) {
-        payload.price = selectedPrice;
-      }
-
+      const payload = await getCachedPartnerRead(
+        "chatgpt-stock",
+        {},
+        async () => {
+          const stock = await Account.countDocuments(buildPackage2SaleFilter());
+          const mainPrice = Number(process.env.DATAMMO_PACKAGE2_MAIN_PRICE || 0);
+          const cheapPrice = Number(process.env.DATAMMO_PACKAGE2_CHEAP_PRICE || 0);
+          const selectedPrice = cheapPrice > 0 ? cheapPrice : mainPrice;
+          const nextPayload = { stock };
+          if (Number.isFinite(selectedPrice) && selectedPrice > 0) {
+            nextPayload.price = selectedPrice;
+          }
+          return nextPayload;
+        },
+      );
       res.json(payload);
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
@@ -11852,9 +11883,12 @@ app.all(
 
     if (action !== "buy") {
       try {
-        await reconcileChatgptMarketInventory();
-        const stock = await Account.countDocuments(buildPackage2SaleFilter());
-        return res.json({ sum: stock });
+        const payload = await getCachedPartnerRead(
+          "shopmini-chatgpt-stock",
+          {},
+          async () => ({ sum: await Account.countDocuments(buildPackage2SaleFilter()) }),
+        );
+        return res.json(payload);
       } catch (error) {
         return res
           .status(500)
@@ -11942,7 +11976,6 @@ app.get(
   verifyDatammoPartnerToken,
   async (req, res) => {
     try {
-      await reconcileTeamMarketInventory();
       const saleMode = resolveTeamMarketplaceModeFromReq(req);
       if (!saleMode) {
         return res.status(400).json({
@@ -11950,7 +11983,11 @@ app.get(
           message: "Missing team mode",
         });
       }
-      const payload = await buildTeamMarketplaceStockPayload(saleMode);
+      const payload = await getCachedPartnerRead(
+        "team-stock",
+        { saleMode },
+        async () => buildTeamMarketplaceStockPayload(saleMode),
+      );
       return res.json(payload);
     } catch (error) {
       return res
@@ -12054,7 +12091,6 @@ app.all(
 
     if (action !== "buy") {
       try {
-        await reconcileTeamMarketInventory();
         const saleMode = resolveTeamMarketplaceModeFromReq(req);
         if (!saleMode) {
           return res.status(400).json({
@@ -12062,7 +12098,11 @@ app.all(
             message: "Missing team mode",
           });
         }
-        const payload = await buildTeamMarketplaceStockPayload(saleMode);
+        const payload = await getCachedPartnerRead(
+          "shopmini-team-stock",
+          { saleMode },
+          async () => buildTeamMarketplaceStockPayload(saleMode),
+        );
         return res.json({ sum: payload.stock });
       } catch (error) {
         return res
@@ -12177,24 +12217,83 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
 });
 
 // 2.5 ADD ACCOUNT (Public - for Telegram bot)
+const buildPublicChatgptAccountPayload = (payload = {}) => {
+  const now = new Date();
+  const expiredDate = new Date(now);
+  expiredDate.setMonth(expiredDate.getMonth() + 1);
+  const normalizedBody = normalizeChatgptPayload(payload);
+  return {
+    id: createStoreId("gpt"),
+    ...normalizedBody,
+    createdAt: now.toISOString(),
+    expiredAt: expiredDate.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+};
+const createPublicChatgptAccount = async (payload = {}) => {
+  const newAcc = buildPublicChatgptAccountPayload(payload);
+  const created = await Account.create(newAcc);
+  return created?.toObject?.() || newAcc;
+};
 app.post("/api/chatgpt-public", verifyBotInternalToken, async (req, res) => {
   try {
-    const now = new Date();
-    const expiredDate = new Date(now);
-    expiredDate.setMonth(expiredDate.getMonth() + 1); // Add 1 month
-    const normalizedBody = normalizeChatgptPayload(req.body);
-
-    const newAcc = {
-      id: Date.now().toString(),
-      ...normalizedBody,
-      createdAt: now.toISOString(),
-      expiredAt: expiredDate.toISOString(),
-      updatedAt: now.toISOString(),
-    };
-    await Account.create(newAcc);
-    res.json({ message: "Added successfully", account: newAcc });
+    const account = await createPublicChatgptAccount(req.body);
+    res.json({ message: "Added successfully", account });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post("/api/chatgpt-public/bulk", verifyBotInternalToken, async (req, res) => {
+  try {
+    const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (rawItems.length === 0) {
+      return res.status(400).json({ error: "Thieu danh sach account." });
+    }
+
+    const successes = [];
+    const errors = [];
+    for (let index = 0; index < rawItems.length; index += 1) {
+      const item = rawItems[index] || {};
+      const lineNumber = Number(item?.lineNumber || index + 1);
+      try {
+        const account = await createPublicChatgptAccount({
+          username: item.username || item.email || "",
+          password: item.password || "",
+          otpSecret: item.otpSecret || "",
+          link: item.link || "",
+          type: "unassigned",
+          note: item.note || "",
+        });
+        successes.push({
+          lineNumber,
+          kind: "plus",
+          username: String(account?.username || item?.username || item?.email || "").trim(),
+        });
+      } catch (error) {
+        errors.push({
+          lineNumber,
+          kind: "plus",
+          username: String(item?.username || item?.email || "").trim(),
+          reason: error.message || "Khong the them account",
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      summary: {
+        total: rawItems.length,
+        successCount: successes.length,
+        errorCount: errors.length,
+      },
+      successes,
+      errors,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the import hang loat Plus.",
+    });
   }
 });
 
@@ -13519,32 +13618,94 @@ app.post("/api/team", verifyToken, async (req, res) => {
 });
 
 // POST add team account (Public - for Telegram bot)
+const buildPublicTeamAccountPayload = (payload = {}) => {
+  const now = new Date();
+  const expiredDate = new Date(now);
+  expiredDate.setMonth(expiredDate.getMonth() + 1);
+  const normalizedBody = normalizeTeamPayload(payload, {
+    defaultSaleMode: true,
+    defaultSlots: true,
+  });
+  const newAcc = {
+    id: createStoreId("team"),
+    ...normalizedBody,
+    createdAt: now.toISOString(),
+    expiredAt: normalizedBody.expiredAt || expiredDate.toISOString(),
+    updatedAt: now.toISOString(),
+  };
+  newAcc.slots = normalizeTeamSlots(newAcc.slots);
+  assertValidTeamSlotsForSaleMode(newAcc.saleMode, newAcc.slots);
+  return newAcc;
+};
+const createPublicTeamAccount = async (payload = {}) => {
+  const newAcc = buildPublicTeamAccountPayload(payload);
+  const created = await TeamAccount.create(newAcc);
+  const synced = await syncTeamWarehouseStateIfNeeded(created);
+  return sanitizeTeamAccount(synced?.toObject?.() || synced);
+};
 app.post("/api/team-public", verifyBotInternalToken, async (req, res) => {
   try {
-    const now = new Date();
-    const expiredDate = new Date(now);
-    expiredDate.setMonth(expiredDate.getMonth() + 1);
-    const normalizedBody = normalizeTeamPayload(req.body, {
-      defaultSaleMode: true,
-      defaultSlots: true,
-    });
-    const newAcc = {
-      id: Date.now().toString(),
-      ...normalizedBody,
-      createdAt: now.toISOString(),
-      expiredAt: normalizedBody.expiredAt || expiredDate.toISOString(),
-      updatedAt: now.toISOString(),
-    };
-    newAcc.slots = normalizeTeamSlots(newAcc.slots);
-    assertValidTeamSlotsForSaleMode(newAcc.saleMode, newAcc.slots);
-    const created = await TeamAccount.create(newAcc);
-    const synced = await syncTeamWarehouseStateIfNeeded(created);
+    const synced = await createPublicTeamAccount(req.body);
     res.json({
       message: "Added",
-      account: sanitizeTeamAccount(synced?.toObject?.() || synced),
+      account: synced,
     });
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+app.post("/api/team-public/bulk", verifyBotInternalToken, async (req, res) => {
+  try {
+    const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (rawItems.length === 0) {
+      return res.status(400).json({ error: "Thieu danh sach Team account." });
+    }
+
+    const successes = [];
+    const errors = [];
+    for (let index = 0; index < rawItems.length; index += 1) {
+      const item = rawItems[index] || {};
+      const lineNumber = Number(item?.lineNumber || index + 1);
+      try {
+        const account = await createPublicTeamAccount({
+          username: item.username || item.email || "",
+          password: item.password || "",
+          otpSecret: item.otpSecret || "",
+          recoveryUrl: item.recoveryUrl || "",
+          note: item.note || "",
+          saleMode: "business",
+          expiredAt: item.expiredAt || undefined,
+        });
+        successes.push({
+          lineNumber,
+          kind: "team",
+          username: String(account?.username || item?.username || item?.email || "").trim(),
+        });
+      } catch (error) {
+        errors.push({
+          lineNumber,
+          kind: "team",
+          username: String(item?.username || item?.email || "").trim(),
+          reason: error.message || "Khong the them team account",
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      summary: {
+        total: rawItems.length,
+        successCount: successes.length,
+        errorCount: errors.length,
+      },
+      successes,
+      errors,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the import hang loat Team.",
+    });
   }
 });
 

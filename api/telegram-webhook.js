@@ -963,6 +963,44 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
         const batchErrors = [...initialErrors];
         const batchSuccesses = [];
         const totalAccounts = items.length;
+        const originalItemsByLine = new Map(
+          items.map((item) => [Number(item?.lineNumber || 0), item]),
+        );
+        const mergeBulkBatchResponse = (responseData = {}, fallbackItems = []) => {
+          const responseSuccesses = Array.isArray(responseData?.successes)
+            ? responseData.successes
+            : [];
+          const responseErrors = Array.isArray(responseData?.errors)
+            ? responseData.errors
+            : [];
+
+          if (responseSuccesses.length > 0) {
+            responseSuccesses.forEach((entry) => {
+              const original =
+                originalItemsByLine.get(Number(entry?.lineNumber || 0)) || null;
+              if (original) {
+                batchSuccesses.push(original);
+              }
+            });
+          } else {
+            fallbackItems.forEach((item) => {
+              batchSuccesses.push(item);
+            });
+          }
+
+          responseErrors.forEach((entry) => {
+            const original =
+              originalItemsByLine.get(Number(entry?.lineNumber || 0)) || null;
+            batchErrors.push({
+              ...(original || {}),
+              ...entry,
+              lineNumber: Number(entry?.lineNumber || original?.lineNumber || 0),
+              reason: String(entry?.reason || "Khong the them acc").trim(),
+            });
+          });
+        };
+        const plusItems = items.filter((item) => item.kind === "plus");
+        const teamItems = items.filter((item) => item.kind === "team");
 
         try {
           if (totalAccounts > 0) {
@@ -976,44 +1014,66 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
             );
           }
 
-          for (const item of items) {
+          if (teamItems.length > 0) {
             try {
-              if (item.kind === "team") {
-                await axios.post(
-                  `${API_URL}/api/team-public`,
-                  {
+              const response = await axios.post(
+                `${API_URL}/api/team-public/bulk`,
+                {
+                  items: teamItems.map((item) => ({
+                    lineNumber: item.lineNumber,
                     username: item.email,
                     password: item.password,
                     otpSecret: item.otpSecret,
                     recoveryUrl: "",
                     note: "",
                     saleMode: "business",
-                  },
-                  buildInternalApiConfig(),
-                );
-              } else {
-                await axios.post(
-                  `${API_URL}/api/chatgpt-public`,
-                  {
+                  })),
+                },
+                buildInternalApiConfig({ timeout: 60000 }),
+              );
+              mergeBulkBatchResponse(response?.data, teamItems);
+            } catch (error) {
+              teamItems.forEach((item) => {
+                batchErrors.push({
+                  ...item,
+                  reason:
+                    error.response?.data?.error ||
+                    error.response?.data?.message ||
+                    error.message ||
+                    "Khong the them Team account",
+                });
+              });
+            }
+          }
+
+          if (plusItems.length > 0) {
+            try {
+              const response = await axios.post(
+                `${API_URL}/api/chatgpt-public/bulk`,
+                {
+                  items: plusItems.map((item) => ({
+                    lineNumber: item.lineNumber,
                     username: item.email,
                     password: item.password,
                     otpSecret: item.otpSecret,
                     link: "",
                     type: "unassigned",
                     note: "",
-                  },
-                  buildInternalApiConfig(),
-                );
-              }
-              batchSuccesses.push(item);
+                  })),
+                },
+                buildInternalApiConfig({ timeout: 60000 }),
+              );
+              mergeBulkBatchResponse(response?.data, plusItems);
             } catch (error) {
-              batchErrors.push({
-                ...item,
-                reason:
-                  error.response?.data?.error ||
-                  error.response?.data?.message ||
-                  error.message ||
-                  "Khong the them acc",
+              plusItems.forEach((item) => {
+                batchErrors.push({
+                  ...item,
+                  reason:
+                    error.response?.data?.error ||
+                    error.response?.data?.message ||
+                    error.message ||
+                    "Khong the them Plus account",
+                });
               });
             }
           }

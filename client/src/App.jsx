@@ -1623,8 +1623,8 @@ const buildChatgptAdminRequestKey = (query = {}) =>
     String(query?.search || "").trim(),
   ].join("|");
 const ADMIN_AUTO_REFRESH_CACHE_MS = 30000;
-const ADMIN_SUPPORT_NOTICE_SYNC_MS = 4000;
-const ADMIN_SUPPORT_FALLBACK_SYNC_MS = 12000;
+const ADMIN_SUPPORT_NOTICE_SYNC_MS = 10000;
+const ADMIN_SUPPORT_FALLBACK_SYNC_MS = 30000;
 const ADMIN_TAB_DATA_SECTION_MAP = {
   chatgpt: ["team", "datammo", "storeOrders", "summary"],
   netflix: ["netflix", "summary"],
@@ -2304,7 +2304,7 @@ function App() {
       if (document.hidden) return;
       if (shouldSkipAutoRefresh()) return;
       refreshAdminSurface({ includeSummary: true }).catch(() => {});
-    }, getRealtimeSafetySyncMs(adminRealtime, 90000));
+    }, Math.max(getRealtimeSafetySyncMs(adminRealtime, 90000), 120000));
     return () => window.clearInterval(intervalId);
   }, [
     adminRealtime,
@@ -2382,6 +2382,7 @@ function App() {
       loadSupportConversations({
         silent: true,
         limit: 20,
+        allowCached: activeTab !== "support",
       }).catch(() => {});
     };
 

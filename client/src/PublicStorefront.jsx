@@ -1124,6 +1124,7 @@ function PublicStorefront() {
 
   useEffect(() => {
     if (!token || !user) return undefined;
+    if (route.view !== "payment-result") return undefined;
     const pendingOrders = orders.filter(
       (order) =>
         isPendingStorePayment(order.status) &&
@@ -1156,9 +1157,8 @@ function PublicStorefront() {
         pendingReconcileRef.current = false;
       }
     };
-
-    const initialDelayMs = route.view === "payment-result" ? 1500 : 8000;
-    const intervalMs = route.view === "payment-result" ? 10000 : 30000;
+    const initialDelayMs = 1500;
+    const intervalMs = 10000;
     const timeoutId = window.setTimeout(() => {
       runReconcile().catch(() => {});
     }, initialDelayMs);
@@ -1212,7 +1212,7 @@ function PublicStorefront() {
     if (!token || !user) return undefined;
     const intervalId = window.setInterval(() => {
       syncOrdersSilently().catch(() => {});
-    }, getRealtimeSafetySyncMs(config?.realtime, 90000));
+    }, Math.max(getRealtimeSafetySyncMs(config?.realtime, 90000), 180000));
     return () => window.clearInterval(intervalId);
   }, [config?.realtime, token, user]);
 
@@ -1221,7 +1221,7 @@ function PublicStorefront() {
     const intervalId = window.setInterval(() => {
       const shouldMarkRead = shouldMarkSupportThreadRead();
       syncSupportThreadSilently({ markRead: shouldMarkRead }).catch(() => {});
-    }, getRealtimeSafetySyncMs(config?.realtime, 90000));
+    }, Math.max(getRealtimeSafetySyncMs(config?.realtime, 90000), 60000));
     return () => window.clearInterval(intervalId);
   }, [config?.realtime, supportOpen, token, user]);
 
