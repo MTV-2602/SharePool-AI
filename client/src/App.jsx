@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useRef } from "react";
+import { useMemo } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import { startTransition } from "react";
 import {
@@ -7582,28 +7583,87 @@ function App() {
     teamMarketplaceOrderPage,
     teamMarketplaceOrderTotalPages,
   );
-  const filteredStoreUsers = storeUsers
-    .filter((user) => {
-      if (!storeUserQuery.trim()) return true;
-      const queryNormalized = toNonAccentVietnamese(storeUserQuery);
-      const searchIndex = toNonAccentVietnamese(
-        [
-          user?.fullName,
-          user?.phone,
-          user?.email,
-          Array.isArray(user?.authProviders) ? user.authProviders.join(" ") : "",
-          user?.latestOrderAt,
-        ]
-          .filter(Boolean)
-          .join(" "),
-      );
-      return searchIndex.includes(queryNormalized);
-    })
-    .sort((a, b) => {
-      const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
-      const bTime = new Date(b?.latestOrderAt || b?.createdAt || 0).getTime();
-      return bTime - aTime;
+  const storeOrdersByUserId = useMemo(() => {
+    const grouped = new Map();
+    (storeOrders || []).forEach((order) => {
+      const userId = String(order?.userId || "").trim();
+      if (!userId) return;
+      if (!grouped.has(userId)) grouped.set(userId, []);
+      grouped.get(userId).push(order);
     });
+    grouped.forEach((orders) => {
+      orders.sort((a, b) => {
+        const aTime = new Date(a?.createdAt || 0).getTime();
+        const bTime = new Date(b?.createdAt || 0).getTime();
+        return bTime - aTime;
+      });
+    });
+    return grouped;
+  }, [storeOrders]);
+  const normalizedStoreUserQuery = toNonAccentVietnamese(
+    String(storeUserQuery || "").trim(),
+  );
+  const storeUserSearchIndexById = useMemo(() => {
+    const indexMap = new Map();
+    (storeUsers || []).forEach((user) => {
+      const userId = String(user?.id || "").trim();
+      if (!userId) return;
+      const userOrders = storeOrdersByUserId.get(userId) || [];
+      const relatedAccountTerms = [];
+      userOrders.forEach((order) => {
+        relatedAccountTerms.push(
+          order?.assignedUsername,
+          order?.rootAssignedUsername,
+          order?.reservedAccountUsername,
+          order?.assignedAccountId,
+          order?.rootAssignedAccountId,
+          order?.reservedAccountId,
+        );
+        (Array.isArray(order?.warrantyRounds) ? order.warrantyRounds : []).forEach(
+          (round) => {
+            relatedAccountTerms.push(
+              round?.fromUsername,
+              round?.toUsername,
+              round?.fromAccountId,
+              round?.toAccountId,
+            );
+          },
+        );
+      });
+      indexMap.set(
+        userId,
+        toNonAccentVietnamese(
+          [
+            user?.fullName,
+            user?.phone,
+            user?.email,
+            Array.isArray(user?.authProviders) ? user.authProviders.join(" ") : "",
+            user?.latestOrderAt,
+            ...relatedAccountTerms,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        ),
+      );
+    });
+    return indexMap;
+  }, [storeOrdersByUserId, storeUsers]);
+  const filteredStoreUsers = useMemo(
+    () =>
+      storeUsers
+        .filter((user) => {
+          if (!normalizedStoreUserQuery) return true;
+          const userId = String(user?.id || "").trim();
+          const searchIndex = storeUserSearchIndexById.get(userId) || "";
+          return searchIndex.includes(normalizedStoreUserQuery);
+        })
+        .sort((a, b) => {
+          const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
+          const bTime = new Date(b?.latestOrderAt || b?.createdAt || 0).getTime();
+          return bTime - aTime;
+        }),
+    [normalizedStoreUserQuery, storeUserSearchIndexById, storeUsers],
+  );
   const storeUsersWithOrdersCount = filteredStoreUsers.filter(
     (user) => Number(user?.totalOrders || 0) > 0,
   ).length;
@@ -7744,23 +7804,6 @@ function App() {
       (conversation) =>
         String(conversation?.id || "").trim() === selectedSupportConversationId,
     ) || null;
-  const storeOrdersByUserId = (() => {
-    const grouped = new Map();
-    (storeOrders || []).forEach((order) => {
-      const userId = String(order?.userId || "").trim();
-      if (!userId) return;
-      if (!grouped.has(userId)) grouped.set(userId, []);
-      grouped.get(userId).push(order);
-    });
-    grouped.forEach((orders) => {
-      orders.sort((a, b) => {
-        const aTime = new Date(a?.createdAt || 0).getTime();
-        const bTime = new Date(b?.createdAt || 0).getTime();
-        return bTime - aTime;
-      });
-    });
-    return grouped;
-  })();
   const selectedSupportConversationDisplayName =
     getSupportConversationDisplayName(selectedSupportConversation);
   const selectedSupportConversationStatusMeta =
@@ -8506,7 +8549,7 @@ function App() {
                   <input
                     value={storeUserQuery}
                     onChange={(e) => setStoreUserQuery(e.target.value)}
-                    placeholder="Tìm theo tên user, SĐT hoặc email..."
+                    placeholder="Tìm theo tên user, SĐT, email hoặc tài khoản ChatGPT..."
                     className="flex-1 rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-2.5 text-white placeholder:text-slate-500 outline-none transition-all focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30"
                   />
                   <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:self-start">
