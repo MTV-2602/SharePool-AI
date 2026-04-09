@@ -1190,7 +1190,7 @@ const EXTEND_DURATION_OPTIONS = [
   { value: "1Y", label: "1 Năm" },
 ];
 const MARKETPLACE_ORDER_PAGE_SIZE = 5;
-const CHATGPT_ADMIN_PAGE_SIZE_OPTIONS = [5, 10];
+const CHATGPT_ADMIN_PAGE_SIZE_OPTIONS = [5, 10, 20, 30, 50];
 const CHATGPT_MAIL_CHECK_HISTORY_LIMIT_OPTIONS = [20, 30, 50];
 const DEFAULT_CHATGPT_ADMIN_PAGE_SIZE = 10;
 const clampMonthDay = (year, monthIndex, dayOfMonth) => {
