@@ -8003,27 +8003,32 @@ function App() {
         ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-300">
-          <span>Mỗi trang</span>
-          <select
-            value={chatgptAdminPagination.limit}
-            onChange={(event) =>
-              void requestChatgptAdminPage({
-                page: 1,
-                limit: Number(
-                  event.target.value || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
-                ),
-              })
-            }
-            className="bg-transparent font-semibold text-white outline-none"
-          >
-            {CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.map((option) => (
-              <option key={option} value={option} className="bg-slate-900">
+        <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-300">
+          <span className="mr-1">Mỗi trang</span>
+          {CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.map((option) => {
+            const isActive = Number(chatgptAdminPagination.limit) === Number(option);
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() =>
+                  void requestChatgptAdminPage({
+                    page: 1,
+                    limit: Number(option || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE),
+                  })
+                }
+                disabled={chatgptAdminPageLoading && isActive}
+                className={`rounded-full px-2 py-0.5 font-semibold transition ${
+                  isActive
+                    ? "bg-cyan-500/20 text-cyan-100 ring-1 ring-cyan-400/30"
+                    : "bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
                 {option}
-              </option>
-            ))}
-          </select>
-        </label>
+              </button>
+            );
+          })}
+        </div>
         <button
           type="button"
           onClick={() =>
