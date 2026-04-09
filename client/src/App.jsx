@@ -1,5 +1,4 @@
 ﻿import { useState, useEffect, useRef } from "react";
-import { useMemo } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import { startTransition } from "react";
 import {
@@ -7944,7 +7943,7 @@ function App() {
     teamMarketplaceOrderPage,
     teamMarketplaceOrderTotalPages,
   );
-  const storeOrdersByUserId = useMemo(() => {
+  const storeOrdersByUserId = (() => {
     const grouped = new Map();
     (storeOrders || []).forEach((order) => {
       const userId = String(order?.userId || "").trim();
@@ -7960,11 +7959,11 @@ function App() {
       });
     });
     return grouped;
-  }, [storeOrders]);
+  })();
   const normalizedStoreUserQuery = toNonAccentVietnamese(
     String(storeUserQuery || "").trim(),
   );
-  const storeUserSearchIndexById = useMemo(() => {
+  const storeUserSearchIndexById = (() => {
     const indexMap = new Map();
     (storeUsers || []).forEach((user) => {
       const userId = String(user?.id || "").trim();
@@ -8008,23 +8007,19 @@ function App() {
       );
     });
     return indexMap;
-  }, [storeOrdersByUserId, storeUsers]);
-  const filteredStoreUsers = useMemo(
-    () =>
-      storeUsers
-        .filter((user) => {
-          if (!normalizedStoreUserQuery) return true;
-          const userId = String(user?.id || "").trim();
-          const searchIndex = storeUserSearchIndexById.get(userId) || "";
-          return searchIndex.includes(normalizedStoreUserQuery);
-        })
-        .sort((a, b) => {
-          const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
-          const bTime = new Date(b?.latestOrderAt || b?.createdAt || 0).getTime();
-          return bTime - aTime;
-        }),
-    [normalizedStoreUserQuery, storeUserSearchIndexById, storeUsers],
-  );
+  })();
+  const filteredStoreUsers = storeUsers
+    .filter((user) => {
+      if (!normalizedStoreUserQuery) return true;
+      const userId = String(user?.id || "").trim();
+      const searchIndex = storeUserSearchIndexById.get(userId) || "";
+      return searchIndex.includes(normalizedStoreUserQuery);
+    })
+    .sort((a, b) => {
+      const aTime = new Date(a?.latestOrderAt || a?.createdAt || 0).getTime();
+      const bTime = new Date(b?.latestOrderAt || b?.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
   const storeUsersWithOrdersCount = filteredStoreUsers.filter(
     (user) => Number(user?.totalOrders || 0) > 0,
   ).length;
