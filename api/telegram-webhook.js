@@ -276,6 +276,101 @@ const buildTelegramBatchSummaryMessage = ({
 
   return lines.join("\n");
 };
+const parseCleanupCommand = (rawText = "") => {
+  const normalized = String(rawText || "").trim();
+  const match = normalized.match(
+    /^\/cleanup\s+(show|approve|reject)\s+([a-z0-9_-]+)$/i,
+  );
+  if (!match) return null;
+  return {
+    action: String(match[1] || "").trim().toLowerCase(),
+    batchId: String(match[2] || "").trim(),
+  };
+};
+const escapeTelegramHtml = (value = "") =>
+  String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+const formatCleanupBatchTelegramMessage = (batch = {}) => {
+  const items = Array.isArray(batch?.items) ? batch.items : [];
+  const summary =
+    batch?.summary && typeof batch.summary === "object" ? batch.summary : {};
+  const previewItems = items.slice(0, 12);
+  const safeBatchId = escapeTelegramHtml(batch?.batchId || "--");
+  const lines = [
+    "<b>BATCH DON HET HAN</b>",
+    "",
+    `Batch: <code>${safeBatchId}</code>`,
+    `Trang thai: ${escapeTelegramHtml(batch?.status || "--")}`,
+    `Candidate: ${Number(summary?.candidateCount || items.length || 0)}`,
+    `Warning: ${Number(summary?.warningCount || 0)}`,
+    `Scan: ${escapeTelegramHtml(summary?.scannedAt || batch?.createdAt || "--")}`,
+  ];
+  if (previewItems.length > 0) {
+    lines.push("", "<b>Preview:</b>");
+    previewItems.forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${escapeTelegramHtml(item?.scope === "team" ? "Team" : "ChatGPT")} | ${escapeTelegramHtml(item?.username || item?.itemId || "--")} | ${escapeTelegramHtml(item?.reasonLabel || item?.reasonCode || "--")} | ${escapeTelegramHtml(item?.expiredAt || "--")}`,
+      );
+    });
+    if (items.length > previewItems.length) {
+      lines.push(`+${items.length - previewItems.length} item nua`);
+    }
+  }
+  lines.push(
+    "",
+    `<code>/cleanup show ${safeBatchId}</code>`,
+    `<code>/cleanup approve ${safeBatchId}</code>`,
+    `<code>/cleanup reject ${safeBatchId}</code>`,
+  );
+  return lines.join("\n");
+};
+const formatCleanupExecutionResultMessage = ({
+  batch = null,
+  result = null,
+  action = "approve",
+} = {}) => {
+  const safeBatchId = escapeTelegramHtml(batch?.batchId || "--");
+  if (action === "reject") {
+    return [
+      "<b>DA TU CHOI BATCH CLEANUP</b>",
+      "",
+      `Batch: <code>${safeBatchId}</code>`,
+      `Trang thai: ${escapeTelegramHtml(batch?.status || "rejected")}`,
+    ].join("\n");
+  }
+  const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
+  const errors = Array.isArray(result?.errors) ? result.errors : [];
+  const lines = [
+    "<b>KET QUA CLEANUP</b>",
+    "",
+    `Batch: <code>${safeBatchId}</code>`,
+    `Da xoa: ${Number(result?.deletedCount || 0)}`,
+    `Bo qua: ${Number(result?.skippedCount || 0)}`,
+    `Loi: ${Number(result?.errorCount || 0)}`,
+  ];
+  if (skipped.length > 0) {
+    lines.push("", "<b>Bo qua:</b>");
+    skipped.slice(0, 5).forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${escapeTelegramHtml(item?.username || item?.itemId || "--")} | ${escapeTelegramHtml(item?.reason || "--")}`,
+      );
+    });
+    if (skipped.length > 5) {
+      lines.push(`+${skipped.length - 5} item skip nua`);
+    }
+  }
+  if (errors.length > 0) {
+    lines.push("", "<b>Loi:</b>");
+    errors.slice(0, 3).forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${escapeTelegramHtml(item?.username || item?.itemId || "--")} | ${escapeTelegramHtml(item?.error || "--")}`,
+      );
+    });
+  }
+  return lines.join("\n");
+};
 const extractTelegramSearchEmail = (rawText) => {
   if (!rawText) return "";
   const cleanedText = String(rawText)
@@ -406,6 +501,9 @@ const TELEGRAM_WELCOME_MESSAGE = [
   "*Lenh:*",
   "/stats - thong ke tong quan",
   "/help - huong dan",
+  "/cleanup show <batchId> - xem batch don het han",
+  "/cleanup approve <batchId> - duyet xoa batch",
+  "/cleanup reject <batchId> - tu choi batch",
   "",
   "*Nhap Plus:*",
   "```",
@@ -681,6 +779,85 @@ email,password,courseCode
         await sendMessage(chatId, statsMessage);
       } catch (error) {
         await sendMessage(chatId, "❌ Lỗi khi tính thống kê!");
+      }
+      return res.status(200).json({ ok: true });
+    }
+
+    const cleanupCommand = parseCleanupCommand(text);
+    if (cleanupCommand) {
+      try {
+        if (cleanupCommand.action === "show") {
+          await sendMessage(chatId, "Dang tai batch cleanup...", {
+            parse_mode: "HTML",
+          });
+          const response = await axios.get(
+            `${API_URL}/api/admin/chatgpt-expiry-cleanup-batches/${cleanupCommand.batchId}`,
+            buildInternalApiConfig(),
+          );
+          const batch = response?.data?.batch || null;
+          if (!batch) {
+            await sendMessage(chatId, "Khong tim thay batch cleanup.", {
+              parse_mode: "HTML",
+            });
+          } else {
+            await sendMessage(
+              chatId,
+              formatCleanupBatchTelegramMessage(batch),
+              { parse_mode: "HTML" },
+            );
+          }
+        } else if (cleanupCommand.action === "approve") {
+          await sendMessage(chatId, "Dang duyet batch cleanup...", {
+            parse_mode: "HTML",
+          });
+          const response = await axios.post(
+            `${API_URL}/api/admin/chatgpt-expiry-cleanup-batches/${cleanupCommand.batchId}/execute`,
+            {
+              actorSource: "telegram_cleanup_approve",
+              actor: String(userId || chatId || "telegram_admin"),
+            },
+            buildInternalApiConfig(),
+          );
+          await sendMessage(
+            chatId,
+            formatCleanupExecutionResultMessage({
+              batch: response?.data?.batch || null,
+              result: response?.data?.result || null,
+              action: "approve",
+            }),
+            { parse_mode: "HTML" },
+          );
+        } else if (cleanupCommand.action === "reject") {
+          await sendMessage(chatId, "Dang tu choi batch cleanup...", {
+            parse_mode: "HTML",
+          });
+          const response = await axios.post(
+            `${API_URL}/api/admin/chatgpt-expiry-cleanup-batches/${cleanupCommand.batchId}/reject`,
+            {
+              actorSource: "telegram_cleanup_reject",
+              actor: String(userId || chatId || "telegram_admin"),
+            },
+            buildInternalApiConfig(),
+          );
+          await sendMessage(
+            chatId,
+            formatCleanupExecutionResultMessage({
+              batch: response?.data?.batch || null,
+              action: "reject",
+            }),
+            { parse_mode: "HTML" },
+          );
+        }
+      } catch (error) {
+        await sendMessage(
+          chatId,
+          escapeTelegramHtml(
+            error?.response?.data?.error ||
+              error?.message ||
+              "Khong the xu ly lenh cleanup.",
+          ),
+          { parse_mode: "HTML" },
+        );
       }
       return res.status(200).json({ ok: true });
     }

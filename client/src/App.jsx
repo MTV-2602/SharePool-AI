@@ -1724,6 +1724,40 @@ const sortAdminSupportConversationsForUi = (items = []) =>
     const bTime = new Date(b?.lastMessageAt || b?.createdAt || 0).getTime();
     return bTime - aTime;
   });
+const buildDefaultChatgptExpirySummaryState = () => ({
+  scannedAt: "",
+  candidateCount: 0,
+  warningCount: 0,
+  chatgptEmptyExpired: 0,
+  chatgptExpiredUsersOnly: 0,
+  chatgptExpiredWithUsers: 0,
+  teamEmptyExpired: 0,
+  teamExpiredSlotsOnly: 0,
+  teamExpiredWithSlots: 0,
+  pkg2MarketExpiringSoon: 0,
+  latestPendingBatchId: "",
+  latestExecutedBatchId: "",
+  latestRejectedBatchId: "",
+  latestExpiredBatchId: "",
+  lastScanAt: "",
+  updatedAt: "",
+});
+const buildDefaultChatgptExpiryPreviewState = () => ({
+  summary: buildDefaultChatgptExpirySummaryState(),
+  candidates: [],
+  warnings: [],
+  pkg2MarketExpiringSoon: [],
+  scannedAt: "",
+});
+const getExpiryCleanupBatchStatusLabel = (value = "") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "pending_approval") return "Chờ duyệt";
+  if (normalized === "approved") return "Đã duyệt";
+  if (normalized === "rejected") return "Đã từ chối";
+  if (normalized === "executed") return "Đã xóa";
+  if (normalized === "expired") return "Hết hạn duyệt";
+  return normalized || "Không rõ";
+};
 
 function App() {
   // LOGIN STATE
@@ -1761,6 +1795,14 @@ function App() {
   const [dashboardSummary, setDashboardSummary] = useState(
     buildDefaultDashboardSummary(),
   );
+  const [chatgptExpirySummary, setChatgptExpirySummary] = useState(
+    buildDefaultChatgptExpirySummaryState(),
+  );
+  const [chatgptExpiryPreview, setChatgptExpiryPreview] = useState(
+    buildDefaultChatgptExpiryPreviewState(),
+  );
+  const [chatgptExpiryBatches, setChatgptExpiryBatches] = useState([]);
+  const [chatgptExpiryLogBatches, setChatgptExpiryLogBatches] = useState([]);
   const [adminRealtime, setAdminRealtime] = useState(
     buildDefaultAdminRealtimeConfig(),
   );
@@ -1864,6 +1906,10 @@ function App() {
     saveStoreWarranty: false,
     auditStoreOrderState: false,
     repairStoreOrderState: false,
+    fetchChatgptExpirySummary: false,
+    fetchChatgptExpiryPreview: false,
+    fetchChatgptExpiryBatches: false,
+    fetchChatgptExpiryLogs: false,
     saveVoucher: false,
     saveStoreConfig: false,
     deleteStoreUser: "",
@@ -1936,6 +1982,12 @@ function App() {
   const [showStoreManualOrderModal, setShowStoreManualOrderModal] =
     useState(false);
   const [showStoreWarrantyModal, setShowStoreWarrantyModal] = useState(false);
+  const [showChatgptExpiryPreviewModal, setShowChatgptExpiryPreviewModal] =
+    useState(false);
+  const [showChatgptExpiryBatchesModal, setShowChatgptExpiryBatchesModal] =
+    useState(false);
+  const [showChatgptExpiryLogModal, setShowChatgptExpiryLogModal] =
+    useState(false);
   const [storeUserEditForm, setStoreUserEditForm] = useState({
     id: "",
     fullName: "",
@@ -2320,11 +2372,13 @@ function App() {
       skipNextAdminTabBootstrapRef.current = false;
       if (activeTab === "chatgpt") {
         loadChatgptAuxiliaryData({ allowCached: true }).catch(() => {});
+        loadChatgptExpirySummary({ silent: true }).catch(() => {});
       }
       return;
     }
     if (activeTab === "chatgpt") {
       loadChatgptAuxiliaryData({ allowCached: true }).catch(() => {});
+      loadChatgptExpirySummary({ silent: true }).catch(() => {});
       return;
     }
     if (
@@ -4121,6 +4175,115 @@ function App() {
     }
   };
 
+  const loadChatgptExpirySummary = async ({ silent = true } = {}) => {
+    try {
+      setLoadingStates((prev) => ({ ...prev, fetchChatgptExpirySummary: true }));
+      const response = await axios.get("/api/admin/chatgpt-expiry-summary", {
+        timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
+        skipGlobalLoading: silent,
+      });
+      setChatgptExpirySummary({
+        ...buildDefaultChatgptExpirySummaryState(),
+        ...(response?.data?.summary || {}),
+        latestPendingBatchId: String(
+          response?.data?.latestPendingBatchId || "",
+        ).trim(),
+        latestExecutedBatchId: String(
+          response?.data?.latestExecutedBatchId || "",
+        ).trim(),
+        latestRejectedBatchId: String(
+          response?.data?.latestRejectedBatchId || "",
+        ).trim(),
+        latestExpiredBatchId: String(
+          response?.data?.latestExpiredBatchId || "",
+        ).trim(),
+        lastScanAt: String(response?.data?.lastScanAt || "").trim(),
+        updatedAt: String(response?.data?.updatedAt || "").trim(),
+      });
+      return response?.data || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Không thể tải tổng hợp hết hạn ChatGPT."),
+          "error",
+        );
+      }
+      return null;
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, fetchChatgptExpirySummary: false }));
+    }
+  };
+
+  const openChatgptExpiryPreview = async () => {
+    try {
+      setLoadingStates((prev) => ({ ...prev, fetchChatgptExpiryPreview: true }));
+      const response = await axios.get("/api/admin/chatgpt-expiry-cleanup-preview", {
+        timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS,
+        skipGlobalLoading: true,
+      });
+      setChatgptExpiryPreview({
+        ...buildDefaultChatgptExpiryPreviewState(),
+        summary: {
+          ...buildDefaultChatgptExpirySummaryState(),
+          ...(response?.data?.summary || {}),
+        },
+        candidates: Array.isArray(response?.data?.candidates)
+          ? response.data.candidates
+          : [],
+        warnings: Array.isArray(response?.data?.warnings)
+          ? response.data.warnings
+          : [],
+        pkg2MarketExpiringSoon: Array.isArray(response?.data?.pkg2MarketExpiringSoon)
+          ? response.data.pkg2MarketExpiringSoon
+          : [],
+        scannedAt: String(response?.data?.scannedAt || "").trim(),
+      });
+      setShowChatgptExpiryPreviewModal(true);
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể tải danh sách hết hạn."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, fetchChatgptExpiryPreview: false }));
+    }
+  };
+
+  const openChatgptExpiryBatches = async ({
+    status = "pending_approval",
+    logMode = false,
+  } = {}) => {
+    const loadingKey = logMode ? "fetchChatgptExpiryLogs" : "fetchChatgptExpiryBatches";
+    try {
+      setLoadingStates((prev) => ({ ...prev, [loadingKey]: true }));
+      const response = await axios.get("/api/admin/chatgpt-expiry-cleanup-batches", {
+        params: { status: status || "", limit: logMode ? 20 : 10 },
+        timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
+        skipGlobalLoading: true,
+      });
+      const batches = Array.isArray(response?.data?.batches)
+        ? response.data.batches
+        : [];
+      if (logMode) {
+        setChatgptExpiryLogBatches(batches);
+        setShowChatgptExpiryLogModal(true);
+      } else {
+        setChatgptExpiryBatches(batches);
+        setShowChatgptExpiryBatchesModal(true);
+      }
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Không thể tải batch dọn hết hạn."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, [loadingKey]: false }));
+    }
+  };
+
   const loadAdminStoreVouchers = async ({
     silent = true,
     limit = 100,
@@ -4370,6 +4533,7 @@ function App() {
           includeSummary,
         }),
       );
+      tasks.push(loadChatgptExpirySummary({ silent: true }));
       await Promise.allSettled(tasks);
       return;
     }
@@ -10302,244 +10466,193 @@ function App() {
 
         {activeTab === "chatgpt" && (
           <div>
-            {/* GLOBAL EXPIRY / RESCUE BANNER */}
             {(() => {
-              const urgentList = [];
+              const summary =
+                chatgptExpirySummary || buildDefaultChatgptExpirySummaryState();
+              const totalSignals =
+                Number(summary?.candidateCount || 0) +
+                Number(summary?.warningCount || 0) +
+                Number(summary?.pkg2MarketExpiringSoon || 0);
+              if (
+                !loadingStates.fetchChatgptExpirySummary &&
+                !totalSignals &&
+                !summary?.latestPendingBatchId
+              ) {
+                return null;
+              }
 
-              accounts.forEach((acc) => {
-                // 1. Check if ACCOUNT itself is expired
-                const isAccExpired =
-                  acc.expiredAt && new Date(acc.expiredAt) < new Date();
-                const hasUsers = acc.users && acc.users.length > 0;
+              const statCards = [
+                {
+                  key: "chatgpt-empty",
+                  label: "Acc het han trong",
+                  value: Number(summary?.chatgptEmptyExpired || 0),
+                  tone: "border-red-500/30 bg-red-500/10 text-red-100",
+                },
+                {
+                  key: "chatgpt-users",
+                  label: "Acc het han co khach",
+                  value: Number(summary?.chatgptExpiredWithUsers || 0),
+                  tone: "border-amber-500/30 bg-amber-500/10 text-amber-100",
+                },
+                {
+                  key: "team-empty",
+                  label: "Team het han trong",
+                  value: Number(summary?.teamEmptyExpired || 0),
+                  tone: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-100",
+                },
+                {
+                  key: "team-slots",
+                  label: "Team slot het han",
+                  value: Number(summary?.teamExpiredWithSlots || 0),
+                  tone: "border-sky-500/30 bg-sky-500/10 text-sky-100",
+                },
+                {
+                  key: "pkg2-market",
+                  label: "Goi 2 market <=25 ngay",
+                  value: Number(summary?.pkg2MarketExpiringSoon || 0),
+                  tone: "border-yellow-500/30 bg-yellow-500/10 text-yellow-100",
+                },
+              ];
 
-                if (hasUsers) {
-                  acc.users.forEach((u, idx) => {
-                    const days = getDaysUsed(u);
-                    const daysRemaining = getDaysRemaining(u);
-                    const isUserExpired = daysRemaining !== null && daysRemaining <= 0;
-
-                    // Case A: User Expired -> Needs Extension
-                    if (isUserExpired) {
-                      urgentList.push({
-                        type: "user_expired",
-                        acc,
-                        u,
-                        idx,
-                        days,
-                        msg: `Khách hết hạn (${Math.abs(daysRemaining)} ngày quá hạn)`,
-                      });
-                    }
-                    // Case B: Account Expired -> Needs Evacuation (Move)
-                    else if (isAccExpired) {
-                      urgentList.push({
-                        type: "acc_expired",
-                        acc,
-                        u,
-                        idx,
-                        days,
-                        msg: "CHATGPT ĐÃ HẾT HẠN - CẦN CHUYỂN GẤP!",
-                      });
-                    }
-                  });
-                } else if (isAccExpired) {
-                  // Case C: Account Expired & EMPTY -> Needs Deletion
-                  urgentList.push({
-                    type: "acc_empty_expired",
-                    acc,
-                    u: { name: "CHATGPT TRỐNG" },
-                    idx: -1,
-                    days: 0,
-                    msg: "ChatGpt hết hạn & Trống -> Cần Xóa!",
-                  });
-                }
-              });
-
-              // Case D: Gói 2 còn <=25 ngày và không có khách → cảnh báo gỡ khỏi Datammo
-              accounts.forEach((acc) => {
-                if (acc.type !== "package2") return;
-                if (normalizePackage2Shelf(acc.package2Shelf) !== "cheap") return;
-                if (acc.users && acc.users.length > 0) return; // đang có khách, bỏ qua
-                const daysLeft = acc.expiredAt
-                  ? Math.ceil((new Date(acc.expiredAt) - new Date()) / 86400000)
-                  : null;
-                if (daysLeft !== null && daysLeft <= 25 && daysLeft > 0) {
-                  urgentList.push({
-                    type: "pkg2_expiring_soon",
-                    acc,
-                    u: { name: `Gói 2 còn ${daysLeft} ngày` },
-                    idx: -1,
-                    days: daysLeft,
-                    msg: `Tai khoan trong kho market con ${daysLeft} ngay. Hay dua ve kho duoi 25 ngay hoac kho tong!`,
-                  });
-                }
-              });
-
-              teamAccounts.forEach((acc) => {
-                const isAccExpired = acc.expiredAt && new Date(acc.expiredAt) < new Date();
-                const activeSlots = (acc.slots || []).map((slot, idx) => ({ slot, idx })).filter(item => item.slot.status === "active");
-
-                if (activeSlots.length > 0) {
-                  activeSlots.forEach(({ slot, idx }) => {
-                    const sExpDays = slot.expiredAt ? Math.ceil((new Date(slot.expiredAt) - new Date()) / 86400000) : null;
-                    const isSlotExpired = sExpDays !== null && sExpDays <= 0;
-
-                    if (isSlotExpired) {
-                      urgentList.push({
-                        type: "team_slot_expired",
-                        acc,
-                        u: slot,
-                        idx,
-                        days: sExpDays,
-                        msg: `Khách Team hết hạn (${Math.abs(sExpDays)} ngày quá hạn)`,
-                      });
-                    } else if (isAccExpired) {
-                      urgentList.push({
-                        type: "team_acc_expired",
-                        acc,
-                        u: slot,
-                        idx,
-                        days: sExpDays,
-                        msg: "TEAM ĐÃ HẾT HẠN - CẦN CHUYỂN GẤP!",
-                      });
-                    }
-                  });
-                } else if (isAccExpired) {
-                  urgentList.push({
-                    type: "team_empty_expired",
-                    acc,
-                    u: { name: "TEAM TRỐNG" },
-                    idx: -1,
-                    days: 0,
-                    msg: "Team Acc hết hạn & Trống -> Cần Xóa!",
-                  });
-                }
-              });
-
-              if (urgentList.length > 0) {
-                return (
-                  <div className="mb-8 bg-red-900/20 border-2 border-red-600 rounded-xl overflow-hidden shadow-2xl animate-fade-in">
-                    <div className="bg-red-800/80 p-3 flex items-center justify-between">
-                      <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                        <AlertTriangle className="text-yellow-300 animate-pulse" />
-                        DANH SÁCH CẦN XỬ LÝ GẤP ({urgentList.length})
-                      </h3>
+              return (
+                <div className="mb-8 overflow-hidden rounded-2xl border border-amber-500/20 bg-[linear-gradient(145deg,rgba(15,23,42,0.96),rgba(30,41,59,0.92))] shadow-[0_24px_48px_rgba(8,15,30,0.35)]">
+                  <div className="flex flex-col gap-4 border-b border-slate-700/70 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-2">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-200">
+                        <AlertTriangle size={14} className="text-amber-300" />
+                        Expiry cleanup
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-white">
+                          Tong hop acc/team het han
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-300">
+                          Snapshot nay chi hien trong tab ChatGPT va duoc cron lam moi
+                          dinh ky de giam tai render.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs text-slate-400">
+                        <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
+                          Candidate xoa:{" "}
+                          <span className="font-semibold text-white">
+                            {Number(summary?.candidateCount || 0)}
+                          </span>
+                        </span>
+                        <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
+                          Canh bao can xem:{" "}
+                          <span className="font-semibold text-white">
+                            {Number(summary?.warningCount || 0)}
+                          </span>
+                        </span>
+                        <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
+                          Scan lan cuoi:{" "}
+                          <span className="font-semibold text-white">
+                            {formatDateTime(summary?.lastScanAt || summary?.updatedAt) || "--"}
+                          </span>
+                        </span>
+                      </div>
                     </div>
-                    <div className="p-4 space-y-3">
-                      {urgentList.map(({ type, acc, u, idx, days, msg }, i) => (
-                        <div
-                          key={i}
-                          className={`flex items-center justify-between p-3 rounded border ${
-                            type === "pkg2_expiring_soon"
-                              ? "bg-yellow-950/30 border-yellow-600/40"
-                              : "bg-slate-900/50 border-red-500/30"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div
-                              className={`p-2 rounded-full ${
-                                type === "pkg2_expiring_soon"
-                                  ? "bg-yellow-500/20 text-yellow-400"
-                                  : type.includes("acc_expired")
-                                  ? "bg-orange-500/20 text-orange-500"
-                                  : "bg-red-500/20 text-red-500"
-                              }`}
-                            >
-                              {type === "pkg2_expiring_soon" ? (
-                                <Globe size={20} />
-                              ) : type.includes("acc_expired") ? (
-                                <Shield size={20} />
-                              ) : (
-                                <User size={20} />
-                              )}
-                            </div>
-                            <div>
-                              <div className={`font-bold text-lg ${
-                                type === "pkg2_expiring_soon" ? "text-yellow-400" : "text-red-400"
-                              }`}>
-                                {type === "pkg2_expiring_soon" ? acc.username : type.includes("team") ? (u.customerName || u.gmail || u.name || "Khách Team") : (u.name || u.email)}
-                              </div>
-                              <div className="text-xs text-slate-400">
-                                {type === "pkg2_expiring_soon" ? (
-                                  <span className="text-yellow-500 font-bold">{msg}</span>
-                                ) : (
-                                  <>{type.includes("team") ? "Team: " : "Thường: "}<span className="text-white">{acc.username}</span>{" "}•<span className="text-red-500 font-bold ml-1">{msg}</span></>
-                                )}
-                              </div>
-                            </div>
-                          </div>
 
-                          <div className="flex gap-3">
-                            {type === "user_expired" || type === "team_slot_expired" ? (
-                              // Action for Expired User: EXTEND
-                              <>
-                                <button
-                                  onClick={() =>
-                                    handleExtendUser(acc.id, idx, u, type.includes("team") ? "team" : "chatgpt")
-                                  }
-                                  className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform"
-                                >
-                                  <RotateCw size={18} /> GIA HẠN
-                                </button>
-                                <button
-                                  onClick={async () => {
-                                    if (type === "team_slot_expired") {
-                                      const updSlots = [...acc.slots];
-                                      updSlots[idx] = { ...u, status: "empty", gmail: "", customerName: "", addedAt: "", expiredAt: "" };
-                                      await axios.put(
-                                        `/api/team/${acc.id}`,
-                                        withExpectedUpdatedAt({ slots: updSlots }, acc),
-                                      );
-                                      fetchData();
-                                      showAlert("Thành công", "Đã xóa khách Team!", "success");
-                                    } else {
-                                      handleDeleteUser(acc.id, idx, u.name)
-                                    }
-                                  }}
-                                  className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform"
-                                >
-                                  <Trash2 size={18} /> XÓA
-                                </button>
-                              </>
-                            ) : type === "acc_expired" || type === "team_acc_expired" ? (
-                              // Action for Expired Account (With Users): MOVE USER (Rescue)
-                              <button
-                                onClick={() =>
-                                  type === "team_acc_expired" ? openMoveSlotModal(acc.id, idx, u) : openMoveUserModal(acc.id, idx, u)
-                                }
-                                className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform animate-pulse"
-                              >
-                                <ArrowRightLeft size={18} /> CỨU USER (CHUYỂN
-                                GẤP)
-                              </button>
-                            ) : type === "acc_empty_expired" || type === "team_empty_expired" ? (
-                              // Action for Expired Account (Empty): DELETE ACCOUNT
-                              <button
-                                onClick={() => {
-                                  if (type === "team_empty_expired") {
-                                    handleDeleteTeamAccount(acc.id);
-                                  } else {
-                                    setDeletingId(acc.id);
-                                    setShowDeleteModal(true);
-                                  }
-                                }}
-                                className="flex items-center gap-2 bg-red-800 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow-lg hover:scale-105 transition-transform animate-pulse border border-red-500"
-                              >
-                                <Trash2 size={18} /> XÓA {type.includes("team") ? "TEAM" : "CHATGPT"} RÁC
-                              </button>
-                            ) : type === "pkg2_expiring_soon" ? (
-                              // Gói 2 sắp hết hạn: nhắc nhở admin gỡ khỏi Datammo
-                              <div className="flex items-center gap-2">
-                                <span className="text-yellow-400 text-xs font-bold px-3 py-1.5 bg-yellow-900/30 border border-yellow-700/40 rounded">Kho market tu dong - can chuyen kho</span>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      ))}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={openChatgptExpiryPreview}
+                        disabled={loadingStates.fetchChatgptExpiryPreview}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {loadingStates.fetchChatgptExpiryPreview ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <Search size={16} />
+                        )}
+                        Xem danh sach
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openChatgptExpiryBatches({
+                            status: "pending_approval",
+                            logMode: false,
+                          })
+                        }
+                        disabled={loadingStates.fetchChatgptExpiryBatches}
+                        className="inline-flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:border-amber-400/60 hover:bg-amber-500/15 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {loadingStates.fetchChatgptExpiryBatches ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <ShieldCheck size={16} />
+                        )}
+                        Xem batch cho duyet
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openChatgptExpiryBatches({ status: "", logMode: true })
+                        }
+                        disabled={loadingStates.fetchChatgptExpiryLogs}
+                        className="inline-flex items-center gap-2 rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/10 px-4 py-2 text-sm font-semibold text-fuchsia-100 transition hover:border-fuchsia-400/60 hover:bg-fuchsia-500/15 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {loadingStates.fetchChatgptExpiryLogs ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <Calendar size={16} />
+                        )}
+                        Xem log don het han
+                      </button>
                     </div>
                   </div>
-                );
-              }
-              return null;
+
+                  <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 xl:grid-cols-5">
+                    {statCards.map((item) => (
+                      <div
+                        key={item.key}
+                        className={`rounded-2xl border px-4 py-3 ${item.tone}`}
+                      >
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300/85">
+                          {item.label}
+                        </div>
+                        <div className="mt-2 text-3xl font-black text-white">
+                          {item.value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {summary?.latestPendingBatchId && (
+                    <div className="border-t border-amber-500/20 bg-amber-500/10 px-5 py-4">
+                      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <div className="text-sm font-semibold text-amber-100">
+                            Batch {summary.latestPendingBatchId} dang cho admin duyet
+                            qua Telegram
+                          </div>
+                          <div className="mt-1 text-xs text-amber-50/80">
+                            Cron chi tao batch va gui thong bao. Xoa that chi xay ra
+                            khi admin dung lenh Telegram:
+                            <span className="ml-1 rounded bg-black/20 px-1.5 py-0.5 font-mono text-[11px] text-white">
+                              /cleanup approve {summary.latestPendingBatchId}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openChatgptExpiryBatches({
+                              status: "pending_approval",
+                              logMode: false,
+                            })
+                          }
+                          className="inline-flex items-center gap-2 rounded-xl border border-amber-300/40 bg-black/20 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-black/30"
+                        >
+                          <Wrench size={16} />
+                          Mo batch cho duyet
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
             })()}
             <div className="mb-6 rounded-2xl border border-sky-700/30 bg-[linear-gradient(135deg,rgba(14,165,233,0.12),rgba(59,130,246,0.08))] px-4 py-3 shadow-[0_14px_34px_rgba(14,165,233,0.08)]">
               <div className="flex flex-wrap items-center gap-2">
@@ -17225,6 +17338,476 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                 </button>
               </div>
             </form>
+          </div>
+        );
+      })()}
+
+      {showChatgptExpiryPreviewModal && (() => {
+        const preview =
+          chatgptExpiryPreview || buildDefaultChatgptExpiryPreviewState();
+        const candidateItems = Array.isArray(preview?.candidates)
+          ? preview.candidates
+          : [];
+        const warningItems = Array.isArray(preview?.warnings)
+          ? preview.warnings
+          : [];
+        const pkg2Items = Array.isArray(preview?.pkg2MarketExpiringSoon)
+          ? preview.pkg2MarketExpiringSoon
+          : [];
+
+        const renderCleanupItem = (item = {}, tone = "default") => {
+          const scopeLabel = String(item?.scope || "").trim() === "team" ? "Team" : "ChatGPT";
+          const warehouseLabel =
+            String(item?.scope || "").trim() === "team"
+              ? getTeamWarehouseLabel(item?.warehouse)
+              : getPackage2ShelfLabel(item?.warehouse);
+          const countLine =
+            String(item?.scope || "").trim() === "team"
+              ? `Slot con han: ${Number(item?.activeSlotCount || 0)} · Slot het han: ${Number(item?.expiredSlotCount || 0)}`
+              : `Khach con han: ${Number(item?.activeUserCount || 0)} · Khach het han: ${Number(item?.expiredUserCount || 0)}`;
+          const toneClass =
+            tone === "candidate"
+              ? "border-emerald-500/20 bg-emerald-500/10"
+              : tone === "warning"
+                ? "border-amber-500/20 bg-amber-500/10"
+                : "border-yellow-500/20 bg-yellow-500/10";
+          return (
+            <div
+              key={`${item.scope}-${item.itemId}-${item.reasonCode}`}
+              className={`rounded-2xl border px-4 py-3 ${toneClass}`}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-slate-600 bg-slate-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-200">
+                  {scopeLabel}
+                </span>
+                <span className="font-mono text-sm font-semibold text-white">
+                  {item?.username || "--"}
+                </span>
+                <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[11px] text-slate-300">
+                  {warehouseLabel || "--"}
+                </span>
+                <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[11px] text-slate-300">
+                  Het han: {formatDate(item?.expiredAt) || "--"}
+                </span>
+              </div>
+              <div className="mt-2 text-sm font-semibold text-white">
+                {item?.reasonLabel || "--"}
+              </div>
+              <div className="mt-1 text-xs text-slate-300">{countLine}</div>
+              {item?.note ? (
+                <div className="mt-1 text-[11px] text-slate-400">
+                  Note: {item.note}
+                </div>
+              ) : null}
+            </div>
+          );
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div
+              className="max-h-[90vh] w-full overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 shadow-2xl"
+              style={{ maxWidth: "980px" }}
+            >
+              <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Xem danh sach het han ChatGPT / Team
+                  </h2>
+                  <div className="mt-1 text-xs text-slate-400">
+                    Scan luc {formatDateTime(preview?.scannedAt) || "--"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openChatgptExpiryPreview}
+                    disabled={loadingStates.fetchChatgptExpiryPreview}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {loadingStates.fetchChatgptExpiryPreview ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={15} />
+                    )}
+                    Lam moi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowChatgptExpiryPreviewModal(false)}
+                    className="rounded-xl border border-slate-600 bg-slate-900/80 p-2 text-slate-300 transition hover:text-white"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-h-[calc(90vh-88px)] overflow-y-auto px-5 py-5">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-emerald-100/80">
+                      Candidate xoa
+                    </div>
+                    <div className="mt-2 text-3xl font-black text-white">
+                      {Number(preview?.summary?.candidateCount || 0)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-amber-100/80">
+                      Warning
+                    </div>
+                    <div className="mt-2 text-3xl font-black text-white">
+                      {Number(preview?.summary?.warningCount || 0)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-red-100/80">
+                      Acc trong het han
+                    </div>
+                    <div className="mt-2 text-3xl font-black text-white">
+                      {Number(preview?.summary?.chatgptEmptyExpired || 0)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-sky-100/80">
+                      Team trong het han
+                    </div>
+                    <div className="mt-2 text-3xl font-black text-white">
+                      {Number(preview?.summary?.teamEmptyExpired || 0)}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-yellow-100/80">
+                      Goi 2 market &lt;=25
+                    </div>
+                    <div className="mt-2 text-3xl font-black text-white">
+                      {Number(preview?.summary?.pkg2MarketExpiringSoon || 0)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-6">
+                  <section>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-emerald-200">
+                        Candidate co the dua vao batch xoa
+                      </h3>
+                      <div className="text-xs text-slate-400">
+                        {candidateItems.length} item
+                      </div>
+                    </div>
+                    {candidateItems.length === 0 ? (
+                      <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-5 text-sm text-slate-400">
+                        Chua co candidate nao an toan de dua vao batch xoa.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {candidateItems.map((item) =>
+                          renderCleanupItem(item, "candidate"),
+                        )}
+                      </div>
+                    )}
+                  </section>
+
+                  <section>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-amber-200">
+                        Warning dang het han nhung dang ban/nghi vu
+                      </h3>
+                      <div className="text-xs text-slate-400">
+                        {warningItems.length} item
+                      </div>
+                    </div>
+                    {warningItems.length === 0 ? (
+                      <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-5 text-sm text-slate-400">
+                        Khong co warning nao can xem them.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {warningItems.map((item) =>
+                          renderCleanupItem(item, "warning"),
+                        )}
+                      </div>
+                    )}
+                  </section>
+
+                  <section>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-yellow-200">
+                        Goi 2 market can canh bao
+                      </h3>
+                      <div className="text-xs text-slate-400">
+                        {pkg2Items.length} item
+                      </div>
+                    </div>
+                    {pkg2Items.length === 0 ? (
+                      <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-5 text-sm text-slate-400">
+                        Khong co acc goi 2 market nao canh bao trong snapshot nay.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {pkg2Items.map((item) => renderCleanupItem(item, "pkg2"))}
+                      </div>
+                    )}
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showChatgptExpiryBatchesModal && (() => {
+        const batches = Array.isArray(chatgptExpiryBatches)
+          ? chatgptExpiryBatches
+          : [];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div
+              className="max-h-[88vh] w-full overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 shadow-2xl"
+              style={{ maxWidth: "860px" }}
+            >
+              <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Batch cleanup dang cho duyet
+                  </h2>
+                  <div className="mt-1 text-xs text-slate-400">
+                    Cron tao batch, admin duyet qua Telegram roi moi xoa.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openChatgptExpiryBatches({
+                        status: "pending_approval",
+                        logMode: false,
+                      })
+                    }
+                    disabled={loadingStates.fetchChatgptExpiryBatches}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {loadingStates.fetchChatgptExpiryBatches ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={15} />
+                    )}
+                    Lam moi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowChatgptExpiryBatchesModal(false)}
+                    className="rounded-xl border border-slate-600 bg-slate-900/80 p-2 text-slate-300 transition hover:text-white"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-h-[calc(88vh-88px)] overflow-y-auto px-5 py-5">
+                {batches.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-6 text-sm text-slate-400">
+                    Hien khong co batch cleanup nao dang cho duyet.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {batches.map((batch) => (
+                      <div
+                        key={batch.batchId}
+                        className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4"
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full border border-amber-300/30 bg-black/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-100">
+                                {getExpiryCleanupBatchStatusLabel(batch?.status)}
+                              </span>
+                              <span className="font-mono text-sm font-semibold text-white">
+                                {batch?.batchId || "--"}
+                              </span>
+                            </div>
+                            <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                              <div>
+                                Tao luc:{" "}
+                                <span className="font-semibold text-white">
+                                  {formatDateTime(batch?.createdAt) || "--"}
+                                </span>
+                              </div>
+                              <div>
+                                Het han duyet:{" "}
+                                <span className="font-semibold text-white">
+                                  {formatDateTime(batch?.expiresAt) || "--"}
+                                </span>
+                              </div>
+                              <div>
+                                Candidate:{" "}
+                                <span className="font-semibold text-white">
+                                  {Number(batch?.summary?.candidateCount || batch?.itemCount || 0)}
+                                </span>
+                              </div>
+                              <div>
+                                Warning luc scan:{" "}
+                                <span className="font-semibold text-white">
+                                  {Number(batch?.summary?.warningCount || 0)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-2xl border border-slate-700 bg-slate-950/50 px-4 py-3 text-xs text-slate-300">
+                            <div className="font-semibold text-white">Lenh Telegram</div>
+                            <div className="mt-2 space-y-1 font-mono text-[11px] text-cyan-200">
+                              <div>/cleanup show {batch?.batchId}</div>
+                              <div>/cleanup approve {batch?.batchId}</div>
+                              <div>/cleanup reject {batch?.batchId}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showChatgptExpiryLogModal && (() => {
+        const batches = Array.isArray(chatgptExpiryLogBatches)
+          ? chatgptExpiryLogBatches
+          : [];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div
+              className="max-h-[88vh] w-full overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 shadow-2xl"
+              style={{ maxWidth: "900px" }}
+            >
+              <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Log don cleanup het han
+                  </h2>
+                  <div className="mt-1 text-xs text-slate-400">
+                    Theo doi batch da duyet, da xoa, tu choi, hoac het han duyet.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openChatgptExpiryBatches({ status: "", logMode: true })
+                    }
+                    disabled={loadingStates.fetchChatgptExpiryLogs}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {loadingStates.fetchChatgptExpiryLogs ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={15} />
+                    )}
+                    Lam moi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowChatgptExpiryLogModal(false)}
+                    className="rounded-xl border border-slate-600 bg-slate-900/80 p-2 text-slate-300 transition hover:text-white"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-h-[calc(88vh-88px)] overflow-y-auto px-5 py-5">
+                {batches.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-6 text-sm text-slate-400">
+                    Chua co log cleanup nao de hien thi.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {batches.map((batch) => {
+                      const result = batch?.executionResult || {};
+                      return (
+                        <div
+                          key={batch.batchId}
+                          className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4"
+                        >
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-full border border-slate-600 bg-slate-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-100">
+                                  {getExpiryCleanupBatchStatusLabel(batch?.status)}
+                                </span>
+                                <span className="font-mono text-sm font-semibold text-white">
+                                  {batch?.batchId || "--"}
+                                </span>
+                              </div>
+                              <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                                <div>
+                                  Tao luc:{" "}
+                                  <span className="font-semibold text-white">
+                                    {formatDateTime(batch?.createdAt) || "--"}
+                                  </span>
+                                </div>
+                                <div>
+                                  Cap nhat:{" "}
+                                  <span className="font-semibold text-white">
+                                    {formatDateTime(batch?.updatedAt) || "--"}
+                                  </span>
+                                </div>
+                                <div>
+                                  Da xoa:{" "}
+                                  <span className="font-semibold text-white">
+                                    {Number(result?.deletedCount || 0)}
+                                  </span>
+                                </div>
+                                <div>
+                                  Skip:{" "}
+                                  <span className="font-semibold text-white">
+                                    {Number(result?.skippedCount || 0)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-700 bg-slate-950/50 px-4 py-3 text-xs text-slate-300">
+                              <div>
+                                Actor:{" "}
+                                <span className="font-semibold text-white">
+                                  {result?.actor || batch?.approvedBy || batch?.rejectedBy || "--"}
+                                </span>
+                              </div>
+                              <div className="mt-1">
+                                Source:{" "}
+                                <span className="font-semibold text-white">
+                                  {result?.actorSource || "--"}
+                                </span>
+                              </div>
+                              {batch?.executedAt ? (
+                                <div className="mt-1">
+                                  Da xong luc:{" "}
+                                  <span className="font-semibold text-white">
+                                    {formatDateTime(batch.executedAt) || "--"}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {batch?.rejectedAt ? (
+                                <div className="mt-1">
+                                  Tu choi luc:{" "}
+                                  <span className="font-semibold text-white">
+                                    {formatDateTime(batch.rejectedAt) || "--"}
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         );
       })()}

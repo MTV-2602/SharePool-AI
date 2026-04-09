@@ -660,6 +660,9 @@ const storeOrderSchema = new mongoose.Schema({
   package1LastCode: { type: String, default: "" },
   fulfillmentState: { type: String, default: "" },
   fulfillmentReason: { type: String, default: "" },
+  fulfillmentLockToken: { type: String, default: "" },
+  fulfillmentLockedAt: { type: String, default: "" },
+  fulfillmentSource: { type: String, default: "" },
   fulfilledAt: { type: String, default: "" },
   paidAt: { type: String, default: "" },
   createdAt: { type: String, default: () => new Date().toISOString() },
@@ -750,6 +753,76 @@ const StoreSupportMessage =
     "store_support_messages",
   );
 
+const expiryCleanupBatchItemSchema = new mongoose.Schema(
+  {
+    scope: { type: String, default: "chatgpt" },
+    itemId: { type: String, default: "" },
+    username: { type: String, default: "" },
+    accountType: { type: String, default: "" },
+    saleMode: { type: String, default: "" },
+    warehouse: { type: String, default: "" },
+    expiredAt: { type: String, default: "" },
+    reasonCode: { type: String, default: "" },
+    reasonLabel: { type: String, default: "" },
+    activeUserCount: { type: Number, default: 0 },
+    expiredUserCount: { type: Number, default: 0 },
+    activeSlotCount: { type: Number, default: 0 },
+    expiredSlotCount: { type: Number, default: 0 },
+    expectedUpdatedAt: { type: String, default: "" },
+    note: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
+const expiryCleanupBatchSchema = new mongoose.Schema({
+  batchId: { type: String, unique: true, index: true },
+  signature: { type: String, default: "", index: true },
+  status: {
+    type: String,
+    default: "pending_approval",
+    index: true,
+  },
+  summary: { type: mongoose.Schema.Types.Mixed, default: {} },
+  items: { type: [expiryCleanupBatchItemSchema], default: [] },
+  telegramMessageMeta: { type: mongoose.Schema.Types.Mixed, default: null },
+  executionResult: { type: mongoose.Schema.Types.Mixed, default: null },
+  createdBy: { type: String, default: "cron" },
+  approvedBy: { type: String, default: "" },
+  rejectedBy: { type: String, default: "" },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  approvedAt: { type: String, default: "" },
+  rejectedAt: { type: String, default: "" },
+  executedAt: { type: String, default: "" },
+  expiresAt: { type: String, default: "" },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+expiryCleanupBatchSchema.index({ status: 1, createdAt: -1 });
+const ExpiryCleanupBatch =
+  mongoose.models.ExpiryCleanupBatch ||
+  mongoose.model(
+    "ExpiryCleanupBatch",
+    expiryCleanupBatchSchema,
+    "expiry_cleanup_batches",
+  );
+
+const expiryCleanupSnapshotSchema = new mongoose.Schema({
+  id: { type: String, unique: true, default: "default" },
+  summary: { type: mongoose.Schema.Types.Mixed, default: {} },
+  latestPendingBatchId: { type: String, default: "" },
+  latestExecutedBatchId: { type: String, default: "" },
+  latestRejectedBatchId: { type: String, default: "" },
+  latestExpiredBatchId: { type: String, default: "" },
+  lastScanAt: { type: String, default: "" },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+const ExpiryCleanupSnapshot =
+  mongoose.models.ExpiryCleanupSnapshot ||
+  mongoose.model(
+    "ExpiryCleanupSnapshot",
+    expiryCleanupSnapshotSchema,
+    "expiry_cleanup_snapshots",
+  );
+
 // Middleware to ensure DB is connected before processing
 app.use(async (req, res, next) => {
   const path = String(req.path || "").trim();
@@ -809,6 +882,35 @@ const TELEGRAM_WEBHOOK_SECRET = String(
   process.env.TELEGRAM_WEBHOOK_SECRET ||
     buildLegacyBotSecret("telegram-webhook"),
 ).trim();
+const TELEGRAM_BOT_TOKEN = String(
+  process.env.TELEGRAM_BOT_TOKEN || LEGACY_TELEGRAM_BOT_TOKEN,
+).trim();
+const parseTelegramIdEnv = (...keys) =>
+  Array.from(
+    new Set(
+      keys
+        .flatMap((key) =>
+          String(process.env[key] || "")
+            .split(",")
+            .map((item) => Number.parseInt(String(item || "").trim(), 10))
+            .filter((value) => Number.isInteger(value) && value > 0),
+        ),
+    ),
+  );
+const TELEGRAM_NOTIFICATION_USER_IDS = parseTelegramIdEnv(
+  "ALLOWED_USER_IDS",
+  "TELEGRAM_ALLOWED_USER_IDS",
+);
+const TELEGRAM_NOTIFICATION_CHAT_IDS = parseTelegramIdEnv(
+  "ALLOWED_CHAT_IDS",
+  "TELEGRAM_ALLOWED_CHAT_IDS",
+);
+const TELEGRAM_NOTIFICATION_RECIPIENT_IDS = Array.from(
+  new Set([
+    ...TELEGRAM_NOTIFICATION_USER_IDS,
+    ...TELEGRAM_NOTIFICATION_CHAT_IDS,
+  ]),
+);
 
 const safeCompareSecret = (left = "", right = "") => {
   const leftBuffer = Buffer.from(String(left || ""), "utf8");
@@ -1181,16 +1283,36 @@ app.get(
   async (req, res) => {
     try {
       const startedAt = Date.now();
-      await Promise.all([
+      const maintenanceResults = await Promise.all([
         expireStaleStoreOrders(),
         cleanupOldStoreFailedOrders(),
         cleanupOldStoreSupportMessages(),
       ]);
+      const expiryCleanup = await refreshExpiryCleanupSnapshot({
+        createBatch: true,
+        notifyTelegram: true,
+      });
       return res.json({
         ok: true,
         task: "store-maintenance",
         durationMs: Date.now() - startedAt,
         version: latestDataVersion,
+        maintenanceResults,
+        expiryCleanup: {
+          pendingBatchId: String(
+            expiryCleanup?.snapshot?.latestPendingBatchId || "",
+          ).trim(),
+          createdBatchId: String(
+            expiryCleanup?.createdBatch?.batchId || "",
+          ).trim(),
+          candidateCount: Number(
+            expiryCleanup?.scan?.summary?.candidateCount || 0,
+          ),
+          warningCount: Number(
+            expiryCleanup?.scan?.summary?.warningCount || 0,
+          ),
+          notified: !!expiryCleanup?.telegramResult?.sent,
+        },
       });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
@@ -1697,7 +1819,9 @@ app.post("/api/store/orders/:id/reconcile", verifyStoreUserToken, async (req, re
     if (canRetryStoreFailedFulfillment(order)) {
       order = await retryFailedStoreOrderFulfillment(order, { emitRealtime: true });
     }
-    order = await reconcileStoreOrderPaymentStatus(order);
+    order = await reconcileStoreOrderPaymentStatus(order, {
+      source: "user_reconcile",
+    });
     if (!order) {
       return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
     }
@@ -2073,10 +2197,20 @@ app.post("/api/store/momo/ipn", async (req, res) => {
     order.momoMessage = String(req.body?.message || "").trim();
     order.updatedAt = new Date().toISOString();
     if (resultCode === 0) {
-      order.status = "paid";
-      order.paidAt = new Date().toISOString();
-      await order.save();
-      const fulfilledOrder = await fulfillStoreOrder(order);
+      const paidAt = new Date().toISOString();
+      const prepared = await prepareStoreOrderForPaidFulfillment({
+        orderId: String(order?.id || "").trim(),
+        paidAt,
+        paymentPatch: {
+          momoResultCode: resultCode,
+          momoTransId: String(req.body?.transId || "").trim(),
+          momoMessage: String(req.body?.message || "").trim(),
+        },
+      });
+      const fulfilledOrder =
+        prepared?.shouldFulfill && prepared?.order
+          ? await fulfillStoreOrder(prepared.order, { source: "momo_ipn" })
+          : prepared?.order || (await StoreOrder.findOne({ id: order.id }));
       await emitStoreOrderRealtimeUpdate(fulfilledOrder || order, {
         includeStock: true,
       });
@@ -2111,7 +2245,9 @@ app.post("/api/store/payos/webhook", async (req, res) => {
       return res.status(200).json({ code: "00", desc: "success" });
     }
 
-    const nextOrder = await reconcileStoreOrderPaymentStatus(order);
+    const nextOrder = await reconcileStoreOrderPaymentStatus(order, {
+      source: "payos_webhook",
+    });
     if (nextOrder) {
       await emitStoreOrderRealtimeUpdate(nextOrder, {
         includeStock: String(nextOrder?.status || "").trim().toLowerCase() === "fulfilled",
@@ -3238,6 +3374,10 @@ const resolveStoreOrderOtpSecret = async (order = {}) => {
   return otpSecret;
 };
 const STORE_PENDING_PAYMENT_STATUSES = ["pending_payment", "awaiting_payment"];
+const STORE_ACTIVE_RESERVATION_STATUSES = [
+  ...STORE_PENDING_PAYMENT_STATUSES,
+  "paid",
+];
 const STORE_HIDDEN_ORDER_STATUSES = new Set(["payment_failed", "payment_expired"]);
 const STORE_IMMEDIATE_DELETE_ORDER_STATUSES = [
   "payment_failed",
@@ -3247,8 +3387,23 @@ const STORE_PRUNABLE_ORDER_STATUSES = ["fulfillment_failed"];
 const STORE_FAILED_ORDER_RETENTION_MS = 24 * 60 * 60 * 1000;
 const STORE_WARRANTY_HOLD_NOTE_PREFIX = "[StoreWarrantyHold";
 const STORE_WARRANTY_HOLD_NOTE_REGEX = /\[StoreWarrantyHold\b/i;
+const EXPIRY_CLEANUP_SNAPSHOT_ID = "default";
+const EXPIRY_CLEANUP_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+const EXPIRY_CLEANUP_REJECT_SUPPRESS_MS = 24 * 60 * 60 * 1000;
+const EXPIRY_CLEANUP_SNAPSHOT_TTL_MS = 5 * 60 * 1000;
+const EXPIRY_CLEANUP_TELEGRAM_PREVIEW_LIMIT = 12;
+const EXPIRY_CLEANUP_BATCH_PREVIEW_LIMIT = 100;
 const normalizeStoreOrderStatusValue = (value = "") =>
   String(value || "").trim().toLowerCase();
+const normalizeStoreFulfillmentStateValue = (value = "") =>
+  String(value || "").trim().toLowerCase();
+const isStoreOrderFulfillmentInProgress = (order = {}) =>
+  normalizeStoreFulfillmentStateValue(order?.fulfillmentState) === "fulfilling";
+const isStoreOrderReadyForFulfillment = (order = {}) =>
+  normalizeStoreOrderStatusValue(order?.status) === "paid" &&
+  !["fulfilled", "fulfilling"].includes(
+    normalizeStoreFulfillmentStateValue(order?.fulfillmentState),
+  );
 const isStoreFailedLikeStatus = (status = "") => {
   const normalized = normalizeStoreOrderStatusValue(status);
   return (
@@ -3373,19 +3528,24 @@ const buildStoreActivePendingOrderQuery = (extra = {}) => {
   const cutoffIso = getStorePendingCutoffIso();
   return {
     ...extra,
-    status: { $in: STORE_PENDING_PAYMENT_STATUSES },
     $or: [
-      { expiresAt: { $gt: nowIso } },
+      { status: "paid" },
       {
-        $and: [
+        status: { $in: STORE_PENDING_PAYMENT_STATUSES },
+        $or: [
+          { expiresAt: { $gt: nowIso } },
           {
-            $or: [
-              { expiresAt: "" },
-              { expiresAt: null },
-              { expiresAt: { $exists: false } },
+            $and: [
+              {
+                $or: [
+                  { expiresAt: "" },
+                  { expiresAt: null },
+                  { expiresAt: { $exists: false } },
+                ],
+              },
+              { createdAt: { $gt: cutoffIso } },
             ],
           },
-          { createdAt: { $gt: cutoffIso } },
         ],
       },
     ],
@@ -6060,6 +6220,1098 @@ const loadChatgptAccountOperationalStateMap = async (
   return new Map(
     decorated.map((account) => [String(account?.id || "").trim(), account]),
   );
+};
+const normalizeExpiryCleanupBatchStatus = (value = "") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (
+    [
+      "pending_approval",
+      "approved",
+      "rejected",
+      "executed",
+      "expired",
+    ].includes(normalized)
+  ) {
+    return normalized;
+  }
+  return "pending_approval";
+};
+const getExpiryCleanupReasonLabel = (reasonCode = "") => {
+  switch (String(reasonCode || "").trim()) {
+    case "chatgpt_empty_expired":
+      return "acc trong, da het han";
+    case "chatgpt_with_expired_users_only":
+      return "khach da het han";
+    case "team_empty_expired":
+      return "team trong, da het han";
+    case "team_with_expired_slots_only":
+      return "slot da het han";
+    case "pkg2_market_expiring_soon":
+      return "goi 2 market sap het han";
+    default:
+      return String(reasonCode || "").trim() || "khong ro";
+  }
+};
+const getExpiryCleanupItemScopeLabel = (scope = "") =>
+  String(scope || "").trim().toLowerCase() === "team" ? "Team" : "ChatGPT";
+const sanitizeExpiryCleanupItem = (item = {}) => ({
+  scope:
+    String(item?.scope || "chatgpt").trim().toLowerCase() === "team"
+      ? "team"
+      : "chatgpt",
+  itemId: String(item?.itemId || "").trim(),
+  username: String(item?.username || "").trim(),
+  accountType: String(item?.accountType || "").trim(),
+  saleMode: String(item?.saleMode || "").trim(),
+  warehouse: String(item?.warehouse || "").trim(),
+  expiredAt: String(item?.expiredAt || "").trim(),
+  reasonCode: String(item?.reasonCode || "").trim(),
+  reasonLabel:
+    String(item?.reasonLabel || "").trim() ||
+    getExpiryCleanupReasonLabel(item?.reasonCode),
+  activeUserCount: Math.max(0, Number(item?.activeUserCount || 0)),
+  expiredUserCount: Math.max(0, Number(item?.expiredUserCount || 0)),
+  activeSlotCount: Math.max(0, Number(item?.activeSlotCount || 0)),
+  expiredSlotCount: Math.max(0, Number(item?.expiredSlotCount || 0)),
+  expectedUpdatedAt: String(item?.expectedUpdatedAt || "").trim(),
+  note: String(item?.note || "").trim(),
+});
+const sanitizeExpiryCleanupBatch = (
+  batch = {},
+  { includeItems = false, itemLimit = EXPIRY_CLEANUP_TELEGRAM_PREVIEW_LIMIT } = {},
+) => {
+  if (!batch || typeof batch !== "object") return null;
+  const items = Array.isArray(batch?.items) ? batch.items : [];
+  return {
+    batchId: String(batch?.batchId || "").trim(),
+    signature: String(batch?.signature || "").trim(),
+    status: normalizeExpiryCleanupBatchStatus(batch?.status),
+    summary:
+      batch?.summary && typeof batch.summary === "object" ? batch.summary : {},
+    items: includeItems
+      ? items.slice(0, Math.max(1, Number(itemLimit || items.length))).map((item) =>
+          sanitizeExpiryCleanupItem(item),
+        )
+      : [],
+    itemCount: items.length,
+    telegramMessageMeta:
+      batch?.telegramMessageMeta && typeof batch.telegramMessageMeta === "object"
+        ? batch.telegramMessageMeta
+        : null,
+    executionResult:
+      batch?.executionResult && typeof batch.executionResult === "object"
+        ? batch.executionResult
+        : null,
+    createdBy: String(batch?.createdBy || "").trim(),
+    approvedBy: String(batch?.approvedBy || "").trim(),
+    rejectedBy: String(batch?.rejectedBy || "").trim(),
+    createdAt: String(batch?.createdAt || "").trim(),
+    approvedAt: String(batch?.approvedAt || "").trim(),
+    rejectedAt: String(batch?.rejectedAt || "").trim(),
+    executedAt: String(batch?.executedAt || "").trim(),
+    expiresAt: String(batch?.expiresAt || "").trim(),
+    updatedAt: String(batch?.updatedAt || "").trim(),
+  };
+};
+const buildExpiryCleanupSignature = (items = []) =>
+  crypto
+    .createHash("sha256")
+    .update(
+      JSON.stringify(
+        (Array.isArray(items) ? items : [])
+          .map((item) => ({
+            scope: String(item?.scope || "").trim(),
+            itemId: String(item?.itemId || "").trim(),
+            reasonCode: String(item?.reasonCode || "").trim(),
+            expectedUpdatedAt: String(item?.expectedUpdatedAt || "").trim(),
+          }))
+          .sort((left, right) =>
+            `${left.scope}:${left.itemId}:${left.reasonCode}`.localeCompare(
+              `${right.scope}:${right.itemId}:${right.reasonCode}`,
+            ),
+          ),
+      ),
+    )
+    .digest("hex");
+const buildExpiryCleanupBatchSummary = (scan = {}) => {
+  const summary = scan?.summary && typeof scan.summary === "object" ? scan.summary : {};
+  const candidates = Array.isArray(scan?.candidates) ? scan.candidates : [];
+  const warnings = Array.isArray(scan?.warnings) ? scan.warnings : [];
+  return {
+    scannedAt: String(summary?.scannedAt || new Date().toISOString()).trim(),
+    chatgptEmptyExpired: Math.max(0, Number(summary?.chatgptEmptyExpired || 0)),
+    chatgptExpiredUsersOnly: Math.max(
+      0,
+      Number(summary?.chatgptExpiredUsersOnly || 0),
+    ),
+    chatgptExpiredWithUsers: Math.max(
+      0,
+      Number(summary?.chatgptExpiredWithUsers || 0),
+    ),
+    teamEmptyExpired: Math.max(0, Number(summary?.teamEmptyExpired || 0)),
+    teamExpiredSlotsOnly: Math.max(
+      0,
+      Number(summary?.teamExpiredSlotsOnly || 0),
+    ),
+    teamExpiredWithSlots: Math.max(
+      0,
+      Number(summary?.teamExpiredWithSlots || 0),
+    ),
+    pkg2MarketExpiringSoon: Math.max(
+      0,
+      Number(summary?.pkg2MarketExpiringSoon || 0),
+    ),
+    candidateCount: candidates.length,
+    warningCount: warnings.length,
+  };
+};
+const getTelegramNotificationRecipients = () =>
+  [...TELEGRAM_NOTIFICATION_RECIPIENT_IDS];
+const sendTelegramNotificationMessage = async (chatId, text, options = {}) => {
+  const normalizedChatId = Number.parseInt(chatId, 10);
+  if (!Number.isInteger(normalizedChatId) || !text || !TELEGRAM_BOT_TOKEN) {
+    return null;
+  }
+  try {
+    const response = await axios.post(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        chat_id: normalizedChatId,
+        text: String(text || ""),
+        disable_web_page_preview: true,
+        ...options,
+      },
+      { timeout: 15000 },
+    );
+    return response?.data?.result || null;
+  } catch (error) {
+    console.error(
+      "Expiry cleanup telegram notify failed:",
+      error?.response?.data || error?.message || error,
+    );
+    return null;
+  }
+};
+const buildExpiryCleanupBatchTelegramText = (batch = {}) => {
+  const safeBatch = sanitizeExpiryCleanupBatch(batch, {
+    includeItems: true,
+    itemLimit: EXPIRY_CLEANUP_TELEGRAM_PREVIEW_LIMIT,
+  });
+  if (!safeBatch) return "";
+  const summary = safeBatch.summary || {};
+  const lines = [
+    "[CLEANUP PENDING]",
+    `Batch: ${safeBatch.batchId}`,
+    `Created: ${safeBatch.createdAt || "--"}`,
+    `Candidates: ${safeBatch.itemCount}`,
+    `ChatGPT empty expired: ${Number(summary.chatgptEmptyExpired || 0)}`,
+    `ChatGPT customers expired: ${Number(summary.chatgptExpiredUsersOnly || 0)}`,
+    `Team empty expired: ${Number(summary.teamEmptyExpired || 0)}`,
+    `Team slots expired: ${Number(summary.teamExpiredSlotsOnly || 0)}`,
+    `Pkg2 market <=25d: ${Number(summary.pkg2MarketExpiringSoon || 0)}`,
+    "",
+    "Preview:",
+  ];
+  safeBatch.items.forEach((item, index) => {
+    lines.push(
+      `${index + 1}. ${getExpiryCleanupItemScopeLabel(item.scope)} | ${item.username || item.itemId} | ${item.reasonLabel} | ${item.expiredAt || "--"}`,
+    );
+  });
+  if (safeBatch.itemCount > safeBatch.items.length) {
+    lines.push(`+${safeBatch.itemCount - safeBatch.items.length} item nua`);
+  }
+  lines.push(
+    "",
+    `Lenh: /cleanup show ${safeBatch.batchId}`,
+    `Lenh: /cleanup approve ${safeBatch.batchId}`,
+    `Lenh: /cleanup reject ${safeBatch.batchId}`,
+  );
+  return lines.join("\n");
+};
+const notifyAdminsAboutExpiryCleanupBatch = async (batch = {}) => {
+  const recipients = getTelegramNotificationRecipients();
+  if (!TELEGRAM_BOT_TOKEN || recipients.length === 0) {
+    return { sent: false, recipients: 0, messages: [] };
+  }
+  const text = buildExpiryCleanupBatchTelegramText(batch);
+  if (!text) return { sent: false, recipients: recipients.length, messages: [] };
+  const messages = [];
+  for (const recipient of recipients) {
+    const result = await sendTelegramNotificationMessage(recipient, text);
+    if (result) {
+      messages.push({
+        chatId: Number(recipient),
+        messageId: Number(result?.message_id || 0) || null,
+        date: Number(result?.date || 0) || null,
+      });
+    }
+  }
+  return {
+    sent: messages.length > 0,
+    recipients: recipients.length,
+    messages,
+  };
+};
+const isDateExpiredNow = (value = "", nowMs = Date.now()) => {
+  const time = parseStoreDateMs(value);
+  return time > 0 && time <= nowMs;
+};
+const getChatgptExpiryUserStats = (account = {}) => {
+  const users = Array.isArray(account?.users) ? account.users : [];
+  let activeUserCount = 0;
+  let expiredUserCount = 0;
+  users.forEach((user) => {
+    const remainingDays = getChatgptUserRemainingDays(user);
+    if (remainingDays !== null && remainingDays <= 0) {
+      expiredUserCount += 1;
+    } else {
+      activeUserCount += 1;
+    }
+  });
+  return {
+    totalUserCount: users.length,
+    activeUserCount,
+    expiredUserCount,
+  };
+};
+const getTeamExpirySlotStats = (account = {}) => {
+  const slots = normalizeTeamSlots(account?.slots);
+  let activeSlotCount = 0;
+  let expiredSlotCount = 0;
+  slots.forEach((slot) => {
+    if (!isFilledTeamSlot(slot)) return;
+    if (isDateExpiredNow(slot?.expiredAt)) {
+      expiredSlotCount += 1;
+    } else {
+      activeSlotCount += 1;
+    }
+  });
+  return {
+    filledSlotCount: slots.filter((slot) => isFilledTeamSlot(slot)).length,
+    activeSlotCount,
+    expiredSlotCount,
+  };
+};
+const buildTeamMarketplaceTraceMap = async (accountIds = []) => {
+  const normalizedIds = Array.from(
+    new Set(
+      (Array.isArray(accountIds) ? accountIds : [accountIds])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (normalizedIds.length === 0) return new Map();
+  const [orders, warrantyCases] = await Promise.all([
+    DatammoOrder.find({
+      scope: "team",
+      "accounts.accountId": { $in: normalizedIds },
+    })
+      .select(CHATGPT_ADMIN_MARKETPLACE_ORDER_TRACE_SELECT)
+      .lean(),
+    DatammoWarrantyCase.find({
+      scope: "team",
+      $or: [
+        { rootAccountId: { $in: normalizedIds } },
+        { currentAccountId: { $in: normalizedIds } },
+        { "rounds.fromAccountId": { $in: normalizedIds } },
+        { "rounds.toAccountId": { $in: normalizedIds } },
+      ],
+    })
+      .select(CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT)
+      .lean(),
+  ]);
+  return buildMarketplaceAccountTraceMap(orders, warrantyCases);
+};
+const scanChatgptExpiryCleanupState = async () => {
+  const nowMs = Date.now();
+  const rawAccounts = await Account.find({})
+    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .lean();
+  const expiredAccountIds = rawAccounts
+    .filter((account) => isDateExpiredNow(account?.expiredAt, nowMs))
+    .map((account) => String(account?.id || "").trim())
+    .filter(Boolean);
+  const decoratedMap = await loadChatgptAccountOperationalStateMap(expiredAccountIds);
+  const summary = {
+    chatgptEmptyExpired: 0,
+    chatgptExpiredUsersOnly: 0,
+    chatgptExpiredWithUsers: 0,
+  };
+  const candidates = [];
+  const warnings = [];
+
+  decoratedMap.forEach((account) => {
+    const userStats = getChatgptExpiryUserStats(account);
+    const isEmpty = userStats.totalUserCount === 0;
+    const hasExpiredUsersOnly =
+      userStats.totalUserCount > 0 && userStats.activeUserCount === 0;
+    const hasActiveUsers = userStats.activeUserCount > 0;
+    const hasActiveReservation =
+      Number(account?.storeTraceSummary?.activeReservedOrders || 0) > 0 ||
+      (Array.isArray(account?.storeTraceSummary?.activeReservationTraces) &&
+        account.storeTraceSummary.activeReservationTraces.length > 0);
+    const hasWarrantyHold = hasStoreWarrantyHoldNote(account?.note);
+    const hasMarketplaceBusy = hasMarketplaceTraceSummary(
+      account?.marketplaceTraceSummary,
+    );
+    const hasWarrantyReplacement = Array.isArray(account?.storeTraceSummary?.traces)
+      ? account.storeTraceSummary.traces.some(
+          (trace) => String(trace?.role || "").trim() === "warranty_to",
+        )
+      : false;
+    if (isEmpty) {
+      summary.chatgptEmptyExpired += 1;
+    } else {
+      summary.chatgptExpiredWithUsers += 1;
+      if (hasExpiredUsersOnly) {
+        summary.chatgptExpiredUsersOnly += 1;
+      }
+    }
+    const baseItem = sanitizeExpiryCleanupItem({
+      scope: "chatgpt",
+      itemId: account?.id,
+      username: account?.username,
+      accountType: account?.type,
+      warehouse: normalizePackage2Shelf(
+        account?.package2Shelf,
+        CHATGPT_TOTAL_VALUE,
+      ),
+      expiredAt: String(account?.expiredAt || "").trim(),
+      activeUserCount: userStats.activeUserCount,
+      expiredUserCount: userStats.expiredUserCount,
+      expectedUpdatedAt: String(account?.updatedAt || "").trim(),
+      note: String(account?.note || "").trim(),
+    });
+    if (
+      (isEmpty || hasExpiredUsersOnly) &&
+      !hasActiveUsers &&
+      !hasActiveReservation &&
+      !hasWarrantyHold &&
+      !hasMarketplaceBusy &&
+      !hasWarrantyReplacement
+    ) {
+      const reasonCode = isEmpty
+        ? "chatgpt_empty_expired"
+        : "chatgpt_with_expired_users_only";
+      candidates.push({
+        ...baseItem,
+        reasonCode,
+        reasonLabel: getExpiryCleanupReasonLabel(reasonCode),
+      });
+      return;
+    }
+    const warningReasons = [];
+    if (hasActiveUsers) warningReasons.push("khach con han");
+    if (hasActiveReservation) warningReasons.push("dang reserve");
+    if (hasWarrantyHold) warningReasons.push("giu warranty");
+    if (hasMarketplaceBusy) warningReasons.push("dang ban san");
+    if (hasWarrantyReplacement) warningReasons.push("acc thay the");
+    warnings.push({
+      ...baseItem,
+      reasonCode: "chatgpt_blocked_expired",
+      reasonLabel: warningReasons.join(", ") || "khong du dieu kien xoa",
+    });
+  });
+
+  const pkg2MarketExpiringSoon = rawAccounts
+    .filter((account) => String(account?.type || "").trim() === "package2")
+    .filter(
+      (account) =>
+        normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
+        CHATGPT_MARKET_VALUE,
+    )
+    .filter(
+      (account) => (Array.isArray(account?.users) ? account.users.length : 0) === 0,
+    )
+    .filter((account) => {
+      const expiredAtMs = parseStoreDateMs(account?.expiredAt);
+      if (!expiredAtMs || expiredAtMs <= nowMs) return false;
+      const daysLeft = Math.ceil((expiredAtMs - nowMs) / 86400000);
+      return daysLeft > 0 && daysLeft <= PACKAGE2_MIN_DAYS_FOR_SALE;
+    })
+    .map((account) =>
+      sanitizeExpiryCleanupItem({
+        scope: "chatgpt",
+        itemId: account?.id,
+        username: account?.username,
+        accountType: account?.type,
+        warehouse: normalizePackage2Shelf(
+          account?.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        ),
+        expiredAt: String(account?.expiredAt || "").trim(),
+        reasonCode: "pkg2_market_expiring_soon",
+        reasonLabel: getExpiryCleanupReasonLabel("pkg2_market_expiring_soon"),
+        expectedUpdatedAt: String(account?.updatedAt || "").trim(),
+      }),
+    );
+
+  return {
+    summary,
+    candidates,
+    warnings,
+    pkg2MarketExpiringSoon,
+  };
+};
+const scanTeamExpiryCleanupState = async () => {
+  const nowMs = Date.now();
+  const rawTeamAccounts = await TeamAccount.find({})
+    .select("id username saleMode warehouse note slots expiredAt updatedAt")
+    .lean();
+  const expiredTeamAccounts = rawTeamAccounts.filter((account) =>
+    isDateExpiredNow(account?.expiredAt, nowMs),
+  );
+  const traceMap = await buildTeamMarketplaceTraceMap(
+    expiredTeamAccounts.map((account) => String(account?.id || "").trim()),
+  );
+  const summary = {
+    teamEmptyExpired: 0,
+    teamExpiredSlotsOnly: 0,
+    teamExpiredWithSlots: 0,
+  };
+  const candidates = [];
+  const warnings = [];
+
+  expiredTeamAccounts.forEach((account) => {
+    const slotStats = getTeamExpirySlotStats(account);
+    const isEmpty = slotStats.filledSlotCount === 0;
+    const hasExpiredSlotsOnly =
+      slotStats.filledSlotCount > 0 && slotStats.activeSlotCount === 0;
+    const hasActiveSlots = slotStats.activeSlotCount > 0;
+    const hasMarketplaceBusy = hasMarketplaceTraceSummary(
+      traceMap.get(String(account?.id || "").trim()) || null,
+    );
+    if (isEmpty) {
+      summary.teamEmptyExpired += 1;
+    } else {
+      summary.teamExpiredWithSlots += 1;
+      if (hasExpiredSlotsOnly) {
+        summary.teamExpiredSlotsOnly += 1;
+      }
+    }
+    const baseItem = sanitizeExpiryCleanupItem({
+      scope: "team",
+      itemId: account?.id,
+      username: account?.username,
+      saleMode: normalizeTeamSaleMode(account?.saleMode),
+      warehouse: normalizeTeamWarehouse(account?.warehouse, TEAM_WAREHOUSE_TOTAL),
+      expiredAt: String(account?.expiredAt || "").trim(),
+      activeSlotCount: slotStats.activeSlotCount,
+      expiredSlotCount: slotStats.expiredSlotCount,
+      expectedUpdatedAt: String(account?.updatedAt || "").trim(),
+      note: String(account?.note || "").trim(),
+    });
+    if ((isEmpty || hasExpiredSlotsOnly) && !hasActiveSlots && !hasMarketplaceBusy) {
+      const reasonCode = isEmpty
+        ? "team_empty_expired"
+        : "team_with_expired_slots_only";
+      candidates.push({
+        ...baseItem,
+        reasonCode,
+        reasonLabel: getExpiryCleanupReasonLabel(reasonCode),
+      });
+      return;
+    }
+    const warningReasons = [];
+    if (hasActiveSlots) warningReasons.push("slot con han");
+    if (hasMarketplaceBusy) warningReasons.push("dang ban san");
+    warnings.push({
+      ...baseItem,
+      reasonCode: "team_blocked_expired",
+      reasonLabel: warningReasons.join(", ") || "khong du dieu kien xoa",
+    });
+  });
+
+  return {
+    summary,
+    candidates,
+    warnings,
+  };
+};
+const scanExpiryCleanupState = async () => {
+  const scannedAt = new Date().toISOString();
+  const [chatgptScan, teamScan] = await Promise.all([
+    scanChatgptExpiryCleanupState(),
+    scanTeamExpiryCleanupState(),
+  ]);
+  const candidates = [
+    ...(Array.isArray(chatgptScan?.candidates) ? chatgptScan.candidates : []),
+    ...(Array.isArray(teamScan?.candidates) ? teamScan.candidates : []),
+  ];
+  const warnings = [
+    ...(Array.isArray(chatgptScan?.warnings) ? chatgptScan.warnings : []),
+    ...(Array.isArray(teamScan?.warnings) ? teamScan.warnings : []),
+  ];
+  const summary = buildExpiryCleanupBatchSummary({
+    summary: {
+      scannedAt,
+      ...(chatgptScan?.summary || {}),
+      ...(teamScan?.summary || {}),
+      pkg2MarketExpiringSoon: Array.isArray(chatgptScan?.pkg2MarketExpiringSoon)
+        ? chatgptScan.pkg2MarketExpiringSoon.length
+        : 0,
+    },
+    candidates,
+    warnings,
+  });
+  return {
+    scannedAt,
+    summary,
+    candidates,
+    warnings,
+    pkg2MarketExpiringSoon: Array.isArray(chatgptScan?.pkg2MarketExpiringSoon)
+      ? chatgptScan.pkg2MarketExpiringSoon
+      : [],
+  };
+};
+const buildDefaultExpiryCleanupSnapshot = () => ({
+  id: EXPIRY_CLEANUP_SNAPSHOT_ID,
+  summary: buildExpiryCleanupBatchSummary({
+    summary: { scannedAt: "" },
+    candidates: [],
+    warnings: [],
+  }),
+  latestPendingBatchId: "",
+  latestExecutedBatchId: "",
+  latestRejectedBatchId: "",
+  latestExpiredBatchId: "",
+  lastScanAt: "",
+  updatedAt: "",
+});
+const getExpiryCleanupSnapshot = async () => {
+  const snapshot = await ExpiryCleanupSnapshot.findOne({
+    id: EXPIRY_CLEANUP_SNAPSHOT_ID,
+  })
+    .lean()
+    .catch(() => null);
+  return snapshot ? { ...buildDefaultExpiryCleanupSnapshot(), ...snapshot } : null;
+};
+const listRecentExpiryCleanupBatches = async ({
+  status = "",
+  limit = 10,
+} = {}) => {
+  const normalizedStatus = normalizeExpiryCleanupBatchStatus(status);
+  const query =
+    normalizedStatus && normalizedStatus !== "all"
+      ? { status: normalizedStatus }
+      : {};
+  const safeLimit = Math.min(Math.max(Number(limit || 10), 1), 50);
+  const items = await ExpiryCleanupBatch.find(query)
+    .sort({ createdAt: -1, updatedAt: -1 })
+    .limit(safeLimit)
+    .lean();
+  return Array.isArray(items)
+    ? items.map((item) => sanitizeExpiryCleanupBatch(item))
+    : [];
+};
+const findExpiryCleanupBatchById = async (batchId = "") => {
+  const normalizedId = String(batchId || "").trim();
+  if (!normalizedId) return null;
+  const batch = await ExpiryCleanupBatch.findOne({ batchId: normalizedId }).lean();
+  return batch ? sanitizeExpiryCleanupBatch(batch, { includeItems: true }) : null;
+};
+const shouldSuppressRejectedExpiryCleanupBatch = (batch = {}, signature = "") => {
+  const normalizedSignature = String(signature || "").trim();
+  if (!normalizedSignature) return false;
+  if (String(batch?.signature || "").trim() !== normalizedSignature) return false;
+  const rejectedAtMs = parseStoreDateMs(batch?.rejectedAt || batch?.updatedAt);
+  if (!rejectedAtMs) return false;
+  return Date.now() - rejectedAtMs <= EXPIRY_CLEANUP_REJECT_SUPPRESS_MS;
+};
+const expirePendingExpiryCleanupBatchesIfNeeded = async () => {
+  const nowIso = new Date().toISOString();
+  const pendingBatches = await ExpiryCleanupBatch.find({
+    status: "pending_approval",
+    expiresAt: { $lte: nowIso, $ne: "" },
+  }).lean();
+  if (!Array.isArray(pendingBatches) || pendingBatches.length === 0) {
+    return [];
+  }
+  const expiredIds = pendingBatches
+    .map((item) => String(item?.batchId || "").trim())
+    .filter(Boolean);
+  if (expiredIds.length === 0) return [];
+  await ExpiryCleanupBatch.updateMany(
+    { batchId: { $in: expiredIds }, status: "pending_approval" },
+    {
+      $set: {
+        status: "expired",
+        updatedAt: nowIso,
+      },
+    },
+  );
+  return expiredIds;
+};
+const refreshExpiryCleanupSnapshot = async ({
+  createBatch = false,
+  notifyTelegram = false,
+} = {}) => {
+  await expirePendingExpiryCleanupBatchesIfNeeded();
+  const scan = await scanExpiryCleanupState();
+  const pendingBatch = await ExpiryCleanupBatch.findOne({
+    status: "pending_approval",
+  })
+    .sort({ createdAt: -1, updatedAt: -1 })
+    .lean();
+  const latestExecutedBatch = await ExpiryCleanupBatch.findOne({
+    status: "executed",
+  })
+    .sort({ executedAt: -1, updatedAt: -1 })
+    .lean();
+  const latestRejectedBatch = await ExpiryCleanupBatch.findOne({
+    status: "rejected",
+  })
+    .sort({ rejectedAt: -1, updatedAt: -1 })
+    .lean();
+  const latestExpiredBatch = await ExpiryCleanupBatch.findOne({
+    status: "expired",
+  })
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  const candidateSignature = buildExpiryCleanupSignature(scan?.candidates || []);
+  let createdBatch = null;
+  let telegramResult = null;
+  const canCreateBatch =
+    createBatch &&
+    !pendingBatch &&
+    Array.isArray(scan?.candidates) &&
+    scan.candidates.length > 0 &&
+    !shouldSuppressRejectedExpiryCleanupBatch(
+      latestRejectedBatch,
+      candidateSignature,
+    );
+
+  if (canCreateBatch) {
+    const nowIso = new Date().toISOString();
+    const createdDoc = await ExpiryCleanupBatch.create({
+      batchId: createStoreId("cleanup"),
+      signature: candidateSignature,
+      status: "pending_approval",
+      summary: buildExpiryCleanupBatchSummary(scan),
+      items: (scan.candidates || []).slice(0, EXPIRY_CLEANUP_BATCH_PREVIEW_LIMIT),
+      createdBy: "cron",
+      approvedBy: "",
+      rejectedBy: "",
+      executionResult: null,
+      telegramMessageMeta: null,
+      createdAt: nowIso,
+      approvedAt: "",
+      rejectedAt: "",
+      executedAt: "",
+      expiresAt: new Date(
+        Date.now() + EXPIRY_CLEANUP_PENDING_TTL_MS,
+      ).toISOString(),
+      updatedAt: nowIso,
+    });
+    createdBatch =
+      createdDoc && typeof createdDoc.toObject === "function"
+        ? createdDoc.toObject()
+        : snapshotDocument(createdDoc);
+    if (notifyTelegram) {
+      telegramResult = await notifyAdminsAboutExpiryCleanupBatch(createdBatch);
+      if (telegramResult?.sent) {
+        await ExpiryCleanupBatch.updateOne(
+          { batchId: String(createdBatch?.batchId || "").trim() },
+          {
+            $set: {
+              telegramMessageMeta: {
+                sent: true,
+                sentAt: new Date().toISOString(),
+                recipients: Array.isArray(telegramResult?.recipients)
+                  ? telegramResult.recipients
+                  : [],
+                results: Array.isArray(telegramResult?.results)
+                  ? telegramResult.results
+                  : [],
+              },
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        );
+        createdBatch.telegramMessageMeta = {
+          sent: true,
+          sentAt: new Date().toISOString(),
+          recipients: Array.isArray(telegramResult?.recipients)
+            ? telegramResult.recipients
+            : [],
+          results: Array.isArray(telegramResult?.results)
+            ? telegramResult.results
+            : [],
+        };
+      }
+    }
+  }
+
+  const snapshotPayload = {
+    id: EXPIRY_CLEANUP_SNAPSHOT_ID,
+    summary: buildExpiryCleanupBatchSummary(scan),
+    latestPendingBatchId: String(
+      createdBatch?.batchId || pendingBatch?.batchId || "",
+    ).trim(),
+    latestExecutedBatchId: String(latestExecutedBatch?.batchId || "").trim(),
+    latestRejectedBatchId: String(latestRejectedBatch?.batchId || "").trim(),
+    latestExpiredBatchId: String(latestExpiredBatch?.batchId || "").trim(),
+    lastScanAt: String(scan?.scannedAt || new Date().toISOString()).trim(),
+    updatedAt: new Date().toISOString(),
+  };
+  await ExpiryCleanupSnapshot.findOneAndUpdate(
+    { id: EXPIRY_CLEANUP_SNAPSHOT_ID },
+    { $set: snapshotPayload },
+    { upsert: true, new: true },
+  );
+
+  return {
+    scan,
+    snapshot: { ...buildDefaultExpiryCleanupSnapshot(), ...snapshotPayload },
+    pendingBatch: pendingBatch ? sanitizeExpiryCleanupBatch(pendingBatch) : null,
+    createdBatch: createdBatch
+      ? sanitizeExpiryCleanupBatch(createdBatch, { includeItems: true })
+      : null,
+    telegramResult,
+  };
+};
+const getFreshExpiryCleanupSnapshot = async ({ allowStale = true } = {}) => {
+  const snapshot = await getExpiryCleanupSnapshot();
+  const lastScanAtMs = parseStoreDateMs(snapshot?.lastScanAt);
+  if (
+    allowStale &&
+    snapshot &&
+    lastScanAtMs &&
+    Date.now() - lastScanAtMs <= EXPIRY_CLEANUP_SNAPSHOT_TTL_MS
+  ) {
+    return snapshot;
+  }
+  const refreshed = await refreshExpiryCleanupSnapshot({
+    createBatch: false,
+    notifyTelegram: false,
+  });
+  return refreshed?.snapshot || buildDefaultExpiryCleanupSnapshot();
+};
+const buildExpiryCleanupExecutionSkipReason = (item = {}, reason = "") => ({
+  itemId: String(item?.itemId || "").trim(),
+  username: String(item?.username || "").trim(),
+  scope: String(item?.scope || "").trim(),
+  reason: String(reason || "skip").trim(),
+});
+const executeExpiryCleanupBatch = async (
+  batchId = "",
+  { actor = "", actorSource = "" } = {},
+) => {
+  const normalizedBatchId = String(batchId || "").trim();
+  if (!normalizedBatchId) {
+    const error = new Error("Thieu batchId cleanup.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const lockToken = createStoreId("cleanup_lock");
+  const nowIso = new Date().toISOString();
+  let lockedBatch = await ExpiryCleanupBatch.findOneAndUpdate(
+    {
+      batchId: normalizedBatchId,
+      status: "pending_approval",
+    },
+    {
+      $set: {
+        status: "approved",
+        approvedAt: nowIso,
+        approvedBy: String(actor || "").trim(),
+        updatedAt: nowIso,
+        executionResult: {
+          state: "executing",
+          actorSource: String(actorSource || "").trim(),
+          actor: String(actor || "").trim(),
+          startedAt: nowIso,
+          lockToken,
+        },
+      },
+    },
+    { new: true },
+  );
+  if (!lockedBatch) {
+    const existingBatch = await ExpiryCleanupBatch.findOne({
+      batchId: normalizedBatchId,
+    }).lean();
+    if (!existingBatch) {
+      const error = new Error("Khong tim thay batch cleanup.");
+      error.statusCode = 404;
+      throw error;
+    }
+    return {
+      batch: sanitizeExpiryCleanupBatch(existingBatch, { includeItems: true }),
+      result:
+        existingBatch?.executionResult && typeof existingBatch.executionResult === "object"
+          ? existingBatch.executionResult
+          : null,
+      skippedExecution: true,
+    };
+  }
+
+  const rawBatch =
+    lockedBatch && typeof lockedBatch.toObject === "function"
+      ? lockedBatch.toObject()
+      : snapshotDocument(lockedBatch);
+  const items = Array.isArray(rawBatch?.items) ? rawBatch.items : [];
+  const deleted = [];
+  const skipped = [];
+  const errors = [];
+
+  for (const item of items) {
+    try {
+      const itemId = String(item?.itemId || "").trim();
+      const expectedUpdatedAt = getExpectedUpdatedAtValue(item?.expectedUpdatedAt);
+      if (!itemId || !expectedUpdatedAt) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(
+            item,
+            "thieu itemId hoac expectedUpdatedAt",
+          ),
+        );
+        continue;
+      }
+      if (String(item?.scope || "").trim() === "team") {
+        const teamAccount = await TeamAccount.findOne({ id: itemId }).lean();
+        if (!teamAccount) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(item, "team da bi xoa truoc do"),
+          );
+          continue;
+        }
+        if (getExpectedUpdatedAtValue(teamAccount?.updatedAt) !== expectedUpdatedAt) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(
+              item,
+              "team vua bi cap nhat boi thao tac khac",
+            ),
+          );
+          continue;
+        }
+        if (!isDateExpiredNow(teamAccount?.expiredAt)) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(item, "team khong con het han"),
+          );
+          continue;
+        }
+        const slotStats = getTeamExpirySlotStats(teamAccount);
+        if (slotStats.activeSlotCount > 0) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(item, "team con slot con han"),
+          );
+          continue;
+        }
+        const teamTraceMap = await buildTeamMarketplaceTraceMap([itemId]);
+        if (hasMarketplaceTraceSummary(teamTraceMap.get(itemId) || null)) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(item, "team dang ban san"),
+          );
+          continue;
+        }
+        const deletedDoc = await TeamAccount.findOneAndDelete(
+          buildConditionalUpdateFilter(itemId, expectedUpdatedAt),
+        ).lean();
+        if (!deletedDoc) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(
+              item,
+              "team khong con khop version khi xoa",
+            ),
+          );
+          continue;
+        }
+        deleted.push({
+          scope: "team",
+          itemId,
+          username: String(deletedDoc?.username || "").trim(),
+        });
+        continue;
+      }
+
+      const decoratedMap = await loadChatgptAccountOperationalStateMap([itemId]);
+      const account = decoratedMap.get(itemId) || null;
+      if (!account) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(item, "acc da bi xoa truoc do"),
+        );
+        continue;
+      }
+      if (getExpectedUpdatedAtValue(account?.updatedAt) !== expectedUpdatedAt) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(
+            item,
+            "acc vua bi cap nhat boi thao tac khac",
+          ),
+        );
+        continue;
+      }
+      if (!isDateExpiredNow(account?.expiredAt)) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(item, "acc khong con het han"),
+        );
+        continue;
+      }
+      const userStats = getChatgptExpiryUserStats(account);
+      const hasActiveReservation =
+        Number(account?.storeTraceSummary?.activeReservedOrders || 0) > 0 ||
+        (Array.isArray(account?.storeTraceSummary?.activeReservationTraces) &&
+          account.storeTraceSummary.activeReservationTraces.length > 0);
+      const hasWarrantyHold = hasStoreWarrantyHoldNote(account?.note);
+      const hasMarketplaceBusy = hasMarketplaceTraceSummary(
+        account?.marketplaceTraceSummary,
+      );
+      const hasWarrantyReplacement = Array.isArray(account?.storeTraceSummary?.traces)
+        ? account.storeTraceSummary.traces.some(
+            (trace) => String(trace?.role || "").trim() === "warranty_to",
+          )
+        : false;
+      if (userStats.activeUserCount > 0) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(item, "acc con khach con han"),
+        );
+        continue;
+      }
+      if (hasActiveReservation) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(item, "acc dang duoc reserve"),
+        );
+        continue;
+      }
+      if (hasWarrantyHold) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(item, "acc dang giu warranty"),
+        );
+        continue;
+      }
+      if (hasMarketplaceBusy) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(item, "acc dang ban san"),
+        );
+        continue;
+      }
+      if (hasWarrantyReplacement) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(item, "acc dang la acc thay the"),
+        );
+        continue;
+      }
+      const deletedDoc = await Account.findOneAndDelete(
+        buildConditionalUpdateFilter(itemId, expectedUpdatedAt),
+      ).lean();
+      if (!deletedDoc) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(
+            item,
+            "acc khong con khop version khi xoa",
+          ),
+        );
+        continue;
+      }
+      deleted.push({
+        scope: "chatgpt",
+        itemId,
+        username: String(deletedDoc?.username || "").trim(),
+      });
+    } catch (error) {
+      errors.push({
+        itemId: String(item?.itemId || "").trim(),
+        username: String(item?.username || "").trim(),
+        scope: String(item?.scope || "").trim(),
+        error: String(error?.message || error || "cleanup_error").trim(),
+      });
+    }
+  }
+
+  const finishedAt = new Date().toISOString();
+  const executionResult = {
+    state: "executed",
+    actorSource: String(actorSource || "").trim(),
+    actor: String(actor || "").trim(),
+    startedAt: String(rawBatch?.executionResult?.startedAt || nowIso).trim(),
+    finishedAt,
+    deletedCount: deleted.length,
+    skippedCount: skipped.length,
+    errorCount: errors.length,
+    deleted,
+    skipped,
+    errors,
+    lockToken,
+  };
+  await ExpiryCleanupBatch.updateOne(
+    {
+      batchId: normalizedBatchId,
+      "executionResult.lockToken": lockToken,
+    },
+    {
+      $set: {
+        status: "executed",
+        executedAt: finishedAt,
+        updatedAt: finishedAt,
+        executionResult,
+      },
+    },
+  );
+  if (deleted.length > 0) {
+    bumpDataVersion();
+    notifyClients();
+  }
+  await refreshExpiryCleanupSnapshot({ createBatch: false, notifyTelegram: false });
+  const finalBatch = await ExpiryCleanupBatch.findOne({
+    batchId: normalizedBatchId,
+  }).lean();
+  return {
+    batch: finalBatch
+      ? sanitizeExpiryCleanupBatch(finalBatch, { includeItems: true })
+      : sanitizeExpiryCleanupBatch(rawBatch, { includeItems: true }),
+    result: executionResult,
+    skippedExecution: false,
+  };
+};
+const rejectExpiryCleanupBatch = async (
+  batchId = "",
+  { actor = "", actorSource = "" } = {},
+) => {
+  const normalizedBatchId = String(batchId || "").trim();
+  if (!normalizedBatchId) {
+    const error = new Error("Thieu batchId cleanup.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const rejectedAt = new Date().toISOString();
+  const batch = await ExpiryCleanupBatch.findOneAndUpdate(
+    {
+      batchId: normalizedBatchId,
+      status: "pending_approval",
+    },
+    {
+      $set: {
+        status: "rejected",
+        rejectedAt,
+        rejectedBy: String(actor || "").trim(),
+        updatedAt: rejectedAt,
+        executionResult: {
+          state: "rejected",
+          actorSource: String(actorSource || "").trim(),
+          actor: String(actor || "").trim(),
+          finishedAt: rejectedAt,
+        },
+      },
+    },
+    { new: true },
+  );
+  if (!batch) {
+    const existingBatch = await ExpiryCleanupBatch.findOne({
+      batchId: normalizedBatchId,
+    }).lean();
+    if (!existingBatch) {
+      const error = new Error("Khong tim thay batch cleanup.");
+      error.statusCode = 404;
+      throw error;
+    }
+    return sanitizeExpiryCleanupBatch(existingBatch, { includeItems: true });
+  }
+  await refreshExpiryCleanupSnapshot({ createBatch: false, notifyTelegram: false });
+  const safeBatch =
+    batch && typeof batch.toObject === "function" ? batch.toObject() : snapshotDocument(batch);
+  return sanitizeExpiryCleanupBatch(safeBatch, { includeItems: true });
 };
 const buildChatgptActionDecision = (account = {}, action = "", options = {}) => {
   const currentState = pickChatgptCurrentStatePayload(account);
@@ -8879,6 +10131,121 @@ const rollbackStoreClaimedAccount = async (claim = null) => {
     Number(resetInvalidShortWarehouse?.modifiedCount || 0) > 0
   );
 };
+const prepareStoreOrderForPaidFulfillment = async ({
+  orderId = "",
+  paidAt = "",
+  paymentPatch = {},
+  allowedStatuses = STORE_ACTIVE_RESERVATION_STATUSES,
+} = {}) => {
+  const normalizedOrderId = String(orderId || "").trim();
+  if (!normalizedOrderId) return { order: null, shouldFulfill: false };
+  const nowIso = new Date().toISOString();
+  const nextPaidAt = String(paidAt || "").trim() || nowIso;
+  const allowedStatusList =
+    Array.isArray(allowedStatuses) && allowedStatuses.length > 0
+      ? allowedStatuses
+      : STORE_ACTIVE_RESERVATION_STATUSES;
+  const preparedOrder = await StoreOrder.findOneAndUpdate(
+    {
+      id: normalizedOrderId,
+      status: { $in: allowedStatusList },
+      fulfillmentState: { $nin: ["fulfilling", "fulfilled"] },
+    },
+    {
+      $set: {
+        ...paymentPatch,
+        status: "paid",
+        paidAt: nextPaidAt,
+        fulfillmentState: "ready_for_fulfillment",
+        fulfillmentReason: "",
+        fulfillmentLockToken: "",
+        fulfillmentLockedAt: "",
+        fulfillmentSource: "",
+        updatedAt: nowIso,
+      },
+    },
+    { new: true },
+  );
+  if (preparedOrder) {
+    return { order: preparedOrder, shouldFulfill: true };
+  }
+  if (Object.keys(paymentPatch || {}).length > 0) {
+    await StoreOrder.findOneAndUpdate(
+      { id: normalizedOrderId },
+      {
+        $set: {
+          ...paymentPatch,
+          updatedAt: nowIso,
+        },
+      },
+    );
+  }
+  const currentOrder = await StoreOrder.findOne({ id: normalizedOrderId });
+  return {
+    order: currentOrder,
+    shouldFulfill: isStoreOrderReadyForFulfillment(currentOrder),
+  };
+};
+const acquireStoreOrderFulfillmentLock = async ({
+  orderId = "",
+  source = "",
+} = {}) => {
+  const normalizedOrderId = String(orderId || "").trim();
+  if (!normalizedOrderId) {
+    const error = new Error("Thieu ID don web de giao hang.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const nowIso = new Date().toISOString();
+  const lockToken = `store_fulfill_${createRandomHexToken(12)}`;
+  const lockedOrder = await StoreOrder.findOneAndUpdate(
+    {
+      id: normalizedOrderId,
+      status: "paid",
+      fulfillmentState: { $nin: ["fulfilling", "fulfilled"] },
+    },
+    {
+      $set: {
+        fulfillmentState: "fulfilling",
+        fulfillmentReason: "",
+        fulfillmentLockToken: lockToken,
+        fulfillmentLockedAt: nowIso,
+        fulfillmentSource: String(source || "").trim(),
+        updatedAt: nowIso,
+      },
+    },
+    { new: true },
+  );
+  if (lockedOrder) {
+    return {
+      kind: "locked",
+      order: lockedOrder,
+      lockToken,
+      source: String(source || "").trim(),
+    };
+  }
+  const currentOrder = await StoreOrder.findOne({ id: normalizedOrderId });
+  if (!currentOrder) {
+    const error = new Error("Khong tim thay don web de giao hang.");
+    error.statusCode = 404;
+    throw error;
+  }
+  const currentStatus = normalizeStoreOrderStatusValue(currentOrder?.status);
+  if (currentStatus === "fulfilled") {
+    return { kind: "fulfilled", order: currentOrder, lockToken: "" };
+  }
+  if (currentStatus === "paid" && isStoreOrderFulfillmentInProgress(currentOrder)) {
+    return { kind: "in_progress", order: currentOrder, lockToken: "" };
+  }
+  if (currentStatus !== "paid") {
+    const error = new Error(
+      "Don hang chua duoc xac nhan thanh toan, khong duoc giao nick.",
+    );
+    error.statusCode = 409;
+    throw error;
+  }
+  return { kind: "stale", order: currentOrder, lockToken: "" };
+};
 const restoreStoreAccountSnapshot = async (account = null) => {
   if (!account?.id) return;
   await Account.findOneAndUpdate(
@@ -9219,7 +10586,7 @@ const warrantyStoreOrderForAdmin = async (
   }
 };
 
-const fulfillStoreOrder = async (order) => {
+const fulfillStoreOrderLegacy = async (order) => {
   const safeOrder =
     typeof order?.toObject === "function" ? order.toObject() : { ...(order || {}) };
   if (!safeOrder?.id) {
@@ -9331,6 +10698,187 @@ const fulfillStoreOrder = async (order) => {
     throw error;
   }
 };
+const fulfillStoreOrder = async (order, { source = "" } = {}) => {
+  const inputOrder =
+    typeof order?.toObject === "function" ? order.toObject() : { ...(order || {}) };
+  const orderId = String(inputOrder?.id || "").trim();
+  if (!orderId) {
+    throw new Error("ÄÆ¡n hÃ ng khÃ´ng há»£p lá»‡");
+  }
+
+  const lock = await acquireStoreOrderFulfillmentLock({ orderId, source });
+  if (lock.kind === "fulfilled") return lock.order;
+  if (lock.kind === "in_progress") return lock.order;
+
+  const lockedOrder =
+    lock.kind === "locked" && lock.order ? lock.order : await StoreOrder.findOne({ id: orderId });
+  if (!lockedOrder) {
+    const error = new Error("Khong tim thay don web de giao hang.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const normalizedStatus = normalizeStoreOrderStatusValue(lockedOrder?.status);
+  if (normalizedStatus === "fulfilled") {
+    return lockedOrder;
+  }
+  if (normalizedStatus !== "paid") {
+    const error = new Error(
+      "Don hang chua duoc xac nhan thanh toan, khong duoc giao nick.",
+    );
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const lockToken = String(lock?.lockToken || "").trim();
+  const normalizedSource = String(source || lock?.source || "").trim();
+  const nowIso = new Date().toISOString();
+  const storeUser = lockedOrder?.userId
+    ? await StoreUser.findOne({ id: String(lockedOrder.userId || "").trim() }).lean()
+    : null;
+  let claim = null;
+
+  try {
+    if (lockedOrder.packageCode === "package1") {
+      claim = await claimStorePackage1AccountForOrder({
+        order: lockedOrder,
+        user: storeUser,
+      });
+      const savedOrder = await StoreOrder.findOneAndUpdate(
+        {
+          id: orderId,
+          status: "paid",
+          fulfillmentState: "fulfilling",
+          fulfillmentLockToken: lockToken,
+        },
+        {
+          $set: {
+            status: "fulfilled",
+            assignedAccountId: String(claim?.updatedAcc?.id || ""),
+            assignedUsername: String(claim?.updatedAcc?.username || ""),
+            rootAssignedAccountId: String(claim?.updatedAcc?.id || ""),
+            rootAssignedUsername: String(claim?.updatedAcc?.username || ""),
+            assignedPassword: String(claim?.updatedAcc?.password || ""),
+            assignedLink: String(claim?.updatedAcc?.link || ""),
+            assignedType: String(claim?.updatedAcc?.type || ""),
+            assignedWarehouse: CHATGPT_TOTAL_VALUE,
+            assignedCustomerName: String(claim?.customer?.name || ""),
+            assignedCustomerJoinedAt: String(claim?.customer?.joinedAt || ""),
+            assignedCustomerExpiredAt: String(claim?.customer?.expiredAt || ""),
+            reservationState: String(lockedOrder?.reservedAccountId || "").trim()
+              ? "consumed"
+              : "none",
+            fulfillmentState: "fulfilled",
+            fulfillmentReason: "",
+            fulfillmentLockToken: "",
+            fulfillmentLockedAt: "",
+            fulfillmentSource: normalizedSource,
+            package1AccessToken: String(claim?.package1AccessToken || ""),
+            package1MaxUsage: STORE_PACKAGE1_MAX_OTP_USES,
+            package1UsedCount: 0,
+            fulfilledAt: nowIso,
+            updatedAt: nowIso,
+          },
+        },
+        { new: true },
+      );
+      if (savedOrder) return savedOrder;
+    }
+    if (lockedOrder.packageCode === "package2") {
+      claim = await claimStorePackage2AccountForOrder({
+        order: lockedOrder,
+        user: storeUser,
+      });
+      const savedOrder = await StoreOrder.findOneAndUpdate(
+        {
+          id: orderId,
+          status: "paid",
+          fulfillmentState: "fulfilling",
+          fulfillmentLockToken: lockToken,
+        },
+        {
+          $set: {
+            status: "fulfilled",
+            assignedAccountId: String(claim?.updatedAcc?.id || ""),
+            assignedUsername: String(claim?.updatedAcc?.username || ""),
+            rootAssignedAccountId: String(claim?.updatedAcc?.id || ""),
+            rootAssignedUsername: String(claim?.updatedAcc?.username || ""),
+            assignedPassword: String(claim?.updatedAcc?.password || ""),
+            assignedOtpSecret: String(claim?.updatedAcc?.otpSecret || ""),
+            assignedLink: String(claim?.updatedAcc?.link || ""),
+            assignedType: String(claim?.updatedAcc?.type || ""),
+            assignedWarehouse: CHATGPT_TOTAL_VALUE,
+            assignedCustomerName: String(claim?.customer?.name || ""),
+            assignedCustomerJoinedAt: String(claim?.customer?.joinedAt || ""),
+            assignedCustomerExpiredAt: String(claim?.customer?.expiredAt || ""),
+            reservationState: String(lockedOrder?.reservedAccountId || "").trim()
+              ? "consumed"
+              : "none",
+            fulfillmentState: "fulfilled",
+            fulfillmentReason: "",
+            fulfillmentLockToken: "",
+            fulfillmentLockedAt: "",
+            fulfillmentSource: normalizedSource,
+            fulfilledAt: nowIso,
+            updatedAt: nowIso,
+          },
+        },
+        { new: true },
+      );
+      if (savedOrder) return savedOrder;
+    }
+
+    const latestOrder = await StoreOrder.findOne({ id: orderId });
+    if (normalizeStoreOrderStatusValue(latestOrder?.status) === "fulfilled") {
+      return latestOrder;
+    }
+    return latestOrder || lockedOrder;
+  } catch (error) {
+    if (claim) {
+      await rollbackStoreClaimedAccount(claim);
+    }
+    const failureReason = String(error?.message || "Fulfillment error").trim();
+    const failedOrder = await StoreOrder.findOneAndUpdate(
+      {
+        id: orderId,
+        status: "paid",
+        fulfillmentState: "fulfilling",
+        fulfillmentLockToken: lockToken,
+      },
+      {
+        $set: {
+          status: "fulfillment_failed",
+          reservationState: String(lockedOrder?.reservedAccountId || "").trim()
+            ? "blocked"
+            : "none",
+          fulfillmentState: "failed",
+          fulfillmentReason: failureReason,
+          fulfillmentLockToken: "",
+          fulfillmentLockedAt: "",
+          fulfillmentSource: normalizedSource,
+          momoMessage: failureReason || "Fulfillment error",
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { new: true },
+    );
+    if (failedOrder) {
+      console.warn("Store fulfillment failed:", {
+        orderId,
+        source: normalizedSource,
+        reservedAccountId: String(lockedOrder?.reservedAccountId || "").trim(),
+        reservationState: String(failedOrder?.reservationState || "").trim(),
+        fulfillmentState: String(failedOrder?.fulfillmentState || "").trim(),
+        fulfillmentReason: String(failedOrder?.fulfillmentReason || "").trim(),
+      });
+    }
+    const latestOrder = failedOrder || (await StoreOrder.findOne({ id: orderId }));
+    if (normalizeStoreOrderStatusValue(latestOrder?.status) === "fulfilled") {
+      return latestOrder;
+    }
+    throw error;
+  }
+};
 const STORE_FULFILLMENT_RETRY_COOLDOWN_MS = 15000;
 const canRetryStoreFailedFulfillment = (order = {}) => {
   const packageCode = String(order?.packageCode || "").trim().toLowerCase();
@@ -9346,7 +10894,7 @@ const canRetryStoreFailedFulfillment = (order = {}) => {
 };
 const retryFailedStoreOrderFulfillment = async (
   orderInput = null,
-  { emitRealtime = false } = {},
+  { emitRealtime = false, source = "auto_retry" } = {},
 ) => {
   const order =
     orderInput && typeof orderInput.save === "function"
@@ -9365,12 +10913,15 @@ const retryFailedStoreOrderFulfillment = async (
     if (assignedAccountId) {
       updatedOrder = await completeStoreOrderManualFulfillment(order);
     } else {
-      order.status = "paid";
-      order.fulfillmentState = "ready_for_fulfillment";
-      order.fulfillmentReason = "";
-      order.updatedAt = new Date().toISOString();
-      await order.save();
-      updatedOrder = await fulfillStoreOrder(order);
+      const prepared = await prepareStoreOrderForPaidFulfillment({
+        orderId: String(order?.id || "").trim(),
+        paidAt: String(order?.paidAt || "").trim(),
+        allowedStatuses: [...STORE_ACTIVE_RESERVATION_STATUSES, "fulfillment_failed"],
+      });
+      updatedOrder =
+        prepared?.shouldFulfill && prepared?.order
+          ? await fulfillStoreOrder(prepared.order, { source })
+          : prepared?.order || order;
     }
   } catch (error) {
     updatedOrder = await StoreOrder.findOne({ id: String(order?.id || "").trim() });
@@ -9594,7 +11145,10 @@ const queryPayosPaymentStatusForStoreOrder = async (order = {}) => {
   );
   return response?.data || {};
 };
-const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
+const reconcileStoreOrderPaymentStatus = async (
+  orderInput = null,
+  { source = "" } = {},
+) => {
   const order =
     orderInput && typeof orderInput.save === "function"
       ? orderInput
@@ -9610,31 +11164,34 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
     const responseData = await queryPayosPaymentStatusForStoreOrder(order);
     const data = responseData?.data || {};
     const payosResponseCode = String(responseData?.code || "").trim();
-    order.payosCode = String(responseData?.code || "").trim();
-    order.payosDesc = String(responseData?.desc || "").trim();
-    order.payosStatus = String(data?.status || "").trim();
+    const payosPatch = {
+      payosCode: String(responseData?.code || "").trim(),
+      payosDesc: String(responseData?.desc || "").trim(),
+      payosStatus: String(data?.status || "").trim(),
+    };
     if (!String(order.payosPaymentLinkId || "").trim()) {
-      order.payosPaymentLinkId = String(data?.id || data?.paymentLinkId || "").trim();
+      payosPatch.payosPaymentLinkId = String(data?.id || data?.paymentLinkId || "").trim();
     }
     if (!String(order.payosCheckoutUrl || "").trim()) {
-      order.payosCheckoutUrl = String(data?.checkoutUrl || "").trim();
+      payosPatch.payosCheckoutUrl = String(data?.checkoutUrl || "").trim();
     }
     if (!String(order.payosQrCode || "").trim()) {
-      order.payosQrCode = String(data?.qrCode || "").trim();
+      payosPatch.payosQrCode = String(data?.qrCode || "").trim();
     }
-    order.updatedAt = nowIso;
     if (payosResponseCode === "00" && isStorePayosSuccess(data)) {
-      if (!String(order.paidAt || "").trim()) {
-        order.paidAt = nowIso;
-      }
-      order.status = "paid";
-      order.fulfillmentState = "ready_for_fulfillment";
-      order.fulfillmentReason = "";
-      await order.save();
-      try {
-        await fulfillStoreOrder(order);
-      } catch (error) {
-        return StoreOrder.findOne({ id: order.id });
+      const prepared = await prepareStoreOrderForPaidFulfillment({
+        orderId: String(order?.id || "").trim(),
+        paidAt: String(order?.paidAt || "").trim() || nowIso,
+        paymentPatch: payosPatch,
+      });
+      if (prepared?.shouldFulfill && prepared?.order) {
+        try {
+          return await fulfillStoreOrder(prepared.order, {
+            source: String(source || "payos_reconcile").trim(),
+          });
+        } catch (error) {
+          return StoreOrder.findOne({ id: order.id });
+        }
       }
       return StoreOrder.findOne({ id: order.id });
     }
@@ -9642,6 +11199,19 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
       await StoreOrder.deleteOne({ id: order.id });
       return null;
     }
+    order.payosCode = String(payosPatch.payosCode || "").trim();
+    order.payosDesc = String(payosPatch.payosDesc || "").trim();
+    order.payosStatus = String(payosPatch.payosStatus || "").trim();
+    if (Object.prototype.hasOwnProperty.call(payosPatch, "payosPaymentLinkId")) {
+      order.payosPaymentLinkId = String(payosPatch.payosPaymentLinkId || "").trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(payosPatch, "payosCheckoutUrl")) {
+      order.payosCheckoutUrl = String(payosPatch.payosCheckoutUrl || "").trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(payosPatch, "payosQrCode")) {
+      order.payosQrCode = String(payosPatch.payosQrCode || "").trim();
+    }
+    order.updatedAt = nowIso;
     if (payosResponseCode === "00" && normalizedStatus === "paid") {
       order.status = getStorePendingStatusFromExistingPayment(order);
       order.paidAt = "";
@@ -9666,17 +11236,23 @@ const reconcileStoreOrderPaymentStatus = async (orderInput = null) => {
   }
   order.updatedAt = nowIso;
   if (resultCode === 0) {
-    if (!String(order.paidAt || "").trim()) {
-      order.paidAt = nowIso;
-    }
-    order.status = "paid";
-    order.fulfillmentState = "ready_for_fulfillment";
-    order.fulfillmentReason = "";
-    await order.save();
-    try {
-      await fulfillStoreOrder(order);
-    } catch (error) {
-      return StoreOrder.findOne({ id: order.id });
+    const prepared = await prepareStoreOrderForPaidFulfillment({
+      orderId: String(order?.id || "").trim(),
+      paidAt: String(order?.paidAt || "").trim() || nowIso,
+      paymentPatch: {
+        momoResultCode: Number.isNaN(resultCode) ? order?.momoResultCode : resultCode,
+        momoMessage: message,
+        momoTransId: transId,
+      },
+    });
+    if (prepared?.shouldFulfill && prepared?.order) {
+      try {
+        return await fulfillStoreOrder(prepared.order, {
+          source: String(source || "momo_reconcile").trim(),
+        });
+      } catch (error) {
+        return StoreOrder.findOne({ id: order.id });
+      }
     }
     return StoreOrder.findOne({ id: order.id });
   }
@@ -11147,6 +12723,157 @@ app.post(
   },
 );
 
+app.get("/api/admin/chatgpt-expiry-summary", verifyToken, async (req, res) => {
+  try {
+    const snapshot = await getFreshExpiryCleanupSnapshot({ allowStale: true });
+    return res.json({
+      success: true,
+      summary: snapshot?.summary || buildDefaultExpiryCleanupSnapshot().summary,
+      latestPendingBatchId: String(snapshot?.latestPendingBatchId || "").trim(),
+      latestExecutedBatchId: String(snapshot?.latestExecutedBatchId || "").trim(),
+      latestRejectedBatchId: String(snapshot?.latestRejectedBatchId || "").trim(),
+      latestExpiredBatchId: String(snapshot?.latestExpiredBatchId || "").trim(),
+      lastScanAt: String(snapshot?.lastScanAt || "").trim(),
+      updatedAt: String(snapshot?.updatedAt || "").trim(),
+      version: latestDataVersion,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc tong hop het han ChatGPT.",
+    });
+  }
+});
+
+app.get(
+  "/api/admin/chatgpt-expiry-cleanup-preview",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const scan = await scanExpiryCleanupState();
+      return res.json({
+        success: true,
+        summary: scan?.summary || buildDefaultExpiryCleanupSnapshot().summary,
+        candidates: Array.isArray(scan?.candidates) ? scan.candidates : [],
+        warnings: Array.isArray(scan?.warnings) ? scan.warnings : [],
+        pkg2MarketExpiringSoon: Array.isArray(scan?.pkg2MarketExpiringSoon)
+          ? scan.pkg2MarketExpiringSoon
+          : [],
+        scannedAt: String(scan?.scannedAt || "").trim(),
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong tai duoc preview don cleanup het han.",
+      });
+    }
+  },
+);
+
+app.get(
+  "/api/admin/chatgpt-expiry-cleanup-batches",
+  verifyAdminOrBotInternalToken,
+  async (req, res) => {
+    try {
+      const status = String(req.query?.status || "").trim();
+      const limit = Math.min(Math.max(Number(req.query?.limit || 10), 1), 50);
+      const batches = await listRecentExpiryCleanupBatches({ status, limit });
+      return res.json({
+        success: true,
+        batches,
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong tai duoc danh sach batch cleanup.",
+      });
+    }
+  },
+);
+
+app.get(
+  "/api/admin/chatgpt-expiry-cleanup-batches/:batchId",
+  verifyAdminOrBotInternalToken,
+  async (req, res) => {
+    try {
+      const batchId = String(req.params?.batchId || "").trim();
+      if (!batchId) {
+        return res.status(400).json({ error: "Thieu batchId cleanup." });
+      }
+      const batch = await findExpiryCleanupBatchById(batchId);
+      if (!batch) {
+        return res.status(404).json({ error: "Khong tim thay batch cleanup." });
+      }
+      return res.json({ success: true, batch, version: latestDataVersion });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong tai duoc chi tiet batch cleanup.",
+      });
+    }
+  },
+);
+
+app.post(
+  "/api/admin/chatgpt-expiry-cleanup-batches/:batchId/execute",
+  verifyAdminOrBotInternalToken,
+  async (req, res) => {
+    try {
+      const batchId = String(req.params?.batchId || "").trim();
+      const actor = String(
+        req.user?.email || req.body?.actor || "telegram_admin",
+      ).trim();
+      const actorSource = String(
+        req.body?.actorSource ||
+          (req.user?.email ? "admin_panel" : "telegram_cleanup_approve"),
+      ).trim();
+      const execution = await executeExpiryCleanupBatch(batchId, {
+        actor,
+        actorSource,
+      });
+      return res.json({
+        success: true,
+        batch: execution?.batch || null,
+        result: execution?.result || null,
+        skippedExecution: !!execution?.skippedExecution,
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong the chay batch cleanup.",
+      });
+    }
+  },
+);
+
+app.post(
+  "/api/admin/chatgpt-expiry-cleanup-batches/:batchId/reject",
+  verifyAdminOrBotInternalToken,
+  async (req, res) => {
+    try {
+      const batchId = String(req.params?.batchId || "").trim();
+      const actor = String(
+        req.user?.email || req.body?.actor || "telegram_admin",
+      ).trim();
+      const actorSource = String(
+        req.body?.actorSource ||
+          (req.user?.email ? "admin_panel" : "telegram_cleanup_reject"),
+      ).trim();
+      const batch = await rejectExpiryCleanupBatch(batchId, {
+        actor,
+        actorSource,
+      });
+      return res.json({
+        success: true,
+        batch,
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong the tu choi batch cleanup.",
+      });
+    }
+  },
+);
+
 app.post("/api/store-orders/admin", verifyToken, async (req, res) => {
   try {
     const packageCode = String(req.body?.packageCode || "").trim();
@@ -11250,7 +12977,9 @@ app.post("/api/store-orders/admin", verifyToken, async (req, res) => {
 
     let fulfilledOrder = null;
     try {
-      fulfilledOrder = await fulfillStoreOrder(order);
+      fulfilledOrder = await fulfillStoreOrder(order, {
+        source: "admin_manual_order",
+      });
     } catch (error) {
       await StoreOrder.deleteOne({ id: String(order.id || "").trim() });
       throw error;
