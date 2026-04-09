@@ -20,7 +20,7 @@
     },
     {
       "path": "/api/internal/cron/chatgpt-mail-die-audit",
-      "schedule": "0 20 * * *"
+      "schedule": "0 * * * *"
     }
   ],
   "rewrites": [

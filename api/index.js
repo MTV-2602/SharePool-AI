@@ -62,7 +62,7 @@ const CHATGPT_MAIL_DIE_LIST_LIMIT = Math.max(
 );
 const CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT = Math.max(
   1,
-  Math.min(toPositiveInt(process.env.CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT, 25), 100),
+  Math.min(toPositiveInt(process.env.CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT, 20), 100),
 );
 const CHATGPT_MAIL_DIE_AUDIT_MIN_INTERVAL_MS = Math.max(
   60 * 60 * 1000,
@@ -245,9 +245,18 @@ function buildChatgptMailCheckStateForPayload(payload = {}, existingAcc = null) 
   ).trim();
   const hasExisting = !!(existingAcc && typeof existingAcc === "object");
   const existingEnabled = hasExisting ? !!existingAcc?.mailCheckEnabled : false;
+  const existingAutoEligible = hasExisting
+    ? !!existingAcc?.mailCheckAutoEligible
+    : false;
+  const existingNextAuditAt = hasExisting
+    ? String(existingAcc?.mailCheckNextAuditAt || "").trim()
+    : "";
   const usernameIsValidEmail = isValidEmailAddress(username);
   const mailCheckEnabled = hasExisting
     ? existingEnabled && usernameIsValidEmail
+    : usernameIsValidEmail;
+  const mailCheckAutoEligible = hasExisting
+    ? existingAutoEligible && usernameIsValidEmail
     : usernameIsValidEmail;
   const mailCheckProvider = mailCheckEnabled
     ? CHATGPT_MAIL_CHECK_PROVIDER
@@ -256,10 +265,15 @@ function buildChatgptMailCheckStateForPayload(payload = {}, existingAcc = null) 
       : "";
   return {
     mailCheckEnabled,
+    mailCheckAutoEligible,
     mailCheckProvider,
     mailCheckStatus: normalizeChatgptMailCheckStatus(
       hasExisting ? existingAcc?.mailCheckStatus : "unchecked",
     ),
+    mailCheckNextAuditAt:
+      mailCheckEnabled && mailCheckAutoEligible
+        ? existingNextAuditAt || new Date().toISOString()
+        : "",
     mailCheckLastCheckedAt: hasExisting
       ? String(existingAcc?.mailCheckLastCheckedAt || "").trim()
       : "",
@@ -289,8 +303,10 @@ function sanitizeChatgptMailCheckRecord(account = {}) {
     package2Shelf: String(account?.package2Shelf || "").trim(),
     expiredAt: String(account?.expiredAt || "").trim(),
     mailCheckEnabled: !!account?.mailCheckEnabled,
+    mailCheckAutoEligible: !!account?.mailCheckAutoEligible,
     mailCheckProvider: String(account?.mailCheckProvider || "").trim(),
     mailCheckStatus: normalizeChatgptMailCheckStatus(account?.mailCheckStatus),
+    mailCheckNextAuditAt: String(account?.mailCheckNextAuditAt || "").trim(),
     mailCheckLastCheckedAt: String(account?.mailCheckLastCheckedAt || "").trim(),
     mailCheckLastMatchedEmailId: String(account?.mailCheckLastMatchedEmailId || "").trim(),
     mailCheckLastMatchedAt: String(account?.mailCheckLastMatchedAt || "").trim(),
@@ -342,8 +358,15 @@ function buildChatgptMailCheckResult(account = {}, result = {}) {
       result?.mailCheckEnabled !== undefined
         ? !!result.mailCheckEnabled
         : !!account?.mailCheckEnabled,
+    mailCheckAutoEligible:
+      result?.mailCheckAutoEligible !== undefined
+        ? !!result.mailCheckAutoEligible
+        : !!account?.mailCheckAutoEligible,
     mailCheckProvider: String(
       result?.mailCheckProvider || account?.mailCheckProvider || "",
+    ).trim(),
+    mailCheckNextAuditAt: String(
+      result?.mailCheckNextAuditAt || account?.mailCheckNextAuditAt || "",
     ).trim(),
     mailCheckLastCheckedAt: String(
       result?.mailCheckLastCheckedAt || account?.mailCheckLastCheckedAt || "",
@@ -366,6 +389,27 @@ function buildChatgptMailCheckResult(account = {}, result = {}) {
   };
 }
 
+const CHATGPT_MAIL_CHECK_ACCOUNT_SELECT = [
+  "id",
+  "username",
+  "type",
+  "package2Shelf",
+  "createdAt",
+  "expiredAt",
+  "updatedAt",
+  "mailCheckEnabled",
+  "mailCheckAutoEligible",
+  "mailCheckProvider",
+  "mailCheckStatus",
+  "mailCheckNextAuditAt",
+  "mailCheckLastCheckedAt",
+  "mailCheckLastMatchedEmailId",
+  "mailCheckLastMatchedAt",
+  "mailCheckLastSubject",
+  "mailCheckLastSender",
+  "mailCheckLastSnippet",
+].join(" ");
+
 async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
   const source = String(options?.source || "manual").trim() || "manual";
   const account =
@@ -377,7 +421,7 @@ async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
       : await Account.findOne({
           id: String(accountInput?.id || accountInput || "").trim(),
         })
-          .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+          .select(CHATGPT_MAIL_CHECK_ACCOUNT_SELECT)
           .lean();
   if (!account) {
     return {
@@ -476,6 +520,7 @@ async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
 
   if (matchedEmail) {
     updatePayload.mailCheckStatus = "died";
+    updatePayload.mailCheckNextAuditAt = "";
     updatePayload.mailCheckLastMatchedEmailId = String(
       matchedEmail?.id ?? "",
     ).trim();
@@ -494,8 +539,13 @@ async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
     );
   } else if (currentStatus === "died") {
     updatePayload.mailCheckStatus = "died";
+    updatePayload.mailCheckNextAuditAt = "";
   } else {
     updatePayload.mailCheckStatus = "clean";
+    updatePayload.mailCheckNextAuditAt =
+      account?.mailCheckEnabled && account?.mailCheckAutoEligible
+        ? new Date(Date.now() + CHATGPT_MAIL_DIE_AUDIT_MIN_INTERVAL_MS).toISOString()
+        : "";
     updatePayload.mailCheckLastMatchedEmailId = "";
     updatePayload.mailCheckLastMatchedAt = "";
     updatePayload.mailCheckLastSubject = "";
@@ -529,43 +579,41 @@ async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
 }
 
 async function buildChatgptMailCheckSummary() {
-  const accounts = await Account.find({})
-    .select(
-      "id username mailCheckEnabled mailCheckStatus mailCheckLastCheckedAt mailCheckLastMatchedAt",
-    )
-    .lean();
-  let diedCount = 0;
-  let checkedCleanCount = 0;
-  let uncheckedCount = 0;
-  let autoEnabledCount = 0;
-  let latestDetectedAt = "";
-
-  (Array.isArray(accounts) ? accounts : []).forEach((account) => {
-    const status = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
-    const lastCheckedAt = String(account?.mailCheckLastCheckedAt || "").trim();
-    const lastMatchedAt = String(account?.mailCheckLastMatchedAt || "").trim();
-    if (account?.mailCheckEnabled) autoEnabledCount += 1;
-    if (status === "died") {
-      diedCount += 1;
-      if (!latestDetectedAt || lastMatchedAt > latestDetectedAt) {
-        latestDetectedAt = lastMatchedAt;
-      }
-      return;
-    }
-    if (lastCheckedAt) {
-      checkedCleanCount += 1;
-      return;
-    }
-    uncheckedCount += 1;
-  });
-
-  return {
-    totalCount: Array.isArray(accounts) ? accounts.length : 0,
+  const [
+    totalCount,
     autoEnabledCount,
     diedCount,
     checkedCleanCount,
     uncheckedCount,
-    latestDetectedAt,
+    latestDoc,
+  ] = await Promise.all([
+    Account.countDocuments({}),
+    Account.countDocuments({
+      mailCheckEnabled: true,
+      mailCheckAutoEligible: true,
+    }),
+    Account.countDocuments({ mailCheckStatus: "died" }),
+    Account.countDocuments({ mailCheckStatus: "clean" }),
+    Account.countDocuments({
+      $or: [
+        { mailCheckStatus: { $exists: false } },
+        { mailCheckStatus: "" },
+        { mailCheckStatus: "unchecked" },
+      ],
+    }),
+    Account.findOne({ mailCheckStatus: "died" })
+      .sort({ mailCheckLastMatchedAt: -1, updatedAt: -1 })
+      .select("mailCheckLastMatchedAt")
+      .lean(),
+  ]);
+
+  return {
+    totalCount,
+    autoEnabledCount,
+    diedCount,
+    checkedCleanCount,
+    uncheckedCount,
+    latestDetectedAt: String(latestDoc?.mailCheckLastMatchedAt || "").trim(),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -575,16 +623,13 @@ async function listChatgptMailCheckHistory(limit = 30) {
   const accounts = await Account.find({
     mailCheckStatus: "died",
   })
-    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .sort({ mailCheckLastMatchedAt: -1, updatedAt: -1 })
+    .limit(safeLimit)
+    .select(CHATGPT_MAIL_CHECK_ACCOUNT_SELECT)
     .lean();
-  return (Array.isArray(accounts) ? accounts : [])
-    .map((account) => sanitizeChatgptMailCheckRecord(account))
-    .sort((left, right) =>
-      String(right?.mailCheckLastMatchedAt || "").localeCompare(
-        String(left?.mailCheckLastMatchedAt || ""),
-      ),
-    )
-    .slice(0, safeLimit);
+  return (Array.isArray(accounts) ? accounts : []).map((account) =>
+    sanitizeChatgptMailCheckRecord(account),
+  );
 }
 
 async function runChatgptMailCheckForIds(accountIds = [], options = {}) {
@@ -605,7 +650,7 @@ async function runChatgptMailCheckForIds(accountIds = [], options = {}) {
     };
   }
   const accounts = await Account.find({ id: { $in: normalizedIds } })
-    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .select(CHATGPT_MAIL_CHECK_ACCOUNT_SELECT)
     .lean();
   const accountMap = new Map(
     (Array.isArray(accounts) ? accounts : []).map((account) => [
@@ -649,27 +694,26 @@ async function runChatgptMailCheckForIds(accountIds = [], options = {}) {
 
 async function listEligibleChatgptMailCheckAccountsForAudit(limit = 25) {
   const safeLimit = Math.max(1, Math.min(Number(limit || 25), 100));
-  const thresholdIso = new Date(
-    Date.now() - CHATGPT_MAIL_DIE_AUDIT_MIN_INTERVAL_MS,
-  ).toISOString();
+  const nowIso = new Date().toISOString();
   const accounts = await Account.find({
+    mailCheckAutoEligible: true,
     mailCheckEnabled: true,
     mailCheckStatus: { $ne: "died" },
     $or: [
-      { mailCheckLastCheckedAt: { $exists: false } },
-      { mailCheckLastCheckedAt: "" },
-      { mailCheckLastCheckedAt: { $lt: thresholdIso } },
+      { mailCheckNextAuditAt: { $exists: false } },
+      { mailCheckNextAuditAt: "" },
+      { mailCheckNextAuditAt: { $lte: nowIso } },
     ],
   })
-    .sort({ mailCheckLastCheckedAt: 1, createdAt: -1 })
+    .sort({ mailCheckNextAuditAt: 1, createdAt: 1 })
     .limit(safeLimit)
-    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .select(CHATGPT_MAIL_CHECK_ACCOUNT_SELECT)
     .lean();
   return Array.isArray(accounts) ? accounts : [];
 }
 
 async function runChatgptMailDieAuditBatch(options = {}) {
-  const source = String(options?.source || "cron_daily").trim() || "cron_daily";
+  const source = String(options?.source || "cron_hourly").trim() || "cron_hourly";
   const eligibleAccounts = await listEligibleChatgptMailCheckAccountsForAudit(
     options?.limit || CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT,
   );
@@ -1006,8 +1050,10 @@ const accountSchema = new mongoose.Schema({
   link: String,
   status: { type: String, default: "available" },
   mailCheckEnabled: { type: Boolean, default: false },
+  mailCheckAutoEligible: { type: Boolean, default: false },
   mailCheckProvider: { type: String, default: "" },
   mailCheckStatus: { type: String, default: "unchecked" },
+  mailCheckNextAuditAt: { type: String, default: "" },
   mailCheckLastCheckedAt: { type: String, default: "" },
   mailCheckLastMatchedEmailId: { type: String, default: "" },
   mailCheckLastMatchedAt: { type: String, default: "" },
@@ -1018,6 +1064,13 @@ const accountSchema = new mongoose.Schema({
   expiredAt: { type: String },
   updatedAt: { type: String, default: () => new Date().toISOString() },
 });
+accountSchema.index({
+  mailCheckAutoEligible: 1,
+  mailCheckEnabled: 1,
+  mailCheckStatus: 1,
+  mailCheckNextAuditAt: 1,
+});
+accountSchema.index({ mailCheckStatus: 1, mailCheckLastMatchedAt: -1 });
 const Account =
   mongoose.models.Account ||
   mongoose.model("Account", accountSchema, "chatgpt_accounts");
@@ -1939,7 +1992,7 @@ app.get(
     try {
       const startedAt = Date.now();
       const audit = await runChatgptMailDieAuditBatch({
-        source: "cron_daily",
+        source: "cron_hourly",
         limit: CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT,
       });
       if (Number(audit?.summary?.changedCount || 0) > 0) {
@@ -5062,7 +5115,7 @@ const matchesAdminChatgptExpiryRange = (
   return true;
 };
 const CHATGPT_ADMIN_ACCOUNT_SELECT =
-  "id username password otpSecret type package2Shelf users note link status createdAt expiredAt updatedAt mailCheckEnabled mailCheckProvider mailCheckStatus mailCheckLastCheckedAt mailCheckLastMatchedEmailId mailCheckLastMatchedAt mailCheckLastSubject mailCheckLastSender mailCheckLastSnippet";
+  "id username password otpSecret type package2Shelf users note link status createdAt expiredAt updatedAt mailCheckEnabled mailCheckAutoEligible mailCheckProvider mailCheckStatus mailCheckNextAuditAt mailCheckLastCheckedAt mailCheckLastMatchedEmailId mailCheckLastMatchedAt mailCheckLastSubject mailCheckLastSender mailCheckLastSnippet";
 const CHATGPT_ADMIN_MARKETPLACE_ORDER_TRACE_SELECT =
   "provider orderId accounts.accountId";
 const CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT =
@@ -11973,8 +12026,10 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
   }
 
   delete normalized.mailCheckEnabled;
+  delete normalized.mailCheckAutoEligible;
   delete normalized.mailCheckProvider;
   delete normalized.mailCheckStatus;
+  delete normalized.mailCheckNextAuditAt;
   delete normalized.mailCheckLastCheckedAt;
   delete normalized.mailCheckLastMatchedEmailId;
   delete normalized.mailCheckLastMatchedAt;
