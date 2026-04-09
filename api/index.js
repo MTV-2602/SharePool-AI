@@ -5122,6 +5122,7 @@ const hasAssignedCustomerForAdminChatgpt = (account = {}) => {
     currentState?.isReservedForWeb ||
     currentState?.isWarrantyHold ||
     currentState?.isBusyInMarketplace ||
+    currentState?.hasMarketplaceHistory ||
     currentState?.isBusyInWarrantyReplacement ||
     String(currentState?.availabilityState || "").trim() ===
       "assigned_to_store_order"
@@ -6558,6 +6559,32 @@ const buildStoreWarrantyHoldTraceInfo = (account = {}) => {
     createdAt,
   };
 };
+const getChatgptAssignedUserState = (account = {}) => {
+  const users = Array.isArray(account?.users) ? account.users : [];
+  let activeUserCount = 0;
+  let expiredUserCount = 0;
+  users.forEach((user) => {
+    const expiredAtMs = parseStoreDateMs(user?.expiredAt);
+    if (!expiredAtMs || expiredAtMs > Date.now()) {
+      activeUserCount += 1;
+    } else {
+      expiredUserCount += 1;
+    }
+  });
+  return {
+    totalUserCount: users.length,
+    activeUserCount,
+    expiredUserCount,
+  };
+};
+const hasStoreTraceHistoryForAccount = (account = {}) => {
+  const summary =
+    account?.storeTraceSummary && typeof account.storeTraceSummary === "object"
+      ? account.storeTraceSummary
+      : null;
+  if (Number(summary?.totalOrders || 0) > 0) return true;
+  return Array.isArray(summary?.traces) && summary.traces.length > 0;
+};
 const inferChatgptTypeFromTraceValue = (value = "") => {
   const normalized = normalizeAdminSearchText(value);
   if (!normalized) return "";
@@ -6658,7 +6685,8 @@ const pickChatgptEffectiveTypePayload = (account = {}) => {
 };
 const buildChatgptAccountCurrentState = (account = {}) => {
   const users = Array.isArray(account?.users) ? account.users : [];
-  const userCount = users.length;
+  const assignedUserState = getChatgptAssignedUserState(account);
+  const userCount = assignedUserState.totalUserCount;
   const expiredAt = String(account?.expiredAt || "").trim();
   const expiredAtMs = new Date(expiredAt).getTime();
   const isExpired = !!expiredAt && Number.isFinite(expiredAtMs) && expiredAtMs <= Date.now();
@@ -6684,8 +6712,9 @@ const buildChatgptAccountCurrentState = (account = {}) => {
   const hasManagedMarketplaceUser = users.some((user) =>
     isActiveMarketplaceManagedUser(user),
   );
+  const hasMarketplaceHistory = hasMarketplaceTraceSummary(marketplaceTraceSummary);
   const hasMarketplaceBusy =
-    hasMarketplaceTraceSummary(marketplaceTraceSummary) || hasManagedMarketplaceUser;
+    !isExpired && (hasMarketplaceHistory || hasManagedMarketplaceUser);
 
   let availabilityState = "sellable";
   let busyReason = "";
@@ -6788,6 +6817,11 @@ const buildChatgptAccountCurrentState = (account = {}) => {
     isBusyInWarrantyReplacement:
       availabilityState === "busy_in_warranty_replacement",
     hasAssignedUsers: userCount > 0,
+    hasActiveAssignedUsers: assignedUserState.activeUserCount > 0,
+    activeAssignedUserCount: assignedUserState.activeUserCount,
+    expiredAssignedUserCount: assignedUserState.expiredUserCount,
+    hasMarketplaceHistory,
+    isExpired,
     userCount,
     activeReservationOrderId: String(latestActiveReservation?.orderId || "").trim(),
     holdOrderId: String(warrantyHoldInfo?.orderId || "").trim(),
@@ -6811,6 +6845,11 @@ const pickChatgptCurrentStatePayload = (account = {}) => {
     isBusyInMarketplace: !!currentState?.isBusyInMarketplace,
     isBusyInWarrantyReplacement: !!currentState?.isBusyInWarrantyReplacement,
     hasAssignedUsers: !!currentState?.hasAssignedUsers,
+    hasActiveAssignedUsers: !!currentState?.hasActiveAssignedUsers,
+    activeAssignedUserCount: Number(currentState?.activeAssignedUserCount || 0),
+    expiredAssignedUserCount: Number(currentState?.expiredAssignedUserCount || 0),
+    hasMarketplaceHistory: !!currentState?.hasMarketplaceHistory,
+    isExpired: !!currentState?.isExpired,
     userCount: Number(currentState?.userCount || 0),
     activeReservationOrderId: String(
       currentState?.activeReservationOrderId || "",
@@ -7514,6 +7553,7 @@ const scanChatgptExpiryCleanupState = async () => {
   const warnings = [];
 
   decoratedMap.forEach((account) => {
+    const currentState = pickChatgptCurrentStatePayload(account);
     const userStats = getChatgptExpiryUserStats(account);
     const isEmpty = userStats.totalUserCount === 0;
     const hasExpiredUsersOnly =
@@ -7524,9 +7564,7 @@ const scanChatgptExpiryCleanupState = async () => {
       (Array.isArray(account?.storeTraceSummary?.activeReservationTraces) &&
         account.storeTraceSummary.activeReservationTraces.length > 0);
     const hasWarrantyHold = hasStoreWarrantyHoldNote(account?.note);
-    const hasMarketplaceBusy = hasMarketplaceTraceSummary(
-      account?.marketplaceTraceSummary,
-    );
+    const hasMarketplaceBusy = !!currentState?.isBusyInMarketplace;
     const hasWarrantyReplacement = Array.isArray(account?.storeTraceSummary?.traces)
       ? account.storeTraceSummary.traces.some(
           (trace) => String(trace?.role || "").trim() === "warranty_to",
@@ -8635,6 +8673,7 @@ const auditStoreOrderAccountConsistency = async ({ repair = false } = {}) => {
     orphanAssignedAccounts: [],
     orphanWarrantyHoldNotes: [],
     warrantyHoldOutsideTotal: [],
+    warrantyHoldTypeMismatch: [],
     busyAccountsStillInMarket: [],
     fulfilledWithoutPaidAt: [],
     fulfilledBeforePaidAt: [],
@@ -8810,6 +8849,38 @@ const auditStoreOrderAccountConsistency = async ({ repair = false } = {}) => {
       }
     }
 
+    const rawType = normalizeChatgptAccountType(account?.type);
+    const effectiveType = normalizeChatgptAccountType(account?.effectiveType);
+    if (
+      account?.isWarrantyHold &&
+      String(account?.effectiveTypeSource || "").trim() === "store_trace" &&
+      ["package1", "package2"].includes(effectiveType) &&
+      rawType !== effectiveType
+    ) {
+      findings.warrantyHoldTypeMismatch.push({
+        accountId,
+        username: String(account?.username || "").trim(),
+        currentType: rawType,
+        expectedType: effectiveType,
+      });
+      if (repair) {
+        await Account.updateOne(
+          { id: accountId },
+          {
+            $set: {
+              type: effectiveType,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        );
+        repairs.push({
+          type: "normalize_warranty_hold_type",
+          accountId,
+          nextType: effectiveType,
+        });
+      }
+    }
+
     if (
       warehouse === CHATGPT_MARKET_VALUE &&
       [
@@ -8850,6 +8921,7 @@ const auditStoreOrderAccountConsistency = async ({ repair = false } = {}) => {
       orphanAssignedAccounts: findings.orphanAssignedAccounts.length,
       orphanWarrantyHoldNotes: findings.orphanWarrantyHoldNotes.length,
       warrantyHoldOutsideTotal: findings.warrantyHoldOutsideTotal.length,
+      warrantyHoldTypeMismatch: findings.warrantyHoldTypeMismatch.length,
       busyAccountsStillInMarket: findings.busyAccountsStillInMarket.length,
       fulfilledWithoutPaidAt: findings.fulfilledWithoutPaidAt.length,
       fulfilledBeforePaidAt: findings.fulfilledBeforePaidAt.length,
@@ -11480,6 +11552,7 @@ const warrantyStoreOrderForAdmin = async (
       { id: currentAssignedId },
       {
         $set: {
+          type: packageCode === "package1" ? "package1" : "package2",
           note: appendStoreWarrantyHoldNote(
             currentAssignedSnapshot?.note,
             orderId,
@@ -15417,9 +15490,20 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
     const currentState = decoratedExisting
       ? pickChatgptCurrentStatePayload(decoratedExisting)
       : null;
+    const canDeleteExpiredMarketplaceAccount = !!(
+      decoratedExisting &&
+      currentState?.isExpired &&
+      currentState?.hasMarketplaceHistory &&
+      !hasStoreTraceHistoryForAccount(decoratedExisting) &&
+      !currentState?.hasActiveAssignedUsers &&
+      !currentState?.isReservedForWeb &&
+      !currentState?.isWarrantyHold &&
+      !currentState?.isBusyInWarrantyReplacement &&
+      !currentState?.isBusyInMarketplace
+    );
     if (
       currentState &&
-      (currentState.hasAssignedUsers ||
+      ((currentState.hasAssignedUsers && !canDeleteExpiredMarketplaceAccount) ||
         currentState.isWarrantyHold ||
         currentState.isBusyInWarrantyReplacement ||
         currentState.isBusyInMarketplace)

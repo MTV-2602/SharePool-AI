@@ -3890,6 +3890,12 @@ function App() {
     });
     return response?.data || null;
   };
+  const getChatgptFocusMissingMessage = (payload = {}, fallback = "") => {
+    if (String(payload?.reason || "").trim() === "account_missing") {
+      return "Acc này đã bị xóa hoặc trace đơn/bảo hành cũ không còn trỏ tới acc hiện tại.";
+    }
+    return String(payload?.message || fallback || "Khong tim thay tai khoan nay nua.");
+  };
   const focusChatgptAccountById = async (accountId = "") => {
     const normalizedId = String(accountId || "").trim();
     if (!normalizedId) return null;
@@ -3898,7 +3904,7 @@ function App() {
       if (!payload?.found) {
         showAlert(
           "Khong tim thay acc",
-          String(payload?.message || "Khong tim thay tai khoan nay nua."),
+          getChatgptFocusMissingMessage(payload, "Khong tim thay tai khoan nay nua."),
           "warning",
         );
         return null;
@@ -7231,7 +7237,10 @@ function App() {
         if (!payload?.found || !payload?.account) {
           showAlert(
             "Khong tim thay acc",
-            String(payload?.message || "Khong tim thay acc hien tai cua order nay."),
+            getChatgptFocusMissingMessage(
+              payload,
+              "Khong tim thay acc hien tai cua order nay.",
+            ),
             "warning",
           );
           return;
