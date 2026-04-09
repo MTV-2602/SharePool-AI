@@ -5091,6 +5091,13 @@ const normalizeAdminChatgptTotalType = (value = "") => {
   }
   return "all";
 };
+const normalizeChatgptAccountType = (value = "") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["package1", "package2", "unassigned"].includes(normalized)) {
+    return normalized;
+  }
+  return "unassigned";
+};
 const normalizeAdminCustomerFilter = (value = "") => {
   const normalized = String(value || "").trim().toLowerCase();
   if (["all", "with", "without"].includes(normalized)) {
@@ -5236,8 +5243,10 @@ const buildAdminChatgptSearchText = (account = {}) =>
 const sortAdminChatgptAccounts = (items = []) => {
   const typeOrder = { package1: 0, package2: 1, unassigned: 2 };
   return [...(Array.isArray(items) ? items : [])].sort((left, right) => {
-    const leftOrder = typeOrder[String(left?.type || "unassigned").trim()] ?? 99;
-    const rightOrder = typeOrder[String(right?.type || "unassigned").trim()] ?? 99;
+    const leftOrder =
+      typeOrder[normalizeChatgptAccountType(left?.effectiveType || left?.type)] ?? 99;
+    const rightOrder =
+      typeOrder[normalizeChatgptAccountType(right?.effectiveType || right?.type)] ?? 99;
     if (leftOrder !== rightOrder) return leftOrder - rightOrder;
     return (
       new Date(String(right?.createdAt || 0)).getTime() -
@@ -5516,10 +5525,13 @@ const listAdminChatgptAccounts = async ({
     })
     .filter((account) => {
       if (normalizedSubTab !== "total" || normalizedTotalType === "all") return true;
+      const effectiveType = normalizeChatgptAccountType(
+        account?.effectiveType || account?.type,
+      );
       if (normalizedTotalType === "unassigned") {
-        return !account?.type || String(account.type).trim() === "unassigned";
+        return effectiveType === "unassigned";
       }
-      return String(account?.type || "").trim() === normalizedTotalType;
+      return effectiveType === normalizedTotalType;
     })
     .filter((account) =>
       accountMatchesMailCheckFilter(account, normalizedMailCheckFilter),
@@ -5581,14 +5593,19 @@ const listAdminChatgptAccounts = async ({
       totalTypeTabs: {
         all: totalPoolAccounts.length,
         package1: totalPoolAccounts.filter(
-          (account) => String(account?.type || "").trim() === "package1",
+          (account) =>
+            normalizeChatgptAccountType(account?.effectiveType || account?.type) ===
+            "package1",
         ).length,
         package2: totalPoolAccounts.filter(
-          (account) => String(account?.type || "").trim() === "package2",
+          (account) =>
+            normalizeChatgptAccountType(account?.effectiveType || account?.type) ===
+            "package2",
         ).length,
         unassigned: totalPoolAccounts.filter(
           (account) =>
-            !account?.type || String(account?.type || "").trim() === "unassigned",
+            normalizeChatgptAccountType(account?.effectiveType || account?.type) ===
+            "unassigned",
         ).length,
       },
       mailCheckTabs: {
@@ -5778,7 +5795,7 @@ const buildChatgptPublicStatsSummary = async () => {
   };
 
   (Array.isArray(accounts) ? accounts : []).forEach((account) => {
-    const type = String(account?.type || "unassigned").trim() || "unassigned";
+    const type = normalizeChatgptAccountType(account?.effectiveType || account?.type);
     const users = Array.isArray(account?.users) ? account.users : [];
     const userCount = users.length;
     summary.totalAccounts += 1;
@@ -5817,7 +5834,7 @@ const buildChatgptPublicStatsSummary = async () => {
   });
 
   chatgptTotalPoolAccounts.forEach((account) => {
-    const type = String(account?.type || "unassigned").trim() || "unassigned";
+    const type = normalizeChatgptAccountType(account?.effectiveType || account?.type);
     if (type === "package1") summary.chatgpt.totalTypeTabs.package1 += 1;
     else if (type === "package2") summary.chatgpt.totalTypeTabs.package2 += 1;
     else summary.chatgpt.totalTypeTabs.unassigned += 1;
@@ -6541,6 +6558,104 @@ const buildStoreWarrantyHoldTraceInfo = (account = {}) => {
     createdAt,
   };
 };
+const inferChatgptTypeFromTraceValue = (value = "") => {
+  const normalized = normalizeAdminSearchText(value);
+  if (!normalized) return "";
+  if (
+    normalized === "package1" ||
+    normalized.includes("goi 1") ||
+    normalized.includes("goi1") ||
+    normalized.includes("shared") ||
+    normalized.includes("chia se")
+  ) {
+    return "package1";
+  }
+  if (
+    normalized === "package2" ||
+    normalized.includes("goi 2") ||
+    normalized.includes("goi2") ||
+    normalized.includes("private") ||
+    normalized.includes("linh hoat") ||
+    normalized.includes("tai khoan rieng")
+  ) {
+    return "package2";
+  }
+  if (
+    normalized === "unassigned" ||
+    normalized.includes("chua chon") ||
+    normalized.includes("chon goi")
+  ) {
+    return "unassigned";
+  }
+  return "";
+};
+const pickChatgptEffectiveTypePayload = (account = {}) => {
+  const rawType = normalizeChatgptAccountType(account?.type);
+  if (rawType !== "unassigned") {
+    return {
+      effectiveType: rawType,
+      effectiveTypeSource: "raw",
+    };
+  }
+  const currentState =
+    account?.currentAccountState && typeof account.currentAccountState === "object"
+      ? account.currentAccountState
+      : null;
+  const availabilityState = String(
+    currentState?.availabilityState || account?.availabilityState || "",
+  ).trim();
+  const shouldInferFromStoreTrace =
+    availabilityState === "warranty_hold_source" || hasStoreWarrantyHoldNote(account?.note);
+  if (!shouldInferFromStoreTrace) {
+    return {
+      effectiveType: rawType,
+      effectiveTypeSource: "raw",
+    };
+  }
+  const summary =
+    account?.storeTraceSummary && typeof account.storeTraceSummary === "object"
+      ? account.storeTraceSummary
+      : null;
+  const traces = Array.isArray(summary?.traces) ? summary.traces : [];
+  const prioritizedTraces = [
+    ...traces.filter((trace) => String(trace?.role || "").trim() === "warranty_from"),
+    ...traces.filter((trace) => {
+      const role = String(trace?.role || "").trim();
+      return role === "assigned" || role === "root";
+    }),
+    ...traces.filter((trace) => {
+      const role = String(trace?.role || "").trim();
+      return role !== "warranty_from" && role !== "assigned" && role !== "root";
+    }),
+  ];
+  for (const trace of prioritizedTraces) {
+    const inferredType = [
+      trace?.fromType,
+      trace?.assignedType,
+      trace?.packageCode,
+      trace?.packageName,
+    ]
+      .map(inferChatgptTypeFromTraceValue)
+      .find((type) => type === "package1" || type === "package2");
+    if (inferredType) {
+      return {
+        effectiveType: inferredType,
+        effectiveTypeSource: "store_trace",
+      };
+    }
+  }
+  const fallbackType = inferChatgptTypeFromTraceValue(summary?.latestPackageName);
+  if (fallbackType === "package1" || fallbackType === "package2") {
+    return {
+      effectiveType: fallbackType,
+      effectiveTypeSource: "store_trace",
+    };
+  }
+  return {
+    effectiveType: rawType,
+    effectiveTypeSource: "raw",
+  };
+};
 const buildChatgptAccountCurrentState = (account = {}) => {
   const users = Array.isArray(account?.users) ? account.users : [];
   const userCount = users.length;
@@ -6709,9 +6824,15 @@ const pickChatgptCurrentStatePayload = (account = {}) => {
 };
 const enrichChatgptAccountWithOperationalState = (account = {}) => {
   const currentAccountState = pickChatgptCurrentStatePayload(account);
+  const effectiveTypePayload = pickChatgptEffectiveTypePayload({
+    ...account,
+    currentAccountState,
+  });
   return {
     ...account,
     currentAccountState,
+    effectiveType: effectiveTypePayload.effectiveType,
+    effectiveTypeSource: effectiveTypePayload.effectiveTypeSource,
     availabilityState: currentAccountState.availabilityState,
     busyReason: currentAccountState.busyReason,
     busyOrderId: currentAccountState.busyOrderId,
@@ -7110,8 +7231,9 @@ const buildAdminChatgptAccountFocus = async ({
     };
   }
 
-  const normalizedType =
-    String(targetAccount?.type || "unassigned").trim() || "unassigned";
+  const normalizedType = normalizeChatgptAccountType(
+    targetAccount?.effectiveType || targetAccount?.type,
+  );
   const isTrackedMarketplaceAccount = hasMarketplaceTraceSummary(
     targetAccount?.marketplaceTraceSummary,
   );
@@ -7138,7 +7260,7 @@ const buildAdminChatgptAccountFocus = async ({
       : totalPoolAccounts.filter((account) => {
           if (targetTotalType === "all") return true;
           return (
-            (String(account?.type || "unassigned").trim() || "unassigned") ===
+            normalizeChatgptAccountType(account?.effectiveType || account?.type) ===
             targetTotalType
           );
         });

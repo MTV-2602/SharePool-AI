@@ -96,6 +96,10 @@ const supportsChatgptMarketType = (value) =>
   ["package1", "package2", "unassigned", ""].includes(
     String(value || "").trim(),
   );
+const normalizeChatgptAccountType = (value) =>
+  ["package1", "package2", "unassigned"].includes(String(value || "").trim())
+    ? String(value || "").trim()
+    : "unassigned";
 
 const getPackage2ShelfLabel = (value) =>
   normalizeChatgptWarehouseUiValue(value) === "cheap"
@@ -4058,8 +4062,10 @@ function App() {
                 : "none",
             }))
             .sort((a, b) => {
-            const orderA = typeOrder[a.type] ?? 99;
-            const orderB = typeOrder[b.type] ?? 99;
+            const orderA =
+              typeOrder[normalizeChatgptAccountType(a.effectiveType || a.type)] ?? 99;
+            const orderB =
+              typeOrder[normalizeChatgptAccountType(b.effectiveType || b.type)] ?? 99;
             if (orderA !== orderB) return orderA - orderB;
             return new Date(b.createdAt) - new Date(a.createdAt);
           });
@@ -11845,14 +11851,17 @@ function App() {
                         );
                         const primaryVisibleChatgptUserEntry =
                           visibleChatgptUserEntries[0] || null;
+                        const effectiveChatgptType = normalizeChatgptAccountType(
+                          acc?.effectiveType || acc?.type,
+                        );
                         const effectiveChatgptCustomerViewType =
-                          acc?.type === "unassigned" || !String(acc?.type || "").trim()
+                          effectiveChatgptType === "unassigned"
                             ? visibleChatgptUsers.length > 1
                               ? "package1"
                               : visibleChatgptUsers.length === 1
                                 ? "package2"
                                 : "unassigned"
-                            : acc.type;
+                            : effectiveChatgptType;
                         const hasActiveStoreReservation = activeStoreReservationCount > 0;
                         const activeStoreReservationPackageName = String(
                           latestStoreReservationTrace?.packageName || "",
@@ -11874,6 +11883,9 @@ function App() {
                         const isAccountLockedByStoreOrder = hasActiveStoreReservation;
                         const isAccountLockedByStoreWarrantyHold =
                           !!storeWarrantyHoldInfo && !hasActiveStoreReservation;
+                        const displayedChatgptType = isAccountLockedByStoreWarrantyHold
+                          ? effectiveChatgptType
+                          : normalizeChatgptAccountType(acc?.type);
                         const isAccountLockedFromManualSale =
                           isAccountLockedByStoreOrder || isAccountLockedByStoreWarrantyHold;
                         const isChatgptRowExpanded =
@@ -11931,7 +11943,7 @@ function App() {
                             )}
                             <select
                               id={`select-type-${acc.id}`}
-                              value={acc.type}
+                              value={displayedChatgptType}
                               onChange={(e) =>
                                 handleTypeChange(acc, e.target.value)
                               }
@@ -11942,9 +11954,9 @@ function App() {
                               className={`
                                             ${gptSubTab === "market" ? "hidden" : "w-full"} rounded-md px-2 py-1.5 text-[10px] outline-none font-bold border cursor-pointer appearance-none text-center
                                             ${loadingStates.changeType[acc.id] || isAccountLockedFromManualSale ? "opacity-50 cursor-not-allowed" : ""}
-                                            ${acc.type === "package1"
+                                            ${displayedChatgptType === "package1"
                                   ? "bg-blue-900/40 text-blue-400 border-blue-700/50"
-                                  : acc.type === "package2"
+                                  : displayedChatgptType === "package2"
                                     ? "bg-purple-900/40 text-purple-400 border-purple-700/50"
                                     : "bg-slate-800 text-slate-400 border-slate-700"
                                 }
