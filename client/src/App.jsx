@@ -1850,6 +1850,10 @@ function App() {
   const [chatgptMailCheckHistory, setChatgptMailCheckHistory] = useState([]);
   const [chatgptMailCheckHistoryLimit, setChatgptMailCheckHistoryLimit] =
     useState(20);
+  const [chatgptMailCheckHistoryFromDate, setChatgptMailCheckHistoryFromDate] =
+    useState("");
+  const [chatgptMailCheckHistoryToDate, setChatgptMailCheckHistoryToDate] =
+    useState("");
   const [adminRealtime, setAdminRealtime] = useState(
     buildDefaultAdminRealtimeConfig(),
   );
@@ -4300,15 +4304,29 @@ function App() {
     }
   };
 
-  const openChatgptMailCheckHistory = async (limitOverride = null) => {
+  const openChatgptMailCheckHistory = async (options = null) => {
+    const normalizedOptions =
+      typeof options === "number" ? { limitOverride: options } : options || {};
     const effectiveLimit = Math.max(
       1,
-      Number(limitOverride || chatgptMailCheckHistoryLimit || 20),
+      Number(
+        normalizedOptions.limitOverride || chatgptMailCheckHistoryLimit || 20,
+      ),
     );
+    const effectiveDateFrom = String(
+      normalizedOptions.dateFromOverride ?? chatgptMailCheckHistoryFromDate ?? "",
+    ).trim();
+    const effectiveDateTo = String(
+      normalizedOptions.dateToOverride ?? chatgptMailCheckHistoryToDate ?? "",
+    ).trim();
     try {
       setLoadingStates((prev) => ({ ...prev, fetchChatgptMailCheckHistory: true }));
       const response = await axios.get("/api/admin/chatgpt-mail-check/history", {
-        params: { limit: effectiveLimit },
+        params: {
+          limit: effectiveLimit,
+          dateFrom: effectiveDateFrom,
+          dateTo: effectiveDateTo,
+        },
         timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
         skipGlobalLoading: true,
       });
@@ -4316,6 +4334,8 @@ function App() {
         Array.isArray(response?.data?.items) ? response.data.items : [],
       );
       setChatgptMailCheckHistoryLimit(effectiveLimit);
+      setChatgptMailCheckHistoryFromDate(effectiveDateFrom);
+      setChatgptMailCheckHistoryToDate(effectiveDateTo);
       setShowChatgptMailCheckHistoryModal(true);
     } catch (error) {
       showAlert(
@@ -18320,6 +18340,67 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
               </div>
 
               <div className="max-h-[calc(88vh-88px)] overflow-y-auto px-5 py-5">
+                <div className="mb-4 rounded-2xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Tu ngay
+                        </div>
+                        <input
+                          type="date"
+                          value={chatgptMailCheckHistoryFromDate}
+                          onChange={(event) =>
+                            setChatgptMailCheckHistoryFromDate(event.target.value)
+                          }
+                          className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400"
+                        />
+                      </div>
+                      <div>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Den ngay
+                        </div>
+                        <input
+                          type="date"
+                          value={chatgptMailCheckHistoryToDate}
+                          onChange={(event) =>
+                            setChatgptMailCheckHistoryToDate(event.target.value)
+                          }
+                          className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void openChatgptMailCheckHistory()}
+                        disabled={loadingStates.fetchChatgptMailCheckHistory}
+                        className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/15 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        <Search size={15} />
+                        Loc
+                      </button>
+                      {(chatgptMailCheckHistoryFromDate || chatgptMailCheckHistoryToDate) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setChatgptMailCheckHistoryFromDate("");
+                            setChatgptMailCheckHistoryToDate("");
+                            void openChatgptMailCheckHistory({
+                              dateFromOverride: "",
+                              dateToOverride: "",
+                            });
+                          }}
+                          disabled={loadingStates.fetchChatgptMailCheckHistory}
+                          className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm font-semibold text-slate-300 transition hover:text-white disabled:cursor-wait disabled:opacity-60"
+                        >
+                          Xoa ngay
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      Loc theo ngay acc bi match mail khoa OpenAI.
+                    </div>
+                  </div>
+                </div>
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-xs text-slate-300 sm:hidden">
                   <span>Hiển thị tối đa {chatgptMailCheckHistoryLimit} acc</span>
                   <div className="flex items-center gap-1">

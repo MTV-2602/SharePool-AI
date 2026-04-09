@@ -618,11 +618,29 @@ async function buildChatgptMailCheckSummary() {
   };
 }
 
-async function listChatgptMailCheckHistory(limit = 30) {
+const buildDateRangeIso = (value, { endOfDay = false } = {}) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  const parsed = endOfDay
+    ? new Date(`${normalized}T23:59:59.999Z`)
+    : new Date(`${normalized}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString();
+};
+
+async function listChatgptMailCheckHistory(limit = 30, filters = {}) {
   const safeLimit = Math.max(1, Math.min(Number(limit || 30), 100));
-  const accounts = await Account.find({
+  const dateFromIso = buildDateRangeIso(filters?.dateFrom, { endOfDay: false });
+  const dateToIso = buildDateRangeIso(filters?.dateTo, { endOfDay: true });
+  const query = {
     mailCheckStatus: "died",
-  })
+  };
+  if (dateFromIso || dateToIso) {
+    query.mailCheckLastMatchedAt = {};
+    if (dateFromIso) query.mailCheckLastMatchedAt.$gte = dateFromIso;
+    if (dateToIso) query.mailCheckLastMatchedAt.$lte = dateToIso;
+  }
+  const accounts = await Account.find(query)
     .sort({ mailCheckLastMatchedAt: -1, updatedAt: -1 })
     .limit(safeLimit)
     .select(CHATGPT_MAIL_CHECK_ACCOUNT_SELECT)
@@ -12788,12 +12806,17 @@ app.get("/api/admin/chatgpt-mail-check/summary", verifyToken, async (req, res) =
 app.get("/api/admin/chatgpt-mail-check/history", verifyToken, async (req, res) => {
   try {
     const safeLimit = parsePositiveLimit(req.query?.limit, 20, 100);
+    const dateFrom = String(req.query?.dateFrom || "").trim();
+    const dateTo = String(req.query?.dateTo || "").trim();
     const payload = await getCachedAdminRead(
       "admin:chatgpt-mail-check-history",
-      { limit: safeLimit },
+      { limit: safeLimit, dateFrom, dateTo },
       async () => ({
         success: true,
-        items: await listChatgptMailCheckHistory(safeLimit),
+        items: await listChatgptMailCheckHistory(safeLimit, {
+          dateFrom,
+          dateTo,
+        }),
         version: latestDataVersion,
       }),
     );
