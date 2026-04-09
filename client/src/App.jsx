@@ -6694,6 +6694,14 @@ function App() {
   const handleRunOneChatgptMailCheck = async (acc = {}) => {
     const accountId = String(acc?.id || "").trim();
     if (!accountId || loadingStates.runChatgptMailCheckOne === accountId) return;
+    if (normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) === "died") {
+      showAlert(
+        "Bo qua doc lai",
+        "Acc nay da duoc danh dau Mail die, khong can doc lai de tranh ton request Tinyhost.",
+        "info",
+      );
+      return;
+    }
     try {
       setLoadingStates((prev) => ({ ...prev, runChatgptMailCheckOne: accountId }));
       const response = await axios.post(
@@ -12227,10 +12235,20 @@ function App() {
                                         type="button"
                                         onClick={() => handleRunOneChatgptMailCheck(acc)}
                                         disabled={
+                                          normalizeChatgptMailCheckStatus(
+                                            acc?.mailCheckStatus,
+                                          ) === "died" ||
                                           loadingStates.runChatgptMailCheckOne ===
                                           String(acc?.id || "")
                                         }
                                         className="inline-flex items-center gap-1 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1 font-semibold text-rose-100 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                                        title={
+                                          normalizeChatgptMailCheckStatus(
+                                            acc?.mailCheckStatus,
+                                          ) === "died"
+                                            ? "Acc da Mail die, khong doc lai"
+                                            : "Đọc mail Tinyhost"
+                                        }
                                       >
                                         {loadingStates.runChatgptMailCheckOne ===
                                         String(acc?.id || "") ? (
@@ -12238,7 +12256,11 @@ function App() {
                                         ) : (
                                           <Mail size={11} />
                                         )}
-                                        Đọc mail
+                                        {normalizeChatgptMailCheckStatus(
+                                          acc?.mailCheckStatus,
+                                        ) === "died"
+                                          ? "Da die"
+                                          : "Đọc mail"}
                                       </button>
                                     </div>
                                     {acc?.mailCheckLastSubject && (
@@ -13607,11 +13629,18 @@ function App() {
                                 type="button"
                                 onClick={() => handleRunOneChatgptMailCheck(acc)}
                                 disabled={
+                                  normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) ===
+                                    "died" ||
                                   loadingStates.runChatgptMailCheckOne ===
                                   String(acc?.id || "")
                                 }
                                 className="rounded-md bg-slate-700 p-1.5 text-slate-300 transition-colors hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                                title="Đọc mail Tinyhost"
+                                title={
+                                  normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) ===
+                                  "died"
+                                    ? "Acc da Mail die, khong doc lai"
+                                    : "Đọc mail Tinyhost"
+                                }
                               >
                                 {loadingStates.runChatgptMailCheckOne ===
                                 String(acc?.id || "") ? (
@@ -18656,23 +18685,6 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                   >
                                     <Search size={14} />
                                     Toi acc
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRunOneChatgptMailCheck(item)}
-                                    disabled={
-                                      loadingStates.runChatgptMailCheckOne ===
-                                      String(item?.id || "")
-                                    }
-                                    className="inline-flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-100 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    {loadingStates.runChatgptMailCheckOne ===
-                                    String(item?.id || "") ? (
-                                      <Loader2 size={14} className="animate-spin" />
-                                    ) : (
-                                      <Mail size={14} />
-                                    )}
-                                    Doc lai
                                   </button>
                                 </div>
                               </div>

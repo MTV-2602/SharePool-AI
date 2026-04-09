@@ -434,6 +434,16 @@ async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
     };
   }
 
+  const currentStatus = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
+  if (currentStatus === "died") {
+    return buildChatgptMailCheckResult(account, {
+      status: "skipped",
+      changed: false,
+      source,
+      reason: "Acc da duoc danh dau Mail die. Bo qua doc lai de tranh ton request Tinyhost.",
+    });
+  }
+
   const mailbox = parseTinyhostInboxFromEmail(account?.username);
   if (!mailbox) {
     return buildChatgptMailCheckResult(account, {
@@ -511,7 +521,6 @@ async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
   }
 
   const checkedAt = new Date().toISOString();
-  const currentStatus = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
   const updatePayload = {
     mailCheckProvider:
       String(account?.mailCheckProvider || "").trim() || CHATGPT_MAIL_CHECK_PROVIDER,
