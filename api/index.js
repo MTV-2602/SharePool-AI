@@ -1917,16 +1917,30 @@ app.get(
         cleanupOldStoreFailedOrders(),
         cleanupOldStoreSupportMessages(),
       ]);
+      const inventoryResults = await Promise.all([
+        reconcileChatgptMarketInventory(),
+        reconcileTeamMarketInventory(),
+      ]);
+      const inventoryChanged = inventoryResults.some(Boolean);
       const expiryCleanup = await refreshExpiryCleanupSnapshot({
         createBatch: true,
         notifyTelegram: true,
       });
+      const audit = await runChatgptMailDieAuditBatch({
+        source: "cron_daily_hobby",
+        limit: CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT,
+      });
+      if (inventoryChanged || Number(audit?.summary?.changedCount || 0) > 0) {
+        bumpDataVersion();
+        notifyClients();
+      }
       return res.json({
         ok: true,
         task: "store-maintenance",
         durationMs: Date.now() - startedAt,
         version: latestDataVersion,
         maintenanceResults,
+        inventoryChanged,
         expiryCleanup: {
           pendingBatchId: String(
             expiryCleanup?.snapshot?.latestPendingBatchId || "",
@@ -1941,6 +1955,14 @@ app.get(
             expiryCleanup?.scan?.summary?.warningCount || 0,
           ),
           notified: !!expiryCleanup?.telegramResult?.sent,
+        },
+        mailAudit: {
+          scannedCount: Number(audit?.scannedCount || 0),
+          diedCount: Number(audit?.summary?.diedCount || 0),
+          cleanCount: Number(audit?.summary?.cleanCount || 0),
+          skippedCount: Number(audit?.summary?.skippedCount || 0),
+          errorCount: Number(audit?.summary?.errorCount || 0),
+          changedCount: Number(audit?.summary?.changedCount || 0),
         },
       });
     } catch (error) {
