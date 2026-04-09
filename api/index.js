@@ -654,6 +654,7 @@ async function listEligibleChatgptMailCheckAccountsForAudit(limit = 25) {
   ).toISOString();
   const accounts = await Account.find({
     mailCheckEnabled: true,
+    mailCheckStatus: { $ne: "died" },
     $or: [
       { mailCheckLastCheckedAt: { $exists: false } },
       { mailCheckLastCheckedAt: "" },
