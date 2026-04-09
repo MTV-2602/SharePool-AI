@@ -5234,6 +5234,9 @@ const buildAdminChatgptSearchText = (account = {}) =>
       account?.marketplaceTraceSummary?.latestOrderId,
       account?.marketplaceTraceSummary?.latestWarrantyOrderId,
       account?.marketplaceTraceSummary?.latestProvider,
+      ...(Array.isArray(account?.marketplaceTraceSummary?.searchValues)
+        ? account.marketplaceTraceSummary.searchValues
+        : []),
       account?.mailCheckLastSubject,
       account?.mailCheckLastSender,
       account?.mailCheckLastSnippet,
@@ -6470,6 +6473,7 @@ const buildMarketplaceAccountTraceMap = (
         latestOrderId: "",
         latestProvider: "",
         latestWarrantyOrderId: "",
+        searchValues: [],
       });
     }
     return map.get(normalizedId);
@@ -6481,6 +6485,16 @@ const buildMarketplaceAccountTraceMap = (
       summary.providers.push(normalizedProvider);
     }
   };
+  const pushSearchValues = (summary, ...values) => {
+    if (!summary || !Array.isArray(summary.searchValues)) return;
+    values.forEach((value) => {
+      const normalizedValue = String(value || "").trim();
+      if (!normalizedValue) return;
+      if (!summary.searchValues.includes(normalizedValue)) {
+        summary.searchValues.push(normalizedValue);
+      }
+    });
+  };
 
   (Array.isArray(orders) ? orders : []).forEach((order) => {
     const provider = normalizeProvider(order?.provider);
@@ -6490,6 +6504,13 @@ const buildMarketplaceAccountTraceMap = (
       if (!summary) return;
       summary.orderCount += 1;
       pushProvider(summary, provider);
+      pushSearchValues(
+        summary,
+        provider,
+        orderId,
+        item?.accountId,
+        item?.username,
+      );
       if (!summary.latestOrderId) {
         summary.latestOrderId = orderId;
         summary.latestProvider = provider;
@@ -6503,15 +6524,30 @@ const buildMarketplaceAccountTraceMap = (
     const relatedIds = new Set();
     relatedIds.add(String(item?.rootAccountId || "").trim());
     relatedIds.add(String(item?.currentAccountId || "").trim());
+    const relatedSearchValues = [
+      provider,
+      orderId,
+      item?.rootAccountId,
+      item?.rootUsername,
+      item?.currentAccountId,
+      item?.currentUsername,
+    ];
     (Array.isArray(item?.rounds) ? item.rounds : []).forEach((round) => {
       relatedIds.add(String(round?.fromAccountId || "").trim());
       relatedIds.add(String(round?.toAccountId || "").trim());
+      relatedSearchValues.push(
+        round?.fromAccountId,
+        round?.fromUsername,
+        round?.toAccountId,
+        round?.toUsername,
+      );
     });
     relatedIds.forEach((accountId) => {
       const summary = touchSummary(accountId);
       if (!summary) return;
       summary.warrantyCount += 1;
       pushProvider(summary, provider);
+      pushSearchValues(summary, ...relatedSearchValues);
       if (!summary.latestWarrantyOrderId) {
         summary.latestWarrantyOrderId = orderId;
       }
