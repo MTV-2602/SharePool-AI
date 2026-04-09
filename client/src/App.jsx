@@ -18472,8 +18472,8 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
           : [];
         const activeDateLabel =
           chatgptMailCheckHistoryFromDate || chatgptMailCheckHistoryToDate
-            ? `Dang loc ${chatgptMailCheckHistoryFromDate || "--"} -> ${chatgptMailCheckHistoryToDate || "--"}`
-            : `Dang hien thi toi da ${chatgptMailCheckHistoryLimit} acc moi nhat`;
+            ? `${chatgptMailCheckHistoryFromDate || "--"} -> ${chatgptMailCheckHistoryToDate || "--"}`
+            : `Toi da ${chatgptMailCheckHistoryLimit} acc moi nhat`;
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
             <div
@@ -18585,30 +18585,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                       </button>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
-                    <span>{activeDateLabel}</span>
-                    <div className="flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-950/70 p-1">
-                      {CHATGPT_MAIL_CHECK_HISTORY_LIMIT_OPTIONS.map((limitOption) => {
-                        const isActive =
-                          Number(chatgptMailCheckHistoryLimit) === Number(limitOption);
-                        return (
-                          <button
-                            key={limitOption}
-                            type="button"
-                            onClick={() => void openChatgptMailCheckHistory(limitOption)}
-                            disabled={loadingStates.fetchChatgptMailCheckHistory}
-                            className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                              isActive
-                                ? "bg-cyan-500/20 text-cyan-100"
-                                : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                            } disabled:cursor-wait disabled:opacity-60`}
-                          >
-                            {limitOption}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <div className="text-xs text-slate-400">{activeDateLabel}</div>
                 </div>
                 {items.length === 0 ? (
                   <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-6 text-sm text-slate-400">
