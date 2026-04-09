@@ -50,6 +50,53 @@ const MONGO_CONNECT_OPTIONS = {
   ),
   socketTimeoutMS: toPositiveInt(process.env.MONGO_SOCKET_TIMEOUT_MS, 20000),
 };
+const CHATGPT_MAIL_CHECK_PROVIDER = "tinyhost";
+const TINYHOST_BASE_URL = String(
+  process.env.TINYHOST_BASE_URL || "https://tinyhost.shop",
+)
+  .trim()
+  .replace(/\/+$/, "");
+const CHATGPT_MAIL_DIE_LIST_LIMIT = Math.max(
+  1,
+  Math.min(toPositiveInt(process.env.CHATGPT_MAIL_DIE_LIST_LIMIT, 10), 20),
+);
+const CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT = Math.max(
+  1,
+  Math.min(toPositiveInt(process.env.CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT, 25), 100),
+);
+const CHATGPT_MAIL_DIE_AUDIT_MIN_INTERVAL_MS = Math.max(
+  60 * 60 * 1000,
+  toPositiveInt(
+    process.env.CHATGPT_MAIL_DIE_AUDIT_MIN_INTERVAL_MS,
+    24 * 60 * 60 * 1000,
+  ),
+);
+const CHATGPT_MAIL_DIE_SNIPPET_MAX_LENGTH = Math.max(
+  80,
+  Math.min(
+    toPositiveInt(process.env.CHATGPT_MAIL_DIE_SNIPPET_MAX_LENGTH, 240),
+    1000,
+  ),
+);
+const OPENAI_SYSTEM_SENDER_DOMAINS = ["openai.com", "tm.openai.com"];
+const OPENAI_DEACTIVATION_SUBJECT_PATTERNS = [
+  "access deactivated",
+  "account deactivated",
+  "access disabled",
+  "account disabled",
+  "account restricted",
+  "access restricted",
+  "openai - access deactivated",
+];
+const OPENAI_DEACTIVATION_BODY_PATTERNS = [
+  "we are deactivating your access",
+  "we are disabling your access",
+  "your access to our services immediately",
+  "activity in chatgpt that is not permitted",
+  "restrict the use of our services",
+  "not permitted under our policies",
+  "we have identified activity in chatgpt",
+];
 
 const getMongoReadyStateLabel = (readyState) => {
   switch (Number(readyState || 0)) {
@@ -115,6 +162,525 @@ const normalizeVietnameseForSearch = (value = "") =>
     .replace(/đ/g, "d")
     .replace(/Đ/g, "d")
     .toLowerCase();
+
+function isValidEmailAddress(value = "") {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+function normalizeChatgptMailCheckStatus(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "died") return "died";
+  if (normalized === "clean") return "clean";
+  return "unchecked";
+}
+
+function parseTinyhostInboxFromEmail(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  const match = normalized.match(/^([^@\s]+)@([^@\s]+\.[^@\s]+)$/);
+  if (!match) return null;
+  return {
+    email: normalized,
+    user: String(match[1] || "").trim(),
+    domain: String(match[2] || "").trim(),
+  };
+}
+
+function stripHtmlTags(value = "") {
+  return String(value || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildMailCheckSnippet(...values) {
+  const raw = values
+    .map((value) => stripHtmlTags(value))
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return "";
+  return raw.slice(0, CHATGPT_MAIL_DIE_SNIPPET_MAX_LENGTH);
+}
+
+function extractEmailFromSenderText(value = "") {
+  const match = String(value || "")
+    .trim()
+    .match(/([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i);
+  if (match && match[1]) return String(match[1]).trim().toLowerCase();
+  return String(value || "").trim().toLowerCase();
+}
+
+function isOpenAiSystemSender(value = "") {
+  const senderEmail = extractEmailFromSenderText(value);
+  if (!senderEmail) return false;
+  const domain = String(senderEmail.split("@")[1] || "").trim().toLowerCase();
+  return OPENAI_SYSTEM_SENDER_DOMAINS.includes(domain);
+}
+
+function matchesMailCheckPatterns(value = "", patterns = []) {
+  const haystack = normalizeVietnameseForSearch(value).replace(/\s+/g, " ").trim();
+  if (!haystack) return false;
+  return (Array.isArray(patterns) ? patterns : []).some((pattern) =>
+    haystack.includes(normalizeVietnameseForSearch(pattern)),
+  );
+}
+
+function isPotentialOpenAiDeactivationMail(message = {}) {
+  if (!isOpenAiSystemSender(message?.sender)) return false;
+  const subject = String(message?.subject || "").trim();
+  if (matchesMailCheckPatterns(subject, OPENAI_DEACTIVATION_SUBJECT_PATTERNS)) {
+    return true;
+  }
+  const snippet = buildMailCheckSnippet(message?.body, message?.html_body);
+  return matchesMailCheckPatterns(snippet, OPENAI_DEACTIVATION_BODY_PATTERNS);
+}
+
+function buildChatgptMailCheckStateForPayload(payload = {}, existingAcc = null) {
+  const username = String(
+    payload?.username ?? existingAcc?.username ?? "",
+  ).trim();
+  const hasExisting = !!(existingAcc && typeof existingAcc === "object");
+  const existingEnabled = hasExisting ? !!existingAcc?.mailCheckEnabled : false;
+  const usernameIsValidEmail = isValidEmailAddress(username);
+  const mailCheckEnabled = hasExisting
+    ? existingEnabled && usernameIsValidEmail
+    : usernameIsValidEmail;
+  const mailCheckProvider = mailCheckEnabled
+    ? CHATGPT_MAIL_CHECK_PROVIDER
+    : hasExisting
+      ? String(existingAcc?.mailCheckProvider || "").trim()
+      : "";
+  return {
+    mailCheckEnabled,
+    mailCheckProvider,
+    mailCheckStatus: normalizeChatgptMailCheckStatus(
+      hasExisting ? existingAcc?.mailCheckStatus : "unchecked",
+    ),
+    mailCheckLastCheckedAt: hasExisting
+      ? String(existingAcc?.mailCheckLastCheckedAt || "").trim()
+      : "",
+    mailCheckLastMatchedEmailId: hasExisting
+      ? String(existingAcc?.mailCheckLastMatchedEmailId || "").trim()
+      : "",
+    mailCheckLastMatchedAt: hasExisting
+      ? String(existingAcc?.mailCheckLastMatchedAt || "").trim()
+      : "",
+    mailCheckLastSubject: hasExisting
+      ? String(existingAcc?.mailCheckLastSubject || "").trim()
+      : "",
+    mailCheckLastSender: hasExisting
+      ? String(existingAcc?.mailCheckLastSender || "").trim()
+      : "",
+    mailCheckLastSnippet: hasExisting
+      ? String(existingAcc?.mailCheckLastSnippet || "").trim()
+      : "",
+  };
+}
+
+function sanitizeChatgptMailCheckRecord(account = {}) {
+  return {
+    id: String(account?.id || "").trim(),
+    username: String(account?.username || "").trim(),
+    type: String(account?.type || "").trim(),
+    package2Shelf: String(account?.package2Shelf || "").trim(),
+    expiredAt: String(account?.expiredAt || "").trim(),
+    mailCheckEnabled: !!account?.mailCheckEnabled,
+    mailCheckProvider: String(account?.mailCheckProvider || "").trim(),
+    mailCheckStatus: normalizeChatgptMailCheckStatus(account?.mailCheckStatus),
+    mailCheckLastCheckedAt: String(account?.mailCheckLastCheckedAt || "").trim(),
+    mailCheckLastMatchedEmailId: String(account?.mailCheckLastMatchedEmailId || "").trim(),
+    mailCheckLastMatchedAt: String(account?.mailCheckLastMatchedAt || "").trim(),
+    mailCheckLastSubject: String(account?.mailCheckLastSubject || "").trim(),
+    mailCheckLastSender: String(account?.mailCheckLastSender || "").trim(),
+    mailCheckLastSnippet: String(account?.mailCheckLastSnippet || "").trim(),
+  };
+}
+
+async function fetchTinyhostInboxList(domain, user, options = {}) {
+  const response = await axios.get(
+    `${TINYHOST_BASE_URL}/api/email/${encodeURIComponent(domain)}/${encodeURIComponent(user)}/`,
+    {
+      params: {
+        page: 1,
+        limit: Math.max(
+          1,
+          Math.min(Number(options?.limit || CHATGPT_MAIL_DIE_LIST_LIMIT), 100),
+        ),
+      },
+      timeout: Number(options?.timeout || 15000),
+    },
+  );
+  return Array.isArray(response?.data?.emails) ? response.data.emails : [];
+}
+
+async function fetchTinyhostEmailDetail(domain, user, emailId, options = {}) {
+  const response = await axios.get(
+    `${TINYHOST_BASE_URL}/api/email/${encodeURIComponent(domain)}/${encodeURIComponent(user)}/${encodeURIComponent(emailId)}`,
+    {
+      timeout: Number(options?.timeout || 15000),
+    },
+  );
+  return response?.data && typeof response.data === "object" ? response.data : null;
+}
+
+function buildChatgptMailCheckResult(account = {}, result = {}) {
+  return {
+    accountId: String(account?.id || "").trim(),
+    username: String(account?.username || "").trim(),
+    status: String(result?.status || "skipped").trim(),
+    changed: !!result?.changed,
+    source: String(result?.source || "").trim(),
+    reason: String(result?.reason || "").trim(),
+    mailCheckStatus: normalizeChatgptMailCheckStatus(
+      result?.mailCheckStatus || account?.mailCheckStatus,
+    ),
+    mailCheckEnabled:
+      result?.mailCheckEnabled !== undefined
+        ? !!result.mailCheckEnabled
+        : !!account?.mailCheckEnabled,
+    mailCheckProvider: String(
+      result?.mailCheckProvider || account?.mailCheckProvider || "",
+    ).trim(),
+    mailCheckLastCheckedAt: String(
+      result?.mailCheckLastCheckedAt || account?.mailCheckLastCheckedAt || "",
+    ).trim(),
+    mailCheckLastMatchedEmailId: String(
+      result?.mailCheckLastMatchedEmailId || account?.mailCheckLastMatchedEmailId || "",
+    ).trim(),
+    mailCheckLastMatchedAt: String(
+      result?.mailCheckLastMatchedAt || account?.mailCheckLastMatchedAt || "",
+    ).trim(),
+    mailCheckLastSubject: String(
+      result?.mailCheckLastSubject || account?.mailCheckLastSubject || "",
+    ).trim(),
+    mailCheckLastSender: String(
+      result?.mailCheckLastSender || account?.mailCheckLastSender || "",
+    ).trim(),
+    mailCheckLastSnippet: String(
+      result?.mailCheckLastSnippet || account?.mailCheckLastSnippet || "",
+    ).trim(),
+  };
+}
+
+async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
+  const source = String(options?.source || "manual").trim() || "manual";
+  const account =
+    accountInput &&
+    typeof accountInput === "object" &&
+    accountInput.id &&
+    accountInput.username
+      ? accountInput
+      : await Account.findOne({
+          id: String(accountInput?.id || accountInput || "").trim(),
+        })
+          .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+          .lean();
+  if (!account) {
+    return {
+      accountId: String(accountInput?.id || accountInput || "").trim(),
+      username: "",
+      status: "error",
+      changed: false,
+      source,
+      reason: "Khong tim thay account.",
+    };
+  }
+
+  const mailbox = parseTinyhostInboxFromEmail(account?.username);
+  if (!mailbox) {
+    return buildChatgptMailCheckResult(account, {
+      status: "skipped",
+      changed: false,
+      source,
+      reason: "Username khong phai email hop le de doc Tinyhost.",
+    });
+  }
+
+  let emails = [];
+  try {
+    emails = await fetchTinyhostInboxList(mailbox.domain, mailbox.user, {
+      limit: CHATGPT_MAIL_DIE_LIST_LIMIT,
+    });
+  } catch (error) {
+    const statusCode = Number(error?.response?.status || 0);
+    if (statusCode === 404) {
+      return buildChatgptMailCheckResult(account, {
+        status: "skipped",
+        changed: false,
+        source,
+        reason: "Khong tim thay inbox Tinyhost cho account nay.",
+      });
+    }
+    return buildChatgptMailCheckResult(account, {
+      status: "error",
+      changed: false,
+      source,
+      reason:
+        error?.response?.data?.detail ||
+        error?.response?.data?.error ||
+        error?.message ||
+        "Khong the doc inbox Tinyhost.",
+    });
+  }
+
+  const suspiciousEmail = emails.find((email) => {
+    if (!isOpenAiSystemSender(email?.sender)) return false;
+    const subject = String(email?.subject || "").trim();
+    const snippet = buildMailCheckSnippet(email?.body, email?.html_body);
+    return (
+      matchesMailCheckPatterns(subject, OPENAI_DEACTIVATION_SUBJECT_PATTERNS) ||
+      matchesMailCheckPatterns(snippet, OPENAI_DEACTIVATION_BODY_PATTERNS)
+    );
+  });
+
+  let matchedEmail = null;
+  if (suspiciousEmail?.id !== undefined && suspiciousEmail?.id !== null) {
+    try {
+      const emailDetail = await fetchTinyhostEmailDetail(
+        mailbox.domain,
+        mailbox.user,
+        suspiciousEmail.id,
+      );
+      const detailCandidate = emailDetail || suspiciousEmail;
+      if (isPotentialOpenAiDeactivationMail(detailCandidate)) {
+        matchedEmail = detailCandidate;
+      }
+    } catch (error) {
+      const statusCode = Number(error?.response?.status || 0);
+      if (statusCode !== 404) {
+        return buildChatgptMailCheckResult(account, {
+          status: "error",
+          changed: false,
+          source,
+          reason:
+            error?.response?.data?.detail ||
+            error?.response?.data?.error ||
+            error?.message ||
+            "Khong the doc chi tiet mail nghi van.",
+        });
+      }
+    }
+  }
+
+  const checkedAt = new Date().toISOString();
+  const currentStatus = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
+  const updatePayload = {
+    mailCheckProvider:
+      String(account?.mailCheckProvider || "").trim() || CHATGPT_MAIL_CHECK_PROVIDER,
+    mailCheckLastCheckedAt: checkedAt,
+  };
+
+  if (matchedEmail) {
+    updatePayload.mailCheckStatus = "died";
+    updatePayload.mailCheckLastMatchedEmailId = String(
+      matchedEmail?.id ?? "",
+    ).trim();
+    updatePayload.mailCheckLastMatchedAt = String(
+      matchedEmail?.date || checkedAt,
+    ).trim();
+    updatePayload.mailCheckLastSubject = String(
+      matchedEmail?.subject || "",
+    ).trim();
+    updatePayload.mailCheckLastSender = String(
+      matchedEmail?.sender || "",
+    ).trim();
+    updatePayload.mailCheckLastSnippet = buildMailCheckSnippet(
+      matchedEmail?.body,
+      matchedEmail?.html_body,
+    );
+  } else if (currentStatus === "died") {
+    updatePayload.mailCheckStatus = "died";
+  } else {
+    updatePayload.mailCheckStatus = "clean";
+    updatePayload.mailCheckLastMatchedEmailId = "";
+    updatePayload.mailCheckLastMatchedAt = "";
+    updatePayload.mailCheckLastSubject = "";
+    updatePayload.mailCheckLastSender = "";
+    updatePayload.mailCheckLastSnippet = "";
+  }
+
+  const normalizedBefore = sanitizeChatgptMailCheckRecord(account);
+  const normalizedAfter = sanitizeChatgptMailCheckRecord({
+    ...account,
+    ...updatePayload,
+  });
+  const changed =
+    JSON.stringify(normalizedBefore) !== JSON.stringify(normalizedAfter);
+
+  if (changed) {
+    await Account.updateOne({ id: String(account?.id || "").trim() }, { $set: updatePayload });
+  }
+
+  return buildChatgptMailCheckResult(account, {
+    status: matchedEmail ? "died" : updatePayload.mailCheckStatus,
+    changed,
+    source,
+    reason: matchedEmail
+      ? "Phat hien mail OpenAI khoa acc."
+      : updatePayload.mailCheckStatus === "clean"
+        ? "Khong thay mail khoa OpenAI trong inbox ngan."
+        : "Acc da duoc danh dau die tu truoc.",
+    ...updatePayload,
+  });
+}
+
+async function buildChatgptMailCheckSummary() {
+  const accounts = await Account.find({})
+    .select(
+      "id username mailCheckEnabled mailCheckStatus mailCheckLastCheckedAt mailCheckLastMatchedAt",
+    )
+    .lean();
+  let diedCount = 0;
+  let checkedCleanCount = 0;
+  let uncheckedCount = 0;
+  let autoEnabledCount = 0;
+  let latestDetectedAt = "";
+
+  (Array.isArray(accounts) ? accounts : []).forEach((account) => {
+    const status = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
+    const lastCheckedAt = String(account?.mailCheckLastCheckedAt || "").trim();
+    const lastMatchedAt = String(account?.mailCheckLastMatchedAt || "").trim();
+    if (account?.mailCheckEnabled) autoEnabledCount += 1;
+    if (status === "died") {
+      diedCount += 1;
+      if (!latestDetectedAt || lastMatchedAt > latestDetectedAt) {
+        latestDetectedAt = lastMatchedAt;
+      }
+      return;
+    }
+    if (lastCheckedAt) {
+      checkedCleanCount += 1;
+      return;
+    }
+    uncheckedCount += 1;
+  });
+
+  return {
+    totalCount: Array.isArray(accounts) ? accounts.length : 0,
+    autoEnabledCount,
+    diedCount,
+    checkedCleanCount,
+    uncheckedCount,
+    latestDetectedAt,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function listChatgptMailCheckHistory(limit = 30) {
+  const safeLimit = Math.max(1, Math.min(Number(limit || 30), 100));
+  const accounts = await Account.find({
+    mailCheckStatus: "died",
+  })
+    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .lean();
+  return (Array.isArray(accounts) ? accounts : [])
+    .map((account) => sanitizeChatgptMailCheckRecord(account))
+    .sort((left, right) =>
+      String(right?.mailCheckLastMatchedAt || "").localeCompare(
+        String(left?.mailCheckLastMatchedAt || ""),
+      ),
+    )
+    .slice(0, safeLimit);
+}
+
+async function runChatgptMailCheckForIds(accountIds = [], options = {}) {
+  const normalizedIds = [...new Set((Array.isArray(accountIds) ? accountIds : [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean))];
+  if (normalizedIds.length === 0) {
+    return {
+      items: [],
+      summary: {
+        total: 0,
+        cleanCount: 0,
+        diedCount: 0,
+        skippedCount: 0,
+        errorCount: 0,
+        changedCount: 0,
+      },
+    };
+  }
+  const accounts = await Account.find({ id: { $in: normalizedIds } })
+    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .lean();
+  const accountMap = new Map(
+    (Array.isArray(accounts) ? accounts : []).map((account) => [
+      String(account?.id || "").trim(),
+      account,
+    ]),
+  );
+  const items = [];
+  for (const accountId of normalizedIds) {
+    const account = accountMap.get(accountId);
+    if (!account) {
+      items.push({
+        accountId,
+        username: "",
+        status: "error",
+        changed: false,
+        source: String(options?.source || "manual").trim() || "manual",
+        reason: "Khong tim thay account.",
+      });
+      continue;
+    }
+    // Keep sequential to stay gentle on Tinyhost and Vercel.
+    // This route is admin-triggered, so correctness matters more than speed.
+    // eslint-disable-next-line no-await-in-loop
+    const result = await runChatgptMailCheckForAccount(account, options);
+    items.push(result);
+  }
+
+  return {
+    items,
+    summary: {
+      total: items.length,
+      cleanCount: items.filter((item) => item.status === "clean").length,
+      diedCount: items.filter((item) => item.status === "died").length,
+      skippedCount: items.filter((item) => item.status === "skipped").length,
+      errorCount: items.filter((item) => item.status === "error").length,
+      changedCount: items.filter((item) => item.changed).length,
+    },
+  };
+}
+
+async function listEligibleChatgptMailCheckAccountsForAudit(limit = 25) {
+  const safeLimit = Math.max(1, Math.min(Number(limit || 25), 100));
+  const thresholdIso = new Date(
+    Date.now() - CHATGPT_MAIL_DIE_AUDIT_MIN_INTERVAL_MS,
+  ).toISOString();
+  const accounts = await Account.find({
+    mailCheckEnabled: true,
+    $or: [
+      { mailCheckLastCheckedAt: { $exists: false } },
+      { mailCheckLastCheckedAt: "" },
+      { mailCheckLastCheckedAt: { $lt: thresholdIso } },
+    ],
+  })
+    .sort({ mailCheckLastCheckedAt: 1, createdAt: -1 })
+    .limit(safeLimit)
+    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .lean();
+  return Array.isArray(accounts) ? accounts : [];
+}
+
+async function runChatgptMailDieAuditBatch(options = {}) {
+  const source = String(options?.source || "cron_daily").trim() || "cron_daily";
+  const eligibleAccounts = await listEligibleChatgptMailCheckAccountsForAudit(
+    options?.limit || CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT,
+  );
+  const run = await runChatgptMailCheckForIds(
+    eligibleAccounts.map((account) => String(account?.id || "").trim()),
+    { source },
+  );
+  return {
+    scannedCount: eligibleAccounts.length,
+    ...run,
+  };
+}
 
 const transformLegacyChatgptAccountForMigration = (doc = {}) => {
   const migrated = { ...doc };
@@ -438,6 +1004,15 @@ const accountSchema = new mongoose.Schema({
   note: String,
   link: String,
   status: { type: String, default: "available" },
+  mailCheckEnabled: { type: Boolean, default: false },
+  mailCheckProvider: { type: String, default: "" },
+  mailCheckStatus: { type: String, default: "unchecked" },
+  mailCheckLastCheckedAt: { type: String, default: "" },
+  mailCheckLastMatchedEmailId: { type: String, default: "" },
+  mailCheckLastMatchedAt: { type: String, default: "" },
+  mailCheckLastSubject: { type: String, default: "" },
+  mailCheckLastSender: { type: String, default: "" },
+  mailCheckLastSnippet: { type: String, default: "" },
   createdAt: { type: String },
   expiredAt: { type: String },
   updatedAt: { type: String, default: () => new Date().toISOString() },
@@ -1351,6 +1926,35 @@ app.get(
         ok: false,
         task: "inventory-reconcile",
         error: error.message || "Inventory reconcile failed.",
+      });
+    }
+  },
+);
+
+app.get(
+  "/api/internal/cron/chatgpt-mail-die-audit",
+  verifyCronSecret,
+  async (req, res) => {
+    try {
+      const startedAt = Date.now();
+      const audit = await runChatgptMailDieAuditBatch({
+        source: "cron_daily",
+        limit: CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT,
+      });
+      if (Number(audit?.summary?.changedCount || 0) > 0) {
+        bumpDataVersion();
+        notifyClients();
+      }
+      return res.json({
+        success: true,
+        durationMs: Date.now() - startedAt,
+        audit,
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      console.error("Cron /api/internal/cron/chatgpt-mail-die-audit failed:", error);
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong the audit mail die ChatGPT.",
       });
     }
   },
@@ -4457,7 +5061,7 @@ const matchesAdminChatgptExpiryRange = (
   return true;
 };
 const CHATGPT_ADMIN_ACCOUNT_SELECT =
-  "id username password otpSecret type package2Shelf users note link status createdAt expiredAt updatedAt";
+  "id username password otpSecret type package2Shelf users note link status createdAt expiredAt updatedAt mailCheckEnabled mailCheckProvider mailCheckStatus mailCheckLastCheckedAt mailCheckLastMatchedEmailId mailCheckLastMatchedAt mailCheckLastSubject mailCheckLastSender mailCheckLastSnippet";
 const CHATGPT_ADMIN_MARKETPLACE_ORDER_TRACE_SELECT =
   "provider orderId accounts.accountId";
 const CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT =
@@ -4512,6 +5116,9 @@ const buildAdminChatgptSearchText = (account = {}) =>
       account?.marketplaceTraceSummary?.latestOrderId,
       account?.marketplaceTraceSummary?.latestWarrantyOrderId,
       account?.marketplaceTraceSummary?.latestProvider,
+      account?.mailCheckLastSubject,
+      account?.mailCheckLastSender,
+      account?.mailCheckLastSnippet,
     ]
       .filter(Boolean)
       .join(" "),
@@ -4705,6 +5312,7 @@ const listAdminChatgptAccounts = async ({
   limit = 10,
   subTab = "all",
   totalType = "all",
+  mailCheckFilter = "all",
   customerFilter = "all",
   expiryFilter = "all",
   expiryMin = "",
@@ -4717,6 +5325,11 @@ const listAdminChatgptAccounts = async ({
   const safeLimit = parsePositiveLimit(limit, 10, 50);
   const normalizedSubTab = normalizeAdminChatgptSubTab(subTab);
   const normalizedTotalType = normalizeAdminChatgptTotalType(totalType);
+  const normalizedMailCheckFilter = ["died", "checked", "unchecked"].includes(
+    String(mailCheckFilter || "").trim().toLowerCase(),
+  )
+    ? String(mailCheckFilter || "").trim().toLowerCase()
+    : "all";
   const normalizedCustomerFilter = normalizeAdminCustomerFilter(customerFilter);
   const normalizedSearch = normalizeAdminSearchText(search);
   const normalizedPackage2ShelfTab =
@@ -4751,6 +5364,15 @@ const listAdminChatgptAccounts = async ({
     if (provider === "all") return true;
     return (account?.marketplaceTraceSummary?.providers || []).includes(provider);
   };
+  const accountMatchesMailCheckFilter = (account = {}, filterValue = "all") => {
+    if (filterValue === "all") return true;
+    const status = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
+    const lastCheckedAt = String(account?.mailCheckLastCheckedAt || "").trim();
+    if (filterValue === "died") return status === "died";
+    if (filterValue === "checked") return !!lastCheckedAt && status !== "died";
+    if (filterValue === "unchecked") return !lastCheckedAt;
+    return true;
+  };
   const isMarketUnsoldAccount = (account = {}) =>
     !isTrackedMarketplaceAccount(account) && isMarketAccount(account);
   const isMarketSoldAccount = (account = {}, provider = "all") =>
@@ -4781,6 +5403,9 @@ const listAdminChatgptAccounts = async ({
       }
       return String(account?.type || "").trim() === normalizedTotalType;
     })
+    .filter((account) =>
+      accountMatchesMailCheckFilter(account, normalizedMailCheckFilter),
+    )
     .filter((account) =>
       matchesAdminChatgptCustomerFilter(
         hasAssignedCustomerForAdminChatgpt(account),
@@ -4838,6 +5463,20 @@ const listAdminChatgptAccounts = async ({
         unassigned: totalPoolAccounts.filter(
           (account) =>
             !account?.type || String(account?.type || "").trim() === "unassigned",
+        ).length,
+      },
+      mailCheckTabs: {
+        all: enrichedAccounts.length,
+        died: enrichedAccounts.filter(
+          (account) => normalizeChatgptMailCheckStatus(account?.mailCheckStatus) === "died",
+        ).length,
+        checked: enrichedAccounts.filter((account) => {
+          const status = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
+          const lastCheckedAt = String(account?.mailCheckLastCheckedAt || "").trim();
+          return !!lastCheckedAt && status !== "died";
+        }).length,
+        unchecked: enrichedAccounts.filter(
+          (account) => !String(account?.mailCheckLastCheckedAt || "").trim(),
         ).length,
       },
       marketShelfTabs: {
@@ -11332,6 +11971,20 @@ const normalizeChatgptPayload = (payload = {}, existingAcc = null) => {
     normalized.package2Shelf = CHATGPT_TOTAL_VALUE;
   }
 
+  delete normalized.mailCheckEnabled;
+  delete normalized.mailCheckProvider;
+  delete normalized.mailCheckStatus;
+  delete normalized.mailCheckLastCheckedAt;
+  delete normalized.mailCheckLastMatchedEmailId;
+  delete normalized.mailCheckLastMatchedAt;
+  delete normalized.mailCheckLastSubject;
+  delete normalized.mailCheckLastSender;
+  delete normalized.mailCheckLastSnippet;
+  Object.assign(
+    normalized,
+    buildChatgptMailCheckStateForPayload(normalized, existingAcc),
+  );
+
   return normalized;
 };
 const buildTeamBusinessDeliveryLine = (acc = {}) =>
@@ -11993,6 +12646,7 @@ app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
         limit: req.query?.limit,
         subTab: req.query?.subTab,
         totalType: req.query?.totalType,
+        mailCheckFilter: req.query?.mailCheckFilter,
         customerFilter: req.query?.customerFilter,
         expiryFilter: req.query?.expiryFilter,
         expiryMin: req.query?.expiryMin,
@@ -12007,6 +12661,7 @@ app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
           limit: req.query?.limit,
           subTab: req.query?.subTab,
           totalType: req.query?.totalType,
+          mailCheckFilter: req.query?.mailCheckFilter,
           customerFilter: req.query?.customerFilter,
           expiryFilter: req.query?.expiryFilter,
           expiryMin: req.query?.expiryMin,
@@ -12032,6 +12687,99 @@ app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
     });
   }
 });
+
+app.get("/api/admin/chatgpt-mail-check/summary", verifyToken, async (req, res) => {
+  try {
+    const payload = await getCachedAdminRead(
+      "admin:chatgpt-mail-check-summary",
+      {},
+      async () => ({
+        success: true,
+        summary: await buildChatgptMailCheckSummary(),
+        version: latestDataVersion,
+      }),
+    );
+    return res.json(payload);
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc tong hop mail check.",
+    });
+  }
+});
+
+app.get("/api/admin/chatgpt-mail-check/history", verifyToken, async (req, res) => {
+  try {
+    const safeLimit = parsePositiveLimit(req.query?.limit, 20, 100);
+    const payload = await getCachedAdminRead(
+      "admin:chatgpt-mail-check-history",
+      { limit: safeLimit },
+      async () => ({
+        success: true,
+        items: await listChatgptMailCheckHistory(safeLimit),
+        version: latestDataVersion,
+      }),
+    );
+    return res.json(payload);
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong tai duoc lich su mail die.",
+    });
+  }
+});
+
+app.post(
+  "/api/admin/chatgpt-mail-check/run-selected",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const accountIds = Array.isArray(req.body?.accountIds)
+        ? req.body.accountIds
+        : [];
+      const run = await runChatgptMailCheckForIds(accountIds, {
+        source: "admin_selected",
+      });
+      if (Number(run?.summary?.changedCount || 0) > 0) {
+        bumpDataVersion();
+        notifyClients();
+      }
+      return res.json({
+        success: true,
+        ...run,
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong the chay mail check cho danh sach da chon.",
+      });
+    }
+  },
+);
+
+app.post(
+  "/api/admin/chatgpt-mail-check/run-one/:id",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const result = await runChatgptMailCheckForAccount(
+        { id: String(req.params?.id || "").trim() },
+        { source: "admin_one" },
+      );
+      if (result?.changed) {
+        bumpDataVersion();
+        notifyClients();
+      }
+      return res.json({
+        success: true,
+        item: result,
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong the doc mail cho account nay.",
+      });
+    }
+  },
+);
 
 app.get("/api/admin/dashboard/summary", verifyToken, async (req, res) => {
   try {

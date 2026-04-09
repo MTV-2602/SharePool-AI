@@ -1578,6 +1578,7 @@ const buildDefaultChatgptAdminPaginationState = () => ({
   summary: {
     tabs: { all: 0, total: 0, market: 0, short: 0 },
     totalTypeTabs: { all: 0, package1: 0, package2: 0, unassigned: 0 },
+    mailCheckTabs: { all: 0, died: 0, checked: 0, unchecked: 0 },
     marketShelfTabs: { all: 0, sold: 0, soldDatammo: 0, soldShopmini: 0 },
     storeWarehouse: {
       package1: {
@@ -1600,6 +1601,7 @@ const buildDefaultChatgptAdminQueryState = () => ({
   subTab: "all",
   totalType: "all",
   package2ShelfTab: "all",
+  mailCheckFilter: "all",
   soldProviderFilter: "all",
   customerFilter: "all",
   expiryFilter: "all",
@@ -1616,6 +1618,7 @@ const buildChatgptAdminRequestKey = (query = {}) =>
     String(query?.subTab || "all").trim(),
     String(query?.totalType || "all").trim(),
     String(query?.package2ShelfTab || "all").trim(),
+    String(query?.mailCheckFilter || "all").trim(),
     String(query?.soldProviderFilter || "all").trim(),
     String(query?.customerFilter || "all").trim(),
     String(query?.expiryFilter || "all").trim(),
@@ -1749,6 +1752,44 @@ const buildDefaultChatgptExpiryPreviewState = () => ({
   pkg2MarketExpiringSoon: [],
   scannedAt: "",
 });
+const buildDefaultChatgptMailCheckSummaryState = () => ({
+  totalCount: 0,
+  autoEnabledCount: 0,
+  diedCount: 0,
+  checkedCleanCount: 0,
+  uncheckedCount: 0,
+  latestDetectedAt: "",
+  updatedAt: "",
+});
+const normalizeChatgptMailCheckStatus = (value = "") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "died") return "died";
+  if (normalized === "clean") return "clean";
+  return "unchecked";
+};
+const getChatgptMailCheckVisualState = (account = {}) => {
+  const status = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
+  const lastCheckedAt = String(account?.mailCheckLastCheckedAt || "").trim();
+  if (status === "died") {
+    return {
+      key: "died",
+      label: "Mail die",
+      tone: "border-red-700/60 bg-red-900/20 text-red-200",
+    };
+  }
+  if (lastCheckedAt) {
+    return {
+      key: "checked",
+      label: "Da check",
+      tone: "border-emerald-700/60 bg-emerald-900/20 text-emerald-200",
+    };
+  }
+  return {
+    key: "unchecked",
+    label: "Chua check",
+    tone: "border-slate-700 bg-slate-800 text-slate-300",
+  };
+};
 const getExpiryCleanupBatchStatusLabel = (value = "") => {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "pending_approval") return "Chờ duyệt";
@@ -1798,11 +1839,15 @@ function App() {
   const [chatgptExpirySummary, setChatgptExpirySummary] = useState(
     buildDefaultChatgptExpirySummaryState(),
   );
+  const [chatgptMailCheckSummary, setChatgptMailCheckSummary] = useState(
+    buildDefaultChatgptMailCheckSummaryState(),
+  );
   const [chatgptExpiryPreview, setChatgptExpiryPreview] = useState(
     buildDefaultChatgptExpiryPreviewState(),
   );
   const [chatgptExpiryBatches, setChatgptExpiryBatches] = useState([]);
   const [chatgptExpiryLogBatches, setChatgptExpiryLogBatches] = useState([]);
+  const [chatgptMailCheckHistory, setChatgptMailCheckHistory] = useState([]);
   const [adminRealtime, setAdminRealtime] = useState(
     buildDefaultAdminRealtimeConfig(),
   );
@@ -1844,6 +1889,7 @@ function App() {
   const [gptSubTab, setGptSubTab] = useState("all");
   const [chatgptTotalTypeTab, setChatgptTotalTypeTab] = useState("all");
   const [package2ShelfTab, setPackage2ShelfTab] = useState("all");
+  const [chatgptMailCheckFilter, setChatgptMailCheckFilter] = useState("all");
   const [soldPackage2ProviderFilter, setSoldPackage2ProviderFilter] =
     useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -1910,6 +1956,10 @@ function App() {
     fetchChatgptExpiryPreview: false,
     fetchChatgptExpiryBatches: false,
     fetchChatgptExpiryLogs: false,
+    fetchChatgptMailCheckSummary: false,
+    fetchChatgptMailCheckHistory: false,
+    runChatgptMailCheck: false,
+    runChatgptMailCheckOne: "",
     saveVoucher: false,
     saveStoreConfig: false,
     deleteStoreUser: "",
@@ -1964,6 +2014,7 @@ function App() {
     subTab: gptSubTab,
     totalType: chatgptTotalTypeTab,
     package2ShelfTab,
+    mailCheckFilter: chatgptMailCheckFilter,
     soldProviderFilter: soldPackage2ProviderFilter,
     customerFilter: chatgptCustomerFilter,
     expiryFilter: chatgptExpiryFilter,
@@ -1987,6 +2038,8 @@ function App() {
   const [showChatgptExpiryBatchesModal, setShowChatgptExpiryBatchesModal] =
     useState(false);
   const [showChatgptExpiryLogModal, setShowChatgptExpiryLogModal] =
+    useState(false);
+  const [showChatgptMailCheckHistoryModal, setShowChatgptMailCheckHistoryModal] =
     useState(false);
   const [storeUserEditForm, setStoreUserEditForm] = useState({
     id: "",
@@ -2373,12 +2426,14 @@ function App() {
       if (activeTab === "chatgpt") {
         loadChatgptAuxiliaryData({ allowCached: true }).catch(() => {});
         loadChatgptExpirySummary({ silent: true }).catch(() => {});
+        loadChatgptMailCheckSummary({ silent: true }).catch(() => {});
       }
       return;
     }
     if (activeTab === "chatgpt") {
       loadChatgptAuxiliaryData({ allowCached: true }).catch(() => {});
       loadChatgptExpirySummary({ silent: true }).catch(() => {});
+      loadChatgptMailCheckSummary({ silent: true }).catch(() => {});
       return;
     }
     if (
@@ -2461,6 +2516,7 @@ function App() {
     gptSubTab,
     chatgptTotalTypeTab,
     package2ShelfTab,
+    chatgptMailCheckFilter,
     soldPackage2ProviderFilter,
     chatgptCustomerFilter,
     chatgptExpiryFilter,
@@ -3965,6 +4021,7 @@ function App() {
             limit: safeLimit,
             subTab: querySnapshot.subTab,
             totalType: querySnapshot.totalType,
+            mailCheckFilter: querySnapshot.mailCheckFilter,
             customerFilter: querySnapshot.customerFilter,
             expiryFilter: querySnapshot.expiryFilter,
             expiryMin: querySnapshot.expiryMin,
@@ -4212,6 +4269,55 @@ function App() {
       return null;
     } finally {
       setLoadingStates((prev) => ({ ...prev, fetchChatgptExpirySummary: false }));
+    }
+  };
+
+  const loadChatgptMailCheckSummary = async ({ silent = true } = {}) => {
+    try {
+      setLoadingStates((prev) => ({ ...prev, fetchChatgptMailCheckSummary: true }));
+      const response = await axios.get("/api/admin/chatgpt-mail-check/summary", {
+        timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
+        skipGlobalLoading: silent,
+      });
+      setChatgptMailCheckSummary({
+        ...buildDefaultChatgptMailCheckSummaryState(),
+        ...(response?.data?.summary || {}),
+      });
+      return response?.data?.summary || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Khong the tai tong hop mail check."),
+          "error",
+        );
+      }
+      return null;
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, fetchChatgptMailCheckSummary: false }));
+    }
+  };
+
+  const openChatgptMailCheckHistory = async () => {
+    try {
+      setLoadingStates((prev) => ({ ...prev, fetchChatgptMailCheckHistory: true }));
+      const response = await axios.get("/api/admin/chatgpt-mail-check/history", {
+        params: { limit: 30 },
+        timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
+        skipGlobalLoading: true,
+      });
+      setChatgptMailCheckHistory(
+        Array.isArray(response?.data?.items) ? response.data.items : [],
+      );
+      setShowChatgptMailCheckHistoryModal(true);
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Khong the tai lich su mail die."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, fetchChatgptMailCheckHistory: false }));
     }
   };
 
@@ -4534,6 +4640,7 @@ function App() {
         }),
       );
       tasks.push(loadChatgptExpirySummary({ silent: true }));
+      tasks.push(loadChatgptMailCheckSummary({ silent: true }));
       await Promise.allSettled(tasks);
       return;
     }
@@ -6259,6 +6366,96 @@ function App() {
         }
       },
     );
+  };
+
+  const handleRunSelectedChatgptMailCheck = async () => {
+    const accountIds = selectedChatgptIds
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+    if (accountIds.length === 0 || loadingStates.runChatgptMailCheck) return;
+    try {
+      setLoadingStates((prev) => ({ ...prev, runChatgptMailCheck: true }));
+      const response = await axios.post(
+        "/api/admin/chatgpt-mail-check/run-selected",
+        { accountIds },
+        {
+          timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS,
+          skipGlobalLoading: true,
+        },
+      );
+      const summary = response?.data?.summary || {};
+      await Promise.allSettled([
+        loadAdminChatgptAccounts({ silent: true, force: true }),
+        loadChatgptMailCheckSummary({ silent: true }),
+        showChatgptMailCheckHistoryModal
+          ? openChatgptMailCheckHistory()
+          : Promise.resolve(),
+      ]);
+      broadcastDataChange();
+      showAlert(
+        "Da doc mail acc",
+        [
+          `Tong acc: ${Number(summary?.total || 0)}`,
+          `Mail die: ${Number(summary?.diedCount || 0)}`,
+          `Mail clean: ${Number(summary?.cleanCount || 0)}`,
+          `Bo qua: ${Number(summary?.skippedCount || 0)}`,
+          `Loi: ${Number(summary?.errorCount || 0)}`,
+        ].join("\n"),
+        Number(summary?.errorCount || 0) > 0 ? "warning" : "success",
+      );
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Khong the doc mail cho cac acc da chon."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, runChatgptMailCheck: false }));
+    }
+  };
+
+  const handleRunOneChatgptMailCheck = async (acc = {}) => {
+    const accountId = String(acc?.id || "").trim();
+    if (!accountId || loadingStates.runChatgptMailCheckOne === accountId) return;
+    try {
+      setLoadingStates((prev) => ({ ...prev, runChatgptMailCheckOne: accountId }));
+      const response = await axios.post(
+        `/api/admin/chatgpt-mail-check/run-one/${encodeURIComponent(accountId)}`,
+        {},
+        {
+          timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
+          skipGlobalLoading: true,
+        },
+      );
+      const item = response?.data?.item || {};
+      await Promise.allSettled([
+        loadAdminChatgptAccounts({ silent: true, force: true }),
+        loadChatgptMailCheckSummary({ silent: true }),
+        showChatgptMailCheckHistoryModal
+          ? openChatgptMailCheckHistory()
+          : Promise.resolve(),
+      ]);
+      broadcastDataChange();
+      showAlert(
+        "Ket qua doc mail",
+        [
+          `Acc: ${item?.username || acc?.username || accountId}`,
+          `Trang thai: ${item?.status || "--"}`,
+          item?.reason ? `Chi tiet: ${item.reason}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        item?.status === "error" ? "error" : item?.status === "died" ? "warning" : "success",
+      );
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Khong the doc mail cho account nay."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, runChatgptMailCheckOne: "" }));
+    }
   };
 
   const handleToggleChatgptSelection = (accId, checked) => {
@@ -10668,12 +10865,115 @@ function App() {
               </div>
             </div>
 
+            <div className="mb-6 rounded-2xl border border-rose-500/20 bg-[linear-gradient(145deg,rgba(24,24,39,0.96),rgba(39,13,31,0.92))] px-5 py-4 shadow-[0_20px_42px_rgba(15,23,42,0.32)]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-200">
+                    <Mail size={14} className="text-rose-300" />
+                    Mail check
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">
+                      Theo dõi acc ChatGPT bị die qua Tinyhost
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-300">
+                      Chỉ acc mới sau rollout mới auto scan theo lịch. Acc cũ chỉ scan tay
+                      khi bạn chọn hoặc bấm đọc mail.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs text-slate-400">
+                    <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
+                      Tong acc:{" "}
+                      <span className="font-semibold text-white">
+                        {Number(chatgptMailCheckSummary?.totalCount || 0)}
+                      </span>
+                    </span>
+                    <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
+                      Auto scan acc moi:{" "}
+                      <span className="font-semibold text-white">
+                        {Number(chatgptMailCheckSummary?.autoEnabledCount || 0)}
+                      </span>
+                    </span>
+                    <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
+                      Match lan cuoi:{" "}
+                      <span className="font-semibold text-white">
+                        {formatDateTime(chatgptMailCheckSummary?.latestDetectedAt) || "--"}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  {[
+                    {
+                      key: "died",
+                      label: "Mail die",
+                      value: Number(chatgptMailCheckSummary?.diedCount || 0),
+                      tone: "border-red-500/30 bg-red-500/10 text-red-100",
+                    },
+                    {
+                      key: "checked",
+                      label: "Da check",
+                      value: Number(chatgptMailCheckSummary?.checkedCleanCount || 0),
+                      tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
+                    },
+                    {
+                      key: "unchecked",
+                      label: "Chua check",
+                      value: Number(chatgptMailCheckSummary?.uncheckedCount || 0),
+                      tone: "border-slate-500/30 bg-slate-500/10 text-slate-100",
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.key}
+                      className={`min-w-[120px] rounded-2xl border px-4 py-3 ${item.tone}`}
+                    >
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300/85">
+                        {item.label}
+                      </div>
+                      <div className="mt-2 text-3xl font-black text-white">
+                        {item.value}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={openChatgptMailCheckHistory}
+                      disabled={loadingStates.fetchChatgptMailCheckHistory}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {loadingStates.fetchChatgptMailCheckHistory ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Mail size={16} />
+                      )}
+                      Xem acc die
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => loadChatgptMailCheckSummary({ silent: false })}
+                      disabled={loadingStates.fetchChatgptMailCheckSummary}
+                      className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/15 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {loadingStates.fetchChatgptMailCheckSummary ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <RefreshCw size={16} />
+                      )}
+                      Lam moi mail check
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div className="flex-1 max-w-2xl space-y-2.5">
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Tìm theo email hoặc tên khách..."
+                    placeholder="Tìm theo email, tên khách hoặc nội dung mail check..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -10727,6 +11027,49 @@ function App() {
                         setChatgptExpiryMax,
                       ),
                   )}
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Mail
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      {
+                        key: "all",
+                        label: "Tat ca",
+                        count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.all || 0),
+                      },
+                      {
+                        key: "died",
+                        label: "Mail die",
+                        count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.died || 0),
+                      },
+                      {
+                        key: "checked",
+                        label: "Da check",
+                        count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.checked || 0),
+                      },
+                      {
+                        key: "unchecked",
+                        label: "Chua check",
+                        count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.unchecked || 0),
+                      },
+                    ].map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => setChatgptMailCheckFilter(option.key)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                          chatgptMailCheckFilter === option.key
+                            ? "border-cyan-400/60 bg-cyan-500/15 text-cyan-100"
+                            : "border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-500 hover:text-white"
+                        }`}
+                      >
+                        {option.label}
+                        <span className="rounded-full bg-black/20 px-1.5 py-0.5 text-[10px] font-bold">
+                          {option.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -10768,6 +11111,18 @@ function App() {
                   className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Copy size={14} /> Copy web
+                </button>
+                <button
+                  onClick={handleRunSelectedChatgptMailCheck}
+                  disabled={selectedChatgptIds.length === 0 || loadingStates.runChatgptMailCheck}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-rose-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loadingStates.runChatgptMailCheck ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Mail size={14} />
+                  )}
+                  Đọc mail acc die
                 </button>
                 <button
                   onClick={() => setShowImportGPTModal(true)}
@@ -11325,6 +11680,8 @@ function App() {
                         const accountExpiryStatus = acc?.expiredAt
                           ? getExpiryStatus(acc.expiredAt)
                           : null;
+                        const mailCheckVisualState =
+                          getChatgptMailCheckVisualState(acc);
                         return (
                         <tr
                           id={`chatgpt-account-row-${acc.id}`}
@@ -11508,6 +11865,16 @@ function App() {
                                     Có ghi chú
                                   </span>
                                 )}
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 ${mailCheckVisualState.tone}`}
+                                  title={
+                                    acc?.mailCheckLastSubject
+                                      ? `Mail check: ${acc.mailCheckLastSubject}`
+                                      : "Trang thai mail check"
+                                  }
+                                >
+                                  {mailCheckVisualState.label}
+                                </span>
                               </div>
 
                               {isChatgptRowExpanded && (
@@ -11604,6 +11971,62 @@ function App() {
                                       {getVisibleAccountNote(acc.note)}
                                     </div>
                                   )}
+
+                                  <div className="rounded-lg border border-rose-700/30 bg-rose-950/10 px-2.5 py-2 text-[10px] text-slate-200">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-black uppercase tracking-[0.12em] text-rose-200">
+                                          Mail check
+                                        </span>
+                                        <span
+                                          className={`rounded-full border px-2 py-0.5 ${mailCheckVisualState.tone}`}
+                                        >
+                                          {mailCheckVisualState.label}
+                                        </span>
+                                        {acc?.mailCheckLastCheckedAt && (
+                                          <span className="text-slate-400">
+                                            Check lan cuoi:{" "}
+                                            {formatDateTime(acc.mailCheckLastCheckedAt) || "--"}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRunOneChatgptMailCheck(acc)}
+                                        disabled={
+                                          loadingStates.runChatgptMailCheckOne ===
+                                          String(acc?.id || "")
+                                        }
+                                        className="inline-flex items-center gap-1 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1 font-semibold text-rose-100 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        {loadingStates.runChatgptMailCheckOne ===
+                                        String(acc?.id || "") ? (
+                                          <Loader2 size={11} className="animate-spin" />
+                                        ) : (
+                                          <Mail size={11} />
+                                        )}
+                                        Đọc mail
+                                      </button>
+                                    </div>
+                                    {acc?.mailCheckLastSubject && (
+                                      <div className="mt-2 space-y-1">
+                                        <div className="font-semibold text-white">
+                                          {acc.mailCheckLastSubject}
+                                        </div>
+                                        <div className="text-slate-400">
+                                          {acc?.mailCheckLastSender || "--"}
+                                          {acc?.mailCheckLastMatchedAt
+                                            ? ` · ${formatDateTime(acc.mailCheckLastMatchedAt) || "--"}`
+                                            : ""}
+                                        </div>
+                                        {acc?.mailCheckLastSnippet && (
+                                          <div className="rounded-md border border-slate-700/70 bg-slate-900/70 px-2 py-1.5 text-slate-300">
+                                            {acc.mailCheckLastSnippet}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -12968,6 +13391,23 @@ function App() {
                                   </button>
                                 );
                               })()}
+                              <button
+                                type="button"
+                                onClick={() => handleRunOneChatgptMailCheck(acc)}
+                                disabled={
+                                  loadingStates.runChatgptMailCheckOne ===
+                                  String(acc?.id || "")
+                                }
+                                className="rounded-md bg-slate-700 p-1.5 text-slate-300 transition-colors hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                                title="Đọc mail Tinyhost"
+                              >
+                                {loadingStates.runChatgptMailCheckOne ===
+                                String(acc?.id || "") ? (
+                                  <Loader2 size={14} className="animate-spin" />
+                                ) : (
+                                  <Mail size={14} />
+                                )}
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => {
@@ -17804,6 +18244,133 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         </div>
                       );
                     })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showChatgptMailCheckHistoryModal && (() => {
+        const items = Array.isArray(chatgptMailCheckHistory)
+          ? chatgptMailCheckHistory
+          : [];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div
+              className="max-h-[88vh] w-full overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 shadow-2xl"
+              style={{ maxWidth: "920px" }}
+            >
+              <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Lich su acc ChatGPT bi mail die
+                  </h2>
+                  <div className="mt-1 text-xs text-slate-400">
+                    Chi hien cac acc da match mail OpenAI khoa tai khoan.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openChatgptMailCheckHistory}
+                    disabled={loadingStates.fetchChatgptMailCheckHistory}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {loadingStates.fetchChatgptMailCheckHistory ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={15} />
+                    )}
+                    Lam moi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowChatgptMailCheckHistoryModal(false)}
+                    className="rounded-xl border border-slate-600 bg-slate-900/80 p-2 text-slate-300 transition hover:text-white"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-h-[calc(88vh-88px)] overflow-y-auto px-5 py-5">
+                {items.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-6 text-sm text-slate-400">
+                    Chua co acc nao bi match mail die.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {items.map((item, index) => (
+                      <div
+                        key={`${String(item?.id || item?.username || "mail-check")}-${index}`}
+                        className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4"
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full border border-red-700/60 bg-red-900/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-red-200">
+                                Mail die
+                              </span>
+                              <span className="font-mono text-sm font-semibold text-white">
+                                {item?.username || "--"}
+                              </span>
+                              <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[11px] text-slate-300">
+                                {item?.type || "unassigned"}
+                              </span>
+                            </div>
+                            <div className="text-sm font-semibold text-white">
+                              {item?.mailCheckLastSubject || "Khong co subject luu"}
+                            </div>
+                            <div className="text-xs text-slate-300">
+                              {item?.mailCheckLastSender || "--"}
+                              {item?.mailCheckLastMatchedAt
+                                ? ` · ${formatDateTime(item.mailCheckLastMatchedAt) || "--"}`
+                                : ""}
+                            </div>
+                            {item?.mailCheckLastSnippet && (
+                              <div className="rounded-xl border border-slate-700/70 bg-slate-950/60 px-3 py-2 text-xs leading-6 text-slate-300">
+                                {item.mailCheckLastSnippet}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleRunOneChatgptMailCheck(item)}
+                              disabled={
+                                loadingStates.runChatgptMailCheckOne ===
+                                String(item?.id || "")
+                              }
+                              className="inline-flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {loadingStates.runChatgptMailCheckOne ===
+                              String(item?.id || "") ? (
+                                <Loader2 size={15} className="animate-spin" />
+                              ) : (
+                                <Mail size={15} />
+                              )}
+                              Đọc lại mail
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowChatgptMailCheckHistoryModal(false);
+                                focusChatgptAccountFromStoreOrder(
+                                  item?.id,
+                                  item?.username,
+                                );
+                              }}
+                              className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200"
+                            >
+                              <Search size={15} />
+                              Tới acc
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

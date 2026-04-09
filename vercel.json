@@ -17,6 +17,10 @@
     {
       "path": "/api/internal/cron/store-maintenance",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/internal/cron/chatgpt-mail-die-audit",
+      "schedule": "0 20 * * *"
     }
   ],
   "rewrites": [
