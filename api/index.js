@@ -60,9 +60,14 @@ const CHATGPT_MAIL_DIE_LIST_LIMIT = Math.max(
   1,
   Math.min(toPositiveInt(process.env.CHATGPT_MAIL_DIE_LIST_LIMIT, 10), 20),
 );
+const CHATGPT_MAIL_AUTO_TRACK_ROLLOUT_AT = "2026-04-09T17:00:00.000Z";
 const CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT = Math.max(
   1,
-  Math.min(toPositiveInt(process.env.CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT, 20), 100),
+  Math.min(toPositiveInt(process.env.CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT, 100), 100),
+);
+const CHATGPT_MAIL_DIE_AUDIT_CONCURRENCY = Math.max(
+  1,
+  Math.min(toPositiveInt(process.env.CHATGPT_MAIL_DIE_AUDIT_CONCURRENCY, 5), 10),
 );
 const CHATGPT_MAIL_DIE_AUDIT_MIN_INTERVAL_MS = Math.max(
   60 * 60 * 1000,
@@ -239,6 +244,12 @@ function isPotentialOpenAiDeactivationMail(message = {}) {
   return matchesMailCheckPatterns(snippet, OPENAI_DEACTIVATION_BODY_PATTERNS);
 }
 
+function isChatgptMailAutoTrackCreatedAtEligible(value = "") {
+  const normalizedValue = String(value || "").trim();
+  if (!normalizedValue) return false;
+  return normalizedValue >= CHATGPT_MAIL_AUTO_TRACK_ROLLOUT_AT;
+}
+
 function buildChatgptMailCheckStateForPayload(payload = {}, existingAcc = null) {
   const username = String(
     payload?.username ?? existingAcc?.username ?? "",
@@ -251,13 +262,17 @@ function buildChatgptMailCheckStateForPayload(payload = {}, existingAcc = null) 
   const existingNextAuditAt = hasExisting
     ? String(existingAcc?.mailCheckNextAuditAt || "").trim()
     : "";
+  const candidateCreatedAt = String(
+    payload?.createdAt ?? existingAcc?.createdAt ?? "",
+  ).trim();
   const usernameIsValidEmail = isValidEmailAddress(username);
   const mailCheckEnabled = hasExisting
     ? existingEnabled && usernameIsValidEmail
     : usernameIsValidEmail;
   const mailCheckAutoEligible = hasExisting
     ? existingAutoEligible && usernameIsValidEmail
-    : usernameIsValidEmail;
+    : usernameIsValidEmail &&
+      isChatgptMailAutoTrackCreatedAtEligible(candidateCreatedAt);
   const mailCheckProvider = mailCheckEnabled
     ? CHATGPT_MAIL_CHECK_PROVIDER
     : hasExisting
@@ -598,8 +613,10 @@ async function buildChatgptMailCheckSummary() {
   ] = await Promise.all([
     Account.countDocuments({}),
     Account.countDocuments({
+      createdAt: { $gte: CHATGPT_MAIL_AUTO_TRACK_ROLLOUT_AT },
       mailCheckEnabled: true,
       mailCheckAutoEligible: true,
+      mailCheckStatus: { $ne: "died" },
     }),
     Account.countDocuments({ mailCheckStatus: "died" }),
     Account.countDocuments({ mailCheckStatus: "clean" }),
@@ -624,6 +641,24 @@ async function buildChatgptMailCheckSummary() {
     uncheckedCount,
     latestDetectedAt: String(latestDoc?.mailCheckLastMatchedAt || "").trim(),
     updatedAt: new Date().toISOString(),
+  };
+}
+
+function buildNewChatgptAccountPayload(payload = {}, options = {}) {
+  const now = options?.now instanceof Date ? options.now : new Date();
+  const createdAtIso = String(options?.createdAt || now.toISOString()).trim();
+  const expiredDate = new Date(now);
+  expiredDate.setMonth(expiredDate.getMonth() + 1);
+  const normalizedBody = normalizeChatgptPayload({
+    ...(payload || {}),
+    createdAt: createdAtIso,
+  });
+  return {
+    id: String(options?.id || "").trim() || createStoreId("gpt"),
+    ...normalizedBody,
+    createdAt: createdAtIso,
+    expiredAt: String(options?.expiredAt || expiredDate.toISOString()).trim(),
+    updatedAt: String(options?.updatedAt || createdAtIso).trim(),
   };
 }
 
@@ -719,10 +754,61 @@ async function runChatgptMailCheckForIds(accountIds = [], options = {}) {
   };
 }
 
+async function runChatgptMailCheckForAccounts(accounts = [], options = {}) {
+  const safeAccounts = (Array.isArray(accounts) ? accounts : []).filter(
+    (account) => account && typeof account === "object",
+  );
+  if (safeAccounts.length === 0) {
+    return {
+      items: [],
+      summary: {
+        total: 0,
+        cleanCount: 0,
+        diedCount: 0,
+        skippedCount: 0,
+        errorCount: 0,
+        changedCount: 0,
+      },
+    };
+  }
+  const results = new Array(safeAccounts.length);
+  const safeConcurrency = Math.max(
+    1,
+    Math.min(Number(options?.concurrency || 1), safeAccounts.length),
+  );
+  let nextIndex = 0;
+  const runWorker = async () => {
+    while (nextIndex < safeAccounts.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      if (currentIndex >= safeAccounts.length) break;
+      // Keep concurrency bounded to stay gentle on Tinyhost and Vercel.
+      // eslint-disable-next-line no-await-in-loop
+      results[currentIndex] = await runChatgptMailCheckForAccount(
+        safeAccounts[currentIndex],
+        options,
+      );
+    }
+  };
+  await Promise.all(Array.from({ length: safeConcurrency }, () => runWorker()));
+  return {
+    items: results,
+    summary: {
+      total: results.length,
+      cleanCount: results.filter((item) => item?.status === "clean").length,
+      diedCount: results.filter((item) => item?.status === "died").length,
+      skippedCount: results.filter((item) => item?.status === "skipped").length,
+      errorCount: results.filter((item) => item?.status === "error").length,
+      changedCount: results.filter((item) => item?.changed).length,
+    },
+  };
+}
+
 async function listEligibleChatgptMailCheckAccountsForAudit(limit = 25) {
   const safeLimit = Math.max(1, Math.min(Number(limit || 25), 100));
   const nowIso = new Date().toISOString();
   const accounts = await Account.find({
+    createdAt: { $gte: CHATGPT_MAIL_AUTO_TRACK_ROLLOUT_AT },
     mailCheckAutoEligible: true,
     mailCheckEnabled: true,
     mailCheckStatus: { $ne: "died" },
@@ -740,16 +826,17 @@ async function listEligibleChatgptMailCheckAccountsForAudit(limit = 25) {
 }
 
 async function runChatgptMailDieAuditBatch(options = {}) {
-  const source = String(options?.source || "cron_hourly").trim() || "cron_hourly";
+  const source = String(options?.source || "cron_nightly").trim() || "cron_nightly";
   const eligibleAccounts = await listEligibleChatgptMailCheckAccountsForAudit(
     options?.limit || CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT,
   );
-  const run = await runChatgptMailCheckForIds(
-    eligibleAccounts.map((account) => String(account?.id || "").trim()),
-    { source },
-  );
+  const run = await runChatgptMailCheckForAccounts(eligibleAccounts, {
+    source,
+    concurrency: options?.concurrency || CHATGPT_MAIL_DIE_AUDIT_CONCURRENCY,
+  });
   return {
     scannedCount: eligibleAccounts.length,
+    trackStartAt: CHATGPT_MAIL_AUTO_TRACK_ROLLOUT_AT,
     ...run,
   };
 }
@@ -1954,8 +2041,9 @@ app.get(
         notifyTelegram: true,
       });
       const audit = await runChatgptMailDieAuditBatch({
-        source: "cron_daily_hobby",
+        source: "cron_nightly_hobby",
         limit: CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT,
+        concurrency: CHATGPT_MAIL_DIE_AUDIT_CONCURRENCY,
       });
       if (inventoryChanged || Number(audit?.summary?.changedCount || 0) > 0) {
         bumpDataVersion();
@@ -2041,8 +2129,9 @@ app.get(
     try {
       const startedAt = Date.now();
       const audit = await runChatgptMailDieAuditBatch({
-        source: "cron_hourly",
+        source: "cron_nightly_manual",
         limit: CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT,
+        concurrency: CHATGPT_MAIL_DIE_AUDIT_CONCURRENCY,
       });
       if (Number(audit?.summary?.changedCount || 0) > 0) {
         bumpDataVersion();
@@ -15170,17 +15259,10 @@ app.all(
 app.post("/api/chatgpt", verifyToken, async (req, res) => {
   try {
     const now = new Date();
-    const expiredDate = new Date(now);
-    expiredDate.setMonth(expiredDate.getMonth() + 1); // Add 1 month
-    const normalizedBody = normalizeChatgptPayload(req.body);
-
-    const newAcc = {
+    const newAcc = buildNewChatgptAccountPayload(req.body, {
+      now,
       id: Date.now().toString(),
-      ...normalizedBody,
-      createdAt: now.toISOString(),
-      expiredAt: expiredDate.toISOString(),
-      updatedAt: now.toISOString(),
-    };
+    });
     await Account.create(newAcc);
     res.json({ message: "Added successfully", account: newAcc });
   } catch (error) {
@@ -15190,17 +15272,7 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
 
 // 2.5 ADD ACCOUNT (Public - for Telegram bot)
 const buildPublicChatgptAccountPayload = (payload = {}) => {
-  const now = new Date();
-  const expiredDate = new Date(now);
-  expiredDate.setMonth(expiredDate.getMonth() + 1);
-  const normalizedBody = normalizeChatgptPayload(payload);
-  return {
-    id: createStoreId("gpt"),
-    ...normalizedBody,
-    createdAt: now.toISOString(),
-    expiredAt: expiredDate.toISOString(),
-    updatedAt: now.toISOString(),
-  };
+  return buildNewChatgptAccountPayload(payload);
 };
 const createPublicChatgptAccount = async (payload = {}) => {
   const newAcc = buildPublicChatgptAccountPayload(payload);
