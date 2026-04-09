@@ -18598,17 +18598,18 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         const itemId = String(item?.id || item?.username || `mail-${index}`);
                         const isExpanded = expandedChatgptMailHistoryId === itemId;
                         const rawSnippet = String(item?.mailCheckLastSnippet || "").trim();
-                        const snippetPreview =
-                          rawSnippet.length > 140
-                            ? `${rawSnippet.slice(0, 140).trim()}...`
-                            : rawSnippet;
+                        const hasSavedMailDetails = !!(
+                          String(item?.mailCheckLastSender || "").trim() ||
+                          String(item?.mailCheckLastSubject || "").trim() ||
+                          rawSnippet
+                        );
                         return (
                           <div
                             key={`${String(item?.id || item?.username || "mail-check")}-${index}`}
                             className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-3"
                           >
                             <div className="flex flex-col gap-3">
-                              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                 <div className="min-w-0 flex-1 space-y-2">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="rounded-full border border-red-700/60 bg-red-900/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-red-200">
@@ -18622,35 +18623,26 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                     </span>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                                    <span className="truncate">
-                                      {item?.mailCheckLastSender || "--"}
-                                    </span>
-                                    <span className="hidden sm:inline">•</span>
-                                    <span>
+                                    <span>Match luc:</span>
+                                    <span className="font-medium text-slate-300">
                                       {formatDateTime(item?.mailCheckLastMatchedAt) || "--"}
                                     </span>
                                   </div>
-                                  <div className="truncate text-sm font-semibold text-white">
-                                    {item?.mailCheckLastSubject || "Khong co subject luu"}
-                                  </div>
-                                  {rawSnippet ? (
-                                    <div className="text-xs leading-5 text-slate-400">
-                                      {isExpanded ? rawSnippet : snippetPreview}
-                                    </div>
-                                  ) : null}
                                 </div>
                                 <div className="flex flex-wrap gap-2 lg:justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setExpandedChatgptMailHistoryId((prev) =>
-                                        prev === itemId ? "" : itemId,
-                                      )
-                                    }
-                                    className="rounded-lg border border-slate-600 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-cyan-400/50 hover:text-white"
-                                  >
-                                    {isExpanded ? "An noi dung" : "Xem noi dung"}
-                                  </button>
+                                  {hasSavedMailDetails ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setExpandedChatgptMailHistoryId((prev) =>
+                                          prev === itemId ? "" : itemId,
+                                        )
+                                      }
+                                      className="rounded-lg border border-slate-600 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-cyan-400/50 hover:text-white"
+                                    >
+                                      {isExpanded ? "An chi tiet" : "Chi tiet"}
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -18684,6 +18676,38 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                   </button>
                                 </div>
                               </div>
+                              {isExpanded && hasSavedMailDetails ? (
+                                <div className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-3 text-xs text-slate-300">
+                                  <div className="grid gap-2 md:grid-cols-2">
+                                    <div className="min-w-0">
+                                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                                        Sender
+                                      </div>
+                                      <div className="mt-1 truncate">
+                                        {item?.mailCheckLastSender || "--"}
+                                      </div>
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                                        Subject
+                                      </div>
+                                      <div className="mt-1 truncate">
+                                        {item?.mailCheckLastSubject || "--"}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {rawSnippet ? (
+                                    <div className="mt-3">
+                                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                                        Noi dung
+                                      </div>
+                                      <div className="mt-1 whitespace-pre-wrap leading-5 text-slate-400">
+                                        {rawSnippet}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         );
