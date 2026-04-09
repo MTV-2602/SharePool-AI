@@ -89,6 +89,8 @@ const normalizePackage2Shelf = (value) => {
   if (value === "none") return "none";
   return "none";
 };
+const normalizeChatgptWarehouseUiValue = (value) =>
+  normalizePackage2Shelf(value) === "cheap" ? "cheap" : "none";
 
 const supportsChatgptMarketType = (value) =>
   ["package1", "package2", "unassigned", ""].includes(
@@ -96,11 +98,9 @@ const supportsChatgptMarketType = (value) =>
   );
 
 const getPackage2ShelfLabel = (value) =>
-  normalizePackage2Shelf(value) === "cheap"
+  normalizeChatgptWarehouseUiValue(value) === "cheap"
     ? "Kho market"
-    : normalizePackage2Shelf(value) === "main"
-      ? "Kho duoi 25 ngay"
-      : "Kho tong";
+    : "Kho tong";
 const getChatgptWarehouseLabel = (value) => getPackage2ShelfLabel(value);
 const isChatgptMarketWarehouse = (acc = {}) =>
   supportsChatgptMarketType(acc?.type) &&
@@ -1301,8 +1301,19 @@ const getStoreWarrantyHoldInfo = (account = {}) => {
     createdAt,
   };
 };
-const hasAssignedCustomer = (account = {}) =>
-  getVisibleAccountUserEntries(account).length > 0 || !!getStoreWarrantyHoldInfo(account);
+const hasAssignedCustomer = (account = {}) => {
+  const availabilityState = String(
+    account?.currentAccountState?.availabilityState || "",
+  ).trim();
+  return (
+    getVisibleAccountUserEntries(account).length > 0 ||
+    !!getStoreWarrantyHoldInfo(account) ||
+    getActiveStoreReservationCount(account) > 0 ||
+    hasMarketplaceTraceSummaryForUi(account?.marketplaceTraceSummary) ||
+    availabilityState === "assigned_to_store_order" ||
+    availabilityState === "busy_in_warranty_replacement"
+  );
+};
 const hasAssignedTeamCustomer = (account = {}) =>
   getActiveTeamCustomers(account).length > 0;
 const matchesCustomerFilter = (hasCustomer, filterValue = "all") => {
@@ -1607,6 +1618,8 @@ const buildDefaultChatgptAdminQueryState = () => ({
   expiryFilter: "all",
   expiryMin: "",
   expiryMax: "",
+  createdFrom: "",
+  createdTo: "",
   search: "",
 });
 const buildChatgptAdminRequestKey = (query = {}) =>
@@ -1624,6 +1637,8 @@ const buildChatgptAdminRequestKey = (query = {}) =>
     String(query?.expiryFilter || "all").trim(),
     String(query?.expiryMin || "").trim(),
     String(query?.expiryMax || "").trim(),
+    String(query?.createdFrom || "").trim(),
+    String(query?.createdTo || "").trim(),
     String(query?.search || "").trim(),
   ].join("|");
 const ADMIN_AUTO_REFRESH_CACHE_MS = 30000;
@@ -1910,6 +1925,8 @@ function App() {
   const [chatgptExpiryFilter, setChatgptExpiryFilter] = useState("all");
   const [chatgptExpiryMin, setChatgptExpiryMin] = useState("");
   const [chatgptExpiryMax, setChatgptExpiryMax] = useState("");
+  const [chatgptCreatedFrom, setChatgptCreatedFrom] = useState("");
+  const [chatgptCreatedTo, setChatgptCreatedTo] = useState("");
   const [marketplaceOrderQuery, setMarketplaceOrderQuery] = useState("");
   const [marketplaceOrderProviderFilter, setMarketplaceOrderProviderFilter] =
     useState("all");
@@ -1991,6 +2008,7 @@ function App() {
   const fetchDataInFlightRef = useRef(new Map());
   const chatgptPageEffectPrimedRef = useRef(false);
   const skipNextChatgptPageEffectRef = useRef(false);
+  const skipNextChatgptFilterEffectRef = useRef(false);
   const chatgptListRequestSeqRef = useRef(0);
   const chatgptListAppliedSeqRef = useRef(0);
   const chatgptListInFlightRef = useRef({ key: "", promise: null });
@@ -2026,6 +2044,8 @@ function App() {
     expiryFilter: chatgptExpiryFilter,
     expiryMin: chatgptExpiryMin,
     expiryMax: chatgptExpiryMax,
+    createdFrom: chatgptCreatedFrom,
+    createdTo: chatgptCreatedTo,
     search: searchQuery,
   };
 
@@ -2528,11 +2548,17 @@ function App() {
     chatgptExpiryFilter,
     chatgptExpiryMin,
     chatgptExpiryMax,
+    chatgptCreatedFrom,
+    chatgptCreatedTo,
     searchQuery,
   ].join("|");
 
   useEffect(() => {
     if (!isAuthenticated || activeTab !== "chatgpt") return;
+    if (skipNextChatgptFilterEffectRef.current) {
+      skipNextChatgptFilterEffectRef.current = false;
+      return;
+    }
     if (chatgptAdminPagination.page !== 1) {
       setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
       return;
@@ -3114,6 +3140,43 @@ function App() {
         <button
           type="button"
           onClick={() => { onMinChange(""); onMaxChange(""); }}
+          className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-slate-700 hover:text-white"
+        >
+          Xoa
+        </button>
+      )}
+    </div>
+  );
+
+  const renderCreatedDateRangeInputs = (
+    fromValue,
+    onFromChange,
+    toValue,
+    onToChange,
+  ) => (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <input
+        type="date"
+        value={fromValue}
+        onChange={(event) => onFromChange(event.target.value)}
+        className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 outline-none focus:border-blue-500"
+      />
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        den
+      </span>
+      <input
+        type="date"
+        value={toValue}
+        onChange={(event) => onToChange(event.target.value)}
+        className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 outline-none focus:border-blue-500"
+      />
+      {(fromValue || toValue) && (
+        <button
+          type="button"
+          onClick={() => {
+            onFromChange("");
+            onToChange("");
+          }}
           className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-slate-700 hover:text-white"
         >
           Xoa
@@ -3707,6 +3770,176 @@ function App() {
     ...(chatgptAdminQueryRef.current || buildDefaultChatgptAdminQueryState()),
     ...(overrides || {}),
   });
+  const applyChatgptAdminQueryState = (nextQuery = {}) => {
+    const currentQuery =
+      chatgptAdminQueryRef.current || buildDefaultChatgptAdminQueryState();
+    const mergedQuery = {
+      ...currentQuery,
+      ...(nextQuery || {}),
+    };
+    const normalizedLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(
+      Number(mergedQuery?.limit),
+    )
+      ? Number(mergedQuery.limit)
+      : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE;
+    const normalizedPage = Math.max(1, Number(mergedQuery?.page || 1));
+    const normalizedSubTab = ["all", "total", "market"].includes(
+      String(mergedQuery?.subTab || "").trim(),
+    )
+      ? String(mergedQuery.subTab).trim()
+      : String(mergedQuery?.subTab || "").trim() === "short"
+        ? "total"
+        : "all";
+    const normalizedTotalType = ["all", "package1", "package2", "unassigned"].includes(
+      String(mergedQuery?.totalType || "").trim(),
+    )
+      ? String(mergedQuery.totalType).trim()
+      : "all";
+    const normalizedPackage2ShelfTab =
+      String(mergedQuery?.package2ShelfTab || "").trim() === "sold"
+        ? "sold"
+        : "all";
+    const normalizedSoldProviderFilter = ["all", "datammo", "shopmini"].includes(
+      String(mergedQuery?.soldProviderFilter || "").trim(),
+    )
+      ? String(mergedQuery.soldProviderFilter).trim()
+      : "all";
+    const normalizedMailCheckFilter = ["all", "died", "checked", "unchecked"].includes(
+      String(mergedQuery?.mailCheckFilter || "").trim(),
+    )
+      ? String(mergedQuery.mailCheckFilter).trim()
+      : "all";
+    const normalizedCustomerFilter = ["all", "with", "without"].includes(
+      String(mergedQuery?.customerFilter || "").trim(),
+    )
+      ? String(mergedQuery.customerFilter).trim()
+      : "all";
+    const normalizedExpiryFilter = String(mergedQuery?.expiryFilter || "all").trim() || "all";
+    const normalizedQuery = {
+      page: normalizedPage,
+      limit: normalizedLimit,
+      subTab: normalizedSubTab,
+      totalType: normalizedSubTab === "total" ? normalizedTotalType : "all",
+      package2ShelfTab: normalizedSubTab === "market" ? normalizedPackage2ShelfTab : "all",
+      soldProviderFilter:
+        normalizedSubTab === "market" && normalizedPackage2ShelfTab === "sold"
+          ? normalizedSoldProviderFilter
+          : "all",
+      mailCheckFilter: normalizedMailCheckFilter,
+      customerFilter: normalizedCustomerFilter,
+      expiryFilter: normalizedExpiryFilter,
+      expiryMin: String(mergedQuery?.expiryMin || "").trim(),
+      expiryMax: String(mergedQuery?.expiryMax || "").trim(),
+      createdFrom: String(mergedQuery?.createdFrom || "").trim(),
+      createdTo: String(mergedQuery?.createdTo || "").trim(),
+      search: String(mergedQuery?.search || "").trim(),
+    };
+    chatgptAdminQueryRef.current = normalizedQuery;
+    setGptSubTab(normalizedQuery.subTab);
+    setChatgptTotalTypeTab(normalizedQuery.totalType);
+    setPackage2ShelfTab(normalizedQuery.package2ShelfTab);
+    setSoldPackage2ProviderFilter(normalizedQuery.soldProviderFilter);
+    setChatgptMailCheckFilter(normalizedQuery.mailCheckFilter);
+    setChatgptCustomerFilter(normalizedQuery.customerFilter);
+    setChatgptExpiryFilter(normalizedQuery.expiryFilter);
+    setChatgptExpiryMin(normalizedQuery.expiryMin);
+    setChatgptExpiryMax(normalizedQuery.expiryMax);
+    setChatgptCreatedFrom(normalizedQuery.createdFrom);
+    setChatgptCreatedTo(normalizedQuery.createdTo);
+    setSearchQuery(normalizedQuery.search);
+    setChatgptAdminPagination((prev) => ({
+      ...prev,
+      page: normalizedQuery.page,
+      limit: normalizedQuery.limit,
+    }));
+    return normalizedQuery;
+  };
+  const highlightChatgptAccountRow = (accountId = "") => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return;
+    setExpandedChatgptAccountId(normalizedId);
+    setHighlightedChatgptAccountId(normalizedId);
+    setTimeout(() => {
+      const row = document.getElementById(`chatgpt-account-row-${normalizedId}`);
+      if (row) {
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 120);
+    setTimeout(() => {
+      setHighlightedChatgptAccountId((prev) =>
+        prev === normalizedId ? "" : prev,
+      );
+    }, 4000);
+  };
+  const fetchChatgptAccountFocus = async (accountId = "", options = {}) => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return null;
+    const safeLimit = CHATGPT_ADMIN_PAGE_SIZE_OPTIONS.includes(
+      Number(options?.limit || chatgptAdminPagination.limit),
+    )
+      ? Number(options?.limit || chatgptAdminPagination.limit)
+      : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE;
+    const response = await axios.get(`/api/admin/chatgpt-account-focus/${normalizedId}`, {
+      params: { limit: safeLimit },
+      timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
+      skipGlobalLoading: true,
+    });
+    return response?.data || null;
+  };
+  const focusChatgptAccountById = async (accountId = "") => {
+    const normalizedId = String(accountId || "").trim();
+    if (!normalizedId) return null;
+    try {
+      const payload = await fetchChatgptAccountFocus(normalizedId);
+      if (!payload?.found) {
+        showAlert(
+          "Khong tim thay acc",
+          String(payload?.message || "Khong tim thay tai khoan nay nua."),
+          "warning",
+        );
+        return null;
+      }
+      const targetView =
+        payload?.targetView && typeof payload.targetView === "object"
+          ? payload.targetView
+          : {};
+      skipNextChatgptFilterEffectRef.current = true;
+      skipNextChatgptPageEffectRef.current = true;
+      setActiveTab("chatgpt");
+      const nextQuery = applyChatgptAdminQueryState({
+        page: Number(payload?.targetPage || 1),
+        limit: Number(payload?.targetLimit || chatgptAdminPagination.limit || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE),
+        subTab: targetView?.subTab || "all",
+        totalType: targetView?.totalType || "all",
+        package2ShelfTab: targetView?.package2ShelfTab || "all",
+        soldProviderFilter: targetView?.soldProviderFilter || "all",
+        mailCheckFilter: "all",
+        customerFilter: "all",
+        expiryFilter: "all",
+        expiryMin: "",
+        expiryMax: "",
+        createdFrom: "",
+        createdTo: "",
+        search: "",
+      });
+      await loadAdminChatgptAccounts({
+        silent: true,
+        force: true,
+        showError: true,
+        page: nextQuery.page,
+        limit: nextQuery.limit,
+      });
+      highlightChatgptAccountRow(normalizedId);
+      return payload?.account || null;
+    } catch (error) {
+      showAlert(
+        "Khong tim thay acc",
+        getApiErrorMessage(error, "Khong the dinh vi tai khoan nay luc nay."),
+        "warning",
+      );
+      return null;
+    }
+  };
   const invalidateAdminCaches = (nextVersion = 0) => {
     const normalizedVersion = Number(nextVersion || 0);
     if (Number.isFinite(normalizedVersion) && normalizedVersion > 0) {
@@ -4032,6 +4265,8 @@ function App() {
             expiryFilter: querySnapshot.expiryFilter,
             expiryMin: querySnapshot.expiryMin,
             expiryMax: querySnapshot.expiryMax,
+            createdFrom: querySnapshot.createdFrom,
+            createdTo: querySnapshot.createdTo,
             search: querySnapshot.search,
             package2ShelfTab: querySnapshot.package2ShelfTab,
             soldProviderFilter: querySnapshot.soldProviderFilter,
@@ -6923,85 +7158,12 @@ function App() {
     }
   };
 
-  const focusChatgptAccountFromMarketplace = (accountId, label = "") => {
-    const normalizedId = String(accountId || "").trim();
-    if (!normalizedId) return;
-    setActiveTab("chatgpt");
-    setGptSubTab("market");
-    setPackage2ShelfTab(
-      marketplaceTrackedAccountIds?.has(normalizedId) ? "sold" : "all",
-    );
-    setSoldPackage2ProviderFilter("all");
-    setChatgptCustomerFilter("all");
-    if (label) {
-      setSearchQuery(String(label || "").trim());
-    }
-    setHighlightedChatgptAccountId(normalizedId);
-    setTimeout(() => {
-      const row = document.getElementById(`chatgpt-account-row-${normalizedId}`);
-      if (row) {
-        row.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }, 120);
-    setTimeout(() => {
-      setHighlightedChatgptAccountId((prev) =>
-        prev === normalizedId ? "" : prev,
-      );
-    }, 4000);
+  const focusChatgptAccountFromMarketplace = async (accountId) => {
+    await focusChatgptAccountById(accountId);
   };
 
-  const focusChatgptAccountFromStoreOrder = (accountId, label = "") => {
-    const normalizedId = String(accountId || "").trim();
-    if (!normalizedId) return;
-    const targetAccount = accounts.find(
-      (acc) => String(acc?.id || "").trim() === normalizedId,
-    );
-    const normalizedType =
-      String(targetAccount?.type || "unassigned").trim() || "unassigned";
-    const isTrackedMarketplaceAccount =
-      marketplaceTrackedAccountIds?.has(normalizedId);
-
-    setActiveTab("chatgpt");
-    setSoldPackage2ProviderFilter("all");
-    setChatgptCustomerFilter("all");
-
-    if (targetAccount) {
-      if (isTrackedMarketplaceAccount || isChatgptMarketWarehouse(targetAccount)) {
-        setGptSubTab("market");
-        setPackage2ShelfTab(isTrackedMarketplaceAccount ? "sold" : "all");
-      } else if (isChatgptShortDateWarehouse(targetAccount)) {
-        setGptSubTab("short");
-        setPackage2ShelfTab("all");
-      } else {
-        setGptSubTab("total");
-        setPackage2ShelfTab("all");
-        setChatgptTotalTypeTab(
-          ["package1", "package2", "unassigned"].includes(normalizedType)
-            ? normalizedType
-            : "all",
-        );
-      }
-    } else {
-      setGptSubTab("all");
-      setPackage2ShelfTab("all");
-      setChatgptTotalTypeTab("all");
-    }
-
-    if (label) {
-      setSearchQuery(String(label || "").trim());
-    }
-    setHighlightedChatgptAccountId(normalizedId);
-    setTimeout(() => {
-      const row = document.getElementById(`chatgpt-account-row-${normalizedId}`);
-      if (row) {
-        row.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }, 120);
-    setTimeout(() => {
-      setHighlightedChatgptAccountId((prev) =>
-        prev === normalizedId ? "" : prev,
-      );
-    }, 4000);
+  const focusChatgptAccountFromStoreOrder = async (accountId) => {
+    await focusChatgptAccountById(accountId);
   };
 
   const focusTeamAccountFromMarketplace = (accountId, label = "") => {
@@ -7054,9 +7216,33 @@ function App() {
     );
   };
 
-  const openWarrantyFromMarketplaceOrder = (item = {}) => {
+  const openWarrantyFromMarketplaceOrder = async (item = {}) => {
     const normalizedId = String(item?.currentAccountId || "").trim();
     const scope = normalizeMarketplaceScope(item?.scope);
+    if (scope === "chatgpt") {
+      try {
+        const payload = await fetchChatgptAccountFocus(normalizedId);
+        if (!payload?.found || !payload?.account) {
+          showAlert(
+            "Khong tim thay acc",
+            String(payload?.message || "Khong tim thay acc hien tai cua order nay."),
+            "warning",
+          );
+          return;
+        }
+        await openWarrantyModal(payload.account, scope);
+      } catch (error) {
+        showAlert(
+          "Khong tim thay acc",
+          getApiErrorMessage(
+            error,
+            "Khong the mo acc hien tai cua order nay de bao hanh.",
+          ),
+          "warning",
+        );
+      }
+      return;
+    }
     const targetAcc =
       scope === "team"
         ? teamAccounts.find((acc) => String(acc?.id || "").trim() === normalizedId)
@@ -11051,6 +11237,15 @@ function App() {
                       ),
                   )}
                   <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Ngay nhap
+                  </span>
+                  {renderCreatedDateRangeInputs(
+                    chatgptCreatedFrom,
+                    setChatgptCreatedFrom,
+                    chatgptCreatedTo,
+                    setChatgptCreatedTo,
+                  )}
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Mail
                   </span>
                   <div className="flex flex-wrap gap-1.5">
@@ -11122,13 +11317,6 @@ function App() {
                   <Globe size={14} /> Kho market
                 </button>
                 <button
-                  onClick={() => handleBulkWarehouseMove("main")}
-                  disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-amber-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Globe size={14} /> {"Kho <25"}
-                </button>
-                <button
                   onClick={handleCopySelectedChatgptMarketplaceFormat}
                   disabled={selectedChatgptIds.length === 0}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
@@ -11167,7 +11355,6 @@ function App() {
                 { key: "all", label: "Tat ca", count: summaryTabs.all, color: "bg-slate-600" },
                 { key: "total", label: "Kho tong", count: summaryTabs.total, color: "bg-blue-600" },
                 { key: "market", label: "Kho market", count: summaryTabs.market, color: "bg-emerald-600" },
-                { key: "short", label: "Kho duoi 25", count: summaryTabs.short, color: "bg-amber-600" },
               ];
               return (
                 <div className="flex gap-2 flex-wrap mb-4">
@@ -11328,9 +11515,6 @@ function App() {
                       </div>
                       <div className="mt-1 text-xs text-slate-400">
                         Kho market la kho chung cua Datammo va Shopmini. Ban ben nao cung tu tru kho ben con lai.
-                      </div>
-                      <div className="mt-1 text-xs text-amber-300">
-                        Kho duoi 25 ngay la kho day tay, khong di vao API stock/buy tu dong.
                       </div>
                     </div>
                     <div className="text-xs text-slate-400">
@@ -11793,7 +11977,7 @@ function App() {
                                   </div>
                                 ) : (
                                   <select
-                                    value={normalizePackage2Shelf(acc.package2Shelf)}
+                                    value={normalizeChatgptWarehouseUiValue(acc.package2Shelf)}
                                     onChange={(e) =>
                                       handlePackage2ShelfChange(acc, e.target.value)
                                     }
@@ -11810,16 +11994,13 @@ function App() {
                                     }
                                     className={`
                                       w-full rounded-md px-2 py-1.5 text-[10px] outline-none font-semibold border text-center
-                                      ${normalizePackage2Shelf(acc.package2Shelf) === "none"
+                                      ${normalizeChatgptWarehouseUiValue(acc.package2Shelf) === "none"
                                         ? "bg-slate-800 text-slate-300 border-slate-600"
-                                        : normalizePackage2Shelf(acc.package2Shelf) === "main"
-                                          ? "bg-amber-900/40 text-amber-300 border-amber-700/60"
-                                          : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"}
+                                        : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"}
                                     `}
                                   >
                                     <option value="none">Kho tong</option>
                                     <option value="cheap">Kho market</option>
-                                    <option value="main">Kho duoi 25 ngay</option>
                                   </select>
                                 )}
                                 {loadingStates.changeShelf[acc.id] && (
@@ -12131,14 +12312,6 @@ function App() {
                                             <Globe size={9} /> Kho market
                                           </span>
                                         )}
-                                      {isChatgptShortDateWarehouse(acc) &&
-                                        !marketplaceTrackedAccountIds.has(
-                                          String(acc?.id || ""),
-                                        ) && (
-                                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-800/50 bg-amber-900/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-amber-300">
-                                            <Globe size={9} /> Kho dưới 25
-                                          </span>
-                                        )}
                                       {hasActiveStoreReservation && (
                                         <span className="inline-flex items-center gap-1 rounded-full border border-cyan-700/40 bg-cyan-950/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
                                           <Lock size={9} /> Giữ chỗ{" "}
@@ -12161,7 +12334,9 @@ function App() {
                                         ))
                                       ) : (
                                         <span className="text-[10px] italic text-slate-500">
-                                          Chưa có khách
+                                          {hasAssignedCustomer(acc)
+                                            ? "Co khach / trace dang gan"
+                                            : "Chua co khach"}
                                         </span>
                                       )}
                                       {hiddenPreviewChatgptUserCount > 0 && (
@@ -12176,11 +12351,6 @@ function App() {
                                 {isChatgptMarketWarehouse(acc) && !marketplaceTrackedAccountIds.has(String(acc?.id || "")) && (
                                   <div className="mb-2 w-full px-2 py-0.5 bg-emerald-900/40 text-emerald-300 font-bold rounded text-[10px] uppercase border border-emerald-800/50 flex items-center justify-center gap-1 shadow-sm">
                                     <Globe size={10} /> Kho market - chua ban
-                                  </div>
-                                )}
-                                {isChatgptShortDateWarehouse(acc) && !marketplaceTrackedAccountIds.has(String(acc?.id || "")) && (
-                                  <div className="mb-2 w-full px-2 py-0.5 bg-amber-900/40 text-amber-300 font-bold rounded text-[10px] uppercase border border-amber-800/50 flex items-center justify-center gap-1 shadow-sm">
-                                    <Globe size={10} /> Kho duoi 25 ngay - day tay
                                   </div>
                                 )}
                                 {hasActiveStoreReservation && (
@@ -13207,37 +13377,27 @@ function App() {
                                             ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
                                             : isOnDatammoShelf
                                               ? "border-emerald-700/50 bg-emerald-950/20 text-emerald-100"
-                                              : package2Shelf === "main"
-                                                ? "border-amber-700/50 bg-amber-950/20 text-amber-100"
-                                                : "border-slate-700/60 bg-slate-900/80 text-slate-100";
+                                              : "border-slate-700/60 bg-slate-900/80 text-slate-100";
                                           const warehouseChipClasses = hasActiveStoreReservation
                                             ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-200"
                                             : isOnDatammoShelf
                                               ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
-                                              : package2Shelf === "main"
-                                                ? "border-amber-500/30 bg-amber-500/15 text-amber-200"
-                                                : "border-slate-600/60 bg-slate-800 text-slate-200";
+                                              : "border-slate-600/60 bg-slate-800 text-slate-200";
                                           const warehouseTitle = hasActiveStoreReservation
                                             ? "Don web dang giu cho"
                                             : isOnDatammoShelf
                                               ? "Kho market"
-                                              : package2Shelf === "main"
-                                                ? "Kho duoi 25 ngay"
-                                                : "Kho tong";
+                                              : "Kho tong";
                                           const warehouseStatus = hasActiveStoreReservation
                                             ? "Da khoa"
                                             : isOnDatammoShelf
                                               ? "Chua ban"
-                                              : package2Shelf === "main"
-                                                ? "Day tay"
-                                                : "San sang";
+                                              : "San sang";
                                           const warehouseDescription = hasActiveStoreReservation
                                             ? "Acc nay dang duoc don web giu cho nen tam thoi khoa sua, xoa va doi kho."
                                             : isOnDatammoShelf
                                               ? "Acc dang nam trong kho market va se duoc ban tu dong qua Datammo + Shopmini."
-                                              : package2Shelf === "main"
-                                                ? "Acc duoi 25 ngay, chi de day tay va khong di vao API stock/buy."
-                                                : "Acc dang nam o kho tong, co the them khach tay hoac chuyen sang kho khac.";
+                                              : "Acc dang nam o kho tong, co the them khach tay hoac chuyen sang kho khac.";
                                           return (
                                             <div
                                               className={`rounded-xl border px-3 py-3 shadow-sm ${warehouseCardClasses}`}
@@ -14506,7 +14666,9 @@ function App() {
                 <label>Kho ban ChatGPT</label>
                 <select
                   className="form-input"
-                  value={normalizePackage2Shelf(showAddModal ? newAcc.package2Shelf : editingAcc.package2Shelf)}
+                  value={normalizeChatgptWarehouseUiValue(
+                    showAddModal ? newAcc.package2Shelf : editingAcc.package2Shelf,
+                  )}
                   onChange={(e) =>
                     showAddModal
                       ? setNewAcc({
@@ -14521,7 +14683,6 @@ function App() {
                 >
                   <option value="none">Kho tong</option>
                   <option value="cheap">Kho market</option>
-                  <option value="main">Kho duoi 25 ngay</option>
                 </select>
               </div>
             )}
@@ -17549,7 +17710,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         const filteredReplacementAccounts = eligibleReplacementAccounts.filter((acc) => {
           const normalizedWarehouse = isTeamWarranty
             ? normalizeTeamWarehouse(acc?.warehouse)
-            : normalizePackage2Shelf(acc?.package2Shelf);
+            : normalizeChatgptWarehouseUiValue(acc?.package2Shelf);
           if (
             warrantyWarehouseFilter !== "all" &&
             normalizedWarehouse !== warrantyWarehouseFilter
@@ -17576,7 +17737,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
           (summary, acc) => {
             const normalizedWarehouse = isTeamWarranty
               ? normalizeTeamWarehouse(acc?.warehouse)
-              : normalizePackage2Shelf(acc?.package2Shelf);
+              : normalizeChatgptWarehouseUiValue(acc?.package2Shelf);
             const key = String(normalizedWarehouse || "all").trim() || "all";
             return {
               ...summary,
@@ -17601,7 +17762,6 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
             : [
                 { key: "none", label: "Kho tong" },
                 { key: "cheap", label: "Kho market" },
-                { key: "main", label: "Kho duoi 25 ngay" },
               ]
         ).filter(
           (item) =>
@@ -17703,7 +17863,9 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                       <option value="all">Tat ca kho</option>
                       <option value={isTeamWarranty ? "total" : "none"}>Kho tong</option>
                       <option value={isTeamWarranty ? "market" : "cheap"}>Kho market</option>
-                      <option value={isTeamWarranty ? "short" : "main"}>Kho duoi 25 ngay</option>
+                      {isTeamWarranty ? (
+                        <option value="short">Kho duoi 25 ngay</option>
+                      ) : null}
                     </select>
                   </div>
                   <select

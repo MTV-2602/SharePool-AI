@@ -5076,7 +5076,10 @@ const listAdminStoreSupportConversations = async ({
 
 const normalizeAdminChatgptSubTab = (value = "") => {
   const normalized = String(value || "").trim().toLowerCase();
-  if (["all", "total", "market", "short"].includes(normalized)) {
+  if (normalized === "short") {
+    return "total";
+  }
+  if (["all", "total", "market"].includes(normalized)) {
     return normalized;
   }
   return "all";
@@ -5102,9 +5105,21 @@ const normalizeAdminSearchText = (value = "") =>
     .replace(/đ/gi, "d")
     .trim()
     .toLowerCase();
-const hasAssignedCustomerForAdminChatgpt = (account = {}) =>
-  Array.isArray(account?.users) &&
-  account.users.some((user) => String(user?.name || "").trim());
+const hasAssignedCustomerForAdminChatgpt = (account = {}) => {
+  const currentState =
+    account?.currentAccountState && typeof account.currentAccountState === "object"
+      ? account.currentAccountState
+      : buildChatgptAccountCurrentState(account);
+  return !!(
+    currentState?.hasAssignedUsers ||
+    currentState?.isReservedForWeb ||
+    currentState?.isWarrantyHold ||
+    currentState?.isBusyInMarketplace ||
+    currentState?.isBusyInWarrantyReplacement ||
+    String(currentState?.availabilityState || "").trim() ===
+      "assigned_to_store_order"
+  );
+};
 const getAdminChatgptAccountDaysRemaining = (account = {}) => {
   const expiresAt = String(account?.expiredAt || "").trim();
   if (!expiresAt) return null;
@@ -5198,6 +5213,7 @@ const loadStoreUsersForTraceOrders = async (
 const buildAdminChatgptSearchText = (account = {}) =>
   normalizeAdminSearchText(
     [
+      account?.id,
       account?.username,
       account?.password,
       account?.note,
@@ -5346,7 +5362,6 @@ const getCachedChatgptAdminSnapshot = async (
       if (!supportsChatgptMarket(account?.type)) return false;
       if (isTrackedMarketplaceAccount(account)) return false;
       if (isMarketAccount(account)) return false;
-      if (isShortAccount(account)) return false;
       return true;
     });
     const marketUnsoldAccounts = enrichedAccounts.filter(
@@ -5411,6 +5426,8 @@ const listAdminChatgptAccounts = async ({
   expiryFilter = "all",
   expiryMin = "",
   expiryMax = "",
+  createdFrom = "",
+  createdTo = "",
   search = "",
   package2ShelfTab = "all",
   soldProviderFilter = "all",
@@ -5426,6 +5443,16 @@ const listAdminChatgptAccounts = async ({
     : "all";
   const normalizedCustomerFilter = normalizeAdminCustomerFilter(customerFilter);
   const normalizedSearch = normalizeAdminSearchText(search);
+  const createdFromTime = (() => {
+    const iso = buildDateRangeIso(createdFrom, { endOfDay: false });
+    const time = new Date(iso || "").getTime();
+    return Number.isFinite(time) ? time : null;
+  })();
+  const createdToTime = (() => {
+    const iso = buildDateRangeIso(createdTo, { endOfDay: true });
+    const time = new Date(iso || "").getTime();
+    return Number.isFinite(time) ? time : null;
+  })();
   const normalizedPackage2ShelfTab =
     String(package2ShelfTab || "").trim().toLowerCase() === "sold"
       ? "sold"
@@ -5480,12 +5507,9 @@ const listAdminChatgptAccounts = async ({
         }
         return isMarketUnsoldAccount(account);
       }
-      if (normalizedSubTab === "short") {
-        return !isTrackedMarketplaceAccount(account) && isShortAccount(account);
-      }
       if (normalizedSubTab === "total") {
         if (isTrackedMarketplaceAccount(account)) return false;
-        if (isMarketAccount(account) || isShortAccount(account)) return false;
+        if (isMarketAccount(account)) return false;
         return supportsChatgptMarket(account?.type);
       }
       return true;
@@ -5520,6 +5544,14 @@ const listAdminChatgptAccounts = async ({
       ),
     )
     .filter((account) => {
+      if (createdFromTime === null && createdToTime === null) return true;
+      const createdAtTime = new Date(String(account?.createdAt || "")).getTime();
+      if (!Number.isFinite(createdAtTime)) return false;
+      if (createdFromTime !== null && createdAtTime < createdFromTime) return false;
+      if (createdToTime !== null && createdAtTime > createdToTime) return false;
+      return true;
+    })
+    .filter((account) => {
       if (!normalizedSearch) return true;
       return buildAdminChatgptSearchText(account).includes(normalizedSearch);
     });
@@ -5544,7 +5576,7 @@ const listAdminChatgptAccounts = async ({
         all: enrichedAccounts.length,
         total: totalPoolAccounts.length,
         market: marketUnsoldAccounts.length + marketSoldAccounts.length,
-        short: shortAccounts.length,
+        short: 0,
       },
       totalTypeTabs: {
         all: totalPoolAccounts.length,
@@ -7044,6 +7076,92 @@ const sanitizeExpiryCleanupBatch = (
     executedAt: String(batch?.executedAt || "").trim(),
     expiresAt: String(batch?.expiresAt || "").trim(),
     updatedAt: String(batch?.updatedAt || "").trim(),
+  };
+};
+
+const buildAdminChatgptAccountFocus = async ({
+  accountId = "",
+  limit = 10,
+} = {}) => {
+  const normalizedId = String(accountId || "").trim();
+  if (!normalizedId) {
+    return {
+      found: false,
+      reason: "missing_account_id",
+      message: "Thiếu ID tài khoản cần điều hướng.",
+    };
+  }
+  const safeLimit = parsePositiveLimit(limit, 10, 50);
+  const {
+    enrichedAccounts,
+    totalPoolAccounts,
+    marketUnsoldAccounts,
+    marketSoldAccounts,
+  } = await getCachedChatgptAdminSnapshot();
+  const targetAccount =
+    (Array.isArray(enrichedAccounts) ? enrichedAccounts : []).find(
+      (account) => String(account?.id || "").trim() === normalizedId,
+    ) || null;
+  if (!targetAccount) {
+    return {
+      found: false,
+      reason: "account_missing",
+      message: "Tài khoản không còn tồn tại hoặc trace đơn đã cũ.",
+    };
+  }
+
+  const normalizedType =
+    String(targetAccount?.type || "unassigned").trim() || "unassigned";
+  const isTrackedMarketplaceAccount = hasMarketplaceTraceSummary(
+    targetAccount?.marketplaceTraceSummary,
+  );
+  const isMarketAccount =
+    supportsChatgptMarket(targetAccount?.type) &&
+    normalizePackage2Shelf(
+      targetAccount?.package2Shelf,
+      CHATGPT_TOTAL_VALUE,
+    ) === CHATGPT_MARKET_VALUE;
+  const targetSubTab =
+    isTrackedMarketplaceAccount || isMarketAccount ? "market" : "total";
+  const targetTotalType =
+    targetSubTab === "total" &&
+    ["package1", "package2", "unassigned"].includes(normalizedType)
+      ? normalizedType
+      : "all";
+  const targetPackage2ShelfTab =
+    targetSubTab === "market" && isTrackedMarketplaceAccount ? "sold" : "all";
+  const focusList =
+    targetSubTab === "market"
+      ? targetPackage2ShelfTab === "sold"
+        ? marketSoldAccounts
+        : marketUnsoldAccounts
+      : totalPoolAccounts.filter((account) => {
+          if (targetTotalType === "all") return true;
+          return (
+            (String(account?.type || "unassigned").trim() || "unassigned") ===
+            targetTotalType
+          );
+        });
+  const targetIndex = Math.max(
+    0,
+    (Array.isArray(focusList) ? focusList : []).findIndex(
+      (account) => String(account?.id || "").trim() === normalizedId,
+    ),
+  );
+  return {
+    found: true,
+    reason: "",
+    message: "",
+    account: targetAccount,
+    targetView: {
+      subTab: targetSubTab,
+      totalType: targetTotalType,
+      package2ShelfTab: targetPackage2ShelfTab,
+      soldProviderFilter: "all",
+      warehouse: targetSubTab === "market" ? "market" : "total",
+    },
+    targetPage: Math.max(1, Math.floor(targetIndex / safeLimit) + 1),
+    targetLimit: safeLimit,
   };
 };
 const buildExpiryCleanupSignature = (items = []) =>
@@ -12747,6 +12865,8 @@ app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
         expiryFilter: req.query?.expiryFilter,
         expiryMin: req.query?.expiryMin,
         expiryMax: req.query?.expiryMax,
+        createdFrom: req.query?.createdFrom,
+        createdTo: req.query?.createdTo,
         search: req.query?.search,
         package2ShelfTab: req.query?.package2ShelfTab,
         soldProviderFilter: req.query?.soldProviderFilter,
@@ -12762,6 +12882,8 @@ app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
           expiryFilter: req.query?.expiryFilter,
           expiryMin: req.query?.expiryMin,
           expiryMax: req.query?.expiryMax,
+          createdFrom: req.query?.createdFrom,
+          createdTo: req.query?.createdTo,
           search: req.query?.search,
           package2ShelfTab: req.query?.package2ShelfTab,
           soldProviderFilter: req.query?.soldProviderFilter,
@@ -12780,6 +12902,38 @@ app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
     console.error("Admin /api/admin/chatgpt-accounts failed:", error);
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong tai duoc danh sach ChatGPT admin.",
+    });
+  }
+});
+
+app.get("/api/admin/chatgpt-account-focus/:id", verifyToken, async (req, res) => {
+  try {
+    const normalizedId = String(req.params?.id || "").trim();
+    if (!normalizedId) {
+      return res.status(400).json({
+        error: "Thieu ID tai khoan can dieu huong.",
+      });
+    }
+    const safeLimit = parsePositiveLimit(req.query?.limit, 10, 50);
+    const payload = await getCachedAdminRead(
+      "admin:chatgpt-account-focus",
+      { id: normalizedId, limit: safeLimit },
+      async () => ({
+        success: true,
+        ...(
+          await buildAdminChatgptAccountFocus({
+            accountId: normalizedId,
+            limit: safeLimit,
+          })
+        ),
+        version: latestDataVersion,
+      }),
+    );
+    return res.json(payload);
+  } catch (error) {
+    console.error("Admin /api/admin/chatgpt-account-focus failed:", error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the dinh vi tai khoan ChatGPT.",
     });
   }
 });
