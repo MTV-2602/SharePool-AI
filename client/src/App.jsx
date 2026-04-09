@@ -1191,6 +1191,7 @@ const EXTEND_DURATION_OPTIONS = [
 ];
 const MARKETPLACE_ORDER_PAGE_SIZE = 5;
 const CHATGPT_ADMIN_PAGE_SIZE_OPTIONS = [5, 10];
+const CHATGPT_MAIL_CHECK_HISTORY_LIMIT_OPTIONS = [20, 30, 50];
 const DEFAULT_CHATGPT_ADMIN_PAGE_SIZE = 10;
 const clampMonthDay = (year, monthIndex, dayOfMonth) => {
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
@@ -1847,6 +1848,8 @@ function App() {
   const [chatgptExpiryBatches, setChatgptExpiryBatches] = useState([]);
   const [chatgptExpiryLogBatches, setChatgptExpiryLogBatches] = useState([]);
   const [chatgptMailCheckHistory, setChatgptMailCheckHistory] = useState([]);
+  const [chatgptMailCheckHistoryLimit, setChatgptMailCheckHistoryLimit] =
+    useState(20);
   const [adminRealtime, setAdminRealtime] = useState(
     buildDefaultAdminRealtimeConfig(),
   );
@@ -4297,17 +4300,22 @@ function App() {
     }
   };
 
-  const openChatgptMailCheckHistory = async () => {
+  const openChatgptMailCheckHistory = async (limitOverride = null) => {
+    const effectiveLimit = Math.max(
+      1,
+      Number(limitOverride || chatgptMailCheckHistoryLimit || 20),
+    );
     try {
       setLoadingStates((prev) => ({ ...prev, fetchChatgptMailCheckHistory: true }));
       const response = await axios.get("/api/admin/chatgpt-mail-check/history", {
-        params: { limit: 30 },
+        params: { limit: effectiveLimit },
         timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
         skipGlobalLoading: true,
       });
       setChatgptMailCheckHistory(
         Array.isArray(response?.data?.items) ? response.data.items : [],
       );
+      setChatgptMailCheckHistoryLimit(effectiveLimit);
       setShowChatgptMailCheckHistoryModal(true);
     } catch (error) {
       showAlert(
@@ -18267,6 +18275,27 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <div className="hidden items-center gap-1 rounded-xl border border-slate-700 bg-slate-900/70 p-1 sm:flex">
+                    {CHATGPT_MAIL_CHECK_HISTORY_LIMIT_OPTIONS.map((limitOption) => {
+                      const isActive =
+                        Number(chatgptMailCheckHistoryLimit) === Number(limitOption);
+                      return (
+                        <button
+                          key={limitOption}
+                          type="button"
+                          onClick={() => void openChatgptMailCheckHistory(limitOption)}
+                          disabled={loadingStates.fetchChatgptMailCheckHistory}
+                          className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                            isActive
+                              ? "bg-cyan-500/20 text-cyan-100"
+                              : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                          } disabled:cursor-wait disabled:opacity-60`}
+                        >
+                          {limitOption}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <button
                     type="button"
                     onClick={openChatgptMailCheckHistory}
@@ -18291,6 +18320,30 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
               </div>
 
               <div className="max-h-[calc(88vh-88px)] overflow-y-auto px-5 py-5">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900/50 px-4 py-3 text-xs text-slate-300 sm:hidden">
+                  <span>Hiển thị tối đa {chatgptMailCheckHistoryLimit} acc</span>
+                  <div className="flex items-center gap-1">
+                    {CHATGPT_MAIL_CHECK_HISTORY_LIMIT_OPTIONS.map((limitOption) => {
+                      const isActive =
+                        Number(chatgptMailCheckHistoryLimit) === Number(limitOption);
+                      return (
+                        <button
+                          key={limitOption}
+                          type="button"
+                          onClick={() => void openChatgptMailCheckHistory(limitOption)}
+                          disabled={loadingStates.fetchChatgptMailCheckHistory}
+                          className={`rounded-lg px-2.5 py-1 font-semibold transition ${
+                            isActive
+                              ? "bg-cyan-500/20 text-cyan-100"
+                              : "border border-slate-700 bg-slate-950/70 text-slate-300 hover:text-white"
+                          } disabled:cursor-wait disabled:opacity-60`}
+                        >
+                          {limitOption}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 {items.length === 0 ? (
                   <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-6 text-sm text-slate-400">
                     Chua co acc nao bi match mail die.
