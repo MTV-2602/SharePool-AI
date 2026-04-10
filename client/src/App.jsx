@@ -1873,6 +1873,8 @@ function App() {
     useState("");
   const [chatgptMailCheckHistoryToDate, setChatgptMailCheckHistoryToDate] =
     useState("");
+  const [chatgptMailCheckHistorySearchDraft, setChatgptMailCheckHistorySearchDraft] =
+    useState("");
   const [expandedChatgptMailHistoryId, setExpandedChatgptMailHistoryId] =
     useState("");
   const [adminRealtime, setAdminRealtime] = useState(
@@ -3280,6 +3282,32 @@ function App() {
     }
   };
 
+  const formatVietnamDateTime = (isoString) => {
+    if (!isoString) return "";
+    try {
+      return new Intl.DateTimeFormat("vi-VN", {
+        timeZone: "Asia/Ho_Chi_Minh",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).format(new Date(isoString));
+    } catch (e) {
+      return "";
+    }
+  };
+
+  const formatDateInputLabel = (dateValue) => {
+    const rawValue = String(dateValue || "").trim();
+    if (!rawValue) return "";
+    const [year, month, day] = rawValue.split("-");
+    if (!year || !month || !day) return rawValue;
+    return `${day}/${month}/${year}`;
+  };
+
   const formatRelativeTime = (isoString) => {
     if (!isoString) return "";
     try {
@@ -4585,6 +4613,7 @@ function App() {
       setChatgptMailCheckHistoryLimit(effectiveLimit);
       setChatgptMailCheckHistoryFromDate(effectiveDateFrom);
       setChatgptMailCheckHistoryToDate(effectiveDateTo);
+      setChatgptMailCheckHistorySearchDraft("");
       setExpandedChatgptMailHistoryId("");
       setShowChatgptMailCheckHistoryModal(true);
     } catch (error) {
@@ -18499,10 +18528,53 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         const items = Array.isArray(chatgptMailCheckHistory)
           ? chatgptMailCheckHistory
           : [];
-        const activeDateLabel =
-          chatgptMailCheckHistoryFromDate || chatgptMailCheckHistoryToDate
-            ? `${chatgptMailCheckHistoryFromDate || "--"} -> ${chatgptMailCheckHistoryToDate || "--"}`
-            : `Toi da ${chatgptMailCheckHistoryLimit} acc moi nhat`;
+        const historySearchDraft = String(
+          chatgptMailCheckHistorySearchDraft || "",
+        ).trim();
+        const normalizedHistorySearch = toNonAccentVietnamese(
+          historySearchDraft.toLowerCase(),
+        );
+        const visibleItems = normalizedHistorySearch
+          ? items.filter((item) => {
+              const username = String(item?.username || "").trim();
+              const usernameParts = username.split("@");
+              const emailDomain =
+                usernameParts.length > 1 ? usernameParts.slice(1).join("@") : "";
+              const typeLabel =
+                item?.type === "package1"
+                  ? "goi 1 package1"
+                  : item?.type === "package2"
+                    ? "goi 2 package2"
+                    : "chua chon unassigned";
+              const searchIndex = toNonAccentVietnamese(
+                [
+                  username,
+                  emailDomain,
+                  typeLabel,
+                  item?.mailCheckLastSender,
+                  item?.mailCheckLastSubject,
+                  item?.mailCheckLastSnippet,
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+                  .toLowerCase(),
+              );
+              return searchIndex.includes(normalizedHistorySearch);
+            })
+          : items;
+        const hasDateFilter =
+          !!chatgptMailCheckHistoryFromDate || !!chatgptMailCheckHistoryToDate;
+        const summaryParts = [
+          hasDateFilter
+            ? `Dang loc: ${formatDateInputLabel(chatgptMailCheckHistoryFromDate) || "--"} -> ${formatDateInputLabel(chatgptMailCheckHistoryToDate) || "--"}`
+            : `Dang xem ${items.length} acc moi nhat`,
+          historySearchDraft
+            ? `Tim: ${historySearchDraft}`
+            : "",
+          historySearchDraft
+            ? `Khop ${visibleItems.length}/${items.length} acc`
+            : `${visibleItems.length} acc`,
+        ].filter(Boolean);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
             <div
@@ -18515,7 +18587,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                     Lich su acc ChatGPT bi mail die
                   </h2>
                   <div className="mt-1 text-xs text-slate-400">
-                    Chi hien cac acc da match mail OpenAI khoa tai khoan.
+                    Danh sach acc da match mail OpenAI khoa tai khoan.
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -18614,15 +18686,36 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                       </button>
                     )}
                   </div>
-                  <div className="text-xs text-slate-400">{activeDateLabel}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative min-w-[240px] flex-1">
+                      <Search
+                        size={14}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                      />
+                      <input
+                        type="text"
+                        value={chatgptMailCheckHistorySearchDraft}
+                        onChange={(event) =>
+                          setChatgptMailCheckHistorySearchDraft(event.target.value)
+                        }
+                        placeholder="Tim email/domain trong ket qua..."
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950/70 py-2 pl-9 pr-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400"
+                      />
+                    </div>
+                    <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-100">
+                      {summaryParts.join(" • ")}
+                    </div>
+                  </div>
                 </div>
-                {items.length === 0 ? (
+                {visibleItems.length === 0 ? (
                   <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-6 text-sm text-slate-400">
-                    Chua co acc nao bi match mail die.
+                    {items.length === 0
+                      ? "Chua co acc nao bi match mail die."
+                      : "Khong co acc nao khop bo loc hien tai."}
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {items.map((item, index) => (
+                  <div className="space-y-2">
+                    {visibleItems.map((item, index) => (
                       (() => {
                         const itemId = String(item?.id || item?.username || `mail-${index}`);
                         const isExpanded = expandedChatgptMailHistoryId === itemId;
@@ -18635,11 +18728,11 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         return (
                           <div
                             key={`${String(item?.id || item?.username || "mail-check")}-${index}`}
-                            className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-3"
+                            className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3"
                           >
                             <div className="flex flex-col gap-3">
-                              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                                <div className="min-w-0 flex-1 space-y-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="rounded-full border border-red-700/60 bg-red-900/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-red-200">
                                       Mail die
@@ -18648,17 +18741,21 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                       {item?.username || "--"}
                                     </span>
                                     <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5 text-[11px] text-slate-300">
-                                      {item?.type || "unassigned"}
+                                      {item?.type === "package1"
+                                        ? "Goi 1"
+                                        : item?.type === "package2"
+                                          ? "Goi 2"
+                                          : "Chua chon"}
                                     </span>
                                   </div>
-                                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                                    <span>Match luc:</span>
+                                  <div className="mt-1 text-xs text-slate-400">
+                                    Match luc{" "}
                                     <span className="font-medium text-slate-300">
-                                      {formatDateTime(item?.mailCheckLastMatchedAt) || "--"}
+                                      {formatVietnamDateTime(item?.mailCheckLastMatchedAt) || "--"}
                                     </span>
                                   </div>
                                 </div>
-                                <div className="flex flex-wrap gap-2 lg:justify-end">
+                                <div className="flex flex-wrap gap-2 md:justify-end">
                                   {hasSavedMailDetails ? (
                                     <button
                                       type="button"
@@ -18669,7 +18766,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                       }
                                       className="rounded-lg border border-slate-600 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-cyan-400/50 hover:text-white"
                                     >
-                                      {isExpanded ? "An chi tiet" : "Chi tiet"}
+                                      {isExpanded ? "An" : "Chi tiet"}
                                     </button>
                                   ) : null}
                                   <button
@@ -18690,34 +18787,46 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                               </div>
                               {isExpanded && hasSavedMailDetails ? (
                                 <div className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-3 text-xs text-slate-300">
-                                  <div className="grid gap-2 md:grid-cols-2">
-                                    <div className="min-w-0">
-                                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                                        Sender
+                                  <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                                    <div className="space-y-2">
+                                      <div>
+                                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                                          Sender
+                                        </div>
+                                        <div className="mt-1 break-all">
+                                          {item?.mailCheckLastSender || "--"}
+                                        </div>
                                       </div>
-                                      <div className="mt-1 truncate">
-                                        {item?.mailCheckLastSender || "--"}
+                                      <div>
+                                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                                          Thoi gian
+                                        </div>
+                                        <div className="mt-1">
+                                          {formatVietnamDateTime(item?.mailCheckLastMatchedAt) || "--"}
+                                        </div>
                                       </div>
                                     </div>
-                                    <div className="min-w-0">
-                                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                                        Subject
+                                    <div className="space-y-2">
+                                      <div>
+                                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                                          Subject
+                                        </div>
+                                        <div className="mt-1 break-words">
+                                          {item?.mailCheckLastSubject || "--"}
+                                        </div>
                                       </div>
-                                      <div className="mt-1 truncate">
-                                        {item?.mailCheckLastSubject || "--"}
-                                      </div>
+                                      {rawSnippet ? (
+                                        <div>
+                                          <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                                            Noi dung
+                                          </div>
+                                          <div className="mt-1 whitespace-pre-wrap leading-5 text-slate-400">
+                                            {rawSnippet}
+                                          </div>
+                                        </div>
+                                      ) : null}
                                     </div>
                                   </div>
-                                  {rawSnippet ? (
-                                    <div className="mt-3">
-                                      <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                                        Noi dung
-                                      </div>
-                                      <div className="mt-1 whitespace-pre-wrap leading-5 text-slate-400">
-                                        {rawSnippet}
-                                      </div>
-                                    </div>
-                                  ) : null}
                                 </div>
                               ) : null}
                             </div>
