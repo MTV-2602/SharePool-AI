@@ -1907,6 +1907,8 @@ function App() {
     useState("");
   const [chatgptMailCheckHistoryToDate, setChatgptMailCheckHistoryToDate] =
     useState("");
+  const [chatgptMailCheckHistoryLatestOnly, setChatgptMailCheckHistoryLatestOnly] =
+    useState(false);
   const [chatgptMailCheckHistorySearchDraft, setChatgptMailCheckHistorySearchDraft] =
     useState("");
   const [expandedChatgptMailHistoryId, setExpandedChatgptMailHistoryId] =
@@ -2054,6 +2056,7 @@ function App() {
   const chatgptPageEffectPrimedRef = useRef(false);
   const skipNextChatgptPageEffectRef = useRef(false);
   const skipNextChatgptFilterEffectRef = useRef(false);
+  const chatgptForceFreshOnNextLoadRef = useRef(true);
   const chatgptListRequestSeqRef = useRef(0);
   const chatgptListAppliedSeqRef = useRef(0);
   const chatgptListInFlightRef = useRef({ key: "", promise: null });
@@ -2464,19 +2467,28 @@ function App() {
     const handleVisibilityChange = () => {
       if (document.hidden) return;
       if (shouldSkipAutoRefresh()) return;
+      if (activeTab === "chatgpt") {
+        chatgptForceFreshOnNextLoadRef.current = true;
+        refreshAdminSurface({ includeSummary: true, forceFull: true }).catch(() => {});
+        return;
+      }
       refreshAdminSurface({ includeSummary: true }).catch(() => {});
     };
 
     window.addEventListener("online", handleVisibilityChange);
+    window.addEventListener("focus", handleVisibilityChange);
+    window.addEventListener("pageshow", handleVisibilityChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       window.removeEventListener("online", handleVisibilityChange);
+      window.removeEventListener("focus", handleVisibilityChange);
+      window.removeEventListener("pageshow", handleVisibilityChange);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [isAuthenticated, activeTab, selectedSupportConversationId]);
 
   useEffect(() => {
-    if (!isAuthenticated) return undefined;
+    if (!isAuthenticated || activeTab === "chatgpt") return undefined;
     const intervalId = window.setInterval(() => {
       if (document.hidden) return;
       if (shouldSkipAutoRefresh()) return;
@@ -2608,7 +2620,13 @@ function App() {
       setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
       return;
     }
-    loadAdminChatgptAccounts({ silent: true, allowCached: true }).catch(() => {});
+    const shouldForceFresh = !!chatgptForceFreshOnNextLoadRef.current;
+    chatgptForceFreshOnNextLoadRef.current = false;
+    loadAdminChatgptAccounts({
+      silent: true,
+      allowCached: !shouldForceFresh,
+      force: shouldForceFresh,
+    }).catch(() => {});
   }, [activeTab, chatgptListFilterKey, isAuthenticated]);
 
   useEffect(() => {
@@ -2621,7 +2639,13 @@ function App() {
       chatgptPageEffectPrimedRef.current = true;
       return;
     }
-    loadAdminChatgptAccounts({ silent: true, allowCached: true }).catch(() => {});
+    const shouldForceFresh = !!chatgptForceFreshOnNextLoadRef.current;
+    chatgptForceFreshOnNextLoadRef.current = false;
+    loadAdminChatgptAccounts({
+      silent: true,
+      allowCached: !shouldForceFresh,
+      force: shouldForceFresh,
+    }).catch(() => {});
   }, [
     activeTab,
     isAuthenticated,
@@ -2655,6 +2679,7 @@ function App() {
     if (isAuthenticated && activeTab === "chatgpt") return;
     chatgptPageEffectPrimedRef.current = false;
     skipNextChatgptPageEffectRef.current = false;
+    chatgptForceFreshOnNextLoadRef.current = true;
   }, [activeTab, isAuthenticated]);
 
   useEffect(() => {
@@ -3965,6 +3990,7 @@ function App() {
       buildChatgptAdminFilterDiffKey(nextDraftState) ===
         buildChatgptAdminFilterDiffKey(chatgptAppliedFilters) &&
       Number(chatgptAdminPagination.page || 1) === 1;
+    chatgptForceFreshOnNextLoadRef.current = true;
     const normalizedQuery = applyChatgptAdminQueryState({
       page: 1,
       limit: chatgptAdminPagination.limit || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
@@ -3986,6 +4012,7 @@ function App() {
       buildChatgptAdminFilterDiffKey(defaultFilterState) ===
         buildChatgptAdminFilterDiffKey(chatgptAppliedFilters) &&
       Number(chatgptAdminPagination.page || 1) === 1;
+    chatgptForceFreshOnNextLoadRef.current = true;
     const normalizedQuery = applyChatgptAdminQueryState({
       page: 1,
       limit: chatgptAdminPagination.limit || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
@@ -4137,9 +4164,10 @@ function App() {
       ? Number(options?.limit || chatgptAdminPagination.limit)
       : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE;
     const response = await axios.get(`/api/admin/chatgpt-account-focus/${normalizedId}`, {
-      params: { limit: safeLimit },
+      params: { limit: safeLimit, forceFresh: 1 },
       timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
       skipGlobalLoading: true,
+      headers: { "Cache-Control": "no-cache" },
     });
     return response?.data || null;
   };
@@ -4214,6 +4242,11 @@ function App() {
     chatgptListAppliedSeqRef.current = 0;
     chatgptListInFlightRef.current = { key: "", promise: null };
   };
+  const refreshChatgptAdminAfterConflict = async () => {
+    chatgptForceFreshOnNextLoadRef.current = true;
+    invalidateAdminCaches();
+    await refreshAdminSurface({ includeSummary: true, forceFull: true });
+  };
 
   const fetchData = async (options = true) => {
     const resolvedOptions =
@@ -4239,15 +4272,17 @@ function App() {
     const syncChatgptPage =
       activeTab === "chatgpt" && resolvedOptions.syncChatgptPage !== false;
     const allowCached = !!resolvedOptions.allowCached;
+    const forceFresh = !!resolvedOptions.forceFresh;
     const requestLabel =
       String(resolvedOptions.requestLabel || "").trim() ||
       "Đang tải lại dữ liệu";
-    if (allowCached && hasFreshAdminSectionsCached(dataSections)) {
+    if (!forceFresh && allowCached && hasFreshAdminSectionsCached(dataSections)) {
       return null;
     }
     const requestSignature = JSON.stringify({
       omitChatgpt: omitChatgpt ? 1 : 0,
       sections: [...dataSections].sort(),
+      forceFresh: forceFresh ? 1 : 0,
     });
     const existingFetchPromise = fetchDataInFlightRef.current.get(requestSignature);
     if (existingFetchPromise) {
@@ -4270,6 +4305,9 @@ function App() {
         }
         if (dataSections.length > 0) {
           queryParams.sections = dataSections.join(",");
+        }
+        if (forceFresh) {
+          queryParams.forceFresh = 1;
         }
         const res = await axios.get("/api/data", {
           params: Object.keys(queryParams).length > 0 ? queryParams : undefined,
@@ -4488,6 +4526,7 @@ function App() {
     limit,
     allowCached = false,
     force = false,
+    forceFresh = force,
     showError = !silent,
   } = {}) => {
     const querySnapshot = getCurrentChatgptAdminQuery({ page, limit });
@@ -4535,9 +4574,11 @@ function App() {
             search: querySnapshot.search,
             package2ShelfTab: querySnapshot.package2ShelfTab,
             soldProviderFilter: querySnapshot.soldProviderFilter,
+            forceFresh: forceFresh ? 1 : undefined,
           },
           timeout: 30000,
           skipGlobalLoading: true,
+          headers: { "Cache-Control": "no-cache" },
         });
         if (requestSeq !== chatgptListRequestSeqRef.current) {
           return response?.data || null;
@@ -4618,23 +4659,11 @@ function App() {
         limit: nextLimit,
       }));
     });
-    const requestKey = buildChatgptAdminRequestKey(
-      getCurrentChatgptAdminQuery({ page: nextPage, limit: nextLimit }),
-    );
-    const cachedEntry = getFreshChatgptListCacheEntry(requestKey);
-    if (cachedEntry?.data) {
-      applyChatgptAdminListPayload(cachedEntry.data, {
-        requestKey,
-        safePage: nextPage,
-        safeLimit: nextLimit,
-      });
-      setChatgptAdminPageLoading(false);
-      return;
-    }
     const responseData = await loadAdminChatgptAccounts({
       silent: true,
       showError: true,
-      allowCached: true,
+      allowCached: false,
+      force: true,
       page: nextPage,
       limit: nextLimit,
     });
@@ -4652,6 +4681,7 @@ function App() {
     silent = true,
     allowCached = false,
     force = false,
+    forceFresh = force,
     includeSummary = true,
   } = {}) => {
     const sections = includeSummary
@@ -4666,6 +4696,7 @@ function App() {
       showLoader: !silent,
       syncChatgptPage: false,
       allowCached: allowCached && !force,
+      forceFresh,
       omitChatgpt: true,
       sections,
       requestLabel: "Đang cập nhật dữ liệu ChatGPT",
@@ -4678,6 +4709,7 @@ function App() {
       showLoader: false,
       syncChatgptPage: false,
       allowCached: false,
+      forceFresh,
       omitChatgpt: true,
       sections: fallbackSections,
       requestLabel: "Đang tải lại dữ liệu Team",
@@ -4778,12 +4810,19 @@ function App() {
     }
   };
 
-  const loadChatgptMailCheckSummary = async ({ silent = true } = {}) => {
+  const loadChatgptMailCheckSummary = async ({
+    silent = true,
+    forceFresh = false,
+  } = {}) => {
     try {
       setLoadingStates((prev) => ({ ...prev, fetchChatgptMailCheckSummary: true }));
       const response = await axios.get("/api/admin/chatgpt-mail-check/summary", {
+        params: {
+          forceFresh: forceFresh ? 1 : undefined,
+        },
         timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
         skipGlobalLoading: silent,
+        headers: { "Cache-Control": "no-cache" },
       });
       setChatgptMailCheckSummary({
         ...buildDefaultChatgptMailCheckSummaryState(),
@@ -4819,6 +4858,7 @@ function App() {
     const effectiveDateTo = String(
       normalizedOptions.dateToOverride ?? chatgptMailCheckHistoryToDate ?? "",
     ).trim();
+    const forceFresh = normalizedOptions.forceFresh !== false;
     try {
       setLoadingStates((prev) => ({ ...prev, fetchChatgptMailCheckHistory: true }));
       const response = await axios.get("/api/admin/chatgpt-mail-check/history", {
@@ -4826,9 +4866,11 @@ function App() {
           limit: effectiveLimit,
           dateFrom: effectiveDateFrom,
           dateTo: effectiveDateTo,
+          forceFresh: forceFresh ? 1 : undefined,
         },
         timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
         skipGlobalLoading: true,
+        headers: { "Cache-Control": "no-cache" },
       });
       setChatgptMailCheckHistory(
         Array.isArray(response?.data?.items) ? response.data.items : [],
@@ -5165,11 +5207,14 @@ function App() {
           silent: true,
           allowCached: !forceFull,
           force: forceFull,
+          forceFresh: forceFull,
           includeSummary,
         }),
       );
       tasks.push(loadChatgptExpirySummary({ silent: true }));
-      tasks.push(loadChatgptMailCheckSummary({ silent: true }));
+      tasks.push(
+        loadChatgptMailCheckSummary({ silent: true, forceFresh: forceFull }),
+      );
       await Promise.allSettled(tasks);
       return;
     }
@@ -6549,7 +6594,17 @@ function App() {
       await syncAdminDataAfterMutation("Đang đồng bộ xóa tài khoản");
       broadcastDataChange();
     } catch (error) {
-      showAlert("Lỗi", getApiErrorMessage(error, "Lỗi xóa tài khoản"), "error");
+      const message = getApiErrorMessage(error, "Lỗi xóa tài khoản");
+      if (isAdminVersionConflictError(error)) {
+        await refreshChatgptAdminAfterConflict();
+        showAlert(
+          "Chặn Thao Tác",
+          `${message}\n\nĐã tự tải dữ liệu mới nhất cho trang này.`,
+          "warning",
+        );
+      } else {
+        showAlert("Lỗi", message, "error");
+      }
     } finally {
       setLoadingStates((prev) => ({ ...prev, deleteAccount: false }));
     }
@@ -6647,7 +6702,16 @@ function App() {
       broadcastDataChange();
     } catch (error) {
       const msg = getApiErrorMessageWithDiagnostics(error, "Lỗi đổi gói");
-      showAlert("Chặn Thao Tác", msg, "error");
+      if (isAdminVersionConflictError(error)) {
+        await refreshChatgptAdminAfterConflict();
+        showAlert(
+          "Chặn Thao Tác",
+          `${msg}\n\nĐã tự tải dữ liệu mới nhất cho trang này.`,
+          "warning",
+        );
+      } else {
+        showAlert("Chặn Thao Tác", msg, "error");
+      }
       // Reset dropdown về giá trị gói cũ
       const selectElement = document.getElementById(`select-type-${acc.id}`);
       if (selectElement) selectElement.value = acc.type;
@@ -6723,7 +6787,16 @@ function App() {
       broadcastDataChange();
     } catch (error) {
       const msg = getApiErrorMessageWithDiagnostics(error, "Lỗi đổi kệ gói 2");
-      showAlert("Lỗi", msg, "error");
+      if (isAdminVersionConflictError(error)) {
+        await refreshChatgptAdminAfterConflict();
+        showAlert(
+          "Chặn Thao Tác",
+          `${msg}\n\nĐã tự tải dữ liệu mới nhất cho trang này.`,
+          "warning",
+        );
+      } else {
+        showAlert("Lỗi", msg, "error");
+      }
     } finally {
       setLoadingStates((prev) => ({
         ...prev,
@@ -11455,7 +11528,12 @@ function App() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => loadChatgptMailCheckSummary({ silent: false })}
+                      onClick={() =>
+                        loadChatgptMailCheckSummary({
+                          silent: false,
+                          forceFresh: true,
+                        })
+                      }
                       disabled={loadingStates.fetchChatgptMailCheckSummary}
                       className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/15 disabled:cursor-wait disabled:opacity-60"
                     >
@@ -18823,13 +18901,42 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         const items = Array.isArray(chatgptMailCheckHistory)
           ? chatgptMailCheckHistory
           : [];
+        const getHistoryItemId = (item = {}, index = 0) =>
+          String(item?.id || item?.username || `mail-${index}`);
+        const latestHistoryReferenceMs = items.reduce((maxValue, item) => {
+          const candidate = Date.parse(
+            String(
+              item?.mailCheckLastCheckedAt || item?.mailCheckLastMatchedAt || "",
+            ).trim(),
+          );
+          return Number.isFinite(candidate) && candidate > maxValue
+            ? candidate
+            : maxValue;
+        }, 0);
+        const latestHistoryWindowMs = 10 * 60 * 1000;
+        const latestHistoryItemIds = new Set(
+          items.flatMap((item, index) => {
+            const candidate = Date.parse(
+              String(
+                item?.mailCheckLastCheckedAt || item?.mailCheckLastMatchedAt || "",
+              ).trim(),
+            );
+            if (!latestHistoryReferenceMs || !Number.isFinite(candidate)) return [];
+            const deltaMs = latestHistoryReferenceMs - candidate;
+            if (deltaMs < 0 || deltaMs > latestHistoryWindowMs) return [];
+            return [getHistoryItemId(item, index)];
+          }),
+        );
+        const latestHistoryReferenceLabel = latestHistoryReferenceMs
+          ? formatVietnamDateTime(new Date(latestHistoryReferenceMs).toISOString())
+          : "";
         const historySearchDraft = String(
           chatgptMailCheckHistorySearchDraft || "",
         ).trim();
         const normalizedHistorySearch = toNonAccentVietnamese(
           historySearchDraft.toLowerCase(),
         );
-        const visibleItems = normalizedHistorySearch
+        const matchedItems = normalizedHistorySearch
           ? items.filter((item) => {
               const username = String(item?.username || "").trim();
               const usernameParts = username.split("@");
@@ -18866,16 +18973,26 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
               return searchIndex.includes(normalizedHistorySearch);
             })
           : items;
+        const visibleItems = chatgptMailCheckHistoryLatestOnly
+          ? matchedItems.filter((item, index) =>
+              latestHistoryItemIds.has(getHistoryItemId(item, index)),
+            )
+          : matchedItems;
         const hasDateFilter =
           !!chatgptMailCheckHistoryFromDate || !!chatgptMailCheckHistoryToDate;
         const summaryParts = [
           hasDateFilter
             ? `Dang loc: ${formatDateInputLabel(chatgptMailCheckHistoryFromDate) || "--"} -> ${formatDateInputLabel(chatgptMailCheckHistoryToDate) || "--"}`
             : "Moi nhat truoc",
-          historySearchDraft
+          chatgptMailCheckHistoryLatestOnly
+            ? `Lan quet gan nhat ${latestHistoryItemIds.size} acc`
+            : historySearchDraft
             ? `Tim: ${historySearchDraft}`
             : `Toi da ${items.length} acc`,
-          `Khop ${visibleItems.length}/${items.length} acc`,
+          latestHistoryReferenceLabel
+            ? `Quet luc ${latestHistoryReferenceLabel}`
+            : null,
+          `Khop ${visibleItems.length}/${matchedItems.length} acc`,
         ].filter(Boolean);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
@@ -19004,6 +19121,23 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         className="w-full rounded-xl border border-slate-700 bg-slate-950/70 py-2 pl-9 pr-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400"
                       />
                     </div>
+                    {latestHistoryItemIds.size > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setChatgptMailCheckHistoryLatestOnly((prev) => !prev)
+                        }
+                        className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                          chatgptMailCheckHistoryLatestOnly
+                            ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
+                            : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-emerald-400/40 hover:text-emerald-100"
+                        }`}
+                      >
+                        {chatgptMailCheckHistoryLatestOnly
+                          ? "Bo loc moi quet"
+                          : `Lan quet gan nhat ${latestHistoryItemIds.size}`}
+                      </button>
+                    ) : null}
                     <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-100">
                       {summaryParts.join(" • ")}
                     </div>
@@ -19019,8 +19153,9 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   <div className="space-y-2">
                     {visibleItems.map((item, index) => (
                       (() => {
-                        const itemId = String(item?.id || item?.username || `mail-${index}`);
+                        const itemId = getHistoryItemId(item, index);
                         const isExpanded = expandedChatgptMailHistoryId === itemId;
+                        const isLatestHistoryItem = latestHistoryItemIds.has(itemId);
                         const effectiveMailHistoryType = normalizeChatgptAccountType(
                           item?.effectiveType || item?.type,
                         );
@@ -19050,7 +19185,9 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                           <div
                             key={`${String(item?.id || item?.username || "mail-check")}-${index}`}
                             className={`rounded-xl border px-4 py-3 ${
-                              historySearchDraft || hasDateFilter
+                              isLatestHistoryItem
+                                ? "border-emerald-500/25 bg-emerald-950/10"
+                                : historySearchDraft || hasDateFilter
                                 ? "border-cyan-500/25 bg-slate-900/70"
                                 : "border-slate-700 bg-slate-900/60"
                             }`}
@@ -19063,11 +19200,16 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                       Mail die
                                     </span>
                                     <span className="min-w-0 truncate font-mono text-sm font-semibold text-white">
-                                      {item?.username || "--"}
+                                    {item?.username || "--"}
+                                  </span>
+                                  {isLatestHistoryItem ? (
+                                    <span className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-100">
+                                      Moi quet
                                     </span>
-                                    {historySearchDraft ? (
-                                      <span className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-2 py-0.5 text-[11px] font-semibold text-cyan-100">
-                                        Khop tim
+                                  ) : null}
+                                  {historySearchDraft ? (
+                                    <span className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-2 py-0.5 text-[11px] font-semibold text-cyan-100">
+                                      Khop tim
                                       </span>
                                     ) : null}
                                   </div>
