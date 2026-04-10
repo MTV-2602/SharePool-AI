@@ -106,6 +106,36 @@ const getPackage2ShelfLabel = (value) =>
     ? "Kho market"
     : "Kho tong";
 const getChatgptWarehouseLabel = (value) => getPackage2ShelfLabel(value);
+const getChatgptTypeShortLabel = (value) => {
+  const normalized = normalizeChatgptAccountType(value);
+  if (normalized === "package1") return "Goi 1";
+  if (normalized === "package2") return "Goi 2";
+  return "Chua chon";
+};
+const getChatgptHistoryWarehouseTone = (value = "") =>
+  String(value || "").trim().toLowerCase() === "market"
+    ? "border-emerald-700/60 bg-emerald-950/20 text-emerald-200"
+    : "border-blue-700/60 bg-blue-950/20 text-blue-200";
+const getChatgptHistoryTypeTone = (value = "") => {
+  const normalized = normalizeChatgptAccountType(value);
+  if (normalized === "package1") {
+    return "border-blue-700/60 bg-blue-950/20 text-blue-200";
+  }
+  if (normalized === "package2") {
+    return "border-fuchsia-700/60 bg-fuchsia-950/20 text-fuchsia-200";
+  }
+  return "border-slate-700 bg-slate-900/80 text-slate-300";
+};
+const getChatgptHistorySaleTone = (value = "") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "warranty") {
+    return "border-amber-700/60 bg-amber-950/20 text-amber-200";
+  }
+  if (normalized === "sold") {
+    return "border-cyan-700/60 bg-cyan-950/20 text-cyan-200";
+  }
+  return "border-slate-700 bg-slate-900/80 text-slate-300";
+};
 const isChatgptMarketWarehouse = (acc = {}) =>
   supportsChatgptMarketType(acc?.type) &&
   normalizePackage2Shelf(acc?.package2Shelf) === "cheap";
@@ -4036,6 +4066,14 @@ function App() {
       ).includes(normalizedQuery);
     if (matchesAny(account?.username)) {
       pushHint("Khop email");
+    }
+    if (
+      matchesAny(
+        getChatgptTypeShortLabel(account?.effectiveType || account?.type),
+        getChatgptWarehouseLabel(account?.package2Shelf),
+      )
+    ) {
+      pushHint("Khop kho/goi");
     }
     if (
       matchesAny(
@@ -11575,10 +11613,10 @@ function App() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
-                  <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 font-semibold text-white">
+                  <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 font-semibold text-cyan-100">
                     {appliedChatgptFilterSummaryParts.length > 0
-                      ? `Đang lọc: ${appliedChatgptFilterSummaryParts.join(" • ")}`
-                      : "Đang lọc: Mặc định"}
+                      ? `Ket qua dang ap: ${appliedChatgptFilterSummaryParts.join(" • ")} • ${Number(chatgptAdminPagination?.total || 0)} acc`
+                      : `Ket qua dang ap: Mac dinh • ${Number(chatgptAdminPagination?.total || 0)} acc`}
                   </span>
                   {hasPendingChatgptFilterChanges ? (
                     <span className="text-amber-200/90">
@@ -12200,6 +12238,11 @@ function App() {
                               ? "bg-slate-900/35"
                               : ""
                           } ${
+                            String(chatgptAppliedFilters?.search || "").trim() &&
+                            searchMatchHints.length > 0
+                              ? "bg-cyan-950/10"
+                              : ""
+                          } ${
                             String(highlightedChatgptAccountId || "") ===
                             String(acc.id || "")
                               ? "bg-cyan-900/20 ring-1 ring-cyan-500/50"
@@ -12343,6 +12386,16 @@ function App() {
                               </div>
 
                               <div className="flex flex-wrap gap-1.5 text-[10px]">
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 font-semibold ${mailCheckVisualState.tone}`}
+                                  title={
+                                    acc?.mailCheckLastSubject
+                                      ? `Mail check: ${acc.mailCheckLastSubject}`
+                                      : "Trang thai mail check"
+                                  }
+                                >
+                                  {mailCheckVisualState.label}
+                                </span>
                                 {accountExpiryStatus && (
                                   <span
                                     className={`rounded-full border px-2 py-0.5 font-semibold ${
@@ -12371,24 +12424,17 @@ function App() {
                                     Có ghi chú
                                   </span>
                                 )}
-                                <span
-                                  className={`rounded-full border px-2 py-0.5 ${mailCheckVisualState.tone}`}
-                                  title={
-                                    acc?.mailCheckLastSubject
-                                      ? `Mail check: ${acc.mailCheckLastSubject}`
-                                      : "Trang thai mail check"
-                                  }
-                                >
-                                  {mailCheckVisualState.label}
-                                </span>
                               </div>
 
                               {searchMatchHints.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 text-[10px]">
+                                  <span className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-2 py-0.5 font-bold text-cyan-100">
+                                    Ket qua tim
+                                  </span>
                                   {searchMatchHints.map((hint) => (
                                     <span
                                       key={`${acc.id}-${hint}`}
-                                      className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 font-semibold text-cyan-100"
+                                      className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-2 py-0.5 font-semibold text-cyan-100"
                                     >
                                       {hint}
                                     </span>
@@ -18803,6 +18849,12 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   username,
                   emailDomain,
                   typeLabel,
+                  item?.warehouseLabel,
+                  item?.saleLabel,
+                  item?.traceContextLabel,
+                  item?.latestProvider,
+                  item?.latestOrderId,
+                  item?.latestWarrantyOrderId,
                   item?.mailCheckLastSender,
                   item?.mailCheckLastSubject,
                   item?.mailCheckLastSnippet,
@@ -18819,13 +18871,11 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         const summaryParts = [
           hasDateFilter
             ? `Dang loc: ${formatDateInputLabel(chatgptMailCheckHistoryFromDate) || "--"} -> ${formatDateInputLabel(chatgptMailCheckHistoryToDate) || "--"}`
-            : `Dang xem ${items.length} acc moi nhat`,
+            : "Moi nhat truoc",
           historySearchDraft
             ? `Tim: ${historySearchDraft}`
-            : "",
-          historySearchDraft
-            ? `Khop ${visibleItems.length}/${items.length} acc`
-            : `${visibleItems.length} acc`,
+            : `Toi da ${items.length} acc`,
+          `Khop ${visibleItems.length}/${items.length} acc`,
         ].filter(Boolean);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
@@ -18974,6 +19024,22 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         const effectiveMailHistoryType = normalizeChatgptAccountType(
                           item?.effectiveType || item?.type,
                         );
+                        const warehouseView = String(
+                          item?.warehouseView ||
+                            (normalizeChatgptWarehouseUiValue(item?.package2Shelf) ===
+                            "cheap"
+                              ? "market"
+                              : "total"),
+                        ).trim();
+                        const warehouseLabel = String(
+                          item?.warehouseLabel ||
+                            getChatgptWarehouseLabel(item?.package2Shelf),
+                        ).trim();
+                        const saleState = String(item?.saleState || "unsold").trim();
+                        const saleLabel = String(item?.saleLabel || "Chua ban").trim();
+                        const traceContextLabel = String(
+                          item?.traceContextLabel || "",
+                        ).trim();
                         const rawSnippet = String(item?.mailCheckLastSnippet || "").trim();
                         const hasSavedMailDetails = !!(
                           String(item?.mailCheckLastSender || "").trim() ||
@@ -18983,7 +19049,11 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         return (
                           <div
                             key={`${String(item?.id || item?.username || "mail-check")}-${index}`}
-                            className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3"
+                            className={`rounded-xl border px-4 py-3 ${
+                              historySearchDraft || hasDateFilter
+                                ? "border-cyan-500/25 bg-slate-900/70"
+                                : "border-slate-700 bg-slate-900/60"
+                            }`}
                           >
                             <div className="flex flex-col gap-3">
                               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -18995,19 +19065,49 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                     <span className="min-w-0 truncate font-mono text-sm font-semibold text-white">
                                       {item?.username || "--"}
                                     </span>
-                                    <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5 text-[11px] text-slate-300">
-                                      {effectiveMailHistoryType === "package1"
-                                        ? "Goi 1"
-                                        : effectiveMailHistoryType === "package2"
-                                          ? "Goi 2"
-                                          : "Chua chon"}
+                                    {historySearchDraft ? (
+                                      <span className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-2 py-0.5 text-[11px] font-semibold text-cyan-100">
+                                        Khop tim
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 font-semibold ${getChatgptHistoryWarehouseTone(
+                                        warehouseView,
+                                      )}`}
+                                    >
+                                      {warehouseLabel || "Kho tong"}
+                                    </span>
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 font-semibold ${getChatgptHistoryTypeTone(
+                                        effectiveMailHistoryType,
+                                      )}`}
+                                    >
+                                      {getChatgptTypeShortLabel(effectiveMailHistoryType)}
+                                    </span>
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 font-semibold ${getChatgptHistorySaleTone(
+                                        saleState,
+                                      )}`}
+                                    >
+                                      {saleLabel || "Chua ban"}
                                     </span>
                                   </div>
-                                  <div className="mt-1 text-xs text-slate-400">
+                                  <div className="mt-2 text-xs text-slate-400">
                                     Match luc{" "}
                                     <span className="font-medium text-slate-300">
                                       {formatVietnamDateTime(item?.mailCheckLastMatchedAt) || "--"}
                                     </span>
+                                    {traceContextLabel ? (
+                                      <>
+                                        {" "}
+                                        |{" "}
+                                        <span className="font-medium text-slate-200">
+                                          {traceContextLabel}
+                                        </span>
+                                      </>
+                                    ) : null}
                                   </div>
                                 </div>
                                 <div className="flex flex-wrap gap-2 md:justify-end">

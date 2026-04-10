@@ -311,6 +311,89 @@ function buildChatgptMailCheckStateForPayload(payload = {}, existingAcc = null) 
 }
 
 function sanitizeChatgptMailCheckRecord(account = {}) {
+  const currentState =
+    account?.currentAccountState && typeof account.currentAccountState === "object"
+      ? account.currentAccountState
+      : null;
+  const storeTraceSummary =
+    account?.storeTraceSummary && typeof account.storeTraceSummary === "object"
+      ? account.storeTraceSummary
+      : null;
+  const marketplaceTraceSummary =
+    account?.marketplaceTraceSummary &&
+    typeof account.marketplaceTraceSummary === "object"
+      ? account.marketplaceTraceSummary
+      : null;
+  const latestStoreTrace =
+    Array.isArray(storeTraceSummary?.traces) && storeTraceSummary.traces.length > 0
+      ? storeTraceSummary.traces[0]
+      : null;
+  const warehouse = normalizePackage2Shelf(
+    currentState?.warehouse || account?.warehouse || account?.package2Shelf,
+    CHATGPT_TOTAL_VALUE,
+  );
+  const warehouseView = warehouse === CHATGPT_MARKET_VALUE ? "market" : "total";
+  const warehouseLabel = warehouseView === "market" ? "Kho market" : "Kho tong";
+  const availabilityState = String(
+    currentState?.availabilityState || account?.availabilityState || "",
+  ).trim();
+  const busySource = String(currentState?.busySource || account?.busySource || "").trim();
+  const latestStoreOrderId = String(
+    latestStoreTrace?.orderId || storeTraceSummary?.latestOrderId || "",
+  ).trim();
+  const latestStoreCustomer = String(
+    latestStoreTrace?.customerName ||
+      latestStoreTrace?.customerEmail ||
+      storeTraceSummary?.latestCustomerName ||
+      storeTraceSummary?.latestCustomerEmail ||
+      "",
+  ).trim();
+  const latestProvider = normalizeMarketplaceProvider(
+    marketplaceTraceSummary?.latestProvider,
+    "",
+  );
+  const latestOrderId = String(
+    marketplaceTraceSummary?.latestOrderId || "",
+  ).trim();
+  const latestWarrantyOrderId = String(
+    marketplaceTraceSummary?.latestWarrantyOrderId || "",
+  ).trim();
+  const latestProviderLabel = latestProvider
+    ? getMarketplaceProviderLabel(latestProvider)
+    : "San";
+  let saleState = "unsold";
+  let saleLabel = "Chua ban";
+  let traceContextLabel = "";
+
+  if (
+    availabilityState === "warranty_hold_source" ||
+    availabilityState === "busy_in_warranty_replacement"
+  ) {
+    saleState = "warranty";
+    saleLabel = "Dang bao hanh";
+    traceContextLabel = latestStoreCustomer || latestStoreOrderId
+      ? `Web | ${latestStoreCustomer || latestStoreOrderId}`
+      : "Web | Bao hanh";
+  } else if (latestWarrantyOrderId || busySource === "marketplace_warranty") {
+    saleState = "warranty";
+    saleLabel = "Dang bao hanh";
+    traceContextLabel = `${latestProviderLabel} | BH ${latestWarrantyOrderId || latestOrderId || "--"}`;
+  } else if (latestOrderId || busySource === "marketplace_order") {
+    saleState = "sold";
+    saleLabel = "Da ban";
+    traceContextLabel = `${latestProviderLabel} | ${latestOrderId || "--"}`;
+  } else if (
+    latestStoreCustomer ||
+    latestStoreOrderId ||
+    Number(storeTraceSummary?.totalOrders || 0) > 0 ||
+    availabilityState === "assigned_to_store_order" ||
+    availabilityState === "reserved_for_pending_store_order"
+  ) {
+    saleState = availabilityState === "warranty_hold_source" ? "warranty" : "sold";
+    saleLabel = saleState === "warranty" ? "Dang bao hanh" : "Da ban";
+    traceContextLabel = `Web | ${latestStoreCustomer || latestStoreOrderId || "Don web"}`;
+  }
+
   return {
     id: String(account?.id || "").trim(),
     username: String(account?.username || "").trim(),
@@ -318,6 +401,15 @@ function sanitizeChatgptMailCheckRecord(account = {}) {
     effectiveType: String(account?.effectiveType || "").trim(),
     effectiveTypeSource: String(account?.effectiveTypeSource || "").trim(),
     package2Shelf: String(account?.package2Shelf || "").trim(),
+    warehouseView,
+    warehouseLabel,
+    saleState,
+    saleLabel,
+    availabilityState,
+    latestProvider,
+    latestOrderId,
+    latestWarrantyOrderId,
+    traceContextLabel,
     expiredAt: String(account?.expiredAt || "").trim(),
     mailCheckEnabled: !!account?.mailCheckEnabled,
     mailCheckAutoEligible: !!account?.mailCheckAutoEligible,
