@@ -315,6 +315,8 @@ function sanitizeChatgptMailCheckRecord(account = {}) {
     id: String(account?.id || "").trim(),
     username: String(account?.username || "").trim(),
     type: String(account?.type || "").trim(),
+    effectiveType: String(account?.effectiveType || "").trim(),
+    effectiveTypeSource: String(account?.effectiveTypeSource || "").trim(),
     package2Shelf: String(account?.package2Shelf || "").trim(),
     expiredAt: String(account?.expiredAt || "").trim(),
     mailCheckEnabled: !!account?.mailCheckEnabled,
@@ -689,9 +691,19 @@ async function listChatgptMailCheckHistory(limit = 30, filters = {}) {
     .limit(safeLimit)
     .select(CHATGPT_MAIL_CHECK_ACCOUNT_SELECT)
     .lean();
-  return (Array.isArray(accounts) ? accounts : []).map((account) =>
-    sanitizeChatgptMailCheckRecord(account),
+  const snapshot = await getCachedChatgptAdminSnapshot();
+  const enrichedAccountMap = new Map(
+    (Array.isArray(snapshot?.enrichedAccounts) ? snapshot.enrichedAccounts : []).map(
+      (account) => [String(account?.id || "").trim(), account],
+    ),
   );
+  return (Array.isArray(accounts) ? accounts : []).map((account) => {
+    const accountId = String(account?.id || "").trim();
+    return sanitizeChatgptMailCheckRecord({
+      ...account,
+      ...(enrichedAccountMap.get(accountId) || {}),
+    });
+  });
 }
 
 async function runChatgptMailCheckForIds(accountIds = [], options = {}) {
@@ -6756,6 +6768,17 @@ const pickChatgptEffectiveTypePayload = (account = {}) => {
     return {
       effectiveType: rawType,
       effectiveTypeSource: "raw",
+    };
+  }
+  const marketplaceTraceSummary =
+    account?.marketplaceTraceSummary &&
+    typeof account.marketplaceTraceSummary === "object"
+      ? account.marketplaceTraceSummary
+      : null;
+  if (hasMarketplaceTraceSummary(marketplaceTraceSummary)) {
+    return {
+      effectiveType: "package2",
+      effectiveTypeSource: "marketplace_trace",
     };
   }
   const currentState =

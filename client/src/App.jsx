@@ -1626,6 +1626,10 @@ const buildDefaultChatgptAdminQueryState = () => ({
   createdTo: "",
   search: "",
 });
+const buildDefaultChatgptAdminFilterState = () => {
+  const { page, limit, ...rest } = buildDefaultChatgptAdminQueryState();
+  return rest;
+};
 const buildChatgptAdminRequestKey = (query = {}) =>
   [
     Math.max(1, Number(query?.page || 1)),
@@ -1922,6 +1926,9 @@ function App() {
   const [soldPackage2ProviderFilter, setSoldPackage2ProviderFilter] =
     useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [chatgptAppliedFilters, setChatgptAppliedFilters] = useState(
+    buildDefaultChatgptAdminFilterState(),
+  );
   const [chatgptAdminPagination, setChatgptAdminPagination] = useState(
     buildDefaultChatgptAdminPaginationState(),
   );
@@ -2043,18 +2050,18 @@ function App() {
   chatgptAdminQueryRef.current = {
     page: Number(chatgptAdminPagination.page || 1),
     limit: Number(chatgptAdminPagination.limit || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE),
-    subTab: gptSubTab,
-    totalType: chatgptTotalTypeTab,
-    package2ShelfTab,
-    mailCheckFilter: chatgptMailCheckFilter,
-    soldProviderFilter: soldPackage2ProviderFilter,
-    customerFilter: chatgptCustomerFilter,
-    expiryFilter: chatgptExpiryFilter,
-    expiryMin: chatgptExpiryMin,
-    expiryMax: chatgptExpiryMax,
-    createdFrom: chatgptCreatedFrom,
-    createdTo: chatgptCreatedTo,
-    search: searchQuery,
+    subTab: chatgptAppliedFilters.subTab,
+    totalType: chatgptAppliedFilters.totalType,
+    package2ShelfTab: chatgptAppliedFilters.package2ShelfTab,
+    mailCheckFilter: chatgptAppliedFilters.mailCheckFilter,
+    soldProviderFilter: chatgptAppliedFilters.soldProviderFilter,
+    customerFilter: chatgptAppliedFilters.customerFilter,
+    expiryFilter: chatgptAppliedFilters.expiryFilter,
+    expiryMin: chatgptAppliedFilters.expiryMin,
+    expiryMax: chatgptAppliedFilters.expiryMax,
+    createdFrom: chatgptAppliedFilters.createdFrom,
+    createdTo: chatgptAppliedFilters.createdTo,
+    search: chatgptAppliedFilters.search,
   };
 
   // Modal States
@@ -2547,18 +2554,18 @@ function App() {
   }, [activeTab, adminRealtime, isAuthenticated]);
 
   const chatgptListFilterKey = [
-    gptSubTab,
-    chatgptTotalTypeTab,
-    package2ShelfTab,
-    chatgptMailCheckFilter,
-    soldPackage2ProviderFilter,
-    chatgptCustomerFilter,
-    chatgptExpiryFilter,
-    chatgptExpiryMin,
-    chatgptExpiryMax,
-    chatgptCreatedFrom,
-    chatgptCreatedTo,
-    searchQuery,
+    chatgptAppliedFilters.subTab,
+    chatgptAppliedFilters.totalType,
+    chatgptAppliedFilters.package2ShelfTab,
+    chatgptAppliedFilters.mailCheckFilter,
+    chatgptAppliedFilters.soldProviderFilter,
+    chatgptAppliedFilters.customerFilter,
+    chatgptAppliedFilters.expiryFilter,
+    chatgptAppliedFilters.expiryMin,
+    chatgptAppliedFilters.expiryMax,
+    chatgptAppliedFilters.createdFrom,
+    chatgptAppliedFilters.createdTo,
+    chatgptAppliedFilters.search,
   ].join("|");
 
   useEffect(() => {
@@ -3804,6 +3811,26 @@ function App() {
     ...(chatgptAdminQueryRef.current || buildDefaultChatgptAdminQueryState()),
     ...(overrides || {}),
   });
+  const buildDraftChatgptAdminFilterState = (overrides = {}) => ({
+    subTab: gptSubTab,
+    totalType: chatgptTotalTypeTab,
+    package2ShelfTab,
+    soldProviderFilter: soldPackage2ProviderFilter,
+    mailCheckFilter: chatgptMailCheckFilter,
+    customerFilter: chatgptCustomerFilter,
+    expiryFilter: chatgptExpiryFilter,
+    expiryMin: chatgptExpiryMin,
+    expiryMax: chatgptExpiryMax,
+    createdFrom: chatgptCreatedFrom,
+    createdTo: chatgptCreatedTo,
+    search: searchQuery,
+    ...(overrides || {}),
+  });
+  const buildChatgptAdminFilterDiffKey = (filterState = {}) =>
+    buildChatgptAdminRequestKey({
+      ...buildDefaultChatgptAdminQueryState(),
+      ...(filterState || {}),
+    });
   const applyChatgptAdminQueryState = (nextQuery = {}) => {
     const currentQuery =
       chatgptAdminQueryRef.current || buildDefaultChatgptAdminQueryState();
@@ -3869,6 +3896,20 @@ function App() {
       search: String(mergedQuery?.search || "").trim(),
     };
     chatgptAdminQueryRef.current = normalizedQuery;
+    setChatgptAppliedFilters({
+      subTab: normalizedQuery.subTab,
+      totalType: normalizedQuery.totalType,
+      package2ShelfTab: normalizedQuery.package2ShelfTab,
+      soldProviderFilter: normalizedQuery.soldProviderFilter,
+      mailCheckFilter: normalizedQuery.mailCheckFilter,
+      customerFilter: normalizedQuery.customerFilter,
+      expiryFilter: normalizedQuery.expiryFilter,
+      expiryMin: normalizedQuery.expiryMin,
+      expiryMax: normalizedQuery.expiryMax,
+      createdFrom: normalizedQuery.createdFrom,
+      createdTo: normalizedQuery.createdTo,
+      search: normalizedQuery.search,
+    });
     setGptSubTab(normalizedQuery.subTab);
     setChatgptTotalTypeTab(normalizedQuery.totalType);
     setPackage2ShelfTab(normalizedQuery.package2ShelfTab);
@@ -3887,6 +3928,150 @@ function App() {
       limit: normalizedQuery.limit,
     }));
     return normalizedQuery;
+  };
+  const applyCurrentChatgptDraftFilters = async () => {
+    const nextDraftState = buildDraftChatgptAdminFilterState();
+    const shouldForceReload =
+      buildChatgptAdminFilterDiffKey(nextDraftState) ===
+        buildChatgptAdminFilterDiffKey(chatgptAppliedFilters) &&
+      Number(chatgptAdminPagination.page || 1) === 1;
+    const normalizedQuery = applyChatgptAdminQueryState({
+      page: 1,
+      limit: chatgptAdminPagination.limit || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
+      ...nextDraftState,
+    });
+    if (shouldForceReload) {
+      await loadAdminChatgptAccounts({
+        silent: true,
+        force: true,
+        page: normalizedQuery.page,
+        limit: normalizedQuery.limit,
+      });
+    }
+    return normalizedQuery;
+  };
+  const resetChatgptAdminFilters = async () => {
+    const defaultFilterState = buildDefaultChatgptAdminFilterState();
+    const shouldForceReload =
+      buildChatgptAdminFilterDiffKey(defaultFilterState) ===
+        buildChatgptAdminFilterDiffKey(chatgptAppliedFilters) &&
+      Number(chatgptAdminPagination.page || 1) === 1;
+    const normalizedQuery = applyChatgptAdminQueryState({
+      page: 1,
+      limit: chatgptAdminPagination.limit || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
+      ...defaultFilterState,
+    });
+    if (shouldForceReload) {
+      await loadAdminChatgptAccounts({
+        silent: true,
+        force: true,
+        page: normalizedQuery.page,
+        limit: normalizedQuery.limit,
+      });
+    }
+    return normalizedQuery;
+  };
+  const buildChatgptAppliedFilterSummaryParts = (filterState = {}) => {
+    const parts = [];
+    if (filterState?.subTab === "total") {
+      parts.push("Kho tong");
+    } else if (filterState?.subTab === "market") {
+      parts.push("Kho market");
+    }
+    if (filterState?.subTab === "total") {
+      if (filterState?.totalType === "package1") parts.push("Goi 1");
+      else if (filterState?.totalType === "package2") parts.push("Goi 2");
+      else if (filterState?.totalType === "unassigned") parts.push("Chua chon");
+    }
+    if (filterState?.subTab === "market") {
+      if (filterState?.package2ShelfTab === "sold") {
+        parts.push("Da ban");
+      } else if (filterState?.package2ShelfTab === "all") {
+        parts.push("Chua ban");
+      }
+      if (filterState?.soldProviderFilter === "datammo") parts.push("Datammo");
+      else if (filterState?.soldProviderFilter === "shopmini") parts.push("Shopmini");
+    }
+    if (filterState?.customerFilter === "with") parts.push("Co khach");
+    else if (filterState?.customerFilter === "without") parts.push("Khong khach");
+    if (filterState?.mailCheckFilter === "died") parts.push("Mail die");
+    else if (filterState?.mailCheckFilter === "checked") parts.push("Da check");
+    else if (filterState?.mailCheckFilter === "unchecked") parts.push("Chua check");
+    if (String(filterState?.expiryFilter || "").trim() && filterState.expiryFilter !== "all") {
+      parts.push(`Han: ${filterState.expiryFilter}`);
+    }
+    if (String(filterState?.expiryMin || "").trim() || String(filterState?.expiryMax || "").trim()) {
+      parts.push(
+        `Han ${String(filterState?.expiryMin || "").trim() || "--"} -> ${String(filterState?.expiryMax || "").trim() || "--"} ngay`,
+      );
+    }
+    if (String(filterState?.createdFrom || "").trim() || String(filterState?.createdTo || "").trim()) {
+      parts.push(
+        `Ngay nhap ${formatDateInputLabel(filterState?.createdFrom) || "--"} -> ${formatDateInputLabel(filterState?.createdTo) || "--"}`,
+      );
+    }
+    if (String(filterState?.search || "").trim()) {
+      parts.push(`Tim: ${String(filterState.search).trim()}`);
+    }
+    return parts;
+  };
+  const getChatgptSearchMatchHints = (account = {}, rawQuery = "") => {
+    const normalizedQuery = toNonAccentVietnamese(
+      String(rawQuery || "").trim().toLowerCase(),
+    );
+    if (!normalizedQuery) return [];
+    const hints = [];
+    const pushHint = (label = "") => {
+      const normalizedLabel = String(label || "").trim();
+      if (!normalizedLabel || hints.includes(normalizedLabel)) return;
+      hints.push(normalizedLabel);
+    };
+    const matchesAny = (...values) =>
+      toNonAccentVietnamese(
+        values
+          .flat()
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase(),
+      ).includes(normalizedQuery);
+    if (matchesAny(account?.username)) {
+      pushHint("Khop email");
+    }
+    if (
+      matchesAny(
+        account?.storeTraceSummary?.latestCustomerName,
+        account?.storeTraceSummary?.latestCustomerEmail,
+        ...(Array.isArray(account?.users)
+          ? account.users.flatMap((user) => [user?.name, user?.email, user?.gmail])
+          : []),
+      )
+    ) {
+      pushHint("Khop khach");
+    }
+    if (
+      matchesAny(
+        account?.marketplaceTraceSummary?.latestOrderId,
+        account?.marketplaceTraceSummary?.latestWarrantyOrderId,
+        ...(Array.isArray(account?.marketplaceTraceSummary?.searchValues)
+          ? account.marketplaceTraceSummary.searchValues
+          : []),
+      )
+    ) {
+      pushHint("Khop don san");
+    }
+    if (
+      matchesAny(
+        account?.mailCheckLastSender,
+        account?.mailCheckLastSubject,
+        account?.mailCheckLastSnippet,
+      )
+    ) {
+      pushHint("Khop mail check");
+    }
+    if (matchesAny(getVisibleAccountNote(account?.note))) {
+      pushHint("Khop ghi chu");
+    }
+    return hints.slice(0, 3);
   };
   const highlightChatgptAccountRow = (accountId = "") => {
     const normalizedId = String(accountId || "").trim();
@@ -8609,6 +8794,17 @@ function App() {
   const selectedChatgptIdSet = new Set(
     selectedChatgptIds.map((id) => String(id || "")),
   );
+  const chatgptDraftFilterState = buildDraftChatgptAdminFilterState();
+  const chatgptDraftFilterKey = buildChatgptAdminFilterDiffKey(
+    chatgptDraftFilterState,
+  );
+  const chatgptAppliedFilterKey = buildChatgptAdminFilterDiffKey(
+    chatgptAppliedFilters,
+  );
+  const hasPendingChatgptFilterChanges =
+    chatgptDraftFilterKey !== chatgptAppliedFilterKey;
+  const appliedChatgptFilterSummaryParts =
+    buildChatgptAppliedFilterSummaryParts(chatgptAppliedFilters);
   const selectedInFilteredCount = filteredChatgptIds.filter((id) =>
     selectedChatgptIdSet.has(id),
   ).length;
@@ -11239,22 +11435,51 @@ function App() {
 
             <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div className="flex-1 max-w-2xl space-y-2.5">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Tìm theo email, tên khách hoặc nội dung mail check..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                  {searchQuery && (
+                <div className="flex flex-col gap-2 lg:flex-row">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      placeholder="Tìm theo email, tên khách hoặc nội dung mail check..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                      type="button"
+                      onClick={applyCurrentChatgptDraftFilters}
+                      className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                        hasPendingChatgptFilterChanges
+                          ? "border border-cyan-400/50 bg-cyan-500/15 text-cyan-100 hover:bg-cyan-500/20"
+                          : "border border-slate-700 bg-slate-800 text-slate-300 hover:text-white"
+                      }`}
                     >
-                      <X size={15} />
+                      <Search size={14} />
+                      Lọc
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      onClick={resetChatgptAdminFilters}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-300 transition hover:text-white"
+                    >
+                      <X size={14} />
+                      Xóa lọc
+                    </button>
+                    {hasPendingChatgptFilterChanges ? (
+                      <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-100">
+                        Chưa áp dụng
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -11349,6 +11574,18 @@ function App() {
                     ))}
                   </div>
                 </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
+                  <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 font-semibold text-white">
+                    {appliedChatgptFilterSummaryParts.length > 0
+                      ? `Đang lọc: ${appliedChatgptFilterSummaryParts.join(" • ")}`
+                      : "Đang lọc: Mặc định"}
+                  </span>
+                  {hasPendingChatgptFilterChanges ? (
+                    <span className="text-amber-200/90">
+                      Bạn đang chỉnh bộ lọc mới nhưng chưa bấm Lọc.
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <div className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] text-slate-300">
@@ -11422,7 +11659,6 @@ function App() {
                     <button
                       key={t.key}
                       onClick={() => {
-                        setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
                         setGptSubTab(t.key);
                         if (t.key !== "market") {
                           setPackage2ShelfTab("all");
@@ -11461,7 +11697,6 @@ function App() {
                       <button
                         key={t.key}
                         onClick={() => {
-                          setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
                           setChatgptTotalTypeTab(t.key);
                         }}
                         className={`flex items-center gap-1.5 px-3 py-1 rounded-full font-bold text-xs transition-all border ${
@@ -11498,7 +11733,6 @@ function App() {
                       <button
                         key={t.key}
                         onClick={() => {
-                          setChatgptAdminPagination((prev) => ({ ...prev, page: 1 }));
                           setPackage2ShelfTab(t.key);
                           if (t.key !== "sold") {
                             setSoldPackage2ProviderFilter("all");
@@ -11937,9 +12171,7 @@ function App() {
                         const isAccountLockedByStoreOrder = hasActiveStoreReservation;
                         const isAccountLockedByStoreWarrantyHold =
                           !!storeWarrantyHoldInfo && !hasActiveStoreReservation;
-                        const displayedChatgptType = isAccountLockedByStoreWarrantyHold
-                          ? effectiveChatgptType
-                          : normalizeChatgptAccountType(acc?.type);
+                        const displayedChatgptType = effectiveChatgptType;
                         const isAccountLockedFromManualSale =
                           isAccountLockedByStoreOrder || isAccountLockedByStoreWarrantyHold;
                         const isChatgptRowExpanded =
@@ -11955,6 +12187,10 @@ function App() {
                           : null;
                         const mailCheckVisualState =
                           getChatgptMailCheckVisualState(acc);
+                        const searchMatchHints = getChatgptSearchMatchHints(
+                          acc,
+                          chatgptAppliedFilters.search,
+                        );
                         return (
                         <tr
                           id={`chatgpt-account-row-${acc.id}`}
@@ -12146,6 +12382,19 @@ function App() {
                                   {mailCheckVisualState.label}
                                 </span>
                               </div>
+
+                              {searchMatchHints.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 text-[10px]">
+                                  {searchMatchHints.map((hint) => (
+                                    <span
+                                      key={`${acc.id}-${hint}`}
+                                      className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 font-semibold text-cyan-100"
+                                    >
+                                      {hint}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
 
                               {isChatgptRowExpanded && (
                                 <div className="space-y-2 rounded-xl border border-slate-700/60 bg-slate-950/35 p-2.5">
@@ -18540,10 +18789,13 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
               const usernameParts = username.split("@");
               const emailDomain =
                 usernameParts.length > 1 ? usernameParts.slice(1).join("@") : "";
+              const effectiveType = normalizeChatgptAccountType(
+                item?.effectiveType || item?.type,
+              );
               const typeLabel =
-                item?.type === "package1"
+                effectiveType === "package1"
                   ? "goi 1 package1"
-                  : item?.type === "package2"
+                  : effectiveType === "package2"
                     ? "goi 2 package2"
                     : "chua chon unassigned";
               const searchIndex = toNonAccentVietnamese(
@@ -18719,6 +18971,9 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                       (() => {
                         const itemId = String(item?.id || item?.username || `mail-${index}`);
                         const isExpanded = expandedChatgptMailHistoryId === itemId;
+                        const effectiveMailHistoryType = normalizeChatgptAccountType(
+                          item?.effectiveType || item?.type,
+                        );
                         const rawSnippet = String(item?.mailCheckLastSnippet || "").trim();
                         const hasSavedMailDetails = !!(
                           String(item?.mailCheckLastSender || "").trim() ||
@@ -18741,9 +18996,9 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                       {item?.username || "--"}
                                     </span>
                                     <span className="rounded-full border border-slate-700 bg-slate-950/80 px-2 py-0.5 text-[11px] text-slate-300">
-                                      {item?.type === "package1"
+                                      {effectiveMailHistoryType === "package1"
                                         ? "Goi 1"
-                                        : item?.type === "package2"
+                                        : effectiveMailHistoryType === "package2"
                                           ? "Goi 2"
                                           : "Chua chon"}
                                     </span>
