@@ -17290,13 +17290,43 @@ app.post("/api/hotmail/reserve", async (req, res) => {
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
-app.post("/api/hotmail/release", async (req, res) => {
+app.post("/api/hotmail/release", cors(), async (req, res) => {
   try {
     const email = String(req.body?.email || "").toLowerCase().trim();
-    await HotmailAccount.updateOne({ email }, { $set: { state: "available", reservedAt: "" } });
+    await HotmailAccount.updateOne({ email }, { $set: { state: "available", reservedAt: "", takenNote: "", takenByIp: "", takenAt: "" } });
     res.json({ ok: true, email, state: "available" });
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
+
+// Danh dau da dung that su (sau khi extension dien vao form ChatGPT)
+app.post("/api/hotmail/mark-used", cors(), async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").toLowerCase().trim();
+    if (!email) return res.status(400).json({ ok: false, error: "Thieu email" });
+    const note = String(req.body?.note || "").slice(0, 200);
+    const ip = String(
+      req.headers["x-forwarded-for"] || req.socket?.remoteAddress || ""
+    ).split(",")[0].trim().slice(0, 80);
+    const now = new Date().toISOString();
+    const result = await HotmailAccount.findOneAndUpdate(
+      { email },
+      { $set: { 
+          state: "used", 
+          usedAt: now,
+          updatedAt: now,
+          takenByIp: ip,
+          takenAt: now,
+          takenNote: note || `Da dung luc ${now}`,
+        },
+        $inc: { usedCount: 1 }
+      },
+      { new: true }
+    );
+    if (!result) return res.status(404).json({ ok: false, error: "Khong tim thay account " + email });
+    res.json({ ok: true, email, state: "used", usedCount: result.usedCount });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
 
 // THIS ENDPOINT HAS CORS OPEN FOR EXTENSION/WEB FETCH
 app.post("/api/hotmail/read", cors(), async (req, res) => {

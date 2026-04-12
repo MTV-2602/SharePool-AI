@@ -327,6 +327,7 @@ function hotmailProxyEndpoint(proxyReadUrl, path) {
     if (path === "/save-hotmail-account") return base + "/save";
     if (path === "/new") return base + "/new";
     if (path === "/2fa") return base + "/2fa";
+    if (path === "/mark-used") return base + "/mark-used";
   }
   return url.replace(/\/read-hotmail\/?$/i, path);
 }
@@ -408,6 +409,24 @@ async function fetchNewHotmailViaProxy() {
     throw new Error(json?.error || `Lay Hotmail moi that bai HTTP ${res.status}`);
   }
   return json; // { ok, account, formatted }
+}
+
+async function markHotmailUsedViaProxy(email) {
+  const emailNorm = String(email || "").trim().toLowerCase();
+  if (!emailNorm) return;
+  try {
+    const readUrl = await getHotmailProxyReadUrl();
+    const markUrl = hotmailProxyEndpoint(readUrl, "/mark-used");
+    const note = `Da dien vao ChatGPT tu tab: ${String(location.hostname || "").slice(0, 60)} | ${new Date().toLocaleString("vi-VN")}`;
+    await fetch(markUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: emailNorm, note }),
+    });
+  } catch (_) {
+    // Loi nay khong can block UI, chi log
+    console.warn("[AF] markHotmailUsedViaProxy failed:", _);
+  }
 }
 
 
@@ -4215,6 +4234,10 @@ function injectEmailQuickDock() {
       let usedEmail = String(target.email || "").trim();
       try {
         await fillHotmailNow(target);
+        
+        // Danh dau "used" tren web ngay lap tuc - khong doi, khong can biet thanh cong hay khong
+        markHotmailUsedViaProxy(usedEmail);
+
         const lines = String(inputEl.value || "").split(/\r?\n/).map(v => v.trim()).filter(Boolean);
         const primary = lastParsedCredentials[0];
         if (primary && primary.password) {
