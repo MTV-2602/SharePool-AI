@@ -1854,101 +1854,195 @@ const getExpiryCleanupBatchStatusLabel = (value = "") => {
   return normalized || "Không rõ";
 };
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+const extractCode = (text = "") => {
+  const t = String(text || "");
+  // 6-digit OTP first
+  const m6 = t.match(/\b(\d{6})\b/);
+  if (m6) return m6[1];
+  // 4-digit fallback
+  const m4 = t.match(/\b(\d{4})\b/);
+  if (m4) return m4[1];
+  return null;
+};
+
+const classifyService = (sender = "", subject = "") => {
+  const s = (sender + " " + subject).toLowerCase();
+  if (s.includes("chatgpt") || s.includes("openai")) return "ChatGPT";
+  if (s.includes("microsoft") || s.includes("outlook") || s.includes("hotmail")) return "Microsoft";
+  if (s.includes("google")) return "Google";
+  if (s.includes("facebook") || s.includes("meta")) return "Facebook";
+  return "Khác";
+};
+
+const SERVICE_COLORS = {
+  ChatGPT: { bg: "bg-emerald-900/60", text: "text-emerald-300", border: "border-emerald-700/60" },
+  Microsoft: { bg: "bg-sky-900/60", text: "text-sky-300", border: "border-sky-700/60" },
+  Google: { bg: "bg-amber-900/60", text: "text-amber-300", border: "border-amber-700/60" },
+  Facebook: { bg: "bg-blue-900/60", text: "text-blue-300", border: "border-blue-700/60" },
+  Khác: { bg: "bg-slate-700/60", text: "text-slate-300", border: "border-slate-600" },
+};
+
+// ── MailModal ────────────────────────────────────────────────────────────────
+const MailModal = ({ email, messages, serviceFilter, onClose }) => {
+  const [copied, setCopied] = useState("");
+
+  const displayed = serviceFilter
+    ? messages.filter(m => classifyService(m.sender || m.from, m.subject) === serviceFilter)
+    : messages;
+
+  const copyCode = (code, id) => {
+    navigator.clipboard.writeText(code).catch(() => {});
+    setCopied(id);
+    setTimeout(() => setCopied(""), 1500);
+  };
+
+  const fmtTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }} onClick={onClose}>
+      <div className="relative w-full max-w-xl rounded-2xl bg-white shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 py-4 border-b">
+          <div>
+            <div className="font-bold text-gray-900 text-base">{serviceFilter ? `${serviceFilter} - ${email}` : email}</div>
+            <div className="text-xs text-gray-500 mt-0.5">{displayed.length} message{displayed.length !== 1 ? "s" : ""}</div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none mt-0.5">✕</button>
+        </div>
+
+        {/* Messages */}
+        <div className="overflow-y-auto max-h-[60vh] px-6 py-4 space-y-3">
+          {displayed.length === 0 && (
+            <div className="text-center text-gray-400 py-8 italic">Không có thư nào</div>
+          )}
+          {displayed.map((msg, i) => {
+            const code = extractCode(msg.body || msg.bodyPreview || msg.subject);
+            const id = `msg-${i}`;
+            const timeStr = fmtTime(msg.receivedAt || msg.date || "");
+            return (
+              <div key={id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="font-semibold text-gray-800 text-sm">{msg.subject || "(no subject)"}</div>
+                {timeStr && <div className="text-[11px] text-blue-500 mt-0.5">{timeStr}</div>}
+                {code && (
+                  <div className="mt-3 text-2xl font-bold text-gray-900 tracking-widest">{code}</div>
+                )}
+                <div className="flex gap-2 mt-3">
+                  {code && (
+                    <button
+                      onClick={() => copyCode(code, id)}
+                      className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
+                    >
+                      {copied === id ? "✅ Đã copy!" : "⎘ Copy code"}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => alert((msg.body || msg.bodyPreview || msg.html_body || "(Trống)").slice(0, 800))}
+                    className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
+                  >
+                    👁 Xem mail
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="px-6 py-3 border-t flex justify-end">
+          <button onClick={onClose} className="rounded-xl border border-gray-300 px-5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">Đóng</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── HotmailAdminTab ───────────────────────────────────────────────────────────
 const HotmailAdminTab = () => {
   const [accounts, setAccounts] = useState([]);
   const [inputLine, setInputLine] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState("");
   const [search, setSearch] = useState("");
   const [filterState, setFilterState] = useState("all");
+
+  // modal state
+  const [modal, setModal] = useState(null); // { email, messages, serviceFilter }
 
   const loadAccounts = async () => {
     try {
       const res = await axios.get("/api/hotmail/accounts");
       if (res.data?.ok) setAccounts(res.data.accounts || []);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   useEffect(() => { loadAccounts(); }, []);
 
   const handleSave = async () => {
-    if (!inputLine.trim()) return alert("Vui lòng nhập định dạng email|pass|token|id hoặc dán nhiều dòng");
+    if (!inputLine.trim()) return alert("Nhập email|pass|secret2fa hoặc email|pass|token|id|secret2fa");
     setLoading(true);
     try {
       const lines = inputLine.split('\n').filter(l => l.trim());
-      for (const line of lines) {
-        await axios.post("/api/hotmail/save", { line });
-      }
+      for (const line of lines) await axios.post("/api/hotmail/save", { line });
       setInputLine("");
       alert(`Đã lưu thành công ${lines.length} tài khoản!`);
       loadAccounts();
-    } catch (e) {
-      alert("Lỗi: " + (e.response?.data?.error || e.message));
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { alert("Lỗi: " + (e.response?.data?.error || e.message)); }
+    finally { setLoading(false); }
   };
 
   const handleDelete = async (email) => {
     if (!window.confirm("Xóa " + email + "?")) return;
-    try {
-      await axios.delete("/api/hotmail/delete/" + encodeURIComponent(email));
-      loadAccounts();
-    } catch (e) {}
+    try { await axios.delete("/api/hotmail/delete/" + encodeURIComponent(email)); loadAccounts(); } catch (e) {}
   };
 
   const handleRelease = async (email) => {
     if (!window.confirm("Đặt lại " + email + " về 'available'?")) return;
-    try {
-      await axios.post("/api/hotmail/release", { email });
-      loadAccounts();
-    } catch (e) {}
+    try { await axios.post("/api/hotmail/release", { email }); loadAccounts(); } catch (e) {}
   };
 
   const handleTestRead = async (email) => {
     setLoading(true);
-    setResult("⏳ Đang đọc inbox của " + email + "...");
     try {
-      const res = await axios.post("/api/hotmail/read", { email, top: 3 });
-      const msgs = res.data.messages || [];
-      if (msgs.length === 0) {
-        setResult("✅ Inbox trống (không có thư mới)\nEmail: " + email);
-      } else {
-        setResult(
-          "📬 " + msgs.length + " thư gần nhất của: " + email + "\n" +
-          "─".repeat(40) + "\n" +
-          msgs.map((m, i) =>
-            `[${i+1}] From: ${m.sender || m.from || "?"}\n    Subject: ${m.subject || "(no subject)"}\n    Preview: ${(m.body || m.bodyPreview || "").slice(0, 120)}`
-          ).join("\n\n")
-        );
-      }
+      const res = await axios.post("/api/hotmail/read", { email, top: 10 });
+      const messages = res.data.messages || [];
+      setModal({ email, messages, serviceFilter: null });
       loadAccounts();
     } catch (e) {
-      setResult("❌ Lỗi: " + (e.response?.data?.error || e.message));
-    } finally {
-      setLoading(false);
-    }
+      alert("❌ Lỗi đọc inbox: " + (e.response?.data?.error || e.message));
+    } finally { setLoading(false); }
   };
 
   const fmtDate = (iso) => {
     if (!iso) return "—";
     const d = new Date(iso);
     if (isNaN(d)) return "—";
-    return d.toLocaleString("vi-VN", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
+    return d.toLocaleString("vi-VN", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" });
   };
 
   const stateBadge = (state) => {
     if (state === "available") return <span className="rounded-full px-2 py-0.5 text-[11px] font-bold bg-emerald-900/60 text-emerald-400 border border-emerald-700/60">✅ available</span>;
-    if (state === "reserved") return <span className="rounded-full px-2 py-0.5 text-[11px] font-bold bg-amber-900/60 text-amber-400 border border-amber-700/60">⏳ reserved</span>;
-    if (state === "used")     return <span className="rounded-full px-2 py-0.5 text-[11px] font-bold bg-red-900/60 text-red-400 border border-red-700/60">🔴 used</span>;
+    if (state === "reserved")  return <span className="rounded-full px-2 py-0.5 text-[11px] font-bold bg-amber-900/60 text-amber-400 border border-amber-700/60">⏳ reserved</span>;
+    if (state === "used")      return <span className="rounded-full px-2 py-0.5 text-[11px] font-bold bg-red-900/60 text-red-400 border border-red-700/60">🔴 used</span>;
     return <span className="rounded-full px-2 py-0.5 text-[11px] font-bold bg-slate-700 text-slate-300">{state || "?"}</span>;
+  };
+
+  // group messages by service for badge previews
+  const getServiceGroups = (msgs = []) => {
+    const map = {};
+    msgs.forEach(m => {
+      const svc = classifyService(m.sender || m.from, m.subject);
+      map[svc] = (map[svc] || 0) + 1;
+    });
+    return Object.entries(map);
   };
 
   const filtered = accounts.filter(acc => {
     if (filterState !== "all" && acc.state !== filterState) return false;
-    if (search && !acc.email.includes(search.toLowerCase())) return false;
+    if (search && !acc.email.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
@@ -1957,50 +2051,39 @@ const HotmailAdminTab = () => {
 
   return (
     <div className="rounded-[24px] border border-slate-700/60 bg-slate-900/50 p-6 shadow-xl backdrop-blur-sm mt-4">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <h2 className="text-2xl font-black text-white">🗂️ Quản lý Hotmail Proxy</h2>
         <div className="flex gap-3 text-sm font-semibold">
-          <span className="rounded-xl px-3 py-1 bg-emerald-900/40 text-emerald-400">✅ {counts.available} available</span>
-          <span className="rounded-xl px-3 py-1 bg-amber-900/40 text-amber-400">⏳ {counts.reserved} reserved</span>
-          <span className="rounded-xl px-3 py-1 bg-red-900/40 text-red-400">🔴 {counts.used} used</span>
+          <span className="rounded-xl px-3 py-1 bg-emerald-900/40 text-emerald-400">✅ {counts.available}</span>
+          <span className="rounded-xl px-3 py-1 bg-amber-900/40 text-amber-400">⏳ {counts.reserved}</span>
+          <span className="rounded-xl px-3 py-1 bg-red-900/40 text-red-400">🔴 {counts.used}</span>
         </div>
       </div>
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <textarea
-            className="w-full rounded-xl border border-slate-700/60 bg-slate-950 p-4 text-slate-200 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 font-mono text-sm"
-            rows="5"
-            placeholder={"Dán Hotmail (mỗi dòng 1 acc):\nemail|pass|secret2fa\nemail|pass|refresh_token|client_id|secret2fa"}
-            value={inputLine}
-            onChange={(e) => setInputLine(e.target.value)}
-          />
-          <button
-            onClick={handleSave}
-            disabled={loading}
-            className="w-full rounded-xl bg-purple-600 py-3 font-bold text-white shadow-lg shadow-purple-900/50 transition-all hover:scale-[1.01] hover:bg-purple-500 disabled:scale-100 disabled:opacity-50"
-          >
-            {loading ? "Đang xử lý..." : "📥 Import & Lưu Tài Khoản"}
+      {/* Import */}
+      <div className="mb-5">
+        <textarea
+          className="w-full rounded-xl border border-slate-700/60 bg-slate-950 p-4 text-slate-200 outline-none focus:border-purple-500 font-mono text-sm"
+          rows="4"
+          placeholder={"Dán Hotmail (mỗi dòng 1 acc):\nemail|pass|secret2fa\nemail|pass|refresh_token|client_id|secret2fa"}
+          value={inputLine}
+          onChange={(e) => setInputLine(e.target.value)}
+        />
+        <div className="flex gap-2 mt-2">
+          <button onClick={handleSave} disabled={loading}
+            className="flex-1 rounded-xl bg-purple-600 py-2.5 font-bold text-white shadow-lg shadow-purple-900/50 transition-all hover:bg-purple-500 disabled:opacity-50">
+            {loading ? "Đang xử lý..." : "📥 Import & Lưu"}
           </button>
-        </div>
-        <div className="flex flex-col gap-2">
-          <textarea
-            className="w-full flex-1 rounded-xl border border-slate-700/60 bg-black/50 p-4 font-mono text-sm text-green-400 outline-none"
-            readOnly
-            rows="5"
-            value={result}
-            placeholder="Kết quả Test Read sẽ hiện ở đây (không đánh dấu đã dùng)..."
-          />
-          <button onClick={loadAccounts} className="rounded-xl border border-slate-600 py-2 text-sm text-slate-400 hover:text-white transition">🔄 Tải lại danh sách</button>
+          <button onClick={loadAccounts} className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-400 hover:text-white transition">🔄</button>
         </div>
       </div>
 
+      {/* Filters */}
       <div className="flex flex-wrap gap-2 mb-4">
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+        <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="🔍 Tìm email..."
-          className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-slate-200 outline-none focus:border-purple-500 w-64"
+          className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-slate-200 outline-none focus:border-purple-500 w-56"
         />
         {["all","available","reserved","used"].map(s => (
           <button key={s} onClick={() => setFilterState(s)}
@@ -2008,52 +2091,66 @@ const HotmailAdminTab = () => {
             {s === "all" ? "Tất cả" : s}
           </button>
         ))}
-        <span className="ml-auto text-sm text-slate-500 self-center">{filtered.length}/{accounts.length} tài khoản</span>
+        <span className="ml-auto text-sm text-slate-500 self-center">{filtered.length}/{accounts.length} acc</span>
       </div>
 
+      {/* Table */}
       <div className="overflow-x-auto rounded-2xl border border-slate-700/60">
-        <table className="w-full text-left text-sm text-slate-300 min-w-[900px]">
-          <thead className="bg-slate-800 text-xs uppercase text-slate-400 border-b border-slate-700/60">
+        <table className="w-full text-left text-sm text-slate-300 min-w-[860px]">
+          <thead className="bg-slate-800 text-[11px] uppercase text-slate-400 border-b border-slate-700/60">
             <tr>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3 w-28">Trạng thái</th>
-              <th className="px-4 py-3 w-16 text-center">Dùng</th>
-              <th className="px-4 py-3 w-36">Lấy lúc</th>
-              <th className="px-4 py-3">Ghi chú (ai lấy / tab nào)</th>
-              <th className="px-4 py-3 text-right w-40">Thao tác</th>
+              <th className="px-4 py-3 w-14 text-center">Dùng</th>
+              <th className="px-4 py-3 w-32">Lấy lúc</th>
+              <th className="px-4 py-3">Ghi chú tab</th>
+              <th className="px-4 py-3 text-right w-44">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700/60">
             {filtered.map(acc => (
-              <tr key={acc.email} className={`transition-colors hover:bg-slate-800/50 ${acc.state === "used" ? "opacity-60" : ""}`}>
-                <td className="px-4 py-3 font-mono text-white font-medium text-xs">{acc.email}</td>
+              <tr key={acc.email} className={`transition-colors hover:bg-slate-800/40 ${acc.state === "used" ? "opacity-55" : ""}`}>
+                <td className="px-4 py-3 font-mono text-white text-xs">{acc.email}</td>
                 <td className="px-4 py-3">{stateBadge(acc.state)}</td>
-                <td className="px-4 py-3 text-center text-amber-400 font-bold">{acc.usedCount || 0}</td>
-                <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">{fmtDate(acc.takenAt || acc.reservedAt || acc.updatedAt)}</td>
-                <td className="px-4 py-3 text-slate-400 text-xs max-w-[260px] truncate" title={acc.takenNote || ""}>
-                  {acc.takenNote
-                    ? <span className="text-sky-400">{acc.takenNote}</span>
-                    : <span className="italic text-slate-600">—</span>
-                  }
+                <td className="px-4 py-3 text-center text-amber-400 font-bold text-sm">{acc.usedCount || 0}</td>
+                <td className="px-4 py-3 text-slate-400 text-xs">{fmtDate(acc.takenAt || acc.reservedAt || acc.updatedAt)}</td>
+                <td className="px-4 py-3 text-xs max-w-[220px] truncate" title={acc.takenNote || ""}>
+                  {acc.takenNote ? <span className="text-sky-400">{acc.takenNote}</span> : <span className="italic text-slate-600">—</span>}
                 </td>
                 <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
-                  <button onClick={() => handleTestRead(acc.email)} disabled={loading} className="font-semibold text-purple-400 transition hover:text-purple-300 disabled:opacity-40 text-xs">Test Read</button>
+                  <button onClick={() => handleTestRead(acc.email)} disabled={loading}
+                    className="font-semibold text-purple-400 hover:text-purple-300 disabled:opacity-40 text-xs transition">
+                    {loading ? "⏳" : "📬 Đọc mail"}
+                  </button>
                   {(acc.state === "reserved" || acc.state === "used") && (
-                    <button onClick={() => handleRelease(acc.email)} className="font-semibold text-amber-400 transition hover:text-amber-300 border-l border-slate-600 pl-2 text-xs">Reset</button>
+                    <button onClick={() => handleRelease(acc.email)}
+                      className="font-semibold text-amber-400 hover:text-amber-300 border-l border-slate-600 pl-2 text-xs transition">Reset</button>
                   )}
-                  <button onClick={() => handleDelete(acc.email)} className="font-semibold text-red-500 transition hover:text-red-400 border-l border-slate-600 pl-2 text-xs">Xóa</button>
+                  <button onClick={() => handleDelete(acc.email)}
+                    className="font-semibold text-red-500 hover:text-red-400 border-l border-slate-600 pl-2 text-xs transition">Xóa</button>
                 </td>
               </tr>
             ))}
-            {accounts.length === 0 && (
-              <tr><td colSpan="5" className="p-4 text-center text-slate-500 italic">Chưa có tài khoản nào.</td></tr>
+            {filtered.length === 0 && (
+              <tr><td colSpan="6" className="p-6 text-center text-slate-500 italic">Không có tài khoản nào.</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Mail Modal */}
+      {modal && (
+        <MailModal
+          email={modal.email}
+          messages={modal.messages}
+          serviceFilter={modal.serviceFilter}
+          onClose={() => setModal(null)}
+        />
+      )}
     </div>
   );
 };
+
 
 function App() {
   // LOGIN STATE
