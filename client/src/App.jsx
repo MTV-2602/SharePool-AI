@@ -1886,6 +1886,7 @@ const SERVICE_COLORS = {
 // ── MailModal ────────────────────────────────────────────────────────────────
 const MailModal = ({ email, messages, serviceFilter, onClose }) => {
   const [copied, setCopied] = useState("");
+  const [viewMsg, setViewMsg] = useState(null); // full email viewer
 
   const displayed = serviceFilter
     ? messages.filter(m => classifyService(m.sender || m.from, m.subject) === serviceFilter)
@@ -1905,59 +1906,138 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }} onClick={onClose}>
-      <div className="relative w-full max-w-xl rounded-2xl bg-white shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 border-b">
-          <div>
-            <div className="font-bold text-gray-900 text-base">{serviceFilter ? `${serviceFilter} - ${email}` : email}</div>
-            <div className="text-xs text-gray-500 mt-0.5">{displayed.length} message{displayed.length !== 1 ? "s" : ""}</div>
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }} onClick={onClose}>
+        <div className="relative w-full max-w-xl rounded-2xl bg-white shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div className="flex items-start justify-between px-6 py-4 border-b">
+            <div>
+              <div className="font-bold text-gray-900 text-base">{serviceFilter ? `${serviceFilter} - ${email}` : email}</div>
+              <div className="text-xs text-gray-500 mt-0.5">{displayed.length} message{displayed.length !== 1 ? "s" : ""}</div>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none mt-0.5">✕</button>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none mt-0.5">✕</button>
-        </div>
 
-        {/* Messages */}
-        <div className="overflow-y-auto max-h-[60vh] px-6 py-4 space-y-3">
-          {displayed.length === 0 && (
-            <div className="text-center text-gray-400 py-8 italic">Không có thư nào</div>
-          )}
-          {displayed.map((msg, i) => {
-            const code = extractCode(msg.body || msg.bodyPreview || msg.subject);
-            const id = `msg-${i}`;
-            const timeStr = fmtTime(msg.receivedAt || msg.date || "");
-            return (
-              <div key={id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="font-semibold text-gray-800 text-sm">{msg.subject || "(no subject)"}</div>
-                {timeStr && <div className="text-[11px] text-blue-500 mt-0.5">{timeStr}</div>}
-                {code && (
-                  <div className="mt-3 text-2xl font-bold text-gray-900 tracking-widest">{code}</div>
-                )}
-                <div className="flex gap-2 mt-3">
+          {/* Messages */}
+          <div className="overflow-y-auto max-h-[62vh] px-6 py-4 space-y-3">
+            {displayed.length === 0 && (
+              <div className="text-center text-gray-400 py-8 italic">Không có thư nào</div>
+            )}
+            {displayed.map((msg, i) => {
+              const code = extractCode(msg.body || msg.bodyPreview || msg.subject);
+              const id = `msg-${i}`;
+              const timeStr = fmtTime(msg.receivedAt || msg.date || "");
+              const sender = msg.sender || msg.from || "";
+              return (
+                <div key={id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  {/* Subject + meta */}
+                  <div className="font-semibold text-gray-800 text-sm">{msg.subject || "(no subject)"}</div>
+                  <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500">
+                    {sender && <span>👤 {sender}</span>}
+                    {timeStr && <span>🕐 {timeStr}</span>}
+                  </div>
+                  {/* Code highlight */}
                   {code && (
+                    <div className="mt-3 text-2xl font-bold text-gray-900 tracking-widest">{code}</div>
+                  )}
+                  {/* Actions */}
+                  <div className="flex gap-2 mt-3">
+                    {code && (
+                      <button
+                        onClick={() => copyCode(code, id)}
+                        className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
+                      >
+                        {copied === id ? "✅ Đã copy!" : "⎘ Copy code"}
+                      </button>
+                    )}
                     <button
-                      onClick={() => copyCode(code, id)}
+                      onClick={() => setViewMsg(msg)}
                       className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
                     >
-                      {copied === id ? "✅ Đã copy!" : "⎘ Copy code"}
+                      👁 Xem mail
                     </button>
-                  )}
-                  <button
-                    onClick={() => alert((msg.body || msg.bodyPreview || msg.html_body || "(Trống)").slice(0, 800))}
-                    className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
-                  >
-                    👁 Xem mail
-                  </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
 
-        <div className="px-6 py-3 border-t flex justify-end">
-          <button onClick={onClose} className="rounded-xl border border-gray-300 px-5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">Đóng</button>
+          <div className="px-6 py-3 border-t flex justify-end">
+            <button onClick={onClose} className="rounded-xl border border-gray-300 px-5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">Đóng</button>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Full email viewer overlay */}
+      {viewMsg && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.85)" }}
+          onClick={() => setViewMsg(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col"
+            style={{ maxHeight: "90vh" }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Email header */}
+            <div className="px-6 pt-5 pb-4 border-b">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 pr-4">
+                  <h2 className="text-lg font-bold text-gray-900 leading-snug">{viewMsg.subject || "(no subject)"}</h2>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[12px] text-gray-500">
+                    {(viewMsg.sender || viewMsg.from) && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-blue-400">👤</span>
+                        {viewMsg.sender || viewMsg.from}
+                      </span>
+                    )}
+                    {(viewMsg.receivedAt || viewMsg.date) && (
+                      <span className="flex items-center gap-1">
+                        <span className="text-blue-400">🕐</span>
+                        {new Date(viewMsg.receivedAt || viewMsg.date).toLocaleString("vi-VN", {
+                          hour: "2-digit", minute: "2-digit", second: "2-digit",
+                          day: "2-digit", month: "2-digit", year: "numeric"
+                        })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setViewMsg(null)}
+                  className="text-gray-400 hover:text-gray-700 text-2xl leading-none flex-shrink-0"
+                >✕</button>
+              </div>
+            </div>
+
+            {/* Email body rendered in iframe */}
+            <div className="flex-1 overflow-hidden" style={{ minHeight: 300 }}>
+              {viewMsg.html_body || (viewMsg.body && viewMsg.body.includes("<")) ? (
+                <iframe
+                  title="email-content"
+                  sandbox="allow-same-origin"
+                  style={{ width: "100%", height: "100%", minHeight: 440, border: "none" }}
+                  srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:sans-serif;padding:24px;font-size:14px;color:#222;line-height:1.6}a{color:#1a73e8}</style></head><body>${viewMsg.html_body || viewMsg.body || ""}</body></html>`}
+                />
+              ) : (
+                <div className="px-6 py-5 overflow-y-auto whitespace-pre-wrap text-sm text-gray-700" style={{ maxHeight: 440 }}>
+                  {viewMsg.body || viewMsg.bodyPreview || "(Không có nội dung)"}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t flex justify-end">
+              <button
+                onClick={() => setViewMsg(null)}
+                className="rounded-xl border border-gray-300 px-5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
