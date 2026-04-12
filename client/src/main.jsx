@@ -2,6 +2,7 @@ import { Component, StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.jsx";
+import HotmailReader from "./HotmailReader.jsx";
 import PublicStorefront from "./PublicStorefront.jsx";
 
 const STORE_TOKEN_KEY = "store_user_token";
@@ -77,10 +78,16 @@ function SessionRouter() {
         ? window.location.pathname.toLowerCase()
         : "/";
     const onStoreRoute = pathname.startsWith("/store");
+    const onHotmailReaderRoute = pathname.startsWith("/hotmail-reader");
     const sessionRole = readStoredSessionRole();
     const storeToken = String(localStorage.getItem(STORE_TOKEN_KEY) || "").trim();
     const hasStoreSession = !!storeToken;
     const hasAdminSession = hasValidStoredAdminSession();
+
+    if (onHotmailReaderRoute) {
+      setMode("hotmail-reader");
+      return;
+    }
 
     if (sessionRole === "user" && hasStoreSession) {
       clearStoredAdminSession();
@@ -143,7 +150,12 @@ function SessionRouter() {
     return <SessionBootScreen />;
   }
 
-  const ActiveComponent = mode === "store" ? PublicStorefront : App;
+  const ActiveComponent =
+    mode === "store"
+      ? PublicStorefront
+      : mode === "hotmail-reader"
+        ? HotmailReader
+        : App;
   return <ActiveComponent />;
 }
 

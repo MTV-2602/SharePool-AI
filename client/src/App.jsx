@@ -1910,21 +1910,21 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(2,6,23,0.82)" }} onClick={onClose}>
-        <div className="relative w-full max-w-3xl overflow-hidden rounded-[28px] border border-slate-700/60 bg-slate-950/95 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl" onClick={e => e.stopPropagation()}>
+      <div className="fixed inset-0 z-[9999] grid place-items-center p-4" style={{ background: "rgba(2,6,23,0.86)" }} onClick={onClose}>
+        <div className="relative mx-auto flex max-h-[86vh] w-[min(94vw,760px)] flex-col overflow-hidden rounded-[28px] border border-violet-400/20 bg-slate-950/95 shadow-[0_30px_90px_rgba(0,0,0,0.55)] ring-1 ring-white/10 backdrop-blur-xl" onClick={e => e.stopPropagation()}>
           {/* Header */}
           <div className="flex items-start justify-between border-b border-slate-800 px-6 py-5">
             <div>
               <div className="text-base font-bold text-white">{serviceFilter ? `${serviceFilter} - ${email}` : email}</div>
               <div className="mt-1 text-xs text-slate-400">{displayed.length} message{displayed.length !== 1 ? "s" : ""}</div>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none mt-0.5">✕</button>
+            <button onClick={onClose} className="mt-0.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-lg leading-none text-slate-300 transition hover:border-violet-400/50 hover:text-white">×</button>
           </div>
 
           {/* Messages */}
-          <div className="max-h-[62vh] space-y-3 overflow-y-auto bg-slate-950/40 px-6 py-5">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-950/40 px-6 py-5">
             {displayed.length === 0 && (
-              <div className="text-center text-gray-400 py-8 italic">Không có thư nào</div>
+              <div className="py-10 text-center italic text-slate-500">Không có thư nào.</div>
             )}
             {displayed.map((msg, i) => {
               const code = extractCode(msg.body || msg.bodyPreview || msg.subject);
@@ -1935,7 +1935,7 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
                 <div key={id} className="rounded-2xl border border-slate-700/60 bg-slate-900/80 p-4 shadow-lg shadow-black/10">
                   {/* Subject + meta */}
                   <div className="text-sm font-semibold text-white">{msg.subject || "(no subject)"}</div>
-                  <div className="mt-1 flex items-center gap-3 text-[11px] text-slate-400">
+                  <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
                     {sender && <span>👤 {sender}</span>}
                     {timeStr && <span>🕐 {timeStr}</span>}
                   </div>
@@ -1944,7 +1944,7 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
                     <div className="mt-3 font-mono text-2xl font-bold tracking-[0.28em] text-violet-200">{code}</div>
                   )}
                   {/* Actions */}
-                  <div className="flex gap-2 mt-3">
+                  <div className="mt-3 flex flex-wrap gap-2">
                     {code && (
                       <button
                         onClick={() => copyCode(code, id)}
@@ -1966,7 +1966,7 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
           </div>
 
           <div className="flex justify-end border-t border-slate-800 px-6 py-4">
-            <button onClick={onClose} className="rounded-xl border border-gray-300 px-5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">Đóng</button>
+            <button onClick={onClose} className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-2 text-sm font-medium text-slate-100 transition hover:border-violet-400/50 hover:bg-slate-800">Đóng</button>
           </div>
         </div>
       </div>
@@ -1974,8 +1974,8 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
       {/* Full email viewer overlay */}
       {viewMsg && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.85)" }}
+          className="fixed inset-0 z-[10000] grid place-items-center p-4"
+          style={{ background: "rgba(2,6,23,0.9)" }}
           onClick={() => setViewMsg(null)}
         >
           <div
@@ -2070,55 +2070,6 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
     error?.message ||
     fallback;
 
-  /*
-  const handleSave = async () => {
-    if (!inputLine.trim()) return alert("Nhập email|pass|secret2fa hoặc email|pass|token|id|secret2fa");
-    setLoading(true);
-    try {
-      const lines = inputLine.split('\n').filter(l => l.trim());
-      for (const line of lines) await axios.post("/api/hotmail/save", { line });
-      setInputLine("");
-      alert(`Đã lưu thành công ${lines.length} tài khoản!`);
-      loadAccounts();
-    } catch (e) { alert("Lỗi: " + (e.response?.data?.error || e.message)); }
-    finally { setLoading(false); }
-  };
-
-  const handleDelete = (email) => {
-    showConfirm("Xóa Hotmail", `Bạn có chắc chắn muốn xóa email ${email}?`, async () => {
-      try {
-        await axios.delete("/api/hotmail/delete/" + encodeURIComponent(email));
-        loadAccounts();
-      } catch (e) {
-        setAlertInfo({ show: true, title: "Lỗi", message: e.message, type: "error" });
-      }
-    });
-  };
-
-  const handleRelease = (email) => {
-    showConfirm("Reset Trạng Thái", `Đặt lại ${email} về 'available'?`, async () => {
-      try {
-        await axios.post("/api/hotmail/release", { email });
-        loadAccounts();
-      } catch (e) {
-        setAlertInfo({ show: true, title: "Lỗi", message: e.message, type: "error" });
-      }
-    });
-  };
-
-  const handleTestRead = async (email) => {
-    setLoading(true);
-    try {
-      const res = await axios.post("/api/hotmail/read", { email, top: 10 });
-      const messages = res.data.messages || [];
-      setModal({ email, messages, serviceFilter: null });
-      loadAccounts();
-    } catch (e) {
-      alert("❌ Lỗi đọc inbox: " + (e.response?.data?.error || e.message));
-    } finally { setLoading(false); }
-  };
-
-  */
   const handleHotmailSave = async () => {
     if (!inputLine.trim()) {
       showAlert(
@@ -2206,14 +2157,38 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
     return <span className="rounded-full px-2 py-0.5 text-[11px] font-bold bg-slate-700 text-slate-300">{state || "?"}</span>;
   };
 
-  // group messages by service for badge previews
-  const getServiceGroups = (msgs = []) => {
-    const map = {};
-    msgs.forEach(m => {
-      const svc = classifyService(m.sender || m.from, m.subject);
-      map[svc] = (map[svc] || 0) + 1;
-    });
-    return Object.entries(map);
+  const renderUsageSource = (acc) => {
+    const chatgpt = acc.chatgptAccount;
+    const hasExtensionTrace = acc.takenNote || acc.takenAt || acc.takenByIp || acc.usedAt;
+    if (chatgpt) {
+      return (
+        <div className="space-y-1">
+          <div className="inline-flex rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-sky-200">
+            ChatGPT
+          </div>
+          <div className="font-mono text-[11px] text-white">{chatgpt.id || chatgpt.username}</div>
+          <div className="text-[11px] text-slate-400">
+            Mail die: {chatgpt.mailCheckStatus || "unchecked"}
+          </div>
+        </div>
+      );
+    }
+    if (hasExtensionTrace) {
+      return (
+        <div className="space-y-1">
+          <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-amber-200">
+            Extension
+          </div>
+          <div className="max-w-[220px] truncate text-[11px] text-slate-300" title={acc.takenNote || ""}>
+            {acc.takenNote || "Đã lấy từ extension"}
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {fmtDate(acc.takenAt || acc.usedAt)}{acc.takenByIp ? ` · ${acc.takenByIp}` : ""}
+          </div>
+        </div>
+      );
+    }
+    return <span className="text-xs italic text-slate-600">Chưa dùng</span>;
   };
 
   const filtered = accounts.filter(acc => {
@@ -2284,12 +2259,13 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-slate-700/60">
-        <table className="min-w-[820px] w-full text-left text-sm text-slate-300">
+        <table className="min-w-[980px] w-full text-left text-sm text-slate-300">
           <thead className="border-b border-slate-700/60 bg-slate-800 text-[11px] uppercase text-slate-400">
             <tr>
               <th className="px-4 py-3">Email</th>
               <th className="w-28 px-4 py-3">Trạng thái</th>
               <th className="w-32 px-4 py-3">Lúc lấy</th>
+              <th className="px-4 py-3">Nguồn sử dụng</th>
               <th className="px-4 py-3">Ghi chú</th>
               <th className="w-44 px-4 py-3 text-right">Thao tác</th>
             </tr>
@@ -2302,6 +2278,7 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
                 <td className="px-4 py-3 text-xs text-slate-400">
                   {fmtDate(acc.takenAt || acc.reservedAt || acc.updatedAt)}
                 </td>
+                <td className="px-4 py-3 text-xs">{renderUsageSource(acc)}</td>
                 <td className="max-w-[220px] px-4 py-3 text-xs" title={acc.takenNote || ""}>
                   {acc.takenNote ? (
                     <span className="text-sky-400">{acc.takenNote}</span>
@@ -2336,7 +2313,7 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan="5" className="p-6 text-center italic text-slate-500">
+                <td colSpan="6" className="p-6 text-center italic text-slate-500">
                   Không có tài khoản nào.
                 </td>
               </tr>
@@ -2356,113 +2333,6 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
     </div>
   );
 };
-
-/*
-  const counts = { available: 0, reserved: 0, used: 0 };
-  accounts.forEach(a => { if (counts[a.state] !== undefined) counts[a.state]++; });
-
-  return (
-    <div className="rounded-[24px] border border-slate-700/60 bg-slate-900/50 p-6 shadow-xl backdrop-blur-sm mt-4">
-      {/* Header * /}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <h2 className="text-2xl font-black text-white">🗂️ Quản lý Hotmail Proxy</h2>
-        <div className="flex gap-3 text-sm font-semibold">
-          <span className="rounded-xl px-3 py-1 bg-emerald-900/40 text-emerald-400">✅ {counts.available}</span>
-          <span className="rounded-xl px-3 py-1 bg-amber-900/40 text-amber-400">⏳ {counts.reserved}</span>
-          <span className="rounded-xl px-3 py-1 bg-red-900/40 text-red-400">🔴 {counts.used}</span>
-        </div>
-      </div>
-
-      {/* Import * /}
-      <div className="mb-5">
-        <textarea
-          className="w-full rounded-xl border border-slate-700/60 bg-slate-950 p-4 text-slate-200 outline-none focus:border-purple-500 font-mono text-sm"
-          rows="4"
-          placeholder={"Dán Hotmail (mỗi dòng 1 acc):\nemail|pass|secret2fa\nemail|pass|refresh_token|client_id|secret2fa"}
-          value={inputLine}
-          onChange={(e) => setInputLine(e.target.value)}
-        />
-        <div className="flex gap-2 mt-2">
-          <button onClick={handleSave} disabled={loading}
-            className="flex-1 rounded-xl bg-purple-600 py-2.5 font-bold text-white shadow-lg shadow-purple-900/50 transition-all hover:bg-purple-500 disabled:opacity-50">
-            {loading ? "Đang xử lý..." : "📥 Import & Lưu"}
-          </button>
-          <button onClick={loadAccounts} className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-400 hover:text-white transition">🔄</button>
-        </div>
-      </div>
-
-      {/* Filters * /}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="🔍 Tìm email..."
-          className="rounded-xl border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-slate-200 outline-none focus:border-purple-500 w-56"
-        />
-        {["all","available","reserved","used"].map(s => (
-          <button key={s} onClick={() => setFilterState(s)}
-            className={`rounded-xl px-3 py-2 text-sm font-medium border transition ${filterState===s ? "bg-purple-600 border-purple-500 text-white" : "bg-slate-800 border-slate-600 text-slate-400 hover:text-white"}`}>
-            {s === "all" ? "Tất cả" : s}
-          </button>
-        ))}
-        <span className="ml-auto text-sm text-slate-500 self-center">{filtered.length}/{accounts.length} acc</span>
-      </div>
-
-      {/* Table * /}
-      <div className="overflow-x-auto rounded-2xl border border-slate-700/60">
-        <table className="w-full text-left text-sm text-slate-300 min-w-[860px]">
-          <thead className="bg-slate-800 text-[11px] uppercase text-slate-400 border-b border-slate-700/60">
-            <tr>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3 w-28">Trạng thái</th>
-              <th className="px-4 py-3 w-14 text-center">Dùng</th>
-              <th className="px-4 py-3 w-32">Lấy lúc</th>
-              <th className="px-4 py-3">Ghi chú tab</th>
-              <th className="px-4 py-3 text-right w-44">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-700/60">
-            {filtered.map(acc => (
-              <tr key={acc.email} className={`transition-colors hover:bg-slate-800/40 ${acc.state === "used" ? "opacity-55" : ""}`}>
-                <td className="px-4 py-3 font-mono text-white text-xs">{acc.email}</td>
-                <td className="px-4 py-3">{stateBadge(acc.state)}</td>
-                <td className="px-4 py-3 text-center text-amber-400 font-bold text-sm">{acc.usedCount || 0}</td>
-                <td className="px-4 py-3 text-slate-400 text-xs">{fmtDate(acc.takenAt || acc.reservedAt || acc.updatedAt)}</td>
-                <td className="px-4 py-3 text-xs max-w-[220px] truncate" title={acc.takenNote || ""}>
-                  {acc.takenNote ? <span className="text-sky-400">{acc.takenNote}</span> : <span className="italic text-slate-600">—</span>}
-                </td>
-                <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
-                  <button onClick={() => handleTestRead(acc.email)} disabled={loading}
-                    className="font-semibold text-purple-400 hover:text-purple-300 disabled:opacity-40 text-xs transition">
-                    {loading ? "⏳" : "📬 Đọc mail"}
-                  </button>
-                  {(acc.state === "reserved" || acc.state === "used") && (
-                    <button onClick={() => handleRelease(acc.email)}
-                      className="font-semibold text-amber-400 hover:text-amber-300 border-l border-slate-600 pl-2 text-xs transition">Reset</button>
-                  )}
-                  <button onClick={() => handleDelete(acc.email)}
-                    className="font-semibold text-red-500 hover:text-red-400 border-l border-slate-600 pl-2 text-xs transition">Xóa</button>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan="6" className="p-6 text-center text-slate-500 italic">Không có tài khoản nào.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Mail Modal * /}
-      {modal && (
-        <MailModal
-          email={modal.email}
-          messages={modal.messages}
-          serviceFilter={modal.serviceFilter}
-          onClose={() => setModal(null)}
-        />
-      )}
-    </div>
-  );
-};
-*/
 
 function App() {
   // LOGIN STATE
@@ -8529,6 +8399,22 @@ function App() {
               🛒 Dịch Vụ Tài Khoản Premium
             </h1>
             <p className="text-slate-400 text-lg">Cấp nhanh · Ổn định · Hỗ trợ 24/7</p>
+            <div className="mx-auto mt-5 flex w-full max-w-2xl flex-col gap-3 rounded-2xl border border-cyan-400/20 bg-slate-900/80 p-3 shadow-xl shadow-cyan-950/20 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-left">
+                <div className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-300">
+                  Truy cập nhanh
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-200">
+                  Cần đọc mã Hotmail? Mở trang đọc inbox public ngay.
+                </div>
+              </div>
+              <a
+                href="/hotmail-reader"
+                className="inline-flex items-center justify-center rounded-xl bg-cyan-500 px-5 py-2.5 text-sm font-black text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-300"
+              >
+                Đọc Hotmail nhanh
+              </a>
+            </div>
           </div>
 
           <div className="flex flex-col lg:flex-row gap-8 items-start">

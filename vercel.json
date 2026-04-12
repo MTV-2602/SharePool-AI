@@ -23,6 +23,14 @@
     {
       "source": "/store",
       "destination": "/index.html"
+    },
+    {
+      "source": "/hotmail-reader",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/hotmail-reader/:path*",
+      "destination": "/index.html"
     }
   ]
 }

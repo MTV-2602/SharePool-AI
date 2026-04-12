@@ -608,43 +608,25 @@ async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
         email: String(account?.username || "").trim().toLowerCase(),
       }).lean();
       if (!cred) {
-        throw new Error(
-          "Acc Hotmail nay chua duoc nap vao he thong Hotmail nen khong the check mail.",
-        );
+        throw new Error("Chưa có acc trong Hotmail.");
       }
       if (!cred.refreshToken) {
         throw new Error(
-          "Acc Hotmail thieu refresh token Outlook. Hay test/read Hotmail truoc.",
+          "Acc Hotmail thiếu refresh token Outlook. Hãy import lại đúng format Hotmail đầy đủ.",
         );
       }
       if (!cred.clientId) {
         throw new Error(
-          "Acc Hotmail thieu clientId Outlook. Hay import lai dung format Hotmail day du.",
+          "Acc Hotmail thiếu clientId Outlook. Hãy import lại đúng format Hotmail đầy đủ.",
         );
       }
 
-      const tokenData = await exchangeOutlookToken(
-        cred.clientId,
-        cred.refreshToken,
-      );
-      const messages = await readOutlookInbox(
-        tokenData.access_token,
+      const hotmailRead = await readStoredHotmailInbox(
+        cred,
         CHATGPT_MAIL_DIE_LIST_LIMIT || 12,
       );
 
-      if (tokenData.refresh_token) {
-        await HotmailAccount.updateOne(
-          { email: cred.email },
-          {
-            $set: {
-              refreshToken: tokenData.refresh_token,
-              updatedAt: new Date().toISOString(),
-            },
-          },
-        );
-      }
-
-      emails = messages.map((message) => ({
+      emails = hotmailRead.messages.map((message) => ({
         id: String(message?.id || "").trim(),
         sender: String(message?.from || "").trim(),
         subject: String(message?.subject || "").trim(),
@@ -17297,10 +17279,93 @@ function parseHotmailLine(rawLine) {
   return { email: parts[0].toLowerCase(), password: parts[1], refreshToken: parts[2], clientId: parts[3], secret2fa: parts[4] || "" };
 }
 
+function normalizeHotmailEmail(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function createHttpError(message, statusCode = 500) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function assertReadableHotmailAccount(cred) {
+  if (!cred) throw createHttpError("Chưa có acc trong Hotmail.", 404);
+  if (!cred.refreshToken) {
+    throw createHttpError(
+      "Acc Hotmail thiếu refresh token Outlook. Hãy import lại đúng format Hotmail đầy đủ.",
+      400,
+    );
+  }
+  if (!cred.clientId) {
+    throw createHttpError(
+      "Acc Hotmail thiếu clientId Outlook. Hãy import lại đúng format Hotmail đầy đủ.",
+      400,
+    );
+  }
+}
+
+async function readStoredHotmailInbox(cred, top = 5) {
+  assertReadableHotmailAccount(cred);
+  const tokenData = await exchangeOutlookToken(cred.clientId, cred.refreshToken);
+  const messages = await readOutlookInbox(tokenData.access_token, top);
+  const now = new Date().toISOString();
+  await HotmailAccount.updateOne(
+    { email: normalizeHotmailEmail(cred.email) },
+    {
+      $set: {
+        refreshToken: tokenData.refresh_token || cred.refreshToken,
+        lastReadAt: now,
+        updatedAt: now,
+      },
+    },
+  );
+  return {
+    email: normalizeHotmailEmail(cred.email),
+    messages,
+    scope: tokenData.scope || "",
+    rotatedRefreshToken: tokenData.refresh_token || "",
+    lastReadAt: now,
+  };
+}
+
+function sendHotmailReadError(res, error) {
+  const statusCode = Number(error?.statusCode || error?.status || 500);
+  res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
+    ok: false,
+    error: error?.message || "Không thể đọc inbox Hotmail.",
+  });
+}
+
 app.get("/api/hotmail/accounts", async (req, res) => {
   try {
     const accounts = await HotmailAccount.find({}).sort({ state: 1, updatedAt: -1 }).lean();
-    res.json({ ok: true, count: accounts.length, accounts });
+    const emails = accounts.map((account) => normalizeHotmailEmail(account.email)).filter(Boolean);
+    const chatgptAccounts = emails.length
+      ? await Account.find({ username: { $in: emails } })
+          .select("id username type status mailCheckProvider mailCheckStatus mailCheckLastCheckedAt mailCheckLastSubject")
+          .lean()
+      : [];
+    const chatgptByEmail = new Map(
+      chatgptAccounts.map((account) => [
+        normalizeHotmailEmail(account.username),
+        {
+          id: account.id || "",
+          username: account.username || "",
+          type: account.type || "",
+          status: account.status || "",
+          mailCheckProvider: account.mailCheckProvider || "",
+          mailCheckStatus: account.mailCheckStatus || "",
+          mailCheckLastCheckedAt: account.mailCheckLastCheckedAt || "",
+          mailCheckLastSubject: account.mailCheckLastSubject || "",
+        },
+      ]),
+    );
+    const enrichedAccounts = accounts.map((account) => ({
+      ...account,
+      chatgptAccount: chatgptByEmail.get(normalizeHotmailEmail(account.email)) || null,
+    }));
+    res.json({ ok: true, count: enrichedAccounts.length, accounts: enrichedAccounts });
   } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 
@@ -17426,28 +17491,37 @@ app.post("/api/hotmail/read", cors(), async (req, res) => {
   try {
     let cred = null;
     if (req.body?.line) cred = parseHotmailLine(req.body.line);
-    else if (req.body?.email) cred = await HotmailAccount.findOne({ email: String(req.body.email).trim().toLowerCase() }).lean();
-    if (!cred) return res.status(400).json({ ok: false, error: "Khong tim thay account." });
+    else if (req.body?.email) cred = await HotmailAccount.findOne({ email: normalizeHotmailEmail(req.body.email) }).lean();
+    if (!cred) throw createHttpError("Chưa có acc trong Hotmail.", 404);
     
     if (req.body?.line) {
        await HotmailAccount.findOneAndUpdate({ email: cred.email }, { $set: { ...cred, updatedAt: new Date().toISOString() } }, { upsert: true });
     }
 
-    const tokenData = await exchangeOutlookToken(cred.clientId, cred.refreshToken);
-    const messages = await readOutlookInbox(tokenData.access_token, req.body?.top || 5);
-    
-    await HotmailAccount.updateOne({ email: cred.email }, {
-      $set: {
-        refreshToken: tokenData.refresh_token || cred.refreshToken,
-        lastReadAt: new Date().toISOString()
-      }
-    });
+    const result = await readStoredHotmailInbox(cred, req.body?.top || 5);
 
     res.json({
-      ok: true, email: cred.email, count: messages.length, scope: tokenData.scope || "",
-      rotatedRefreshToken: tokenData.refresh_token || "", messages
+      ok: true, email: result.email, count: result.messages.length, scope: result.scope,
+      rotatedRefreshToken: result.rotatedRefreshToken, messages: result.messages
     });
-  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+  } catch (err) { sendHotmailReadError(res, err); }
+});
+
+app.post("/api/hotmail/public-read", cors(), async (req, res) => {
+  try {
+    const email = normalizeHotmailEmail(req.body?.email);
+    if (!email) return res.status(400).json({ ok: false, error: "Thiếu email Hotmail." });
+    const cred = await HotmailAccount.findOne({ email }).lean();
+    if (!cred) throw createHttpError("Chưa có acc trong Hotmail.", 404);
+    const result = await readStoredHotmailInbox(cred, req.body?.top || 10);
+    res.json({
+      ok: true,
+      email: result.email,
+      count: result.messages.length,
+      lastReadAt: result.lastReadAt,
+      messages: result.messages,
+    });
+  } catch (err) { sendHotmailReadError(res, err); }
 });
 
 // 5. PROXY GOOGLE SHEET
