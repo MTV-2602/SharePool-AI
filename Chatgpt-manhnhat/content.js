@@ -68,7 +68,7 @@ function generateRandomPassword() {
 const TEMPMAIL_API_BASE = "https://tinyhost.shop";
 const TEMPMAIL_CACHE_DURATION = 3600000; // 1 hour cache for domains
 const TWOFA_SECRET_STORE_KEY = "af_twofa_secret_store_v1";
-const HOTMAIL_PROXY_URL_DEFAULT = "http://localhost:8787/read-hotmail";
+const HOTMAIL_PROXY_URL_DEFAULT = "https://vinhaccplus.vercel.app/api/hotmail/read";
 const HOTMAIL_ACTIVE_EMAIL_KEY = "af_hotmail_active_email_v1";
 const HOTMAIL_QUEUE_STORE_KEY = "af_hotmail_queue_lines_v1";
 

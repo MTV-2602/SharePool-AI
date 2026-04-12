@@ -912,9 +912,9 @@ document.addEventListener("DOMContentLoaded", () => {
           "Lỗi: Không kết nối được Proxy.",
           "",
           "Cách xử lý:",
-          "1) Chạy server: node hotmail-proxy-server.mjs",
-          "2) Mở đúng URL proxy (mặc định: http://localhost:8787/read-hotmail)",
-          "3) Nếu đổi cổng thì sửa lại ô Proxy URL trong popup",
+          "1) Mở Web Backend",
+          "2) Mở đúng URL proxy (mặc định: https://vinhaccplus.vercel.app/api/hotmail/read)",
+          "3) Nếu Web chạy domain khác thì sửa lại ô Proxy URL trong popup",
           "",
           `Chi tiết: ${msg}`,
         ].join("\n");
