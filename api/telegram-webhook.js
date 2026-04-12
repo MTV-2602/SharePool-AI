@@ -241,6 +241,12 @@ const buildTelegramBatchSummaryMessage = ({
 }) => {
   const plusSuccesses = successes.filter((item) => item.kind === "plus");
   const teamSuccesses = successes.filter((item) => item.kind === "team");
+  const hotmailLinkedCount = plusSuccesses.filter(
+    (item) => item?.hotmailLink?.status === "linked",
+  ).length;
+  const hotmailMissingCount = plusSuccesses.filter(
+    (item) => item?.hotmailLink?.status === "missing",
+  ).length;
   const successPreview = successes.slice(0, 8);
   const errorPreview = errors.slice(0, 8);
   const lines = [
@@ -251,12 +257,18 @@ const buildTelegramBatchSummaryMessage = ({
     `Team thanh cong: ${teamSuccesses.length}`,
     `Dong loi: ${errors.length}`,
   ];
+  if (hotmailLinkedCount > 0 || hotmailMissingCount > 0) {
+    lines.push(
+      `Hotmail da noi: ${hotmailLinkedCount}`,
+      `Hotmail chua co trong kho: ${hotmailMissingCount}`,
+    );
+  }
 
   if (successPreview.length > 0) {
     lines.push("", "*Thanh cong:*");
     successPreview.forEach((item) => {
       lines.push(
-        `${item.lineNumber}. [${item.kind === "team" ? "Team" : "Plus"}] \`${item.email}\``,
+        `${item.lineNumber}. [${item.kind === "team" ? "Team" : "Plus"}] \`${item.email}\`${formatTelegramHotmailLinkSuffix(item.hotmailLink)}`,
       );
     });
     if (successes.length > successPreview.length) {
@@ -275,6 +287,22 @@ const buildTelegramBatchSummaryMessage = ({
   }
 
   return lines.join("\n");
+};
+const formatTelegramHotmailLinkText = (hotmailLink = null) => {
+  const status = String(hotmailLink?.status || "").trim();
+  if (status === "linked") {
+    return hotmailLink?.lockApplied
+      ? "da noi va khoa kho extension"
+      : "da noi ChatGPT";
+  }
+  if (status === "missing") return "Chua co acc trong Hotmail";
+  if (status === "hotmail_only") return "co trong kho Hotmail, chua co ChatGPT";
+  if (status === "error") return hotmailLink?.message || "loi khi noi Hotmail";
+  return "";
+};
+const formatTelegramHotmailLinkSuffix = (hotmailLink = null) => {
+  const text = formatTelegramHotmailLinkText(hotmailLink);
+  return text ? ` | Hotmail: ${text}` : "";
 };
 const parseCleanupCommand = (rawText = "") => {
   const normalized = String(rawText || "").trim();
@@ -968,6 +996,12 @@ email,password,courseCode
             }),
           );
           const found = response?.data?.account || null;
+          const hotmailText = formatTelegramHotmailLinkText(
+            response?.data?.hotmailLink,
+          );
+          if (!found && hotmailText) {
+            await sendMessage(chatId, `Hotmail: ${hotmailText}`);
+          }
 
           if (!found) {
             await sendMessage(
@@ -1013,6 +1047,9 @@ email,password,courseCode
             }
             if (found.link) message += `${found.link}\n\n`;
             else message += `\n`;
+            if (hotmailText) {
+              message += `Hotmail: ${hotmailText}\n\n`;
+            }
 
             if (found.users && found.users.length > 0) {
               message += `👥 *Khách hàng (${found.users.length}):*\n`;
@@ -1156,7 +1193,10 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
               const original =
                 originalItemsByLine.get(Number(entry?.lineNumber || 0)) || null;
               if (original) {
-                batchSuccesses.push(original);
+                batchSuccesses.push({
+                  ...original,
+                  hotmailLink: entry?.hotmailLink || null,
+                });
               }
             });
           } else {
@@ -1356,7 +1396,7 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
               await sendMessage(chatId, "⏳ Đang thêm account...");
 
               // Call public API endpoint
-              await axios.post(
+              const response = await axios.post(
                 `${API_URL}/api/chatgpt-public`,
                 {
                   username: email,
@@ -1367,6 +1407,9 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
                   note: "",
                 },
                 buildInternalApiConfig(),
+              );
+              const hotmailText = formatTelegramHotmailLinkText(
+                response?.data?.hotmailLink,
               );
 
               const successMessage = `
@@ -1393,6 +1436,7 @@ ${accounts.map((acc, i) => `${i + 1}. \`${acc.email}\`,\`${acc.password}\`,\`${a
                 `Email: \`${email}\``,
                 `Password: \`${password}\``,
                 `2FA: \`${otpSecret}\``,
+                ...(hotmailText ? [`Hotmail: ${hotmailText}`] : []),
               ].join("\n");
               await sendMessage(chatId, displayMessage);
             } catch (error) {

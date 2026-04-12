@@ -14991,15 +14991,23 @@ app.get("/api/chatgpt/account-public", verifyBotInternalToken, async (req, res) 
     if (!email) {
       return res.status(400).json({ error: "Thieu email." });
     }
+    const hotmailLink = await getHotmailLinkInfoForEmail(email, {
+      source: "telegram_lookup",
+    });
+    if (hotmailLink?.lockApplied) {
+      bumpDataVersion();
+      notifyClients();
+    }
     const account = await Account.findOne({
       username: new RegExp(`^${escapeRegex(email)}$`, "i"),
     }).lean();
     if (!account) {
-      return res.json({ success: true, account: null });
+      return res.json({ success: true, account: null, hotmailLink });
     }
     const traceMap = await buildMarketplaceTraceMapForAccountIds([account.id]);
     return res.json({
       success: true,
+      hotmailLink,
       account: {
         ...account,
         package2Shelf: normalizePackage2Shelf(
@@ -15524,7 +15532,14 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
       id: Date.now().toString(),
     });
     await Account.create(newAcc);
-    res.json({ message: "Added successfully", account: newAcc });
+    const hotmailLink = await safeSyncHotmailLinkForChatgptAccount(newAcc, {
+      source: "admin_create",
+    });
+    if (hotmailLink?.lockApplied) {
+      bumpDataVersion();
+      notifyClients();
+    }
+    res.json({ message: "Added successfully", account: newAcc, hotmailLink });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -15537,12 +15552,20 @@ const buildPublicChatgptAccountPayload = (payload = {}) => {
 const createPublicChatgptAccount = async (payload = {}) => {
   const newAcc = buildPublicChatgptAccountPayload(payload);
   const created = await Account.create(newAcc);
-  return created?.toObject?.() || newAcc;
+  const account = created?.toObject?.() || newAcc;
+  const hotmailLink = await safeSyncHotmailLinkForChatgptAccount(account, {
+    source: "telegram_public",
+  });
+  return { account, hotmailLink };
 };
 app.post("/api/chatgpt-public", verifyBotInternalToken, async (req, res) => {
   try {
-    const account = await createPublicChatgptAccount(req.body);
-    res.json({ message: "Added successfully", account });
+    const { account, hotmailLink } = await createPublicChatgptAccount(req.body);
+    if (hotmailLink?.lockApplied) {
+      bumpDataVersion();
+      notifyClients();
+    }
+    res.json({ success: true, message: "Added successfully", account, hotmailLink });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -15561,7 +15584,7 @@ app.post("/api/chatgpt-public/bulk", verifyBotInternalToken, async (req, res) =>
       const item = rawItems[index] || {};
       const lineNumber = Number(item?.lineNumber || index + 1);
       try {
-        const account = await createPublicChatgptAccount({
+        const { account, hotmailLink } = await createPublicChatgptAccount({
           username: item.username || item.email || "",
           password: item.password || "",
           otpSecret: item.otpSecret || "",
@@ -15573,6 +15596,7 @@ app.post("/api/chatgpt-public/bulk", verifyBotInternalToken, async (req, res) =>
           lineNumber,
           kind: "plus",
           username: String(account?.username || item?.username || item?.email || "").trim(),
+          hotmailLink,
         });
       } catch (error) {
         errors.push({
@@ -15584,14 +15608,24 @@ app.post("/api/chatgpt-public/bulk", verifyBotInternalToken, async (req, res) =>
       }
     }
 
+    if (successes.some((item) => item?.hotmailLink?.lockApplied)) {
+      bumpDataVersion();
+      notifyClients();
+    }
+
     return res.json({
       success: true,
       summary: {
         total: rawItems.length,
         successCount: successes.length,
         errorCount: errors.length,
+        hotmailLinkedCount: successes.filter((item) => item?.hotmailLink?.status === "linked").length,
+        hotmailMissingCount: successes.filter((item) => item?.hotmailLink?.status === "missing").length,
       },
       successes,
+      hotmailLinks: successes
+        .map((item) => item?.hotmailLink)
+        .filter(Boolean),
       errors,
     });
   } catch (error) {
@@ -15821,6 +15855,13 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       });
     }
     const reconciled = await syncChatgptMarketStateIfNeeded(updated);
+    const hotmailLink = await safeSyncHotmailLinkForChatgptAccount(reconciled, {
+      source: "admin_update",
+    });
+    if (hotmailLink?.lockApplied) {
+      bumpDataVersion();
+      notifyClients();
+    }
     const isPackage2Context =
       supportsChatgptMarket(existingAcc.type) || supportsChatgptMarket(targetType);
     const isManualShelfUpdateForResponse =
@@ -15834,11 +15875,12 @@ app.put("/api/chatgpt/:id", verifyToken, async (req, res) => {
       return res.json({
         message: "Updated",
         account: reconciled,
+        hotmailLink,
         syncSkipped: true,
       });
     }
 
-    res.json({ message: "Updated", account: reconciled });
+    res.json({ message: "Updated", account: reconciled, hotmailLink });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -17283,6 +17325,213 @@ function normalizeHotmailEmail(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
+const HOTMAIL_CHATGPT_LINK_ACTOR = "system:chatgpt-link";
+
+function buildHotmailChatgptLockNote(account = {}) {
+  const accountId = String(account?.id || "").trim();
+  const username = normalizeHotmailEmail(account?.username || account?.email);
+  return `Khoa do dang la acc ChatGPT: ${accountId || username}`;
+}
+
+function sanitizeHotmailChatgptAccount(account = {}) {
+  if (!account) return null;
+  return {
+    id: String(account?.id || "").trim(),
+    username: String(account?.username || "").trim(),
+    type: String(account?.type || "").trim(),
+    status: String(account?.status || "").trim(),
+    mailCheckProvider: String(account?.mailCheckProvider || "").trim(),
+    mailCheckStatus: String(account?.mailCheckStatus || "").trim(),
+    mailCheckLastCheckedAt: String(account?.mailCheckLastCheckedAt || "").trim(),
+    mailCheckLastSubject: String(account?.mailCheckLastSubject || "").trim(),
+  };
+}
+
+function buildHotmailLinkResult({
+  status = "not_hotmail",
+  email = "",
+  account = null,
+  hotmail = null,
+  lockApplied = false,
+  message = "",
+} = {}) {
+  const normalizedEmail = normalizeHotmailEmail(email || account?.username || hotmail?.email);
+  const linked = status === "linked";
+  return {
+    status,
+    email: normalizedEmail,
+    linked,
+    exists: !!hotmail,
+    locked: linked && String(hotmail?.state || "").trim() !== "available",
+    lockApplied: !!lockApplied,
+    state: String(hotmail?.state || "").trim(),
+    accountId: String(account?.id || "").trim(),
+    chatgptAccount: sanitizeHotmailChatgptAccount(account),
+    message:
+      message ||
+      (status === "linked"
+        ? lockApplied
+          ? "Da noi Hotmail voi ChatGPT va khoa kho extension."
+          : "Hotmail da noi voi ChatGPT."
+        : status === "missing"
+          ? "Chua co acc trong Hotmail."
+          : status === "hotmail_only"
+            ? "Co Hotmail trong kho nhung chua co acc ChatGPT."
+            : "Khong phai Hotmail/Outlook."),
+  };
+}
+
+async function syncHotmailLinkForChatgptAccount(accountInput = {}, options = {}) {
+  const account =
+    accountInput &&
+    typeof accountInput === "object" &&
+    accountInput.username
+      ? accountInput
+      : await Account.findOne({ id: String(accountInput?.id || accountInput || "").trim() })
+          .select("id username type status mailCheckProvider mailCheckStatus mailCheckLastCheckedAt mailCheckLastSubject")
+          .lean();
+  const email = normalizeHotmailEmail(account?.username || accountInput?.username || accountInput?.email);
+  if (!email || !isMicrosoftInboxDomain(email)) {
+    return buildHotmailLinkResult({ status: "not_hotmail", email, account });
+  }
+
+  const hotmail = await HotmailAccount.findOne({ email });
+  if (!hotmail) {
+    return buildHotmailLinkResult({ status: "missing", email, account });
+  }
+
+  const now =
+    options?.now instanceof Date
+      ? options.now.toISOString()
+      : String(options?.now || new Date().toISOString()).trim();
+  let nextHotmail = hotmail;
+  let lockApplied = false;
+  if (String(hotmail?.state || "").trim() === "available") {
+    nextHotmail = await HotmailAccount.findOneAndUpdate(
+      { email, state: "available" },
+      {
+        $set: {
+          state: "reserved",
+          reservedAt: now,
+          takenByIp: HOTMAIL_CHATGPT_LINK_ACTOR,
+          takenAt: now,
+          takenNote: buildHotmailChatgptLockNote(account),
+          updatedAt: now,
+        },
+      },
+      { new: true },
+    );
+    lockApplied = !!nextHotmail;
+  }
+
+  return buildHotmailLinkResult({
+    status: "linked",
+    email,
+    account,
+    hotmail: nextHotmail || hotmail,
+    lockApplied,
+  });
+}
+
+async function safeSyncHotmailLinkForChatgptAccount(accountInput = {}, options = {}) {
+  try {
+    return await syncHotmailLinkForChatgptAccount(accountInput, options);
+  } catch (error) {
+    const email = normalizeHotmailEmail(accountInput?.username || accountInput?.email);
+    return {
+      status: "error",
+      email,
+      linked: false,
+      exists: false,
+      locked: false,
+      lockApplied: false,
+      state: "",
+      accountId: String(accountInput?.id || "").trim(),
+      chatgptAccount: sanitizeHotmailChatgptAccount(accountInput),
+      message: error?.message || "Khong the noi Hotmail voi ChatGPT.",
+    };
+  }
+}
+
+async function getHotmailLinkInfoForEmail(emailValue = "", options = {}) {
+  const email = normalizeHotmailEmail(emailValue);
+  if (!email || !isMicrosoftInboxDomain(email)) {
+    return buildHotmailLinkResult({ status: "not_hotmail", email });
+  }
+  const account = await Account.findOne({
+    username: new RegExp(`^${escapeRegex(email)}$`, "i"),
+  })
+    .select("id username type status mailCheckProvider mailCheckStatus mailCheckLastCheckedAt mailCheckLastSubject")
+    .lean();
+  if (account) {
+    if (options?.sync === false) {
+      const hotmail = await HotmailAccount.findOne({ email }).lean();
+      return hotmail
+        ? buildHotmailLinkResult({
+            status: "linked",
+            email,
+            account,
+            hotmail,
+          })
+        : buildHotmailLinkResult({ status: "missing", email, account });
+    }
+    return safeSyncHotmailLinkForChatgptAccount(account, options);
+  }
+  const hotmail = await HotmailAccount.findOne({ email }).lean();
+  if (hotmail) {
+    return buildHotmailLinkResult({
+      status: "hotmail_only",
+      email,
+      hotmail,
+    });
+  }
+  return buildHotmailLinkResult({ status: "missing", email });
+}
+
+async function listChatgptMicrosoftEmails() {
+  const accounts = await Account.find({ username: /@/i }).select("username").lean();
+  return Array.from(
+    new Set(
+      (accounts || [])
+        .map((account) => normalizeHotmailEmail(account?.username))
+        .filter((email) => email && isMicrosoftInboxDomain(email)),
+    ),
+  );
+}
+
+async function syncAllHotmailChatgptLinks() {
+  const accounts = await Account.find({ username: /@/i })
+    .select("id username type status mailCheckProvider mailCheckStatus mailCheckLastCheckedAt mailCheckLastSubject")
+    .lean();
+  const microsoftAccounts = (accounts || []).filter((account) =>
+    isMicrosoftInboxDomain(account?.username),
+  );
+  let lockedCount = 0;
+  let alreadyLockedCount = 0;
+  let missingHotmailCount = 0;
+  let errorCount = 0;
+  const items = [];
+
+  for (const account of microsoftAccounts) {
+    const result = await safeSyncHotmailLinkForChatgptAccount(account);
+    items.push(result);
+    if (result.status === "linked" && result.lockApplied) lockedCount += 1;
+    else if (result.status === "linked") alreadyLockedCount += 1;
+    else if (result.status === "missing") missingHotmailCount += 1;
+    else if (result.status === "error") errorCount += 1;
+  }
+
+  return {
+    ok: true,
+    scannedCount: microsoftAccounts.length,
+    lockedCount,
+    alreadyLockedCount,
+    missingHotmailCount,
+    errorCount,
+    items,
+  };
+}
+
 function createHttpError(message, statusCode = 500) {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -17341,32 +17590,48 @@ app.get("/api/hotmail/accounts", async (req, res) => {
   try {
     const accounts = await HotmailAccount.find({}).sort({ state: 1, updatedAt: -1 }).lean();
     const emails = accounts.map((account) => normalizeHotmailEmail(account.email)).filter(Boolean);
+    const emailSet = new Set(emails);
     const chatgptAccounts = emails.length
-      ? await Account.find({ username: { $in: emails } })
+      ? (await Account.find({ username: /@/i })
           .select("id username type status mailCheckProvider mailCheckStatus mailCheckLastCheckedAt mailCheckLastSubject")
-          .lean()
+          .lean()).filter((account) => emailSet.has(normalizeHotmailEmail(account?.username)))
       : [];
     const chatgptByEmail = new Map(
       chatgptAccounts.map((account) => [
         normalizeHotmailEmail(account.username),
-        {
-          id: account.id || "",
-          username: account.username || "",
-          type: account.type || "",
-          status: account.status || "",
-          mailCheckProvider: account.mailCheckProvider || "",
-          mailCheckStatus: account.mailCheckStatus || "",
-          mailCheckLastCheckedAt: account.mailCheckLastCheckedAt || "",
-          mailCheckLastSubject: account.mailCheckLastSubject || "",
-        },
+        sanitizeHotmailChatgptAccount(account),
       ]),
     );
-    const enrichedAccounts = accounts.map((account) => ({
-      ...account,
-      chatgptAccount: chatgptByEmail.get(normalizeHotmailEmail(account.email)) || null,
-    }));
+    const enrichedAccounts = accounts.map((account) => {
+      const chatgptAccount = chatgptByEmail.get(normalizeHotmailEmail(account.email)) || null;
+      const isLockedByChatgpt = !!chatgptAccount;
+      return {
+        ...account,
+        chatgptAccount,
+        isLockedByChatgpt,
+        lockReason: isLockedByChatgpt
+          ? buildHotmailChatgptLockNote(chatgptAccount)
+          : "",
+      };
+    });
     res.json({ ok: true, count: enrichedAccounts.length, accounts: enrichedAccounts });
   } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+});
+
+app.post("/api/hotmail/sync-chatgpt-links", verifyAdminOrBotInternalToken, async (req, res) => {
+  try {
+    const result = await syncAllHotmailChatgptLinks();
+    if (Number(result?.lockedCount || 0) > 0) {
+      bumpDataVersion();
+      notifyClients();
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message || "Khong the dong bo Hotmail voi ChatGPT.",
+    });
+  }
 });
 
 app.get("/api/hotmail/account/:email", async (req, res) => {
@@ -17386,9 +17651,14 @@ app.get("/api/hotmail/new", cors(), async (req, res) => {
       req.headers["x-forwarded-for"] || req.socket?.remoteAddress || ""
     ).split(",")[0].trim().slice(0, 80);
     const now = new Date().toISOString();
+    const linkedChatgptEmails = await listChatgptMicrosoftEmails();
+    const query = { state: "available" };
+    if (linkedChatgptEmails.length > 0) {
+      query.email = { $nin: linkedChatgptEmails };
+    }
 
     const account = await HotmailAccount.findOneAndUpdate(
-      { state: "available" },
+      query,
       { $set: { 
           state: "reserved", 
           reservedAt: now,
@@ -17428,7 +17698,14 @@ app.post("/api/hotmail/save", async (req, res) => {
     } else {
       await HotmailAccount.create({ ...cred, usedCount: 0, state: "available" });
     }
-    res.json({ ok: true, email: cred.email, message: "Saved" });
+    const hotmailLink = await getHotmailLinkInfoForEmail(cred.email, {
+      source: "hotmail_save",
+    });
+    if (hotmailLink?.lockApplied) {
+      bumpDataVersion();
+      notifyClients();
+    }
+    res.json({ ok: true, email: cred.email, message: "Saved", hotmailLink });
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 

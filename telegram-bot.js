@@ -261,6 +261,12 @@ const buildTelegramBatchSummaryMessage = ({
 }) => {
   const plusSuccesses = successes.filter((item) => item.kind === 'plus');
   const teamSuccesses = successes.filter((item) => item.kind === 'team');
+  const hotmailLinkedCount = plusSuccesses.filter(
+    (item) => item?.hotmailLink?.status === 'linked',
+  ).length;
+  const hotmailMissingCount = plusSuccesses.filter(
+    (item) => item?.hotmailLink?.status === 'missing',
+  ).length;
   const successPreview = successes.slice(0, 8);
   const errorPreview = errors.slice(0, 8);
   const lines = [
@@ -271,12 +277,18 @@ const buildTelegramBatchSummaryMessage = ({
     `Team thanh cong: ${teamSuccesses.length}`,
     `Dong loi: ${errors.length}`,
   ];
+  if (hotmailLinkedCount > 0 || hotmailMissingCount > 0) {
+    lines.push(
+      `Hotmail da noi: ${hotmailLinkedCount}`,
+      `Hotmail chua co trong kho: ${hotmailMissingCount}`,
+    );
+  }
 
   if (successPreview.length > 0) {
     lines.push('', '*Thanh cong:*');
     successPreview.forEach((item) => {
       lines.push(
-        `${item.lineNumber}. [${item.kind === 'team' ? 'Team' : 'Plus'}] \`${item.email}\``,
+        `${item.lineNumber}. [${item.kind === 'team' ? 'Team' : 'Plus'}] \`${item.email}\`${formatTelegramHotmailLinkSuffix(item.hotmailLink)}`,
       );
     });
     if (successes.length > successPreview.length) {
@@ -295,6 +307,30 @@ const buildTelegramBatchSummaryMessage = ({
   }
 
   return lines.join('\n');
+};
+const formatTelegramHotmailLinkText = (hotmailLink = null) => {
+  const status = String(hotmailLink?.status || '').trim();
+  if (status === 'linked') {
+    return hotmailLink?.lockApplied
+      ? 'da noi va khoa kho extension'
+      : 'da noi ChatGPT';
+  }
+  if (status === 'missing') return 'Chua co acc trong Hotmail';
+  if (status === 'hotmail_only') return 'co trong kho Hotmail, chua co ChatGPT';
+  if (status === 'error') return hotmailLink?.message || 'loi khi noi Hotmail';
+  return '';
+};
+const formatTelegramHotmailLinkSuffix = (hotmailLink = null) => {
+  const text = formatTelegramHotmailLinkText(hotmailLink);
+  return text ? ` | Hotmail: ${text}` : '';
+};
+const extractTelegramSearchEmail = (rawText = '') => {
+  const cleanedText = String(rawText || '')
+    .replace(/^\[.*?\]/, '')
+    .replace(/^team\s+/i, '')
+    .trim();
+  const match = cleanedText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? String(match[0] || '').trim().toLowerCase() : '';
 };
 const parseCleanupCommand = (rawText = '') => {
   const normalized = String(rawText || '').trim();
@@ -735,6 +771,59 @@ bot.on('message', async (msg) => {
   if (!text) return;
   if (!isAuthorizedTelegramMessage(msg)) return;
 
+  const extractedSearchEmail = extractTelegramSearchEmail(text);
+  if (
+    extractedSearchEmail &&
+    !text.includes('---') &&
+    !text.includes(',') &&
+    !/[|ï½œÂ¦â”ƒ]/.test(text)
+  ) {
+    try {
+      bot.sendMessage(chatId, 'Dang tim tai khoan...');
+      const response = await axios.get(
+        `${API_URL}/api/chatgpt/account-public`,
+        buildInternalApiConfig({
+          params: { email: extractedSearchEmail },
+        }),
+      );
+      const found = response?.data?.account || null;
+      const hotmailText = formatTelegramHotmailLinkText(
+        response?.data?.hotmailLink,
+      );
+      if (!found) {
+        bot.sendMessage(
+          chatId,
+          [
+            `Khong tim thay tai khoan: \`${extractedSearchEmail}\``,
+            hotmailText ? `Hotmail: ${hotmailText}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n'),
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+      const lines = [
+        '*THONG TIN TAI KHOAN*',
+        '',
+        `Type: ${found.type || 'unassigned'}`,
+        `Email: \`${found.username || extractedSearchEmail}\``,
+        `Password: \`${found.password || ''}\``,
+      ];
+      if (found.otpSecret) lines.push(`2FA: \`${found.otpSecret}\``);
+      if (found.link) lines.push(found.link);
+      if (hotmailText) lines.push(`Hotmail: ${hotmailText}`);
+      lines.push(`Khach: ${Array.isArray(found.users) ? found.users.length : 0}`);
+      bot.sendMessage(chatId, lines.join('\n'), { parse_mode: 'Markdown' });
+    } catch (error) {
+      bot.sendMessage(
+        chatId,
+        `Loi khi tim kiem: ${error.response?.data?.error || error.message}`,
+      );
+    }
+    return;
+  }
+
   // COURSERA AUTO-DETECT: email,password,courseCode format
   if (text.includes(',') && text.includes('@') && !text.includes('---')) {
     const parts = text.split(',').map(p => p.trim());
@@ -808,7 +897,10 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
           const original =
             originalItemsByLine.get(Number(entry?.lineNumber || 0)) || null;
           if (original) {
-            batchSuccesses.push(original);
+            batchSuccesses.push({
+              ...original,
+              hotmailLink: entry?.hotmailLink || null,
+            });
           }
         });
       } else {
@@ -1013,7 +1105,7 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
           const expiredAt = addMonthsClamped(new Date(), 1);
           const expiredAtStr = expiredAt.toISOString();
 
-          await axios.post(`${API_URL}/api/chatgpt-public`, {
+          const response = await axios.post(`${API_URL}/api/chatgpt-public`, {
             username: email,
             password,
             otpSecret,
@@ -1022,6 +1114,7 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
             expiredAt: expiredAtStr,
             note: ''
           });
+          const hotmailText = formatTelegramHotmailLinkText(response?.data?.hotmailLink);
 
           const successMessage = `
 ✅ *TỰ ĐỘNG THÊM THÀNH CÔNG!*
@@ -1048,6 +1141,7 @@ ${courseCode ? `📚 *Course:* \`${courseCode}\`\n` : ''}📅 *Hết hạn:* ${e
             `Email: \`${email}\``,
             `Password: \`${password}\``,
             `2FA: \`${otpSecret}\``,
+            ...(hotmailText ? [`Hotmail: ${hotmailText}`] : []),
           ].join('\n');
           bot.sendMessage(chatId, displayMessage, { parse_mode: 'Markdown' });
 

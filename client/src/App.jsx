@@ -2100,6 +2100,26 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
     }
   };
 
+  const handleHotmailSyncChatgpt = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.post("/api/hotmail/sync-chatgpt-links");
+      const lockedCount = Number(res.data?.lockedCount || 0);
+      const alreadyLockedCount = Number(res.data?.alreadyLockedCount || 0);
+      const missingHotmailCount = Number(res.data?.missingHotmailCount || 0);
+      await loadAccounts();
+      showAlert(
+        "Dong bo ChatGPT xong",
+        `Da khoa moi ${lockedCount} Hotmail, ${alreadyLockedCount} acc da khoa san, ${missingHotmailCount} acc ChatGPT chua co trong Hotmail.`,
+        "success",
+      );
+    } catch (error) {
+      showAlert("Dong bo that bai", getErrorMessage(error), "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleHotmailDelete = (email) => {
     showConfirm("Xóa Hotmail", `Bạn có chắc muốn xóa ${email}?`, async () => {
       try {
@@ -2111,7 +2131,20 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
     });
   };
 
-  const handleHotmailRelease = (email) => {
+  const handleHotmailRelease = (accountOrEmail) => {
+    const email =
+      typeof accountOrEmail === "string"
+        ? accountOrEmail
+        : accountOrEmail?.email || "";
+    const isChatgptLocked =
+      typeof accountOrEmail === "object" && !!accountOrEmail?.chatgptAccount;
+    if (isChatgptLocked) {
+      showAlert(
+        "Hotmail dang noi ChatGPT",
+        "Reset chi xoa dau extension; API cap mail van chan acc nay vi email trung ChatGPT.",
+        "warning",
+      );
+    }
     showConfirm(
       "Reset trạng thái",
       `Đặt lại ${email} về trạng thái available?`,
@@ -2164,12 +2197,17 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
       return (
         <div className="space-y-1">
           <div className="inline-flex rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-sky-200">
-            ChatGPT
+            ChatGPT lock
           </div>
           <div className="font-mono text-[11px] text-white">{chatgpt.id || chatgpt.username}</div>
           <div className="text-[11px] text-slate-400">
             Mail die: {chatgpt.mailCheckStatus || "unchecked"}
           </div>
+          {acc.lockReason && (
+            <div className="max-w-[220px] truncate text-[11px] text-sky-300" title={acc.lockReason}>
+              {acc.lockReason}
+            </div>
+          )}
         </div>
       );
     }
@@ -2229,6 +2267,13 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
             className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-400 transition hover:text-white"
           >
             Làm mới
+          </button>
+          <button
+            onClick={handleHotmailSyncChatgpt}
+            disabled={loading}
+            className="rounded-xl border border-sky-500/50 bg-sky-500/10 px-4 py-2 text-sm font-bold text-sky-200 transition hover:bg-sky-500/20 disabled:opacity-50"
+          >
+            Dong bo ChatGPT
           </button>
         </div>
       </div>
@@ -2296,7 +2341,7 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
                   </button>
                   {(acc.state === "reserved" || acc.state === "used") && (
                     <button
-                      onClick={() => handleHotmailRelease(acc.email)}
+                      onClick={() => handleHotmailRelease(acc)}
                       className="border-l border-slate-600 pl-2 text-xs font-semibold text-amber-400 transition hover:text-amber-300"
                     >
                       Reset
