@@ -51,6 +51,7 @@ const MONGO_CONNECT_OPTIONS = {
   socketTimeoutMS: toPositiveInt(process.env.MONGO_SOCKET_TIMEOUT_MS, 20000),
 };
 const CHATGPT_MAIL_CHECK_PROVIDER = "tinyhost";
+const CHATGPT_MAIL_CHECK_PROVIDER_HOTMAIL = "hotmail";
 const TINYHOST_BASE_URL = String(
   process.env.TINYHOST_BASE_URL || "https://tinyhost.shop",
 )
@@ -190,6 +191,42 @@ function parseTinyhostInboxFromEmail(value = "") {
   };
 }
 
+function getEmailDomain(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  const match = normalized.match(/^[^@\s]+@([^@\s]+\.[^@\s]+)$/);
+  return match && match[1] ? String(match[1]).trim() : "";
+}
+
+function isMicrosoftInboxDomain(value = "") {
+  const domain = getEmailDomain(value);
+  if (!domain) return false;
+  return (
+    domain === "live.com" ||
+    domain === "msn.com" ||
+    domain.startsWith("hotmail.") ||
+    domain.startsWith("outlook.") ||
+    domain.endsWith(".live.com") ||
+    domain.endsWith(".msn.com")
+  );
+}
+
+function inferChatgptMailCheckProvider(username = "", fallbackProvider = "") {
+  if (!isValidEmailAddress(username)) return "";
+  if (isMicrosoftInboxDomain(username)) {
+    return CHATGPT_MAIL_CHECK_PROVIDER_HOTMAIL;
+  }
+  const normalizedFallback = String(fallbackProvider || "")
+    .trim()
+    .toLowerCase();
+  if (
+    normalizedFallback &&
+    normalizedFallback !== CHATGPT_MAIL_CHECK_PROVIDER_HOTMAIL
+  ) {
+    return normalizedFallback;
+  }
+  return CHATGPT_MAIL_CHECK_PROVIDER;
+}
+
 function stripHtmlTags(value = "") {
   return String(value || "")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -266,6 +303,10 @@ function buildChatgptMailCheckStateForPayload(payload = {}, existingAcc = null) 
     payload?.createdAt ?? existingAcc?.createdAt ?? "",
   ).trim();
   const usernameIsValidEmail = isValidEmailAddress(username);
+  const resolvedProvider = inferChatgptMailCheckProvider(
+    username,
+    hasExisting ? existingAcc?.mailCheckProvider : "",
+  );
   const mailCheckEnabled = hasExisting
     ? existingEnabled && usernameIsValidEmail
     : usernameIsValidEmail;
@@ -274,7 +315,7 @@ function buildChatgptMailCheckStateForPayload(payload = {}, existingAcc = null) 
     : usernameIsValidEmail &&
       isChatgptMailAutoTrackCreatedAtEligible(candidateCreatedAt);
   const mailCheckProvider = mailCheckEnabled
-    ? CHATGPT_MAIL_CHECK_PROVIDER
+    ? resolvedProvider
     : hasExisting
       ? String(existingAcc?.mailCheckProvider || "").trim()
       : "";
@@ -549,33 +590,76 @@ async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
       status: "skipped",
       changed: false,
       source,
-      reason: "Acc da duoc danh dau Mail die. Bo qua doc lai de tranh ton request Tinyhost.",
+      reason:
+        "Acc da duoc danh dau Mail die. Bo qua doc lai de tranh ton request inbox.",
     });
   }
 
   let emails = [];
+  let mailbox = null;
+  const effectiveMailProvider = inferChatgptMailCheckProvider(
+    account?.username,
+    account?.mailCheckProvider,
+  );
   try {
-    if (account?.mailCheckProvider === "hotmail") {
-      const HotmailAccount = mongoose.models.HotmailAccount;
+    if (effectiveMailProvider === CHATGPT_MAIL_CHECK_PROVIDER_HOTMAIL) {
       if (!HotmailAccount) throw new Error("Chua co module Hotmail DB");
-      const cred = await HotmailAccount.findOne({ email: account.username }).lean();
-      if (!cred) throw new Error("Acc hotmail nay chua duoc nap vao he thong Proxy Hotmail nen khong the check mail.");
-      if (!cred.refreshToken) throw new Error("Acc hotmail thieu Token Outlook (chua test hoac import thieu).");
-      
-      const tokenData = await exchangeOutlookToken(cred.clientId, cred.refreshToken);
-      const messages = await readOutlookInbox(tokenData.access_token, CHATGPT_MAIL_DIE_LIST_LIMIT || 12);
-      
-      if (tokenData.refresh_token) {
-         await HotmailAccount.updateOne({ email: cred.email }, { $set: { refreshToken: tokenData.refresh_token, updatedAt: new Date().toISOString() }});
+      const cred = await HotmailAccount.findOne({
+        email: String(account?.username || "").trim().toLowerCase(),
+      }).lean();
+      if (!cred) {
+        throw new Error(
+          "Acc Hotmail nay chua duoc nap vao he thong Hotmail nen khong the check mail.",
+        );
       }
-      emails = messages.map(m => ({
-         sender: m.from || "", subject: m.subject || "", body: m.bodyPreview || "", html_body: m.bodyPreview || ""
+      if (!cred.refreshToken) {
+        throw new Error(
+          "Acc Hotmail thieu refresh token Outlook. Hay test/read Hotmail truoc.",
+        );
+      }
+      if (!cred.clientId) {
+        throw new Error(
+          "Acc Hotmail thieu clientId Outlook. Hay import lai dung format Hotmail day du.",
+        );
+      }
+
+      const tokenData = await exchangeOutlookToken(
+        cred.clientId,
+        cred.refreshToken,
+      );
+      const messages = await readOutlookInbox(
+        tokenData.access_token,
+        CHATGPT_MAIL_DIE_LIST_LIMIT || 12,
+      );
+
+      if (tokenData.refresh_token) {
+        await HotmailAccount.updateOne(
+          { email: cred.email },
+          {
+            $set: {
+              refreshToken: tokenData.refresh_token,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        );
+      }
+
+      emails = messages.map((message) => ({
+        id: String(message?.id || "").trim(),
+        sender: String(message?.from || "").trim(),
+        subject: String(message?.subject || "").trim(),
+        body: String(message?.bodyPreview || "").trim(),
+        html_body: String(message?.bodyPreview || "").trim(),
+        date: String(message?.receivedDateTime || "").trim(),
       }));
     } else {
-      const mailbox = parseTinyhostInboxFromEmail(account?.username);
+      mailbox = parseTinyhostInboxFromEmail(account?.username);
       if (!mailbox) {
         return buildChatgptMailCheckResult(account, {
-          status: "skipped", changed: false, source, reason: "Khong phai email nhan thu." 
+          status: "skipped",
+          changed: false,
+          source,
+          reason: "Khong phai email nhan thu.",
         });
       }
       emails = await fetchTinyhostInboxList(mailbox.domain, mailbox.user, {
@@ -595,49 +679,55 @@ async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
     });
   }
 
-  const suspiciousEmail = emails.find((email) => {
-    if (!isOpenAiSystemSender(email?.sender)) return false;
-    const subject = String(email?.subject || "").trim();
-    const snippet = buildMailCheckSnippet(email?.body, email?.html_body);
-    return (
-      matchesMailCheckPatterns(subject, OPENAI_DEACTIVATION_SUBJECT_PATTERNS) ||
-      matchesMailCheckPatterns(snippet, OPENAI_DEACTIVATION_BODY_PATTERNS)
-    );
-  });
+  const suspiciousEmail = emails.find((email) =>
+    isPotentialOpenAiDeactivationMail(email),
+  );
 
   let matchedEmail = null;
-  if (suspiciousEmail?.id !== undefined && suspiciousEmail?.id !== null) {
-    try {
-      const emailDetail = await fetchTinyhostEmailDetail(
-        mailbox.domain,
-        mailbox.user,
-        suspiciousEmail.id,
-      );
-      const detailCandidate = emailDetail || suspiciousEmail;
-      if (isPotentialOpenAiDeactivationMail(detailCandidate)) {
-        matchedEmail = detailCandidate;
+  if (suspiciousEmail) {
+    if (effectiveMailProvider === CHATGPT_MAIL_CHECK_PROVIDER_HOTMAIL) {
+      matchedEmail = suspiciousEmail;
+    } else if (
+      suspiciousEmail?.id !== undefined &&
+      suspiciousEmail?.id !== null &&
+      mailbox
+    ) {
+      try {
+        const emailDetail = await fetchTinyhostEmailDetail(
+          mailbox.domain,
+          mailbox.user,
+          suspiciousEmail.id,
+        );
+        const detailCandidate = emailDetail || suspiciousEmail;
+        if (isPotentialOpenAiDeactivationMail(detailCandidate)) {
+          matchedEmail = detailCandidate;
+        }
+      } catch (error) {
+        const statusCode = Number(error?.response?.status || 0);
+        if (statusCode !== 404) {
+          return buildChatgptMailCheckResult(account, {
+            status: "error",
+            changed: false,
+            source,
+            reason:
+              error?.response?.data?.detail ||
+              error?.response?.data?.error ||
+              error?.message ||
+              "Khong the doc chi tiet mail nghi van.",
+          });
+        }
       }
-    } catch (error) {
-      const statusCode = Number(error?.response?.status || 0);
-      if (statusCode !== 404) {
-        return buildChatgptMailCheckResult(account, {
-          status: "error",
-          changed: false,
-          source,
-          reason:
-            error?.response?.data?.detail ||
-            error?.response?.data?.error ||
-            error?.message ||
-            "Khong the doc chi tiet mail nghi van.",
-        });
-      }
+    } else if (isPotentialOpenAiDeactivationMail(suspiciousEmail)) {
+      matchedEmail = suspiciousEmail;
     }
   }
 
   const checkedAt = new Date().toISOString();
   const updatePayload = {
     mailCheckProvider:
-      String(account?.mailCheckProvider || "").trim() || CHATGPT_MAIL_CHECK_PROVIDER,
+      effectiveMailProvider ||
+      String(account?.mailCheckProvider || "").trim() ||
+      CHATGPT_MAIL_CHECK_PROVIDER,
     mailCheckLastCheckedAt: checkedAt,
   };
 
@@ -854,7 +944,7 @@ async function runChatgptMailCheckForIds(accountIds = [], options = {}) {
       });
       continue;
     }
-    // Keep sequential to stay gentle on Tinyhost and Vercel.
+    // Keep sequential to stay gentle on mail providers and Vercel.
     // This route is admin-triggered, so correctness matters more than speed.
     // eslint-disable-next-line no-await-in-loop
     const result = await runChatgptMailCheckForAccount(account, options);
@@ -902,7 +992,7 @@ async function runChatgptMailCheckForAccounts(accounts = [], options = {}) {
       const currentIndex = nextIndex;
       nextIndex += 1;
       if (currentIndex >= safeAccounts.length) break;
-      // Keep concurrency bounded to stay gentle on Tinyhost and Vercel.
+      // Keep concurrency bounded to stay gentle on mail providers and Vercel.
       // eslint-disable-next-line no-await-in-loop
       results[currentIndex] = await runChatgptMailCheckForAccount(
         safeAccounts[currentIndex],
@@ -15464,12 +15554,6 @@ const buildPublicChatgptAccountPayload = (payload = {}) => {
 };
 const createPublicChatgptAccount = async (payload = {}) => {
   const newAcc = buildPublicChatgptAccountPayload(payload);
-  const username = String(newAcc.username || "").toLowerCase();
-  if (username.endsWith("@hotmail.com") || username.endsWith("@outlook.com")) {
-      newAcc.mailCheckProvider = "hotmail";
-      newAcc.mailCheckAutoEligible = true;
-      newAcc.mailCheckEnabled = true;
-  }
   const created = await Account.create(newAcc);
   return created?.toObject?.() || newAcc;
 };
@@ -17220,6 +17304,15 @@ app.get("/api/hotmail/accounts", async (req, res) => {
   } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 
+app.get("/api/hotmail/account/:email", async (req, res) => {
+  try {
+    const email = String(req.params.email || "").toLowerCase().trim();
+    const account = await HotmailAccount.findOne({ email }).lean();
+    if (!account) return res.status(404).json({ ok: false, error: "Khong tim thay account" });
+    res.json({ ok: true, account });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+});
+
 app.get("/api/hotmail/new", cors(), async (req, res) => {
   try {
     // Lay note tu query param neu co (extension gui domain/tab info)
@@ -17346,9 +17439,8 @@ app.post("/api/hotmail/read", cors(), async (req, res) => {
     await HotmailAccount.updateOne({ email: cred.email }, {
       $set: {
         refreshToken: tokenData.refresh_token || cred.refreshToken,
-        state: "used", reservedAt: "", usedAt: new Date().toISOString(), lastReadAt: new Date().toISOString()
-      },
-      $inc: { usedCount: 1 }
+        lastReadAt: new Date().toISOString()
+      }
     });
 
     res.json({

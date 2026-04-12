@@ -57,7 +57,6 @@ const WEB_ADMIN_TABS = [
   "store-config",
   "store-vouchers",
   "support",
-  "hotmail",
 ];
 const SUPPORT_QUICK_REPLY_SNIPPETS = [
   "Chào bạn, mình đã nhận được yêu cầu và đang kiểm tra giúp bạn.",
@@ -1821,6 +1820,10 @@ const normalizeChatgptMailCheckStatus = (value = "") => {
   if (normalized === "clean") return "clean";
   return "unchecked";
 };
+const getChatgptMailCheckSourceLabel = (account = {}) =>
+  String(account?.mailCheckProvider || "").trim().toLowerCase() === "hotmail"
+    ? "Hotmail"
+    : "inbox";
 const getChatgptMailCheckVisualState = (account = {}) => {
   const status = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
   const lastCheckedAt = String(account?.mailCheckLastCheckedAt || "").trim();
@@ -1907,19 +1910,19 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }} onClick={onClose}>
-        <div className="relative w-full max-w-xl rounded-2xl bg-white shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(2,6,23,0.82)" }} onClick={onClose}>
+        <div className="relative w-full max-w-3xl overflow-hidden rounded-[28px] border border-slate-700/60 bg-slate-950/95 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl" onClick={e => e.stopPropagation()}>
           {/* Header */}
-          <div className="flex items-start justify-between px-6 py-4 border-b">
+          <div className="flex items-start justify-between border-b border-slate-800 px-6 py-5">
             <div>
-              <div className="font-bold text-gray-900 text-base">{serviceFilter ? `${serviceFilter} - ${email}` : email}</div>
-              <div className="text-xs text-gray-500 mt-0.5">{displayed.length} message{displayed.length !== 1 ? "s" : ""}</div>
+              <div className="text-base font-bold text-white">{serviceFilter ? `${serviceFilter} - ${email}` : email}</div>
+              <div className="mt-1 text-xs text-slate-400">{displayed.length} message{displayed.length !== 1 ? "s" : ""}</div>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none mt-0.5">✕</button>
           </div>
 
           {/* Messages */}
-          <div className="overflow-y-auto max-h-[62vh] px-6 py-4 space-y-3">
+          <div className="max-h-[62vh] space-y-3 overflow-y-auto bg-slate-950/40 px-6 py-5">
             {displayed.length === 0 && (
               <div className="text-center text-gray-400 py-8 italic">Không có thư nào</div>
             )}
@@ -1929,30 +1932,30 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
               const timeStr = fmtTime(msg.receivedAt || msg.date || "");
               const sender = msg.sender || msg.from || "";
               return (
-                <div key={id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div key={id} className="rounded-2xl border border-slate-700/60 bg-slate-900/80 p-4 shadow-lg shadow-black/10">
                   {/* Subject + meta */}
-                  <div className="font-semibold text-gray-800 text-sm">{msg.subject || "(no subject)"}</div>
-                  <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500">
+                  <div className="text-sm font-semibold text-white">{msg.subject || "(no subject)"}</div>
+                  <div className="mt-1 flex items-center gap-3 text-[11px] text-slate-400">
                     {sender && <span>👤 {sender}</span>}
                     {timeStr && <span>🕐 {timeStr}</span>}
                   </div>
                   {/* Code highlight */}
                   {code && (
-                    <div className="mt-3 text-2xl font-bold text-gray-900 tracking-widest">{code}</div>
+                    <div className="mt-3 font-mono text-2xl font-bold tracking-[0.28em] text-violet-200">{code}</div>
                   )}
                   {/* Actions */}
                   <div className="flex gap-2 mt-3">
                     {code && (
                       <button
                         onClick={() => copyCode(code, id)}
-                        className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
+                        className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800"
                       >
                         {copied === id ? "✅ Đã copy!" : "⎘ Copy code"}
                       </button>
                     )}
                     <button
                       onClick={() => setViewMsg(msg)}
-                      className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 transition"
+                      className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800"
                     >
                       👁 Xem mail
                     </button>
@@ -1962,7 +1965,7 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
             })}
           </div>
 
-          <div className="px-6 py-3 border-t flex justify-end">
+          <div className="flex justify-end border-t border-slate-800 px-6 py-4">
             <button onClick={onClose} className="rounded-xl border border-gray-300 px-5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">Đóng</button>
           </div>
         </div>
@@ -1976,16 +1979,16 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
           onClick={() => setViewMsg(null)}
         >
           <div
-            className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col"
+            className="relative flex w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-slate-700/60 bg-slate-950 shadow-2xl ring-1 ring-white/10"
             style={{ maxHeight: "90vh" }}
             onClick={e => e.stopPropagation()}
           >
             {/* Email header */}
-            <div className="px-6 pt-5 pb-4 border-b">
+            <div className="border-b border-slate-800 px-6 pb-4 pt-5">
               <div className="flex items-start justify-between">
                 <div className="flex-1 pr-4">
-                  <h2 className="text-lg font-bold text-gray-900 leading-snug">{viewMsg.subject || "(no subject)"}</h2>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[12px] text-gray-500">
+                  <h2 className="text-lg font-bold leading-snug text-white">{viewMsg.subject || "(no subject)"}</h2>
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-400">
                     {(viewMsg.sender || viewMsg.from) && (
                       <span className="flex items-center gap-1">
                         <span className="text-blue-400">👤</span>
@@ -2005,7 +2008,7 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
                 </div>
                 <button
                   onClick={() => setViewMsg(null)}
-                  className="text-gray-400 hover:text-gray-700 text-2xl leading-none flex-shrink-0"
+                  className="flex-shrink-0 text-2xl leading-none text-slate-500 transition hover:text-white"
                 >✕</button>
               </div>
             </div>
@@ -2017,19 +2020,19 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
                   title="email-content"
                   sandbox="allow-same-origin"
                   style={{ width: "100%", height: "100%", minHeight: 440, border: "none" }}
-                  srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:sans-serif;padding:24px;font-size:14px;color:#222;line-height:1.6}a{color:#1a73e8}</style></head><body>${viewMsg.html_body || viewMsg.body || ""}</body></html>`}
+                  srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;padding:24px;font-size:14px;color:#e5e7eb;background:#020617;line-height:1.6}a{color:#7dd3fc}</style></head><body>${viewMsg.html_body || viewMsg.body || ""}</body></html>`}
                 />
               ) : (
-                <div className="px-6 py-5 overflow-y-auto whitespace-pre-wrap text-sm text-gray-700" style={{ maxHeight: 440 }}>
+                <div className="overflow-y-auto whitespace-pre-wrap px-6 py-5 text-sm text-slate-200" style={{ maxHeight: 440 }}>
                   {viewMsg.body || viewMsg.bodyPreview || "(Không có nội dung)"}
                 </div>
               )}
             </div>
 
-            <div className="px-6 py-3 border-t flex justify-end">
+            <div className="flex justify-end border-t border-slate-800 px-6 py-4">
               <button
                 onClick={() => setViewMsg(null)}
-                className="rounded-xl border border-gray-300 px-5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
               >
                 Đóng
               </button>
@@ -2042,7 +2045,7 @@ const MailModal = ({ email, messages, serviceFilter, onClose }) => {
 };
 
 // ── HotmailAdminTab ───────────────────────────────────────────────────────────
-const HotmailAdminTab = () => {
+const HotmailAdminTab = ({ showAlert, showConfirm }) => {
   const [accounts, setAccounts] = useState([]);
   const [inputLine, setInputLine] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2061,6 +2064,13 @@ const HotmailAdminTab = () => {
 
   useEffect(() => { loadAccounts(); }, []);
 
+  const getErrorMessage = (error, fallback = "Có lỗi xảy ra.") =>
+    error?.response?.data?.error ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback;
+
+  /*
   const handleSave = async () => {
     if (!inputLine.trim()) return alert("Nhập email|pass|secret2fa hoặc email|pass|token|id|secret2fa");
     setLoading(true);
@@ -2074,14 +2084,26 @@ const HotmailAdminTab = () => {
     finally { setLoading(false); }
   };
 
-  const handleDelete = async (email) => {
-    if (!window.confirm("Xóa " + email + "?")) return;
-    try { await axios.delete("/api/hotmail/delete/" + encodeURIComponent(email)); loadAccounts(); } catch (e) {}
+  const handleDelete = (email) => {
+    showConfirm("Xóa Hotmail", `Bạn có chắc chắn muốn xóa email ${email}?`, async () => {
+      try {
+        await axios.delete("/api/hotmail/delete/" + encodeURIComponent(email));
+        loadAccounts();
+      } catch (e) {
+        setAlertInfo({ show: true, title: "Lỗi", message: e.message, type: "error" });
+      }
+    });
   };
 
-  const handleRelease = async (email) => {
-    if (!window.confirm("Đặt lại " + email + " về 'available'?")) return;
-    try { await axios.post("/api/hotmail/release", { email }); loadAccounts(); } catch (e) {}
+  const handleRelease = (email) => {
+    showConfirm("Reset Trạng Thái", `Đặt lại ${email} về 'available'?`, async () => {
+      try {
+        await axios.post("/api/hotmail/release", { email });
+        loadAccounts();
+      } catch (e) {
+        setAlertInfo({ show: true, title: "Lỗi", message: e.message, type: "error" });
+      }
+    });
   };
 
   const handleTestRead = async (email) => {
@@ -2094,6 +2116,80 @@ const HotmailAdminTab = () => {
     } catch (e) {
       alert("❌ Lỗi đọc inbox: " + (e.response?.data?.error || e.message));
     } finally { setLoading(false); }
+  };
+
+  */
+  const handleHotmailSave = async () => {
+    if (!inputLine.trim()) {
+      showAlert(
+        "Thiếu dữ liệu",
+        "Nhập email|pass|secret2fa hoặc email|pass|refresh_token|client_id|secret2fa.",
+        "warning",
+      );
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const lines = inputLine.split("\n").filter((line) => line.trim());
+      for (const line of lines) {
+        await axios.post("/api/hotmail/save", { line });
+      }
+      setInputLine("");
+      await loadAccounts();
+      showAlert(
+        "Import thành công",
+        `Đã lưu ${lines.length} tài khoản Hotmail.`,
+        "success",
+      );
+    } catch (error) {
+      showAlert("Import thất bại", getErrorMessage(error), "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleHotmailDelete = (email) => {
+    showConfirm("Xóa Hotmail", `Bạn có chắc muốn xóa ${email}?`, async () => {
+      try {
+        await axios.delete("/api/hotmail/delete/" + encodeURIComponent(email));
+        await loadAccounts();
+      } catch (error) {
+        showAlert("Xóa thất bại", getErrorMessage(error), "error");
+      }
+    });
+  };
+
+  const handleHotmailRelease = (email) => {
+    showConfirm(
+      "Reset trạng thái",
+      `Đặt lại ${email} về trạng thái available?`,
+      async () => {
+        try {
+          await axios.post("/api/hotmail/release", { email });
+          await loadAccounts();
+        } catch (error) {
+          showAlert("Reset thất bại", getErrorMessage(error), "error");
+        }
+      },
+    );
+  };
+
+  const handleHotmailRead = async (email) => {
+    setLoading(true);
+    try {
+      const res = await axios.post("/api/hotmail/read", { email, top: 10 });
+      setModal({
+        email,
+        messages: res.data?.messages || [],
+        serviceFilter: null,
+      });
+      await loadAccounts();
+    } catch (error) {
+      showAlert("Đọc inbox thất bại", getErrorMessage(error), "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fmtDate = (iso) => {
@@ -2126,12 +2222,148 @@ const HotmailAdminTab = () => {
     return true;
   });
 
+  return (
+    <div className="mt-4 rounded-[24px] border border-slate-700/60 bg-slate-900/50 p-6 shadow-xl backdrop-blur-sm">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-black text-white">Hotmail Inbox</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Admin đọc mail chỉ để xem inbox, không đánh dấu đã dùng.
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-5">
+        <textarea
+          className="w-full rounded-xl border border-slate-700/60 bg-slate-950 p-4 font-mono text-sm text-slate-200 outline-none focus:border-violet-500"
+          rows="4"
+          placeholder={"Dán Hotmail, mỗi dòng 1 acc:\nemail|pass|secret2fa\nemail|pass|refresh_token|client_id|secret2fa"}
+          value={inputLine}
+          onChange={(e) => setInputLine(e.target.value)}
+        />
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={handleHotmailSave}
+            disabled={loading}
+            className="flex-1 rounded-xl bg-violet-600 py-2.5 font-bold text-white shadow-lg shadow-violet-900/40 transition-all hover:bg-violet-500 disabled:opacity-50"
+          >
+            {loading ? "Đang xử lý..." : "Import & Lưu"}
+          </button>
+          <button
+            onClick={loadAccounts}
+            className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-400 transition hover:text-white"
+          >
+            Làm mới
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tìm email..."
+          className="w-56 rounded-xl border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-slate-200 outline-none focus:border-violet-500"
+        />
+        {["all", "available", "reserved", "used"].map((state) => (
+          <button
+            key={state}
+            onClick={() => setFilterState(state)}
+            className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
+              filterState === state
+                ? "border-violet-500 bg-violet-600 text-white"
+                : "border-slate-600 bg-slate-800 text-slate-400 hover:text-white"
+            }`}
+          >
+            {state === "all" ? "Tất cả" : state}
+          </button>
+        ))}
+        <span className="ml-auto self-center text-sm text-slate-500">
+          {filtered.length}/{accounts.length} acc
+        </span>
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-slate-700/60">
+        <table className="min-w-[820px] w-full text-left text-sm text-slate-300">
+          <thead className="border-b border-slate-700/60 bg-slate-800 text-[11px] uppercase text-slate-400">
+            <tr>
+              <th className="px-4 py-3">Email</th>
+              <th className="w-28 px-4 py-3">Trạng thái</th>
+              <th className="w-32 px-4 py-3">Lúc lấy</th>
+              <th className="px-4 py-3">Ghi chú</th>
+              <th className="w-44 px-4 py-3 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700/60">
+            {filtered.map((acc) => (
+              <tr key={acc.email} className="transition-colors hover:bg-slate-800/40">
+                <td className="px-4 py-3 font-mono text-xs text-white">{acc.email}</td>
+                <td className="px-4 py-3">{stateBadge(acc.state)}</td>
+                <td className="px-4 py-3 text-xs text-slate-400">
+                  {fmtDate(acc.takenAt || acc.reservedAt || acc.updatedAt)}
+                </td>
+                <td className="max-w-[220px] px-4 py-3 text-xs" title={acc.takenNote || ""}>
+                  {acc.takenNote ? (
+                    <span className="text-sky-400">{acc.takenNote}</span>
+                  ) : (
+                    <span className="italic text-slate-600">—</span>
+                  )}
+                </td>
+                <td className="space-x-2 whitespace-nowrap px-4 py-3 text-right">
+                  <button
+                    onClick={() => handleHotmailRead(acc.email)}
+                    disabled={loading}
+                    className="text-xs font-semibold text-violet-400 transition hover:text-violet-300 disabled:opacity-40"
+                  >
+                    {loading ? "Đang đọc..." : "Đọc mail"}
+                  </button>
+                  {(acc.state === "reserved" || acc.state === "used") && (
+                    <button
+                      onClick={() => handleHotmailRelease(acc.email)}
+                      className="border-l border-slate-600 pl-2 text-xs font-semibold text-amber-400 transition hover:text-amber-300"
+                    >
+                      Reset
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleHotmailDelete(acc.email)}
+                    className="border-l border-slate-600 pl-2 text-xs font-semibold text-red-500 transition hover:text-red-400"
+                  >
+                    Xóa
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan="5" className="p-6 text-center italic text-slate-500">
+                  Không có tài khoản nào.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && (
+        <MailModal
+          email={modal.email}
+          messages={modal.messages}
+          serviceFilter={modal.serviceFilter}
+          onClose={() => setModal(null)}
+        />
+      )}
+    </div>
+  );
+};
+
+/*
   const counts = { available: 0, reserved: 0, used: 0 };
   accounts.forEach(a => { if (counts[a.state] !== undefined) counts[a.state]++; });
 
   return (
     <div className="rounded-[24px] border border-slate-700/60 bg-slate-900/50 p-6 shadow-xl backdrop-blur-sm mt-4">
-      {/* Header */}
+      {/* Header * /}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <h2 className="text-2xl font-black text-white">🗂️ Quản lý Hotmail Proxy</h2>
         <div className="flex gap-3 text-sm font-semibold">
@@ -2141,7 +2373,7 @@ const HotmailAdminTab = () => {
         </div>
       </div>
 
-      {/* Import */}
+      {/* Import * /}
       <div className="mb-5">
         <textarea
           className="w-full rounded-xl border border-slate-700/60 bg-slate-950 p-4 text-slate-200 outline-none focus:border-purple-500 font-mono text-sm"
@@ -2159,7 +2391,7 @@ const HotmailAdminTab = () => {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters * /}
       <div className="flex flex-wrap gap-2 mb-4">
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="🔍 Tìm email..."
@@ -2174,7 +2406,7 @@ const HotmailAdminTab = () => {
         <span className="ml-auto text-sm text-slate-500 self-center">{filtered.length}/{accounts.length} acc</span>
       </div>
 
-      {/* Table */}
+      {/* Table * /}
       <div className="overflow-x-auto rounded-2xl border border-slate-700/60">
         <table className="w-full text-left text-sm text-slate-300 min-w-[860px]">
           <thead className="bg-slate-800 text-[11px] uppercase text-slate-400 border-b border-slate-700/60">
@@ -2218,7 +2450,7 @@ const HotmailAdminTab = () => {
         </table>
       </div>
 
-      {/* Mail Modal */}
+      {/* Mail Modal * /}
       {modal && (
         <MailModal
           email={modal.email}
@@ -2230,7 +2462,7 @@ const HotmailAdminTab = () => {
     </div>
   );
 };
-
+*/
 
 function App() {
   // LOGIN STATE
@@ -7401,7 +7633,7 @@ function App() {
     if (normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) === "died") {
       showAlert(
         "Bo qua doc lai",
-        "Acc nay da duoc danh dau Mail die, khong can doc lai de tranh ton request Tinyhost.",
+        "Acc nay da duoc danh dau Mail die, khong can doc lai de tranh ton request inbox.",
         "info",
       );
       return;
@@ -9536,6 +9768,12 @@ function App() {
               Coursera Plus
             </button>
             <button
+              onClick={() => setActiveTab("hotmail")}
+              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "hotmail" ? "bg-violet-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+            >
+              Hotmail
+            </button>
+            <button
               onClick={handleLogout}
               className="ml-2 w-10 h-10 rounded-full bg-red-900/50 hover:bg-red-600 text-red-200 hover:text-white flex items-center justify-center transition-all"
               title="Đăng Xuất"
@@ -9784,11 +10022,6 @@ function App() {
                     label: "Hỗ trợ",
                     activeClass: "bg-sky-600 text-white shadow-lg",
                     badge: visibleSupportUnreadIndicatorCount,
-                  },
-                  {
-                    key: "hotmail",
-                    label: "Hotmail",
-                    activeClass: "bg-purple-600 text-white shadow-lg",
                   },
                 ].map((item) => (
                   <button
@@ -10603,7 +10836,12 @@ function App() {
           </div>
         )}
 
-        {activeTab === "hotmail" && <HotmailAdminTab />}
+        {activeTab === "hotmail" && (
+          <HotmailAdminTab
+            showAlert={showAlert}
+            showConfirm={showConfirm}
+          />
+        )}
 
         {activeTab === "store-config" && (() => {
           const normalizedStoreConfig = normalizeStoreConfigForUi(storeConfig);
@@ -11836,7 +12074,7 @@ function App() {
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-white">
-                      Theo dõi acc ChatGPT bị die qua Tinyhost
+                      Theo dõi acc ChatGPT bị die qua inbox mail
                     </h3>
                     <p className="mt-1 text-sm text-slate-300">
                       Chỉ acc mới sau rollout mới auto scan theo lịch. Acc cũ chỉ scan tay
@@ -13035,7 +13273,7 @@ function App() {
                                             acc?.mailCheckStatus,
                                           ) === "died"
                                             ? "Acc da Mail die, khong doc lai"
-                                            : "Đọc mail Tinyhost"
+                                            : `Đọc mail ${getChatgptMailCheckSourceLabel(acc)}`
                                         }
                                       >
                                         {loadingStates.runChatgptMailCheckOne ===
@@ -14427,7 +14665,7 @@ function App() {
                                   normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) ===
                                   "died"
                                     ? "Acc da Mail die, khong doc lai"
-                                    : "Đọc mail Tinyhost"
+                                    : `Đọc mail ${getChatgptMailCheckSourceLabel(acc)}`
                                 }
                               >
                                 {loadingStates.runChatgptMailCheckOne ===
@@ -14657,17 +14895,22 @@ function App() {
       </div>
 
       {alertInfo.show && (
-        <div className="modal-overlay" style={{ zIndex: 9999 }}>
-          <div className="modal-box text-center" style={{ maxWidth: "400px" }}>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-950/40 backdrop-blur-md animate-in fade-in duration-300 pointer-events-auto"
+            onClick={closeAlert}
+          />
+          <div className="relative w-full max-w-sm overflow-hidden rounded-2xl bg-slate-900/80 p-6 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-in zoom-in-95 duration-200">
             <div
-              className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${alertInfo.type === "error"
-                ? "bg-red-900/30 text-red-500"
-                : alertInfo.type === "warning"
-                  ? "bg-yellow-900/30 text-yellow-500"
+              className={`mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full ring-4 ring-white/5 ${
+                alertInfo.type === "error"
+                  ? "bg-rose-500/20 text-rose-500"
+                  : alertInfo.type === "warning"
+                  ? "bg-amber-500/20 text-amber-500"
                   : alertInfo.type === "confirm"
-                    ? "bg-blue-900/30 text-blue-500"
-                    : "bg-green-900/30 text-green-500" // Success color
-                }`}
+                  ? "bg-indigo-500/20 text-indigo-500"
+                  : "bg-emerald-500/20 text-emerald-500"
+              }`}
             >
               {alertInfo.type === "error" ? (
                 <AlertCircle size={32} />
@@ -14679,33 +14922,43 @@ function App() {
                 <Info size={32} />
               )}
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">
+
+            <h3 className="mb-2 text-center text-xl font-bold tracking-tight text-white">
               {alertInfo.title}
             </h3>
-            <p className="text-slate-300 mb-6 whitespace-pre-wrap">
+            <p className="mb-8 text-center text-sm leading-relaxed text-slate-300 whitespace-pre-wrap">
               {alertInfo.message}
             </p>
 
-            {alertInfo.type === "confirm" ? (
-              <div className="flex justify-center gap-3">
-                <button onClick={closeAlert} className="btn-secondary">
-                  Hủy
-                </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+              {alertInfo.type === "confirm" ? (
+                <>
+                  <button
+                    onClick={closeAlert}
+                    className="flex-1 rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-slate-700 active:scale-95"
+                  >
+                    Hủy Bỏ
+                  </button>
+                  <button
+                    onClick={executeConfirm}
+                    className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all active:scale-95 ${
+                      String(alertInfo.title).toLowerCase().includes("xóa") || String(alertInfo.title).toLowerCase().includes("delete")
+                        ? "bg-rose-600 hover:bg-rose-500 shadow-lg shadow-rose-600/20"
+                        : "bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/20"
+                    }`}
+                  >
+                    Đồng Ý
+                  </button>
+                </>
+              ) : (
                 <button
-                  onClick={executeConfirm}
-                  className="btn-primary bg-blue-600 hover:bg-blue-500"
+                  onClick={closeAlert}
+                  className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-500 active:scale-95"
                 >
-                  Đồng Ý
+                  Đã Hiểu
                 </button>
-              </div>
-            ) : (
-              <button
-                onClick={closeAlert}
-                className="btn-primary w-full justify-center"
-              >
-                Đã Hiểu
-              </button>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
