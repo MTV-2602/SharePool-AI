@@ -276,17 +276,19 @@ function parseCredentialLine(rawLine) {
 function parseHotmailCredentialLine(rawLine) {
   const clean = String(rawLine || "")
     .trim()
-    .replace(/^\s*(?:✅|\[x\]|\[X\]|☑️)\s*/u, "")
+    .replace(/^\s*(?:✔|\[x\]|\[X\]|✔️)\s*/u, "")
     .replace(/^\s*\[\s*\]\s*/u, "")
     .trim();
   if (!clean) return null;
   const parts = clean.split("|").map((v) => String(v || "").trim());
-  if (parts.length < 4) return null;
+  if (parts.length < 3) return null;
+  if (parts.length === 3) return { email: parts[0], password: parts[1], secret2fa: parts[2] };
   return {
     email: parts[0] || "",
     password: parts[1] || "",
     refreshToken: parts[2] || "",
     clientId: parts[3] || "",
+    secret2fa: parts[4] || "",
   };
 }
 
@@ -318,7 +320,15 @@ function markHotmailLineUsed(rawLine) {
 }
 
 function hotmailProxyEndpoint(proxyReadUrl, path) {
-  return String(proxyReadUrl || HOTMAIL_PROXY_URL_DEFAULT).replace(/\/read-hotmail\/?$/i, path);
+  const url = String(proxyReadUrl || HOTMAIL_PROXY_URL_DEFAULT).trim();
+  if (url.includes("/api/hotmail")) {
+    let base = url.replace(/\/read\/?$/i, "");
+    if (path === "/accounts") return base + "/accounts";
+    if (path === "/save-hotmail-account") return base + "/save";
+    if (path === "/new") return base + "/new";
+    if (path === "/2fa") return base + "/2fa";
+  }
+  return url.replace(/\/read-hotmail\/?$/i, path);
 }
 
 async function getHotmailProxyReadUrl() {
@@ -3394,6 +3404,8 @@ function injectEmailQuickDock() {
       <button id="af-eq-copy-pass" style="all:unset;cursor:pointer;padding:7px 12px;background:#27ae60;border-radius:8px;font:700 12px sans-serif;color:#fff">Copy Pass</button>
       <button id="af-eq-gen-2fa" style="all:unset;cursor:pointer;padding:7px 12px;background:#c0392b;border-radius:8px;font:700 12px sans-serif;color:#fff">2FA</button>
       <button id="af-eq-rand-pass" style="all:unset;cursor:pointer;padding:7px 12px;background:#e67e22;border-radius:8px;font:700 12px sans-serif;color:#fff">Random</button>
+      <button id="af-eq-hotmail-new" style="all:unset;cursor:pointer;padding:7px 12px;background:#8e44ad;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🚀 HM New</button>
+      <button id="af-eq-hotmail-2fa" style="all:unset;cursor:pointer;padding:7px 12px;background:#c0392b;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🔑 HM 2FA</button>
       <button id="af-eq-hotmail-save" style="all:unset;cursor:pointer;padding:7px 12px;background:#2980b9;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📥 HM Save</button>
       <button id="af-eq-hotmail-use" style="all:unset;cursor:pointer;padding:7px 12px;background:#1f7a45;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📨 HM Use</button>
       <button id="af-eq-hotmail-code" style="all:unset;cursor:pointer;padding:7px 12px;background:#d35400;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🧩 HM Code</button>
@@ -4077,6 +4089,38 @@ function injectEmailQuickDock() {
         btn.disabled = false;
       }
     });
+
+  document.getElementById("af-eq-hotmail-new")?.addEventListener("click", async () => {
+    try {
+      const data = await fetchNewHotmailViaProxy();
+      toast("🚀 Đã nạp Hotmail mới sẵn sàng!", "#8e44ad");
+      const lines = String(inputEl.value || "").split(/\r?\n/).map((v) => String(v || "").trim()).filter(Boolean);
+      lines.unshift(data.formatted);
+      inputEl.value = lines.join("\n");
+      build();
+      
+      const email = data.account.email;
+      await storageLocalSet({ [HOTMAIL_ACTIVE_EMAIL_KEY]: email });
+      await updateActiveHotmailLabel();
+    } catch (err) {
+      toast(`❌ ${err.message}`, "#e74c3c");
+    }
+  });
+
+  document.getElementById("af-eq-hotmail-2fa")?.addEventListener("click", async () => {
+    try {
+      const target = await resolveHotmailTargetFromDock();
+      if (!target.parsedLine || !target.parsedLine.secret2fa) {
+        throw new Error("Không có 2FA secret (cột 3 hoặc cột 5)");
+      }
+      toast("Đang lấy mã TOTP 2FA...", "#f39c12");
+      const code = await fetchHotmail2FaViaProxy(target.parsedLine.secret2fa);
+      toast(`🔑 Đã copy thẻ MS Auth: ${code}`, "#27ae60");
+      navigator.clipboard.writeText(code).catch(()=>{});
+    } catch (err) {
+      toast(`❌ Lấy 2FA thất bại: ${err.message}`, "#e74c3c");
+    }
+  });
 
   document
     .getElementById("af-eq-hotmail-pick")

@@ -634,12 +634,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const line = String(rawLine || "").trim();
     if (!line) return null;
     const parts = line.split("|").map((p) => String(p || "").trim());
-    if (parts.length < 4) return null;
+    if (parts.length < 3) return null;
+    if (parts.length === 3) {
+      return { email: parts[0], password: parts[1], secret2fa: parts[2] };
+    }
     return {
-      email: parts[0],
-      password: parts[1],
-      refreshToken: parts[2],
-      clientId: parts[3],
+      email: parts[0], password: parts[1], refreshToken: parts[2], clientId: parts[3], secret2fa: parts[4] || ""
     };
   }
 
@@ -974,6 +974,61 @@ document.addEventListener("DOMContentLoaded", () => {
       showToast("❌ Lay OTP that bai", "#e74c3c");
     } finally {
       btn.disabled = false;
+    }
+  });
+
+  document.getElementById("btn-get-new-hotmail")?.addEventListener("click", async () => {
+    const proxyEl = document.getElementById("hotmail-proxy-url");
+    const inputEl = document.getElementById("hotmail-cred-input");
+    if (!proxyEl || !inputEl) return;
+    const proxyUrl = proxyEl.value.trim();
+    if (!proxyUrl || !proxyUrl.includes("/api/hotmail")) return showToast("⚠️ Phải dùng Link nền tảng Web Backend mới!", "#e67e22");
+    
+    try {
+      const newUrl = proxyUrl.replace(/\/read\/?$/i, "/new");
+      const resp = await fetch(newUrl);
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || !json?.ok) throw new Error(json?.error || "Hết hàng hoặc lỗi!");
+      
+      inputEl.value = json.formatted;
+      showToast("🚀 Đã nạp Hotmail mới sẵn sàng!", "#8e44ad");
+      loadHotmailAccountsToSelect(proxyUrl).catch(() => {});
+    } catch(err) {
+      showToast(`❌ ${err.message}`, "#e74c3c");
+    }
+  });
+
+  document.getElementById("btn-hotmail-get-2fa")?.addEventListener("click", async () => {
+    const inputEl = document.getElementById("hotmail-cred-input");
+    const proxyEl = document.getElementById("hotmail-proxy-url");
+    const resultEl = document.getElementById("hotmail-test-result");
+    if (!inputEl || !proxyEl || !resultEl) return;
+
+    const proxyUrl = proxyEl.value.trim();
+    const rawLine = inputEl.value.trim();
+    if (!proxyUrl || !proxyUrl.includes("/api/hotmail")) return showToast("⚠️ Yêu cầu dùng Link Web Backend", "#e67e22");
+
+    const parsed = parseHotmailCredentialLine(rawLine);
+    if (!parsed || !parsed.secret2fa) {
+      return showToast("⚠️ Không tìm thấy mã 2FA secret (cột 3 dạng mk|2FA hoặc cột 5)", "#e67e22");
+    }
+
+    resultEl.value = "Đang sinh mã TOTP 2FA...";
+    try {
+      const authUrl = proxyUrl.replace(/\/read\/?$/i, "/2fa");
+      const resp = await fetch(authUrl, {
+         method: "POST", headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({ secret: parsed.secret2fa })
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || !json?.ok) throw new Error(json?.error || "Lỗi lấy 2FA");
+      
+      resultEl.value = `OTP: ${json.code}`;
+      copyText(json.code);
+      showToast(`🔑 Đã copy thẻ MS Auth: ${json.code}`, "#27ae60");
+    } catch(err) {
+      resultEl.value = err.message;
+      showToast("❌ Lấy 2FA Microsoft thất bại", "#e74c3c");
     }
   });
 

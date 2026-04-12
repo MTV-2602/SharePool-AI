@@ -553,40 +553,45 @@ async function runChatgptMailCheckForAccount(accountInput = {}, options = {}) {
     });
   }
 
-  const mailbox = parseTinyhostInboxFromEmail(account?.username);
-  if (!mailbox) {
-    return buildChatgptMailCheckResult(account, {
-      status: "skipped",
-      changed: false,
-      source,
-      reason: "Username khong phai email hop le de doc Tinyhost.",
-    });
-  }
-
   let emails = [];
   try {
-    emails = await fetchTinyhostInboxList(mailbox.domain, mailbox.user, {
-      limit: CHATGPT_MAIL_DIE_LIST_LIMIT,
-    });
+    if (account?.mailCheckProvider === "hotmail") {
+      const HotmailAccount = mongoose.models.HotmailAccount;
+      if (!HotmailAccount) throw new Error("Chua co module Hotmail DB");
+      const cred = await HotmailAccount.findOne({ email: account.username }).lean();
+      if (!cred) throw new Error("Acc hotmail nay chua duoc nap vao he thong Proxy Hotmail nen khong the check mail.");
+      if (!cred.refreshToken) throw new Error("Acc hotmail thieu Token Outlook (chua test hoac import thieu).");
+      
+      const tokenData = await exchangeOutlookToken(cred.clientId, cred.refreshToken);
+      const messages = await readOutlookInbox(tokenData.access_token, CHATGPT_MAIL_DIE_LIST_LIMIT || 12);
+      
+      if (tokenData.refresh_token) {
+         await HotmailAccount.updateOne({ email: cred.email }, { $set: { refreshToken: tokenData.refresh_token, updatedAt: new Date().toISOString() }});
+      }
+      emails = messages.map(m => ({
+         sender: m.from || "", subject: m.subject || "", body: m.bodyPreview || "", html_body: m.bodyPreview || ""
+      }));
+    } else {
+      const mailbox = parseTinyhostInboxFromEmail(account?.username);
+      if (!mailbox) {
+        return buildChatgptMailCheckResult(account, {
+          status: "skipped", changed: false, source, reason: "Khong phai email nhan thu." 
+        });
+      }
+      emails = await fetchTinyhostInboxList(mailbox.domain, mailbox.user, {
+        limit: CHATGPT_MAIL_DIE_LIST_LIMIT,
+      });
+    }
   } catch (error) {
     const statusCode = Number(error?.response?.status || 0);
     if (statusCode === 404) {
       return buildChatgptMailCheckResult(account, {
-        status: "skipped",
-        changed: false,
-        source,
-        reason: "Khong tim thay inbox Tinyhost cho account nay.",
+        status: "skipped", changed: false, source, reason: "Khong tim thay inbox cho account nay."
       });
     }
     return buildChatgptMailCheckResult(account, {
-      status: "error",
-      changed: false,
-      source,
-      reason:
-        error?.response?.data?.detail ||
-        error?.response?.data?.error ||
-        error?.message ||
-        "Khong the doc inbox Tinyhost.",
+      status: "error", changed: false, source,
+      reason: error?.response?.data?.detail || error?.response?.data?.error || error?.message || "Khong the doc inbox."
     });
   }
 
@@ -1332,6 +1337,7 @@ const hotmailAccountSchema = new mongoose.Schema({
   password: { type: String, default: "" },
   refreshToken: { type: String, default: "" },
   clientId: { type: String, default: "" },
+  secret2fa: { type: String, default: "" },
   state: { type: String, default: "available" }, // 'available', 'reserved', 'used'
   reservedAt: { type: String, default: "" },
   usedAt: { type: String, default: "" },
@@ -15454,6 +15460,12 @@ const buildPublicChatgptAccountPayload = (payload = {}) => {
 };
 const createPublicChatgptAccount = async (payload = {}) => {
   const newAcc = buildPublicChatgptAccountPayload(payload);
+  const username = String(newAcc.username || "").toLowerCase();
+  if (username.endsWith("@hotmail.com") || username.endsWith("@outlook.com")) {
+      newAcc.mailCheckProvider = "hotmail";
+      newAcc.mailCheckAutoEligible = true;
+      newAcc.mailCheckEnabled = true;
+  }
   const created = await Account.create(newAcc);
   return created?.toObject?.() || newAcc;
 };
@@ -17168,10 +17180,33 @@ async function readOutlookInbox(accessToken, top = 5) {
   }));
 }
 
+function getTOTP(secret) {
+  try {
+    const crypto = require('crypto');
+    const base32chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = '';
+    const cleanSecret = String(secret).replace(/\s+/g, '').toUpperCase();
+    for (let i = 0; i < cleanSecret.length; i++) {
+        const val = base32chars.indexOf(cleanSecret[i]);
+        if (val !== -1) bits += val.toString(2).padStart(5, '0');
+    }
+    const hex = bits.match(/.{4}/g).map(chunk => parseInt(chunk, 2).toString(16)).join('');
+    const key = Buffer.from(hex, 'hex');
+    const epoch = Math.round(new Date().getTime() / 1000.0);
+    const time = Buffer.alloc(8);
+    time.writeUInt32BE(Math.floor(epoch / 30), 4);
+    const hmac = crypto.createHmac('sha1', key).update(time).digest();
+    const offset = hmac[hmac.length - 1] & 0xf;
+    const otp = ((hmac[offset] & 0x7f) << 24 | (hmac[offset + 1] & 0xff) << 16 | (hmac[offset + 2] & 0xff) << 8 | (hmac[offset + 3] & 0xff)) % 1000000;
+    return otp.toString().padStart(6, '0');
+  } catch (e) { return null; }
+}
+
 function parseHotmailLine(rawLine) {
   const parts = String(rawLine || "").trim().split("|").map((p) => String(p || "").trim());
-  if (parts.length < 4) return null;
-  return { email: parts[0].toLowerCase(), password: parts[1], refreshToken: parts[2], clientId: parts[3] };
+  if (parts.length < 3) return null;
+  if (parts.length === 3) return { email: parts[0].toLowerCase(), password: parts[1], secret2fa: parts[2] };
+  return { email: parts[0].toLowerCase(), password: parts[1], refreshToken: parts[2], clientId: parts[3], secret2fa: parts[4] || "" };
 }
 
 app.get("/api/hotmail/accounts", async (req, res) => {
@@ -17179,6 +17214,31 @@ app.get("/api/hotmail/accounts", async (req, res) => {
     const accounts = await HotmailAccount.find({}).sort({ state: 1, updatedAt: -1 }).lean();
     res.json({ ok: true, count: accounts.length, accounts });
   } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+});
+
+app.get("/api/hotmail/new", cors(), async (req, res) => {
+  try {
+    const account = await HotmailAccount.findOneAndUpdate(
+      { state: "available" },
+      { $set: { state: "reserved", reservedAt: new Date().toISOString() } },
+      { sort: { usedCount: 1 }, new: true }
+    );
+    if (!account) return res.status(404).json({ ok: false, error: "Hết tài khoản trống" });
+    const formatted = account.refreshToken 
+        ? `${account.email}|${account.password}|${account.refreshToken}|${account.clientId}${account.secret2fa ? '|'+account.secret2fa : ''}`
+        : `${account.email}|${account.password}|${account.secret2fa}`;
+    res.json({ ok: true, account, formatted });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+});
+
+app.post("/api/hotmail/2fa", cors(), async (req, res) => {
+  try {
+    const secret = req.body?.secret || "";
+    if (!secret) return res.status(400).json({ ok: false, error: "Thiếu 2FA secret" });
+    const code = getTOTP(secret);
+    if (!code) return res.status(400).json({ ok: false, error: "Secret không hợp lệ" });
+    res.json({ ok: true, code });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
 app.post("/api/hotmail/save", async (req, res) => {
