@@ -49,50 +49,68 @@ export default function HotmailReader() {
 
       <main className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-4xl items-center justify-center">
         <section className="w-full rounded-[34px] border border-cyan-300/20 bg-slate-950/75 p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)] backdrop-blur-xl md:p-8">
-          <div className="mb-6">
-            <div className="inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs font-black uppercase tracking-[0.22em] text-cyan-200">
-              Public Hotmail Reader
-            </div>
-            <h1 className="mt-4 text-3xl font-black tracking-tight text-white md:text-5xl">
-              Đọc inbox Microsoft mailbox
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 md:text-base">
-              Không cần đăng nhập. Chỉ nhập email Hotmail, Outlook, Live hoặc MSN đã có trong hệ thống để đọc inbox mới nhất.
-            </p>
-          </div>
-
-          <form onSubmit={readInbox} className="space-y-4">
-            <label className="block">
-              <span className="text-sm font-bold text-slate-300">
-                Email Hotmail / Outlook
-              </span>
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="example@outlook.com"
-                className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 font-mono text-white outline-none transition focus:border-cyan-300 focus:ring-4 focus:ring-cyan-300/10"
-              />
-            </label>
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm leading-6 text-slate-400">
-              Chỉ đọc inbox, không đánh dấu đã dùng. Nếu email chưa được import vào kho Microsoft mailbox, trang sẽ báo rõ để bạn biết ngay.
-            </div>
-
-            {error ? (
-              <div className="rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-100">
-                {error}
+          <div className="mx-auto max-w-3xl">
+            <div className="mb-8 text-center">
+              <div className="inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs font-black uppercase tracking-[0.22em] text-cyan-200">
+                Public Hotmail Reader
               </div>
-            ) : null}
+              <h1 className="mt-4 text-3xl font-black tracking-tight text-white md:text-5xl">
+                Đọc inbox nhanh
+              </h1>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-400 md:text-base">
+                Nhập email Hotmail hoặc Outlook đã có trong hệ thống để mở inbox ngay.
+              </p>
+            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-2xl bg-cyan-500 px-5 py-3 font-black text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+            <form
+              onSubmit={readInbox}
+              className="rounded-[28px] border border-slate-800/80 bg-slate-900/70 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)]"
             >
-              {loading ? "Đang đọc inbox..." : "Đọc inbox"}
-            </button>
-          </form>
+              <div className="flex flex-col gap-3 md:flex-row">
+                <label className="min-w-0 flex-1">
+                  <span className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+                    Email Microsoft mailbox
+                  </span>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="example@outlook.com"
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 font-mono text-white outline-none transition focus:border-cyan-300 focus:ring-4 focus:ring-cyan-300/10"
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="md:mt-[1.55rem] md:w-auto rounded-2xl bg-cyan-500 px-6 py-3 font-black text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? "Đang đọc..." : "Đọc inbox"}
+                </button>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                <span className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1">
+                  Hotmail
+                </span>
+                <span className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1">
+                  Outlook
+                </span>
+                <span className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1">
+                  Live
+                </span>
+                <span className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1">
+                  MSN
+                </span>
+              </div>
+
+              {error ? (
+                <div className="mt-4 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-100">
+                  {error}
+                </div>
+              ) : null}
+            </form>
+          </div>
         </section>
       </main>
 
