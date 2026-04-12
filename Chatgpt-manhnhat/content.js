@@ -396,6 +396,21 @@ async function readHotmailInboxViaProxy(payload) {
   return json;
 }
 
+async function fetchNewHotmailViaProxy() {
+  const readUrl = await getHotmailProxyReadUrl();
+  const newUrl = hotmailProxyEndpoint(readUrl, "/new");
+  // Gui kem note = domain hien tai de admin biet tab nao lay
+  const note = `Tab: ${String(location.hostname || location.href).slice(0, 80)} | ${new Date().toLocaleString("vi-VN")}`;
+  const urlWithNote = `${newUrl}?note=${encodeURIComponent(note)}`;
+  const res = await fetch(urlWithNote, { method: "GET" });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok) {
+    throw new Error(json?.error || `Lay Hotmail moi that bai HTTP ${res.status}`);
+  }
+  return json; // { ok, account, formatted }
+}
+
+
 function formatCredentialLine(cred) {
   if (!cred?.account) return "";
   const password = cred.password || AUTO_PASSWORD_VALUE || "";

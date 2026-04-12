@@ -1344,6 +1344,10 @@ const hotmailAccountSchema = new mongoose.Schema({
   lastReadAt: { type: String, default: "" },
   usedCount: { type: Number, default: 0 },
   updatedAt: { type: String, default: () => new Date().toISOString() },
+  // --- Tracking: ai lay cai nay, khi nao, tren tab nao ---
+  takenByIp: { type: String, default: "" },   // IP cua extension lay
+  takenAt: { type: String, default: "" },       // Thoi diem lay
+  takenNote: { type: String, default: "" },     // Note tu extension (domain/tab)
 });
 const HotmailAccount =
   mongoose.models.HotmailAccount ||
@@ -17218,9 +17222,24 @@ app.get("/api/hotmail/accounts", async (req, res) => {
 
 app.get("/api/hotmail/new", cors(), async (req, res) => {
   try {
+    // Lay note tu query param neu co (extension gui domain/tab info)
+    const note = String(req.query.note || req.body?.note || "").slice(0, 200);
+    const ip = String(
+      req.headers["x-forwarded-for"] || req.socket?.remoteAddress || ""
+    ).split(",")[0].trim().slice(0, 80);
+    const now = new Date().toISOString();
+
     const account = await HotmailAccount.findOneAndUpdate(
       { state: "available" },
-      { $set: { state: "reserved", reservedAt: new Date().toISOString() } },
+      { $set: { 
+          state: "reserved", 
+          reservedAt: now,
+          takenByIp: ip,
+          takenAt: now,
+          takenNote: note || `Lay luc ${now}`,
+          updatedAt: now
+        } 
+      },
       { sort: { usedCount: 1 }, new: true }
     );
     if (!account) return res.status(404).json({ ok: false, error: "Hết tài khoản trống" });
