@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Clock3, Copy, MailOpen, X } from "lucide-react";
 
 const SERVICE_STYLES = {
@@ -279,7 +280,7 @@ export default function HotmailInboxModal({
   const body = selectedMessage ? getMessageBody(selectedMessage) : "";
   const readableCode = code ? code.split("").join(" ") : "";
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-slate-950/40 backdrop-blur-md animate-in fade-in duration-300"
@@ -487,4 +488,10 @@ export default function HotmailInboxModal({
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(modalContent, document.body);
 }
