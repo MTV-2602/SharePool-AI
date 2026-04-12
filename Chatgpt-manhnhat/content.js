@@ -1135,6 +1135,7 @@ const BIRTHDAY_FIELD_PATTERNS = [
   /월/,
   /일/,
 ];
+const AGE_FIELD_PATTERNS = [/\bage\b/i, /how old are you/i, /나이/];
 const PASSWORD_FIELD_PATTERNS = [/new password/i, /password/i, /비밀번호/];
 const EMAIL_FIELD_PATTERNS = [/email address/i, /\bemail\b/i, /이메일/];
 const CONTINUE_BUTTON_PATTERNS = [
@@ -1180,6 +1181,7 @@ const FINISH_CREATE_PATTERNS = [
 const AGE_GATE_HEADING_PATTERNS = [
   /confirm your age/i,
   /can we confirm your age/i,
+  /how old are you/i,
   /나이를 확인해 볼까요/,
   /나이를 확인해/,
 ];
@@ -1735,6 +1737,28 @@ function findBirthdayField() {
   );
 }
 
+function findAgeField() {
+  return (
+    qs([
+      'input[name="age"]',
+      'input[name*="age" i]',
+      'input[id*="age" i]',
+      'input[placeholder*="Age" i]',
+      'input[aria-label*="Age" i]',
+    ]) ||
+    findFieldByPatterns(
+      [
+        'input[type="number"]',
+        'input[inputmode="numeric"]',
+        'input[type="text"]',
+        "input:not([type])",
+        "input",
+      ],
+      AGE_FIELD_PATTERNS,
+    )
+  );
+}
+
 function findVisibleEmailField() {
   const direct = qs([
     'input[type="email"]',
@@ -2165,7 +2189,8 @@ function startAgeGateAutoFill() {
       document.querySelector('input[type="hidden"][name="birthday"]') ||
       findBirthdayField()
     );
-    return hasName && hasBirthday;
+    const hasAge = !!findAgeField();
+    return hasName && (hasBirthday || hasAge);
   }
 
   async function tryAutoFillAgeGate() {
@@ -2177,9 +2202,10 @@ function startAgeGateAutoFill() {
     _lastFilled = key;
     _filling = true;
 
-    // Đợi birthday field có trong DOM
+    // Đợi age/birthday field có trong DOM
     for (let i = 0; i < 50; i++) {
       const ready = !!(
+        findAgeField() ||
         document.querySelector('[data-type="month"][role="spinbutton"]') ||
         document.querySelector('input[name="birthday"]') ||
         document.querySelector('input[type="hidden"][name="birthday"]') ||
@@ -5472,7 +5498,10 @@ async function fillIdentityOnMain(identity) {
 
   // Trang xÃƒÆ’Ã‚Â¡c minh tuÃƒÂ¡Ã‚Â»Ã¢â‚¬Â¢i: Ãƒâ€žÃ¢â‚¬ËœiÃƒÂ¡Ã‚Â»Ã‚Ân kiÃƒÂ¡Ã‚Â»Ã†â€™u gÃƒÆ’Ã‚Âµ liÃƒÂ¡Ã‚Â»Ã‚Ân MMDDYYYY nhÃƒâ€ Ã‚Â° nhÃƒÂ¡Ã‚ÂºÃ‚Â­p tay
   if (isChatGPTAgeGate()) {
-    const ok = await fillAgeGateBirthdayAsDigits(identity);
+    let ok = await fillAgeGateAgeField(identity);
+    if (!ok) {
+      ok = await fillAgeGateBirthdayAsDigits(identity);
+    }
     await sleep(40);
     const consentTicked = tickAgeGateConsentIfPresent();
     // Đợi Finish button enabled rồi click
@@ -7388,6 +7417,7 @@ function isChatGPTAgeGate() {
   if (matchesUiPatterns(heading, AGE_GATE_HEADING_PATTERNS)) return true;
   if (heading.includes("xÃƒÆ’Ã‚Â¡c minh tuÃƒÂ¡Ã‚Â»Ã¢â‚¬Â¢i")) return true;
 
+  if (findAgeField()) return true;
   const hasBirthdayHidden = !!document.querySelector(
     'input[type="hidden"][name="birthday"]',
   );
@@ -7424,6 +7454,33 @@ function clearAgeGateBirthdayField() {
   }
 
   if (mSeg) mSeg.focus();
+}
+
+function getIdentityAge(identity) {
+  const year = Number(identity?.year || 0);
+  const month = Number(identity?.month || 1);
+  const day = Number(identity?.day || 1);
+  if (!year) return 21;
+  const today = new Date();
+  let age = today.getFullYear() - year;
+  const monthDelta = today.getMonth() + 1 - month;
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < day)) {
+    age -= 1;
+  }
+  return Math.max(18, age);
+}
+
+async function fillAgeGateAgeField(identity) {
+  const ageEl = findAgeField();
+  if (!ageEl) return false;
+  const ageValue = String(getIdentityAge(identity));
+  typeInto(ageEl, ageValue);
+  await sleep(80);
+  const currentDigits = String(ageEl.value || "").replace(/\D/g, "");
+  if (currentDigits !== ageValue) {
+    await typeInputLikeUser(ageEl, ageValue);
+  }
+  return String(ageEl.value || "").replace(/\D/g, "") === ageValue;
 }
 
 async function fillAgeGateBirthdayAsDigits(identity) {
