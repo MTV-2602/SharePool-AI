@@ -17321,8 +17321,32 @@ function parseHotmailLine(rawLine) {
   return { email: parts[0].toLowerCase(), password: parts[1], refreshToken: parts[2], clientId: parts[3], secret2fa: parts[4] || "" };
 }
 
+function parseStrictHotmailSaveLine(rawLine) {
+  const parts = String(rawLine || "")
+    .trim()
+    .split("|")
+    .map((part) => String(part || "").trim());
+  if (parts.length !== 4 && parts.length !== 5) return null;
+  return {
+    email: normalizeHotmailEmail(parts[0]),
+    password: String(parts[1] || "").trim(),
+    refreshToken: String(parts[2] || "").trim(),
+    clientId: String(parts[3] || "").trim(),
+    secret2fa: String(parts[4] || "").trim(),
+  };
+}
+
 function normalizeHotmailEmail(value = "") {
   return String(value || "").trim().toLowerCase();
+}
+
+function getHotmailLiveErrorMessage(error, fallback = "Loi khong xac dinh.") {
+  return String(
+    error?.response?.data?.error ||
+      error?.response?.data?.message ||
+      error?.message ||
+      fallback,
+  ).trim();
 }
 
 const HOTMAIL_CHATGPT_LINK_ACTOR = "system:chatgpt-link";
@@ -17578,6 +17602,64 @@ async function readStoredHotmailInbox(cred, top = 5) {
   };
 }
 
+async function validateHotmailCredentialLive(credInput = {}, options = {}) {
+  const cred = {
+    email: normalizeHotmailEmail(credInput?.email),
+    password: String(credInput?.password || "").trim(),
+    refreshToken: String(credInput?.refreshToken || "").trim(),
+    clientId: String(credInput?.clientId || "").trim(),
+    secret2fa: String(credInput?.secret2fa || "").trim(),
+  };
+  if (!isMicrosoftInboxDomain(cred.email)) {
+    throw createHttpError(
+      "Chi ho tro Hotmail, Outlook, Live va MSN trong kho Microsoft mailbox.",
+      400,
+    );
+  }
+  assertReadableHotmailAccount(cred);
+
+  let tokenData = null;
+  try {
+    tokenData = await exchangeOutlookToken(cred.clientId, cred.refreshToken);
+  } catch (error) {
+    throw createHttpError(
+      `Live check token Outlook that bai: ${getHotmailLiveErrorMessage(
+        error,
+        "Khong doi duoc access token.",
+      )}`,
+      400,
+    );
+  }
+
+  let messages = [];
+  try {
+    messages = await readOutlookInbox(tokenData.access_token, options?.top || 1);
+  } catch (error) {
+    throw createHttpError(
+      `Live check doc inbox Outlook that bai: ${getHotmailLiveErrorMessage(
+        error,
+        "Khong doc duoc inbox Outlook.",
+      )}`,
+      400,
+    );
+  }
+
+  return {
+    credential: {
+      ...cred,
+      refreshToken: String(tokenData?.refresh_token || cred.refreshToken).trim(),
+    },
+    validated: true,
+    messageCount: Array.isArray(messages) ? messages.length : 0,
+    scope: String(tokenData?.scope || "").trim(),
+    rotatedRefreshToken: String(tokenData?.refresh_token || "").trim(),
+    liveMessage:
+      Array.isArray(messages) && messages.length > 0
+        ? "Live OK: doi token va doc inbox Outlook thanh cong."
+        : "Live OK: doi token va goi inbox Outlook thanh cong, inbox dang trong.",
+  };
+}
+
 function sendHotmailReadError(res, error) {
   const statusCode = Number(error?.statusCode || error?.status || 500);
   res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
@@ -17690,23 +17772,54 @@ app.post("/api/hotmail/2fa", cors(), async (req, res) => {
 
 app.post("/api/hotmail/save", async (req, res) => {
   try {
-    const cred = parseHotmailLine(req.body?.line);
-    if (!cred) return res.status(400).json({ ok: false, error: "Sai format: email|pass|token|id" });
-    const existing = await HotmailAccount.findOne({ email: cred.email });
-    if (existing) {
-      await HotmailAccount.updateOne({ email: cred.email }, { $set: { ...cred, updatedAt: new Date().toISOString() } });
-    } else {
-      await HotmailAccount.create({ ...cred, usedCount: 0, state: "available" });
+    const cred = parseStrictHotmailSaveLine(req.body?.line);
+    if (!cred) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          "Sai format: email|pass|refresh_token|client_id hoac email|pass|refresh_token|client_id|secret2fa",
+      });
     }
-    const hotmailLink = await getHotmailLinkInfoForEmail(cred.email, {
+    const validation = await validateHotmailCredentialLive(cred, { top: 1 });
+    const validatedCred = validation?.credential || cred;
+    const existing = await HotmailAccount.findOne({ email: validatedCred.email });
+    const now = new Date().toISOString();
+    if (existing) {
+      await HotmailAccount.updateOne(
+        { email: validatedCred.email },
+        { $set: { ...validatedCred, updatedAt: now } },
+      );
+    } else {
+      await HotmailAccount.create({
+        ...validatedCred,
+        usedCount: 0,
+        state: "available",
+        updatedAt: now,
+      });
+    }
+    const hotmailLink = await getHotmailLinkInfoForEmail(validatedCred.email, {
       source: "hotmail_save",
     });
-    if (hotmailLink?.lockApplied) {
-      bumpDataVersion();
-      notifyClients();
-    }
-    res.json({ ok: true, email: cred.email, message: "Saved", hotmailLink });
-  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+    bumpDataVersion();
+    notifyClients();
+    res.json({
+      ok: true,
+      email: validatedCred.email,
+      message: "Saved",
+      validated: true,
+      liveMessage: validation?.liveMessage || "Live OK",
+      messageCount: Number(validation?.messageCount || 0),
+      scope: validation?.scope || "",
+      rotatedRefreshToken: validation?.rotatedRefreshToken || "",
+      hotmailLink,
+    });
+  } catch (err) {
+    const statusCode = Number(err?.statusCode || err?.status || 500);
+    res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
+      ok: false,
+      error: err?.message || "Khong the luu Hotmail.",
+    });
+  }
 });
 
 app.delete("/api/hotmail/delete/:email", async (req, res) => {
@@ -17728,9 +17841,34 @@ app.post("/api/hotmail/reserve", async (req, res) => {
 app.post("/api/hotmail/release", cors(), async (req, res) => {
   try {
     const email = String(req.body?.email || "").toLowerCase().trim();
-    await HotmailAccount.updateOne({ email }, { $set: { state: "available", reservedAt: "", takenNote: "", takenByIp: "", takenAt: "" } });
+    if (!email) return res.status(400).json({ ok: false, error: "Thieu email Hotmail." });
+    const now = new Date().toISOString();
+    const result = await HotmailAccount.findOneAndUpdate(
+      { email },
+      {
+        $set: {
+          state: "available",
+          reservedAt: "",
+          takenNote: "",
+          takenByIp: "",
+          takenAt: "",
+          usedAt: "",
+          updatedAt: now,
+        },
+      },
+      { new: true },
+    );
+    if (!result) return res.status(404).json({ ok: false, error: "Khong tim thay account " + email });
+    bumpDataVersion();
+    notifyClients();
     res.json({ ok: true, email, state: "available" });
-  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+  } catch (err) {
+    const statusCode = Number(err?.statusCode || err?.status || 500);
+    res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
+      ok: false,
+      error: err?.message || "Khong the reset Hotmail.",
+    });
+  }
 });
 
 // Danh dau da dung that su (sau khi extension dien vao form ChatGPT)
@@ -17787,7 +17925,12 @@ app.post("/api/hotmail/read", cors(), async (req, res) => {
 app.post("/api/hotmail/public-read", cors(), async (req, res) => {
   try {
     const email = normalizeHotmailEmail(req.body?.email);
-    if (!email) return res.status(400).json({ ok: false, error: "Thiếu email Hotmail." });
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        error: "Thiếu email Hotmail / Outlook.",
+      });
+    }
     const cred = await HotmailAccount.findOne({ email }).lean();
     if (!cred) throw createHttpError("Chưa có acc trong Hotmail.", 404);
     const result = await readStoredHotmailInbox(cred, req.body?.top || 10);

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
+import HotmailInboxModal from "./HotmailInboxModal";
 import { startTransition } from "react";
 import {
   canUseRealtimeRuntime,
@@ -1857,192 +1858,17 @@ const getExpiryCleanupBatchStatusLabel = (value = "") => {
   return normalized || "Không rõ";
 };
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-const extractCode = (text = "") => {
-  const t = String(text || "");
-  // 6-digit OTP first
-  const m6 = t.match(/\b(\d{6})\b/);
-  if (m6) return m6[1];
-  // 4-digit fallback
-  const m4 = t.match(/\b(\d{4})\b/);
-  if (m4) return m4[1];
-  return null;
-};
-
-const classifyService = (sender = "", subject = "") => {
-  const s = (sender + " " + subject).toLowerCase();
-  if (s.includes("chatgpt") || s.includes("openai")) return "ChatGPT";
-  if (s.includes("microsoft") || s.includes("outlook") || s.includes("hotmail")) return "Microsoft";
-  if (s.includes("google")) return "Google";
-  if (s.includes("facebook") || s.includes("meta")) return "Facebook";
-  return "Khác";
-};
-
-const SERVICE_COLORS = {
-  ChatGPT: { bg: "bg-emerald-900/60", text: "text-emerald-300", border: "border-emerald-700/60" },
-  Microsoft: { bg: "bg-sky-900/60", text: "text-sky-300", border: "border-sky-700/60" },
-  Google: { bg: "bg-amber-900/60", text: "text-amber-300", border: "border-amber-700/60" },
-  Facebook: { bg: "bg-blue-900/60", text: "text-blue-300", border: "border-blue-700/60" },
-  Khác: { bg: "bg-slate-700/60", text: "text-slate-300", border: "border-slate-600" },
-};
-
 // ── MailModal ────────────────────────────────────────────────────────────────
-const MailModal = ({ email, messages, serviceFilter, onClose }) => {
-  const [copied, setCopied] = useState("");
-  const [viewMsg, setViewMsg] = useState(null); // full email viewer
-
-  const displayed = serviceFilter
-    ? messages.filter(m => classifyService(m.sender || m.from, m.subject) === serviceFilter)
-    : messages;
-
-  const copyCode = (code, id) => {
-    navigator.clipboard.writeText(code).catch(() => {});
-    setCopied(id);
-    setTimeout(() => setCopied(""), 1500);
-  };
-
-  const fmtTime = (iso) => {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (isNaN(d)) return iso;
-    return d.toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
-  };
-
-  return (
-    <>
-      <div className="fixed inset-0 z-[9999] grid place-items-center p-4" style={{ background: "rgba(2,6,23,0.86)" }} onClick={onClose}>
-        <div className="relative mx-auto flex max-h-[86vh] w-[min(94vw,760px)] flex-col overflow-hidden rounded-[28px] border border-violet-400/20 bg-slate-950/95 shadow-[0_30px_90px_rgba(0,0,0,0.55)] ring-1 ring-white/10 backdrop-blur-xl" onClick={e => e.stopPropagation()}>
-          {/* Header */}
-          <div className="flex items-start justify-between border-b border-slate-800 px-6 py-5">
-            <div>
-              <div className="text-base font-bold text-white">{serviceFilter ? `${serviceFilter} - ${email}` : email}</div>
-              <div className="mt-1 text-xs text-slate-400">{displayed.length} message{displayed.length !== 1 ? "s" : ""}</div>
-            </div>
-            <button onClick={onClose} className="mt-0.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-lg leading-none text-slate-300 transition hover:border-violet-400/50 hover:text-white">×</button>
-          </div>
-
-          {/* Messages */}
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-950/40 px-6 py-5">
-            {displayed.length === 0 && (
-              <div className="py-10 text-center italic text-slate-500">Không có thư nào.</div>
-            )}
-            {displayed.map((msg, i) => {
-              const code = extractCode(msg.body || msg.bodyPreview || msg.subject);
-              const id = `msg-${i}`;
-              const timeStr = fmtTime(msg.receivedAt || msg.date || "");
-              const sender = msg.sender || msg.from || "";
-              return (
-                <div key={id} className="rounded-2xl border border-slate-700/60 bg-slate-900/80 p-4 shadow-lg shadow-black/10">
-                  {/* Subject + meta */}
-                  <div className="text-sm font-semibold text-white">{msg.subject || "(no subject)"}</div>
-                  <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
-                    {sender && <span>👤 {sender}</span>}
-                    {timeStr && <span>🕐 {timeStr}</span>}
-                  </div>
-                  {/* Code highlight */}
-                  {code && (
-                    <div className="mt-3 font-mono text-2xl font-bold tracking-[0.28em] text-violet-200">{code}</div>
-                  )}
-                  {/* Actions */}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {code && (
-                      <button
-                        onClick={() => copyCode(code, id)}
-                        className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800"
-                      >
-                        {copied === id ? "✅ Đã copy!" : "⎘ Copy code"}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setViewMsg(msg)}
-                      className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800"
-                    >
-                      👁 Xem mail
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex justify-end border-t border-slate-800 px-6 py-4">
-            <button onClick={onClose} className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-2 text-sm font-medium text-slate-100 transition hover:border-violet-400/50 hover:bg-slate-800">Đóng</button>
-          </div>
-        </div>
-      </div>
-
-      {/* Full email viewer overlay */}
-      {viewMsg && (
-        <div
-          className="fixed inset-0 z-[10000] grid place-items-center p-4"
-          style={{ background: "rgba(2,6,23,0.9)" }}
-          onClick={() => setViewMsg(null)}
-        >
-          <div
-            className="relative flex w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-slate-700/60 bg-slate-950 shadow-2xl ring-1 ring-white/10"
-            style={{ maxHeight: "90vh" }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Email header */}
-            <div className="border-b border-slate-800 px-6 pb-4 pt-5">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 pr-4">
-                  <h2 className="text-lg font-bold leading-snug text-white">{viewMsg.subject || "(no subject)"}</h2>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-400">
-                    {(viewMsg.sender || viewMsg.from) && (
-                      <span className="flex items-center gap-1">
-                        <span className="text-blue-400">👤</span>
-                        {viewMsg.sender || viewMsg.from}
-                      </span>
-                    )}
-                    {(viewMsg.receivedAt || viewMsg.date) && (
-                      <span className="flex items-center gap-1">
-                        <span className="text-blue-400">🕐</span>
-                        {new Date(viewMsg.receivedAt || viewMsg.date).toLocaleString("vi-VN", {
-                          hour: "2-digit", minute: "2-digit", second: "2-digit",
-                          day: "2-digit", month: "2-digit", year: "numeric"
-                        })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setViewMsg(null)}
-                  className="flex-shrink-0 text-2xl leading-none text-slate-500 transition hover:text-white"
-                >✕</button>
-              </div>
-            </div>
-
-            {/* Email body rendered in iframe */}
-            <div className="flex-1 overflow-hidden" style={{ minHeight: 300 }}>
-              {viewMsg.html_body || (viewMsg.body && viewMsg.body.includes("<")) ? (
-                <iframe
-                  title="email-content"
-                  sandbox="allow-same-origin"
-                  style={{ width: "100%", height: "100%", minHeight: 440, border: "none" }}
-                  srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;padding:24px;font-size:14px;color:#e5e7eb;background:#020617;line-height:1.6}a{color:#7dd3fc}</style></head><body>${viewMsg.html_body || viewMsg.body || ""}</body></html>`}
-                />
-              ) : (
-                <div className="overflow-y-auto whitespace-pre-wrap px-6 py-5 text-sm text-slate-200" style={{ maxHeight: 440 }}>
-                  {viewMsg.body || viewMsg.bodyPreview || "(Không có nội dung)"}
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end border-t border-slate-800 px-6 py-4">
-              <button
-                onClick={() => setViewMsg(null)}
-                className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-};
+const MailModal = ({ email, messages, serviceFilter, onClose }) => (
+  <HotmailInboxModal
+    email={email}
+    messages={messages}
+    serviceFilter={serviceFilter}
+    onClose={onClose}
+    variant="admin"
+    eyebrow="Hotmail Inbox"
+  />
+);
 
 // ── HotmailAdminTab ───────────────────────────────────────────────────────────
 const HotmailAdminTab = ({ showAlert, showConfirm }) => {
@@ -2074,7 +1900,7 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
     if (!inputLine.trim()) {
       showAlert(
         "Thiếu dữ liệu",
-        "Nhập email|pass|secret2fa hoặc email|pass|refresh_token|client_id|secret2fa.",
+        "Nhập email|pass|refresh_token|client_id hoặc email|pass|refresh_token|client_id|secret2fa.",
         "warning",
       );
       return;
@@ -2082,19 +1908,69 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
 
     setLoading(true);
     try {
-      const lines = inputLine.split("\n").filter((line) => line.trim());
-      for (const line of lines) {
-        await axios.post("/api/hotmail/save", { line });
+      const lines = inputLine
+        .split("\n")
+        .map((line) => String(line || "").trim())
+        .filter(Boolean);
+      const successes = [];
+      const failures = [];
+
+      for (const [index, line] of lines.entries()) {
+        try {
+          const response = await axios.post("/api/hotmail/save", { line });
+          successes.push({
+            lineNumber: index + 1,
+            email: response?.data?.email || line.split("|")[0] || `dong ${index + 1}`,
+            liveMessage: response?.data?.liveMessage || "",
+          });
+        } catch (error) {
+          failures.push({
+            line,
+            lineNumber: index + 1,
+            email: line.split("|")[0] || `dong ${index + 1}`,
+            error: getErrorMessage(error, "Không thể live check Hotmail."),
+          });
+        }
       }
-      setInputLine("");
-      await loadAccounts();
+
+      if (successes.length > 0) {
+        await loadAccounts();
+      }
+
+      if (failures.length === 0) {
+        setInputLine("");
+        showAlert(
+          "Import thành công",
+          [
+            `Đã lưu ${successes.length}/${lines.length} mailbox Microsoft.`,
+            successes[0]?.liveMessage || "Live OK: token và inbox Outlook đều hoạt động.",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          "success",
+        );
+        return;
+      }
+
+      setInputLine(failures.map((item) => item.line).join("\n"));
       showAlert(
-        "Import thành công",
-        `Đã lưu ${lines.length} tài khoản Hotmail.`,
-        "success",
+        successes.length > 0 ? "Import một phần" : "Import thất bại",
+        [
+          `Thành công: ${successes.length}/${lines.length}`,
+          `Thất bại: ${failures.length}`,
+          ...failures
+            .slice(0, 6)
+            .map(
+              (item) =>
+                `Dòng ${item.lineNumber} (${item.email}): ${item.error}`,
+            ),
+          failures.length > 6 ? `... còn ${failures.length - 6} dòng lỗi khác.` : "",
+          "Các dòng lỗi đang được giữ lại trong ô nhập để sửa và thử lại.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        successes.length > 0 ? "warning" : "error",
       );
-    } catch (error) {
-      showAlert("Import thất bại", getErrorMessage(error), "error");
     } finally {
       setLoading(false);
     }
@@ -2138,16 +2014,11 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
         : accountOrEmail?.email || "";
     const isChatgptLocked =
       typeof accountOrEmail === "object" && !!accountOrEmail?.chatgptAccount;
-    if (isChatgptLocked) {
-      showAlert(
-        "Hotmail dang noi ChatGPT",
-        "Reset chi xoa dau extension; API cap mail van chan acc nay vi email trung ChatGPT.",
-        "warning",
-      );
-    }
     showConfirm(
       "Reset trạng thái",
-      `Đặt lại ${email} về trạng thái available?`,
+      isChatgptLocked
+        ? `Đặt lại trace của ${email} về available?\n\nReset chỉ xóa dấu test/extension đang hiển thị. Acc này vẫn bị chặn khỏi extension vì email đang nối với ChatGPT.`
+        : `Đặt lại trace của ${email} về trạng thái available?`,
       async () => {
         try {
           await axios.post("/api/hotmail/release", { email });
@@ -2250,10 +2121,15 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
         <textarea
           className="w-full rounded-xl border border-slate-700/60 bg-slate-950 p-4 font-mono text-sm text-slate-200 outline-none focus:border-violet-500"
           rows="4"
-          placeholder={"Dán Hotmail, mỗi dòng 1 acc:\nemail|pass|secret2fa\nemail|pass|refresh_token|client_id|secret2fa"}
+          placeholder={
+            "Dán Microsoft mailbox, mỗi dòng 1 acc:\nemail|pass|refresh_token|client_id\nemail|pass|refresh_token|client_id|secret2fa"
+          }
           value={inputLine}
           onChange={(e) => setInputLine(e.target.value)}
         />
+        <p className="mt-2 text-xs leading-5 text-slate-400">
+          Hotmail, Outlook, Live và MSN dùng chung kho Microsoft mailbox. Chỉ lưu khi live check Outlook đổi token và đọc inbox thành công.
+        </p>
         <div className="mt-2 flex gap-2">
           <button
             onClick={handleHotmailSave}
@@ -2339,14 +2215,12 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
                   >
                     {loading ? "Đang đọc..." : "Đọc mail"}
                   </button>
-                  {(acc.state === "reserved" || acc.state === "used") && (
-                    <button
-                      onClick={() => handleHotmailRelease(acc)}
-                      className="border-l border-slate-600 pl-2 text-xs font-semibold text-amber-400 transition hover:text-amber-300"
-                    >
-                      Reset
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleHotmailRelease(acc)}
+                    className="border-l border-slate-600 pl-2 text-xs font-semibold text-amber-400 transition hover:text-amber-300"
+                  >
+                    Reset
+                  </button>
                   <button
                     onClick={() => handleHotmailDelete(acc.email)}
                     className="border-l border-slate-600 pl-2 text-xs font-semibold text-red-500 transition hover:text-red-400"
@@ -8450,7 +8324,7 @@ function App() {
                   Truy cập nhanh
                 </div>
                 <div className="mt-1 text-sm font-semibold text-slate-200">
-                  Cần đọc mã Hotmail? Mở trang đọc inbox public ngay.
+                  Cần đọc mã Hotmail hoặc Outlook? Mở trang đọc inbox public ngay.
                 </div>
               </div>
               <a

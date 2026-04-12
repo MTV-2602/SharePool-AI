@@ -266,6 +266,19 @@ function parseCredentialLine(rawLine) {
   }
 
   const parts = clean.split(sep).map((v) => String(v || "").trim());
+
+  // Neu co 5 phan (Hotmail Full), parse day du
+  if (parts.length >= 5) {
+    return {
+      account: parts[0] || "",
+      password: parts[1] || "",
+      refreshToken: parts[2] || "",
+      clientId: parts[3] || "",
+      twofaSecret: parts[4] || "",
+    };
+  }
+
+  // Mac dinh 3 phan
   return {
     account: parts[0] || "",
     password: parts[1] || AUTO_PASSWORD_VALUE || "",
@@ -281,15 +294,40 @@ function parseHotmailCredentialLine(rawLine) {
     .trim();
   if (!clean) return null;
   const parts = clean.split("|").map((v) => String(v || "").trim());
+  const email = String(parts[0] || "").trim().toLowerCase();
+  if (!isMicrosoftMailboxEmail(email)) return null;
   if (parts.length < 3) return null;
-  if (parts.length === 3) return { email: parts[0], password: parts[1], secret2fa: parts[2] };
+  if (parts.length === 3) {
+    return { email, password: parts[1], secret2fa: parts[2] };
+  }
   return {
-    email: parts[0] || "",
+    email,
     password: parts[1] || "",
     refreshToken: parts[2] || "",
     clientId: parts[3] || "",
     secret2fa: parts[4] || "",
   };
+}
+
+function getMicrosoftMailboxDomain(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const match = normalized.match(/^[^@\s]+@([^@\s]+\.[^@\s]+)$/);
+  return match && match[1] ? String(match[1]).trim() : "";
+}
+
+function isMicrosoftMailboxEmail(value) {
+  const domain = getMicrosoftMailboxDomain(value);
+  if (!domain) return false;
+  return (
+    domain === "hotmail.com" ||
+    domain === "outlook.com" ||
+    domain === "live.com" ||
+    domain === "msn.com" ||
+    domain.startsWith("hotmail.") ||
+    domain.startsWith("outlook.") ||
+    domain.endsWith(".live.com") ||
+    domain.endsWith(".msn.com")
+  );
 }
 
 function normalizeHotmailLine(rawLine) {
@@ -308,8 +346,10 @@ function extractHotmailEmailFromLine(rawLine) {
   const clean = normalizeHotmailLine(rawLine);
   if (!clean) return "";
   const parsed = parseHotmailCredentialLine(clean);
-  if (parsed?.email) return String(parsed.email).trim();
-  if (clean.includes("@")) return clean;
+  if (parsed?.email) return String(parsed.email).trim().toLowerCase();
+  if (isMicrosoftMailboxEmail(clean)) {
+    return String(clean).trim().toLowerCase();
+  }
   return "";
 }
 
@@ -338,20 +378,6 @@ async function getHotmailProxyReadUrl() {
   return raw || HOTMAIL_PROXY_URL_DEFAULT;
 }
 
-async function saveHotmailAccountViaProxy(rawLine) {
-  const readUrl = await getHotmailProxyReadUrl();
-  const saveUrl = hotmailProxyEndpoint(readUrl, "/save-hotmail-account");
-  const res = await fetch(saveUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ line: rawLine }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok || !json?.ok) {
-    throw new Error(json?.error || `Save hotmail failed HTTP ${res.status}`);
-  }
-  return json;
-}
 
 async function getHotmailAccountsViaProxy() {
   const readUrl = await getHotmailProxyReadUrl();
@@ -413,7 +439,7 @@ async function fetchNewHotmailViaProxy() {
 
 async function markHotmailUsedViaProxy(email) {
   const emailNorm = String(email || "").trim().toLowerCase();
-  if (!emailNorm) return;
+  if (!emailNorm || !isMicrosoftMailboxEmail(emailNorm)) return;
   try {
     const readUrl = await getHotmailProxyReadUrl();
     const markUrl = hotmailProxyEndpoint(readUrl, "/mark-used");
@@ -432,6 +458,10 @@ async function markHotmailUsedViaProxy(email) {
 
 function formatCredentialLine(cred) {
   if (!cred?.account) return "";
+  if (cred.refreshToken && cred.clientId) {
+    // Neu co token, tra ve 5 phan
+    return `${cred.account}|${cred.password}|${cred.refreshToken}|${cred.clientId}|${cred.twofaSecret || ""}`;
+  }
   const password = cred.password || AUTO_PASSWORD_VALUE || "";
   const twofa = cred.twofaSecret || "";
   return `${cred.account}|${password}|${twofa}`;
@@ -1705,48 +1735,44 @@ function findBirthdayField() {
 }
 
 function findVisibleEmailField() {
-  return (
-    qs([
+  const direct = qs([
+    'input[type="email"]',
+    'input[name="email"]',
+    'input[id*="email" i]',
+    'input[autocomplete="email"]',
+    'input[autocomplete="username"]',
+  ]);
+  if (direct) return direct;
+
+  return findFieldByPatterns(
+    [
       'input[type="email"]',
-      'input[name="email"]',
-      'input[id*="email" i]',
-      'input[autocomplete="email"]',
-      'input[autocomplete="username"]',
-    ]) ||
-    (isMockOrSandboxHost()
-      ? findFieldByPatterns(
-          [
-            'input[type="email"]',
-            'input[type="text"]',
-            "input:not([type])",
-            "input",
-          ],
-          EMAIL_FIELD_PATTERNS,
-        )
-      : null)
+      'input[type="text"]',
+      "input:not([type])",
+      "input",
+    ],
+    EMAIL_FIELD_PATTERNS || [/email address/i, /\bemail\b/i]
   );
 }
 
 function findVisiblePasswordField() {
-  return (
-    qs([
+  const direct = qs([
+    'input[type="password"]',
+    'input[name="password"]',
+    'input[id*="password" i]',
+    'input[autocomplete="new-password"]',
+    'input[autocomplete="current-password"]',
+  ]);
+  if (direct) return direct;
+
+  return findFieldByPatterns(
+    [
       'input[type="password"]',
-      'input[name="password"]',
-      'input[id*="password" i]',
-      'input[autocomplete="new-password"]',
-      'input[autocomplete="current-password"]',
-    ]) ||
-    (isMockOrSandboxHost()
-      ? findFieldByPatterns(
-          [
-            'input[type="password"]',
-            'input[type="text"]',
-            "input:not([type])",
-            "input",
-          ],
-          PASSWORD_FIELD_PATTERNS,
-        )
-      : null)
+      'input[type="text"]',
+      "input:not([type])",
+      "input",
+    ],
+    PASSWORD_FIELD_PATTERNS || [/password/i, /mat khau/i]
   );
 }
 
@@ -3439,18 +3465,18 @@ function injectEmailQuickDock() {
       <button id="af-eq-gen-2fa" style="all:unset;cursor:pointer;padding:7px 12px;background:#c0392b;border-radius:8px;font:700 12px sans-serif;color:#fff">2FA</button>
       <button id="af-eq-rand-pass" style="all:unset;cursor:pointer;padding:7px 12px;background:#e67e22;border-radius:8px;font:700 12px sans-serif;color:#fff">Random</button>
       <button id="af-eq-hotmail-new" style="all:unset;cursor:pointer;padding:7px 12px;background:#8e44ad;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🚀 HM New</button>
-      <button id="af-eq-hotmail-save" style="all:unset;cursor:pointer;padding:7px 12px;background:#2980b9;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📥 HM Save</button>
       <button id="af-eq-hotmail-use" style="all:unset;cursor:pointer;padding:7px 12px;background:#1f7a45;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📨 HM Use</button>
       <button id="af-eq-hotmail-code" style="all:unset;cursor:pointer;padding:7px 12px;background:#d35400;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🧩 HM Code</button>
-      <button id="af-eq-hotmail-refresh" style="all:unset;cursor:pointer;padding:7px 12px;background:#34495e;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🔄 HM List</button>
-      <button id="af-eq-hotmail-pick" style="all:unset;cursor:pointer;padding:7px 12px;background:#16a085;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🎯 HM Pick</button>
-      <button id="af-eq-hotmail-xl" style="all:unset;cursor:pointer;padding:7px 12px;background:#0f766e;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📊 XL Paste</button>
+      <button id="af-eq-hotmail-refresh" style="all:unset;cursor:pointer;padding:7px 12px;background:#34495e;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📋 HM List</button>
       <button id="af-eq-tempmail" style="all:unset;cursor:pointer;padding:7px 12px;background:#8e44ad;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📧 Use</button>
       <button id="af-eq-tempmail-new" style="all:unset;cursor:pointer;padding:7px 12px;background:#9b59b6;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🆕 New</button>
       <button id="af-eq-get-code" style="all:unset;cursor:pointer;padding:7px 12px;background:#d35400;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🔐 Code</button>
+      <button id="af-eq-hotmail-pick" style="all:unset;cursor:pointer;padding:7px 12px;background:#16a085;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🎯 HM Pick</button>
+      <button id="af-eq-switch-mode" style="all:unset;cursor:pointer;padding:7px 12px;background:#0e6655;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🔄 → HM</button>
       <button id="af-eq-clear" style="all:unset;cursor:pointer;padding:7px 12px;background:#0f3460;border-radius:8px;font:700 12px sans-serif;color:#aaa">Clear</button>
     </div>
   `;
+
 
   uiRoot.appendChild(panel);
   makeFloatingMovable(panel, {
@@ -3484,8 +3510,8 @@ function injectEmailQuickDock() {
   const updateActiveHotmailLabel = async () => {
     if (!activeHotmailEl) return;
     const data = await storageLocalGet([HOTMAIL_ACTIVE_EMAIL_KEY]);
-    const email = String(data[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim();
-    if (email) {
+    const email = String(data[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim().toLowerCase();
+    if (email && isMicrosoftMailboxEmail(email)) {
       activeHotmailEl.textContent = `Hotmail: ${email}`;
       activeHotmailEl.title = email;
       activeHotmailEl.style.color = "#98f5bf";
@@ -3553,63 +3579,6 @@ function injectEmailQuickDock() {
     build();
   };
 
-  const parseHotmailRowsFromExcelText = (rawText) => {
-    const lines = String(rawText || "")
-      .split(/\r?\n/)
-      .map((s) => String(s || "").trim())
-      .filter(Boolean);
-    const out = [];
-    for (const line of lines) {
-      const clean = normalizeHotmailLine(line).replace(/^"|"$/g, "").trim();
-      if (!clean) continue;
-
-      if (/email|refresh[_\s-]*token|client[_\s-]*id/i.test(clean) && /\t|,|;|\|/.test(clean)) {
-        continue;
-      }
-
-      const direct = parseHotmailCredentialLine(clean);
-      if (direct?.email) {
-        out.push(`${direct.email}|${direct.password}|${direct.refreshToken}|${direct.clientId}`);
-        continue;
-      }
-
-      const cols = clean.split(/\t|,|;/).map((c) => String(c || "").trim().replace(/^"|"$/g, ""));
-      if (cols.length >= 4 && String(cols[0] || "").includes("@")) {
-        out.push(`${cols[0]}|${cols[1] || ""}|${cols[2] || ""}|${cols[3] || ""}`);
-        continue;
-      }
-
-      if (clean.includes("@")) {
-        out.push(clean);
-      }
-    }
-    return out;
-  };
-
-  const mergeHotmailQueueLines = (newLines) => {
-    const currentLines = String(inputEl.value || "")
-      .split(/\r?\n/)
-      .map((v) => String(v || "").trim())
-      .filter(Boolean);
-
-    const usedMap = new Set(
-      currentLines
-        .filter((line) => isHotmailLineUsed(line))
-        .map((line) => extractHotmailEmailFromLine(line).toLowerCase())
-        .filter(Boolean),
-    );
-
-    const map = new Map();
-    for (const line of [...currentLines, ...newLines]) {
-      const email = extractHotmailEmailFromLine(line).toLowerCase();
-      if (!email) continue;
-      const normalized = normalizeHotmailLine(line);
-      map.set(email, usedMap.has(email) ? markHotmailLineUsed(normalized) : normalized);
-    }
-
-    inputEl.value = Array.from(map.values()).join("\n");
-    build();
-  };
 
   const resolveHotmailUseTarget = async () => {
     const nextFromQueue = getNextUntickedHotmailFromInput();
@@ -3630,8 +3599,8 @@ function injectEmailQuickDock() {
 
   const resolveHotmailTargetFromDock = async () => {
     const stored = await storageLocalGet([HOTMAIL_ACTIVE_EMAIL_KEY]);
-    const activeEmail = String(stored[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim();
-    if (activeEmail) {
+    const activeEmail = String(stored[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim().toLowerCase();
+    if (activeEmail && isMicrosoftMailboxEmail(activeEmail)) {
       return {
         email: activeEmail,
         password: AUTO_PASSWORD_VALUE || "",
@@ -3649,18 +3618,18 @@ function injectEmailQuickDock() {
       };
     }
 
-    if (firstLine.includes("@")) {
+    if (isMicrosoftMailboxEmail(firstLine)) {
       return {
-        email: firstLine,
+        email: String(firstLine).trim().toLowerCase(),
         password: AUTO_PASSWORD_VALUE || "",
         parsedLine: null,
       };
     }
 
     const data = await storageLocalGet([HOTMAIL_ACTIVE_EMAIL_KEY]);
-    const fromStore = String(data[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim();
+    const fromStore = String(data[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim().toLowerCase();
     return {
-      email: fromStore,
+      email: isMicrosoftMailboxEmail(fromStore) ? fromStore : "",
       password: AUTO_PASSWORD_VALUE || "",
       parsedLine: null,
     };
@@ -3680,53 +3649,26 @@ function injectEmailQuickDock() {
     return String(lines[0] || "").trim();
   };
 
-  const pickActiveHotmailFromInput = async () => {
-    const line = getDockCaretLine();
-    if (!line) throw new Error("Dat con tro vao dong email Hotmail de chon");
-
-    const parsed = parseHotmailCredentialLine(line);
-    const email = parsed?.email || (line.includes("@") ? line : "");
-    if (!email) throw new Error("Dong dang chon khong phai email Hotmail hop le");
-
-    if (parsed) {
-      await saveHotmailAccountViaProxy(line);
-    }
-    await storageLocalSet({ [HOTMAIL_ACTIVE_EMAIL_KEY]: email });
-    await updateActiveHotmailLabel();
-    return email;
-  };
-
-  const resolveHotmailDeleteTarget = async () => {
-    const data = await storageLocalGet([HOTMAIL_ACTIVE_EMAIL_KEY]);
-    const active = String(data[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim();
-    if (active) return active;
-
-    const line = getDockCaretLine();
-    const parsed = parseHotmailCredentialLine(line);
-    const email = parsed?.email || (line.includes("@") ? line : "");
-    return String(email || "").trim();
-  };
 
   const fillHotmailNow = async (target) => {
-    if (!target.email) {
+    const normalizedEmail = String(target?.email || "").trim().toLowerCase();
+    if (!normalizedEmail) {
       throw new Error("Chua co email Hotmail. Hay paste email hoac line day du");
     }
-
-    if (target.sourceLine && target.parsedLine) {
-      await saveHotmailAccountViaProxy(normalizeHotmailLine(target.sourceLine));
-    } else if (target.parsedLine) {
-      await saveHotmailAccountViaProxy(normalizeHotmailLine(getPrimaryDockLine()));
+    if (!isMicrosoftMailboxEmail(normalizedEmail)) {
+      throw new Error("Email nay khong phai Hotmail / Outlook / Live / MSN");
     }
 
-    const inbox = await readHotmailInboxViaProxy({ email: target.email, top: 1 });
-    await storageLocalSet({ [HOTMAIL_ACTIVE_EMAIL_KEY]: target.email });
+
+    const inbox = await readHotmailInboxViaProxy({ email: normalizedEmail, top: 1 });
+    await storageLocalSet({ [HOTMAIL_ACTIVE_EMAIL_KEY]: normalizedEmail });
     await updateActiveHotmailLabel();
 
     const emailEl = findVisibleEmailField();
     const passEl = findVisiblePasswordField();
     let filled = false;
     if (emailEl) {
-      typeInto(emailEl, target.email);
+      typeInto(emailEl, normalizedEmail);
       filled = true;
     }
     if (passEl && target.password) {
@@ -3735,11 +3677,11 @@ function injectEmailQuickDock() {
     }
 
     if (!filled) {
-      await navigator.clipboard.writeText(target.email);
-      toast(`Hotmail copied: ${target.email}`, "#27ae60");
+      await navigator.clipboard.writeText(normalizedEmail);
+      toast(`Hotmail copied: ${normalizedEmail}`, "#27ae60");
       return;
     }
-    toast(`Da dien Hotmail: ${target.email} (${Number(inbox.count || 0)} mail)`, "#27ae60");
+    toast(`Da dien Hotmail: ${normalizedEmail} (${Number(inbox.count || 0)} mail)`, "#27ae60");
   };
 
   const fetchLatestHotmailCode = async () => {
@@ -3878,14 +3820,10 @@ function injectEmailQuickDock() {
   };
 
   const build = () => {
-    const lines = String(inputEl.value || "")
-      .split(/\r?\n/)
-      .map((v) => v.trim())
-      .filter(Boolean);
-    lastParsedCredentials = lines.map(parseCredentialLine).filter(Boolean);
+    const lines = String(inputEl.value || "").split(/\r?\n/).map((v) => v.trim());
+    lastParsedCredentials = lines.map(parseCredentialLine);
     const results = lastParsedCredentials.map(formatCredentialLine).filter(Boolean);
     lastFormatted = results.join("\n");
-    scheduleAutoCopy();
     persistHotmailQueueInput().catch(() => {});
   };
 
@@ -3896,6 +3834,11 @@ function injectEmailQuickDock() {
     const emailField = findVisibleEmailField();
     const fromField = String(emailField?.value || "").trim();
     if (fromField) return fromField;
+
+    // PRIORITY: Check Hotmail first, then TempMail
+    const hmData = await storageLocalGet([HOTMAIL_ACTIVE_EMAIL_KEY]);
+    const fromHM = String(hmData[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim();
+    if (fromHM) return fromHM;
 
     const lastTemp = await getLastTempMailAddress();
     const fromTemp = String(lastTemp?.email || "").trim();
@@ -4039,51 +3982,6 @@ function injectEmailQuickDock() {
     });
 
   document
-    .getElementById("af-eq-hotmail-save")
-    .addEventListener("click", async () => {
-      const btn = document.getElementById("af-eq-hotmail-save");
-      if (!btn) return;
-      const lines = String(inputEl.value || "")
-        .split(/\r?\n/)
-        .map((v) => String(v || "").trim())
-        .filter(Boolean);
-      const fullLines = lines.filter((line) => !!parseHotmailCredentialLine(line));
-      if (!fullLines.length) {
-        toast("Can it nhat 1 line Hotmail day du de save", "#e67e22");
-        return;
-      }
-
-      btn.disabled = true;
-      btn.style.opacity = "0.5";
-      btn.textContent = "⏳ Save...";
-      let okCount = 0;
-      for (const line of fullLines) {
-        try {
-          const saved = await saveHotmailAccountViaProxy(line);
-          if (saved?.email) {
-            await storageLocalSet({ [HOTMAIL_ACTIVE_EMAIL_KEY]: saved.email });
-          }
-          okCount += 1;
-        } catch (_) {}
-      }
-      await updateActiveHotmailLabel();
-
-      if (okCount > 0) {
-        toast(`Da save ${okCount}/${fullLines.length} Hotmail account`, "#27ae60");
-        btn.textContent = "✅ Saved";
-      } else {
-        toast("Khong save duoc account nao", "#e74c3c");
-        btn.textContent = "❌ Save";
-      }
-      setTimeout(() => {
-        if (!btn) return;
-        btn.textContent = "📥 HM Save";
-        btn.style.opacity = "1";
-        btn.disabled = false;
-      }, 1200);
-    });
-
-  document
     .getElementById("af-eq-hotmail-refresh")
     .addEventListener("click", async () => {
       const btn = document.getElementById("af-eq-hotmail-refresh");
@@ -4093,31 +3991,21 @@ function injectEmailQuickDock() {
       btn.textContent = "⏳ List...";
       try {
         const accounts = await getHotmailAccountsViaProxy();
-        const emails = accounts.map((a) => String(a?.email || "").trim()).filter(Boolean);
-        if (!emails.length) {
-          toast("Chua co Hotmail account nao trong proxy", "#e67e22");
-        } else {
-          const oldLines = String(inputEl.value || "")
-            .split(/\r?\n/)
-            .map((v) => String(v || "").trim())
-            .filter(Boolean);
-          const usedMap = new Set(
-            oldLines
-              .filter((line) => isHotmailLineUsed(line))
-              .map((line) => extractHotmailEmailFromLine(line).toLowerCase())
-              .filter(Boolean),
-          );
+        // Chi lay nhung acc chua dung (available)
+        const availableAccs = accounts.filter(a => a.state === "available");
+        const emails = availableAccs.map((a) => String(a?.email || "").trim()).filter(Boolean);
 
-          inputEl.value = emails
-            .map((email) => (usedMap.has(email.toLowerCase()) ? `✅ ${email}` : email))
-            .join("\n");
+        if (!emails.length) {
+          toast("Khong co Hotmail 'available' nao tren server", "#e67e22");
+        } else {
+          inputEl.value = emails.join("\n");
           build();
-          toast(`Da nap ${emails.length} account vao input`, "#27ae60");
+          toast(`Da tai ${emails.length} Hotmail chua dung vao input`, "#27ae60");
         }
       } catch (err) {
         toast(`❌ ${err.message || err}`, "#e74c3c");
       } finally {
-        btn.textContent = "🔄 HM List";
+        btn.textContent = "📋 HM List";
         btn.style.opacity = "1";
         btn.disabled = false;
       }
@@ -4144,60 +4032,124 @@ function injectEmailQuickDock() {
     }
   });
 
-  document
-    .getElementById("af-eq-hotmail-pick")
-    .addEventListener("click", async () => {
-      const btn = document.getElementById("af-eq-hotmail-pick");
-      if (!btn) return;
-      btn.disabled = true;
-      btn.style.opacity = "0.5";
-      btn.textContent = "⏳ Pick...";
-      try {
-        const email = await pickActiveHotmailFromInput();
-        toast(`Hotmail active: ${email}`, "#27ae60");
-        btn.textContent = "✅ Pick";
-      } catch (err) {
-        toast(`❌ ${err.message || err}`, "#e74c3c");
-        btn.textContent = "❌ Pick";
-      } finally {
-        setTimeout(() => {
-          if (!btn) return;
-          btn.textContent = "🎯 HM Pick";
-          btn.style.opacity = "1";
-          btn.disabled = false;
-        }, 1200);
-      }
-    });
+  // Nut Pick: Lay dung dong dang tro chuot de Use + Mark Used
+  document.getElementById("af-eq-hotmail-pick")?.addEventListener("click", async () => {
+    const btn = document.getElementById("af-eq-hotmail-pick");
+    if (!btn) return;
 
-  document
-    .getElementById("af-eq-hotmail-xl")
-    .addEventListener("click", async () => {
-      const btn = document.getElementById("af-eq-hotmail-xl");
-      if (!btn) return;
-      btn.disabled = true;
-      btn.style.opacity = "0.5";
-      btn.textContent = "⏳ XL...";
-      try {
-        const clip = await navigator.clipboard.readText();
-        const rows = parseHotmailRowsFromExcelText(clip);
-        if (!rows.length) {
-          throw new Error("Clipboard khong co du lieu hop le (email|pass|refresh|client)");
-        }
-        mergeHotmailQueueLines(rows);
-        toast(`Da import ${rows.length} dong tu Excel`, "#27ae60");
-        btn.textContent = "✅ XL";
-      } catch (err) {
-        toast(`❌ ${err.message || err}`, "#e74c3c");
-        btn.textContent = "❌ XL";
-      } finally {
-        setTimeout(() => {
-          if (!btn) return;
-          btn.textContent = "📊 XL Paste";
-          btn.style.opacity = "1";
-          btn.disabled = false;
-        }, 1400);
+    const line = getDockCaretLine();
+    if (!line) {
+      toast("Dat con tro vao dong email muon su dung", "#e67e22");
+      return;
+    }
+
+    const email = extractHotmailEmailFromLine(line);
+    if (!email) {
+      toast("Dong nay khong chua email hop le", "#e67e22");
+      return;
+    }
+
+    btn.disabled = true;
+    btn.style.opacity = "0.5";
+    btn.textContent = "⏳ Picking...";
+
+    try {
+      const parsed = parseHotmailCredentialLine(line);
+      const target = {
+        email,
+        password: parsed?.password || AUTO_PASSWORD_VALUE || "",
+        parsedLine: parsed
+      };
+
+      await fillHotmailNow(target);
+      markHotmailUsedViaProxy(email); // Danh dau tren server
+      markHotmailUsedInInput(email);  // Danh dau tren input (tick xanh)
+
+      toast(`🎯 Da Pick & Fill: ${email}`, "#27ae60");
+      btn.textContent = "✅ Picked";
+    } catch (err) {
+      toast(`❌ ${err.message}`, "#e74c3c");
+      btn.textContent = "❌ Pick";
+    } finally {
+      setTimeout(() => {
+        if (!btn) return;
+        btn.textContent = "🎯 HM Pick";
+        btn.style.opacity = "1";
+        btn.disabled = false;
+      }, 1400);
+    }
+  });
+
+  // Nut Switch: Chuyen doi Tiny (3-part) <-> Hotmail (5-part) tai dong dang tro chuot
+  document.getElementById("af-eq-switch-mode")?.addEventListener("click", async () => {
+    const btn = document.getElementById("af-eq-switch-mode");
+    if (!btn) return;
+
+    const fullText = String(inputEl.value || "");
+    const caretPos = inputEl.selectionStart || 0;
+    const lines = fullText.split(/\r?\n/);
+
+    // Tim index cua dong tai caret
+    let targetIdx = 0;
+    let consumed = 0;
+    for (let i = 0; i < lines.length; i++) {
+       const l = lines[i];
+       if (caretPos >= consumed && caretPos <= consumed + l.length + 1) {
+         targetIdx = i;
+         break;
+       }
+       consumed += l.length + 1;
+    }
+
+    const targetLine = String(lines[targetIdx] || "").trim();
+    if (!targetLine) {
+       toast("Dat con tro vao dong can chuyen doi", "#e67e22");
+       return;
+    }
+
+    const parts = targetLine.split("|").map(p => p.trim());
+
+    btn.disabled = true;
+    btn.style.opacity = "0.5";
+    btn.textContent = "⏳ Switching...";
+
+    try {
+      const data = await storageLocalGet([HOTMAIL_ACTIVE_EMAIL_KEY]);
+      const activeHM = String(data[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim();
+      const lastTemp = await getLastTempMailAddress();
+      const activeTM = String(lastTemp?.email || "").trim();
+
+      const currentEmail = parts[0].toLowerCase();
+      const isCurrentlyHM = activeHM && currentEmail === activeHM.toLowerCase();
+
+      let newEmail = "";
+      if (isCurrentlyHM && activeTM) {
+        newEmail = activeTM; // HM -> TM
+        toast("🔄 Đã chuyển sang Nick Tiny", "#27ae60");
+      } else if (activeHM) {
+        newEmail = activeHM; // TM (hoặc khác) -> HM
+        toast("🔄 Đã chuyển sang Nick Hotmail", "#27ae60");
+      } else {
+        throw new Error("Chưa có Nick đối ứng để switch");
       }
-    });
+
+      // email|mk|2fa
+      const pass = parts[1] || AUTO_PASSWORD_VALUE || "";
+      const twofa = parts[parts.length - 1] || "";
+
+      lines[targetIdx] = `${newEmail}|${pass}|${twofa}`;
+      inputEl.value = lines.join("\n");
+      build();
+    } catch (err) {
+       toast(`❌ ${err.message}`, "#e74c3c");
+    } finally {
+       btn.disabled = false;
+       btn.style.opacity = "1";
+       setTimeout(() => {
+         if (btn && !btn.textContent.includes("🔄")) btn.textContent = "🔄 Switch";
+       }, 1500);
+    }
+  });
 
   document
     .getElementById("af-eq-hotmail-use")
@@ -4219,14 +4171,6 @@ function injectEmailQuickDock() {
         return;
       }
       
-      const ok = await showAfConfirmDialog({
-        title: "Đổi sang Hotmail?",
-        message: `Hệ thống sẽ điền Hotmail: ${target.email}\n\nSau khi điền, tool sẽ tự động định dạng lại dòng hiện tại thành dạng "hotmail|mk|2fa" bằng tk này. Bạn đồng ý chứ?`,
-        confirmText: "Đổi luôn",
-        cancelText: "Hủy"
-      });
-      if (!ok) return;
-
       btn.disabled = true;
       btn.style.opacity = "0.5";
       btn.textContent = "⏳ HM Use...";
@@ -4283,7 +4227,24 @@ function injectEmailQuickDock() {
       btn.style.opacity = "0.5";
       btn.textContent = "⏳ HM Code...";
       try {
-        const code = await fetchLatestHotmailCode();
+        const data = await storageLocalGet([HOTMAIL_ACTIVE_EMAIL_KEY]);
+        const email = String(data[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim();
+        if (!email) throw new Error("Chua co Hotmail active. Hay bam HM New hoac điền mail truoc.");
+
+        const res = await readHotmailInboxViaProxy({ email, top: 5 });
+        const msgs = res.messages || [];
+
+        let code = "";
+        for (const m of msgs) {
+          const text = (m.body || m.bodyPreview || m.subject || "");
+          const m6 = text.match(/\b(\d{6})\b/);
+          if (m6) { code = m6[1]; break; }
+          const m4 = text.match(/\b(\d{4})\b/);
+          if (m4) { code = m4[1]; break; }
+        }
+
+        if (!code) throw new Error("Khong tim thay code 4-6 so trong 5 mail gan nhat");
+
         const codeEl = findVisibleVerificationCodeField();
         if (codeEl) {
           typeInto(codeEl, code);
@@ -4396,14 +4357,6 @@ function injectEmailQuickDock() {
       const codeEl = findVisibleVerificationCodeField();
       if (codeEl) {
         typeInto(codeEl, code);
-        const after = String(codeEl.value || "").trim();
-        if (after !== code) {
-          codeEl.focus();
-          codeEl.value = code;
-          codeEl.dispatchEvent(new Event("input", { bubbles: true }));
-          codeEl.dispatchEvent(new Event("change", { bubbles: true }));
-          if (typeof codeEl.blur === "function") codeEl.blur();
-        }
         setTimeout(() => {
           clickContinueWithRetry(12, 150);
         }, 100);
@@ -4459,14 +4412,6 @@ function injectEmailQuickDock() {
       const codeEl = findVisibleVerificationCodeField();
       if (codeEl) {
         typeInto(codeEl, code);
-        const after = String(codeEl.value || "").trim();
-        if (after !== code) {
-          codeEl.focus();
-          codeEl.value = code;
-          codeEl.dispatchEvent(new Event("input", { bubbles: true }));
-          codeEl.dispatchEvent(new Event("change", { bubbles: true }));
-          if (typeof codeEl.blur === "function") codeEl.blur();
-        }
         setTimeout(() => {
           clickVerifyIfEnabled();
         }, 120);
@@ -7277,13 +7222,34 @@ function findBestSelectOption(options, value) {
 // ============================================================
 function typeInto(el, text) {
   if (!el || text == null) return;
-  const nativeSetter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  ).set;
-  nativeSetter.call(el, String(text));
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-  el.dispatchEvent(new Event("change", { bubbles: true }));
+  const val = String(text);
+  try {
+    el.focus();
+    // Try native insertion first (best for React/modern apps)
+    document.execCommand("selectAll", false);
+    document.execCommand("insertText", false, val);
+
+    // Verify if it worked
+    if (String(el.value || "") !== val) {
+       throw new Error("insertText failed to update value");
+    }
+  } catch (err) {
+    // Force set fallback if insertText fails to stick
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    if (nativeSetter) {
+      nativeSetter.call(el, val);
+    } else {
+      el.value = val;
+    }
+  } finally {
+    // Always trigger events to ensure app state updates
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    if (typeof el.blur === "function") el.blur();
+  }
 }
 
 // ============================================================
@@ -7309,12 +7275,21 @@ function qs(selectors) {
   for (const s of selectors) {
     try {
       const all = document.querySelectorAll(s);
-      let first = null;
-      for (const el of all) {
-        if (!first) first = el;
+      if (!all.length) continue;
+
+      // Smart Priority: Uu tien o trong modal dang hien thi
+      const candidates = Array.from(all).reverse();
+      for (const el of candidates) {
+        const isInModal = el.closest('[role="dialog"], [aria-modal="true"], .modal, .modal-box, .modal-content, [class*="modal"i], [class*="dialog"i]');
+        if (isInModal && isInteractable(el)) return el;
+      }
+
+      // Neu khong tim thay trong modal, lay o interactable dau tai (search nguoc)
+      for (const el of candidates) {
         if (isInteractable(el)) return el;
       }
-      if (first) return first;
+
+      return candidates[0];
     } catch (_) {}
   }
   return null;
@@ -7356,6 +7331,11 @@ function isInteractable(el) {
     el.getClientRects().length === 0
   )
     return false;
+
+  // Final check: phai co kich thuoc thuc te
+  const rect = el.getBoundingClientRect();
+  if (rect.width <= 1 || rect.height <= 1) return false;
+
   return true;
 }
 
