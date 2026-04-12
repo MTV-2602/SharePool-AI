@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoFill Extension v5.1</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        width: 400px;
+        margin: 0;
+        padding: 12px;
+        background: #f4f6f9;
+        color: #2c3e50;
+      }
+      h1 {
+        text-align: center;
+        font-size: 18px;
+        margin: 8px 0 15px 0;
+        color: #2980b9;
+      }
+      .nav {
+        display: flex;
+        margin-bottom: 12px;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .nav-btn {
+        flex: 1;
+        padding: 12px;
+        border: none;
+        background: #ecf0f1;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .nav-btn.active {
+        background: #3498db;
+        color: white;
+      }
+      .tab-panel {
+        display: none;
+      }
+      .tab-panel.active {
+        display: block;
+      }
+      textarea,
+      input,
+      select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #bdc3c7;
+        border-radius: 6px;
+        margin: 6px 0;
+        box-sizing: border-box;
+        font-size: 14px;
+      }
+      button {
+        width: 100%;
+        padding: 12px;
+        margin: 8px 0;
+        border: none;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .btn-primary {
+        background: #27ae60;
+        color: white;
+      }
+      .btn-primary:hover {
+        background: #219653;
+      }
+      .btn-danger {
+        background: #e74c3c;
+        color: white;
+      }
+      .btn-danger:hover {
+        background: #c0392b;
+      }
+      .gen-box {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        margin: 10px 0;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .hint {
+        font-size: 12.5px;
+        color: #7f8c8d;
+        margin: 8px 0;
+      }
+      #toast {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        padding: 12px 18px;
+        border-radius: 8px;
+        z-index: 99999;
+        font-size: 14px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        display: none;
+        text-align: center;
+        max-width: 340px;
+      }
+      #toast.show {
+        display: block;
+      }
+      #auto-gen-status {
+        margin: 12px 0;
+        padding: 10px;
+        background: #ecf0f1;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      /* BIN Status Table */
+      .bin-status-wrap {
+        margin: 10px 0;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #fff;
+      }
+      .bin-status-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        background: #2c3e50;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .bin-status-header button {
+        width: auto;
+        padding: 4px 10px;
+        margin: 0;
+        font-size: 12px;
+        background: #e74c3c;
+        color: #fff;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .bin-status-list {
+        max-height: 180px;
+        overflow-y: auto;
+      }
+      .bin-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 12px;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 13px;
+      }
+      .bin-row:last-child { border-bottom: none; }
+      .bin-row:hover { background: #f8f9fa; }
+      .bin-row.tested { background: #eafaf1; }
+      .bin-row.untested { background: #fff; }
+      .bin-name {
+        font-family: monospace;
+        font-weight: 700;
+        font-size: 14px;
+        color: #2c3e50;
+        flex: 1;
+      }
+      .bin-badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin: 0 8px;
+        font-weight: 600;
+      }
+      .bin-badge.tested { background: #27ae60; color: #fff; }
+      .bin-badge.untested { background: #bdc3c7; color: #555; }
+      .bin-count { font-size: 12px; color: #7f8c8d; margin: 0 8px; min-width: 55px; text-align: right; }
+      .bin-del-btn {
+        width: auto !important;
+        padding: 3px 8px !important;
+        margin: 0 !important;
+        font-size: 12px !important;
+        background: #e74c3c !important;
+        color: #fff !important;
+        border-radius: 4px !important;
+        cursor: pointer !important;
+      }
+      .bin-empty { padding: 12px; text-align: center; color: #aaa; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <h1>🔧 AutoFill Extension v5.1</h1>
+
+    <div class="nav">
+      <button class="nav-btn" data-tab="manual">📋 Manual Cards</button>
+      <button class="nav-btn active" data-tab="autogen">🔢 Auto Gen BIN</button>
+      <button class="nav-btn" data-tab="address">🏠 Address</button>
+      <button class="nav-btn" data-tab="pass">🔑 Pass</button>
+      <button class="nav-btn" data-tab="tempmail">📧 TempMail</button>
+      <button class="nav-btn" data-tab="email">✉️ Email</button>
+    </div>
+
+    <!-- Manual Cards -->
+    <div id="tab-manual" class="tab-panel">
+      <textarea
+        id="card-input"
+        rows="12"
+        placeholder="Dán danh sách thẻ (mỗi dòng một thẻ):&#10;4242424242424242|08|2032|123"
+      ></textarea>
+      <button id="btn-save-cards" class="btn-primary">
+        💾 Lưu danh sách thẻ thủ công
+      </button>
+      <button
+        id="btn-reset-card"
+        class="btn-primary"
+        style="background: #95a5a6"
+      >
+        🔄 Reset Card Index
+      </button>
+    </div>
+
+    <!-- Auto Gen BIN -->
+    <div id="tab-autogen" class="tab-panel active">
+      <div class="gen-box">
+        <label><strong>BIN (nhập nhiều dòng)</strong></label>
+        <textarea
+          id="auto-bin"
+          rows="3"
+          placeholder="Mỗi dòng một BIN, ví dụ:&#10;625804&#10;490612&#10;424242"
+        ></textarea>
+
+        <div class="grid">
+          <div>
+            <label>Độ dài thẻ</label>
+            <select id="auto-length">
+              <option value="16" selected>16 số (Visa/Mastercard)</option>
+              <option value="15">15 số (Amex)</option>
+              <option value="14">14 số (Diners)</option>
+            </select>
+          </div>
+          <div>
+            <label>Số lần test tối đa</label>
+            <input
+              type="number"
+              id="auto-count"
+              value="100"
+              min="10"
+              step="10"
+            />
+          </div>
+        </div>
+
+        <div class="grid">
+          <div>
+            <label>Giới hạn lượt test</label>
+            <input type="text" value="Theo từng BIN (1 giới hạn duy nhất)" readonly />
+          </div>
+          <div>
+            <label>Chiến lược xoay BIN</label>
+            <select id="auto-bin-strategy">
+              <option value="round_robin" selected>Round Robin</option>
+              <option value="sequential">Tuần tự từng BIN</option>
+              <option value="random">Random BIN</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div>
+            <label>Kiểu Expiry</label>
+            <select id="auto-expiry-mode">
+              <option value="random_future" selected>Random tương lai</option>
+              <option value="fixed">Cố định 12/2030</option>
+              <option value="next_year">Năm kế tiếp</option>
+            </select>
+          </div>
+          <div>
+            <label>Kiểu CVV</label>
+            <select id="auto-cvv-mode">
+              <option value="fixed_test" selected>Fixed test (123/1234)</option>
+              <option value="random">Random CVV</option>
+            </select>
+          </div>
+        </div>
+
+        <button id="btn-enable-auto-gen" class="btn-danger">
+          🚀 BẬT AUTO GEN BIN MODE & LƯU
+        </button>
+        <button
+          id="btn-disable-auto-gen"
+          class="btn-primary"
+          style="background: #95a5a6"
+        >
+          ⛔ TẮT AUTO GEN BIN MODE
+        </button>
+
+        <div id="auto-gen-status">📋 Đang dùng danh sách thẻ thủ công</div>
+
+        <!-- BIN Status Table -->
+        <div class="bin-status-wrap" id="bin-status-wrap" style="display:none">
+          <div class="bin-status-header">
+            <span>📊 Trạng thái BIN</span>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              <button id="btn-copy-tested-bins" style="background:#27ae60">📋 Đã test</button>
+              <button id="btn-copy-untested-bins" style="background:#2980b9">📋 Chưa test</button>
+              <button id="btn-reset-bin-usage" style="background:#e67e22">🔄 Reset</button>
+              <button id="btn-clear-tested-bins">🗑️ Xóa đã test</button>
+            </div>
+          </div>
+          <div class="bin-status-list" id="bin-status-list"></div>
+        </div>
+
+          Sau khi bật, extension sẽ tự sinh thẻ hợp lệ (Luhn) sau mỗi Auto
+          Submit.<br />Bạn có thể nhập nhiều BIN + số lần test + nhiều kiểu test.
+        </p>
+
+        <label><strong>Thẻ đã sử dụng</strong></label>
+        <textarea
+          id="used-cards-log"
+          rows="5"
+          readonly
+          placeholder="Danh sách thẻ đã thử sẽ lưu tại đây"
+        ></textarea>
+        <button
+          id="btn-clear-used-cards"
+          class="btn-primary"
+          style="background: #95a5a6"
+        >
+          🧹 Xóa danh sách thẻ đã dùng
+        </button>
+
+        <label><strong>Thẻ thanh toán thành công</strong></label>
+        <textarea
+          id="success-cards-log"
+          rows="4"
+          readonly
+          placeholder="Thẻ thành công sẽ được lưu ở đây"
+        ></textarea>
+        <button
+          id="btn-clear-success-cards"
+          class="btn-primary"
+          style="background: #95a5a6"
+        >
+          🧹 Xóa danh sách thẻ thành công
+        </button>
+      </div>
+    </div>
+
+    <!-- Address -->
+    <div id="tab-address" class="tab-panel">
+      <select id="addr-mode" style="margin-bottom: 8px">
+        <option value="random_kr_indo_mix">Default KR top + Indo random</option>
+        <option value="random_us_indo_mix">Random US top + Indo random</option>
+        <option value="random_uk_indo_mix">Random UK top + Indo random</option>
+        <option value="random_kr">Random KR</option>
+        <option value="random_us">Random US</option>
+        <option value="random_uk">Random UK</option>
+        <option value="random_jp">Random JP</option>
+        <option value="random_indonesia">Random Indonesia</option>
+        <option value="random_india">Random India</option>
+        <option value="random_algeria">Random Algeria</option>
+        <option value="random_kazakhstan">Random Kazakhstan</option>
+        <option value="random_chile">Random Chile</option>
+        <option value="random_any" style="font-weight:bold;color:#e74c3c">Random Any (Global)</option>
+        <option value="fixed_kr">Fixed KR</option>
+        <option value="fixed_us">Fixed US</option>
+        <option value="fixed_uk">Fixed UK</option>
+        <option value="fixed_jp">Fixed JP</option>
+        <option value="fixed_indonesia">Fixed Indonesia</option>
+        <option value="fixed_india">Fixed India</option>
+        <option value="fixed_algeria">Fixed Algeria</option>
+        <option value="fixed_kazakhstan">Fixed Kazakhstan</option>
+        <option value="fixed_chile">Fixed Chile</option>
+      </select>
+      <textarea
+        id="addr-input"
+        rows="10"
+        placeholder="Dán danh sách địa chỉ..."
+      ></textarea>
+      <button id="btn-save-addr" class="btn-primary">
+        💾 Lưu danh sách địa chỉ
+      </button>
+      <button
+        id="btn-reset-addr"
+        class="btn-primary"
+        style="background: #95a5a6"
+      >
+        🔄 Reset Address Index
+      </button>
+    </div>
+
+    <!-- Pass -->
+    <div id="tab-pass" class="tab-panel">
+      <textarea
+        id="pass-input"
+        rows="8"
+        placeholder="Dán danh sách password..."
+      ></textarea>
+      <button id="btn-save-pass" class="btn-primary">
+        💾 Lưu danh sách Pass
+      </button>
+      <div
+        id="pass-display"
+        style="
+          margin: 12px 0;
+          padding: 10px;
+          background: #fff;
+          border-radius: 6px;
+          display: none;
+        "
+      >
+        <strong>Pass hiện tại:</strong><br />
+        <span
+          id="pass-current"
+          style="font-size: 15px; word-break: break-all"
+        ></span
+        ><br />
+        <small id="pass-idx-label"></small>
+      </div>
+      <button
+        id="btn-copy-next-pass"
+        class="btn-primary"
+        style="background: #8e44ad"
+      >
+        📋 Copy Pass Tiếp Theo
+      </button>
+      <button
+        id="btn-reset-pass"
+        class="btn-primary"
+        style="background: #95a5a6"
+      >
+        🔄 Reset Pass Index
+      </button>
+    </div>
+
+    <!-- TempMail -->
+    <div id="tab-tempmail" class="tab-panel">
+      <div style="margin: 12px 0; padding: 12px; background: #e8f8f5; border-radius: 8px; border: 1px solid #a2d5c6">
+        <strong style="color: #1e7e74">🛠️ TempMail Integration</strong>
+        <p style="margin: 8px 0 0 0; font-size: 13px; color: #27ae60">
+          Tự động sinh email tạm thời từ Temp Mail API. Click "Generate" để tạo email mới.
+        </p>
+      </div>
+
+      <label style="display: block; margin: 12px 0 6px 0; font-weight: 600">
+        <input type="checkbox" id="tempmail-enabled" style="width: auto; margin-right: 6px" />
+        Kích hoạt TempMail (dùng nó thay vì email thủ công)
+      </label>
+
+      <div id="tempmail-status-box" style="padding: 10px; background: #fff3cd; border-radius: 6px; margin: 8px 0; display: none">
+        <strong style="color: #ff6b6b">📧 Email hiện tại:</strong><br />
+        <code id="tempmail-current"     style="font-size: 12px; word-break: break-all; color: #27ae60"></code>
+        <p style="margin: 6px 0 0 0; font-size: 12px; color: #666">
+          <small id="tempmail-generated-time"></small>
+        </p>
+      </div>
+
+      <button id="btn-gen-tempmail" class="btn-primary" style="background: #3498db">
+        ✨ Generate TempMail
+      </button>
+
+      <button id="btn-check-inbox" class="btn-primary" style="background: #8e44ad">
+        📬 Check Inbox
+      </button>
+
+      <button id="btn-get-latest-code" class="btn-primary" style="background: #e67e22">
+        🔐 Lấy Code Mới Nhất
+      </button>
+
+      <div id="tempmail-code-box" style="display: none; margin-top: 8px; padding: 10px; border-radius: 6px; background: #eef9f2; border: 1px solid #9fd8b8">
+        <div style="font-weight: 700; color: #1f7a45">OTP mới nhất:</div>
+        <div id="tempmail-latest-code" style="font-size: 20px; margin-top: 4px; letter-spacing: 1px; color: #145a32"></div>
+      </div>
+
+      <button id="btn-copy-tempmail" class="btn-primary" style="background: #27ae60; display: none">
+        📋 Copy Email
+      </button>
+
+      <div id="tempmail-inbox" style="margin-top: 12px; display: none; max-height: 300px; overflow-y: auto; border: 1px solid #bdc3c7; border-radius: 6px; padding: 10px">
+        <strong>📬 Inbox:</strong>
+        <div id="tempmail-inbox-list" style="margin-top: 8px"><!-- emails will be listed here --></div>
+      </div>
+
+      <div id="tempmail-loading" style="text-align: center; color: #7f8c8d; display: none; margin-top: 12px">
+        ⏳ Đang tải...
+      </div>
+
+      <div id="tempmail-error" style="padding: 10px; background: #fadbd8; border-radius: 6px; color: #c0392b; display: none; margin-top: 8px"></div>
+    </div>
+
+    <!-- Email -->
+    <div id="tab-email" class="tab-panel">
+      <textarea
+        id="email-input"
+        rows="8"
+        placeholder="Dán danh sách email..."
+      ></textarea>
+      <button id="btn-convert-email" class="btn-primary">
+        🔄 Chuyển sang generator.email
+      </button>
+
+      <div style="margin-top: 12px; padding: 10px; border: 1px solid #dbe7f3; border-radius: 8px; background: #f8fbff">
+        <strong style="font-size: 13px">🧪 Test Hotmail API (Outlook)</strong>
+        <input
+          id="hotmail-proxy-url"
+          type="text"
+          value="http://localhost:3000/api/hotmail/read"
+          placeholder="Proxy URL (vd: http://localhost:3000/api/hotmail/read)"
+          style="margin-top: 8px"
+        />
+        <textarea
+          id="hotmail-cred-input"
+          rows="3"
+          placeholder="Nhap 1 hoac nhieu dong: email hoac email|password|refresh_token|client_id"
+          style="margin-top: 8px"
+        ></textarea>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+          <button id="btn-save-hotmail-account" class="btn-primary" style="background: #2980b9; margin:0">
+            💾 Luu account(s)
+          </button>
+          <button id="btn-load-hotmail-accounts" class="btn-primary" style="background: #64748b; margin:0">
+            🔄 Tai accounts
+          </button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:8px;align-items:center">
+          <select id="hotmail-account-select" style="margin:0">
+            <option value="">-- Chon account da luu --</option>
+          </select>
+          <div style="display:flex;gap:6px">
+            <button id="btn-use-hotmail-account" class="btn-primary" style="background:#0d6efd;margin:0;width:auto;padding:10px 12px">
+              Dung
+            </button>
+            <button id="btn-delete-hotmail-account" class="btn-primary" style="background:#e74c3c;margin:0;width:auto;padding:10px 12px">
+              Xoa
+            </button>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+          <button id="btn-test-hotmail" class="btn-primary" style="background: #1f7a45; margin:0">
+            ▶️ Doc inbox
+          </button>
+          <button id="btn-hotmail-read-code" class="btn-primary" style="background: #e67e22; margin:0">
+            🔐 Lay code
+          </button>
+        </div>
+
+        <textarea
+          id="hotmail-test-result"
+          rows="6"
+          readonly
+          placeholder="Kết quả test sẽ hiển thị ở đây..."
+        ></textarea>
+      </div>
+
+      <div id="email-result-wrap" style="display: none; margin-top: 10px">
+        <div style="margin-bottom: 8px">
+          Số email: <strong id="email-count">0</strong>
+        </div>
+        <div
+          id="email-result-list"
+          style="max-height: 200px; overflow-y: auto"
+        ></div>
+        <button
+          id="btn-copy-all-email"
+          class="btn-primary"
+          style="margin-top: 8px"
+        >
+          📋 Copy Tất Cả
+        </button>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

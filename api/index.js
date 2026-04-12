@@ -1326,6 +1326,23 @@ const Capcut =
   mongoose.models.Capcut ||
   mongoose.model("Capcut", singleUserSchema, "capcut_accounts");
 
+// --- Hotmail Account Schema for Proxy functionality ---
+const hotmailAccountSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  password: { type: String, default: "" },
+  refreshToken: { type: String, default: "" },
+  clientId: { type: String, default: "" },
+  state: { type: String, default: "available" }, // 'available', 'reserved', 'used'
+  reservedAt: { type: String, default: "" },
+  usedAt: { type: String, default: "" },
+  lastReadAt: { type: String, default: "" },
+  usedCount: { type: Number, default: 0 },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+const HotmailAccount =
+  mongoose.models.HotmailAccount ||
+  mongoose.model("HotmailAccount", hotmailAccountSchema, "hotmail_accounts");
+
 // Team Account Schema (ChatGPT Team - up to 4 Gmail slots)
 const teamSlotSchema = new mongoose.Schema({
   gmail: { type: String, default: "" },         // Gmail của khách
@@ -17113,6 +17130,124 @@ const makeSingleUserRoutes = (router, Model, platformRoute) => {
 makeSingleUserRoutes(app, Netflix, "netflix");
 makeSingleUserRoutes(app, Canva, "canva");
 makeSingleUserRoutes(app, Capcut, "capcut");
+
+// 4.5 HOTMAIL PROXY ROUTES
+async function exchangeOutlookToken(clientId, refreshToken) {
+  const body = new URLSearchParams({
+    client_id: clientId,
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+    scope: "offline_access https://outlook.office.com/IMAP.AccessAsUser.All",
+  });
+  const res = await fetch("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const json = await res.json();
+  if (!res.ok || !json.access_token) {
+    throw new Error(json?.error_description || json?.error || `Token error HTTP ${res.status}`);
+  }
+  return json;
+}
+
+async function readOutlookInbox(accessToken, top = 5) {
+  const url = new URL("https://outlook.office.com/api/v2.0/me/messages");
+  url.searchParams.set("$top", String(Math.max(1, Math.min(20, Number(top) || 5))));
+  url.searchParams.set("$select", "Id,Subject,ReceivedDateTime,From,IsRead,BodyPreview");
+  url.searchParams.set("$orderby", "ReceivedDateTime desc");
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error(json?.error?.message || json?.error_description || `Inbox error HTTP ${res.status}`);
+  }
+  return (json.value || []).map((m) => ({
+    id: m.Id || "", subject: m.Subject || "(No subject)",
+    receivedDateTime: m.ReceivedDateTime || "", from: m?.From?.EmailAddress?.Address || "(unknown)",
+    isRead: Boolean(m.IsRead), bodyPreview: m.BodyPreview || "",
+  }));
+}
+
+function parseHotmailLine(rawLine) {
+  const parts = String(rawLine || "").trim().split("|").map((p) => String(p || "").trim());
+  if (parts.length < 4) return null;
+  return { email: parts[0].toLowerCase(), password: parts[1], refreshToken: parts[2], clientId: parts[3] };
+}
+
+app.get("/api/hotmail/accounts", async (req, res) => {
+  try {
+    const accounts = await HotmailAccount.find({}).sort({ state: 1, updatedAt: -1 }).lean();
+    res.json({ ok: true, count: accounts.length, accounts });
+  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+});
+
+app.post("/api/hotmail/save", async (req, res) => {
+  try {
+    const cred = parseHotmailLine(req.body?.line);
+    if (!cred) return res.status(400).json({ ok: false, error: "Sai format: email|pass|token|id" });
+    const existing = await HotmailAccount.findOne({ email: cred.email });
+    if (existing) {
+      await HotmailAccount.updateOne({ email: cred.email }, { $set: { ...cred, updatedAt: new Date().toISOString() } });
+    } else {
+      await HotmailAccount.create({ ...cred, usedCount: 0, state: "available" });
+    }
+    res.json({ ok: true, email: cred.email, message: "Saved" });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+app.delete("/api/hotmail/delete/:email", async (req, res) => {
+  try {
+    const email = String(req.params.email || "").toLowerCase().trim();
+    await HotmailAccount.findOneAndDelete({ email });
+    res.json({ ok: true, email, message: "Deleted" });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+app.post("/api/hotmail/reserve", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").toLowerCase().trim();
+    await HotmailAccount.updateOne({ email }, { $set: { state: "reserved", reservedAt: new Date().toISOString() } });
+    res.json({ ok: true, email, state: "reserved" });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+app.post("/api/hotmail/release", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").toLowerCase().trim();
+    await HotmailAccount.updateOne({ email }, { $set: { state: "available", reservedAt: "" } });
+    res.json({ ok: true, email, state: "available" });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// THIS ENDPOINT HAS CORS OPEN FOR EXTENSION/WEB FETCH
+app.post("/api/hotmail/read", cors(), async (req, res) => {
+  try {
+    let cred = null;
+    if (req.body?.line) cred = parseHotmailLine(req.body.line);
+    else if (req.body?.email) cred = await HotmailAccount.findOne({ email: String(req.body.email).trim().toLowerCase() }).lean();
+    if (!cred) return res.status(400).json({ ok: false, error: "Khong tim thay account." });
+    
+    if (req.body?.line) {
+       await HotmailAccount.findOneAndUpdate({ email: cred.email }, { $set: { ...cred, updatedAt: new Date().toISOString() } }, { upsert: true });
+    }
+
+    const tokenData = await exchangeOutlookToken(cred.clientId, cred.refreshToken);
+    const messages = await readOutlookInbox(tokenData.access_token, req.body?.top || 5);
+    
+    await HotmailAccount.updateOne({ email: cred.email }, {
+      $set: {
+        refreshToken: tokenData.refresh_token || cred.refreshToken,
+        state: "used", reservedAt: "", usedAt: new Date().toISOString(), lastReadAt: new Date().toISOString()
+      },
+      $inc: { usedCount: 1 }
+    });
+
+    res.json({
+      ok: true, email: cred.email, count: messages.length, scope: tokenData.scope || "",
+      rotatedRefreshToken: tokenData.refresh_token || "", messages
+    });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
 
 // 5. PROXY GOOGLE SHEET
 app.post("/api/proxy-sheet", verifyAdminOrBotInternalToken, async (req, res) => {

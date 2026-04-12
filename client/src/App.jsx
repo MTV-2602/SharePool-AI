@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import { startTransition } from "react";
 import {
@@ -57,6 +57,7 @@ const WEB_ADMIN_TABS = [
   "store-config",
   "store-vouchers",
   "support",
+  "hotmail",
 ];
 const SUPPORT_QUICK_REPLY_SNIPPETS = [
   "Chào bạn, mình đã nhận được yêu cầu và đang kiểm tra giúp bạn.",
@@ -1851,6 +1852,137 @@ const getExpiryCleanupBatchStatusLabel = (value = "") => {
   if (normalized === "executed") return "Đã xóa";
   if (normalized === "expired") return "Hết hạn duyệt";
   return normalized || "Không rõ";
+};
+
+const HotmailAdminTab = () => {
+  const [accounts, setAccounts] = useState([]);
+  const [inputLine, setInputLine] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState("");
+
+  const loadAccounts = async () => {
+    try {
+      const res = await axios.get("/api/hotmail/accounts");
+      if (res.data?.ok) setAccounts(res.data.accounts || []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    loadAccounts();
+  }, []);
+
+  const handleSave = async () => {
+    if (!inputLine.trim()) return alert("Vui lòng nhập định dạng email|pass|token|id hoặc dán nhiều dòng");
+    setLoading(true);
+    try {
+      const lines = inputLine.split('\n').filter(l => l.trim());
+      for (const line of lines) {
+         await axios.post("/api/hotmail/save", { line });
+      }
+      setInputLine("");
+      alert("Đã lưu thành công!");
+      loadAccounts();
+    } catch (e) {
+      alert("Lỗi: " + (e.response?.data?.error || e.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (email) => {
+    if (!window.confirm("Xóa " + email + "?")) return;
+    try {
+      await axios.delete("/api/hotmail/delete/" + encodeURIComponent(email));
+      loadAccounts();
+    } catch (e) {}
+  };
+
+  const handleTestRead = async (email) => {
+    setLoading(true);
+    setResult("Đang đọc inbox...");
+    try {
+      const res = await axios.post("/api/hotmail/read", { email, top: 3 });
+      setResult("Kết quả:\n" + JSON.stringify(res.data.messages, null, 2));
+      loadAccounts();
+    } catch (e) {
+      setResult("Lỗi: " + (e.response?.data?.error || e.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-[24px] border border-slate-700/60 bg-slate-900/50 p-6 shadow-xl backdrop-blur-sm mt-4">
+      <h2 className="mb-4 text-2xl font-black text-white">🗂️ Quản lý Hotmail Proxy</h2>
+      
+      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+        <div className="flex flex-col gap-2">
+           <textarea 
+             className="w-full flex-grow rounded-xl border border-slate-700/60 bg-slate-950 p-4 text-slate-200 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+             rows="5"
+             placeholder="Dán Hotmail: email|pass|refresh_token|client_id&#10;Có thể dán nhiều dòng..."
+             value={inputLine}
+             onChange={(e) => setInputLine(e.target.value)}
+           ></textarea>
+           <button 
+             onClick={handleSave} 
+             disabled={loading}
+             className="w-full rounded-xl bg-purple-600 py-3 font-bold text-white shadow-lg shadow-purple-900/50 transition-all hover:scale-[1.01] hover:bg-purple-500 disabled:scale-100 disabled:opacity-50"
+           >
+             {loading ? "Đang xử lý..." : "📥 Import & Lưu Tài Khoản"}
+           </button>
+        </div>
+        <div className="flex flex-col gap-2">
+           <textarea 
+             className="w-full flex-grow rounded-xl border border-slate-700/60 bg-black/50 p-4 font-mono text-sm text-green-400 outline-none"
+             readOnly
+             value={result}
+             placeholder="Kết quả test hòm thư sẽ hiện ở đây..."
+           ></textarea>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-700/60">
+        <table className="w-full text-left text-sm text-slate-300">
+          <thead className="bg-slate-800 text-xs uppercase text-slate-400 border-b border-slate-700/60">
+            <tr>
+              <th className="px-4 py-3">Email</th>
+              <th className="px-4 py-3">Trạng thái</th>
+              <th className="px-4 py-3">Số lần dùng</th>
+              <th className="px-4 py-3">Cập nhật lúc</th>
+              <th className="px-4 py-3 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700/60">
+            {accounts.map(acc => (
+              <tr key={acc.email} className="hover:bg-slate-800/50 transition-colors">
+                <td className="px-4 py-3 font-medium text-white">{acc.email}</td>
+                <td className="px-4 py-3">
+                  <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${
+                    acc.state === 'available' ? 'bg-emerald-900/50 text-emerald-400' : 
+                    acc.state === 'reserved' ? 'bg-amber-900/50 text-amber-400' : 'bg-slate-700 text-slate-300'
+                  }`}>
+                    {acc.state}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-amber-400 font-medium">{acc.usedCount}</td>
+                <td className="px-4 py-3 text-slate-400">{new Date(acc.updatedAt).toLocaleString()}</td>
+                <td className="px-4 py-3 text-right space-x-2">
+                  <button onClick={() => handleTestRead(acc.email)} className="font-semibold text-purple-400 transition hover:text-purple-300">Test Read</button>
+                  <button onClick={() => handleDelete(acc.email)} className="font-semibold text-red-500 transition hover:text-red-400 border-l border-slate-600 pl-2">Xóa</button>
+                </td>
+              </tr>
+            ))}
+            {accounts.length === 0 && (
+              <tr><td colSpan="5" className="p-4 text-center text-slate-500 italic">Chưa có tài khoản nào.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 };
 
 function App() {
@@ -9406,6 +9538,11 @@ function App() {
                     activeClass: "bg-sky-600 text-white shadow-lg",
                     badge: visibleSupportUnreadIndicatorCount,
                   },
+                  {
+                    key: "hotmail",
+                    label: "Hotmail",
+                    activeClass: "bg-purple-600 text-white shadow-lg",
+                  },
                 ].map((item) => (
                   <button
                     key={item.key}
@@ -10218,6 +10355,8 @@ function App() {
             </div>
           </div>
         )}
+
+        {activeTab === "hotmail" && <HotmailAdminTab />}
 
         {activeTab === "store-config" && (() => {
           const normalizedStoreConfig = normalizeStoreConfigForUi(storeConfig);

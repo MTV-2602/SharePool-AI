@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "AutoFill Form Extension BẢN 1",
+  "version": "2.3",
+  "description": "Tự động điền form Stripe (thẻ + địa chỉ), có nút nổi, lưu danh sách.",
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["page-console-bridge.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

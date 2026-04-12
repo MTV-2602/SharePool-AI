@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hotmail Tool</title>
+    <style>
+      :root {
+        --bg: #eef3f8;
+        --card: #ffffff;
+        --text: #1f2a37;
+        --muted: #6b7280;
+        --primary: #0d6efd;
+        --good: #1f9d55;
+        --bad: #dc3545;
+        --line: #dce3ec;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Segoe UI, Arial, sans-serif;
+        color: var(--text);
+        background: radial-gradient(circle at top left, #f6fbff 0%, #eef3f8 45%, #e9eff6 100%);
+      }
+      .wrap { max-width: 1160px; margin: 18px auto; padding: 0 12px; }
+      .grid { display: grid; grid-template-columns: 1.2fr 2fr; gap: 12px; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      h2 { margin: 0 0 8px; }
+      .hint { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+      input, textarea, select {
+        width: 100%;
+        border: 1px solid #cfd8e3;
+        border-radius: 10px;
+        padding: 9px;
+        font-size: 14px;
+        background: #fff;
+      }
+      textarea { min-height: 115px; resize: vertical; }
+      .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 9px 12px;
+        color: #fff;
+        background: var(--primary);
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button.green { background: var(--good); }
+      button.gray { background: #64748b; }
+      button.red { background: var(--bad); }
+      button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+      .progress {
+        margin-top: 10px;
+        height: 10px;
+        background: #e5e7eb;
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .bar { height: 100%; width: 0%; background: linear-gradient(90deg, #4ea8ff, #0d6efd); }
+      .meta { margin-top: 6px; font-size: 13px; color: var(--muted); }
+
+      .toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+      .pill {
+        border: 1px solid #cdd7e3;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        background: #f8fafc;
+      }
+      .pill.active { background: #dbeafe; border-color: #93c5fd; color: #0d4dcf; }
+      .account-toolbar {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .account-pill {
+        border: 1px solid #cdd7e3;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        background: #f8fafc;
+      }
+      .account-pill.active { background: #e0f2fe; border-color: #7dd3fc; color: #0369a1; }
+      .state-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        margin-top: 4px;
+      }
+      .state-available { background: #eef2ff; color: #3730a3; }
+      .state-reserved { background: #fff7ed; color: #9a3412; }
+      .state-used { background: #ecfdf5; color: #166534; }
+
+      .result { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+      .result-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        padding: 10px;
+        background: #f8fbff;
+        border-bottom: 1px solid var(--line);
+      }
+      .result-email { font-weight: 700; }
+      .badge { font-size: 12px; padding: 4px 8px; border-radius: 999px; color: #fff; }
+      .ok { background: var(--good); }
+      .err { background: var(--bad); }
+      .msg { padding: 10px; border-top: 1px dashed #e5e7eb; }
+      .msg:first-child { border-top: 0; }
+      .msg-subject { font-weight: 600; margin-bottom: 4px; }
+      .msg-meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+      .otp-box {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        background: #eefcf4;
+        color: #106b3b;
+        border: 1px solid #b9edcc;
+        border-radius: 8px;
+        padding: 4px 8px;
+        font-size: 12px;
+      }
+      .accounts { max-height: 250px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+      .acc-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-bottom: 1px solid #edf2f7;
+      }
+      .acc-item:last-child { border-bottom: 0; }
+      .acc-email { font-size: 13px; font-weight: 600; }
+      .sheet-wrap { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+      .sheet-toolbar { display: flex; gap: 6px; padding: 8px; background: #f8fbff; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+      .sheet-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      .sheet-table th, .sheet-table td { border-bottom: 1px solid #edf2f7; padding: 6px; text-align: left; }
+      .sheet-table th { background: #f3f7fc; color: #334155; font-weight: 700; }
+      .sheet-table input[type="text"] { padding: 6px; border-radius: 7px; font-size: 12px; }
+      .sheet-table .used-cell { width: 62px; text-align: center; }
+      .sheet-scroll { max-height: 230px; overflow: auto; }
+
+      @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h2>Hotmail Tool (Tinyhost style)</h2>
+      <div class="hint">Nhap full line 1 lan de luu account. Lan sau chi can nhap email la doc inbox + lay OTP code.</div>
+
+      <div class="grid">
+        <div class="card">
+          <label>Proxy URL</label>
+          <input id="proxy" value="http://localhost:8787/read-hotmail" />
+
+          <div class="row">
+            <label style="width: 100%">Input (moi dong la 1 account): email hoac email|password|refresh_token|client_id</label>
+            <textarea id="input" placeholder="hesterachristopher8@hotmail.com\nhoac\nemail|password|refresh_token|client_id"></textarea>
+          </div>
+
+          <div class="sheet-wrap">
+            <div class="sheet-toolbar">
+              <button class="gray" id="btn-sheet-from-input">Input -> Sheet</button>
+              <button class="gray" id="btn-sheet-to-input">Sheet -> Input</button>
+              <button class="green" id="btn-sheet-add">+ Dong moi</button>
+              <button class="gray" id="btn-sheet-clip">Paste tu Clipboard</button>
+            </div>
+            <div class="sheet-scroll">
+              <table class="sheet-table">
+                <thead>
+                  <tr>
+                    <th class="used-cell">Used</th>
+                    <th>Email</th>
+                    <th>Password</th>
+                    <th>Refresh Token</th>
+                    <th>Client ID</th>
+                  </tr>
+                </thead>
+                <tbody id="sheet-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="row">
+            <button class="green" id="btn-save">Luu account</button>
+            <button id="btn-read">Doc inbox</button>
+            <button class="gray" id="btn-code">Lay code moi nhat</button>
+            <button class="red" id="btn-clear">Xoa ket qua</button>
+          </div>
+
+          <div class="progress"><div id="bar" class="bar"></div></div>
+          <div id="meta" class="meta">Tien trinh: 0/0</div>
+
+          <div class="row" style="margin-top: 12px">
+            <button class="gray" id="btn-load-accounts">Tai danh sach account da luu</button>
+          </div>
+          <div class="account-toolbar">
+            <span class="account-pill active" data-account-filter="all">Tat ca</span>
+            <span class="account-pill" data-account-filter="available">Chua dung</span>
+            <span class="account-pill" data-account-filter="reserved">Da chon</span>
+            <span class="account-pill" data-account-filter="used">Da dung</span>
+            <button class="gray" id="btn-use-next-account">Lay account chua dung dau tien</button>
+          </div>
+          <div id="account-summary" class="meta">Chua tai danh sach account</div>
+          <div id="accounts" class="accounts"></div>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <input id="search" placeholder="Loc theo email..." style="max-width: 220px" />
+            <span class="pill active" data-filter="all">Tat ca</span>
+            <span class="pill" data-filter="success">Thanh cong</span>
+            <span class="pill" data-filter="error">Loi</span>
+          </div>
+          <div id="summary" class="meta">S:0 | E:0 | Tong:0</div>
+          <div id="results" style="margin-top: 10px"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const els = {
+        proxy: document.getElementById("proxy"),
+        input: document.getElementById("input"),
+        btnSave: document.getElementById("btn-save"),
+        btnRead: document.getElementById("btn-read"),
+        btnCode: document.getElementById("btn-code"),
+        btnClear: document.getElementById("btn-clear"),
+        btnLoadAccounts: document.getElementById("btn-load-accounts"),
+        accounts: document.getElementById("accounts"),
+        bar: document.getElementById("bar"),
+        meta: document.getElementById("meta"),
+        search: document.getElementById("search"),
+        results: document.getElementById("results"),
+        summary: document.getElementById("summary"),
+        sheetBody: document.getElementById("sheet-body"),
+        btnSheetFromInput: document.getElementById("btn-sheet-from-input"),
+        btnSheetToInput: document.getElementById("btn-sheet-to-input"),
+        btnSheetAdd: document.getElementById("btn-sheet-add"),
+        btnSheetClip: document.getElementById("btn-sheet-clip"),
+      };
+
+      const state = {
+        results: [],
+        filter: "all",
+        sheetRows: [],
+        accounts: [],
+        accountFilter: "all",
+      };
+
+      function getProxyUrl() {
+        const url = String(els.proxy.value || "").trim();
+        return url || "http://localhost:8787/read-hotmail";
+      }
+
+      function endpointFromRead(pathname) {
+        return getProxyUrl().replace(/\/read-hotmail\/?$/i, pathname);
+      }
+
+      function parseLines(raw) {
+        return String(raw || "")
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+
+      function isUsedLine(line) {
+        return /^\s*(?:✅|\[x\]|\[X\]|☑️)/u.test(String(line || ""));
+      }
+
+      function cleanLinePrefix(line) {
+        return String(line || "")
+          .trim()
+          .replace(/^\s*(?:✅|\[x\]|\[X\]|☑️)\s*/u, "")
+          .replace(/^\s*\[\s*\]\s*/u, "")
+          .trim();
+      }
+
+      function parseSheetRowFromLine(line) {
+        const used = isUsedLine(line);
+        const clean = cleanLinePrefix(line);
+        if (!clean) return null;
+        const parts = clean.split("|").map((s) => String(s || "").trim());
+        if (parts.length >= 4) {
+          return {
+            used,
+            email: parts[0] || "",
+            password: parts[1] || "",
+            refreshToken: parts[2] || "",
+            clientId: parts[3] || "",
+          };
+        }
+        return {
+          used,
+          email: clean,
+          password: "",
+          refreshToken: "",
+          clientId: "",
+        };
+      }
+
+      function sheetRowToLine(row) {
+        const email = String(row.email || "").trim();
+        if (!email) return "";
+        const password = String(row.password || "").trim();
+        const refreshToken = String(row.refreshToken || "").trim();
+        const clientId = String(row.clientId || "").trim();
+        const core = refreshToken || clientId || password
+          ? `${email}|${password}|${refreshToken}|${clientId}`
+          : email;
+        return row.used ? `✅ ${core}` : core;
+      }
+
+      function loadSheetFromInput() {
+        const parsed = parseLines(els.input.value)
+          .map(parseSheetRowFromLine)
+          .filter(Boolean);
+        state.sheetRows = parsed;
+        renderSheet();
+      }
+
+      function applySheetToInput() {
+        const lines = state.sheetRows
+          .map(sheetRowToLine)
+          .filter(Boolean);
+        els.input.value = lines.join("\n");
+      }
+
+      function renderSheet() {
+        if (!els.sheetBody) return;
+        if (!state.sheetRows.length) {
+          els.sheetBody.innerHTML = `<tr><td colspan="5" style="color:#64748b">Chua co dong nao. Bam Input -> Sheet hoac + Dong moi.</td></tr>`;
+          return;
+        }
+
+        els.sheetBody.innerHTML = state.sheetRows
+          .map((r, idx) => `
+            <tr data-row="${idx}">
+              <td class="used-cell"><input type="checkbox" data-k="used" ${r.used ? "checked" : ""} /></td>
+              <td><input type="text" data-k="email" value="${String(r.email || "").replace(/"/g, "&quot;")}" /></td>
+              <td><input type="text" data-k="password" value="${String(r.password || "").replace(/"/g, "&quot;")}" /></td>
+              <td><input type="text" data-k="refreshToken" value="${String(r.refreshToken || "").replace(/"/g, "&quot;")}" /></td>
+              <td><input type="text" data-k="clientId" value="${String(r.clientId || "").replace(/"/g, "&quot;")}" /></td>
+            </tr>
+          `)
+          .join("");
+
+        els.sheetBody.querySelectorAll("tr").forEach((tr) => {
+          const rowIdx = Number(tr.getAttribute("data-row") || -1);
+          if (rowIdx < 0 || !state.sheetRows[rowIdx]) return;
+          tr.querySelectorAll("input[data-k]").forEach((inp) => {
+            inp.addEventListener("input", () => {
+              const key = inp.getAttribute("data-k");
+              if (!key) return;
+              if (key === "used") {
+                state.sheetRows[rowIdx].used = Boolean(inp.checked);
+              } else {
+                state.sheetRows[rowIdx][key] = String(inp.value || "");
+              }
+            });
+            inp.addEventListener("change", () => {
+              const key = inp.getAttribute("data-k");
+              if (!key) return;
+              if (key === "used") {
+                state.sheetRows[rowIdx].used = Boolean(inp.checked);
+              } else {
+                state.sheetRows[rowIdx][key] = String(inp.value || "");
+              }
+            });
+          });
+        });
+      }
+
+      function markUsedByEmail(email) {
+        const target = String(email || "").trim().toLowerCase();
+        if (!target) return;
+        state.sheetRows = state.sheetRows.map((r) => {
+          if (String(r.email || "").trim().toLowerCase() === target) {
+            return { ...r, used: true };
+          }
+          return r;
+        });
+      }
+
+      function parseSheetRowsFromClipboard(rawText) {
+        const rows = [];
+        const lines = String(rawText || "")
+          .split(/\r?\n/)
+          .map((s) => String(s || "").trim())
+          .filter(Boolean);
+        for (const line of lines) {
+          const clean = line.replace(/^"|"$/g, "");
+          if (/email|refresh[_\s-]*token|client[_\s-]*id/i.test(clean) && /\t|,|;|\|/.test(clean)) {
+            continue;
+          }
+          const direct = parseSheetRowFromLine(clean);
+          if (direct && (direct.refreshToken || direct.clientId || clean.includes("|"))) {
+            rows.push(direct);
+            continue;
+          }
+          const cols = clean.split(/\t|,|;/).map((c) => String(c || "").trim().replace(/^"|"$/g, ""));
+          if (cols.length >= 4 && String(cols[0] || "").includes("@")) {
+            rows.push({ used: false, email: cols[0], password: cols[1] || "", refreshToken: cols[2] || "", clientId: cols[3] || "" });
+            continue;
+          }
+          if (clean.includes("@")) {
+            rows.push({ used: false, email: clean, password: "", refreshToken: "", clientId: "" });
+          }
+        }
+        return rows;
+      }
+
+      function extractOtpCodeFromText(raw) {
+        const text = String(raw || "");
+        const normalized = text
+          .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n) || 0))
+          .replace(/&#x([\da-f]+);/gi, (_, h) => String.fromCharCode(Number.parseInt(h, 16) || 0))
+          .replace(/<[^>]*>/g, " ")
+          .replace(/[\u200B-\u200D\uFEFF]/g, "")
+          .replace(/(\d)[\s\-.](?=\d)/g, "$1")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        const near = normalized.match(/(?:verification|verify|security|one[-\s]?time|otp|login|code)[^\d]{0,50}(\d{4,8})/i);
+        if (near && near[1]) return near[1];
+        const m6 = normalized.match(/\b\d{6}\b/);
+        if (m6) return m6[0];
+        const any = normalized.match(/\b\d{4,8}\b/);
+        return any ? any[0] : "";
+      }
+
+      function setProgress(done, total) {
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        els.bar.style.width = pct + "%";
+        els.meta.textContent = `Tien trinh: ${done}/${total} (${pct}%)`;
+      }
+
+      function updateSummary() {
+        const ok = state.results.filter((r) => r.status === "success").length;
+        const err = state.results.filter((r) => r.status === "error").length;
+        els.summary.textContent = `S:${ok} | E:${err} | Tong:${state.results.length}`;
+      }
+
+      function copyText(text) {
+        navigator.clipboard.writeText(text).catch(() => {});
+      }
+
+      function accountStateLabel(state) {
+        if (state === "reserved") return "Da chon";
+        if (state === "used") return "Da dung";
+        return "Chua dung";
+      }
+
+      function accountStateClass(state) {
+        if (state === "reserved") return "state-reserved";
+        if (state === "used") return "state-used";
+        return "state-available";
+      }
+
+      function renderAccountSummary(rows) {
+        const available = rows.filter((a) => (a.state || "available") === "available").length;
+        const reserved = rows.filter((a) => a.state === "reserved").length;
+        const used = rows.filter((a) => a.state === "used").length;
+        const total = rows.length;
+        const next = rows.find((a) => (a.state || "available") === "available");
+        const nextText = next ? ` | Next: ${next.email}` : "";
+        const summaryEl = document.getElementById("account-summary");
+        if (summaryEl) {
+          summaryEl.textContent = `Available:${available} | Reserved:${reserved} | Used:${used} | Total:${total}${nextText}`;
+        }
+      }
+
+      function renderAccounts() {
+        const rows = state.accounts.filter((a) => {
+          if (state.accountFilter === "all") return true;
+          return (a.state || "available") === state.accountFilter;
+        });
+
+        renderAccountSummary(state.accounts);
+
+        if (!rows.length) {
+          els.accounts.innerHTML = "<div class='acc-item'><span class='meta'>Chua co account nao</span></div>";
+          return;
+        }
+
+        els.accounts.innerHTML = rows
+          .map((a) => {
+            const stateLabel = accountStateLabel(a.state || "available");
+            const stateClass = accountStateClass(a.state || "available");
+            const metaLine = [a.updatedAt || "", a.usedCount ? `used:${a.usedCount}` : ""]
+              .filter(Boolean)
+              .join(" | ");
+            return `
+              <div class="acc-item">
+                <div>
+                  <div class="acc-email">${a.email}</div>
+                  <div class="state-badge ${stateClass}">${stateLabel}</div>
+                  <div class="meta">${metaLine}</div>
+                </div>
+                <div>
+                  <button style="padding:6px 8px;background:#0d6efd" data-use="${a.email}">Use</button>
+                  <button style="padding:6px 8px;background:#64748b" data-release="${a.email}">Release</button>
+                  <button style="padding:6px 8px;background:#dc3545" data-del="${a.email}">X</button>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+
+        els.accounts.querySelectorAll("button[data-use]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const email = btn.getAttribute("data-use") || "";
+            try {
+              await postJson(endpointFromRead("/reserve-hotmail-account"), { email });
+              const lines = parseLines(els.input.value);
+              lines.push(email);
+              els.input.value = [...new Set(lines)].join("\n");
+              await loadAccounts();
+            } catch (e) {
+              alert(String(e.message || e));
+            }
+          });
+        });
+
+        els.accounts.querySelectorAll("button[data-release]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const email = btn.getAttribute("data-release") || "";
+            try {
+              await postJson(endpointFromRead("/release-hotmail-account"), { email });
+              await loadAccounts();
+            } catch (e) {
+              alert(String(e.message || e));
+            }
+          });
+        });
+
+        els.accounts.querySelectorAll("button[data-del]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const email = btn.getAttribute("data-del") || "";
+            const delUrl = endpointFromRead("/delete-hotmail-account");
+            try {
+              await postJson(delUrl, { email });
+              loadAccounts();
+            } catch (e) {
+              alert(String(e.message || e));
+            }
+          });
+        });
+      }
+
+      function renderResults() {
+        const q = String(els.search.value || "").trim().toLowerCase();
+        const filtered = state.results.filter((r) => {
+          if (state.filter !== "all" && r.status !== state.filter) return false;
+          if (q && !String(r.email || "").toLowerCase().includes(q)) return false;
+          return true;
+        });
+
+        if (!filtered.length) {
+          els.results.innerHTML = "<div class='meta'>Chua co ket qua</div>";
+          updateSummary();
+          return;
+        }
+
+        els.results.innerHTML = filtered
+          .map((r, i) => {
+            const badge = r.status === "success" ? "ok" : "err";
+            const msgs = (r.messages || [])
+              .map((m, idx) => {
+                const sourceText = `${m.subject || ""}\n${m.bodyPreview || ""}`;
+                const code = extractOtpCodeFromText(sourceText);
+                const codeHtml = code
+                  ? `<span class="otp-box">OTP: <b>${code}</b> <button data-copy="${code}" style="padding:2px 6px;border:0;border-radius:6px;background:#10b981;color:#fff;cursor:pointer">Copy</button></span>`
+                  : "";
+                return `
+                  <div class="msg">
+                    <div class="msg-subject">${idx + 1}. ${m.subject || "(No subject)"}</div>
+                    <div class="msg-meta">${m.from || "(unknown)"} | ${m.receivedDateTime || ""}</div>
+                    ${codeHtml}
+                  </div>
+                `;
+              })
+              .join("");
+
+            const errBlock = r.error
+              ? `<div class="msg" style="color:#b91c1c">${r.error}</div>`
+              : "";
+
+            return `
+              <div class="result">
+                <div class="result-head">
+                  <div>
+                    <div class="result-email">${r.email || "(unknown)"}</div>
+                    <div class="meta">${r.messages?.length || 0} email</div>
+                  </div>
+                  <div>
+                    <span class="badge ${badge}">${r.status === "success" ? "THANH CONG" : "LOI"}</span>
+                    <button style="margin-left:8px;padding:6px 8px;background:#64748b" data-copy-email="${r.email || ""}">Copy email</button>
+                  </div>
+                </div>
+                ${errBlock}
+                ${msgs}
+              </div>
+            `;
+          })
+          .join("");
+
+        updateSummary();
+
+        els.results.querySelectorAll("button[data-copy]").forEach((btn) => {
+          btn.addEventListener("click", () => copyText(btn.getAttribute("data-copy") || ""));
+        });
+        els.results.querySelectorAll("button[data-copy-email]").forEach((btn) => {
+          btn.addEventListener("click", () => copyText(btn.getAttribute("data-copy-email") || ""));
+        });
+      }
+
+      async function postJson(url, payload) {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || `HTTP ${res.status}`);
+        }
+        return json;
+      }
+
+      async function runRead(mode) {
+        applySheetToInput();
+        const lines = parseLines(els.input.value);
+        if (!lines.length) {
+          alert("Nhap it nhat 1 dong");
+          return;
+        }
+
+        state.results = [];
+        renderResults();
+        const readUrl = getProxyUrl();
+
+        for (let i = 0; i < lines.length; i++) {
+          const raw = lines[i];
+          try {
+            const payload = raw.includes("|") ? { line: raw, top: 5 } : { email: raw, top: 5 };
+            const data = await postJson(readUrl, payload);
+            let messages = Array.isArray(data.messages) ? data.messages : [];
+            if (mode === "code") {
+              messages = messages.slice(0, 1);
+            }
+            state.results.push({
+              email: data.email || (raw.includes("|") ? raw.split("|")[0] : raw),
+              status: "success",
+              messages,
+              scope: data.scope || "",
+            });
+            markUsedByEmail(data.email || (raw.includes("|") ? raw.split("|")[0] : raw));
+          } catch (e) {
+            state.results.push({
+              email: raw.includes("|") ? raw.split("|")[0] : raw,
+              status: "error",
+              messages: [],
+              error: String(e.message || e),
+            });
+            markUsedByEmail(raw.includes("|") ? raw.split("|")[0] : raw);
+          }
+          setProgress(i + 1, lines.length);
+          applySheetToInput();
+          renderSheet();
+          renderResults();
+        }
+      }
+
+      async function saveAccounts() {
+        const lines = parseLines(els.input.value).filter((l) => l.includes("|"));
+        if (!lines.length) {
+          alert("Can line day du de luu account");
+          return;
+        }
+        const saveUrl = endpointFromRead("/save-hotmail-account");
+        let ok = 0;
+        for (let i = 0; i < lines.length; i++) {
+          try {
+            await postJson(saveUrl, { line: lines[i] });
+            ok += 1;
+          } catch (_) {}
+          setProgress(i + 1, lines.length);
+        }
+        alert(`Da luu ${ok}/${lines.length} account`);
+        loadAccounts();
+      }
+
+      async function loadAccounts() {
+        const url = endpointFromRead("/accounts");
+        try {
+          const res = await fetch(url);
+          const json = await res.json();
+          if (!res.ok || !json.ok) throw new Error(json.error || `HTTP ${res.status}`);
+          state.accounts = Array.isArray(json.accounts) ? json.accounts : [];
+          renderAccounts();
+        } catch (e) {
+          els.accounts.innerHTML = `<div class='acc-item'><span class='meta'>Loi: ${String(e.message || e)}</span></div>`;
+        }
+      }
+
+      els.btnSave.addEventListener("click", saveAccounts);
+      els.btnRead.addEventListener("click", () => runRead("mail"));
+      els.btnCode.addEventListener("click", () => runRead("code"));
+      els.btnClear.addEventListener("click", () => {
+        state.results = [];
+        setProgress(0, 0);
+        renderResults();
+      });
+      els.btnLoadAccounts.addEventListener("click", loadAccounts);
+      document.querySelectorAll(".account-pill").forEach((p) => {
+        p.addEventListener("click", () => {
+          document.querySelectorAll(".account-pill").forEach((x) => x.classList.remove("active"));
+          p.classList.add("active");
+          state.accountFilter = p.getAttribute("data-account-filter") || "all";
+          renderAccounts();
+        });
+      });
+      document.getElementById("btn-use-next-account")?.addEventListener("click", async () => {
+        const next = state.accounts.find((a) => (a.state || "available") === "available");
+        if (!next) {
+          alert("Khong con account chua dung");
+          return;
+        }
+        try {
+          await postJson(endpointFromRead("/reserve-hotmail-account"), { email: next.email });
+          const lines = parseLines(els.input.value);
+          lines.push(next.email);
+          els.input.value = [...new Set(lines)].join("\n");
+          await loadAccounts();
+        } catch (e) {
+          alert(String(e.message || e));
+        }
+      });
+      els.search.addEventListener("input", renderResults);
+      document.querySelectorAll(".pill").forEach((p) => {
+        p.addEventListener("click", () => {
+          document.querySelectorAll(".pill").forEach((x) => x.classList.remove("active"));
+          p.classList.add("active");
+          state.filter = p.getAttribute("data-filter") || "all";
+          renderResults();
+        });
+      });
+
+      els.btnSheetFromInput.addEventListener("click", () => {
+        loadSheetFromInput();
+      });
+
+      els.btnSheetToInput.addEventListener("click", () => {
+        applySheetToInput();
+      });
+
+      els.btnSheetAdd.addEventListener("click", () => {
+        state.sheetRows.push({ used: false, email: "", password: "", refreshToken: "", clientId: "" });
+        renderSheet();
+      });
+
+      els.btnSheetClip.addEventListener("click", async () => {
+        try {
+          const clip = await navigator.clipboard.readText();
+          const rows = parseSheetRowsFromClipboard(clip);
+          if (!rows.length) {
+            alert("Clipboard khong co du lieu hop le");
+            return;
+          }
+          const map = new Map();
+          for (const r of [...state.sheetRows, ...rows]) {
+            const email = String(r.email || "").trim().toLowerCase();
+            if (!email) continue;
+            map.set(email, r);
+          }
+          state.sheetRows = Array.from(map.values());
+          renderSheet();
+          applySheetToInput();
+        } catch (e) {
+          alert(String(e.message || e));
+        }
+      });
+
+      setProgress(0, 0);
+      renderResults();
+      loadSheetFromInput();
+      loadAccounts();
+    </script>
+  </body>
+</html>
