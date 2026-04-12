@@ -3405,7 +3405,6 @@ function injectEmailQuickDock() {
       <button id="af-eq-gen-2fa" style="all:unset;cursor:pointer;padding:7px 12px;background:#c0392b;border-radius:8px;font:700 12px sans-serif;color:#fff">2FA</button>
       <button id="af-eq-rand-pass" style="all:unset;cursor:pointer;padding:7px 12px;background:#e67e22;border-radius:8px;font:700 12px sans-serif;color:#fff">Random</button>
       <button id="af-eq-hotmail-new" style="all:unset;cursor:pointer;padding:7px 12px;background:#8e44ad;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🚀 HM New</button>
-      <button id="af-eq-hotmail-2fa" style="all:unset;cursor:pointer;padding:7px 12px;background:#c0392b;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🔑 HM 2FA</button>
       <button id="af-eq-hotmail-save" style="all:unset;cursor:pointer;padding:7px 12px;background:#2980b9;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📥 HM Save</button>
       <button id="af-eq-hotmail-use" style="all:unset;cursor:pointer;padding:7px 12px;background:#1f7a45;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📨 HM Use</button>
       <button id="af-eq-hotmail-code" style="all:unset;cursor:pointer;padding:7px 12px;background:#d35400;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🧩 HM Code</button>
@@ -4104,21 +4103,6 @@ function injectEmailQuickDock() {
       await updateActiveHotmailLabel();
     } catch (err) {
       toast(`❌ ${err.message}`, "#e74c3c");
-    }
-  });
-
-  document.getElementById("af-eq-hotmail-2fa")?.addEventListener("click", async () => {
-    try {
-      const target = await resolveHotmailTargetFromDock();
-      if (!target.parsedLine || !target.parsedLine.secret2fa) {
-        throw new Error("Không có 2FA secret (cột 3 hoặc cột 5)");
-      }
-      toast("Đang lấy mã TOTP 2FA...", "#f39c12");
-      const code = await fetchHotmail2FaViaProxy(target.parsedLine.secret2fa);
-      toast(`🔑 Đã copy thẻ MS Auth: ${code}`, "#27ae60");
-      navigator.clipboard.writeText(code).catch(()=>{});
-    } catch (err) {
-      toast(`❌ Lấy 2FA thất bại: ${err.message}`, "#e74c3c");
     }
   });
 
