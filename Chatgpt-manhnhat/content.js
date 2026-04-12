@@ -4090,13 +4090,17 @@ function injectEmailQuickDock() {
     });
 
   document.getElementById("af-eq-hotmail-new")?.addEventListener("click", async () => {
+    const ok = await showAfConfirmDialog({
+      title: "Lấy Hotmail Mới?",
+      message: "Bạn có chắc muốn lấy 1 tài khoản Hotmail mới tinh (chưa dùng) từ server không?",
+      confirmText: "Lấy mới",
+      cancelText: "Hủy"
+    });
+    if (!ok) return;
+
     try {
       const data = await fetchNewHotmailViaProxy();
       toast("🚀 Đã nạp Hotmail mới sẵn sàng!", "#8e44ad");
-      const lines = String(inputEl.value || "").split(/\r?\n/).map((v) => String(v || "").trim()).filter(Boolean);
-      lines.unshift(data.formatted);
-      inputEl.value = lines.join("\n");
-      build();
       
       const email = data.account.email;
       await storageLocalSet({ [HOTMAIL_ACTIVE_EMAIL_KEY]: email });
@@ -4166,14 +4170,53 @@ function injectEmailQuickDock() {
     .addEventListener("click", async () => {
       const btn = document.getElementById("af-eq-hotmail-use");
       if (!btn) return;
+
+      let target;
+      try {
+        target = await resolveHotmailUseTarget();
+      } catch (err) { }
+      
+      if (!target || !target.email) {
+        await showAfConfirmDialog({
+          title: "Chưa có Hotmail",
+          message: "⚠️ Bạn chưa chọn hoặc chưa lấy Hotmail nào.\nVui lòng ấn nút '🚀 HM New' ở trên để lấy 1 email trước nhé!",
+          confirmText: "Đã hiểu",
+        });
+        return;
+      }
+      
+      const ok = await showAfConfirmDialog({
+        title: "Đổi sang Hotmail?",
+        message: `Hệ thống sẽ điền Hotmail: ${target.email}\n\nSau khi điền, tool sẽ tự động định dạng lại dòng hiện tại thành dạng "hotmail|mk|2fa" bằng tk này. Bạn đồng ý chứ?`,
+        confirmText: "Đổi luôn",
+        cancelText: "Hủy"
+      });
+      if (!ok) return;
+
       btn.disabled = true;
       btn.style.opacity = "0.5";
       btn.textContent = "⏳ HM Use...";
-      let usedEmail = "";
+      
+      let usedEmail = String(target.email || "").trim();
       try {
-        const target = await resolveHotmailUseTarget();
-        usedEmail = String(target.email || "").trim();
         await fillHotmailNow(target);
+        const lines = String(inputEl.value || "").split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+        const primary = lastParsedCredentials[0];
+        if (primary && primary.password) {
+           const newCredentialLine = formatCredentialLine({
+             account: usedEmail,
+             password: primary.password,
+             twofaSecret: primary.twofaSecret || ""
+           });
+           if (lines.length > 0) {
+             lines[0] = newCredentialLine;
+           } else {
+             lines.push(newCredentialLine);
+           }
+           inputEl.value = lines.join("\n");
+           build();
+        }
+
         btn.textContent = "✅ HM Use";
         btn.style.background = "#27ae60";
       } catch (err) {
@@ -4181,7 +4224,6 @@ function injectEmailQuickDock() {
         btn.textContent = "❌ HM Use";
       } finally {
         if (usedEmail) {
-          // Mark as used even if failed, per requested workflow.
           markHotmailUsedInInput(usedEmail);
         }
         setTimeout(() => {
