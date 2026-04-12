@@ -2632,16 +2632,16 @@ function PublicStorefront() {
                 Đăng ký hoặc đăng nhập để thanh toán và nhận tài khoản ngay trên web.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
               <a
                 href="/hotmail-reader"
-                className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-medium text-cyan-100 transition hover:bg-cyan-400/20"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2.5 text-sm font-medium text-cyan-100 transition hover:bg-cyan-400/20 sm:w-auto"
               >
                 <Mail size={16} />
                 Đọc mail nhanh
               </a>
               {user ? (
-                <button onClick={handleLogout} className="inline-flex items-center gap-2 rounded-full bg-slate-800 px-4 py-2 text-sm text-slate-100">
+                <button onClick={handleLogout} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-slate-800 px-4 py-2.5 text-sm text-slate-100 sm:w-auto">
                   <LogOut size={16} />
                   Đăng xuất
                 </button>

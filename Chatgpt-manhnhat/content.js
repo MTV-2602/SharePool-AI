@@ -71,6 +71,7 @@ const TWOFA_SECRET_STORE_KEY = "af_twofa_secret_store_v1";
 const HOTMAIL_PROXY_URL_DEFAULT = "https://vinhaccplus.vercel.app/api/hotmail/read";
 const HOTMAIL_ACTIVE_EMAIL_KEY = "af_hotmail_active_email_v1";
 const HOTMAIL_QUEUE_STORE_KEY = "af_hotmail_queue_lines_v1";
+const HOTMAIL_QUEUE_USED_STORE_KEY = "af_hotmail_queue_used_v1";
 
 function getTwofaStoreHostKey() {
   try {
@@ -3492,6 +3493,31 @@ function injectEmailQuickDock() {
   let lastAutoCopied = "";
   let autoCopyTimer = null;
   let lastParsedCredentials = [];
+  let hotmailUsedEmails = new Set();
+
+  const sanitizeHotmailQueueLines = (value = "") =>
+    String(value || "")
+      .split(/\r?\n/)
+      .map((line) => normalizeHotmailLine(line))
+      .filter(Boolean);
+
+  const collectHotmailQueueEmails = (lines = []) =>
+    Array.from(
+      new Set(
+        lines
+          .map((line) => extractHotmailEmailFromLine(line))
+          .filter(Boolean)
+          .map((email) => String(email).trim().toLowerCase()),
+      ),
+    );
+
+  const pruneHotmailUsedEmails = (lines = sanitizeHotmailQueueLines(inputEl.value || "")) => {
+    const validEmails = new Set(collectHotmailQueueEmails(lines));
+    hotmailUsedEmails = new Set(
+      Array.from(hotmailUsedEmails).filter((email) => validEmails.has(email)),
+    );
+    return lines;
+  };
 
   const updateActiveEmailLabel = async () => {
     if (!activeEmailEl) return;
@@ -3531,27 +3557,39 @@ function injectEmailQuickDock() {
   };
 
   const persistHotmailQueueInput = async () => {
-    await storageLocalSet({ [HOTMAIL_QUEUE_STORE_KEY]: String(inputEl.value || "") });
+    const lines = pruneHotmailUsedEmails();
+    await storageLocalSet({
+      [HOTMAIL_QUEUE_STORE_KEY]: lines.join("\n"),
+      [HOTMAIL_QUEUE_USED_STORE_KEY]: Array.from(hotmailUsedEmails),
+    });
   };
 
   const restoreHotmailQueueInput = async () => {
-    const data = await storageLocalGet([HOTMAIL_QUEUE_STORE_KEY]);
-    const saved = String(data[HOTMAIL_QUEUE_STORE_KEY] || "").trim();
-    if (saved) {
-      inputEl.value = saved;
-    }
+    const data = await storageLocalGet([
+      HOTMAIL_QUEUE_STORE_KEY,
+      HOTMAIL_QUEUE_USED_STORE_KEY,
+    ]);
+    const lines = sanitizeHotmailQueueLines(data[HOTMAIL_QUEUE_STORE_KEY] || "");
+    inputEl.value = lines.join("\n");
+    const validEmails = new Set(collectHotmailQueueEmails(lines));
+    hotmailUsedEmails = new Set(
+      (Array.isArray(data[HOTMAIL_QUEUE_USED_STORE_KEY])
+        ? data[HOTMAIL_QUEUE_USED_STORE_KEY]
+        : []
+      )
+        .map((email) => String(email || "").trim().toLowerCase())
+        .filter((email) => validEmails.has(email)),
+    );
   };
 
   const getNextUntickedHotmailFromInput = () => {
-    const lines = String(inputEl.value || "")
-      .split(/\r?\n/)
-      .map((v) => String(v || "").trim())
-      .filter(Boolean);
+    const lines = sanitizeHotmailQueueLines(inputEl.value || "");
+    pruneHotmailUsedEmails(lines);
 
     for (const line of lines) {
       const email = extractHotmailEmailFromLine(line);
       if (!email) continue;
-      if (!isHotmailLineUsed(line)) {
+      if (!hotmailUsedEmails.has(String(email).trim().toLowerCase())) {
         return { line, email };
       }
     }
@@ -3562,20 +3600,21 @@ function injectEmailQuickDock() {
     const emailNorm = String(targetEmail || "").trim().toLowerCase();
     if (!emailNorm) return;
 
-    const lines = String(inputEl.value || "")
-      .split(/\r?\n/)
-      .map((v) => String(v || "").trim())
-      .filter(Boolean);
-
-    const mapped = lines.map((line) => {
-      const email = extractHotmailEmailFromLine(line).toLowerCase();
-      if (email && email === emailNorm) {
-        return markHotmailLineUsed(line);
-      }
-      return line;
+    const lines = sanitizeHotmailQueueLines(inputEl.value || "");
+    let touched = false;
+    const cleaned = lines.map((line) => {
+      const normalizedLine = normalizeHotmailLine(line);
+      if (normalizedLine !== line) touched = true;
+      return normalizedLine;
     });
-
-    inputEl.value = mapped.join("\n");
+    if (cleaned.some((line) => extractHotmailEmailFromLine(line).toLowerCase() === emailNorm)) {
+      hotmailUsedEmails.add(emailNorm);
+    }
+    pruneHotmailUsedEmails(cleaned);
+    const nextValue = cleaned.join("\n");
+    if (touched || String(inputEl.value || "") !== nextValue) {
+      inputEl.value = nextValue;
+    }
     build();
   };
 
@@ -3820,7 +3859,11 @@ function injectEmailQuickDock() {
   };
 
   const build = () => {
-    const lines = String(inputEl.value || "").split(/\r?\n/).map((v) => v.trim());
+    const lines = pruneHotmailUsedEmails(sanitizeHotmailQueueLines(inputEl.value || ""));
+    const sanitizedValue = lines.join("\n");
+    if (String(inputEl.value || "") !== sanitizedValue) {
+      inputEl.value = sanitizedValue;
+    }
     lastParsedCredentials = lines.map(parseCredentialLine);
     const results = lastParsedCredentials.map(formatCredentialLine).filter(Boolean);
     lastFormatted = results.join("\n");
@@ -3892,6 +3935,7 @@ function injectEmailQuickDock() {
     lastFormatted = "";
     lastAutoCopied = "";
     lastParsedCredentials = [];
+    hotmailUsedEmails = new Set();
     build();
     inputEl.focus();
   });

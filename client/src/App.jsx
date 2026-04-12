@@ -2106,20 +2106,87 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
     return true;
   });
 
+  const renderHotmailNote = (acc) =>
+    acc.takenNote ? (
+      <span className="break-words text-sky-400">{acc.takenNote}</span>
+    ) : (
+      <span className="italic text-slate-600">â€”</span>
+    );
+
+  const renderHotmailActions = (acc, mobile = false) => {
+    const readButton = (
+      <button
+        onClick={() => handleHotmailRead(acc.email)}
+        disabled={loading}
+        className={
+          mobile
+            ? "inline-flex items-center justify-center rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2.5 text-[11px] font-semibold text-violet-200 transition hover:bg-violet-500/20 disabled:opacity-40"
+            : "text-xs font-semibold text-violet-400 transition hover:text-violet-300 disabled:opacity-40"
+        }
+      >
+        {loading ? "Dang doc..." : "Doc mail"}
+      </button>
+    );
+
+    const resetButton = (
+      <button
+        onClick={() => handleHotmailRelease(acc)}
+        className={
+          mobile
+            ? "inline-flex items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-500/20"
+            : "border-l border-slate-600 pl-2 text-xs font-semibold text-amber-400 transition hover:text-amber-300"
+        }
+      >
+        Reset
+      </button>
+    );
+
+    const deleteButton = (
+      <button
+        onClick={() => handleHotmailDelete(acc.email)}
+        className={
+          mobile
+            ? "inline-flex items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-[11px] font-semibold text-red-200 transition hover:bg-red-500/20"
+            : "border-l border-slate-600 pl-2 text-xs font-semibold text-red-500 transition hover:text-red-400"
+        }
+      >
+        XÃ³a
+      </button>
+    );
+
+    if (mobile) {
+      return (
+        <div className="grid grid-cols-3 gap-2">
+          {readButton}
+          {resetButton}
+          {deleteButton}
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {readButton}
+        {resetButton}
+        {deleteButton}
+      </>
+    );
+  };
+
   return (
-    <div className="mt-4 rounded-[24px] border border-slate-700/60 bg-slate-900/50 p-6 shadow-xl backdrop-blur-sm">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-black text-white">Hotmail Inbox</h2>
-          <p className="mt-1 text-sm text-slate-400">
+    <div className="mt-4 rounded-[24px] border border-slate-700/60 bg-slate-900/50 p-4 shadow-xl backdrop-blur-sm sm:p-6">
+      <div className="mb-4 flex flex-col gap-2 sm:mb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
+          <h2 className="text-xl font-black text-white sm:text-2xl">Hotmail Inbox</h2>
+          <p className="text-xs text-slate-400 sm:text-sm">
             Admin đọc mail chỉ để xem inbox, không đánh dấu đã dùng.
           </p>
         </div>
       </div>
 
-      <div className="mb-5">
+      <div className="mb-5 space-y-3">
         <textarea
-          className="w-full rounded-xl border border-slate-700/60 bg-slate-950 p-4 font-mono text-sm text-slate-200 outline-none focus:border-violet-500"
+          className="min-h-[132px] w-full rounded-2xl border border-slate-700/60 bg-slate-950 px-4 py-3 font-mono text-sm text-slate-200 outline-none transition focus:border-violet-500"
           rows="4"
           placeholder={
             "Dán Microsoft mailbox, mỗi dòng 1 acc:\nemail|pass|refresh_token|client_id\nemail|pass|refresh_token|client_id|secret2fa"
@@ -2127,59 +2194,117 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
           value={inputLine}
           onChange={(e) => setInputLine(e.target.value)}
         />
-        <p className="mt-2 text-xs leading-5 text-slate-400">
+        <p className="text-[11px] leading-5 text-slate-400 sm:text-xs">
           Hotmail, Outlook, Live và MSN dùng chung kho Microsoft mailbox. Chỉ lưu khi live check Outlook đổi token và đọc inbox thành công.
         </p>
-        <div className="mt-2 flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <button
             onClick={handleHotmailSave}
             disabled={loading}
-            className="flex-1 rounded-xl bg-violet-600 py-2.5 font-bold text-white shadow-lg shadow-violet-900/40 transition-all hover:bg-violet-500 disabled:opacity-50"
+            className="w-full rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-violet-900/40 transition-all hover:bg-violet-500 disabled:opacity-50 sm:flex-1"
           >
             {loading ? "Đang xử lý..." : "Import & Lưu"}
           </button>
           <button
             onClick={loadAccounts}
-            className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-400 transition hover:text-white"
+            className="w-full rounded-2xl border border-slate-600 px-4 py-3 text-sm font-medium text-slate-300 transition hover:border-slate-500 hover:text-white sm:w-auto"
           >
             Làm mới
           </button>
           <button
             onClick={handleHotmailSyncChatgpt}
             disabled={loading}
-            className="rounded-xl border border-sky-500/50 bg-sky-500/10 px-4 py-2 text-sm font-bold text-sky-200 transition hover:bg-sky-500/20 disabled:opacity-50"
+            className="w-full rounded-2xl border border-sky-500/50 bg-sky-500/10 px-4 py-3 text-sm font-bold text-sky-200 transition hover:bg-sky-500/20 disabled:opacity-50 sm:w-auto"
           >
-            Dong bo ChatGPT
+            Đồng bộ ChatGPT
           </button>
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Tìm email..."
-          className="w-56 rounded-xl border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-slate-200 outline-none focus:border-violet-500"
-        />
-        {["all", "available", "reserved", "used"].map((state) => (
-          <button
-            key={state}
-            onClick={() => setFilterState(state)}
-            className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
-              filterState === state
-                ? "border-violet-500 bg-violet-600 text-white"
-                : "border-slate-600 bg-slate-800 text-slate-400 hover:text-white"
-            }`}
-          >
-            {state === "all" ? "Tất cả" : state}
-          </button>
-        ))}
-        <span className="ml-auto self-center text-sm text-slate-500">
-          {filtered.length}/{accounts.length} acc
-        </span>
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm email..."
+            className="w-full rounded-2xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-violet-500 sm:w-72"
+          />
+          <span className="inline-flex self-start rounded-full border border-slate-700 bg-slate-950/80 px-3 py-1 text-[11px] font-semibold text-slate-300">
+            {filtered.length}/{accounts.length} acc
+          </span>
+        </div>
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+          {["all", "available", "reserved", "used"].map((state) => (
+            <button
+              key={state}
+              onClick={() => setFilterState(state)}
+              className={`shrink-0 rounded-2xl border px-3 py-2 text-sm font-medium transition ${
+                filterState === state
+                  ? "border-violet-500 bg-violet-600 text-white"
+                  : "border-slate-600 bg-slate-800 text-slate-400 hover:text-white"
+              }`}
+            >
+              {state === "all" ? "Tất cả" : state}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-700/60">
+      <div className="space-y-3 md:hidden">
+        {filtered.map((acc) => (
+          <div
+            key={acc.email}
+            className="rounded-[22px] border border-slate-700/60 bg-slate-950/65 p-4 shadow-[0_14px_35px_rgba(2,6,23,0.24)]"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Microsoft mailbox
+                </div>
+                <div className="mt-1 break-all font-mono text-xs text-white">
+                  {acc.email}
+                </div>
+              </div>
+              <div className="shrink-0">{stateBadge(acc.state)}</div>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Lúc lấy
+                </div>
+                <div className="mt-1 text-xs text-slate-300">
+                  {fmtDate(acc.takenAt || acc.reservedAt || acc.updatedAt)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Nguồn sử dụng
+                </div>
+                <div className="mt-2 text-xs">{renderUsageSource(acc)}</div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Ghi chú
+                </div>
+                <div className="mt-2 text-xs">{renderHotmailNote(acc)}</div>
+              </div>
+            </div>
+
+            <div className="mt-4">{renderHotmailActions(acc, true)}</div>
+          </div>
+        ))}
+
+        {filtered.length === 0 && (
+          <div className="rounded-[22px] border border-dashed border-slate-700/70 bg-slate-950/40 px-4 py-8 text-center text-sm italic text-slate-500">
+            Không có tài khoản nào.
+          </div>
+        )}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-2xl border border-slate-700/60 md:block">
         <table className="min-w-[980px] w-full text-left text-sm text-slate-300">
           <thead className="border-b border-slate-700/60 bg-slate-800 text-[11px] uppercase text-slate-400">
             <tr>
@@ -2201,32 +2326,10 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
                 </td>
                 <td className="px-4 py-3 text-xs">{renderUsageSource(acc)}</td>
                 <td className="max-w-[220px] px-4 py-3 text-xs" title={acc.takenNote || ""}>
-                  {acc.takenNote ? (
-                    <span className="text-sky-400">{acc.takenNote}</span>
-                  ) : (
-                    <span className="italic text-slate-600">—</span>
-                  )}
+                  {renderHotmailNote(acc)}
                 </td>
                 <td className="space-x-2 whitespace-nowrap px-4 py-3 text-right">
-                  <button
-                    onClick={() => handleHotmailRead(acc.email)}
-                    disabled={loading}
-                    className="text-xs font-semibold text-violet-400 transition hover:text-violet-300 disabled:opacity-40"
-                  >
-                    {loading ? "Đang đọc..." : "Đọc mail"}
-                  </button>
-                  <button
-                    onClick={() => handleHotmailRelease(acc)}
-                    className="border-l border-slate-600 pl-2 text-xs font-semibold text-amber-400 transition hover:text-amber-300"
-                  >
-                    Reset
-                  </button>
-                  <button
-                    onClick={() => handleHotmailDelete(acc.email)}
-                    className="border-l border-slate-600 pl-2 text-xs font-semibold text-red-500 transition hover:text-red-400"
-                  >
-                    Xóa
-                  </button>
+                  {renderHotmailActions(acc)}
                 </td>
               </tr>
             ))}
@@ -9527,10 +9630,10 @@ function App() {
               Quản Lý Tài Khoản
             </h1>
           </div>
-          <div className="flex bg-slate-900 p-1 rounded-3xl border border-slate-700 items-center overflow-x-auto w-full max-w-full no-scrollbar">
+          <div className="flex w-full max-w-full items-center gap-1.5 overflow-x-auto rounded-3xl border border-slate-700 bg-slate-900 p-1 no-scrollbar snap-x snap-mandatory">
             <button
               onClick={() => setActiveTab("chatgpt")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "chatgpt" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${activeTab === "chatgpt" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               ChatGPT
             </button>
@@ -9538,7 +9641,7 @@ function App() {
               onClick={() =>
                 setActiveTab(isActiveWebTab ? activeTab : "store-users")
               }
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all inline-flex items-center ${isActiveWebTab ? "bg-cyan-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`inline-flex items-center whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${isActiveWebTab ? "bg-cyan-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Web
               {visibleSupportUnreadIndicatorCount > 0 ? (
@@ -9549,38 +9652,38 @@ function App() {
             </button>
             <button
               onClick={() => setActiveTab("netflix")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "netflix" ? "bg-red-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${activeTab === "netflix" ? "bg-red-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Netflix
             </button>
             <button
               onClick={() => setActiveTab("capcut")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "capcut" ? "bg-green-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${activeTab === "capcut" ? "bg-green-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               CapCut
             </button>
             <button
               onClick={() => setActiveTab("canva")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "canva" ? "bg-purple-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${activeTab === "canva" ? "bg-purple-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Canva
             </button>
 
             <button
               onClick={() => setActiveTab("coursera")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "coursera" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${activeTab === "coursera" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Coursera Plus
             </button>
             <button
               onClick={() => setActiveTab("hotmail")}
-              className={`whitespace-nowrap shrink-0 px-4 md:px-6 py-2 rounded-3xl font-medium transition-all ${activeTab === "hotmail" ? "bg-violet-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              className={`whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${activeTab === "hotmail" ? "bg-violet-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               Hotmail
             </button>
             <button
               onClick={handleLogout}
-              className="ml-2 w-10 h-10 rounded-full bg-red-900/50 hover:bg-red-600 text-red-200 hover:text-white flex items-center justify-center transition-all"
+              className="ml-1 h-10 w-10 shrink-0 rounded-full bg-red-900/50 text-red-200 transition-all hover:bg-red-600 hover:text-white flex items-center justify-center snap-start"
               title="Đăng Xuất"
             >
               <LogIn size={18} className="transform rotate-180" />

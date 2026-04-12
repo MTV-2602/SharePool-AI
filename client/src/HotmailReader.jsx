@@ -41,32 +41,32 @@ export default function HotmailReader() {
   };
 
   return (
-    <div className="min-h-screen overflow-hidden bg-[#07111f] px-4 py-8 text-slate-100">
+    <div className="min-h-screen overflow-hidden bg-[#07111f] px-3 py-5 text-slate-100 sm:px-4 sm:py-8">
       <div className="pointer-events-none fixed inset-0 opacity-70">
         <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-cyan-500/20 blur-3xl" />
         <div className="absolute -right-20 bottom-10 h-80 w-80 rounded-full bg-emerald-500/10 blur-3xl" />
       </div>
 
-      <main className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-4xl items-center justify-center">
-        <section className="w-full rounded-[34px] border border-cyan-300/20 bg-slate-950/75 p-6 shadow-[0_30px_90px_rgba(0,0,0,0.45)] backdrop-blur-xl md:p-8">
+      <main className="relative mx-auto flex min-h-[calc(100dvh-2.5rem)] max-w-4xl items-start justify-center pt-3 sm:min-h-[calc(100vh-4rem)] sm:items-center sm:pt-0">
+        <section className="w-full rounded-[28px] border border-cyan-300/20 bg-slate-950/75 p-4 shadow-[0_30px_90px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:rounded-[34px] sm:p-6 md:p-8">
           <div className="mx-auto max-w-3xl">
-            <div className="mb-8 text-center">
-              <div className="inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs font-black uppercase tracking-[0.22em] text-cyan-200">
+            <div className="mb-6 text-center sm:mb-8">
+              <div className="inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-cyan-200 sm:text-xs">
                 Public Hotmail Reader
               </div>
-              <h1 className="mt-4 text-3xl font-black tracking-tight text-white md:text-5xl">
+              <h1 className="mt-3 text-2xl font-black tracking-tight text-white sm:mt-4 sm:text-3xl md:text-5xl">
                 Đọc inbox nhanh
               </h1>
-              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-400 md:text-base">
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-400 sm:mt-3 md:text-base">
                 Nhập email Hotmail hoặc Outlook đã có trong hệ thống để mở inbox ngay.
               </p>
             </div>
 
             <form
               onSubmit={readInbox}
-              className="rounded-[28px] border border-slate-800/80 bg-slate-900/70 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)]"
+              className="rounded-[24px] border border-slate-800/80 bg-slate-900/70 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)] sm:rounded-[28px]"
             >
-              <div className="flex flex-col gap-3 md:flex-row">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end">
                 <label className="min-w-0 flex-1">
                   <span className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
                     Email Microsoft mailbox
@@ -83,13 +83,13 @@ export default function HotmailReader() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="md:mt-[1.55rem] md:w-auto rounded-2xl bg-cyan-500 px-6 py-3 font-black text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-2xl bg-cyan-500 px-6 py-3 font-black text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60 md:mt-[1.55rem] md:w-auto"
                 >
                   {loading ? "Đang đọc..." : "Đọc inbox"}
                 </button>
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
                 <span className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1">
                   Hotmail
                 </span>
