@@ -245,6 +245,8 @@ const normalizeMarketplaceProvider = (value, fallback = "datammo") => {
   if (raw === "datammo") return "datammo";
   return fallback;
 };
+const looksLikeMarketplaceOrderIdQuery = (value = "") =>
+  /^[a-z0-9_-]{3,}$/i.test(String(value || "").trim());
 const getMarketplaceProviderLabel = (value) =>
   normalizeMarketplaceProvider(value) === "shopmini" ? "Shopmini" : "Datammo";
 const buildStoreOrderOtpState = ({ code = "", expiresIn = 0 } = {}) => {
@@ -2480,6 +2482,12 @@ function App() {
   const [marketplaceOrderQuery, setMarketplaceOrderQuery] = useState("");
   const [marketplaceOrderProviderFilter, setMarketplaceOrderProviderFilter] =
     useState("all");
+  const [marketplaceOrderSearchResults, setMarketplaceOrderSearchResults] =
+    useState([]);
+  const [marketplaceOrderSearchLoading, setMarketplaceOrderSearchLoading] =
+    useState(false);
+  const [marketplaceOrderSearchMode, setMarketplaceOrderSearchMode] =
+    useState("");
   const [chatgptMarketplaceOrderPage, setChatgptMarketplaceOrderPage] =
     useState(1);
   const [storeUserQuery, setStoreUserQuery] = useState("");
@@ -2487,6 +2495,12 @@ function App() {
     useState("");
   const [teamMarketplaceOrderProviderFilter, setTeamMarketplaceOrderProviderFilter] =
     useState("all");
+  const [teamMarketplaceOrderSearchResults, setTeamMarketplaceOrderSearchResults] =
+    useState([]);
+  const [teamMarketplaceOrderSearchLoading, setTeamMarketplaceOrderSearchLoading] =
+    useState(false);
+  const [teamMarketplaceOrderSearchMode, setTeamMarketplaceOrderSearchMode] =
+    useState("");
   const [teamMarketplaceOrderPage, setTeamMarketplaceOrderPage] = useState(1);
   const [teamCustomerFilter, setTeamCustomerFilter] = useState("all");
   const [teamExpiryFilter, setTeamExpiryFilter] = useState("all");
@@ -3551,6 +3565,102 @@ function App() {
   useEffect(() => {
     setTeamMarketplaceOrderPage(1);
   }, [searchQuery, teamMarketplaceOrderQuery, teamMarketplaceOrderProviderFilter]);
+
+  useEffect(() => {
+    const query = String(marketplaceOrderQuery || "").trim();
+    const shouldSearchHistory = looksLikeMarketplaceOrderIdQuery(query);
+
+    if (!query || !shouldSearchHistory) {
+      setMarketplaceOrderSearchResults([]);
+      setMarketplaceOrderSearchLoading(false);
+      setMarketplaceOrderSearchMode("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setMarketplaceOrderSearchResults([]);
+    setMarketplaceOrderSearchLoading(true);
+    setMarketplaceOrderSearchMode("");
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await axios.get("/api/marketplace-orders/search", {
+          params: {
+            scope: "chatgpt",
+            provider: marketplaceOrderProviderFilter,
+            query,
+          },
+        });
+        if (cancelled) return;
+        setMarketplaceOrderSearchResults(
+          Array.isArray(response.data?.orders) ? response.data.orders : [],
+        );
+        setMarketplaceOrderSearchMode(String(response.data?.mode || "").trim());
+      } catch (error) {
+        if (cancelled) return;
+        console.error("ChatGPT marketplace order search failed:", error);
+        setMarketplaceOrderSearchResults([]);
+        setMarketplaceOrderSearchMode("");
+      } finally {
+        if (!cancelled) {
+          setMarketplaceOrderSearchLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [marketplaceOrderQuery, marketplaceOrderProviderFilter]);
+
+  useEffect(() => {
+    const query = String(teamMarketplaceOrderQuery || "").trim();
+    const shouldSearchHistory = looksLikeMarketplaceOrderIdQuery(query);
+
+    if (!query || !shouldSearchHistory) {
+      setTeamMarketplaceOrderSearchResults([]);
+      setTeamMarketplaceOrderSearchLoading(false);
+      setTeamMarketplaceOrderSearchMode("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setTeamMarketplaceOrderSearchResults([]);
+    setTeamMarketplaceOrderSearchLoading(true);
+    setTeamMarketplaceOrderSearchMode("");
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await axios.get("/api/marketplace-orders/search", {
+          params: {
+            scope: "team",
+            provider: teamMarketplaceOrderProviderFilter,
+            query,
+          },
+        });
+        if (cancelled) return;
+        setTeamMarketplaceOrderSearchResults(
+          Array.isArray(response.data?.orders) ? response.data.orders : [],
+        );
+        setTeamMarketplaceOrderSearchMode(String(response.data?.mode || "").trim());
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Team marketplace order search failed:", error);
+        setTeamMarketplaceOrderSearchResults([]);
+        setTeamMarketplaceOrderSearchMode("");
+      } finally {
+        if (!cancelled) {
+          setTeamMarketplaceOrderSearchLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [teamMarketplaceOrderQuery, teamMarketplaceOrderProviderFilter]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -8136,6 +8246,29 @@ function App() {
           await axios.delete("/api/marketplace-order", {
             data: { orderId, provider, scope },
           });
+          if (scope === "team") {
+            setTeamMarketplaceOrderSearchResults((prev) =>
+              (Array.isArray(prev) ? prev : []).filter(
+                (item) =>
+                  !(
+                    normalizeMarketplaceScope(item?.scope) === scope &&
+                    normalizeMarketplaceProvider(item?.provider) === provider &&
+                    String(item?.orderId || "").trim() === orderId
+                  ),
+              ),
+            );
+          } else {
+            setMarketplaceOrderSearchResults((prev) =>
+              (Array.isArray(prev) ? prev : []).filter(
+                (item) =>
+                  !(
+                    normalizeMarketplaceScope(item?.scope) === scope &&
+                    normalizeMarketplaceProvider(item?.provider) === provider &&
+                    String(item?.orderId || "").trim() === orderId
+                  ),
+              ),
+            );
+          }
           fetchData();
           broadcastDataChange();
           showAlert(
@@ -8978,7 +9111,7 @@ function App() {
     );
     return searchIndex.includes(globalMarketplaceSearchQuery);
   });
-  const filteredChatgptMarketplaceOrders = chatgptMarketplaceOrderSummaries.filter((order) => {
+  const localFilteredChatgptMarketplaceOrders = chatgptMarketplaceOrderSummaries.filter((order) => {
     if (
       marketplaceOrderProviderFilter !== "all" &&
       normalizeMarketplaceProvider(order?.provider) !==
@@ -8996,7 +9129,7 @@ function App() {
     if (!marketplaceOrderQuery.trim()) return true;
     return searchIndex.includes(toNonAccentVietnamese(marketplaceOrderQuery));
   });
-  const filteredTeamMarketplaceOrders = teamMarketplaceOrderSummaries.filter((order) => {
+  const localFilteredTeamMarketplaceOrders = teamMarketplaceOrderSummaries.filter((order) => {
     if (
       teamMarketplaceOrderProviderFilter !== "all" &&
       normalizeMarketplaceProvider(order?.provider) !==
@@ -9014,6 +9147,52 @@ function App() {
     if (!teamMarketplaceOrderQuery.trim()) return true;
     return searchIndex.includes(toNonAccentVietnamese(teamMarketplaceOrderQuery));
   });
+  const shouldSearchChatgptMarketplaceHistory = looksLikeMarketplaceOrderIdQuery(
+    marketplaceOrderQuery,
+  );
+  const shouldSearchTeamMarketplaceHistory = looksLikeMarketplaceOrderIdQuery(
+    teamMarketplaceOrderQuery,
+  );
+  const remoteFilteredChatgptMarketplaceOrders = (
+    Array.isArray(marketplaceOrderSearchResults)
+      ? marketplaceOrderSearchResults
+      : []
+  ).filter((order) => {
+    const searchIndex = String(order?.searchIndex || "");
+    if (
+      globalMarketplaceSearchQuery &&
+      !searchIndex.includes(globalMarketplaceSearchQuery)
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const remoteFilteredTeamMarketplaceOrders = (
+    Array.isArray(teamMarketplaceOrderSearchResults)
+      ? teamMarketplaceOrderSearchResults
+      : []
+  ).filter((order) => {
+    const searchIndex = String(order?.searchIndex || "");
+    if (
+      globalMarketplaceSearchQuery &&
+      !searchIndex.includes(globalMarketplaceSearchQuery)
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const usingChatgptMarketplaceHistoryResults =
+    shouldSearchChatgptMarketplaceHistory &&
+    remoteFilteredChatgptMarketplaceOrders.length > 0;
+  const usingTeamMarketplaceHistoryResults =
+    shouldSearchTeamMarketplaceHistory &&
+    remoteFilteredTeamMarketplaceOrders.length > 0;
+  const filteredChatgptMarketplaceOrders = usingChatgptMarketplaceHistoryResults
+    ? remoteFilteredChatgptMarketplaceOrders
+    : localFilteredChatgptMarketplaceOrders;
+  const filteredTeamMarketplaceOrders = usingTeamMarketplaceHistoryResults
+    ? remoteFilteredTeamMarketplaceOrders
+    : localFilteredTeamMarketplaceOrders;
   const chatgptMarketplaceOrderTotalPages = Math.max(
     1,
     Math.ceil(
@@ -9421,6 +9600,24 @@ function App() {
     filteredTeamMarketplaceOrders.length > 0
       ? `${teamMarketplaceVisibleStart}-${teamMarketplaceVisibleEnd}`
       : "0";
+  const chatgptMarketplaceSearchStatusText = shouldSearchChatgptMarketplaceHistory
+    ? marketplaceOrderSearchLoading
+      ? "don dang tim lich su"
+      : usingChatgptMarketplaceHistoryResults
+        ? marketplaceOrderSearchMode === "exact"
+          ? "don khop ma don"
+          : "don gan dung tu lich su"
+        : "don hop bo loc"
+    : "don hop bo loc";
+  const teamMarketplaceSearchStatusText = shouldSearchTeamMarketplaceHistory
+    ? teamMarketplaceOrderSearchLoading
+      ? "don dang tim lich su"
+      : usingTeamMarketplaceHistoryResults
+        ? teamMarketplaceOrderSearchMode === "exact"
+          ? "don khop ma don"
+          : "don gan dung tu lich su"
+        : "don hop bo loc"
+    : "don hop bo loc";
   const selectedChatgptIdSet = new Set(
     selectedChatgptIds.map((id) => String(id || "")),
   );
@@ -12464,14 +12661,14 @@ function App() {
                       <span className="font-bold text-white">
                         {chatgptMarketplaceVisibleLabel}
                       </span>{" "}
-                      / {filteredChatgptMarketplaceOrders.length} don hop bo loc
+                      / {filteredChatgptMarketplaceOrders.length} {chatgptMarketplaceSearchStatusText}
                     </div>
                   </div>
                   <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex-1 max-w-xl">
                       <input
                         type="text"
-                        placeholder="Tim theo order, acc goc, acc bao hanh..."
+                        placeholder="Tim ma don toan lich su, hoac acc trong danh sach hien tai..."
                         value={marketplaceOrderQuery}
                         onChange={(e) => setMarketplaceOrderQuery(e.target.value)}
                         className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
@@ -16643,14 +16840,14 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         <span className="font-bold text-white">
                           {teamMarketplaceVisibleLabel}
                         </span>{" "}
-                        / {filteredTeamMarketplaceOrders.length} don hop bo loc
+                        / {filteredTeamMarketplaceOrders.length} {teamMarketplaceSearchStatusText}
                       </div>
                     </div>
                     <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div className="flex-1 max-w-xl">
                         <input
                           type="text"
-                          placeholder="Tim theo order, team goc, team bao hanh..."
+                          placeholder="Tim ma don toan lich su, hoac team trong danh sach hien tai..."
                           value={teamMarketplaceOrderQuery}
                           onChange={(e) => setTeamMarketplaceOrderQuery(e.target.value)}
                           className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"

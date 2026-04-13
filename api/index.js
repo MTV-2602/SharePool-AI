@@ -9905,6 +9905,99 @@ const normalizeMarketplaceScope = (value, fallback = "chatgpt") => {
 };
 const getMarketplaceProviderLabel = (value) =>
   normalizeMarketplaceProvider(value) === "shopmini" ? "Shopmini" : "Datammo";
+const buildMarketplaceOrderSearchSummaries = (orders = [], warrantyCases = []) => {
+  const warrantyMap = new Map();
+  (Array.isArray(warrantyCases) ? warrantyCases : []).forEach((item) => {
+    const key = [
+      normalizeMarketplaceScope(item?.scope, "chatgpt"),
+      normalizeMarketplaceProvider(item?.provider, "datammo"),
+      String(item?.orderId || "").trim(),
+      String(item?.rootAccountId || "").trim(),
+    ].join("|");
+    if (!warrantyMap.has(key)) {
+      warrantyMap.set(key, item);
+    }
+  });
+
+  return [...(Array.isArray(orders) ? orders : [])]
+    .filter((order) => !isPlaceholderMarketplaceOrder(order))
+    .sort(
+      (a, b) =>
+        new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime(),
+    )
+    .map((order) => {
+      const provider = normalizeMarketplaceProvider(order?.provider, "datammo");
+      const providerLabel = getMarketplaceProviderLabel(provider);
+      const scope = normalizeMarketplaceScope(order?.scope, "chatgpt");
+      const orderId = String(order?.orderId || "").trim();
+      const accountItems = Array.isArray(order?.accounts) ? order.accounts : [];
+      const accountSummaries = accountItems.map((account) => {
+        const accountScope = normalizeMarketplaceScope(account?.scope || scope, scope);
+        const soldAccountId = String(account?.accountId || "").trim();
+        const soldUsername = String(
+          account?.username || soldAccountId || "Khong ro acc",
+        ).trim();
+        const warrantyKey = [
+          accountScope,
+          provider,
+          orderId,
+          soldAccountId,
+        ].join("|");
+        const warrantyCase = warrantyMap.get(warrantyKey) || null;
+        const warrantyRounds = Array.isArray(warrantyCase?.rounds)
+          ? warrantyCase.rounds
+          : [];
+        const currentUsername = String(
+          warrantyCase?.currentUsername || soldUsername || "Khong ro acc",
+        ).trim();
+        return {
+          scope: accountScope,
+          itemType: String(account?.itemType || "").trim(),
+          soldAccountId,
+          soldUsername,
+          currentAccountId: String(
+            warrantyCase?.currentAccountId || soldAccountId || "",
+          ).trim(),
+          currentUsername,
+          warrantyRounds: warrantyRounds.length,
+          warrantyCase,
+        };
+      });
+      const totalWarrantyRounds = accountSummaries.reduce(
+        (sum, item) => sum + Number(item?.warrantyRounds || 0),
+        0,
+      );
+      const searchIndex = normalizeAdminSearchText(
+        [
+          providerLabel,
+          provider,
+          orderId,
+          scope,
+          ...(accountSummaries || []).flatMap((item) => [
+            item?.scope,
+            item?.soldUsername,
+            item?.currentUsername,
+            item?.soldAccountId,
+            item?.currentAccountId,
+          ]),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+
+      return {
+        ...order,
+        provider,
+        providerLabel,
+        orderId,
+        scope,
+        accountSummaries,
+        totalWarrantyRounds,
+        hasWarranty: accountSummaries.some((item) => item.warrantyRounds > 0),
+        searchIndex,
+      };
+    });
+};
 const escapeRegex = (value = "") =>
   String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const getUserNameValue = (user) => {
@@ -14734,6 +14827,108 @@ app.delete("/api/store-users/:id", verifyToken, async (req, res) => {
     return res.json({ success: true });
   } catch (error) {
     return res.status(500).json({ error: "Không thể xóa user web." });
+  }
+});
+
+app.get("/api/marketplace-orders/search", verifyToken, async (req, res) => {
+  try {
+    const scope = normalizeMarketplaceScope(req.query?.scope, "chatgpt");
+    const rawProvider = String(req.query?.provider || "all")
+      .trim()
+      .toLowerCase();
+    const provider =
+      rawProvider === "all"
+        ? "all"
+        : normalizeMarketplaceProvider(rawProvider, "");
+    const query = String(req.query?.query || "").trim();
+
+    if (!query) {
+      return res.status(400).json({ error: "Thieu query tim don san." });
+    }
+
+    const buildOrderFilter = (orderIdPattern) => {
+      const filter = {
+        scope,
+        orderId: orderIdPattern,
+      };
+      if (provider && provider !== "all") {
+        filter.provider = provider;
+      }
+      return filter;
+    };
+
+    let mode = "exact";
+    let matchedOrders = await DatammoOrder.find(
+      buildOrderFilter(new RegExp(`^${escapeRegex(query)}$`, "i")),
+    )
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .select(
+        "scope provider orderId shelf quantity createdAt accounts.scope accounts.itemType accounts.accountId accounts.username",
+      )
+      .lean();
+
+    if (!matchedOrders.length) {
+      mode = "contains";
+      matchedOrders = await DatammoOrder.find(
+        buildOrderFilter(new RegExp(escapeRegex(query), "i")),
+      )
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .select(
+          "scope provider orderId shelf quantity createdAt accounts.scope accounts.itemType accounts.accountId accounts.username",
+        )
+        .lean();
+    }
+
+    if (!matchedOrders.length) {
+      return res.json({ orders: [], total: 0, mode });
+    }
+
+    const matchedOrderIds = Array.from(
+      new Set(
+        matchedOrders
+          .map((order) => String(order?.orderId || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    const matchedProviders = Array.from(
+      new Set(
+        matchedOrders
+          .map((order) => normalizeMarketplaceProvider(order?.provider, "datammo"))
+          .filter(Boolean),
+      ),
+    );
+
+    const warrantyFilter = {
+      scope,
+      orderId: { $in: matchedOrderIds },
+    };
+    if (matchedProviders.length === 1) {
+      warrantyFilter.provider = matchedProviders[0];
+    } else if (matchedProviders.length > 1) {
+      warrantyFilter.provider = { $in: matchedProviders };
+    }
+
+    const matchedWarrantyCases = await DatammoWarrantyCase.find(warrantyFilter)
+      .select(
+        "scope provider orderId rootAccountId rootUsername currentAccountId currentUsername rounds.sequence rounds.fromAccountId rounds.fromUsername rounds.toAccountId rounds.toUsername",
+      )
+      .lean();
+
+    const orders = buildMarketplaceOrderSearchSummaries(
+      matchedOrders,
+      matchedWarrantyCases,
+    );
+
+    return res.json({
+      orders,
+      total: orders.length,
+      mode,
+    });
+  } catch (error) {
+    console.error("Marketplace order search error:", error);
+    return res.status(500).json({ error: "Khong the tim don san." });
   }
 });
 
