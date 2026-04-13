@@ -3485,44 +3485,80 @@ function injectEmailQuickDock() {
   panel.id = "af-email-quick-dock";
   panel.setAttribute("data-af-ui-root", "1");
   panel.setAttribute("data-dd-privacy", "hidden"); // Tàng hình DataDog
+  const dockSectionTitleStyle =
+    "font:700 9px/1.1 'Segoe UI',Arial,sans-serif;color:#7d89b8;letter-spacing:.14em;text-transform:uppercase;margin:0 0 6px 2px";
+  const dockSectionStyle =
+    "padding:8px;border:1px solid rgba(101,118,171,.22);border-radius:12px;background:rgba(12,18,38,.72)";
+  const dockGridStyle =
+    "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px";
+  const dockButtonBaseStyle =
+    "all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;cursor:pointer;min-height:30px;padding:6px 10px;border-radius:9px;font:700 11px/1 'Segoe UI',Arial,sans-serif;color:#fff;text-align:center";
+  const dockFullWidthButtonStyle = `${dockButtonBaseStyle};grid-column:1 / -1`;
   panel.style.cssText = `
     position: fixed;
     bottom: 78px;
     right: 20px;
     z-index: 2147483647;
-    width: 300px;
-    background: rgba(10, 14, 32, 0.97);
-    border: 1px solid #8e44ad;
-    border-radius: 14px;
-    padding: 8px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-    color: #e0e0e0;
+    width: 312px;
+    max-width: calc(100vw - 24px);
+    background: rgba(9, 13, 28, 0.96);
+    border: 1px solid rgba(143, 91, 255, 0.72);
+    border-radius: 16px;
+    padding: 10px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+    color: #e8ebf3;
     font-family: "Segoe UI", Arial, sans-serif;
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(14px);
   `;
 
   isolateFloatingUIEvents(panel);
   panel.innerHTML = `
-    <div id="af-eq-drag-handle" style="font:700 10px sans-serif;color:#7a88b8;letter-spacing:.6px;text-transform:uppercase;margin:0 0 6px 2px;user-select:none">Move</div>
-    <div id="af-eq-active-email" style="margin:0 0 6px 0;padding:6px 8px;border-radius:8px;background:#10223f;color:#9ec9ff;font:600 11px monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">TempMail: (none)</div>
-    <div id="af-eq-active-hotmail" style="margin:0 0 6px 0;padding:6px 8px;border-radius:8px;background:#13271d;color:#89d7ab;font:600 11px monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Hotmail: (none)</div>
-    <textarea id="af-eq-input" rows="2" style="width:100%;box-sizing:border-box;background:#0f3460;border:1px solid #1a4a8a;border-radius:8px;color:#fff;font:12px monospace;padding:7px;resize:none;outline:none" placeholder="paste tk, one per line"></textarea>
-    <div style="display:flex;justify-content:flex-end;margin-top:8px;gap:8px;flex-wrap:wrap">
-      <button id="af-eq-copy-full" style="all:unset;cursor:pointer;padding:7px 12px;background:#16a085;border-radius:8px;font:700 12px sans-serif;color:#fff">Copy Full</button>
-      <button id="af-eq-copy-pass" style="all:unset;cursor:pointer;padding:7px 12px;background:#27ae60;border-radius:8px;font:700 12px sans-serif;color:#fff">Copy Pass</button>
-      <button id="af-eq-gen-2fa" style="all:unset;cursor:pointer;padding:7px 12px;background:#c0392b;border-radius:8px;font:700 12px sans-serif;color:#fff">2FA</button>
-      <button id="af-eq-push-chatgpt" style="all:unset;cursor:pointer;padding:7px 12px;background:#2563eb;border-radius:8px;font:700 12px sans-serif;color:#fff">Day</button>
-      <button id="af-eq-rand-pass" style="all:unset;cursor:pointer;padding:7px 12px;background:#e67e22;border-radius:8px;font:700 12px sans-serif;color:#fff">Random</button>
-      <button id="af-eq-hotmail-new" style="all:unset;cursor:pointer;padding:7px 12px;background:#8e44ad;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🚀 HM New</button>
-      <button id="af-eq-hotmail-use" style="all:unset;cursor:pointer;padding:7px 12px;background:#1f7a45;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📨 HM Use</button>
-      <button id="af-eq-hotmail-code" style="all:unset;cursor:pointer;padding:7px 12px;background:#d35400;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🧩 HM Code</button>
-      <button id="af-eq-hotmail-refresh" style="all:unset;cursor:pointer;padding:7px 12px;background:#34495e;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📋 HM List</button>
-      <button id="af-eq-tempmail" style="all:unset;cursor:pointer;padding:7px 12px;background:#8e44ad;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📧 Use</button>
-      <button id="af-eq-tempmail-new" style="all:unset;cursor:pointer;padding:7px 12px;background:#9b59b6;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🆕 New</button>
-      <button id="af-eq-get-code" style="all:unset;cursor:pointer;padding:7px 12px;background:#d35400;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🔐 Code</button>
-      <button id="af-eq-hotmail-pick" style="all:unset;cursor:pointer;padding:7px 12px;background:#16a085;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🎯 HM Pick</button>
-      <button id="af-eq-switch-mode" style="all:unset;cursor:pointer;padding:7px 12px;background:#0e6655;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🔄 → HM</button>
-      <button id="af-eq-clear" style="all:unset;cursor:pointer;padding:7px 12px;background:#0f3460;border-radius:8px;font:700 12px sans-serif;color:#aaa">Clear</button>
+    <div id="af-eq-drag-handle" style="display:flex;align-items:center;height:10px;margin:0 0 8px 2px;user-select:none;cursor:move">
+      <span style="display:inline-flex;gap:3px">
+        <span style="width:4px;height:4px;border-radius:999px;background:#5f6b8a"></span>
+        <span style="width:4px;height:4px;border-radius:999px;background:#5f6b8a"></span>
+        <span style="width:4px;height:4px;border-radius:999px;background:#5f6b8a"></span>
+      </span>
+    </div>
+    <div id="af-eq-active-email" style="margin:0 0 6px 0;padding:5px 8px;border-radius:10px;background:#10223c;color:#9ec9ff;font:600 10px/1.3 monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">TempMail: (none)</div>
+    <div id="af-eq-active-hotmail" style="margin:0 0 8px 0;padding:5px 8px;border-radius:10px;background:#14241b;color:#9ae6b4;font:600 10px/1.3 monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Hotmail: (none)</div>
+    <textarea id="af-eq-input" rows="2" style="width:100%;box-sizing:border-box;background:#10284a;border:1px solid rgba(59,130,246,.32);border-radius:10px;color:#f8fbff;font:12px monospace;padding:8px;resize:none;outline:none" placeholder="Paste tk|mk|2fa..."></textarea>
+    <div style="display:grid;gap:8px;margin-top:8px">
+      <div style="${dockSectionStyle}">
+        <div style="${dockSectionTitleStyle}">Credential</div>
+        <div style="${dockGridStyle}">
+          <button id="af-eq-copy-full" style="${dockButtonBaseStyle};background:#0f9f8c">Copy Full</button>
+          <button id="af-eq-copy-pass" style="${dockButtonBaseStyle};background:#22a95f">Copy Pass</button>
+          <button id="af-eq-gen-2fa" style="${dockButtonBaseStyle};background:#dc3f52">2FA</button>
+          <button id="af-eq-rand-pass" style="${dockButtonBaseStyle};background:#ea9a19">Random</button>
+          <button id="af-eq-push-chatgpt" style="${dockFullWidthButtonStyle};background:#2f6df6">Push</button>
+        </div>
+      </div>
+      <div style="${dockSectionStyle}">
+        <div style="${dockSectionTitleStyle}">Hotmail</div>
+        <div style="${dockGridStyle}">
+          <button id="af-eq-hotmail-new" style="${dockButtonBaseStyle};background:#7c3aed">HM New</button>
+          <button id="af-eq-hotmail-use" style="${dockButtonBaseStyle};background:#0f766e">HM Use</button>
+          <button id="af-eq-hotmail-code" style="${dockButtonBaseStyle};background:#f97316">HM Code</button>
+          <button id="af-eq-hotmail-refresh" style="${dockButtonBaseStyle};background:#526077">HM List</button>
+          <button id="af-eq-hotmail-pick" style="${dockFullWidthButtonStyle};background:#14b8a6">HM Pick</button>
+        </div>
+      </div>
+      <div style="${dockSectionStyle}">
+        <div style="${dockSectionTitleStyle}">TempMail</div>
+        <div style="${dockGridStyle}">
+          <button id="af-eq-tempmail" style="${dockButtonBaseStyle};background:#0ea5e9">TM Use</button>
+          <button id="af-eq-tempmail-new" style="${dockButtonBaseStyle};background:#8b5cf6">TM New</button>
+          <button id="af-eq-get-code" style="${dockFullWidthButtonStyle};background:#f59e0b">TM Code</button>
+        </div>
+      </div>
+      <div style="${dockSectionStyle}">
+        <div style="${dockSectionTitleStyle}">Tools</div>
+        <div style="${dockGridStyle}">
+          <button id="af-eq-switch-mode" style="${dockButtonBaseStyle};background:#0f766e">Switch</button>
+          <button id="af-eq-clear" style="${dockButtonBaseStyle};background:#23314c;color:#cbd5e1">Clear</button>
+        </div>
+      </div>
     </div>
   `;
 
@@ -3664,6 +3700,7 @@ function injectEmailQuickDock() {
       inputEl.value = nextValue;
     }
     build();
+    updateSwitchModeButton().catch(() => {});
   };
 
 
@@ -3734,6 +3771,35 @@ function injectEmailQuickDock() {
       consumed = next;
     }
     return String(lines[0] || "").trim();
+  };
+
+  const updateSwitchModeButton = async () => {
+    const btn = document.getElementById("af-eq-switch-mode");
+    if (!btn) return;
+
+    const line = getDockCaretLine();
+    const parsed = line ? parseCredentialLine(line) : null;
+    const currentEmail = String(parsed?.account || line || "")
+      .trim()
+      .toLowerCase();
+    const hotmailData = await storageLocalGet([HOTMAIL_ACTIVE_EMAIL_KEY]);
+    const activeHM = String(hotmailData[HOTMAIL_ACTIVE_EMAIL_KEY] || "")
+      .trim()
+      .toLowerCase();
+    const lastTemp = await getLastTempMailAddress();
+    const activeTM = String(lastTemp?.email || "")
+      .trim()
+      .toLowerCase();
+
+    let label = "Switch";
+    if (currentEmail && activeHM && currentEmail === activeHM) {
+      label = activeTM ? "Switch to Tiny" : "Switch";
+    } else if (activeHM) {
+      label = "Switch to HM";
+    }
+
+    btn.textContent = label;
+    btn.title = label;
   };
 
 
@@ -3967,6 +4033,7 @@ function injectEmailQuickDock() {
 
     inputEl.value = lines.join("\n");
     build();
+    updateSwitchModeButton().catch(() => {});
   };
 
   const getPrimaryCredentialForPush = () => {
@@ -4004,12 +4071,30 @@ function injectEmailQuickDock() {
     return "";
   };
 
-  window.tryRebuildEmailQuickDock = build;
+  window.tryRebuildEmailQuickDock = () => {
+    build();
+    updateSwitchModeButton().catch(() => {});
+  };
 
-  inputEl.addEventListener("input", build);
+  inputEl.addEventListener("input", () => {
+    build();
+    updateSwitchModeButton().catch(() => {});
+  });
+  inputEl.addEventListener("click", () => {
+    updateSwitchModeButton().catch(() => {});
+  });
+  inputEl.addEventListener("keyup", () => {
+    updateSwitchModeButton().catch(() => {});
+  });
+  inputEl.addEventListener("focus", () => {
+    updateSwitchModeButton().catch(() => {});
+  });
   restoreHotmailQueueInput()
     .catch(() => {})
-    .finally(() => build());
+    .finally(() => {
+      build();
+      updateSwitchModeButton().catch(() => {});
+    });
   updateActiveEmailLabel();
   updateActiveHotmailLabel();
 
@@ -4020,6 +4105,7 @@ function injectEmailQuickDock() {
     lastParsedCredentials = [];
     hotmailUsedEmails = new Set();
     build();
+    updateSwitchModeButton().catch(() => {});
     inputEl.focus();
   });
 
@@ -4092,6 +4178,7 @@ function injectEmailQuickDock() {
       chrome.storage.local.set({ randomPassword: newPass });
       AUTO_PASSWORD_VALUE = newPass;
       build(); // rebuild form ngay
+      updateSwitchModeButton().catch(() => {});
       const btn = document.getElementById("af-eq-rand-pass");
       if (btn) {
         const oldText = btn.textContent;
@@ -4115,7 +4202,7 @@ function injectEmailQuickDock() {
       if (!btn) return;
       btn.disabled = true;
       btn.style.opacity = "0.5";
-      btn.textContent = "⏳ List...";
+        btn.textContent = "List...";
       try {
         const accounts = await getHotmailAccountsViaProxy();
         // Chi lay nhung acc chua dung (available)
@@ -4127,12 +4214,13 @@ function injectEmailQuickDock() {
         } else {
           inputEl.value = emails.join("\n");
           build();
+          updateSwitchModeButton().catch(() => {});
           toast(`Da tai ${emails.length} Hotmail chua dung vao input`, "#27ae60");
         }
       } catch (err) {
         toast(`❌ ${err.message || err}`, "#e74c3c");
       } finally {
-        btn.textContent = "📋 HM List";
+        btn.textContent = "HM List";
         btn.style.opacity = "1";
         btn.disabled = false;
       }
@@ -4154,6 +4242,7 @@ function injectEmailQuickDock() {
       const email = data.account.email;
       await storageLocalSet({ [HOTMAIL_ACTIVE_EMAIL_KEY]: email });
       await updateActiveHotmailLabel();
+      await updateSwitchModeButton();
     } catch (err) {
       toast(`❌ ${err.message}`, "#e74c3c");
     }
@@ -4178,7 +4267,7 @@ function injectEmailQuickDock() {
 
     btn.disabled = true;
     btn.style.opacity = "0.5";
-    btn.textContent = "⏳ Picking...";
+    btn.textContent = "Picking...";
 
     try {
       const parsed = parseHotmailCredentialLine(line);
@@ -4189,6 +4278,7 @@ function injectEmailQuickDock() {
       };
 
       await fillHotmailNow(target);
+      await updateSwitchModeButton();
       markHotmailUsedViaProxy(email); // Danh dau tren server
       markHotmailUsedInInput(email);  // Danh dau tren input (tick xanh)
 
@@ -4196,11 +4286,11 @@ function injectEmailQuickDock() {
       btn.textContent = "✅ Picked";
     } catch (err) {
       toast(`❌ ${err.message}`, "#e74c3c");
-      btn.textContent = "❌ Pick";
+      btn.textContent = "HM Pick";
     } finally {
       setTimeout(() => {
         if (!btn) return;
-        btn.textContent = "🎯 HM Pick";
+        btn.textContent = "HM Pick";
         btn.style.opacity = "1";
         btn.disabled = false;
       }, 1400);
@@ -4238,7 +4328,7 @@ function injectEmailQuickDock() {
 
     btn.disabled = true;
     btn.style.opacity = "0.5";
-    btn.textContent = "⏳ Switching...";
+    btn.textContent = "Switching...";
 
     try {
       const data = await storageLocalGet([HOTMAIL_ACTIVE_EMAIL_KEY]);
@@ -4273,7 +4363,7 @@ function injectEmailQuickDock() {
        btn.disabled = false;
        btn.style.opacity = "1";
        setTimeout(() => {
-         if (btn && !btn.textContent.includes("🔄")) btn.textContent = "🔄 Switch";
+         updateSwitchModeButton().catch(() => {});
        }, 1500);
     }
   });
@@ -4300,7 +4390,7 @@ function injectEmailQuickDock() {
       
       btn.disabled = true;
       btn.style.opacity = "0.5";
-      btn.textContent = "⏳ HM Use...";
+      btn.textContent = "HM Use...";
       
       let usedEmail = String(target.email || "").trim();
       try {
@@ -4324,6 +4414,7 @@ function injectEmailQuickDock() {
            }
            inputEl.value = lines.join("\n");
            build();
+           await updateSwitchModeButton();
         }
 
         btn.textContent = "✅ HM Use";
@@ -4337,8 +4428,8 @@ function injectEmailQuickDock() {
         }
         setTimeout(() => {
           if (!btn) return;
-          btn.textContent = "📨 HM Use";
-          btn.style.background = "#1f7a45";
+          btn.textContent = "HM Use";
+          btn.style.background = "#0f766e";
           btn.style.opacity = "1";
           btn.disabled = false;
         }, 1400);
@@ -4352,7 +4443,7 @@ function injectEmailQuickDock() {
       if (!btn) return;
       btn.disabled = true;
       btn.style.opacity = "0.5";
-      btn.textContent = "⏳ HM Code...";
+      btn.textContent = "HM Code...";
       try {
         const data = await storageLocalGet([HOTMAIL_ACTIVE_EMAIL_KEY]);
         const email = String(data[HOTMAIL_ACTIVE_EMAIL_KEY] || "").trim();
@@ -4387,8 +4478,8 @@ function injectEmailQuickDock() {
       } finally {
         setTimeout(() => {
           if (!btn) return;
-          btn.textContent = "🧩 HM Code";
-          btn.style.background = "#d35400";
+          btn.textContent = "HM Code";
+          btn.style.background = "#f97316";
           btn.style.opacity = "1";
           btn.disabled = false;
         }, 1400);
@@ -4404,16 +4495,17 @@ function injectEmailQuickDock() {
 
       btn.disabled = true;
       btn.style.opacity = "0.5";
-      btn.textContent = "⏳ Use...";
+      btn.textContent = "TM Use...";
 
       try {
         await fillTempMailNow(false);
+        await updateSwitchModeButton();
         btn.textContent = "✅ Done!";
         btn.style.background = "#27ae60";
         setTimeout(() => {
           if (btn) {
-            btn.textContent = "📧 Use";
-            btn.style.background = "#8e44ad";
+            btn.textContent = "TM Use";
+            btn.style.background = "#0ea5e9";
           }
         }, 1200);
       } catch (err) {
@@ -4421,8 +4513,8 @@ function injectEmailQuickDock() {
         btn.textContent = "❌ Lỗi";
         setTimeout(() => {
           if (btn) {
-            btn.textContent = "📧 Use";
-            btn.style.background = "#8e44ad";
+            btn.textContent = "TM Use";
+            btn.style.background = "#0ea5e9";
           }
         }, 2000);
       } finally {
@@ -4446,15 +4538,16 @@ function injectEmailQuickDock() {
       if (!btn) return;
       btn.disabled = true;
       btn.style.opacity = "0.5";
-      btn.textContent = "⏳ New...";
+      btn.textContent = "TM New...";
       try {
         await fillTempMailNow(true);
+        await updateSwitchModeButton();
         btn.textContent = "✅ New!";
         btn.style.background = "#27ae60";
         setTimeout(() => {
           if (btn) {
-            btn.textContent = "🆕 New";
-            btn.style.background = "#9b59b6";
+            btn.textContent = "TM New";
+            btn.style.background = "#8b5cf6";
           }
         }, 1200);
       } catch (err) {
@@ -4462,8 +4555,8 @@ function injectEmailQuickDock() {
         btn.textContent = "❌ Lỗi";
         setTimeout(() => {
           if (btn) {
-            btn.textContent = "🆕 New";
-            btn.style.background = "#9b59b6";
+            btn.textContent = "TM New";
+            btn.style.background = "#8b5cf6";
           }
         }, 1800);
       } finally {
@@ -4478,7 +4571,7 @@ function injectEmailQuickDock() {
     if (!btn) return;
     btn.disabled = true;
     btn.style.opacity = "0.5";
-    btn.textContent = "⏳ Code...";
+      btn.textContent = "TM Code...";
     try {
       const code = await fetchLatestTempMailCode();
       const codeEl = findVisibleVerificationCodeField();
@@ -4494,8 +4587,8 @@ function injectEmailQuickDock() {
       btn.style.background = "#27ae60";
       setTimeout(() => {
         if (btn) {
-          btn.textContent = "🔐 Code";
-          btn.style.background = "#d35400";
+          btn.textContent = "TM Code";
+          btn.style.background = "#f59e0b";
         }
       }, 1500);
     } catch (err) {
@@ -4503,8 +4596,8 @@ function injectEmailQuickDock() {
       btn.textContent = "❌ Lỗi";
       setTimeout(() => {
         if (btn) {
-          btn.textContent = "🔐 Code";
-          btn.style.background = "#d35400";
+          btn.textContent = "TM Code";
+          btn.style.background = "#f59e0b";
         }
       }, 1800);
     } finally {
@@ -4550,7 +4643,7 @@ function injectEmailQuickDock() {
       setTimeout(() => {
         if (btn) {
           btn.textContent = "2FA";
-          btn.style.background = "#c0392b";
+          btn.style.background = "#dc3f52";
         }
       }, 1500);
     } catch (err) {
