@@ -1,27 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Clock3, Copy, MailOpen, X } from "lucide-react";
+import { Clock3, Copy, X } from "lucide-react";
 
 const SERVICE_STYLES = {
   ChatGPT: {
     badge: "border-emerald-500/25 bg-emerald-500/10 text-emerald-200",
-    code: "border-emerald-500/25 bg-emerald-500/10 text-emerald-100",
+    code: "border-emerald-500/20 bg-emerald-500/10 text-emerald-100",
   },
   Microsoft: {
     badge: "border-sky-500/25 bg-sky-500/10 text-sky-200",
-    code: "border-sky-500/25 bg-sky-500/10 text-sky-100",
+    code: "border-sky-500/20 bg-sky-500/10 text-sky-100",
   },
   Google: {
     badge: "border-amber-500/25 bg-amber-500/10 text-amber-200",
-    code: "border-amber-500/25 bg-amber-500/10 text-amber-100",
+    code: "border-amber-500/20 bg-amber-500/10 text-amber-100",
   },
   Facebook: {
     badge: "border-blue-500/25 bg-blue-500/10 text-blue-200",
-    code: "border-blue-500/25 bg-blue-500/10 text-blue-100",
+    code: "border-blue-500/20 bg-blue-500/10 text-blue-100",
   },
   Other: {
-    badge: "border-slate-700 bg-slate-800/90 text-slate-300",
-    code: "border-slate-700 bg-slate-800/90 text-slate-100",
+    badge: "border-slate-700/80 bg-slate-800/80 text-slate-300",
+    code: "border-slate-700/80 bg-slate-800/80 text-slate-100",
   },
 };
 
@@ -30,17 +30,17 @@ const VARIANT_STYLES = {
     accent: "text-indigo-300",
     accentSoft: "border-indigo-500/20 bg-indigo-500/10",
     selection:
-      "border-indigo-400/25 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(99,102,241,0.18)]",
+      "border-indigo-400/30 bg-indigo-500/10 shadow-[0_0_0_1px_rgba(129,140,248,0.14)]",
     button:
-      "border-indigo-400/25 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500",
+      "border-indigo-400/20 bg-indigo-600 text-white hover:bg-indigo-500",
   },
   public: {
     accent: "text-cyan-200",
     accentSoft: "border-cyan-400/20 bg-cyan-400/10",
     selection:
-      "border-cyan-300/25 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(34,211,238,0.16)]",
+      "border-cyan-300/30 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(103,232,249,0.14)]",
     button:
-      "border-cyan-300/25 bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20 hover:bg-cyan-400",
+      "border-cyan-300/20 bg-cyan-500 text-slate-950 hover:bg-cyan-400",
   },
 };
 
@@ -91,6 +91,9 @@ const getMessageId = (message = {}, index = 0) =>
 const getMessageSender = (message = {}) =>
   String(message?.sender || message?.from || "(unknown)").trim();
 
+const getMessageSubject = (message = {}) =>
+  String(message?.subject || "(No subject)").trim() || "(No subject)";
+
 const getMessageTime = (message = {}) =>
   String(
     message?.receivedDateTime || message?.receivedAt || message?.date || "",
@@ -111,6 +114,14 @@ const getMessageBody = (message = {}) =>
       "",
   ).trim();
 
+const stripHtml = (value = "") =>
+  String(value || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const isHtmlBody = (message = {}) => {
   const htmlBody = String(message?.html_body || "").trim();
   if (htmlBody) return true;
@@ -130,7 +141,7 @@ const buildIframeDoc = (html = "") => `<!DOCTYPE html>
         padding: 24px;
         font-family: "Segoe UI", Arial, sans-serif;
         font-size: 14px;
-        line-height: 1.7;
+        line-height: 1.65;
         color: #0f172a;
         background: #f8fafc;
         word-break: break-word;
@@ -260,14 +271,17 @@ export default function HotmailInboxModal({
   }, []);
 
   const copyCode = (value, id) => {
-    navigator.clipboard.writeText(value).catch(() => {});
+    navigator.clipboard?.writeText(value).catch(() => {});
     setCopiedId(id);
     window.setTimeout(() => setCopiedId(""), 1500);
   };
 
+  const selectedMessageId = selectedMessage
+    ? getMessageId(selectedMessage, 0)
+    : "";
   const code = extractCode(
     selectedMessage
-      ? `${selectedMessage?.subject || ""} ${getMessageBody(selectedMessage)}`
+      ? `${getMessageSubject(selectedMessage)} ${getMessageBody(selectedMessage)}`
       : "",
   );
   const service = selectedMessage
@@ -279,211 +293,192 @@ export default function HotmailInboxModal({
   const serviceStyle = SERVICE_STYLES[service] || SERVICE_STYLES.Other;
   const body = selectedMessage ? getMessageBody(selectedMessage) : "";
   const readableCode = code ? code.split("").join(" ") : "";
+  const displayCount = `${displayed.length} email`;
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4">
       <div
-        className="absolute inset-0 bg-slate-950/40 backdrop-blur-md animate-in fade-in duration-300"
+        className="absolute inset-0 bg-slate-950/55 backdrop-blur-sm animate-in fade-in duration-200"
         onClick={onClose}
       />
 
-      <div className="relative w-full max-w-6xl overflow-hidden rounded-2xl bg-slate-900/80 shadow-2xl ring-1 ring-white/10 backdrop-blur-xl animate-in zoom-in-95 duration-200">
-        <div className="flex max-h-[min(86vh,820px)] min-h-[min(86vh,820px)] flex-col">
-          <div className="border-b border-slate-800/90 px-4 py-4 sm:px-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
+      <div className="relative flex h-[min(94dvh,860px)] w-full max-w-5xl flex-col overflow-hidden rounded-[24px] border border-white/10 bg-slate-900/95 shadow-[0_30px_80px_rgba(15,23,42,0.55)] animate-in zoom-in-95 duration-200 sm:h-[min(90dvh,860px)]">
+        <div className="border-b border-slate-800/90 px-4 py-3 sm:px-5 sm:py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`hidden rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.18em] sm:inline-flex ${palette.accentSoft} ${palette.accent}`}
+                >
+                  {eyebrow}
+                </span>
+                {serviceFilter ? (
                   <span
-                    className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${palette.accentSoft} ${palette.accent}`}
+                    className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${serviceStyle.badge}`}
                   >
-                    {eyebrow}
+                    {serviceFilter}
                   </span>
-                  {serviceFilter ? (
-                    <span
-                      className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${serviceStyle.badge}`}
-                    >
-                      {serviceFilter}
-                    </span>
-                  ) : null}
-                </div>
-                <h2 className="mt-3 break-all text-xl font-bold tracking-tight text-white sm:text-2xl">
-                  {email}
-                </h2>
-                <p className="mt-2 text-sm text-slate-400">
-                  {displayed.length} email · Mới nhất trước
-                </p>
+                ) : null}
               </div>
 
-              <button
-                type="button"
-                onClick={onClose}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-700/80 bg-slate-900/90 text-slate-300 transition hover:border-white/20 hover:bg-slate-800 hover:text-white"
-                aria-label="Close inbox modal"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <h2 className="mt-2 break-all text-[1.1rem] font-bold leading-tight text-white sm:text-[1.8rem]">
+                {email}
+              </h2>
+              <p className="mt-1 text-xs text-slate-400 sm:text-sm">
+                {displayCount} · Mới nhất trước
+              </p>
             </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-700/80 bg-slate-900/80 text-slate-300 transition hover:border-white/20 hover:bg-slate-800 hover:text-white sm:h-11 sm:w-11"
+              aria-label="Close inbox modal"
+            >
+              <X className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
           </div>
+        </div>
 
-          <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[320px_minmax(0,1fr)] lg:grid-rows-1">
-            <aside className="flex min-h-0 flex-col border-b border-slate-800/80 bg-slate-950/55 lg:border-b-0 lg:border-r">
-              <div className="border-b border-slate-800/70 px-4 py-3 text-[11px] text-slate-400">
-                Chọn email để đọc nội dung nhanh hơn.
-              </div>
+        <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-1">
+          <aside className="flex min-h-0 flex-col border-b border-slate-800/80 bg-slate-950/35 lg:border-b-0 lg:border-r lg:bg-slate-950/45">
+            <div className="min-h-0 flex gap-2 overflow-x-auto px-3 py-3 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto lg:p-3">
+              {displayed.length === 0 ? (
+                <div className="flex min-h-[180px] w-full items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 px-6 text-center text-sm text-slate-500">
+                  Không có email nào trong inbox này.
+                </div>
+              ) : (
+                displayed.map((message, index) => {
+                  const messageId = getMessageId(message, index);
+                  const messageCode = extractCode(
+                    `${getMessageSubject(message)} ${getMessageBody(message)}`,
+                  );
+                  const messageService = classifyService(
+                    getMessageSender(message),
+                    message?.subject,
+                  );
+                  const messageStyle =
+                    SERVICE_STYLES[messageService] || SERVICE_STYLES.Other;
+                  const isSelected = messageId === selectedMessageId;
 
-              <div className="min-h-0 flex gap-3 overflow-x-auto p-3 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto">
-                {displayed.length === 0 ? (
-                  <div className="flex min-h-[220px] w-full items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 px-6 text-center text-sm text-slate-500">
-                    Không có email nào trong inbox này.
-                  </div>
-                ) : (
-                  displayed.map((message, index) => {
-                    const messageId = getMessageId(message, index);
-                    const messageCode = extractCode(
-                      `${message?.subject || ""} ${getMessageBody(message)}`,
-                    );
-                    const messageService = classifyService(
-                      getMessageSender(message),
-                      message?.subject,
-                    );
-                    const messageStyle =
-                      SERVICE_STYLES[messageService] || SERVICE_STYLES.Other;
-                    const isSelected =
-                      messageId === getMessageId(selectedMessage, 0);
+                  return (
+                    <button
+                      key={messageId}
+                      type="button"
+                      onClick={() => setSelectedId(messageId)}
+                      className={`min-w-[212px] max-w-[72vw] shrink-0 rounded-xl border px-3 py-2.5 text-left transition lg:min-w-0 lg:max-w-none ${
+                        isSelected
+                          ? palette.selection
+                          : "border-slate-800/90 bg-slate-900/50 hover:border-slate-700 hover:bg-slate-900/80"
+                      }`}
+                    >
+                      <div className="line-clamp-2 text-[13px] font-semibold leading-5 text-white sm:text-sm">
+                        {getMessageSubject(message)}
+                      </div>
 
-                    return (
-                      <button
-                        key={messageId}
-                        type="button"
-                        onClick={() => setSelectedId(messageId)}
-                        className={`min-w-[260px] max-w-[86vw] shrink-0 rounded-2xl border px-4 py-3 text-left transition lg:min-w-0 lg:max-w-none ${
-                          isSelected
-                            ? palette.selection
-                            : "border-slate-800 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900"
-                        }`}
-                      >
-                        <div className="line-clamp-2 text-sm font-semibold leading-6 text-white">
-                          {message?.subject || "(No subject)"}
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                      <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-400">
+                        <div className="flex min-w-0 items-center gap-2">
                           <span
-                            className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${messageStyle.badge}`}
+                            className={`inline-flex rounded-full border px-1.5 py-0.5 font-semibold ${messageStyle.badge}`}
                           >
                             {messageService}
                           </span>
-                          <span className="truncate">{getMessageSender(message)}</span>
+                          <span className="truncate">
+                            {formatTime(getMessageTime(message))}
+                          </span>
                         </div>
-                        <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-slate-500">
-                          <span>{formatTime(getMessageTime(message))}</span>
-                          {messageCode ? (
-                            <span
-                              className={`rounded-lg border px-2 py-1 font-mono font-black tracking-[0.12em] ${messageStyle.code}`}
-                            >
-                              {messageCode}
-                            </span>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </aside>
 
-            <section className="flex min-h-0 flex-col bg-slate-950/35">
-              {!selectedMessage ? (
-                <div className="flex min-h-[260px] flex-1 items-center justify-center px-6 text-center text-slate-500">
-                  Chọn một email bên trái để xem chi tiết.
-                </div>
-              ) : (
-                <>
-                  <div className="border-b border-slate-800/80 px-4 py-4 sm:px-6">
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                        {messageCode ? (
                           <span
-                            className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${serviceStyle.badge}`}
+                            className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-[0.12em] ${messageStyle.code}`}
                           >
-                            {service}
+                            {messageCode}
                           </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Clock3 className="h-3.5 w-3.5" />
-                            {formatTime(getMessageTime(selectedMessage))}
-                          </span>
-                        </div>
-
-                        <h3 className="mt-3 text-xl font-bold leading-8 text-white sm:text-2xl">
-                          {selectedMessage?.subject || "(No subject)"}
-                        </h3>
-
-                        <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-full border border-slate-800 bg-slate-900/80 px-3 py-2 text-xs text-slate-300 sm:text-sm">
-                          <MailOpen className="h-4 w-4 flex-shrink-0 text-slate-400" />
-                          <span className="truncate">{getMessageSender(selectedMessage)}</span>
-                        </div>
+                        ) : null}
                       </div>
-
-                      {code ? (
-                        <div className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 p-4 xl:w-[300px] xl:shrink-0">
-                          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                            OTP / Code
-                          </div>
-                          <div className="mt-3 break-words font-mono text-2xl font-black tracking-[0.22em] text-white">
-                            {readableCode}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              copyCode(code, getMessageId(selectedMessage, 0))
-                            }
-                            className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all active:scale-95 ${palette.button}`}
-                          >
-                            <Copy className="h-4 w-4" />
-                            {copiedId === getMessageId(selectedMessage, 0)
-                              ? "Đã copy"
-                              : "Copy code"}
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="min-h-0 flex-1 p-3 sm:p-5">
-                    {isHtmlBody(selectedMessage) ? (
-                      <iframe
-                        title="hotmail-email-content"
-                        sandbox="allow-same-origin"
-                        className="h-full min-h-[280px] w-full rounded-2xl border border-slate-800 bg-white"
-                        srcDoc={buildIframeDoc(
-                          String(
-                            selectedMessage?.html_body ||
-                              selectedMessage?.body ||
-                              selectedMessage?.bodyPreview ||
-                              "",
-                          ),
-                        )}
-                      />
-                    ) : (
-                      <div className="h-full min-h-[280px] overflow-y-auto whitespace-pre-wrap rounded-2xl border border-slate-800 bg-slate-900/82 px-4 py-5 text-sm leading-7 text-slate-200 sm:px-5">
-                        {body || "(Khong co noi dung)"}
-                      </div>
-                    )}
-                  </div>
-                </>
+                    </button>
+                  );
+                })
               )}
-            </section>
-          </div>
-
-          <div className="border-t border-slate-800/80 bg-slate-900/50 px-4 py-3 sm:px-6">
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-slate-700 active:scale-95"
-              >
-                Đóng
-              </button>
             </div>
-          </div>
+          </aside>
+
+          <section className="flex min-h-0 flex-col bg-slate-950/20">
+            {!selectedMessage ? (
+              <div className="flex min-h-[220px] flex-1 items-center justify-center px-6 text-center text-sm text-slate-500">
+                Chọn một email để xem chi tiết.
+              </div>
+            ) : (
+              <>
+                <div className="border-b border-slate-800/80 px-4 py-4 sm:px-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${serviceStyle.badge}`}
+                        >
+                          {service}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 className="h-3 w-3" />
+                          {formatTime(getMessageTime(selectedMessage))}
+                        </span>
+                      </div>
+
+                      <h3 className="mt-2 text-xl font-bold leading-tight text-white sm:text-[1.9rem]">
+                        {getMessageSubject(selectedMessage)}
+                      </h3>
+
+                      <div className="mt-2 text-sm text-slate-300">
+                        {getMessageSender(selectedMessage)}
+                      </div>
+                    </div>
+
+                    {code ? (
+                      <div className="w-full rounded-xl border border-slate-800/90 bg-slate-900/80 p-3 lg:w-[220px] lg:shrink-0">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                          OTP / CODE
+                        </div>
+                        <div className="mt-2 break-words font-mono text-xl font-black tracking-[0.22em] text-white sm:text-2xl">
+                          {readableCode}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyCode(code, selectedMessageId)}
+                          className={`mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition active:scale-95 ${palette.button}`}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          {copiedId === selectedMessageId ? "Đã copy" : "Copy code"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 p-3 sm:p-4">
+                  {isHtmlBody(selectedMessage) ? (
+                    <iframe
+                      title="hotmail-email-content"
+                      sandbox="allow-same-origin"
+                      className="h-full min-h-[260px] w-full rounded-xl border border-slate-800 bg-white"
+                      srcDoc={buildIframeDoc(
+                        String(
+                          selectedMessage?.html_body ||
+                            selectedMessage?.body ||
+                            selectedMessage?.bodyPreview ||
+                            "",
+                        ),
+                      )}
+                    />
+                  ) : (
+                    <div className="h-full min-h-[260px] overflow-y-auto whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-900/72 px-4 py-4 text-sm leading-6 text-slate-200 sm:px-5">
+                      {stripHtml(body) || "(Không có nội dung)"}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
         </div>
       </div>
     </div>
