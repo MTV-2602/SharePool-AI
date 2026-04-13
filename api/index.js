@@ -15867,9 +15867,7 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
       .trim()
       .slice(0, 80);
     const link = String(req.body?.link || "").trim();
-    const note =
-      String(req.body?.note || "").trim() ||
-      (originHost ? `Day tu extension: ${originHost}` : "Day tu extension");
+    const note = String(req.body?.note || "").trim();
 
     if (!username || !password || !otpSecret) {
       return res.status(400).json({
