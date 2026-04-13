@@ -2358,6 +2358,554 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
   );
 };
 
+const HotmailAdminTabClean = ({ showAlert, showConfirm }) => {
+  const [accounts, setAccounts] = useState([]);
+  const [inputLine, setInputLine] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterState, setFilterState] = useState("all");
+  const [modal, setModal] = useState(null);
+
+  const loadAccounts = async () => {
+    try {
+      const res = await axios.get("/api/hotmail/accounts");
+      if (res.data?.ok) {
+        setAccounts(Array.isArray(res.data.accounts) ? res.data.accounts : []);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  useEffect(() => {
+    loadAccounts();
+  }, []);
+
+  const getErrorMessage = (error, fallback = "Có lỗi xảy ra.") =>
+    error?.response?.data?.error ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback;
+
+  const handleHotmailSave = async () => {
+    if (!inputLine.trim()) {
+      showAlert(
+        "Thiếu dữ liệu",
+        "Nhập email|pass|refresh_token|client_id hoặc email|pass|refresh_token|client_id|secret2fa.",
+        "warning",
+      );
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const lines = inputLine
+        .split("\n")
+        .map((line) => String(line || "").trim())
+        .filter(Boolean);
+      const successes = [];
+      const failures = [];
+
+      for (const [index, line] of lines.entries()) {
+        try {
+          const response = await axios.post("/api/hotmail/save", { line });
+          successes.push({
+            lineNumber: index + 1,
+            email:
+              response?.data?.email ||
+              line.split("|")[0] ||
+              `dong ${index + 1}`,
+            liveMessage: response?.data?.liveMessage || "",
+          });
+        } catch (error) {
+          failures.push({
+            line,
+            lineNumber: index + 1,
+            email: line.split("|")[0] || `dong ${index + 1}`,
+            error: getErrorMessage(error, "Không thể live check Hotmail."),
+          });
+        }
+      }
+
+      if (successes.length > 0) {
+        await loadAccounts();
+      }
+
+      if (failures.length === 0) {
+        setInputLine("");
+        showAlert(
+          "Import thành công",
+          [
+            `Đã lưu ${successes.length}/${lines.length} mailbox Microsoft.`,
+            successes[0]?.liveMessage ||
+              "Live OK: token và inbox Outlook đều hoạt động.",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          "success",
+        );
+        return;
+      }
+
+      setInputLine(failures.map((item) => item.line).join("\n"));
+      showAlert(
+        successes.length > 0 ? "Import một phần" : "Import thất bại",
+        [
+          `Thành công: ${successes.length}/${lines.length}`,
+          `Thất bại: ${failures.length}`,
+          ...failures
+            .slice(0, 6)
+            .map(
+              (item) =>
+                `Dòng ${item.lineNumber} (${item.email}): ${item.error}`,
+            ),
+          failures.length > 6
+            ? `... còn ${failures.length - 6} dòng lỗi khác.`
+            : "",
+          "Các dòng lỗi đang được giữ lại trong ô nhập để sửa và thử lại.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        successes.length > 0 ? "warning" : "error",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleHotmailSyncChatgpt = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.post("/api/hotmail/sync-chatgpt-links");
+      const lockedCount = Number(res.data?.lockedCount || 0);
+      const alreadyLockedCount = Number(res.data?.alreadyLockedCount || 0);
+      const missingHotmailCount = Number(res.data?.missingHotmailCount || 0);
+      await loadAccounts();
+      showAlert(
+        "Đồng bộ ChatGPT xong",
+        `Đã khóa mới ${lockedCount} Hotmail, ${alreadyLockedCount} acc đã khóa sẵn, ${missingHotmailCount} acc ChatGPT chưa có trong Hotmail.`,
+        "success",
+      );
+    } catch (error) {
+      showAlert("Đồng bộ thất bại", getErrorMessage(error), "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleHotmailDelete = (email) => {
+    showConfirm("Xóa Hotmail", `Bạn có chắc muốn xóa ${email}?`, async () => {
+      try {
+        await axios.delete("/api/hotmail/delete/" + encodeURIComponent(email));
+        await loadAccounts();
+      } catch (error) {
+        showAlert("Xóa thất bại", getErrorMessage(error), "error");
+      }
+    });
+  };
+
+  const handleHotmailRelease = (accountOrEmail) => {
+    const email =
+      typeof accountOrEmail === "string"
+        ? accountOrEmail
+        : accountOrEmail?.email || "";
+    const isChatgptLocked =
+      typeof accountOrEmail === "object" && !!accountOrEmail?.chatgptAccount;
+    showConfirm(
+      "Reset trạng thái",
+      isChatgptLocked
+        ? `Đặt lại trace của ${email} về available?\n\nReset chỉ xóa dấu test/extension đang hiển thị. Acc này vẫn bị chặn khỏi extension vì email đang nối với ChatGPT.`
+        : `Đặt lại trace của ${email} về trạng thái available?`,
+      async () => {
+        try {
+          await axios.post("/api/hotmail/release", { email });
+          await loadAccounts();
+        } catch (error) {
+          showAlert("Reset thất bại", getErrorMessage(error), "error");
+        }
+      },
+    );
+  };
+
+  const handleHotmailRead = async (email) => {
+    setLoading(true);
+    try {
+      const res = await axios.post("/api/hotmail/read", { email, top: 10 });
+      setModal({
+        email,
+        messages: res.data?.messages || [],
+        serviceFilter: null,
+      });
+      await loadAccounts();
+    } catch (error) {
+      showAlert("Đọc inbox thất bại", getErrorMessage(error), "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fmtDate = (iso) => {
+    if (!iso) return "--";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "--";
+    return d.toLocaleString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const stateBadge = (state) => {
+    if (state === "available") {
+      return (
+        <span className="rounded-full border border-emerald-700/60 bg-emerald-900/60 px-2 py-0.5 text-[11px] font-bold text-emerald-400">
+          available
+        </span>
+      );
+    }
+    if (state === "reserved") {
+      return (
+        <span className="rounded-full border border-amber-700/60 bg-amber-900/60 px-2 py-0.5 text-[11px] font-bold text-amber-400">
+          reserved
+        </span>
+      );
+    }
+    if (state === "used") {
+      return (
+        <span className="rounded-full border border-red-700/60 bg-red-900/60 px-2 py-0.5 text-[11px] font-bold text-red-400">
+          used
+        </span>
+      );
+    }
+    return (
+      <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[11px] font-bold text-slate-300">
+        {state || "?"}
+      </span>
+    );
+  };
+
+  const renderUsageSource = (acc) => {
+    const chatgpt = acc.chatgptAccount;
+    const hasExtensionTrace =
+      acc.takenNote || acc.takenAt || acc.takenByIp || acc.usedAt;
+
+    if (chatgpt) {
+      return (
+        <div className="space-y-1">
+          <div className="inline-flex rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-sky-200">
+            ChatGPT lock
+          </div>
+          <div className="font-mono text-[11px] text-white">
+            {chatgpt.id || chatgpt.username}
+          </div>
+          <div className="text-[11px] text-slate-400">
+            Mail die: {chatgpt.mailCheckStatus || "unchecked"}
+          </div>
+          {acc.lockReason && (
+            <div
+              className="max-w-[220px] truncate text-[11px] text-sky-300"
+              title={acc.lockReason}
+            >
+              {acc.lockReason}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (hasExtensionTrace) {
+      return (
+        <div className="space-y-1">
+          <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-amber-200">
+            Extension
+          </div>
+          <div
+            className="max-w-[220px] truncate text-[11px] text-slate-300"
+            title={acc.takenNote || ""}
+          >
+            {acc.takenNote || "Đã lấy từ extension"}
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {fmtDate(acc.takenAt || acc.usedAt)}
+            {acc.takenByIp ? ` · ${acc.takenByIp}` : ""}
+          </div>
+        </div>
+      );
+    }
+
+    return <span className="text-xs italic text-slate-600">Chưa dùng</span>;
+  };
+
+  const filtered = accounts.filter((acc) => {
+    if (filterState !== "all" && acc.state !== filterState) return false;
+    if (search && !acc.email.toLowerCase().includes(search.toLowerCase())) {
+      return false;
+    }
+    return true;
+  });
+
+  const renderHotmailNote = (acc) =>
+    acc.takenNote ? (
+      <span className="break-words text-sky-400">{acc.takenNote}</span>
+    ) : (
+      <span className="italic text-slate-600">--</span>
+    );
+
+  const renderHotmailActions = (acc, mobile = false) => {
+    const readButton = (
+      <button
+        onClick={() => handleHotmailRead(acc.email)}
+        disabled={loading}
+        className={
+          mobile
+            ? "inline-flex items-center justify-center rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2.5 text-[11px] font-semibold text-violet-200 transition hover:bg-violet-500/20 disabled:opacity-40"
+            : "text-xs font-semibold text-violet-400 transition hover:text-violet-300 disabled:opacity-40"
+        }
+      >
+        {loading ? "Đang đọc..." : "Đọc mail"}
+      </button>
+    );
+
+    const resetButton = (
+      <button
+        onClick={() => handleHotmailRelease(acc)}
+        className={
+          mobile
+            ? "inline-flex items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-500/20"
+            : "border-l border-slate-600 pl-2 text-xs font-semibold text-amber-400 transition hover:text-amber-300"
+        }
+      >
+        Reset
+      </button>
+    );
+
+    const deleteButton = (
+      <button
+        onClick={() => handleHotmailDelete(acc.email)}
+        className={
+          mobile
+            ? "inline-flex items-center justify-center rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-[11px] font-semibold text-red-200 transition hover:bg-red-500/20"
+            : "border-l border-slate-600 pl-2 text-xs font-semibold text-red-500 transition hover:text-red-400"
+        }
+      >
+        Xóa
+      </button>
+    );
+
+    if (mobile) {
+      return (
+        <div className="grid grid-cols-3 gap-2">
+          {readButton}
+          {resetButton}
+          {deleteButton}
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {readButton}
+        {resetButton}
+        {deleteButton}
+      </>
+    );
+  };
+
+  return (
+    <div className="mt-4 rounded-[24px] border border-slate-700/60 bg-slate-900/50 p-4 shadow-xl backdrop-blur-sm sm:p-6">
+      <div className="mb-4 flex flex-col gap-2 sm:mb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
+          <h2 className="text-xl font-black text-white sm:text-2xl">
+            Hotmail Inbox
+          </h2>
+          <p className="text-xs text-slate-400 sm:text-sm">
+            Admin đọc mail chỉ để xem inbox, không đánh dấu đã dùng.
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-5 space-y-3">
+        <textarea
+          className="min-h-[132px] w-full rounded-2xl border border-slate-700/60 bg-slate-950 px-4 py-3 font-mono text-sm text-slate-200 outline-none transition focus:border-violet-500"
+          rows="4"
+          placeholder={
+            "Dán Microsoft mailbox, mỗi dòng 1 acc:\nemail|pass|refresh_token|client_id\nemail|pass|refresh_token|client_id|secret2fa"
+          }
+          value={inputLine}
+          onChange={(e) => setInputLine(e.target.value)}
+        />
+        <p className="text-[11px] leading-5 text-slate-400 sm:text-xs">
+          Hotmail, Outlook, Live và MSN dùng chung kho Microsoft mailbox. Chỉ
+          lưu khi live check Outlook đổi token và đọc inbox thành công.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <button
+            onClick={handleHotmailSave}
+            disabled={loading}
+            className="w-full rounded-2xl bg-violet-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-violet-900/40 transition-all hover:bg-violet-500 disabled:opacity-50 sm:flex-1"
+          >
+            {loading ? "Đang xử lý..." : "Import & Lưu"}
+          </button>
+          <button
+            onClick={loadAccounts}
+            className="w-full rounded-2xl border border-slate-600 px-4 py-3 text-sm font-medium text-slate-300 transition hover:border-slate-500 hover:text-white sm:w-auto"
+          >
+            Làm mới
+          </button>
+          <button
+            onClick={handleHotmailSyncChatgpt}
+            disabled={loading}
+            className="w-full rounded-2xl border border-sky-500/50 bg-sky-500/10 px-4 py-3 text-sm font-bold text-sky-200 transition hover:bg-sky-500/20 disabled:opacity-50 sm:w-auto"
+          >
+            Đồng bộ ChatGPT
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm email..."
+            className="w-full rounded-2xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-violet-500 sm:w-72"
+          />
+          <span className="inline-flex self-start rounded-full border border-slate-700 bg-slate-950/80 px-3 py-1 text-[11px] font-semibold text-slate-300">
+            {filtered.length}/{accounts.length} acc
+          </span>
+        </div>
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+          {["all", "available", "reserved", "used"].map((state) => (
+            <button
+              key={state}
+              onClick={() => setFilterState(state)}
+              className={`shrink-0 rounded-2xl border px-3 py-2 text-sm font-medium transition ${
+                filterState === state
+                  ? "border-violet-500 bg-violet-600 text-white"
+                  : "border-slate-600 bg-slate-800 text-slate-400 hover:text-white"
+              }`}
+            >
+              {state === "all" ? "Tất cả" : state}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3 md:hidden">
+        {filtered.map((acc) => (
+          <div
+            key={acc.email}
+            className="rounded-[22px] border border-slate-700/60 bg-slate-950/65 p-4 shadow-[0_14px_35px_rgba(2,6,23,0.24)]"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Microsoft mailbox
+                </div>
+                <div className="mt-1 break-all font-mono text-xs text-white">
+                  {acc.email}
+                </div>
+              </div>
+              <div className="shrink-0">{stateBadge(acc.state)}</div>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Lúc lấy
+                </div>
+                <div className="mt-1 text-xs text-slate-300">
+                  {fmtDate(acc.takenAt || acc.reservedAt || acc.updatedAt)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Nguồn sử dụng
+                </div>
+                <div className="mt-2 text-xs">{renderUsageSource(acc)}</div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Ghi chú
+                </div>
+                <div className="mt-2 text-xs">{renderHotmailNote(acc)}</div>
+              </div>
+            </div>
+
+            <div className="mt-4">{renderHotmailActions(acc, true)}</div>
+          </div>
+        ))}
+
+        {filtered.length === 0 && (
+          <div className="rounded-[22px] border border-dashed border-slate-700/70 bg-slate-950/40 px-4 py-8 text-center text-sm italic text-slate-500">
+            Không có tài khoản nào.
+          </div>
+        )}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-2xl border border-slate-700/60 md:block">
+        <table className="min-w-[980px] w-full text-left text-sm text-slate-300">
+          <thead className="border-b border-slate-700/60 bg-slate-800 text-[11px] uppercase text-slate-400">
+            <tr>
+              <th className="px-4 py-3">Email</th>
+              <th className="w-28 px-4 py-3">Trạng thái</th>
+              <th className="w-32 px-4 py-3">Lúc lấy</th>
+              <th className="px-4 py-3">Nguồn sử dụng</th>
+              <th className="px-4 py-3">Ghi chú</th>
+              <th className="w-44 px-4 py-3 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700/60">
+            {filtered.map((acc) => (
+              <tr
+                key={acc.email}
+                className="transition-colors hover:bg-slate-800/40"
+              >
+                <td className="px-4 py-3 font-mono text-xs text-white">
+                  {acc.email}
+                </td>
+                <td className="px-4 py-3">{stateBadge(acc.state)}</td>
+                <td className="px-4 py-3 text-xs text-slate-400">
+                  {fmtDate(acc.takenAt || acc.reservedAt || acc.updatedAt)}
+                </td>
+                <td className="px-4 py-3 text-xs">{renderUsageSource(acc)}</td>
+                <td
+                  className="max-w-[220px] px-4 py-3 text-xs"
+                  title={acc.takenNote || ""}
+                >
+                  {renderHotmailNote(acc)}
+                </td>
+                <td className="space-x-2 whitespace-nowrap px-4 py-3 text-right">
+                  {renderHotmailActions(acc)}
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan="6" className="p-6 text-center italic text-slate-500">
+                  Không có tài khoản nào.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && (
+        <MailModal
+          email={modal.email}
+          messages={modal.messages}
+          serviceFilter={modal.serviceFilter}
+          onClose={() => setModal(null)}
+        />
+      )}
+    </div>
+  );
+};
+
 function App() {
   // LOGIN STATE
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -10942,7 +11490,7 @@ function App() {
         )}
 
         {activeTab === "hotmail" && (
-          <HotmailAdminTab
+          <HotmailAdminTabClean
             showAlert={showAlert}
             showConfirm={showConfirm}
           />
