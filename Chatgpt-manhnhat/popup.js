@@ -711,16 +711,53 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  chrome.storage.local.get(["hotmailProxyUrl"], (data) => {
+  chrome.storage.local.get(
+    ["hotmailProxyUrl", "extensionPushApiUrl", "extensionPushToken"],
+    (data) => {
     const proxyEl = document.getElementById("hotmail-proxy-url");
+    const pushApiEl = document.getElementById("extension-push-api-url");
+    const pushTokenEl = document.getElementById("extension-push-token");
     if (!proxyEl) return;
     if (data.hotmailProxyUrl) proxyEl.value = data.hotmailProxyUrl;
+    if (pushApiEl && data.extensionPushApiUrl) {
+      pushApiEl.value = data.extensionPushApiUrl;
+    }
+    if (pushTokenEl && data.extensionPushToken) {
+      pushTokenEl.value = data.extensionPushToken;
+    }
 
     const currentProxy = proxyEl.value.trim();
     if (currentProxy) {
       loadHotmailAccountsToSelect(currentProxy).catch(() => {});
     }
-  });
+    },
+  );
+
+  document
+    .getElementById("btn-save-extension-push-config")
+    ?.addEventListener("click", () => {
+      const pushApiEl = document.getElementById("extension-push-api-url");
+      const pushTokenEl = document.getElementById("extension-push-token");
+      if (!pushApiEl || !pushTokenEl) return;
+      const apiUrl =
+        String(pushApiEl.value || "").trim() ||
+        "https://vinhaccplus.vercel.app/api/chatgpt-extension-push";
+      const token = String(pushTokenEl.value || "").trim();
+      chrome.storage.local.set(
+        {
+          extensionPushApiUrl: apiUrl,
+          extensionPushToken: token,
+        },
+        () => {
+          showToast(
+            token
+              ? "✅ Da luu Push URL/Token"
+              : "✅ Da luu Push URL. Nhap them token de day nhanh",
+            token ? "#27ae60" : "#e67e22",
+          );
+        },
+      );
+    });
 
   document.getElementById("btn-load-hotmail-accounts")?.addEventListener("click", async () => {
     const proxyEl = document.getElementById("hotmail-proxy-url");
@@ -1320,4 +1357,3 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
-

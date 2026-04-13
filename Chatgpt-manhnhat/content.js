@@ -72,6 +72,10 @@ const HOTMAIL_PROXY_URL_DEFAULT = "https://vinhaccplus.vercel.app/api/hotmail/re
 const HOTMAIL_ACTIVE_EMAIL_KEY = "af_hotmail_active_email_v1";
 const HOTMAIL_QUEUE_STORE_KEY = "af_hotmail_queue_lines_v1";
 const HOTMAIL_QUEUE_USED_STORE_KEY = "af_hotmail_queue_used_v1";
+const EXTENSION_PUSH_API_URL_DEFAULT =
+  "https://vinhaccplus.vercel.app/api/chatgpt-extension-push";
+const EXTENSION_PUSH_API_URL_KEY = "extensionPushApiUrl";
+const EXTENSION_PUSH_TOKEN_KEY = "extensionPushToken";
 
 function getTwofaStoreHostKey() {
   try {
@@ -377,6 +381,19 @@ async function getHotmailProxyReadUrl() {
   const data = await storageLocalGet(["hotmailProxyUrl"]);
   const raw = String(data.hotmailProxyUrl || "").trim();
   return raw || HOTMAIL_PROXY_URL_DEFAULT;
+}
+
+async function getExtensionPushConfig() {
+  const data = await storageLocalGet([
+    EXTENSION_PUSH_API_URL_KEY,
+    EXTENSION_PUSH_TOKEN_KEY,
+  ]);
+  return {
+    apiUrl:
+      String(data[EXTENSION_PUSH_API_URL_KEY] || "").trim() ||
+      EXTENSION_PUSH_API_URL_DEFAULT,
+    token: String(data[EXTENSION_PUSH_TOKEN_KEY] || "").trim(),
+  };
 }
 
 
@@ -3490,6 +3507,7 @@ function injectEmailQuickDock() {
       <button id="af-eq-copy-full" style="all:unset;cursor:pointer;padding:7px 12px;background:#16a085;border-radius:8px;font:700 12px sans-serif;color:#fff">Copy Full</button>
       <button id="af-eq-copy-pass" style="all:unset;cursor:pointer;padding:7px 12px;background:#27ae60;border-radius:8px;font:700 12px sans-serif;color:#fff">Copy Pass</button>
       <button id="af-eq-gen-2fa" style="all:unset;cursor:pointer;padding:7px 12px;background:#c0392b;border-radius:8px;font:700 12px sans-serif;color:#fff">2FA</button>
+      <button id="af-eq-push-chatgpt" style="all:unset;cursor:pointer;padding:7px 12px;background:#2563eb;border-radius:8px;font:700 12px sans-serif;color:#fff">Day</button>
       <button id="af-eq-rand-pass" style="all:unset;cursor:pointer;padding:7px 12px;background:#e67e22;border-radius:8px;font:700 12px sans-serif;color:#fff">Random</button>
       <button id="af-eq-hotmail-new" style="all:unset;cursor:pointer;padding:7px 12px;background:#8e44ad;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">🚀 HM New</button>
       <button id="af-eq-hotmail-use" style="all:unset;cursor:pointer;padding:7px 12px;background:#1f7a45;border-radius:8px;font:700 12px sans-serif;color:#fff;min-width:fit-content">📨 HM Use</button>
@@ -3945,6 +3963,41 @@ function injectEmailQuickDock() {
 
     inputEl.value = lines.join("\n");
     build();
+  };
+
+  const getPrimaryCredentialForPush = () => {
+    const rawLine = String(getPrimaryDockLine() || "").trim();
+    const parsed = rawLine ? parseCredentialLine(rawLine) : lastParsedCredentials?.[0] || null;
+    const hasCredentialShape =
+      rawLine.includes("|") || rawLine.includes("----");
+    const username = String(parsed?.account || "").trim();
+    const password = String(parsed?.password || "").trim();
+    const otpSecret = normalizeOtpSecret(parsed?.twofaSecret || "");
+
+    if (!rawLine || !hasCredentialShape || !username || !password || !otpSecret) {
+      return {
+        ok: false,
+        error: "Chua co tk|mk|2fa de day",
+      };
+    }
+
+    return {
+      ok: true,
+      username,
+      password,
+      otpSecret,
+      rawLine,
+    };
+  };
+
+  const getHotmailLinkStatusText = (hotmailLink = null) => {
+    const status = String(hotmailLink?.status || "").trim();
+    if (status === "linked") {
+      return hotmailLink?.lockApplied ? " | Hotmail da khoa kho" : " | Hotmail da noi";
+    }
+    if (status === "missing") return " | Chua co acc trong Hotmail";
+    if (status === "error") return ` | ${hotmailLink?.message || "Loi noi Hotmail"}`;
+    return "";
   };
 
   window.tryRebuildEmailQuickDock = build;
@@ -4505,6 +4558,77 @@ function injectEmailQuickDock() {
     } finally {
       btn.disabled = false;
       btn.style.opacity = "1";
+    }
+  });
+
+  document.getElementById("af-eq-push-chatgpt").addEventListener("click", async () => {
+    const btn = document.getElementById("af-eq-push-chatgpt");
+    if (!btn) return;
+
+    const { apiUrl, token } = await getExtensionPushConfig();
+    if (!apiUrl || !token) {
+      toast("Chua cau hinh Push URL/Token trong popup extension", "#e67e22");
+      return;
+    }
+
+    const credential = getPrimaryCredentialForPush();
+    if (!credential?.ok) {
+      toast(credential?.error || "Chua co tk|mk|2fa de day", "#e67e22");
+      return;
+    }
+
+    const oldText = btn.textContent;
+    const oldBg = btn.style.background;
+    btn.disabled = true;
+    btn.style.opacity = "0.55";
+    btn.textContent = "Dang day...";
+
+    try {
+      const resp = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-extension-push-token": token,
+        },
+        body: JSON.stringify({
+          username: credential.username,
+          password: credential.password,
+          otpSecret: credential.otpSecret,
+          source: "extension_quick_dock",
+          originHost: String(location.hostname || location.href || "").slice(0, 120),
+        }),
+      });
+      const json = await resp.json().catch(() => ({}));
+
+      if (resp.status === 409 || json?.duplicate) {
+        btn.textContent = "Trung";
+        btn.style.background = "#d97706";
+        toast("Acc da co trong he thong", "#e67e22");
+        return;
+      }
+
+      if (!resp.ok || !json?.ok) {
+        throw new Error(json?.error || `Push error HTTP ${resp.status}`);
+      }
+
+      const pushedUser = String(json?.account?.username || credential.username).trim();
+      btn.textContent = "Da day";
+      btn.style.background = "#16a34a";
+      toast(
+        `Da day len inventory: ${pushedUser}${getHotmailLinkStatusText(json?.hotmailLink)}`,
+        "#27ae60",
+      );
+    } catch (err) {
+      btn.textContent = "Loi";
+      btn.style.background = "#c0392b";
+      toast(`❌ ${err.message || err}`, "#e74c3c");
+    } finally {
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        btn.textContent = oldText;
+        btn.style.background = oldBg || "#2563eb";
+      }, 1600);
     }
   });
 }

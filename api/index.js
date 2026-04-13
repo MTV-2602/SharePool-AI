@@ -1835,6 +1835,7 @@ const buildLegacyBotSecret = (label = "") =>
 const BOT_INTERNAL_TOKEN = String(
   process.env.BOT_INTERNAL_TOKEN || buildLegacyBotSecret("bot-internal"),
 ).trim();
+const EXTENSION_PUSH_TOKEN = String(process.env.EXTENSION_PUSH_TOKEN || "").trim();
 const TELEGRAM_WEBHOOK_SECRET = String(
   process.env.TELEGRAM_WEBHOOK_SECRET ||
     buildLegacyBotSecret("telegram-webhook"),
@@ -1883,6 +1884,12 @@ const getBotInternalTokenFromReq = (req) =>
       req.headers["x-internal-bot-token"] ||
       "",
   ).trim();
+const getExtensionPushTokenFromReq = (req) =>
+  String(
+    req.headers["x-extension-push-token"] ||
+      req.headers["x-extension-token"] ||
+      "",
+  ).trim();
 
 const verifyBotInternalToken = (req, res, next) => {
   if (!BOT_INTERNAL_TOKEN) {
@@ -1902,6 +1909,26 @@ const verifyBotInternalToken = (req, res, next) => {
     });
   }
   req.botInternal = { authorized: true };
+  return next();
+};
+const verifyExtensionPushToken = (req, res, next) => {
+  if (!EXTENSION_PUSH_TOKEN) {
+    return res.status(503).json({
+      error: "Extension push token chua duoc cau hinh.",
+    });
+  }
+  const token = getExtensionPushTokenFromReq(req);
+  if (!token) {
+    return res.status(401).json({
+      error: "Extension push token required.",
+    });
+  }
+  if (!safeCompareSecret(token, EXTENSION_PUSH_TOKEN)) {
+    return res.status(403).json({
+      error: "Extension push token invalid.",
+    });
+  }
+  req.extensionPush = { authorized: true };
   return next();
 };
 
@@ -7775,6 +7802,61 @@ const sendTelegramNotificationMessage = async (chatId, text, options = {}) => {
     );
     return null;
   }
+};
+const formatTelegramHotmailLinkText = (hotmailLink = null) => {
+  const status = String(hotmailLink?.status || "").trim();
+  if (status === "linked") {
+    return hotmailLink?.lockApplied
+      ? "da noi va khoa kho extension"
+      : "da noi ChatGPT";
+  }
+  if (status === "missing") return "Chua co acc trong Hotmail";
+  if (status === "hotmail_only") return "co trong kho Hotmail, chua co ChatGPT";
+  if (status === "error") return hotmailLink?.message || "loi khi noi Hotmail";
+  return "";
+};
+const buildExtensionPushTelegramText = (payload = {}) => {
+  const username = String(payload?.username || payload?.email || "").trim();
+  const password = String(payload?.password || "").trim();
+  const otpSecret = String(payload?.otpSecret || "").trim();
+  if (!username || !password || !otpSecret) return "";
+  const host = String(payload?.originHost || "").trim();
+  const source = String(payload?.source || "extension").trim();
+  const hotmailText = formatTelegramHotmailLinkText(payload?.hotmailLink);
+  const lines = [
+    "[EXTENSION PUSH THANH CONG]",
+    "",
+    `Email: ${username}`,
+    `Password: ${password}`,
+    `2FA: ${otpSecret}`,
+    `Nguon: ${host ? `${source} | ${host}` : source}`,
+  ];
+  if (hotmailText) lines.push(`Hotmail: ${hotmailText}`);
+  return lines.join("\n");
+};
+const notifyAdminsAboutExtensionPush = async (payload = {}) => {
+  const recipients = getTelegramNotificationRecipients();
+  if (!TELEGRAM_BOT_TOKEN || recipients.length === 0) {
+    return { sent: false, recipients: 0, messages: [] };
+  }
+  const text = buildExtensionPushTelegramText(payload);
+  if (!text) return { sent: false, recipients: recipients.length, messages: [] };
+  const messages = [];
+  for (const recipient of recipients) {
+    const result = await sendTelegramNotificationMessage(recipient, text);
+    if (result) {
+      messages.push({
+        chatId: Number(recipient),
+        messageId: Number(result?.message_id || 0) || null,
+        date: Number(result?.date || 0) || null,
+      });
+    }
+  }
+  return {
+    sent: messages.length > 0,
+    recipients: recipients.length,
+    messages,
+  };
 };
 const buildExpiryCleanupBatchTelegramText = (batch = {}) => {
   const safeBatch = sanitizeExpiryCleanupBatch(batch, {
@@ -15744,12 +15826,19 @@ app.post("/api/chatgpt", verifyToken, async (req, res) => {
 const buildPublicChatgptAccountPayload = (payload = {}) => {
   return buildNewChatgptAccountPayload(payload);
 };
-const createPublicChatgptAccount = async (payload = {}) => {
+const findChatgptAccountByUsernameExact = async (username = "") => {
+  const normalizedUsername = String(username || "").trim();
+  if (!normalizedUsername) return null;
+  return Account.findOne({
+    username: new RegExp(`^${escapeRegex(normalizedUsername)}$`, "i"),
+  }).lean();
+};
+const createPublicChatgptAccount = async (payload = {}, options = {}) => {
   const newAcc = buildPublicChatgptAccountPayload(payload);
   const created = await Account.create(newAcc);
   const account = created?.toObject?.() || newAcc;
   const hotmailLink = await safeSyncHotmailLinkForChatgptAccount(account, {
-    source: "telegram_public",
+    source: String(options?.source || "telegram_public").trim() || "telegram_public",
   });
   return { account, hotmailLink };
 };
@@ -15763,6 +15852,79 @@ app.post("/api/chatgpt-public", verifyBotInternalToken, async (req, res) => {
     res.json({ success: true, message: "Added successfully", account, hotmailLink });
   } catch (error) {
     res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async (req, res) => {
+  try {
+    const username = String(req.body?.username || req.body?.email || "").trim();
+    const password = String(req.body?.password || "").trim();
+    const otpSecret = String(req.body?.otpSecret || "").trim();
+    const originHost = String(req.body?.originHost || "").trim().slice(0, 120);
+    const source = String(req.body?.source || "extension_quick_dock")
+      .trim()
+      .slice(0, 80);
+    const link = String(req.body?.link || "").trim();
+    const note =
+      String(req.body?.note || "").trim() ||
+      (originHost ? `Day tu extension: ${originHost}` : "Day tu extension");
+
+    if (!username || !password || !otpSecret) {
+      return res.status(400).json({
+        ok: false,
+        error: "Thieu username, password hoac 2FA de day.",
+      });
+    }
+
+    const duplicate = await findChatgptAccountByUsernameExact(username);
+    if (duplicate) {
+      return res.status(409).json({
+        ok: false,
+        duplicate: true,
+        error: "Acc da co trong he thong.",
+        account: sanitizeHotmailChatgptAccount(duplicate),
+      });
+    }
+
+    const { account, hotmailLink } = await createPublicChatgptAccount(
+      {
+        username,
+        password,
+        otpSecret,
+        link,
+        type: "unassigned",
+        note,
+      },
+      { source },
+    );
+
+    const telegramResult = await notifyAdminsAboutExtensionPush({
+      username,
+      password,
+      otpSecret,
+      originHost,
+      source,
+      note,
+      account,
+      hotmailLink,
+    });
+
+    bumpDataVersion();
+    notifyClients();
+
+    return res.status(201).json({
+      ok: true,
+      message: "Day account thanh cong.",
+      account,
+      hotmailLink,
+      telegramNotified: !!telegramResult?.sent,
+      duplicate: false,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message || "Khong the day account tu extension.",
+    });
   }
 });
 
