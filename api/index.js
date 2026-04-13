@@ -1835,7 +1835,9 @@ const buildLegacyBotSecret = (label = "") =>
 const BOT_INTERNAL_TOKEN = String(
   process.env.BOT_INTERNAL_TOKEN || buildLegacyBotSecret("bot-internal"),
 ).trim();
-const EXTENSION_PUSH_TOKEN = String(process.env.EXTENSION_PUSH_TOKEN || "").trim();
+const EXTENSION_PUSH_TOKEN = String(
+  process.env.EXTENSION_PUSH_TOKEN || buildLegacyBotSecret("extension-push"),
+).trim();
 const TELEGRAM_WEBHOOK_SECRET = String(
   process.env.TELEGRAM_WEBHOOK_SECRET ||
     buildLegacyBotSecret("telegram-webhook"),

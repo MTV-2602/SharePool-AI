@@ -76,6 +76,8 @@ const EXTENSION_PUSH_API_URL_DEFAULT =
   "https://vinhaccplus.vercel.app/api/chatgpt-extension-push";
 const EXTENSION_PUSH_API_URL_KEY = "extensionPushApiUrl";
 const EXTENSION_PUSH_TOKEN_KEY = "extensionPushToken";
+const EXTENSION_PUSH_TOKEN_DEFAULT =
+  "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
 
 function getTwofaStoreHostKey() {
   try {
@@ -392,7 +394,9 @@ async function getExtensionPushConfig() {
     apiUrl:
       String(data[EXTENSION_PUSH_API_URL_KEY] || "").trim() ||
       EXTENSION_PUSH_API_URL_DEFAULT,
-    token: String(data[EXTENSION_PUSH_TOKEN_KEY] || "").trim(),
+    token:
+      String(data[EXTENSION_PUSH_TOKEN_KEY] || "").trim() ||
+      EXTENSION_PUSH_TOKEN_DEFAULT,
   };
 }
 

@@ -752,8 +752,8 @@ document.addEventListener("DOMContentLoaded", () => {
           showToast(
             token
               ? "✅ Da luu Push URL/Token"
-              : "✅ Da luu Push URL. Nhap them token de day nhanh",
-            token ? "#27ae60" : "#e67e22",
+              : "✅ Da luu Push URL. Se dung token mac dinh",
+            "#27ae60",
           );
         },
       );
