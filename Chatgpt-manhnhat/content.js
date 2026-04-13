@@ -3486,26 +3486,26 @@ function injectEmailQuickDock() {
   panel.setAttribute("data-af-ui-root", "1");
   panel.setAttribute("data-dd-privacy", "hidden"); // Tàng hình DataDog
   const dockSectionTitleStyle =
-    "font:700 9px/1.1 'Segoe UI',Arial,sans-serif;color:#7d89b8;letter-spacing:.14em;text-transform:uppercase;margin:0 0 6px 2px";
+    "font:700 8px/1 'Segoe UI',Arial,sans-serif;color:#7d89b8;letter-spacing:.14em;text-transform:uppercase;margin:0 0 4px 1px";
   const dockSectionStyle =
-    "padding:8px;border:1px solid rgba(101,118,171,.22);border-radius:12px;background:rgba(12,18,38,.72)";
+    "padding:6px;border:1px solid rgba(101,118,171,.18);border-radius:10px;background:rgba(12,18,38,.72)";
   const dockGridStyle =
-    "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px";
+    "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px";
   const dockButtonBaseStyle =
-    "all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;cursor:pointer;min-height:30px;padding:6px 10px;border-radius:9px;font:700 11px/1 'Segoe UI',Arial,sans-serif;color:#fff;text-align:center";
+    "all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;cursor:pointer;min-height:26px;padding:4px 8px;border-radius:8px;font:700 10px/1 'Segoe UI',Arial,sans-serif;color:#fff;text-align:center";
   const dockFullWidthButtonStyle = `${dockButtonBaseStyle};grid-column:1 / -1`;
   panel.style.cssText = `
     position: fixed;
     bottom: 78px;
     right: 20px;
     z-index: 2147483647;
-    width: 312px;
+    width: 276px;
     max-width: calc(100vw - 24px);
     background: rgba(9, 13, 28, 0.96);
     border: 1px solid rgba(143, 91, 255, 0.72);
-    border-radius: 16px;
-    padding: 10px;
-    box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+    border-radius: 14px;
+    padding: 8px;
+    box-shadow: 0 14px 34px rgba(0,0,0,0.45);
     color: #e8ebf3;
     font-family: "Segoe UI", Arial, sans-serif;
     backdrop-filter: blur(14px);
@@ -3513,17 +3513,17 @@ function injectEmailQuickDock() {
 
   isolateFloatingUIEvents(panel);
   panel.innerHTML = `
-    <div id="af-eq-drag-handle" style="display:flex;align-items:center;height:10px;margin:0 0 8px 2px;user-select:none;cursor:move">
+    <div id="af-eq-drag-handle" style="display:flex;align-items:center;height:8px;margin:0 0 6px 2px;user-select:none;cursor:move">
       <span style="display:inline-flex;gap:3px">
         <span style="width:4px;height:4px;border-radius:999px;background:#5f6b8a"></span>
         <span style="width:4px;height:4px;border-radius:999px;background:#5f6b8a"></span>
         <span style="width:4px;height:4px;border-radius:999px;background:#5f6b8a"></span>
       </span>
     </div>
-    <div id="af-eq-active-email" style="margin:0 0 6px 0;padding:5px 8px;border-radius:10px;background:#10223c;color:#9ec9ff;font:600 10px/1.3 monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">TempMail: (none)</div>
-    <div id="af-eq-active-hotmail" style="margin:0 0 8px 0;padding:5px 8px;border-radius:10px;background:#14241b;color:#9ae6b4;font:600 10px/1.3 monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Hotmail: (none)</div>
-    <textarea id="af-eq-input" rows="2" style="width:100%;box-sizing:border-box;background:#10284a;border:1px solid rgba(59,130,246,.32);border-radius:10px;color:#f8fbff;font:12px monospace;padding:8px;resize:none;outline:none" placeholder="Paste tk|mk|2fa..."></textarea>
-    <div style="display:grid;gap:8px;margin-top:8px">
+    <div id="af-eq-active-email" style="margin:0 0 5px 0;padding:4px 7px;border-radius:9px;background:#10223c;color:#9ec9ff;font:600 9px/1.25 monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">TempMail: (none)</div>
+    <div id="af-eq-active-hotmail" style="margin:0 0 6px 0;padding:4px 7px;border-radius:9px;background:#14241b;color:#9ae6b4;font:600 9px/1.25 monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Hotmail: (none)</div>
+    <textarea id="af-eq-input" rows="2" style="width:100%;box-sizing:border-box;background:#10284a;border:1px solid rgba(59,130,246,.32);border-radius:9px;color:#f8fbff;font:11px monospace;padding:7px;resize:none;outline:none" placeholder="Paste tk|mk|2fa..."></textarea>
+    <div style="display:grid;gap:6px;margin-top:6px">
       <div style="${dockSectionStyle}">
         <div style="${dockSectionTitleStyle}">Credential</div>
         <div style="${dockGridStyle}">
