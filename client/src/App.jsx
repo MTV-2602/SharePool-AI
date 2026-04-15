@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import HotmailInboxModal from "./HotmailInboxModal";
 import { startTransition } from "react";
@@ -12655,214 +12655,123 @@ function App() {
               </button>
             </div>
 
-            <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-              <div className="flex-1 max-w-2xl space-y-2.5">
-                <div className="flex flex-col gap-2 lg:flex-row">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      placeholder="Tìm theo email, tên khách hoặc nội dung mail check..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    />
-                    {searchQuery && (
-                      <button
-                        onClick={() => setSearchQuery("")}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-                      >
-                        <X size={15} />
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={applyCurrentChatgptDraftFilters}
-                      className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                        hasPendingChatgptFilterChanges
-                          ? "border border-cyan-400/50 bg-cyan-500/15 text-cyan-100 hover:bg-cyan-500/20"
-                          : "border border-slate-700 bg-slate-800 text-slate-300 hover:text-white"
-                      }`}
-                    >
-                      <Search size={14} />
-                      Lọc
+            {/* ══ CONTROL PANEL ══ */}
+            <div className="mb-4 space-y-2">
+
+              {/* ZONE 1: Search bar + Bulk Actions */}
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2">
+                {/* Search */}
+                <div className="relative min-w-[200px] flex-1">
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Tìm email, tên khách, mail check..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800/80 pl-7 pr-7 py-1.5 text-[12px] text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                      <X size={13} />
                     </button>
-                    <button
-                      type="button"
-                      onClick={resetChatgptAdminFilters}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-300 transition hover:text-white"
-                    >
-                      <X size={14} />
-                      Xóa lọc
-                    </button>
-                    {hasPendingChatgptFilterChanges ? (
-                      <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-100">
-                        Chưa áp dụng
-                      </span>
-                    ) : null}
-                  </div>
+                  )}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Lọc khách
-                  </span>
-                  {renderCustomerFilterButtons(
-                    chatgptCustomerFilter,
-                    setChatgptCustomerFilter,
+                <button type="button" onClick={applyCurrentChatgptDraftFilters}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition ${hasPendingChatgptFilterChanges ? "border border-cyan-400/50 bg-cyan-500/15 text-cyan-100" : "border border-slate-700 bg-slate-800 text-slate-300 hover:text-white"}`}>
+                  <Search size={12} /> Lọc{hasPendingChatgptFilterChanges && <span className="ml-0.5 text-amber-300">*</span>}
+                </button>
+                <button type="button" onClick={resetChatgptAdminFilters}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[12px] font-semibold text-slate-400 transition hover:text-white">
+                  <X size={12} /> Xóa lọc
+                </button>
+
+                <div className="h-4 w-px bg-slate-700/80" />
+
+                {/* Bulk actions */}
+                <div className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/50 px-2 py-1 text-[11px] text-slate-400">
+                  <span className="font-bold text-white">{selectedChatgptIds.length}</span> chọn
+                  {selectedChatgptIds.length > 0 && (
+                    <button onClick={() => setSelectedChatgptIds([])} className="ml-1 text-slate-500 hover:text-white"><X size={11} /></button>
                   )}
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Loc han
-                  </span>
+                </div>
+                <button onClick={() => handleBulkWarehouseMove("none")}
+                  disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
+                  className="inline-flex items-center gap-1 rounded-lg bg-blue-700 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50">
+                  <ArrowRightLeft size={12} /> Kho tổng
+                </button>
+                <button onClick={() => handleBulkWarehouseMove("cheap")}
+                  disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
+                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Globe size={12} /> Kho market
+                </button>
+                <button onClick={handleCopySelectedChatgptMarketplaceFormat}
+                  disabled={selectedChatgptIds.length === 0}
+                  className="inline-flex items-center gap-1 rounded-lg bg-cyan-700 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Copy size={12} /> Copy web
+                </button>
+                <button onClick={handleRunSelectedChatgptMailCheck}
+                  disabled={selectedChatgptIds.length === 0 || loadingStates.runChatgptMailCheck}
+                  className="inline-flex items-center gap-1 rounded-lg bg-rose-700 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50">
+                  {loadingStates.runChatgptMailCheck ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />} Mail die
+                </button>
+                <button onClick={() => setShowImportGPTModal(true)}
+                  className="inline-flex items-center gap-1 rounded-lg bg-purple-600 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-purple-500">
+                  <Upload size={12} /> Import
+                </button>
+              </div>
+
+              {/* ZONE 2: Filters row */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-slate-700/40 bg-slate-900/30 px-3 py-2">
+                {/* Customer filter */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Khách</span>
+                  {renderCustomerFilterButtons(chatgptCustomerFilter, setChatgptCustomerFilter)}
+                </div>
+                <div className="h-4 w-px bg-slate-700/60" />
+                {/* Expiry range */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Hạn</span>
                   {renderExpiryRangeInputs(
-                    chatgptExpiryMin,
-                    (value) =>
-                      handleExpiryRangeChange(
-                        value,
-                        setChatgptExpiryMin,
-                        setChatgptExpiryFilter,
-                      ),
-                    chatgptExpiryMax,
-                    (value) =>
-                      handleExpiryRangeChange(
-                        value,
-                        setChatgptExpiryMax,
-                        setChatgptExpiryFilter,
-                      ),
+                    chatgptExpiryMin, (v) => handleExpiryRangeChange(v, setChatgptExpiryMin, setChatgptExpiryFilter),
+                    chatgptExpiryMax, (v) => handleExpiryRangeChange(v, setChatgptExpiryMax, setChatgptExpiryFilter),
                   )}
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Moc nhanh
-                  </span>
-                  {renderExpiryFilterSelect(
-                    chatgptExpiryFilter,
-                    (value) =>
-                      handleExpiryPresetChange(
-                        value,
-                        setChatgptExpiryFilter,
-                        setChatgptExpiryMin,
-                        setChatgptExpiryMax,
-                      ),
-                  )}
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Ngay nhap
-                  </span>
-                  {renderCreatedDateRangeInputs(
-                    chatgptCreatedFrom,
-                    setChatgptCreatedFrom,
-                    chatgptCreatedTo,
-                    setChatgptCreatedTo,
-                  )}
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Mail
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
+                  {renderExpiryFilterSelect(chatgptExpiryFilter, (v) => handleExpiryPresetChange(v, setChatgptExpiryFilter, setChatgptExpiryMin, setChatgptExpiryMax))}
+                </div>
+                <div className="h-4 w-px bg-slate-700/60" />
+                {/* Date created */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Nhập</span>
+                  {renderCreatedDateRangeInputs(chatgptCreatedFrom, setChatgptCreatedFrom, chatgptCreatedTo, setChatgptCreatedTo)}
+                </div>
+                <div className="h-4 w-px bg-slate-700/60" />
+                {/* Mail check filter */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Mail</span>
+                  <div className="flex flex-wrap gap-1">
                     {[
-                      {
-                        key: "all",
-                        label: "Tat ca",
-                        count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.all || 0),
-                      },
-                      {
-                        key: "died",
-                        label: "Mail die",
-                        count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.died || 0),
-                      },
-                      {
-                        key: "checked",
-                        label: "Da check",
-                        count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.checked || 0),
-                      },
-                      {
-                        key: "unchecked",
-                        label: "Chua check",
-                        count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.unchecked || 0),
-                      },
-                    ].map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        onClick={() => setChatgptMailCheckFilter(option.key)}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
-                          chatgptMailCheckFilter === option.key
-                            ? "border-cyan-400/60 bg-cyan-500/15 text-cyan-100"
-                            : "border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-500 hover:text-white"
-                        }`}
-                      >
-                        {option.label}
-                        <span className="rounded-full bg-black/20 px-1.5 py-0.5 text-[10px] font-bold">
-                          {option.count}
-                        </span>
+                      { key: "all", label: "Tất cả", count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.all || 0) },
+                      { key: "died", label: "Die", count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.died || 0) },
+                      { key: "checked", label: "Checked", count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.checked || 0) },
+                      { key: "unchecked", label: "Chưa", count: Number(chatgptAdminPagination?.summary?.mailCheckTabs?.unchecked || 0) },
+                    ].map(o => (
+                      <button key={o.key} type="button" onClick={() => setChatgptMailCheckFilter(o.key)}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold transition ${chatgptMailCheckFilter === o.key ? "border-cyan-400/60 bg-cyan-500/15 text-cyan-100" : "border-slate-700 bg-slate-800 text-slate-400 hover:text-white"}`}>
+                        {o.label}
+                        <span className="rounded-full bg-black/20 px-1 text-[9px] font-black">{o.count}</span>
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
-                  <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 font-semibold text-cyan-100">
-                    {appliedChatgptFilterSummaryParts.length > 0
-                      ? `Ket qua dang ap: ${appliedChatgptFilterSummaryParts.join(" • ")} • ${Number(chatgptAdminPagination?.total || 0)} acc`
-                      : `Ket qua dang ap: Mac dinh • ${Number(chatgptAdminPagination?.total || 0)} acc`}
-                  </span>
-                  {hasPendingChatgptFilterChanges ? (
-                    <span className="text-amber-200/90">
-                      Bạn đang chỉnh bộ lọc mới nhưng chưa bấm Lọc.
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <div className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-[11px] text-slate-300">
-                  Đã chọn: <span className="font-bold text-white">{selectedChatgptIds.length}</span>
-                </div>
-                {selectedChatgptIds.length > 0 && (
-                  <button
-                    onClick={() => setSelectedChatgptIds([])}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-600"
-                  >
-                    Bỏ chọn
-                  </button>
-                )}
-                <button
-                  onClick={() => handleBulkWarehouseMove("none")}
-                  disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <ArrowRightLeft size={14} /> Kho tổng
-                </button>
-                <button
-                  onClick={() => handleBulkWarehouseMove("cheap")}
-                  disabled={selectedChatgptIds.length === 0 || loadingStates.bulkWarehouseMove}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Globe size={14} /> Kho market
-                </button>
-                <button
-                  onClick={handleCopySelectedChatgptMarketplaceFormat}
-                  disabled={selectedChatgptIds.length === 0}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Copy size={14} /> Copy web
-                </button>
-                <button
-                  onClick={handleRunSelectedChatgptMailCheck}
-                  disabled={selectedChatgptIds.length === 0 || loadingStates.runChatgptMailCheck}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-rose-700 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loadingStates.runChatgptMailCheck ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Mail size={14} />
-                  )}
-                  Đọc mail acc die
-                </button>
-                <button
-                  onClick={() => setShowImportGPTModal(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-purple-500"
-                >
-                  <Upload size={14} /> Import
-                </button>
+                {/* Active filter summary */}
+                <span className="ml-auto text-[10px] text-slate-500">
+                  {appliedChatgptFilterSummaryParts.length > 0
+                    ? `${appliedChatgptFilterSummaryParts.join(" · ")} · `
+                    : "Mặc định · "}
+                  <span className="font-bold text-slate-300">{Number(chatgptAdminPagination?.total || 0)} acc</span>
+                  {hasPendingChatgptFilterChanges && <span className="ml-1 text-amber-300">— chưa áp dụng</span>}
+                </span>
               </div>
             </div>
-
             {gptSubTab !== "market" ? chatgptAdminPaginationControls : null}
 
             {/* SUB-TABS: Tat ca / Kho tong / Kho market */}
