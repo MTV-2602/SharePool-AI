@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import HotmailInboxModal from "./HotmailInboxModal";
 import { startTransition } from "react";
@@ -18315,51 +18315,129 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
 
         const renderCleanupItem = (item = {}, tone = "default") => {
           const scopeLabel = String(item?.scope || "").trim() === "team" ? "Team" : "ChatGPT";
-          const warehouseLabel =
-            String(item?.scope || "").trim() === "team"
-              ? getTeamWarehouseLabel(item?.warehouse)
-              : getPackage2ShelfLabel(item?.warehouse);
-          const countLine =
-            String(item?.scope || "").trim() === "team"
-              ? `Slot con han: ${Number(item?.activeSlotCount || 0)} · Slot het han: ${Number(item?.expiredSlotCount || 0)}`
-              : `Khach con han: ${Number(item?.activeUserCount || 0)} · Khach het han: ${Number(item?.expiredUserCount || 0)}`;
+          const isTeam = String(item?.scope || "").trim() === "team";
+          const warehouseLabel = isTeam
+            ? getTeamWarehouseLabel(item?.warehouse)
+            : getPackage2ShelfLabel(item?.warehouse);
           const toneClass =
-            tone === "candidate"
-              ? "border-emerald-500/20 bg-emerald-500/10"
-              : tone === "warning"
-                ? "border-amber-500/20 bg-amber-500/10"
-                : "border-yellow-500/20 bg-yellow-500/10";
+            tone === "candidate" ? "border-emerald-500/20 bg-emerald-500/5"
+            : tone === "warning"  ? "border-amber-500/20 bg-amber-500/5"
+            : "border-yellow-500/20 bg-yellow-500/5";
+          const toneBadge =
+            tone === "candidate" ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
+            : tone === "warning"  ? "border-amber-500/30 bg-amber-500/15 text-amber-200"
+            : "border-yellow-500/30 bg-yellow-500/15 text-yellow-200";
+
+          // Lookup full account object from loaded state
+          const fullAcc = !isTeam
+            ? (Array.isArray(accounts) ? accounts.find(a => String(a?.id || "") === String(item?.itemId || "")) : null)
+            : null;
+
+          // Collect customer entries from full acc
+          const customerEntries = fullAcc
+            ? getVisibleAccountUserEntries(fullAcc)
+            : [];
+
           return (
             <div
               key={`${item.scope}-${item.itemId}-${item.reasonCode}`}
-              className={`rounded-2xl border px-4 py-3 ${toneClass}`}
+              className={`rounded-2xl border px-4 py-3 space-y-2.5 ${toneClass}`}
             >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-slate-600 bg-slate-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-200">
-                  {scopeLabel}
-                </span>
-                <span className="font-mono text-sm font-semibold text-white">
-                  {item?.username || "--"}
-                </span>
-                <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[11px] text-slate-300">
-                  {warehouseLabel || "--"}
-                </span>
-                <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[11px] text-slate-300">
-                  Het han: {formatDate(item?.expiredAt) || "--"}
-                </span>
-              </div>
-              <div className="mt-2 text-sm font-semibold text-white">
-                {item?.reasonLabel || "--"}
-              </div>
-              <div className="mt-1 text-xs text-slate-300">{countLine}</div>
-              {item?.note ? (
-                <div className="mt-1 text-[11px] text-slate-400">
-                  Note: {item.note}
+              {/* Header row */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <span className="rounded-full border border-slate-600 bg-slate-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-200">{scopeLabel}</span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] ${toneBadge}`}>{item?.reasonLabel || "--"}</span>
+                  <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-300">{warehouseLabel || "--"}</span>
+                  {item?.expiredAt && (
+                    <span className="rounded-full border border-red-700/40 bg-red-900/20 px-2 py-0.5 text-[10px] font-semibold text-red-300">
+                      ⏰ HH {formatDate(item.expiredAt)}
+                    </span>
+                  )}
                 </div>
-              ) : null}
-              {/* Navigate to acc button */}
-              {item?.itemId && item?.scope !== "team" && (
-                <div className="mt-2">
+                {/* Delete button */}
+                {item?.itemId && !isTeam && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowChatgptExpiryPreviewModal(false);
+                      setDeletingId(item.itemId);
+                      setShowDeleteModal(true);
+                    }}
+                    className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-red-600/50 bg-red-900/30 px-2.5 py-1.5 text-[11px] font-bold text-red-200 transition hover:bg-red-700/50"
+                    title="Xóa acc + toàn bộ khách"
+                  >
+                    <Trash2 size={11} /> Xóa acc
+                  </button>
+                )}
+              </div>
+
+              {/* Account credentials */}
+              <div className="rounded-lg bg-slate-950/50 border border-slate-700/30 px-3 py-2 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-slate-500 shrink-0">Email</span>
+                  <span className="font-mono text-[12px] font-semibold text-white break-all">{item?.username || "--"}</span>
+                </div>
+                {fullAcc?.password && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-slate-500 shrink-0">Pass</span>
+                    <span className="font-mono text-[11px] text-slate-300 break-all">{fullAcc.password}</span>
+                  </div>
+                )}
+                {fullAcc?.otpSecret && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-slate-500 shrink-0">2FA</span>
+                    <span className="font-mono text-[11px] text-cyan-200 break-all">{fullAcc.otpSecret}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-3 pt-0.5">
+                  <span className="text-[10px] text-slate-500">
+                    Khách còn hạn: <span className="font-bold text-white">{Number(item?.activeUserCount || 0)}</span>
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    Hết hạn: <span className={`font-bold ${Number(item?.expiredUserCount || 0) > 0 ? "text-red-300" : "text-slate-300"}`}>{Number(item?.expiredUserCount || 0)}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Customer list */}
+              {customerEntries.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-500">Danh sách khách ({customerEntries.length})</div>
+                  {customerEntries.map((entry, ei) => {
+                    const u = entry?.user;
+                    const daysLeft = getDaysRemaining(u);
+                    const isExpired = daysLeft !== null && daysLeft <= 0;
+                    const name = entry?.name || getUserName(u) || "Khách";
+                    const joinedDate = typeof u === "object" && u?.joinedAt ? formatDate(u.joinedAt) : "--";
+                    const expiryDate = typeof u === "object" && u?.expiredAt ? formatDate(u.expiredAt) : "--";
+                    return (
+                      <div key={ei} className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-[10px] ${
+                        isExpired ? "border-red-700/30 bg-red-900/10" : "border-slate-700/40 bg-slate-950/40"
+                      }`}>
+                        <div className="min-w-0 flex-1">
+                          <span className="font-semibold text-white">{name}</span>
+                          {joinedDate !== "--" && <span className="ml-2 text-slate-500">Vào {joinedDate}</span>}
+                        </div>
+                        <span className={`shrink-0 font-bold ${isExpired ? "text-red-400" : "text-emerald-400"}`}>
+                          {isExpired
+                            ? `HH ${expiryDate}`
+                            : daysLeft !== null ? `còn ${daysLeft}d` : expiryDate}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Note */}
+              {item?.note && (
+                <div className="text-[10px] text-slate-500 italic">Note: {item.note}</div>
+              )}
+
+              {/* Bottom actions */}
+              {item?.itemId && !isTeam && (
+                <div className="flex gap-2 pt-0.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -18369,13 +18447,12 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                       setTimeout(() => {
                         const el = document.getElementById(`chatgpt-account-row-${item?.itemId}`);
                         if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-                        // Auto-clear highlight after 3s
                         setTimeout(() => setHighlightedChatgptAccountId(null), 3000);
                       }, 500);
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-600/40 bg-cyan-900/25 px-3 py-1.5 text-[11px] font-bold text-cyan-200 transition hover:bg-cyan-700/40"
+                    className="inline-flex items-center gap-1 rounded-lg border border-cyan-600/40 bg-cyan-900/20 px-2.5 py-1 text-[10px] font-bold text-cyan-200 transition hover:bg-cyan-700/40"
                   >
-                    <ExternalLink size={11} /> Tới acc trong DB
+                    <ExternalLink size={10} /> Tới acc trong DB
                   </button>
                 </div>
               )}
