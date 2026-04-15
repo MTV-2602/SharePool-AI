@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import HotmailInboxModal from "./HotmailInboxModal";
 import { startTransition } from "react";
@@ -12565,108 +12565,33 @@ function App() {
               ];
 
               return (
-                <div className="mb-8 overflow-hidden rounded-2xl border border-amber-500/20 bg-[linear-gradient(145deg,rgba(15,23,42,0.96),rgba(30,41,59,0.92))] shadow-[0_24px_48px_rgba(8,15,30,0.35)]">
-                  <div className="flex flex-col gap-4 border-b border-slate-700/70 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-2">
-                      <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-200">
-                        <AlertTriangle size={14} className="text-amber-300" />
-                        Expiry cleanup
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-white">
-                          Tong hop acc/team het han
-                        </h3>
-                        <p className="mt-1 text-sm text-slate-300">
-                          Snapshot nay chi hien trong tab ChatGPT va duoc cron lam moi
-                          dinh ky de giam tai render.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2 text-xs text-slate-400">
-                        <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
-                          Candidate xoa:{" "}
-                          <span className="font-semibold text-white">
-                            {Number(summary?.candidateCount || 0)}
-                          </span>
-                        </span>
-                        <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
-                          Canh bao can xem:{" "}
-                          <span className="font-semibold text-white">
-                            {Number(summary?.warningCount || 0)}
-                          </span>
-                        </span>
-                        <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
-                          Scan lan cuoi:{" "}
-                          <span className="font-semibold text-white">
-                            {formatDateTime(summary?.lastScanAt || summary?.updatedAt) || "--"}
-                          </span>
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={openChatgptExpiryPreview}
-                        disabled={loadingStates.fetchChatgptExpiryPreview}
-                        className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {loadingStates.fetchChatgptExpiryPreview ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          <Search size={16} />
-                        )}
-                        Xem danh sach
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          openChatgptExpiryBatches({
-                            status: "pending_approval",
-                            logMode: false,
-                          })
-                        }
-                        disabled={loadingStates.fetchChatgptExpiryBatches}
-                        className="inline-flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:border-amber-400/60 hover:bg-amber-500/15 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {loadingStates.fetchChatgptExpiryBatches ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          <ShieldCheck size={16} />
-                        )}
-                        Xem batch cho duyet
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          openChatgptExpiryBatches({ status: "", logMode: true })
-                        }
-                        disabled={loadingStates.fetchChatgptExpiryLogs}
-                        className="inline-flex items-center gap-2 rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/10 px-4 py-2 text-sm font-semibold text-fuchsia-100 transition hover:border-fuchsia-400/60 hover:bg-fuchsia-500/15 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {loadingStates.fetchChatgptExpiryLogs ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          <Calendar size={16} />
-                        )}
-                        Xem log don het han
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 xl:grid-cols-5">
-                    {statCards.map((item) => (
-                      <div
-                        key={item.key}
-                        className={`rounded-2xl border px-4 py-3 ${item.tone}`}
-                      >
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300/85">
-                          {item.label}
-                        </div>
-                        <div className="mt-2 text-3xl font-black text-white">
-                          {item.value}
-                        </div>
-                      </div>
+                <div className="mb-3 overflow-hidden rounded-xl border border-amber-500/20 bg-slate-900/70">
+                  {/* Compact single-row expiry bar */}
+                  <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-amber-300">
+                      <AlertTriangle size={11} /> Expiry
+                    </span>
+                    {/* Stat chips inline */}
+                    {statCards.filter(c => c.value > 0).map(item => (
+                      <span key={item.key} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${item.tone}`}>
+                        {item.label}: <span className="font-black">{item.value}</span>
+                      </span>
                     ))}
+                    <span className="text-[10px] text-slate-500">Scan: {formatDateTime(summary?.lastScanAt || summary?.updatedAt) || "--"}</span>
+                    <span className="flex-1" />
+                    {/* Actions */}
+                    <button type="button" onClick={openChatgptExpiryPreview} disabled={loadingStates.fetchChatgptExpiryPreview}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:opacity-60">
+                      {loadingStates.fetchChatgptExpiryPreview ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} Xem ds
+                    </button>
+                    <button type="button" onClick={() => openChatgptExpiryBatches({ status: "pending_approval", logMode: false })} disabled={loadingStates.fetchChatgptExpiryBatches}
+                      className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:opacity-60">
+                      {loadingStates.fetchChatgptExpiryBatches ? <Loader2 size={11} className="animate-spin" /> : <ShieldCheck size={11} />} Batch
+                    </button>
+                    <button type="button" onClick={() => openChatgptExpiryBatches({ status: "", logMode: true })} disabled={loadingStates.fetchChatgptExpiryLogs}
+                      className="inline-flex items-center gap-1 rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/10 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-200 transition hover:bg-fuchsia-500/20 disabled:opacity-60">
+                      {loadingStates.fetchChatgptExpiryLogs ? <Loader2 size={11} className="animate-spin" /> : <Calendar size={11} />} Log
+                    </button>
                   </div>
 
                   {summary?.latestPendingBatchId && (
@@ -12704,126 +12629,30 @@ function App() {
                 </div>
               );
             })()}
-            <div className="mb-6 rounded-2xl border border-sky-700/30 bg-[linear-gradient(135deg,rgba(14,165,233,0.12),rgba(59,130,246,0.08))] px-4 py-3 shadow-[0_14px_34px_rgba(14,165,233,0.08)]">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-sky-200">
-                  Slogan
-                </span>
-                <div className="text-sm font-semibold text-slate-100 sm:text-base">
-                  Dậy sớm để thành công.
-                </div>
-              </div>
-              <div className="mt-1 text-[11px] text-slate-400">
-                Làm nhanh, làm gọn, quản lý rõ ràng hơn mỗi ngày.
-              </div>
-            </div>
-
-            <div className="mb-6 rounded-2xl border border-rose-500/20 bg-[linear-gradient(145deg,rgba(24,24,39,0.96),rgba(39,13,31,0.92))] px-5 py-4 shadow-[0_20px_42px_rgba(15,23,42,0.32)]">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-200">
-                    <Mail size={14} className="text-rose-300" />
-                    Mail check
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-white">
-                      Theo dõi acc ChatGPT bị die qua inbox mail
-                    </h3>
-                    <p className="mt-1 text-sm text-slate-300">
-                      Chỉ acc mới sau rollout mới auto scan theo lịch. Acc cũ chỉ scan tay
-                      khi bạn chọn hoặc bấm đọc mail.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-xs text-slate-400">
-                    <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
-                      Tong acc:{" "}
-                      <span className="font-semibold text-white">
-                        {Number(chatgptMailCheckSummary?.totalCount || 0)}
-                      </span>
-                    </span>
-                    <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
-                      Auto scan acc moi:{" "}
-                      <span className="font-semibold text-white">
-                        {Number(chatgptMailCheckSummary?.autoEnabledCount || 0)}
-                      </span>
-                    </span>
-                    <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1">
-                      Match lan cuoi:{" "}
-                      <span className="font-semibold text-white">
-                        {formatDateTime(chatgptMailCheckSummary?.latestDetectedAt) || "--"}
-                      </span>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  {[
-                    {
-                      key: "died",
-                      label: "Mail die",
-                      value: Number(chatgptMailCheckSummary?.diedCount || 0),
-                      tone: "border-red-500/30 bg-red-500/10 text-red-100",
-                    },
-                    {
-                      key: "checked",
-                      label: "Da check",
-                      value: Number(chatgptMailCheckSummary?.checkedCleanCount || 0),
-                      tone: "border-emerald-500/30 bg-emerald-500/10 text-emerald-100",
-                    },
-                    {
-                      key: "unchecked",
-                      label: "Chua check",
-                      value: Number(chatgptMailCheckSummary?.uncheckedCount || 0),
-                      tone: "border-slate-500/30 bg-slate-500/10 text-slate-100",
-                    },
-                  ].map((item) => (
-                    <div
-                      key={item.key}
-                      className={`min-w-[120px] rounded-2xl border px-4 py-3 ${item.tone}`}
-                    >
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300/85">
-                        {item.label}
-                      </div>
-                      <div className="mt-2 text-3xl font-black text-white">
-                        {item.value}
-                      </div>
-                    </div>
-                  ))}
-                  <div className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={openChatgptMailCheckHistory}
-                      disabled={loadingStates.fetchChatgptMailCheckHistory}
-                      className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-wait disabled:opacity-60"
-                    >
-                      {loadingStates.fetchChatgptMailCheckHistory ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : (
-                        <Mail size={16} />
-                      )}
-                      Xem acc die
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        loadChatgptMailCheckSummary({
-                          silent: false,
-                          forceFresh: true,
-                        })
-                      }
-                      disabled={loadingStates.fetchChatgptMailCheckSummary}
-                      className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:border-emerald-400/60 hover:bg-emerald-500/15 disabled:cursor-wait disabled:opacity-60"
-                    >
-                      {loadingStates.fetchChatgptMailCheckSummary ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : (
-                        <RefreshCw size={16} />
-                      )}
-                      Lam moi mail check
-                    </button>
-                  </div>
-                </div>
-              </div>
+            {/* Mail Check compact bar */}
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-rose-500/20 bg-slate-900/70 px-3 py-2">
+              <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-rose-300">
+                <Mail size={11} /> Mail
+              </span>
+              <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-200">
+                Die: <span className="font-black">{Number(chatgptMailCheckSummary?.diedCount || 0)}</span>
+              </span>
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-200">
+                Checked: <span className="font-black">{Number(chatgptMailCheckSummary?.checkedCleanCount || 0)}</span>
+              </span>
+              <span className="rounded-full border border-slate-600 bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                Chưa: <span className="font-black">{Number(chatgptMailCheckSummary?.uncheckedCount || 0)}</span>
+              </span>
+              <span className="text-[10px] text-slate-500">Tổng {Number(chatgptMailCheckSummary?.totalCount || 0)} · Auto {Number(chatgptMailCheckSummary?.autoEnabledCount || 0)}</span>
+              <span className="flex-1" />
+              <button type="button" onClick={openChatgptMailCheckHistory} disabled={loadingStates.fetchChatgptMailCheckHistory}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:opacity-60">
+                {loadingStates.fetchChatgptMailCheckHistory ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />} Xem die
+              </button>
+              <button type="button" onClick={() => loadChatgptMailCheckSummary({ silent: false, forceFresh: true })} disabled={loadingStates.fetchChatgptMailCheckSummary}
+                className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-60">
+                {loadingStates.fetchChatgptMailCheckSummary ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} Làm mới
+              </button>
             </div>
 
             <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
