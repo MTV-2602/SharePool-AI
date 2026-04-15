@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import HotmailInboxModal from "./HotmailInboxModal";
 import { startTransition } from "react";
@@ -18448,6 +18448,28 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   Note: {item.note}
                 </div>
               ) : null}
+              {/* Navigate to acc button */}
+              {item?.itemId && item?.scope !== "team" && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowChatgptExpiryPreviewModal(false);
+                      setSearchQuery(String(item?.username || "").trim());
+                      setHighlightedChatgptAccountId(String(item?.itemId || ""));
+                      setTimeout(() => {
+                        const el = document.getElementById(`chatgpt-account-row-${item?.itemId}`);
+                        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                        // Auto-clear highlight after 3s
+                        setTimeout(() => setHighlightedChatgptAccountId(null), 3000);
+                      }, 500);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-600/40 bg-cyan-900/25 px-3 py-1.5 text-[11px] font-bold text-cyan-200 transition hover:bg-cyan-700/40"
+                  >
+                    <ExternalLink size={11} /> Tới acc trong DB
+                  </button>
+                </div>
+              )}
             </div>
           );
         };
