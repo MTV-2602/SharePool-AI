@@ -12572,7 +12572,7 @@ function App() {
                   await loadAdminChatgptAccounts({ silent: true, force: true });
                 });
               }}
-              handleBulkWarehouseChange={() => setLoadingStates(prev => ({ ...prev, bulkWarehouseMove: true }))}
+              handleBulkWarehouseChange={handleBulkWarehouseMove}
               setShowImportGPTModal={setShowImportGPTModal}
               openAddUserModal={openAddUserModal}
               openEditUserModal={openEditUserModal}
@@ -12593,6 +12593,9 @@ function App() {
               getChatgptCopySuccessText={getChatgptCopySuccessText}
               marketplaceTrackedAccountIds={marketplaceTrackedAccountIds}
               focusChatgptAccountById={focusChatgptAccountById}
+              onTypeChange={handleTypeChange}
+              onShelfChange={handlePackage2ShelfChange}
+              handleRunSelectedChatgptMailCheck={handleRunSelectedChatgptMailCheck}
             />
             {/* ── End ChatGPT Admin Panel V2 ── */}
             {(() => {

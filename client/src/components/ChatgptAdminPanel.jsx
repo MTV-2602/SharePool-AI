@@ -1,1213 +1,215 @@
 /**
  * ChatgptAdminPanel.jsx
- * Premium UI component for ChatGPT account management.
- * All business logic stays in App.jsx — this is purely presentation layer.
+ * Premium admin panel for ChatGPT account management.
+ * Based 100% on actual App.jsx logic — no fabrications.
  */
-import { useState, useMemo, useCallback, memo } from "react";
+
+import { useState, useCallback, memo } from "react";
 import {
-  RefreshCw, Search, X, Plus, Upload, Trash2, Copy, ExternalLink,
-  Mail, Pencil, ArrowRightLeft, RotateCw, Lock, Globe, AlertCircle,
-  AlertTriangle, Calendar, ChevronLeft, ChevronRight, Loader2,
-  Filter, CheckSquare, Square, BarChart2, Package, Shield,
-  ShoppingBag, Zap, TrendingUp, Users, Clock, CheckCircle,
-  ChevronDown, ChevronUp, Eye, EyeOff, Flame, Activity,
+  RefreshCw,
+  Upload,
+  Loader2,
+  Copy,
+  Mail,
+  User,
+  Calendar,
+  ExternalLink,
+  Trash2,
+  Pencil,
+  UserPlus,
+  ArrowRightLeft,
+  Search,
+  X,
+  ChevronUp,
+  RotateCw,
+  Shield,
+  AlertTriangle,
+  Plus,
+  Package,
+  ShoppingCart,
+  Check,
+  Filter,
+  Layers,
+  Database,
 } from "lucide-react";
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
+// ─── Pure helper functions (no App.jsx state deps) ───────────────────────────
 const normalizeChatgptAccountType = (v) =>
   ["package1", "package2", "unassigned"].includes(String(v || "").trim())
-    ? String(v).trim()
+    ? String(v || "").trim()
     : "unassigned";
 
-const normalizePackage2Shelf = (v) =>
-  v === "cheap" ? "cheap" : v === "main" ? "main" : "none";
+const normalizePackage2Shelf = (v) => {
+  if (v === "cheap") return "cheap";
+  if (v === "main") return "main";
+  return "none";
+};
 
-const isChatgptMarketWarehouse = (acc = {}) =>
-  ["package1","package2","unassigned",""].includes(String(acc?.type||"").trim()) &&
-  normalizePackage2Shelf(acc?.package2Shelf) === "cheap";
+const normalizeChatgptWarehouseUiValue = (v) =>
+  normalizePackage2Shelf(v) === "cheap" ? "cheap" : "none";
+
+const supportsChatgptMarketType = (v) =>
+  ["package1", "package2", "unassigned", ""].includes(String(v || "").trim());
 
 const normalizeChatgptMailCheckStatus = (v) => {
   const n = String(v || "").trim().toLowerCase();
   if (n === "died") return "died";
-  if (n === "checked") return "checked";
-  if (n === "unchecked") return "unchecked";
+  if (n === "clean") return "clean";
   return "unchecked";
 };
 
-const getAccountDaysRemaining = (acc = {}) => {
-  if (!acc?.expiredAt) return null;
-  const ms = new Date(acc.expiredAt).getTime();
-  if (Number.isNaN(ms)) return null;
-  return Math.ceil((ms - Date.now()) / 86400000);
+const getChatgptMailCheckVisualState = (acc = {}) => {
+  const status = normalizeChatgptMailCheckStatus(acc?.mailCheckStatus);
+  if (status === "died") return { key: "died", label: "Mail die", tone: "border-red-700/60 bg-red-900/20 text-red-300" };
+  if (acc?.mailCheckLastCheckedAt) return { key: "checked", label: "Da check", tone: "border-emerald-700/60 bg-emerald-900/20 text-emerald-300" };
+  return { key: "unchecked", label: "Chua check", tone: "border-slate-700 bg-slate-800/80 text-slate-400" };
 };
 
-const formatDateShort = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+const getExpiryStatus = (iso) => {
+  if (!iso) return null;
+  const days = Math.ceil((new Date(iso) - new Date()) / 86400000);
+  if (days <= 0) return { text: `He${days === 0 ? "t" : " het"} han ${Math.abs(days)}d`, color: "text-red-400", urgent: true };
+  if (days <= 7) return { text: `Con ${days}d`, color: "text-red-400", urgent: true };
+  if (days <= 15) return { text: `Con ${days}d`, color: "text-amber-400", urgent: false };
+  if (days <= 25) return { text: `Con ${days}d`, color: "text-yellow-400", urgent: false };
+  return { text: `Con ${days}d`, color: "text-emerald-400", urgent: false };
+};
+
+const formatDate = (iso) => {
+  if (!iso) return "--";
+  try {
+    return new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+  } catch { return "--"; }
 };
 
 const formatDateTime = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const hhmm = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
-  return `${hhmm} · ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear().toString().slice(-2)}`;
+  if (!iso) return "--";
+  try {
+    return new Date(iso).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  } catch { return "--"; }
 };
 
-const getUserName = (user) =>
+const getVisibleAccountNote = (note) => {
+  const raw = String(note || "").trim();
+  if (!raw) return "";
+  // Strip system notes like [StoreWarrantyHold...] and [Legacy Datammo...]
+  return raw
+    .split("\n")
+    .filter((l) => !/^\[(StoreWarrantyHold|Legacy Datammo customer)\]/i.test(l.trim()))
+    .join("\n")
+    .trim();
+};
+
+const getAccountUserDisplayName = (user) =>
   typeof user === "object" && user !== null
     ? String(user.name || "").trim()
     : String(user || "").trim();
 
-const getUserDate = (user) => {
-  if (!user || typeof user !== "object") return "";
-  const joined = String(user.joinedAt || "").trim();
-  const expired = String(user.expiredAt || "").trim();
-  if (!joined && !expired) return "";
-  return [joined && formatDateShort(joined), expired && formatDateShort(expired)]
-    .filter(Boolean).join(" → ");
+const getVisibleAccountUserEntries = (account = {}) =>
+  (Array.isArray(account?.users) ? account.users : []).reduce((acc, user, index) => {
+    const name = getAccountUserDisplayName(user);
+    if (!name) return acc;
+    acc.push({ user, index, name });
+    return acc;
+  }, []);
+
+const getDaysUsed = (user) => {
+  if (!user || typeof user === "string") return null;
+  if (!user.joinedAt) return null;
+  return Math.floor((Date.now() - new Date(user.joinedAt)) / 86400000);
 };
 
-const getJoinerDaysRemaining = (user) => {
-  if (!user?.expiredAt) return null;
-  const ms = new Date(user.expiredAt).getTime();
-  if (Number.isNaN(ms)) return null;
-  return Math.ceil((ms - Date.now()) / 86400000);
+const getDaysRemaining = (user) => {
+  if (!user || typeof user === "string") return null;
+  if (!user.expiredAt) return null;
+  return Math.ceil((new Date(user.expiredAt) - Date.now()) / 86400000);
 };
 
-// ─── Availability State Config ───────────────────────────────────────────────
-
-const AVAIL_STATE_CONFIG = {
-  sellable: {
-    border: "border-emerald-500/30",
-    bg: "bg-emerald-500/5",
-    badge: "border-emerald-500/40 bg-emerald-500/15 text-emerald-200",
-    dot: "bg-emerald-400",
-    label: "Sẵn bán",
-    icon: CheckCircle,
-  },
-  assigned_to_store_order: {
-    border: "border-violet-500/40",
-    bg: "bg-violet-500/5",
-    badge: "border-violet-500/40 bg-violet-500/15 text-violet-200",
-    dot: "bg-violet-400",
-    label: "Có khách",
-    icon: Users,
-  },
-  reserved_for_pending_store_order: {
-    border: "border-cyan-500/40",
-    bg: "bg-cyan-500/5",
-    badge: "border-cyan-500/40 bg-cyan-500/15 text-cyan-200",
-    dot: "bg-cyan-400",
-    label: "Giữ chỗ",
-    icon: Lock,
-  },
-  warranty_hold_source: {
-    border: "border-amber-500/40",
-    bg: "bg-amber-500/5",
-    badge: "border-amber-500/40 bg-amber-500/15 text-amber-200",
-    dot: "bg-amber-400",
-    label: "Bảo hành",
-    icon: Shield,
-  },
-  expired_unusable: {
-    border: "border-red-500/30",
-    bg: "bg-red-500/5",
-    badge: "border-red-500/30 bg-red-500/10 text-red-300",
-    dot: "bg-red-500",
-    label: "Hết hạn",
-    icon: AlertCircle,
-  },
-  busy_in_marketplace: {
-    border: "border-emerald-600/40",
-    bg: "bg-emerald-600/5",
-    badge: "border-emerald-600/40 bg-emerald-600/15 text-emerald-200",
-    dot: "bg-emerald-500",
-    label: "Đơn sàn",
-    icon: ShoppingBag,
-  },
-  busy_in_warranty_replacement: {
-    border: "border-orange-500/40",
-    bg: "bg-orange-500/5",
-    badge: "border-orange-500/40 bg-orange-500/15 text-orange-200",
-    dot: "bg-orange-400",
-    label: "Thay thế",
-    icon: ArrowRightLeft,
-  },
+const isDatammoManagedUser = (user) => {
+  const name = getAccountUserDisplayName(user).trim().toLowerCase();
+  return name.startsWith("datammo#") || name.startsWith("[datammo]") ||
+    name.startsWith("shopmini#") || name.startsWith("[shopmini]");
 };
 
-const getAvailConfig = (state) =>
-  AVAIL_STATE_CONFIG[state] || {
-    border: "border-slate-700/60",
-    bg: "bg-slate-900/30",
-    badge: "border-slate-600 bg-slate-800 text-slate-300",
-    dot: "bg-slate-500",
-    label: state || "Không rõ",
-    icon: Activity,
-  };
+// ─── Label helpers ────────────────────────────────────────────────────────────
+const typeLabel = (v) => {
+  const n = normalizeChatgptAccountType(v);
+  if (n === "package1") return { text: "Gói 1", cls: "bg-blue-900/40 text-blue-300 border-blue-700/50" };
+  if (n === "package2") return { text: "Gói 2", cls: "bg-violet-900/40 text-violet-300 border-violet-700/50" };
+  return { text: "Chưa chọn", cls: "bg-slate-800 text-slate-400 border-slate-700" };
+};
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
+const shelfLabel = (v) => {
+  const n = normalizeChatgptWarehouseUiValue(v);
+  if (n === "cheap") return { text: "Kho market", cls: "bg-emerald-900/40 text-emerald-300 border-emerald-700/60" };
+  return { text: "Kho tổng", cls: "bg-slate-800 text-slate-300 border-slate-600" };
+};
 
-// Stat Card
-const StatCard = memo(({ label, value, sub, tone, icon: Icon, onClick, active }) => (
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+/** Compact badge */
+const Badge = memo(({ children, className = "" }) => (
+  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none ${className}`}>
+    {children}
+  </span>
+));
+
+/** Section pill tab */
+const PillTab = memo(({ active, onClick, children, count, color = "bg-slate-600" }) => (
   <button
     type="button"
     onClick={onClick}
-    className={`group relative overflow-hidden rounded-2xl border p-3 text-left transition-all duration-200 ${
+    className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-bold transition-all ${
       active
-        ? `${tone.activeBorder} ${tone.activeBg} shadow-lg scale-[1.02]`
-        : `${tone.border} ${tone.bg} hover:scale-[1.01] hover:shadow-md`
+        ? "bg-white/10 text-white ring-1 ring-white/20 shadow-md"
+        : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
     }`}
   >
-    <div className="flex items-start justify-between gap-2">
-      <div className="min-w-0">
-        <p className={`text-[10px] font-black uppercase tracking-[0.22em] ${tone.label}`}>{label}</p>
-        <p className={`mt-1 text-2xl font-black tabular-nums ${tone.value}`}>{value}</p>
-        {sub && <p className={`mt-0.5 text-[10px] ${tone.sub}`}>{sub}</p>}
-      </div>
-      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${tone.iconBg}`}>
-        <Icon size={18} className={tone.iconColor} />
-      </div>
-    </div>
-    {active && (
-      <div className={`absolute inset-x-0 bottom-0 h-0.5 ${tone.activeLine}`} />
-    )}
-  </button>
-));
-
-// Filter Pill Button
-const FilterPill = memo(({ label, active, onClick, count, dim }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all duration-150 ${
-      active
-        ? "border-indigo-400/60 bg-indigo-500/20 text-indigo-100 shadow-sm shadow-indigo-500/10"
-        : dim
-        ? "border-slate-800 bg-slate-950/50 text-slate-600 hover:border-slate-700 hover:text-slate-400"
-        : "border-slate-700/80 bg-slate-900/60 text-slate-300 hover:border-slate-500 hover:text-white"
-    }`}
-  >
-    {label}
-    {count !== undefined && count !== null && (
-      <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${
-        active ? "bg-indigo-400/30 text-indigo-100" : "bg-slate-800 text-slate-400"
-      }`}>{count}</span>
-    )}
-  </button>
-));
-
-// Mail Check Badge
-const MailBadge = memo(({ status }) => {
-  const normalized = normalizeChatgptMailCheckStatus(status);
-  if (normalized === "died") return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-red-300">
-      <span className="h-1.5 w-1.5 rounded-full bg-red-400 animate-pulse" />
-      Mail Die
-    </span>
-  );
-  if (normalized === "checked") return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-300">
-      ✓ OK
-    </span>
-  );
-  return null;
-});
-
-// Type Badge
-const TypeBadge = memo(({ type, effectiveType }) => {
-  const t = normalizeChatgptAccountType(effectiveType || type);
-  if (t === "package1") return (
-    <span className="rounded-full border border-blue-500/40 bg-blue-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-blue-200">
-      Gói 1
-    </span>
-  );
-  if (t === "package2") return (
-    <span className="rounded-full border border-fuchsia-500/40 bg-fuchsia-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-fuchsia-200">
-      Gói 2
-    </span>
-  );
-  return (
-    <span className="rounded-full border border-slate-600 bg-slate-800/60 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-400">
-      Chưa chọn
-    </span>
-  );
-});
-
-// Joiner Row
-const JoinerRow = memo(({ user, index, accId, isExpired: accExpired,
-  onEdit, onDelete, onMove, onExtend, linkedStoreOrder }) => {
-  const name = getUserName(user);
-  const dateStr = getUserDate(user);
-  const days = getJoinerDaysRemaining(user);
-  const isJoinerExpired = days !== null && days <= 0;
-  const isNearExpiry = days !== null && days > 0 && days <= 3;
-  const displayName = name || linkedStoreOrder?.customerName || linkedStoreOrder?.orderId || "Khách";
-  const subtitle = linkedStoreOrder?.orderId || "";
-
-  return (
-    <div className={`flex items-start justify-between gap-2 rounded-xl border p-2.5 transition-colors ${
-      isJoinerExpired
-        ? "border-red-800/50 bg-red-950/20"
-        : isNearExpiry
-        ? "border-amber-700/40 bg-amber-950/10"
-        : "border-slate-700/50 bg-slate-900/40"
-    }`}>
-      <div className="min-w-0 flex-1">
-        <div className={`flex items-center gap-1.5 text-xs font-bold ${
-          isJoinerExpired ? "text-red-400" : isNearExpiry ? "text-amber-300" : "text-white"
-        }`}>
-          {isJoinerExpired && <AlertCircle size={11} />}
-          {isNearExpiry && !isJoinerExpired && <AlertTriangle size={11} />}
-          <span className="truncate max-w-[160px]" title={displayName}>
-            👤 {displayName}
-          </span>
-        </div>
-        {subtitle && (
-          <div className="mt-0.5 truncate text-[10px] font-semibold text-cyan-300/80">{subtitle}</div>
-        )}
-        {dateStr && (
-          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-400">
-            <Calendar size={9} />
-            <span>{dateStr}</span>
-            {days !== null && (
-              <span className={`font-bold ${
-                isJoinerExpired ? "text-red-400"
-                : isNearExpiry ? "text-amber-400"
-                : days > 30 ? "text-purple-400"
-                : "text-blue-400"
-              }`}>
-                ({isJoinerExpired ? `HH ${Math.abs(days)}d` : `+${days}d`})
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="flex shrink-0 gap-1">
-        {(isJoinerExpired || isNearExpiry) && (
-          <button
-            type="button"
-            onClick={() => onExtend(accId, index, user)}
-            className="rounded-lg bg-emerald-600/80 p-1.5 text-white transition hover:bg-emerald-500 hover:scale-105"
-            title="Gia hạn"
-          >
-            <RotateCw size={12} />
-          </button>
-        )}
-        {!isJoinerExpired && (
-          <button
-            type="button"
-            onClick={() => onMove(accId, index, user)}
-            className="rounded-lg bg-orange-600/80 p-1.5 text-white transition hover:bg-orange-500 hover:scale-105"
-            title="Chuyển khách"
-          >
-            <ArrowRightLeft size={12} />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => onEdit(accId, index, user)}
-          className="rounded-lg bg-blue-600/80 p-1.5 text-white transition hover:bg-blue-500 hover:scale-105"
-          title="Sửa"
-        >
-          <Pencil size={12} />
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete(accId, index, name)}
-          className="rounded-lg bg-red-600/80 p-1.5 text-white transition hover:bg-red-500 hover:scale-105"
-          title="Xóa"
-        >
-          <X size={12} />
-        </button>
-      </div>
-    </div>
-  );
-});
-
-// Slot Progress Bar (Package 1)
-const SlotProgress = memo(({ current, reserved, max = 3 }) => {
-  const total = Math.min(max, current + reserved);
-  const full = total >= max;
-  return (
-    <div className="flex items-center gap-1.5">
-      <div className="flex gap-1">
-        {Array.from({ length: max }, (_, i) => {
-          const filled = i < current;
-          const res = i >= current && i < current + reserved;
-          return (
-            <div
-              key={i}
-              className={`h-2 w-6 rounded-full transition-colors ${
-                filled ? (full ? "bg-red-400" : "bg-indigo-400")
-                : res ? "bg-cyan-400/70"
-                : "bg-slate-700"
-              }`}
-            />
-          );
-        })}
-      </div>
-      <span className={`text-[10px] font-black tabular-nums ${full ? "text-red-400" : "text-slate-400"}`}>
-        {total}/{max}
+    {children}
+    {count !== undefined && (
+      <span className={`rounded-full px-1.5 py-px text-[10px] font-extrabold ${
+        active ? `${color} text-white` : "bg-slate-700 text-slate-300"
+      }`}>
+        {count}
       </span>
-    </div>
-  );
-});
+    )}
+  </button>
+));
 
-// Account Card
+/** Summary stat card */
+const StatCard = memo(({ label, value, sub, accent = "border-slate-700/50 bg-slate-800/60", icon: Icon, iconCls = "text-slate-400" }) => (
+  <div className={`flex flex-col gap-1 rounded-2xl border p-3.5 ${accent}`}>
+    <div className="flex items-center justify-between">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">{label}</span>
+      {Icon && <Icon size={14} className={iconCls} />}
+    </div>
+    <div className="text-2xl font-black text-white tabular-nums">{value ?? "—"}</div>
+    {sub && <div className="text-[10px] text-slate-500">{sub}</div>}
+  </div>
+));
+
+/** Single account card */
 const AccountCard = memo(({
   acc,
-  selected,
-  expanded,
-  onSelect,
+  isExpanded,
+  isSelected,
+  isHighlighted,
+  isMarket, // gptSubTab === "market"
+  isMarketTracked, // marketplaceTrackedAccountIds.has(acc.id)
+  loadingStates,
+  onToggleSelect,
   onToggleExpand,
   onEdit,
   onDelete,
-  onCopy,
   onAddUser,
   onEditUser,
   onDeleteUser,
   onMoveUser,
   onExtendUser,
-  onRunMailCheck,
-  onFocusHighlight,
-  visibleUserEntries,
-  activeStoreReservationCount,
-  activeStoreReservationTraces,
-  storeWarrantyHoldInfo,
-  loadingMailCheck,
-  marketplaceTrackedAccountIds,
-  getStoreOrderIdentityForAccountUser,
-  buildChatgpt2faLiveUrl,
-  buildChatgptCopyText,
-  getChatgptCopyButtonText,
-  getChatgptCopySuccessText,
-}) => {
-  const [showCredentials, setShowCredentials] = useState(false);
-  const availConfig = getAvailConfig(acc?.currentAccountState?.availabilityState || acc?.availabilityState);
-  const days = getAccountDaysRemaining(acc);
-  const isExpired = acc?.currentAccountState?.isExpired || (days !== null && days <= 0);
-  const mailStatus = normalizeChatgptMailCheckStatus(acc?.mailCheckStatus);
-  const accType = normalizeChatgptAccountType(acc?.effectiveType || acc?.type);
-  const hasUsers = visibleUserEntries.length > 0;
-  const maxSlots = accType === "package1" ? 3 : 1;
-  const canAddUser = !isExpired && (visibleUserEntries.length + activeStoreReservationCount) < maxSlots;
-  const isMarket = isChatgptMarketWarehouse(acc);
-
-  return (
-    <div
-      id={`chatgpt-acc-${acc.id}`}
-      className={`group relative overflow-hidden rounded-2xl border transition-all duration-200 ${availConfig.border} ${availConfig.bg} ${
-        selected ? "ring-2 ring-indigo-400/60 ring-offset-1 ring-offset-slate-950" : ""
-      }`}
-    >
-      {/* Top Row */}
-      <div className="flex items-start gap-2 p-3">
-        {/* Checkbox */}
-        <button
-          type="button"
-          onClick={() => onSelect(acc.id)}
-          className="mt-0.5 shrink-0 text-slate-500 transition hover:text-indigo-400"
-        >
-          {selected
-            ? <CheckSquare size={16} className="text-indigo-400" />
-            : <Square size={16} />}
-        </button>
-
-        {/* Main Info */}
-        <div className="min-w-0 flex-1">
-          {/* Row 1: username + badges */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className="cursor-pointer font-mono text-sm font-bold text-white hover:text-indigo-300 transition truncate max-w-[200px]"
-              title={acc.username}
-              onClick={() => onFocusHighlight && onFocusHighlight(acc.id)}
-            >
-              {acc.username}
-            </span>
-            {/* Availability Badge */}
-            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${availConfig.badge}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${availConfig.dot}`} />
-              {availConfig.label}
-            </span>
-            <TypeBadge type={acc.type} effectiveType={acc.effectiveType} />
-            <MailBadge status={acc.mailCheckStatus} />
-            {isMarket && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-600/40 bg-emerald-600/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-300">
-                <Globe size={8} /> Market
-              </span>
-            )}
-          </div>
-
-          {/* Row 2: expiry + user slots */}
-          <div className="mt-1.5 flex flex-wrap items-center gap-3">
-            {/* Expiry */}
-            {acc.expiredAt ? (
-              <div className={`flex items-center gap-1 text-[10px] ${
-                isExpired ? "text-red-400" : days !== null && days <= 7 ? "text-amber-400" : "text-slate-400"
-              }`}>
-                <Calendar size={9} />
-                <span>{formatDateShort(acc.expiredAt)}</span>
-                {days !== null && (
-                  <span className="font-bold">
-                    {isExpired ? `(HH ${Math.abs(days)}d)` : `(+${days}d)`}
-                  </span>
-                )}
-              </div>
-            ) : (
-              <span className="text-[10px] text-slate-600">Không có hạn</span>
-            )}
-
-            {/* Slot Progress */}
-            {accType === "package1" && (
-              <SlotProgress
-                current={visibleUserEntries.length}
-                reserved={activeStoreReservationCount}
-                max={3}
-              />
-            )}
-            {accType === "package2" && (
-              <SlotProgress
-                current={visibleUserEntries.length}
-                reserved={activeStoreReservationCount}
-                max={1}
-              />
-            )}
-
-            {/* Store reservation badge */}
-            {activeStoreReservationCount > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-cyan-600/40 bg-cyan-600/10 px-2 py-0.5 text-[9px] font-bold text-cyan-200">
-                <Lock size={8} /> Giữ chỗ {activeStoreReservationCount}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex shrink-0 items-center gap-1">
-          {canAddUser && (
-            <button
-              type="button"
-              onClick={() => onAddUser(acc.id)}
-              className="rounded-lg border border-indigo-500/40 bg-indigo-500/15 p-1.5 text-indigo-300 transition hover:bg-indigo-500/25 hover:text-white"
-              title="Thêm khách"
-            >
-              <Plus size={13} />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => onCopy(buildChatgptCopyText(acc), getChatgptCopySuccessText(acc))}
-            className="rounded-lg border border-slate-700 bg-slate-800/60 p-1.5 text-slate-300 transition hover:bg-slate-700 hover:text-white"
-            title={getChatgptCopyButtonText(acc)}
-          >
-            <Copy size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onEdit(acc)}
-            className="rounded-lg border border-slate-700 bg-slate-800/60 p-1.5 text-slate-300 transition hover:bg-slate-700 hover:text-white"
-            title="Sửa"
-          >
-            <Pencil size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onDelete(acc)}
-            className="rounded-lg border border-red-700/40 bg-red-900/10 p-1.5 text-red-400 transition hover:bg-red-700/20 hover:text-red-300"
-            title="Xóa"
-          >
-            <Trash2 size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={() => onToggleExpand(acc.id)}
-            className="rounded-lg border border-slate-700 bg-slate-800/60 p-1.5 text-slate-400 transition hover:bg-slate-700 hover:text-white"
-            title={expanded ? "Thu gọn" : "Mở rộng"}
-          >
-            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          </button>
-        </div>
-      </div>
-
-      {/* Expanded Content */}
-      {expanded && (
-        <div className="border-t border-slate-800/60 p-3 space-y-3">
-          {/* Credentials */}
-          <div className="rounded-xl border border-slate-700/60 bg-slate-950/50 p-2.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Thông tin đăng nhập</span>
-              <button
-                type="button"
-                onClick={() => setShowCredentials(v => !v)}
-                className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 px-2 py-0.5 text-[10px] text-slate-400 transition hover:text-white"
-              >
-                {showCredentials ? <EyeOff size={10} /> : <Eye size={10} />}
-                {showCredentials ? "Ẩn" : "Hiện"}
-              </button>
-            </div>
-
-            {/* Username */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="w-12 text-[10px] font-semibold uppercase tracking-wider text-slate-500">TK</span>
-              <span className="rounded-lg bg-slate-800 px-2 py-1 font-mono text-xs font-bold text-white break-all">
-                {acc.username}
-              </span>
-            </div>
-
-            {/* Password */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="w-12 text-[10px] font-semibold uppercase tracking-wider text-slate-500">MK</span>
-              <span className="rounded-lg bg-slate-800 px-2 py-1 font-mono text-xs font-bold text-white break-all">
-                {showCredentials ? acc.password : "••••••••••"}
-              </span>
-              <button
-                onClick={() => onCopy(acc.password, "Đã copy Mật khẩu")}
-                className="rounded-lg bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-slate-600"
-              >
-                <Copy size={10} />
-              </button>
-            </div>
-
-            {/* OTP */}
-            {acc.otpSecret && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="w-12 text-[10px] font-semibold uppercase tracking-wider text-slate-500">2FA</span>
-                <span className="rounded-lg bg-slate-800 px-2 py-1 font-mono text-xs font-bold text-cyan-200 break-all">
-                  {showCredentials ? acc.otpSecret : "••••••••••••••••"}
-                </span>
-                <a
-                  href={buildChatgpt2faLiveUrl(acc.otpSecret)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 rounded-lg bg-cyan-700/80 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-cyan-600"
-                >
-                  <ExternalLink size={9} /> 2fa.live
-                </a>
-              </div>
-            )}
-
-            {/* Link */}
-            {acc.link && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="w-12 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Mail</span>
-                <a
-                  href={acc.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 rounded-lg bg-teal-700/80 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-teal-600"
-                >
-                  <Mail size={9} /> Mở Mail
-                </a>
-                <button
-                  onClick={() => onCopy(acc.link, "Đã copy Link Mail")}
-                  className="rounded-lg bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-slate-600"
-                >
-                  <Copy size={10} />
-                </button>
-              </div>
-            )}
-
-            {/* Copy All */}
-            <button
-              onClick={() => onCopy(buildChatgptCopyText(acc), getChatgptCopySuccessText(acc))}
-              className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-600/70 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-indigo-500"
-            >
-              <Copy size={11} /> {getChatgptCopyButtonText(acc)}
-            </button>
-          </div>
-
-          {/* Note */}
-          {acc.note && !/^\[StoreWarrantyHold/i.test(acc.note) && (
-            <div className="rounded-xl border border-amber-700/30 bg-amber-900/10 px-3 py-2 text-[11px] italic text-amber-200">
-              {acc.note}
-            </div>
-          )}
-
-          {/* Mail Check */}
-          <div className="rounded-xl border border-slate-700/50 bg-slate-950/40 p-2.5">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Mail Check</span>
-                <MailBadge status={acc.mailCheckStatus} />
-                {acc.mailCheckLastCheckedAt && (
-                  <span className="text-[10px] text-slate-500">
-                    {formatDateTime(acc.mailCheckLastCheckedAt)}
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => onRunMailCheck(acc)}
-                disabled={mailStatus === "died" || loadingMailCheck === String(acc?.id || "")}
-                className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[10px] font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {loadingMailCheck === String(acc?.id || "") ? (
-                  <Loader2 size={10} className="animate-spin" />
-                ) : <Mail size={10} />}
-                {mailStatus === "died" ? "Đã die" : "Đọc mail"}
-              </button>
-            </div>
-            {acc.mailCheckLastSubject && (
-              <div className="mt-2 space-y-1 text-[10px]">
-                <div className="font-semibold text-white">{acc.mailCheckLastSubject}</div>
-                <div className="text-slate-400">{acc.mailCheckLastSender || "--"}</div>
-                {acc.mailCheckLastSnippet && (
-                  <div className="rounded-lg border border-slate-700/60 bg-slate-900/60 px-2 py-1.5 text-slate-300">
-                    {acc.mailCheckLastSnippet}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Store Reservation Traces */}
-          {activeStoreReservationTraces.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-400">
-                Đơn web đang giữ chỗ
-              </div>
-              {activeStoreReservationTraces.map((trace, i) => (
-                <div
-                  key={trace.orderId || i}
-                  className="rounded-xl border border-cyan-700/40 bg-cyan-950/20 px-2.5 py-2 text-[10px]"
-                >
-                  <div className="font-bold text-cyan-100">{trace.orderId || "--"}</div>
-                  {(trace.customerName || trace.customerEmail) && (
-                    <div className="text-slate-300">{trace.customerName || trace.customerEmail}</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Joiners */}
-          {(hasUsers || accType !== "unassigned") && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                  Khách ({visibleUserEntries.length}{accType === "package1" ? "/3" : "/1"})
-                </span>
-                {canAddUser && (
-                  <button
-                    type="button"
-                    onClick={() => onAddUser(acc.id)}
-                    className="rounded-lg border border-indigo-500/40 bg-indigo-500/15 px-2 py-0.5 text-[10px] font-bold text-indigo-200 transition hover:bg-indigo-500/25"
-                  >
-                    + Thêm khách
-                  </button>
-                )}
-                {!canAddUser && !isExpired && accType !== "unassigned" && (
-                  <span className="text-[10px] font-bold text-red-400">Đã đầy</span>
-                )}
-              </div>
-              {visibleUserEntries.length === 0 && accType !== "unassigned" && (
-                <div className="text-[10px] italic text-slate-600">Chưa có khách</div>
-              )}
-              {visibleUserEntries.map(({ user, index }) => (
-                <JoinerRow
-                  key={index}
-                  user={user}
-                  index={index}
-                  accId={acc.id}
-                  isExpired={isExpired}
-                  onEdit={onEditUser}
-                  onDelete={onDeleteUser}
-                  onMove={onMoveUser}
-                  onExtend={onExtendUser}
-                  linkedStoreOrder={getStoreOrderIdentityForAccountUser
-                    ? getStoreOrderIdentityForAccountUser(acc, user)
-                    : null}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Warranty Hold Info */}
-          {storeWarrantyHoldInfo && (
-            <div className="rounded-xl border border-amber-700/40 bg-amber-950/20 px-2.5 py-2 text-[10px]">
-              <div className="font-black uppercase tracking-wider text-amber-300">Bảo hành web</div>
-              <div className="mt-1 text-amber-100">
-                {storeWarrantyHoldInfo.customerName || storeWarrantyHoldInfo.customerEmail || "--"}
-              </div>
-              {storeWarrantyHoldInfo.orderId && (
-                <div className="text-slate-400">Đơn: {storeWarrantyHoldInfo.orderId}</div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-});
-
-// ─── Filter Bar ──────────────────────────────────────────────────────────────
-
-const FilterBar = memo(({
-  searchQuery,
-  onSearchChange,
-  onApply,
-  onReset,
-  // Draft state
-  gptSubTab, setGptSubTab,
-  chatgptTotalTypeTab, setChatgptTotalTypeTab,
-  package2ShelfTab, setPackage2ShelfTab,
-  chatgptMailCheckFilter, setChatgptMailCheckFilter,
-  chatgptCustomerFilter, setChatgptCustomerFilter,
-  chatgptExpiryFilter, setChatgptExpiryFilter,
-  chatgptExpiryMin, setChatgptExpiryMin,
-  chatgptExpiryMax, setChatgptExpiryMax,
-  chatgptCreatedFrom, setChatgptCreatedFrom,
-  chatgptCreatedTo, setChatgptCreatedTo,
-  soldPackage2ProviderFilter, setSoldPackage2ProviderFilter,
-  // Applied state
-  chatgptAppliedFilters,
-  loading,
-}) => {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  const hasActiveFilters = useMemo(() => {
-    const f = chatgptAppliedFilters || {};
-    return (
-      (f.subTab && f.subTab !== "all") ||
-      (f.totalType && f.totalType !== "all") ||
-      (f.package2ShelfTab && f.package2ShelfTab !== "all") ||
-      (f.mailCheckFilter && f.mailCheckFilter !== "all") ||
-      (f.customerFilter && f.customerFilter !== "all") ||
-      (f.expiryFilter && f.expiryFilter !== "all") ||
-      f.expiryMin || f.expiryMax ||
-      f.createdFrom || f.createdTo
-    );
-  }, [chatgptAppliedFilters]);
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-900/80 shadow-lg">
-      {/* Search + Main Filter Row */}
-      <div className="flex flex-wrap items-center gap-2 p-3">
-        {/* Search */}
-        <label className="flex min-w-[200px] flex-1 items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-950/70 px-3 py-2 transition focus-within:border-indigo-500/60">
-          <Search size={14} className="shrink-0 text-slate-500" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Tìm username, note, mail..."
-            className="w-full bg-transparent text-sm text-white placeholder:text-slate-500 outline-none"
-          />
-          {searchQuery && (
-            <button type="button" onClick={() => onSearchChange("")}
-              className="rounded-full p-0.5 text-slate-500 hover:text-white">
-              <X size={12} />
-            </button>
-          )}
-        </label>
-
-        {/* Kho Tabs */}
-        <div className="flex rounded-xl border border-slate-700/60 bg-slate-950/50 p-1 gap-0.5">
-          {[
-            { v: "all", l: "Tất cả" },
-            { v: "total", l: "Kho Tổng" },
-            { v: "market", l: "Kho Market" },
-          ].map(({ v, l }) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setGptSubTab(v)}
-              className={`rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition ${
-                gptSubTab === v
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >{l}</button>
-          ))}
-        </div>
-
-        {/* Advanced toggle */}
-        <button
-          type="button"
-          onClick={() => setShowAdvanced(v => !v)}
-          className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-semibold transition ${
-            hasActiveFilters
-              ? "border-indigo-500/50 bg-indigo-500/15 text-indigo-200"
-              : "border-slate-700/60 bg-slate-900/60 text-slate-400 hover:text-white"
-          }`}
-        >
-          <Filter size={12} />
-          Bộ lọc
-          {hasActiveFilters && (
-            <span className="rounded-full bg-indigo-500 px-1.5 text-[9px] font-black text-white">●</span>
-          )}
-          {showAdvanced ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-        </button>
-
-        {/* Apply / Reset */}
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onApply}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-[11px] font-bold text-white transition hover:bg-indigo-500 disabled:opacity-60"
-          >
-            {loading ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-            Áp dụng
-          </button>
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={onReset}
-              className="flex items-center gap-1 rounded-xl border border-slate-700 px-3 py-2 text-[11px] text-slate-400 transition hover:border-red-500/50 hover:text-red-300"
-            >
-              <X size={11} /> Reset
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Advanced Filters */}
-      {showAdvanced && (
-        <div className="border-t border-slate-800/60 px-3 pb-3 pt-2.5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {/* Type filter (for total kho) */}
-          {gptSubTab === "total" && (
-            <div>
-              <div className="mb-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Loại gói</div>
-              <div className="flex flex-wrap gap-1">
-                {[
-                  { v: "all", l: "Tất cả" },
-                  { v: "package1", l: "Gói 1" },
-                  { v: "package2", l: "Gói 2" },
-                  { v: "unassigned", l: "Chưa chọn" },
-                ].map(({ v, l }) => (
-                  <FilterPill key={v} label={l} active={chatgptTotalTypeTab === v}
-                    onClick={() => setChatgptTotalTypeTab(v)} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Market shelf (for market kho) */}
-          {gptSubTab === "market" && (
-            <div>
-              <div className="mb-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Trạng thái sàn</div>
-              <div className="flex flex-wrap gap-1">
-                {[
-                  { v: "all", l: "Tất cả" },
-                  { v: "sold", l: "Đã bán" },
-                ].map(({ v, l }) => (
-                  <FilterPill key={v} label={l} active={package2ShelfTab === v}
-                    onClick={() => setPackage2ShelfTab(v)} />
-                ))}
-              </div>
-              {package2ShelfTab === "sold" && (
-                <div className="mt-1.5 flex gap-1">
-                  {[
-                    { v: "all", l: "Tất cả sàn" },
-                    { v: "datammo", l: "Datammo" },
-                    { v: "shopmini", l: "Shopmini" },
-                  ].map(({ v, l }) => (
-                    <FilterPill key={v} label={l} active={soldPackage2ProviderFilter === v}
-                      onClick={() => setSoldPackage2ProviderFilter(v)} />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Mail Check */}
-          <div>
-            <div className="mb-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Mail check</div>
-            <div className="flex flex-wrap gap-1">
-              {[
-                { v: "all", l: "Tất cả" },
-                { v: "died", l: "Mail Die" },
-                { v: "checked", l: "Đã check" },
-                { v: "unchecked", l: "Chưa check" },
-              ].map(({ v, l }) => (
-                <FilterPill key={v} label={l} active={chatgptMailCheckFilter === v}
-                  onClick={() => setChatgptMailCheckFilter(v)} />
-              ))}
-            </div>
-          </div>
-
-          {/* Customer */}
-          <div>
-            <div className="mb-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Khách</div>
-            <div className="flex flex-wrap gap-1">
-              {[
-                { v: "all", l: "Tất cả" },
-                { v: "with", l: "Có khách" },
-                { v: "without", l: "Không khách" },
-              ].map(({ v, l }) => (
-                <FilterPill key={v} label={l} active={chatgptCustomerFilter === v}
-                  onClick={() => setChatgptCustomerFilter(v)} />
-              ))}
-            </div>
-          </div>
-
-          {/* Expiry */}
-          <div>
-            <div className="mb-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Hạn sử dụng</div>
-            <div className="flex flex-wrap gap-1">
-              {[
-                { v: "all", l: "Tất cả" },
-                { v: "expired", l: "Hết hạn" },
-                { v: "under_15", l: "<15 ngày" },
-                { v: "15_20", l: "15-20" },
-                { v: "20_25", l: "20-25" },
-                { v: "25_31", l: "25-31" },
-                { v: "no_expiry", l: "Không hạn" },
-              ].map(({ v, l }) => (
-                <FilterPill key={v} label={l} active={chatgptExpiryFilter === v}
-                  onClick={() => setChatgptExpiryFilter(v)} />
-              ))}
-            </div>
-          </div>
-
-          {/* Custom expiry range */}
-          <div>
-            <div className="mb-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Khoảng hạn (ngày)</div>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                placeholder="Min"
-                value={chatgptExpiryMin}
-                onChange={(e) => setChatgptExpiryMin(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-white outline-none focus:border-indigo-500"
-              />
-              <input
-                type="number"
-                placeholder="Max"
-                value={chatgptExpiryMax}
-                onChange={(e) => setChatgptExpiryMax(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-white outline-none focus:border-indigo-500"
-              />
-            </div>
-          </div>
-
-          {/* Created range */}
-          <div>
-            <div className="mb-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Ngày tạo</div>
-            <div className="flex gap-2">
-              <input type="date" value={chatgptCreatedFrom}
-                onChange={(e) => setChatgptCreatedFrom(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-white outline-none focus:border-indigo-500" />
-              <input type="date" value={chatgptCreatedTo}
-                onChange={(e) => setChatgptCreatedTo(e.target.value)}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-white outline-none focus:border-indigo-500" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Active filter chips */}
-      {hasActiveFilters && (
-        <div className="border-t border-slate-800/60 px-3 py-2 flex flex-wrap gap-1.5 items-center">
-          <span className="text-[10px] text-slate-500">Đang lọc:</span>
-          {chatgptAppliedFilters?.subTab && chatgptAppliedFilters.subTab !== "all" && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/40 bg-indigo-500/15 px-2 py-0.5 text-[10px] font-semibold text-indigo-200">
-              Kho: {chatgptAppliedFilters.subTab}
-              <button onClick={() => { setGptSubTab("all"); setTimeout(onApply, 0); }}><X size={9}/></button>
-            </span>
-          )}
-          {chatgptAppliedFilters?.mailCheckFilter && chatgptAppliedFilters.mailCheckFilter !== "all" && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-200">
-              Mail: {chatgptAppliedFilters.mailCheckFilter}
-              <button onClick={() => { setChatgptMailCheckFilter("all"); setTimeout(onApply, 0); }}><X size={9}/></button>
-            </span>
-          )}
-          {chatgptAppliedFilters?.expiryFilter && chatgptAppliedFilters.expiryFilter !== "all" && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
-              Hạn: {chatgptAppliedFilters.expiryFilter}
-              <button onClick={() => { setChatgptExpiryFilter("all"); setTimeout(onApply, 0); }}><X size={9}/></button>
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-});
-
-// ─── Bulk Action Bar ─────────────────────────────────────────────────────────
-
-const BulkActionBar = memo(({
-  count,
-  onClearSelection,
-  onBulkDelete,
-  onBulkChangeWarehouse,
-  onSelectAll,
-  totalOnPage,
-}) => {
-  if (count === 0) return null;
-  return (
-    <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-      <div className="flex items-center gap-2 rounded-2xl border border-slate-600/80 bg-slate-900/95 px-4 py-3 shadow-2xl shadow-slate-950/60 backdrop-blur-md">
-        <div className="flex items-center gap-2 text-sm font-bold text-white">
-          <CheckSquare size={16} className="text-indigo-400" />
-          <span>{count} acc</span>
-        </div>
-        <div className="mx-2 h-5 w-px bg-slate-700" />
-        <button
-          type="button"
-          onClick={onSelectAll}
-          className="rounded-lg border border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white"
-        >
-          Chọn trang
-        </button>
-        <button
-          type="button"
-          onClick={onBulkChangeWarehouse}
-          className="rounded-lg border border-indigo-500/50 bg-indigo-500/20 px-3 py-1.5 text-[11px] font-semibold text-indigo-200 transition hover:bg-indigo-500/30"
-        >
-          Đổi kho
-        </button>
-        <button
-          type="button"
-          onClick={onBulkDelete}
-          className="rounded-lg border border-red-500/50 bg-red-500/15 px-3 py-1.5 text-[11px] font-semibold text-red-300 transition hover:bg-red-500/25"
-        >
-          <Trash2 size={12} className="inline mr-1" />
-          Xóa ({count})
-        </button>
-        <button
-          type="button"
-          onClick={onClearSelection}
-          className="rounded-lg border border-slate-700 p-1.5 text-slate-400 transition hover:text-white"
-        >
-          <X size={14} />
-        </button>
-      </div>
-    </div>
-  );
-});
-
-// ─── Pagination ──────────────────────────────────────────────────────────────
-
-const Pagination = memo(({ pagination, onPageChange, loading }) => {
-  if (!pagination || pagination.totalPages <= 1) return null;
-  const { page, totalPages, total, limit } = pagination;
-
-  const pages = useMemo(() => {
-    const arr = [];
-    const show = 5;
-    let start = Math.max(1, page - Math.floor(show / 2));
-    let end = Math.min(totalPages, start + show - 1);
-    if (end - start < show - 1) start = Math.max(1, end - show + 1);
-    for (let i = start; i <= end; i++) arr.push(i);
-    return arr;
-  }, [page, totalPages]);
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-700/60 bg-slate-900/70 px-4 py-3">
-      <div className="text-[11px] text-slate-400">
-        Tổng <span className="font-bold text-white">{total}</span> acc ·
-        Trang <span className="font-bold text-white">{page}</span>/{totalPages}
-        · {limit} / trang
-      </div>
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1 || loading}
-          className="rounded-xl border border-slate-700 p-1.5 text-slate-400 transition hover:border-slate-500 hover:text-white disabled:opacity-40"
-        >
-          <ChevronLeft size={14} />
-        </button>
-        {pages[0] > 1 && (
-          <>
-            <button type="button" onClick={() => onPageChange(1)}
-              className="rounded-xl border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-slate-500 hover:text-white">1</button>
-            {pages[0] > 2 && <span className="text-slate-600 px-1">…</span>}
-          </>
-        )}
-        {pages.map(p => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => onPageChange(p)}
-            className={`rounded-xl border px-2.5 py-1 text-[11px] font-semibold transition ${
-              p === page
-                ? "border-indigo-400/60 bg-indigo-500/20 text-indigo-100 cursor-default"
-                : "border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white"
-            }`}
-          >{p}</button>
-        ))}
-        {pages[pages.length - 1] < totalPages && (
-          <>
-            {pages[pages.length - 1] < totalPages - 1 && <span className="text-slate-600 px-1">…</span>}
-            <button type="button" onClick={() => onPageChange(totalPages)}
-              className="rounded-xl border border-slate-700 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-slate-500 hover:text-white">{totalPages}</button>
-          </>
-        )}
-        <button
-          type="button"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages || loading}
-          className="rounded-xl border border-slate-700 p-1.5 text-slate-400 transition hover:border-slate-500 hover:text-white disabled:opacity-40"
-        >
-          <ChevronRight size={14} />
-        </button>
-      </div>
-    </div>
-  );
-});
-
-// ─── Main Panel ──────────────────────────────────────────────────────────────
-
-export default function ChatgptAdminPanel({
-  // Data
-  accounts,
-  chatgptAdminPagination,
-  chatgptAdminPageLoading,
-  dashboardSummary,
-  datammoOrderHistory,
-  datammoWarrantyCases,
-  // Selection
-  selectedChatgptIds,
-  setSelectedChatgptIds,
-  expandedChatgptAccountId,
-  setExpandedChatgptAccountId,
-  highlightedChatgptAccountId,
-  // Filter draft state
-  searchQuery,
-  setSearchQuery,
-  gptSubTab, setGptSubTab,
-  chatgptTotalTypeTab, setChatgptTotalTypeTab,
-  package2ShelfTab, setPackage2ShelfTab,
-  chatgptMailCheckFilter, setChatgptMailCheckFilter,
-  chatgptCustomerFilter, setChatgptCustomerFilter,
-  chatgptExpiryFilter, setChatgptExpiryFilter,
-  chatgptExpiryMin, setChatgptExpiryMin,
-  chatgptExpiryMax, setChatgptExpiryMax,
-  chatgptCreatedFrom, setChatgptCreatedFrom,
-  chatgptCreatedTo, setChatgptCreatedTo,
-  soldPackage2ProviderFilter, setSoldPackage2ProviderFilter,
-  // Applied filters
-  chatgptAppliedFilters,
-  // Handlers
-  applyCurrentChatgptDraftFilters,
-  resetChatgptAdminFilters,
-  requestChatgptAdminPage,
-  loadAdminChatgptAccounts,
-  // Account actions
-  openAddModal,
-  openEditModal,
-  handleDeleteAccount,
-  handleBulkDeleteChatgpt,
-  handleBulkWarehouseChange,
-  setShowImportGPTModal,
-  // User/joiner actions
-  openAddUserModal,
-  openEditUserModal,
-  handleDeleteUser,
-  openMoveUserModal,
-  handleExtendUser,
-  handleRunOneChatgptMailCheck,
-  // Utilities passed from App.jsx
-  handleCopy,
-  loadingStates,
-  // Helpers passed from App.jsx
+  onMailCheck,
+  onCopy,
+  onTypeChange,
+  onShelfChange,
   getVisibleAccountUserEntries,
   getActiveStoreReservationTraces,
   getActiveStoreReservationCount,
@@ -1217,287 +219,1197 @@ export default function ChatgptAdminPanel({
   buildChatgptCopyText,
   getChatgptCopyButtonText,
   getChatgptCopySuccessText,
-  marketplaceTrackedAccountIds,
+}) => {
+  const visibleUsers = getVisibleAccountUserEntries(acc);
+  const activeReservations = getActiveStoreReservationTraces(acc);
+  const reservationCount = getActiveStoreReservationCount(acc);
+  const warrantyHold = getStoreWarrantyHoldInfo(acc);
+  const hasReservation = reservationCount > 0;
+  const hasWarrantyHold = !!warrantyHold && !hasReservation;
+  const isLockedFromSale = hasReservation || hasWarrantyHold;
+
+  const mailState = getChatgptMailCheckVisualState(acc);
+  const expiryStatus = acc.expiredAt ? getExpiryStatus(acc.expiredAt) : null;
+  const accType = normalizeChatgptAccountType(acc?.effectiveType || acc?.type);
+  const tl = typeLabel(accType);
+  const sl = shelfLabel(acc?.package2Shelf);
+  const isMarketable = supportsChatgptMarketType(acc.type);
+  const isDied = normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) === "died";
+  const isMailChecking = loadingStates?.runChatgptMailCheckOne === String(acc?.id || "");
+  const isTypeChanging = !!loadingStates?.changeType?.[acc.id];
+  const isShelfChanging = !!loadingStates?.changeShelf?.[acc.id];
+  const note = getVisibleAccountNote(acc.note);
+  const hasMarketplaceSold = isMarketTracked;
+
+  // User slot display for Pkg1
+  const effectiveViewType = accType === "unassigned"
+    ? visibleUsers.length > 1 ? "package1" : visibleUsers.length === 1 ? "package2" : "unassigned"
+    : accType;
+
+  return (
+    <div
+      id={`chatgpt-account-row-${acc.id}`}
+      className={`group rounded-2xl border transition-all duration-150 ${
+        isHighlighted
+          ? "border-cyan-500/50 bg-cyan-900/10 ring-1 ring-cyan-500/30"
+          : isExpanded
+          ? "border-slate-600/60 bg-slate-800/60"
+          : "border-slate-700/50 bg-slate-800/30 hover:border-slate-600/60 hover:bg-slate-800/50"
+      }`}
+    >
+      {/* ── Card header ── */}
+      <div className="flex items-start gap-2.5 p-3">
+        {/* Checkbox */}
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={(e) => onToggleSelect(acc.id, e.target.checked)}
+          className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-emerald-500 rounded"
+          title="Chọn tài khoản"
+        />
+
+        {/* Main info */}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          {/* Row 1: username + badges */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="break-all font-mono text-sm font-bold text-white">
+              {acc.username}
+            </span>
+            <button
+              onClick={() => onCopy(acc.username, "Đã copy tên tài khoản")}
+              className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-0.5 text-[10px] font-bold text-slate-200 transition hover:bg-slate-600"
+            >
+              <Copy size={10} /> Copy
+            </button>
+
+            {/* Type badge */}
+            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${tl.cls}`}>
+              {tl.text}
+            </span>
+
+            {/* Shelf badge (market only) */}
+            {isMarket && (
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                hasMarketplaceSold
+                  ? "border-amber-700/60 bg-amber-900/40 text-amber-300"
+                  : isLockedFromSale
+                  ? "border-cyan-700/60 bg-cyan-900/40 text-cyan-300"
+                  : sl.cls
+              }`}>
+                {hasMarketplaceSold ? "Acc đã bán" : isLockedFromSale ? (hasReservation ? "Đơn web" : "BH web") : sl.text}
+              </span>
+            )}
+
+            {/* Status badges */}
+            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${mailState.tone}`}>
+              {mailState.label}
+            </span>
+            {expiryStatus && (
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                expiryStatus.urgent
+                  ? "border-red-700/60 bg-red-900/20 text-red-300"
+                  : "border-slate-700 bg-slate-800/80 text-slate-300"
+              }`}>
+                {expiryStatus.text}
+              </span>
+            )}
+            {acc.otpSecret && (
+              <Badge className="border-cyan-700/60 bg-cyan-950/20 text-cyan-300">
+                <Shield size={9} /> 2FA
+              </Badge>
+            )}
+            {note && (
+              <Badge className="border-yellow-700/60 bg-yellow-900/20 text-yellow-300">
+                Ghi chú
+              </Badge>
+            )}
+            {hasReservation && (
+              <Badge className="border-cyan-600/60 bg-cyan-900/20 text-cyan-200">
+                <ShoppingCart size={9} /> Giữ chỗ web
+              </Badge>
+            )}
+            {hasWarrantyHold && (
+              <Badge className="border-amber-700/60 bg-amber-900/20 text-amber-200">
+                BH web
+              </Badge>
+            )}
+          </div>
+
+          {/* Row 2: user preview */}
+          {visibleUsers.length > 0 && !isExpanded && (
+            <div className="flex flex-wrap gap-1.5">
+              {visibleUsers.slice(0, 2).map((entry) => {
+                const remaining = getDaysRemaining(entry.user);
+                const isMarketUser = isDatammoManagedUser(entry.user);
+                return (
+                  <span
+                    key={entry.index}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
+                      isMarketUser
+                        ? "border-amber-700/50 bg-amber-900/30 text-amber-200"
+                        : "border-slate-700/60 bg-slate-900/50 text-slate-300"
+                    }`}
+                  >
+                    <User size={9} />
+                    {entry.name}
+                    {remaining !== null && (
+                      <span className={remaining <= 0 ? "text-red-400" : remaining <= 7 ? "text-amber-400" : "text-emerald-400"}>
+                        ({remaining}d)
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
+              {visibleUsers.length > 2 && (
+                <span className="rounded-full border border-slate-700 bg-slate-900/50 px-2 py-0.5 text-[10px] text-slate-400">
+                  +{visibleUsers.length - 2} khách
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <div className="flex items-center gap-1.5">
+            {/* Copy all */}
+            <button
+              onClick={() => onCopy(buildChatgptCopyText(acc), getChatgptCopySuccessText(acc))}
+              className="inline-flex items-center gap-1 rounded-lg bg-indigo-600/80 px-2.5 py-1.5 text-[10px] font-bold text-white transition hover:bg-indigo-500 shadow-sm shadow-indigo-900/30"
+              title="Copy thông tin acc"
+            >
+              <Copy size={11} /> {getChatgptCopyButtonText(acc)}
+            </button>
+
+            {/* Expand */}
+            <button
+              onClick={() => onToggleExpand(acc.id)}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-all ${
+                isExpanded
+                  ? "border-slate-500 bg-slate-700 text-white"
+                  : "border-slate-700 bg-slate-800 text-slate-400 hover:text-white"
+              }`}
+              title={isExpanded ? "Thu gọn" : "Mở rộng"}
+            >
+              <ChevronUp size={13} className={`transition-transform ${isExpanded ? "rotate-0" : "rotate-180"}`} />
+            </button>
+          </div>
+
+          {/* Edit / Delete */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onEdit(acc)}
+              className="flex h-6 w-6 items-center justify-center rounded-md border border-blue-700/50 bg-blue-900/30 text-blue-300 transition hover:bg-blue-700/50"
+              title="Sửa acc"
+            >
+              <Pencil size={11} />
+            </button>
+            <button
+              onClick={() => onDelete(acc)}
+              className="flex h-6 w-6 items-center justify-center rounded-md border border-red-800/50 bg-red-900/20 text-red-400 transition hover:bg-red-800/40"
+              title="Xóa acc"
+            >
+              <Trash2 size={11} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Expanded section ── */}
+      {isExpanded && (
+        <div className="border-t border-slate-700/50 px-3 pb-3 pt-2.5 space-y-3">
+          {/* Credentials */}
+          <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-2.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Thông tin đăng nhập</span>
+              {acc.expiredAt && (
+                <span className={`text-[10px] font-semibold flex items-center gap-1 ${expiryStatus?.color || "text-slate-400"}`}>
+                  <Calendar size={10} /> {formatDate(acc.expiredAt)}
+                </span>
+              )}
+            </div>
+
+            {/* Password */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="w-14 shrink-0 text-[10px] font-semibold uppercase text-slate-500">Mật khẩu</span>
+              <code className="rounded-md bg-slate-800 px-2 py-1 font-mono text-xs font-bold text-white break-all">
+                {acc.password}
+              </code>
+              <button
+                onClick={() => onCopy(acc.password, "Đã copy mật khẩu")}
+                className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-0.5 text-[10px] font-bold text-white transition hover:bg-slate-600"
+              >
+                <Copy size={10} /> Copy
+              </button>
+            </div>
+
+            {/* 2FA */}
+            {acc.otpSecret && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="w-14 shrink-0 text-[10px] font-semibold uppercase text-slate-500">2FA</span>
+                <code className="rounded-md bg-slate-800 px-2 py-1 font-mono text-xs font-bold text-cyan-200 break-all">
+                  {acc.otpSecret}
+                </code>
+                <button
+                  onClick={() => onCopy(acc.otpSecret, "Đã copy 2FA")}
+                  className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-0.5 text-[10px] font-bold text-white transition hover:bg-slate-600"
+                >
+                  <Copy size={10} /> Copy
+                </button>
+                <a
+                  href={buildChatgpt2faLiveUrl(acc.otpSecret)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-md bg-cyan-700/80 px-2 py-0.5 text-[10px] font-bold text-white transition hover:bg-cyan-600"
+                >
+                  <ExternalLink size={10} /> 2fa.live
+                </a>
+              </div>
+            )}
+
+            {/* Link mail */}
+            {acc.link && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="w-14 shrink-0 text-[10px] font-semibold uppercase text-slate-500">Link</span>
+                <a
+                  href={acc.link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-md bg-teal-700/80 px-2 py-0.5 text-[10px] font-bold text-white transition hover:bg-teal-600"
+                >
+                  <Mail size={10} /> Mở mail
+                </a>
+                <button
+                  onClick={() => onCopy(acc.link, "Đã copy link mail")}
+                  className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-0.5 text-[10px] font-bold text-white transition hover:bg-slate-600"
+                >
+                  <Copy size={10} /> Copy
+                </button>
+              </div>
+            )}
+
+            {/* Note */}
+            {note && (
+              <div className="rounded-lg border border-yellow-700/30 bg-yellow-900/10 px-2 py-1.5 text-[10px] italic text-yellow-200">
+                {note}
+              </div>
+            )}
+          </div>
+
+          {/* Type & Shelf selectors */}
+          <div className="flex flex-wrap gap-2">
+            {/* Type selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-semibold text-slate-500">Loại gói:</span>
+              <select
+                value={normalizeChatgptAccountType(acc?.effectiveType || acc?.type)}
+                onChange={(e) => onTypeChange(acc, e.target.value)}
+                disabled={isTypeChanging || isLockedFromSale}
+                className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold outline-none cursor-pointer appearance-none transition ${
+                  isTypeChanging || isLockedFromSale ? "opacity-50 cursor-not-allowed" : ""
+                } ${tl.cls}`}
+              >
+                <option value="unassigned">❓ Chưa chọn</option>
+                <option value="package1">👥 Gói 1 – Chia sẻ</option>
+                <option value="package2">🔒 Gói 2 – Linh hoạt</option>
+              </select>
+              {isTypeChanging && <Loader2 size={13} className="animate-spin text-blue-400" />}
+            </div>
+
+            {/* Shelf selector (market acc only) */}
+            {isMarketable && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold text-slate-500">Kho:</span>
+                {hasMarketplaceSold ? (
+                  <span className="rounded-lg border border-amber-700/60 bg-amber-900/30 px-2.5 py-1 text-[10px] font-bold text-amber-200">
+                    🔒 Khóa đơn sàn
+                  </span>
+                ) : isLockedFromSale ? (
+                  <span className="rounded-lg border border-cyan-700/60 bg-cyan-900/30 px-2.5 py-1 text-[10px] font-bold text-cyan-200">
+                    {hasReservation ? "🔒 Đơn web đang giữ chỗ" : "🔒 Nick lỗi bảo hành"}
+                  </span>
+                ) : (
+                  <select
+                    value={normalizeChatgptWarehouseUiValue(acc.package2Shelf)}
+                    onChange={(e) => onShelfChange(acc, e.target.value)}
+                    disabled={isShelfChanging || visibleUsers.length > 0 || isLockedFromSale}
+                    className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold outline-none cursor-pointer appearance-none transition ${
+                      normalizeChatgptWarehouseUiValue(acc.package2Shelf) === "cheap"
+                        ? "border-emerald-700/60 bg-emerald-900/30 text-emerald-200"
+                        : "border-slate-600 bg-slate-800 text-slate-300"
+                    } ${isShelfChanging ? "opacity-50" : ""}`}
+                  >
+                    <option value="none">📦 Kho tổng</option>
+                    <option value="cheap">🏪 Kho market</option>
+                  </select>
+                )}
+                {isShelfChanging && <Loader2 size={13} className="animate-spin text-emerald-400" />}
+              </div>
+            )}
+          </div>
+
+          {/* Mail check section */}
+          <div className="rounded-xl border border-rose-900/30 bg-rose-950/15 p-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.12em] text-rose-300">Mail check</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${mailState.tone}`}>
+                  {mailState.label}
+                </span>
+                {acc?.mailCheckLastCheckedAt && (
+                  <span className="text-[10px] text-slate-400">
+                    {formatDateTime(acc.mailCheckLastCheckedAt)}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => onMailCheck(acc)}
+                disabled={isDied || isMailChecking}
+                className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[10px] font-bold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                title={isDied ? "Acc đã mail die, không đọc lại" : "Đọc mail"}
+              >
+                {isMailChecking ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
+                {isDied ? "Đã die" : "Đọc mail"}
+              </button>
+            </div>
+            {acc?.mailCheckLastSubject && (
+              <div className="mt-2 space-y-0.5">
+                <div className="text-[10px] font-semibold text-white">{acc.mailCheckLastSubject}</div>
+                <div className="text-[10px] text-slate-400">
+                  {acc?.mailCheckLastSender || "--"}
+                  {acc?.mailCheckLastMatchedAt ? ` · ${formatDateTime(acc.mailCheckLastMatchedAt)}` : ""}
+                </div>
+                {acc?.mailCheckLastSnippet && (
+                  <div className="rounded-md border border-slate-700/50 bg-slate-900/50 px-2 py-1.5 text-[10px] text-slate-300">
+                    {acc.mailCheckLastSnippet}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Store reservation info */}
+          {hasReservation && activeReservations.length > 0 && (
+            <div className="rounded-xl border border-cyan-700/30 bg-cyan-900/10 p-2.5">
+              <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-cyan-300">
+                Đơn web đang giữ chỗ ({reservationCount})
+              </div>
+              {activeReservations.slice(0, 2).map((trace, i) => (
+                <div key={i} className="flex flex-wrap gap-2 text-[10px] text-slate-300">
+                  <span className="text-cyan-200">{trace?.orderId || "--"}</span>
+                  <span>{trace?.customerName || trace?.customerEmail || "--"}</span>
+                  <span className="text-slate-400">{trace?.packageName || "--"}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Warranty hold info */}
+          {hasWarrantyHold && warrantyHold && (
+            <div className="rounded-xl border border-amber-700/30 bg-amber-900/10 p-2.5 text-[10px]">
+              <div className="mb-1 font-bold uppercase tracking-[0.1em] text-amber-300">Nick lỗi bảo hành web</div>
+              <div className="flex flex-wrap gap-2 text-slate-300">
+                <span>{warrantyHold.customerName || warrantyHold.customerEmail || "--"}</span>
+                {warrantyHold.orderId && <span className="text-amber-200">#{warrantyHold.orderId}</span>}
+                <span className="text-slate-400">{warrantyHold.statusLabel || "--"}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Users section */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                Khách ({visibleUsers.length})
+              </span>
+              {effectiveViewType === "package1" && (
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span className={`font-bold ${
+                    (visibleUsers.length + reservationCount) >= 3 ? "text-red-400" : "text-emerald-400"
+                  }`}>
+                    {Math.min(3, visibleUsers.length + reservationCount)}/3 slot
+                  </span>
+                  {reservationCount > 0 && (
+                    <Badge className="border-cyan-500/30 bg-cyan-500/10 text-cyan-200">
+                      Giữ chỗ web: {reservationCount}
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Add user button */}
+            {!isLockedFromSale && (
+              <button
+                onClick={() => onAddUser(acc.id)}
+                className="mb-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-700/70 px-2.5 py-1 text-[10px] font-bold text-white transition hover:bg-emerald-600"
+              >
+                <UserPlus size={11} /> Thêm khách
+              </button>
+            )}
+
+            {/* User list */}
+            <div className="space-y-1.5">
+              {visibleUsers.map((entry) => {
+                const { user, index, name } = entry;
+                const daysUsed = getDaysUsed(user);
+                const daysRemaining = getDaysRemaining(user);
+                const isMarketUser = isDatammoManagedUser(user);
+                const storeOrderId = getStoreOrderIdentityForAccountUser?.(acc, user);
+                const isPastExpiry = daysRemaining !== null && daysRemaining <= 0;
+
+                return (
+                  <div
+                    key={index}
+                    className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-[10px] ${
+                      isMarketUser
+                        ? "border-amber-700/40 bg-amber-900/15"
+                        : isPastExpiry
+                        ? "border-red-800/40 bg-red-900/10"
+                        : "border-slate-700/50 bg-slate-900/40"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 min-w-0">
+                      <User size={11} className="text-slate-400 shrink-0" />
+                      <span className={`font-semibold break-all ${isMarketUser ? "text-amber-200" : "text-white"}`}>
+                        {name}
+                      </span>
+                      {daysUsed !== null && (
+                        <span className="text-slate-500">{daysUsed}d đã dùng</span>
+                      )}
+                      {daysRemaining !== null && (
+                        <span className={`font-bold ${
+                          daysRemaining <= 0 ? "text-red-400" :
+                          daysRemaining <= 7 ? "text-amber-400" : "text-emerald-400"
+                        }`}>
+                          {daysRemaining <= 0 ? `Hết hạn ${Math.abs(daysRemaining)}d` : `Còn ${daysRemaining}d`}
+                        </span>
+                      )}
+                      {storeOrderId && (
+                        <Badge className="border-cyan-700/40 bg-cyan-900/20 text-cyan-300">
+                          Web
+                        </Badge>
+                      )}
+                    </div>
+                    {!isMarketUser && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => onExtendUser(acc.id, index, user)}
+                          className="flex h-6 w-6 items-center justify-center rounded-md border border-emerald-700/50 bg-emerald-900/30 text-emerald-300 transition hover:bg-emerald-700/40"
+                          title="Gia hạn"
+                        >
+                          <Calendar size={10} />
+                        </button>
+                        <button
+                          onClick={() => onMoveUser(acc.id, index, user)}
+                          className="flex h-6 w-6 items-center justify-center rounded-md border border-amber-700/50 bg-amber-900/30 text-amber-300 transition hover:bg-amber-700/40"
+                          title="Chuyển khách"
+                        >
+                          <ArrowRightLeft size={10} />
+                        </button>
+                        <button
+                          onClick={() => onEditUser(acc.id, index, user)}
+                          className="flex h-6 w-6 items-center justify-center rounded-md border border-blue-700/50 bg-blue-900/30 text-blue-300 transition hover:bg-blue-700/40"
+                          title="Sửa"
+                        >
+                          <Pencil size={10} />
+                        </button>
+                        <button
+                          onClick={() => onDeleteUser(acc.id, index, name)}
+                          className="flex h-6 w-6 items-center justify-center rounded-md border border-red-800/50 bg-red-900/20 text-red-400 transition hover:bg-red-800/40"
+                          title="Xóa"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {visibleUsers.length === 0 && (
+                <div className="text-[10px] text-slate-600 italic">Chưa có khách</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ─── Main Panel ───────────────────────────────────────────────────────────────
+export default function ChatgptAdminPanel({
+  accounts = [],
+  chatgptAdminPagination,
+  chatgptAdminPageLoading,
+  selectedChatgptIds = [],
+  setSelectedChatgptIds,
+  expandedChatgptAccountId,
+  setExpandedChatgptAccountId,
+  highlightedChatgptAccountId,
+  searchQuery,
+  setSearchQuery,
+  gptSubTab,
+  setGptSubTab,
+  chatgptTotalTypeTab,
+  setChatgptTotalTypeTab,
+  package2ShelfTab,
+  setPackage2ShelfTab,
+  chatgptMailCheckFilter,
+  setChatgptMailCheckFilter,
+  chatgptCustomerFilter,
+  setChatgptCustomerFilter,
+  chatgptExpiryFilter,
+  setChatgptExpiryFilter,
+  chatgptExpiryMin,
+  setChatgptExpiryMin,
+  chatgptExpiryMax,
+  setChatgptExpiryMax,
+  chatgptCreatedFrom,
+  setChatgptCreatedFrom,
+  chatgptCreatedTo,
+  setChatgptCreatedTo,
+  soldPackage2ProviderFilter,
+  setSoldPackage2ProviderFilter,
+  chatgptAppliedFilters = {},
+  applyCurrentChatgptDraftFilters,
+  resetChatgptAdminFilters,
+  requestChatgptAdminPage,
+  loadAdminChatgptAccounts,
+  openAddModal,
+  openEditModal,
+  handleDeleteAccount,
+  handleBulkDeleteChatgpt,
+  handleBulkWarehouseChange,
+  setShowImportGPTModal,
+  openAddUserModal,
+  openEditUserModal,
+  handleDeleteUser,
+  openMoveUserModal,
+  handleExtendUser,
+  handleRunOneChatgptMailCheck,
+  handleCopy,
+  loadingStates = {},
+  getVisibleAccountUserEntries,
+  getActiveStoreReservationTraces,
+  getActiveStoreReservationCount,
+  getStoreWarrantyHoldInfo,
+  getStoreOrderIdentityForAccountUser,
+  buildChatgpt2faLiveUrl,
+  buildChatgptCopyText,
+  getChatgptCopyButtonText,
+  getChatgptCopySuccessText,
+  marketplaceTrackedAccountIds = new Set(),
   focusChatgptAccountById,
+  onTypeChange,
+  onShelfChange,
+  handleRunSelectedChatgptMailCheck,
 }) {
-  // ── Derived stats ──────────────────────────────────────────────────────────
-  const paginationSummary = chatgptAdminPagination?.summary || {};
-  const totalAccs = Number(paginationSummary.total || chatgptAdminPagination?.total || 0);
-  const mailDieCount = Number(paginationSummary.mailDiedCount || dashboardSummary?.chatgptMailDiedCount || 0);
-  const package1Count = Number(paginationSummary.package1Count || 0);
-  const package2Count = Number(paginationSummary.package2Count || 0);
-  const marketCount = Number(paginationSummary.marketCount || 0);
-  const expiringSoonCount = Number(paginationSummary.expiringSoonCount || 0);
+  const [showFilters, setShowFilters] = useState(false);
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
-  const handleToggleSelect = useCallback((id) => {
-    setSelectedChatgptIds(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
-  }, [setSelectedChatgptIds]);
+  const pagination = chatgptAdminPagination || {
+    page: 1, totalPages: 1, total: 0, limit: 10,
+    summary: { tabs: {}, totalTypeTabs: {}, mailCheckTabs: {}, marketShelfTabs: {} },
+  };
+  const summaryTabs = pagination.summary?.tabs || {};
+  const totalTypeTabs = pagination.summary?.totalTypeTabs || {};
+  const mailCheckTabs = pagination.summary?.mailCheckTabs || {};
+  const marketShelfTabs = pagination.summary?.marketShelfTabs || {};
+  const storeWarehouse = pagination.summary?.storeWarehouse || {};
 
-  const handleToggleExpand = useCallback((id) => {
-    setExpandedChatgptAccountId(prev => prev === id ? "" : id);
-  }, [setExpandedChatgptAccountId]);
+  const selectedIdSet = new Set(selectedChatgptIds.map((id) => String(id || "")));
+  const allFilteredSelected =
+    accounts.length > 0 &&
+    accounts.every((acc) => selectedIdSet.has(String(acc.id || "")));
 
-  const handleSelectAll = useCallback(() => {
-    const allIds = accounts.map(a => a.id);
-    setSelectedChatgptIds(prev =>
-      prev.length === allIds.length ? [] : allIds
-    );
+  const handleToggleSelectAll = useCallback((checked) => {
+    const ids = accounts.map((acc) => String(acc.id || ""));
+    setSelectedChatgptIds((prev) => {
+      const s = new Set(prev);
+      if (checked) ids.forEach((id) => s.add(id));
+      else ids.forEach((id) => s.delete(id));
+      return Array.from(s);
+    });
   }, [accounts, setSelectedChatgptIds]);
 
-  const handlePageChange = useCallback((p) => {
-    void requestChatgptAdminPage({ page: p });
-  }, [requestChatgptAdminPage]);
+  const handleToggleExpand = useCallback((id) => {
+    setExpandedChatgptAccountId((prev) =>
+      String(prev || "") === String(id || "") ? "" : id,
+    );
+  }, [setExpandedChatgptAccountId]);
 
-  const handleRefresh = useCallback(() => {
-    void loadAdminChatgptAccounts({ force: true });
-  }, [loadAdminChatgptAccounts]);
+  const handleToggleSelect = useCallback((id, checked) => {
+    const key = String(id || "");
+    setSelectedChatgptIds((prev) => {
+      if (checked) return prev.includes(key) ? prev : [...prev, key];
+      return prev.filter((v) => v !== key);
+    });
+  }, [setSelectedChatgptIds]);
 
-  // ── Stats tones ─────────────────────────────────────────────────────────────
-  const statsConfig = [
+  // Stats cards
+  const pkg2StoreWarehouse = storeWarehouse?.package2 || {};
+  const pkg1StoreWarehouse = storeWarehouse?.package1 || {};
+
+  const statCards = [
     {
-      label: "Tổng kho",
-      value: totalAccs,
-      sub: `${chatgptAdminPagination?.totalPages || 1} trang`,
+      label: "Tổng acc",
+      value: summaryTabs.all ?? pagination.total,
+      icon: Database,
+      iconCls: "text-slate-400",
+      accent: "border-slate-700/50 bg-slate-800/50",
+    },
+    {
+      label: "Kho tổng",
+      value: summaryTabs.total,
       icon: Package,
-      filter: null,
-      tone: {
-        border: "border-slate-700/60", bg: "bg-slate-900/60",
-        activeBorder: "border-indigo-500/60", activeBg: "bg-indigo-500/10",
-        activeLine: "bg-indigo-500",
-        label: "text-slate-400", value: "text-white",
-        sub: "text-slate-500", iconBg: "bg-slate-800", iconColor: "text-slate-300",
-      },
+      iconCls: "text-blue-400",
+      accent: "border-blue-700/30 bg-blue-900/15",
     },
     {
-      label: "Gói 1", value: package1Count,
-      sub: "Chia sẻ",
-      icon: Users,
-      tone: {
-        border: "border-blue-700/40", bg: "bg-blue-900/10",
-        activeBorder: "border-blue-500/60", activeBg: "bg-blue-500/15",
-        activeLine: "bg-blue-400",
-        label: "text-blue-400/80", value: "text-blue-100",
-        sub: "text-blue-400/60", iconBg: "bg-blue-900/40", iconColor: "text-blue-300",
-      },
+      label: "Kho market",
+      value: summaryTabs.market,
+      icon: ShoppingCart,
+      iconCls: "text-emerald-400",
+      accent: "border-emerald-700/30 bg-emerald-900/15",
     },
     {
-      label: "Gói 2", value: package2Count,
-      sub: "Riêng tư",
+      label: "Dưới 25 ngày",
+      value: summaryTabs.short,
+      icon: AlertTriangle,
+      iconCls: "text-amber-400",
+      accent: "border-amber-700/30 bg-amber-900/15",
+    },
+    {
+      label: "Mail die",
+      value: mailCheckTabs.died,
+      icon: Mail,
+      iconCls: "text-red-400",
+      accent: "border-red-700/30 bg-red-900/10",
+    },
+    {
+      label: "Gói 2 sẵn bán",
+      value: pkg2StoreWarehouse.availableNow,
+      sub: `Tổng: ${pkg2StoreWarehouse.existingAccounts ?? "--"} · Có thể chuyển: ${pkg2StoreWarehouse.convertibleAccounts ?? "--"}`,
       icon: Shield,
-      tone: {
-        border: "border-fuchsia-700/40", bg: "bg-fuchsia-900/10",
-        activeBorder: "border-fuchsia-500/60", activeBg: "bg-fuchsia-500/15",
-        activeLine: "bg-fuchsia-400",
-        label: "text-fuchsia-400/80", value: "text-fuchsia-100",
-        sub: "text-fuchsia-400/60", iconBg: "bg-fuchsia-900/40", iconColor: "text-fuchsia-300",
-      },
-    },
-    {
-      label: "Kho Market", value: marketCount,
-      sub: "Datammo / Shopmini",
-      icon: ShoppingBag,
-      tone: {
-        border: "border-emerald-700/40", bg: "bg-emerald-900/10",
-        activeBorder: "border-emerald-500/60", activeBg: "bg-emerald-500/15",
-        activeLine: "bg-emerald-400",
-        label: "text-emerald-400/80", value: "text-emerald-100",
-        sub: "text-emerald-400/60", iconBg: "bg-emerald-900/40", iconColor: "text-emerald-300",
-      },
-    },
-    {
-      label: "Mail Die", value: mailDieCount,
-      sub: mailDieCount > 0 ? "⚠ Cần xử lý" : "Tất cả OK",
-      icon: mailDieCount > 0 ? Flame : CheckCircle,
-      tone: {
-        border: mailDieCount > 0 ? "border-red-700/50" : "border-slate-700/40",
-        bg: mailDieCount > 0 ? "bg-red-950/15" : "bg-slate-900/40",
-        activeBorder: "border-red-500/60", activeBg: "bg-red-500/15",
-        activeLine: "bg-red-400",
-        label: mailDieCount > 0 ? "text-red-400/80" : "text-slate-400",
-        value: mailDieCount > 0 ? "text-red-300" : "text-slate-400",
-        sub: mailDieCount > 0 ? "text-red-400/60 animate-pulse" : "text-slate-600",
-        iconBg: mailDieCount > 0 ? "bg-red-900/40" : "bg-slate-800",
-        iconColor: mailDieCount > 0 ? "text-red-300" : "text-slate-500",
-      },
-    },
-    {
-      label: "Sắp hết hạn", value: expiringSoonCount,
-      sub: "≤ 7 ngày",
-      icon: Clock,
-      tone: {
-        border: expiringSoonCount > 0 ? "border-amber-700/40" : "border-slate-700/40",
-        bg: expiringSoonCount > 0 ? "bg-amber-950/10" : "bg-slate-900/40",
-        activeBorder: "border-amber-500/60", activeBg: "bg-amber-500/10",
-        activeLine: "bg-amber-400",
-        label: expiringSoonCount > 0 ? "text-amber-400/80" : "text-slate-400",
-        value: expiringSoonCount > 0 ? "text-amber-200" : "text-slate-500",
-        sub: "text-amber-400/60",
-        iconBg: expiringSoonCount > 0 ? "bg-amber-900/30" : "bg-slate-800",
-        iconColor: expiringSoonCount > 0 ? "text-amber-300" : "text-slate-500",
-      },
+      iconCls: "text-violet-400",
+      accent: "border-violet-700/30 bg-violet-900/15",
     },
   ];
 
+  // SubTab definitions
+  const mainTabs = [
+    { key: "all", label: "Tất cả", count: summaryTabs.all },
+    { key: "total", label: "Kho tổng", count: summaryTabs.total },
+    { key: "market", label: "Kho market", count: summaryTabs.market },
+  ];
+
+  // Market shelf sub-tabs (only visible in "market" tab)
+  const marketShelfTabs2 = [
+    { key: "all", label: "Tất cả", count: marketShelfTabs.all },
+    { key: "sold", label: "Đã bán", count: marketShelfTabs.sold },
+    { key: "soldDatammo", label: "Datammo", count: marketShelfTabs.soldDatammo },
+    { key: "soldShopmini", label: "Shopmini", count: marketShelfTabs.soldShopmini },
+  ];
+
+  // Total type sub-tabs (visible in "total" tab)
+  const totalTypeTabs2 = [
+    { key: "all", label: "Tất cả", count: totalTypeTabs.all },
+    { key: "package1", label: "Gói 1", count: totalTypeTabs.package1 },
+    { key: "package2", label: "Gói 2", count: totalTypeTabs.package2 },
+    { key: "unassigned", label: "Chưa chọn", count: totalTypeTabs.unassigned },
+  ];
+
+  // Mail check filter
+  const mailFilters = [
+    { key: "all", label: "Tất cả mail", count: mailCheckTabs.all },
+    { key: "died", label: "Mail die", count: mailCheckTabs.died },
+    { key: "checked", label: "Đã check", count: mailCheckTabs.checked },
+    { key: "unchecked", label: "Chưa check", count: mailCheckTabs.unchecked },
+  ];
+
+  // Pagination
+  const buildVisiblePages = () => {
+    const total = Math.max(1, Number(pagination.totalPages || 1));
+    const cur = Math.max(1, Math.min(total, Number(pagination.page || 1)));
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    const s = new Set([1, total, cur - 1, cur, cur + 1]);
+    if (cur <= 3) [2, 3, 4].forEach((p) => s.add(p));
+    if (cur >= total - 2) [total - 1, total - 2, total - 3].forEach((p) => s.add(p));
+    const sorted = Array.from(s).filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
+    const items = [];
+    let prev = 0;
+    sorted.forEach((p) => {
+      if (prev > 0 && p - prev > 1) items.push(`ellipsis-${prev}-${p}`);
+      items.push(p);
+      prev = p;
+    });
+    return items;
+  };
+  const visiblePages = buildVisiblePages();
+  const pageStart = pagination.total > 0 ? (pagination.page - 1) * pagination.limit + 1 : 0;
+  const pageEnd = pagination.total > 0 ? Math.min(pagination.total, pageStart + accounts.length - 1) : 0;
+
   return (
     <div className="space-y-4">
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      {/* ── Header ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-[11px] font-black uppercase tracking-[0.28em] text-indigo-400/80">
-            Quản lý
-          </div>
-          <h2 className="mt-0.5 text-xl font-black text-white flex items-center gap-2">
-            <span className="text-2xl">🤖</span> ChatGPT Dashboard
-          </h2>
+          <h2 className="text-xl font-black text-white">Kho ChatGPT</h2>
+          <p className="text-[12px] text-slate-400">Quản lý tài khoản ChatGPT – Gói 1, Gói 2, Kho market</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            type="button"
+            onClick={() => loadAdminChatgptAccounts({ silent: false, force: true })}
+            disabled={chatgptAdminPageLoading}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-[11px] font-semibold text-slate-200 transition hover:bg-slate-700 disabled:opacity-60"
+            title="Tải lại"
+          >
+            <RotateCw size={13} className={chatgptAdminPageLoading ? "animate-spin" : ""} />
+            Tải lại
+          </button>
+          <button
             onClick={() => setShowImportGPTModal(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-2 text-[12px] font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-violet-700 px-3 py-2 text-[11px] font-bold text-white transition hover:bg-violet-600 shadow-sm"
           >
             <Upload size={13} /> Import
           </button>
           <button
-            type="button"
             onClick={openAddModal}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-500/50 bg-indigo-600/80 px-3 py-2 text-[12px] font-bold text-white shadow-sm shadow-indigo-500/20 transition hover:bg-indigo-500"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3 py-2 text-[11px] font-bold text-white transition hover:bg-emerald-600 shadow-sm"
           >
             <Plus size={13} /> Thêm acc
           </button>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={chatgptAdminPageLoading}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-2 text-[12px] font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:opacity-60"
-          >
-            <RefreshCw size={13} className={chatgptAdminPageLoading ? "animate-spin" : ""} />
-            {chatgptAdminPageLoading ? "Đang tải..." : "Tải lại"}
-          </button>
         </div>
       </div>
 
-      {/* ── Stats Grid ─────────────────────────────────────────────────────── */}
-      <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-        {statsConfig.map((stat) => (
-          <StatCard key={stat.label} {...stat} />
+      {/* ── Stats grid ── */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        {statCards.map((card) => (
+          <StatCard key={card.label} {...card} />
         ))}
       </div>
 
-      {/* ── Filter Bar ─────────────────────────────────────────────────────── */}
-      <FilterBar
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        onApply={applyCurrentChatgptDraftFilters}
-        onReset={resetChatgptAdminFilters}
-        gptSubTab={gptSubTab} setGptSubTab={setGptSubTab}
-        chatgptTotalTypeTab={chatgptTotalTypeTab} setChatgptTotalTypeTab={setChatgptTotalTypeTab}
-        package2ShelfTab={package2ShelfTab} setPackage2ShelfTab={setPackage2ShelfTab}
-        chatgptMailCheckFilter={chatgptMailCheckFilter} setChatgptMailCheckFilter={setChatgptMailCheckFilter}
-        chatgptCustomerFilter={chatgptCustomerFilter} setChatgptCustomerFilter={setChatgptCustomerFilter}
-        chatgptExpiryFilter={chatgptExpiryFilter} setChatgptExpiryFilter={setChatgptExpiryFilter}
-        chatgptExpiryMin={chatgptExpiryMin} setChatgptExpiryMin={setChatgptExpiryMin}
-        chatgptExpiryMax={chatgptExpiryMax} setChatgptExpiryMax={setChatgptExpiryMax}
-        chatgptCreatedFrom={chatgptCreatedFrom} setChatgptCreatedFrom={setChatgptCreatedFrom}
-        chatgptCreatedTo={chatgptCreatedTo} setChatgptCreatedTo={setChatgptCreatedTo}
-        soldPackage2ProviderFilter={soldPackage2ProviderFilter} setSoldPackage2ProviderFilter={setSoldPackage2ProviderFilter}
-        chatgptAppliedFilters={chatgptAppliedFilters}
-        loading={chatgptAdminPageLoading}
-      />
-
-      {/* ── Account List ────────────────────────────────────────────────────── */}
-      {chatgptAdminPageLoading && accounts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 py-20">
-          <Loader2 size={28} className="animate-spin text-indigo-400" />
-          <span className="text-sm text-slate-400">Đang tải danh sách acc...</span>
+      {/* ── Search bar ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Tìm tài khoản, khách, đơn hàng..."
+            className="w-full rounded-xl border border-slate-700 bg-slate-800/90 py-2 pl-8 pr-8 text-sm text-white placeholder-slate-500 outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-600 transition"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+            >
+              <X size={13} />
+            </button>
+          )}
         </div>
-      ) : accounts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 py-20">
-          <Package size={28} className="text-slate-600" />
-          <span className="text-sm text-slate-500">Không tìm thấy acc nào</span>
-          <button
-            type="button"
-            onClick={resetChatgptAdminFilters}
-            className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-400 transition hover:border-slate-500 hover:text-white"
-          >
-            Bỏ bộ lọc
-          </button>
-        </div>
-      ) : (
-        <div className={`grid gap-3 transition-opacity duration-200 ${chatgptAdminPageLoading ? "opacity-60" : "opacity-100"}`}>
-          {accounts.map((acc) => {
-            const visibleUserEntries = getVisibleAccountUserEntries
-              ? getVisibleAccountUserEntries(acc)
-              : (Array.isArray(acc.users) ? acc.users : []).reduce((arr, user, idx) => {
-                  const name = getUserName(user);
-                  if (name) arr.push({ user, index: idx, name });
-                  return arr;
-                }, []);
+        <button
+          onClick={() => setShowFilters((v) => !v)}
+          className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-semibold transition ${
+            showFilters ? "border-slate-500 bg-slate-700 text-white" : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
+          }`}
+        >
+          <Filter size={12} /> Lọc nâng cao
+        </button>
+      </div>
 
-            const activeTraces = getActiveStoreReservationTraces
-              ? getActiveStoreReservationTraces(acc)
-              : [];
-            const reservationCount = getActiveStoreReservationCount
-              ? getActiveStoreReservationCount(acc)
-              : activeTraces.length;
-            const warrantyHoldInfo = getStoreWarrantyHoldInfo
-              ? getStoreWarrantyHoldInfo(acc)
-              : null;
+      {/* ── Advanced filters ── */}
+      {showFilters && (
+        <div className="rounded-2xl border border-slate-700/60 bg-slate-800/50 p-3.5 space-y-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+            {/* Mail filter */}
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-500">Mail check</label>
+              <select
+                value={chatgptMailCheckFilter}
+                onChange={(e) => setChatgptMailCheckFilter(e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white outline-none"
+              >
+                <option value="all">Tất cả</option>
+                <option value="died">Mail die</option>
+                <option value="checked">Đã check</option>
+                <option value="unchecked">Chưa check</option>
+              </select>
+            </div>
 
-            return (
-              <AccountCard
-                key={acc.id}
-                acc={acc}
-                selected={selectedChatgptIds.includes(acc.id)}
-                expanded={expandedChatgptAccountId === acc.id}
-                onSelect={handleToggleSelect}
-                onToggleExpand={handleToggleExpand}
-                onEdit={openEditModal}
-                onDelete={handleDeleteAccount}
-                onCopy={handleCopy}
-                onAddUser={openAddUserModal}
-                onEditUser={openEditUserModal}
-                onDeleteUser={handleDeleteUser}
-                onMoveUser={openMoveUserModal}
-                onExtendUser={handleExtendUser}
-                onRunMailCheck={handleRunOneChatgptMailCheck}
-                onFocusHighlight={focusChatgptAccountById}
-                visibleUserEntries={visibleUserEntries}
-                activeStoreReservationCount={reservationCount}
-                activeStoreReservationTraces={activeTraces}
-                storeWarrantyHoldInfo={warrantyHoldInfo}
-                loadingMailCheck={loadingStates?.runChatgptMailCheckOne}
-                marketplaceTrackedAccountIds={marketplaceTrackedAccountIds}
-                getStoreOrderIdentityForAccountUser={getStoreOrderIdentityForAccountUser}
-                buildChatgpt2faLiveUrl={buildChatgpt2faLiveUrl}
-                buildChatgptCopyText={buildChatgptCopyText}
-                getChatgptCopyButtonText={getChatgptCopyButtonText}
-                getChatgptCopySuccessText={getChatgptCopySuccessText}
-              />
-            );
-          })}
+            {/* Customer filter */}
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-500">Khách hàng</label>
+              <select
+                value={chatgptCustomerFilter}
+                onChange={(e) => setChatgptCustomerFilter(e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white outline-none"
+              >
+                <option value="all">Tất cả</option>
+                <option value="with">Có khách</option>
+                <option value="without">Không khách</option>
+              </select>
+            </div>
+
+            {/* Expiry filter */}
+            <div>
+              <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-500">Hạn sử dụng</label>
+              <select
+                value={chatgptExpiryFilter}
+                onChange={(e) => setChatgptExpiryFilter(e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white outline-none"
+              >
+                <option value="all">Tất cả</option>
+                <option value="expired">Đã hết hạn</option>
+                <option value="under_15">Dưới 15 ngày</option>
+                <option value="15_20">15–20 ngày</option>
+                <option value="20_25">20–25 ngày</option>
+                <option value="25_31">25–31 ngày</option>
+                <option value="no_expiry">Không có hạn</option>
+              </select>
+            </div>
+
+            {/* Market provider filter (only market tab) */}
+            {gptSubTab === "market" && (
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-500">Kênh bán</label>
+                <select
+                  value={soldPackage2ProviderFilter}
+                  onChange={(e) => setSoldPackage2ProviderFilter(e.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] text-white outline-none"
+                >
+                  <option value="all">Tất cả kênh</option>
+                  <option value="datammo">Datammo</option>
+                  <option value="shopmini">Shopmini</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Expiry range */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-semibold text-slate-500">Khoảng hạn (ngày):</span>
+            <input
+              type="number"
+              value={chatgptExpiryMin}
+              onChange={(e) => setChatgptExpiryMin(e.target.value)}
+              placeholder="Từ"
+              className="w-20 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-[11px] text-white outline-none"
+            />
+            <span className="text-slate-500">–</span>
+            <input
+              type="number"
+              value={chatgptExpiryMax}
+              onChange={(e) => setChatgptExpiryMax(e.target.value)}
+              placeholder="Đến"
+              className="w-20 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-[11px] text-white outline-none"
+            />
+          </div>
+
+          {/* Date range */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-semibold text-slate-500">Ngày tạo:</span>
+            <input
+              type="date"
+              value={chatgptCreatedFrom}
+              onChange={(e) => setChatgptCreatedFrom(e.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-[11px] text-white outline-none"
+            />
+            <span className="text-slate-500">–</span>
+            <input
+              type="date"
+              value={chatgptCreatedTo}
+              onChange={(e) => setChatgptCreatedTo(e.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-[11px] text-white outline-none"
+            />
+          </div>
+
+          {/* Apply / reset */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={applyCurrentChatgptDraftFilters}
+              disabled={chatgptAdminPageLoading}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-700 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-cyan-600 disabled:opacity-60"
+            >
+              <Check size={12} /> Áp dụng
+            </button>
+            <button
+              onClick={resetChatgptAdminFilters}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-slate-300 transition hover:bg-slate-700"
+            >
+              <X size={12} /> Reset
+            </button>
+          </div>
         </div>
       )}
 
-      {/* ── Pagination ──────────────────────────────────────────────────────── */}
-      <Pagination
-        pagination={chatgptAdminPagination}
-        onPageChange={handlePageChange}
-        loading={chatgptAdminPageLoading}
-      />
+      {/* ── Main tab bar (all / kho tổng / kho market) ── */}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-700/50 pb-2">
+        {mainTabs.map((tab) => (
+          <PillTab
+            key={tab.key}
+            active={gptSubTab === tab.key}
+            onClick={() => {
+              setGptSubTab(tab.key);
+              void requestChatgptAdminPage({ page: 1, subTab: tab.key });
+            }}
+            count={tab.count}
+            color={tab.key === "market" ? "bg-emerald-600" : tab.key === "total" ? "bg-blue-600" : "bg-slate-600"}
+          >
+            {tab.key === "market" && <ShoppingCart size={11} />}
+            {tab.key === "total" && <Package size={11} />}
+            {tab.label}
+          </PillTab>
+        ))}
+      </div>
 
-      {/* ── Bulk Actions ────────────────────────────────────────────────────── */}
-      <BulkActionBar
-        count={selectedChatgptIds.length}
-        onClearSelection={() => setSelectedChatgptIds([])}
-        onSelectAll={handleSelectAll}
-        onBulkDelete={handleBulkDeleteChatgpt}
-        onBulkChangeWarehouse={handleBulkWarehouseChange}
-        totalOnPage={accounts.length}
-      />
+      {/* ── Sub-tab bar (market shelf tabs when in market tab) ── */}
+      {gptSubTab === "market" && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-semibold text-slate-500">Trạng thái:</span>
+          {marketShelfTabs2.map((tab) => (
+            <PillTab
+              key={tab.key}
+              active={package2ShelfTab === tab.key}
+              onClick={() => {
+                setPackage2ShelfTab(tab.key);
+                void requestChatgptAdminPage({ page: 1, package2ShelfTab: tab.key });
+              }}
+              count={tab.count}
+              color={tab.key === "sold" || tab.key.startsWith("sold") ? "bg-amber-600" : "bg-slate-600"}
+            >
+              {tab.label}
+            </PillTab>
+          ))}
+        </div>
+      )}
+
+      {/* ── Sub-tab bar (type tabs when in kho tổng) ── */}
+      {gptSubTab === "total" && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-semibold text-slate-500">Loại gói:</span>
+          {totalTypeTabs2.map((tab) => (
+            <PillTab
+              key={tab.key}
+              active={chatgptTotalTypeTab === tab.key}
+              onClick={() => {
+                setChatgptTotalTypeTab(tab.key);
+                void requestChatgptAdminPage({ page: 1, totalType: tab.key });
+              }}
+              count={tab.count}
+              color={tab.key === "package1" ? "bg-blue-600" : tab.key === "package2" ? "bg-violet-600" : "bg-slate-600"}
+            >
+              {tab.label}
+            </PillTab>
+          ))}
+        </div>
+      )}
+
+      {/* ── Mail filter pill bar ── */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-semibold text-slate-500">Mail:</span>
+        {mailFilters.map((f) => (
+          <PillTab
+            key={f.key}
+            active={chatgptMailCheckFilter === f.key}
+            onClick={() => {
+              setChatgptMailCheckFilter(f.key);
+              void requestChatgptAdminPage({ page: 1, mailCheckFilter: f.key });
+            }}
+            count={f.count}
+            color={f.key === "died" ? "bg-red-600" : f.key === "checked" ? "bg-emerald-600" : "bg-slate-600"}
+          >
+            {f.label}
+          </PillTab>
+        ))}
+      </div>
+
+      {/* ── Pagination & bulk controls ── */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-700/50 bg-slate-800/40 px-3 py-2">
+        {/* Info */}
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+          <span className="rounded-full border border-slate-700 bg-slate-900/70 px-2 py-0.5">
+            {pagination.total} acc
+          </span>
+          {pagination.total > 0 && (
+            <span className="rounded-full border border-slate-700 bg-slate-900/70 px-2 py-0.5">
+              {pageStart}–{pageEnd} / {pagination.total}
+            </span>
+          )}
+          <span className="rounded-full border border-slate-700 bg-slate-900/70 px-2 py-0.5">
+            Trang {pagination.page}/{pagination.totalPages}
+          </span>
+          {chatgptAdminPageLoading && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-2 py-0.5 text-cyan-200">
+              <Loader2 size={11} className="animate-spin" /> Đang tải
+            </span>
+          )}
+        </div>
+
+        {/* Page size + nav */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Page sizes */}
+          <div className="flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/70 px-2 py-0.5">
+            <span className="text-[10px] text-slate-500 mr-1">Trang:</span>
+            {[5, 10, 20, 30, 50].map((n) => (
+              <button
+                key={n}
+                onClick={() => requestChatgptAdminPage({ page: 1, limit: n })}
+                disabled={pagination.limit === n && chatgptAdminPageLoading}
+                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
+                  pagination.limit === n
+                    ? "bg-cyan-500/20 text-cyan-100 ring-1 ring-cyan-400/30"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+
+          {/* Prev */}
+          <button
+            onClick={() => requestChatgptAdminPage({ page: Math.max(1, pagination.page - 1) })}
+            disabled={pagination.page <= 1 || chatgptAdminPageLoading}
+            className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white disabled:opacity-50"
+          >
+            « Trước
+          </button>
+
+          {/* Page numbers */}
+          <div className="flex items-center gap-1">
+            {visiblePages.map((p) =>
+              typeof p === "string" ? (
+                <span key={p} className="px-1 text-[11px] text-slate-600">…</span>
+              ) : (
+                <button
+                  key={p}
+                  onClick={() => requestChatgptAdminPage({ page: p })}
+                  disabled={p === pagination.page || chatgptAdminPageLoading}
+                  className={`min-w-[30px] rounded-full border px-2 py-0.5 text-[11px] font-bold transition ${
+                    p === pagination.page
+                      ? "cursor-default border-violet-400/60 bg-violet-500/20 text-violet-200"
+                      : "border-slate-700 bg-slate-900/70 text-slate-300 hover:border-slate-500 hover:text-white"
+                  }`}
+                >
+                  {p}
+                </button>
+              ),
+            )}
+          </div>
+
+          {/* Next */}
+          <button
+            onClick={() => requestChatgptAdminPage({ page: Math.min(pagination.totalPages, pagination.page + 1) })}
+            disabled={pagination.page >= pagination.totalPages || chatgptAdminPageLoading}
+            className="rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-[11px] font-semibold text-sky-200 transition hover:border-sky-400 hover:bg-sky-500/15 disabled:opacity-50"
+          >
+            Sau »
+          </button>
+        </div>
+      </div>
+
+      {/* ── Select all + bulk actions ── */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={allFilteredSelected}
+            onChange={(e) => handleToggleSelectAll(e.target.checked)}
+            className="h-4 w-4 cursor-pointer accent-emerald-500"
+            title="Chọn tất cả"
+          />
+          <span className="text-[11px] text-slate-400">
+            Đã chọn <strong className="text-white">{selectedChatgptIds.length}</strong> acc
+          </span>
+          {selectedChatgptIds.length > 0 && (
+            <button
+              onClick={() => setSelectedChatgptIds([])}
+              className="text-[10px] text-slate-500 hover:text-slate-300 underline"
+            >
+              Bỏ chọn
+            </button>
+          )}
+        </div>
+
+        {selectedChatgptIds.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => void handleBulkWarehouseChange("cheap")}
+              disabled={!!loadingStates.bulkWarehouseMove}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-800/70 px-3 py-1.5 text-[11px] font-bold text-emerald-200 transition hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {loadingStates.bulkWarehouseMove ? <Loader2 size={12} className="animate-spin" /> : <Layers size={12} />}
+              → Kho market
+            </button>
+            <button
+              onClick={() => void handleBulkWarehouseChange("none")}
+              disabled={!!loadingStates.bulkWarehouseMove}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-800/70 px-3 py-1.5 text-[11px] font-bold text-blue-200 transition hover:bg-blue-700 disabled:opacity-60"
+            >
+              {loadingStates.bulkWarehouseMove ? <Loader2 size={12} className="animate-spin" /> : <Package size={12} />}
+              → Kho tổng
+            </button>
+            <button
+              onClick={handleBulkDeleteChatgpt}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-red-800/60 px-3 py-1.5 text-[11px] font-bold text-red-300 transition hover:bg-red-700/70"
+            >
+              <Trash2 size={12} /> Xóa đã chọn
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Account list ── */}
+      <div className="space-y-2">
+        {chatgptAdminPageLoading && accounts.length === 0 && (
+          <div className="flex items-center justify-center gap-2 py-12 text-slate-400">
+            <Loader2 size={20} className="animate-spin" />
+            <span>Đang tải...</span>
+          </div>
+        )}
+        {!chatgptAdminPageLoading && accounts.length === 0 && (
+          <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 py-12 text-center">
+            <p className="text-slate-500">Không có tài khoản nào khớp bộ lọc hiện tại.</p>
+          </div>
+        )}
+        {accounts.map((acc) => (
+          <AccountCard
+            key={acc.id}
+            acc={acc}
+            isExpanded={String(expandedChatgptAccountId || "") === String(acc.id || "")}
+            isSelected={selectedIdSet.has(String(acc.id || ""))}
+            isHighlighted={String(highlightedChatgptAccountId || "") === String(acc.id || "")}
+            isMarket={gptSubTab === "market"}
+            isMarketTracked={marketplaceTrackedAccountIds.has(String(acc.id || ""))}
+            loadingStates={loadingStates}
+            onToggleSelect={handleToggleSelect}
+            onToggleExpand={handleToggleExpand}
+            onEdit={openEditModal}
+            onDelete={handleDeleteAccount}
+            onAddUser={(accId) => openAddUserModal(accId)}
+            onEditUser={(accId, idx, user) => openEditUserModal(accId, idx, user)}
+            onDeleteUser={(accId, idx, name) => handleDeleteUser(accId, idx, name)}
+            onMoveUser={(accId, idx, user) => openMoveUserModal(accId, idx, user)}
+            onExtendUser={(accId, idx, user) => handleExtendUser(accId, idx, user)}
+            onMailCheck={handleRunOneChatgptMailCheck}
+            onCopy={handleCopy}
+            onTypeChange={onTypeChange}
+            onShelfChange={onShelfChange}
+            getVisibleAccountUserEntries={getVisibleAccountUserEntries}
+            getActiveStoreReservationTraces={getActiveStoreReservationTraces}
+            getActiveStoreReservationCount={getActiveStoreReservationCount}
+            getStoreWarrantyHoldInfo={getStoreWarrantyHoldInfo}
+            getStoreOrderIdentityForAccountUser={getStoreOrderIdentityForAccountUser}
+            buildChatgpt2faLiveUrl={buildChatgpt2faLiveUrl}
+            buildChatgptCopyText={buildChatgptCopyText}
+            getChatgptCopyButtonText={getChatgptCopyButtonText}
+            getChatgptCopySuccessText={getChatgptCopySuccessText}
+          />
+        ))}
+      </div>
     </div>
   );
 }
