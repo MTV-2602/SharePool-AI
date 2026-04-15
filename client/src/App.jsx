@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import HotmailInboxModal from "./HotmailInboxModal";
 import { startTransition } from "react";
@@ -13841,142 +13841,202 @@ function App() {
                                 );
                               };
                               return (
-                                <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
-                                  {/* Admin trace summary */}
+                                <div className="space-y-2">
+                                  {/* Admin trace: compact pill bar */}
                                   {showAdminTraceSummary && (
-                                    <div className="mb-2 rounded-xl border border-fuchsia-700/40 bg-fuchsia-950/15 px-3 py-3 text-fuchsia-100">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <span className="inline-flex items-center rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-fuchsia-200">Trace gắn với nick</span>
-                                        {Number(storeTraceSummary?.totalOrders || 0) > 0 && <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase text-cyan-200">Web {storeTraceSummary.totalOrders}</span>}
-                                        {Number(marketplaceTraceSummary?.orderCount || 0) > 0 && <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold uppercase text-emerald-200">San {marketplaceTraceSummary.orderCount}</span>}
-                                        {Number(marketplaceTraceSummary?.warrantyCount || 0) > 0 && <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase text-amber-200">Bao hanh {marketplaceTraceSummary.warrantyCount}</span>}
-                                      </div>
-                                      <div className="mt-2 space-y-1 text-[11px] text-slate-200">
-                                        {(() => { const t = Array.isArray(storeTraceSummary?.traces) && storeTraceSummary.traces[0]; return t ? <div><span className="text-slate-400">Đơn web mới nhất: </span><span className="font-semibold text-white">{t.orderId}</span>{t.customerName || t.customerEmail ? <span className="text-fuchsia-200"> · {t.customerName || t.customerEmail}</span> : null}</div> : null; })()}
-                                        {Number(marketplaceTraceSummary?.orderCount || 0) > 0 && <div><span className="text-slate-400">Đơn sàn gần nhất: </span><span className="font-semibold text-white">{getMarketplaceProviderLabel(marketplaceTraceSummary?.latestProvider)} {marketplaceTraceSummary?.latestOrderId || "--"}</span></div>}
-                                        {Number(marketplaceTraceSummary?.warrantyCount || 0) > 0 && <div><span className="text-slate-400">Đơn BH gần nhất: </span><span className="font-semibold text-white">{marketplaceTraceSummary?.latestWarrantyOrderId || "--"}</span></div>}
-                                        <div className="text-[10px] text-slate-400">Nếu đã xóa đơn mà khung này còn, nick đang dính trace ở collection khác.</div>
-                                      </div>
+                                    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-fuchsia-700/30 bg-fuchsia-950/10 px-2.5 py-1.5">
+                                      <span className="text-[9px] font-black uppercase tracking-[0.1em] text-fuchsia-400">Trace</span>
+                                      {Number(storeTraceSummary?.totalOrders || 0) > 0 && <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] font-bold text-cyan-200">Web {storeTraceSummary.totalOrders}</span>}
+                                      {Number(marketplaceTraceSummary?.orderCount || 0) > 0 && <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-200">Sàn {marketplaceTraceSummary.orderCount}</span>}
+                                      {Number(marketplaceTraceSummary?.warrantyCount || 0) > 0 && <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-200">BH {marketplaceTraceSummary.warrantyCount}</span>}
+                                      <span className="text-[9px] text-slate-600 ml-1">Nếu xóa đơn rồi mà còn trace → nick dính ở collection khác</span>
                                     </div>
                                   )}
-                                  {displayMarketplaceUser ? (
-                                    showMarketplaceManagementCard ? (
-                                      <div className={`rounded-xl border px-3 py-3 shadow-sm ${marketplaceCardClasses}`}>
-                                        <div className="flex items-start justify-between gap-3">
-                                          <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
-                                              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-slate-950/40"><Shield size={12} /></span>
-                                              <div>
-                                                <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Don san</div>
-                                                <div className="mt-0.5 text-[10px] leading-relaxed text-slate-300">{providerLabel} · {displayMarketplaceName || "Khach san"}</div>
-                                              </div>
+
+                                  {/* ── MAIN BLOCK ── */}
+                                  {displayMarketplaceUser || warrantyCase || isLockedByStoreWarrantyHold ? (
+                                    /* === UNIFIED CUSTOMER CARD === 
+                                       - Regular customer (gói 2): slate border
+                                       - Marketplace sold: indigo border
+                                       - Warranty (current): cyan border
+                                       - Warranty (history): amber border
+                                       - Store warranty hold: amber/warm border */
+                                    <div className={`rounded-xl border px-3 py-2.5 space-y-2 ${
+                                      warrantyInfo?.role === "current"
+                                        ? "border-cyan-700/40 bg-cyan-950/15"
+                                        : warrantyCase
+                                        ? "border-amber-700/40 bg-amber-950/15"
+                                        : isLockedByStoreWarrantyHold
+                                        ? "border-amber-600/30 bg-amber-900/10"
+                                        : showMarketplaceManagementCard
+                                        ? "border-indigo-700/40 bg-indigo-950/15"
+                                        : "border-slate-700/40 bg-slate-900/40"
+                                    }`}>
+                                      {/* Row 1: icon + name + badges + actions */}
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-start gap-2 min-w-0">
+                                          {/* Icon */}
+                                          <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${
+                                            warrantyCase ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                                            : isLockedByStoreWarrantyHold ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                                            : showMarketplaceManagementCard ? "border-indigo-500/40 bg-indigo-500/10 text-indigo-300"
+                                            : "border-slate-700 bg-slate-800 text-slate-300"
+                                          }`}>
+                                            {warrantyCase || isLockedByStoreWarrantyHold ? <Shield size={12} /> : <User size={12} />}
+                                          </span>
+                                          <div className="min-w-0 flex-1">
+                                            {/* Name + badges */}
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                              <span className="font-bold text-white text-[13px] break-all">{displayMarketplacePrimaryLabel || displayMarketplaceName || "Khách"}</span>
+                                              {/* Provider badge */}
+                                              {managedProvider && managedProvider !== "unknown" && (
+                                                <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-indigo-200">{providerLabel}</span>
+                                              )}
+                                              {/* Warranty badge */}
+                                              {warrantyCase && (
+                                                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.06em] ${
+                                                  warrantyInfo?.role === "current" ? "border-cyan-500/40 bg-cyan-500/15 text-cyan-200"
+                                                  : "border-amber-500/40 bg-amber-500/15 text-amber-200"
+                                                }`}>
+                                                  🛡 BH #{warrantyRounds.length} · {warrantyRoleLabel}
+                                                </span>
+                                              )}
+                                              {/* Store warranty hold badge */}
+                                              {isLockedByStoreWarrantyHold && !warrantyCase && (
+                                                <span className="rounded-full border border-amber-600/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-200">Giữ BH web</span>
+                                              )}
+                                              {/* Sold badge (no warranty) */}
+                                              {showMarketplaceManagementCard && !warrantyCase && !isLockedByStoreWarrantyHold && (
+                                                <span className="rounded-full border border-slate-600/60 bg-slate-800 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-300">Đã bán</span>
+                                              )}
+                                            </div>
+                                            {/* Row 2: order + dates */}
+                                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[10px]">
+                                              {datammoOrderId && <span className="font-mono text-slate-400">{datammoOrderId}</span>}
+                                              {displayMarketplaceJoinedDate && displayMarketplaceJoinedDate !== "--" && <span className="text-slate-500">Vào {displayMarketplaceJoinedDate}</span>}
+                                              {displayMarketplaceExpiryDate && (
+                                                <span className={`font-semibold ${isExpiredMarket ? "text-red-400" : isNearExpiryMarket ? "text-amber-400" : "text-emerald-400"}`}>
+                                                  HH {displayMarketplaceExpiryDate}
+                                                  {daysRemainingMarket !== null && (
+                                                    <span className="ml-1 font-normal opacity-80">
+                                                      ({isExpiredMarket ? `quá ${Math.abs(daysRemainingMarket)}d` : `còn ${daysRemainingMarket}d`})
+                                                    </span>
+                                                  )}
+                                                </span>
+                                              )}
+                                              {/* Store warranty hold info inline */}
+                                              {isLockedByStoreWarrantyHold && storeWarrantyHoldInfo && (
+                                                <span className="text-slate-400">{[storeWarrantyHoldInfo?.orderId, storeWarrantyHoldInfo?.statusLabel].filter(Boolean).join(" · ")}</span>
+                                              )}
                                             </div>
                                           </div>
-                                          <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${marketplaceChipClasses}`}>{marketplaceStatusLabel}</span>
                                         </div>
-                                        <div className="mt-3 space-y-1.5 text-[10px]">
-                                          {[["Order", datammoOrderId || "Khong ro"], ["Khach san", displayMarketplaceName || "--"], ["Acc da ban", soldMarketplaceUsername || "--"], ["Acc hien tai", currentMarketplaceUsername || "--"], ["Ngay vao", displayMarketplaceJoinedDate]].map(([label, val]) => (
-                                            <div key={label} className="flex items-center justify-between gap-3"><span className="text-slate-400">{label}</span><span className="font-semibold text-white">{val}</span></div>
-                                          ))}
-                                          {displayMarketplaceExpiryDate && <div className="flex items-center justify-between gap-3"><span className="text-slate-400">Het han</span><span className={`font-semibold ${isExpiredMarket ? "text-red-300" : isNearExpiryMarket ? "text-yellow-300" : "text-emerald-300"}`}>{displayMarketplaceExpiryDate}</span></div>}
-                                          {daysRemainingMarket !== null && <div className="flex items-center justify-between gap-3"><span className="text-slate-400">Tinh trang</span><span className={`font-semibold ${isExpiredMarket ? "text-red-300" : isNearExpiryMarket ? "text-yellow-300" : "text-cyan-200"}`}>{isExpiredMarket ? `Het han ${Math.abs(daysRemainingMarket)} ngay` : `Con ${daysRemainingMarket} ngay`}</span></div>}
-                                        </div>
-                                        <div className="mt-3 flex flex-wrap gap-1.5">
-                                          <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase text-cyan-200">{providerLabel}</span>
-                                          <span className="rounded-full border border-white/10 bg-slate-950/50 px-2 py-1 text-[9px] font-bold uppercase text-white/80">Da ban</span>
-                                          {warrantyCase && <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase text-amber-200">Bao hanh lan {warrantyRounds.length}</span>}
-                                        </div>
-                                        {warrantyCase && (
-                                          <div className="mt-3 rounded-lg border border-white/10 bg-slate-950/30 px-2.5 py-2 text-[10px] text-slate-200">
-                                            <div className="font-semibold text-white">{warrantyRoleLabel}</div>
-                                            {warrantyInfo?.role === "current" ? <div className="mt-1 text-slate-300">Acc nay dang la acc hien tai cua don.</div> : latestWarrantyTarget ? <div className="mt-1 text-slate-300">Hien tai dang thay boi <span className="font-semibold text-white">{latestWarrantyTarget}</span></div> : null}
-                                            {/* Warranty rounds */}
-                                            {warrantyRounds.length > 0 && (
-                                              <div className="mt-2 space-y-1">
-                                                {warrantyRounds.map((round, ri) => {
-                                                  const isTarget = String(round?.toAccountId || "") === String(acc.id || "");
-                                                  const isSource = String(round?.fromAccountId || "") === String(acc.id || "");
-                                                  return (
-                                                    <div key={ri} className={`rounded-md border px-2 py-1.5 text-[10px] ${isTarget ? "border-cyan-400/30 bg-cyan-500/10" : isSource ? "border-amber-400/30 bg-amber-500/10" : "border-slate-700/60 bg-slate-950/40"}`}>
-                                                      <div className="flex items-center justify-between gap-2 mb-0.5">
-                                                        <span className="text-[9px] font-black uppercase text-white/90">Lan {round?.sequence || ri + 1}</span>
-                                                        {isTarget && <span className="text-[9px] font-bold text-cyan-200">Acc nay</span>}
-                                                        {isSource && !isTarget && <span className="text-[9px] font-bold text-amber-200">Da doi ra</span>}
-                                                      </div>
-                                                      <div className="break-all text-slate-200">
-                                                        <span className="text-slate-400">{round?.fromUsername || round?.fromAccountId || "Khong ro"}</span>
-                                                        <span className="mx-1 text-slate-500">→</span>
-                                                        <span className="font-semibold text-white">{round?.toUsername || round?.toAccountId || "Khong ro"}</span>
-                                                      </div>
-                                                    </div>
-                                                  );
-                                                })}
-                                              </div>
-                                            )}
-                                          </div>
-                                        )}
-                                        <div className={`mt-3 grid gap-2 ${canOpenDatammoWarranty && hasActualManagedMarketplaceUser && (isExpiredMarket || isNearExpiryMarket) ? "grid-cols-2" : "grid-cols-1"}`}>
-                                          {canOpenDatammoWarranty && <button type="button" onClick={() => openWarrantyModal(acc)} className="rounded-lg bg-cyan-700 hover:bg-cyan-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors" title={`Bảo hành ${providerLabel}`}>🛡 Bao hanh</button>}
-                                          {hasActualManagedMarketplaceUser && (isExpiredMarket || isNearExpiryMarket) && <button type="button" onClick={() => handleExtendUser(acc.id, primaryUserIndex, u)} className="rounded-lg bg-emerald-700 hover:bg-emerald-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors" title="Gia hạn">Gia han</button>}
-                                          <div className={`rounded-lg border border-slate-700 bg-slate-950/50 px-2.5 py-2 text-center text-[11px] font-bold text-slate-300 ${canOpenDatammoWarranty || (hasActualManagedMarketplaceUser && (isExpiredMarket || isNearExpiryMarket)) ? "col-span-2" : ""}`}>Acc da ban qua san - khong chuyen tay. Neu can doi acc, hay dung Bao hanh.</div>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className={`flex justify-between items-center text-sm font-bold p-1 rounded ${isExpiredMarket ? "bg-red-900/20" : ""}`}>
-                                        <div className={isExpiredMarket ? "text-red-400" : "text-white"}>
-                                          <span className="flex items-center gap-2">
-                                            {isExpiredMarket && <AlertCircle size={14} className="text-red-500" />}
-                                            {isNearExpiryMarket && <AlertTriangle size={14} className="text-yellow-500" />}
-                                            👤 {displayMarketplacePrimaryLabel}
-                                          </span>
-                                          {displayMarketplaceSecondaryLabel && <span className="text-[10px] ml-6 block font-semibold text-cyan-200">{displayMarketplaceSecondaryLabel}</span>}
-                                          <span className={`text-[10px] block ml-6 ${isExpiredMarket ? "text-red-300" : isNearExpiryMarket ? "text-yellow-400" : daysRemainingMarket !== null && daysRemainingMarket > 30 ? "text-purple-400" : "text-slate-400"}`}>
-                                            {displayMarketplaceJoinedDate}
-                                            {daysRemainingMarket !== null && <span className="ml-1">{isExpiredMarket ? `(HH ${Math.abs(daysRemainingMarket)}ngày)` : `(Còn ${daysRemainingMarket}ngày)`}</span>}
-                                          </span>
-                                          {displayMarketplaceExpiryDate && <span className={`text-[10px] block ml-6 font-semibold ${isExpiredMarket ? "text-red-500" : isNearExpiryMarket ? "text-yellow-500" : "text-emerald-500"}`}>🕑 HH: {displayMarketplaceExpiryDate}</span>}
-                                          {renderWarrantySummary("mt-2 ml-6")}
-                                        </div>
-                                        <div className="flex gap-2">
-                                          {hasActualManagedMarketplaceUser && (isExpiredMarket || isNearExpiryMarket) && <button type="button" onClick={() => handleExtendUser(acc.id, primaryUserIndex, u)} className="text-green-400 hover:text-white" title="Gia hạn"><RotateCw size={14} /></button>}
-                                          {!showMarketplaceManagementCard && !isLockedByStoreWarrantyHold ? (
-                                            !isExpiredMarket ? <button type="button" onClick={() => openMoveUserModal(acc.id, primaryUserIndex, displayMarketplaceUser)} className="text-orange-400 hover:text-white" title="Chuyển khách"><ArrowRightLeft size={14} /></button>
-                                            : <span className="text-slate-500 cursor-not-allowed" title="Hết hạn: Không thể chuyển"><ArrowRightLeft size={14} /></span>
-                                          ) : <span className="text-slate-500 cursor-not-allowed" title={isLockedByStoreWarrantyHold ? "Acc đang được giữ cho khách bảo hành" : "Acc đã bán qua sàn không được chuyển tay"}><ArrowRightLeft size={14} /></span>}
-                                          {!showMarketplaceManagementCard && !isLockedByStoreWarrantyHold && (
+                                        {/* Action buttons column */}
+                                        <div className="flex shrink-0 items-center gap-1">
+                                          {canOpenDatammoWarranty && (
+                                            <button type="button" onClick={() => openWarrantyModal(acc)}
+                                              className="inline-flex items-center gap-1 rounded-lg border border-cyan-600/50 bg-cyan-900/30 px-2 py-1 text-[10px] font-bold text-cyan-200 transition hover:bg-cyan-700/40"
+                                              title={`Bảo hành ${providerLabel}`}>
+                                              <Shield size={11} /> BH
+                                            </button>
+                                          )}
+                                          {hasActualManagedMarketplaceUser && (isExpiredMarket || isNearExpiryMarket) && (
+                                            <button type="button" onClick={() => handleExtendUser(acc.id, primaryUserIndex, u)}
+                                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-600/50 bg-emerald-900/30 px-2 py-1 text-[10px] font-bold text-emerald-200 transition hover:bg-emerald-700/40"
+                                              title="Gia hạn">
+                                              <RotateCw size={11} /> Gia hạn
+                                            </button>
+                                          )}
+                                          {/* Edit/delete only for non-market, non-locked regular users */}
+                                          {hasRegularVisibleUser && !isLockedByStoreWarrantyHold && (
                                             <>
-                                              <button type="button" onClick={() => openEditUserModal(acc.id, primaryUserIndex, displayMarketplaceUser)} className="text-blue-400 hover:text-white" title="Sửa khách"><Pencil size={14} /></button>
-                                              <button type="button" onClick={() => handleDeleteUser(acc.id, primaryUserIndex, getUserName(displayMarketplaceUser))} className="text-red-400 hover:text-white" title="Xóa khách"><X size={14} /></button>
+                                              <button type="button" onClick={() => openMoveUserModal(acc.id, primaryUserIndex, displayMarketplaceUser)}
+                                                disabled={isExpiredMarket}
+                                                className="flex h-6 w-6 items-center justify-center rounded-md text-orange-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40" title="Chuyển khách"><ArrowRightLeft size={13} /></button>
+                                              <button type="button" onClick={() => openEditUserModal(acc.id, primaryUserIndex, displayMarketplaceUser)}
+                                                className="flex h-6 w-6 items-center justify-center rounded-md text-blue-400 hover:text-white" title="Sửa khách"><Pencil size={13} /></button>
+                                              <button type="button" onClick={() => handleDeleteUser(acc.id, primaryUserIndex, getUserName(displayMarketplaceUser))}
+                                                className="flex h-6 w-6 items-center justify-center rounded-md text-red-400 hover:text-white" title="Xóa khách"><X size={13} /></button>
                                             </>
                                           )}
                                         </div>
                                       </div>
-                                    )
-                                  ) : (
-                                    <div className="flex flex-col gap-2">
-                                      {renderWarrantySummary()}
-                                      {(() => {
-                                        const warehouseCardClasses = hasActiveStoreReservation ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100" : isOnDatammoShelf ? "border-emerald-700/50 bg-emerald-950/20 text-emerald-100" : "border-slate-700/60 bg-slate-900/80 text-slate-100";
-                                        const warehouseChipClasses = hasActiveStoreReservation ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-200" : isOnDatammoShelf ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200" : "border-slate-600/60 bg-slate-800 text-slate-200";
-                                        const warehouseTitle = hasActiveStoreReservation ? "Don web dang giu cho" : isOnDatammoShelf ? "San datammo / shopmini" : "Kho tong";
-                                        return (
-                                          <div className={`rounded-xl border px-3 py-3 shadow-sm ${warehouseCardClasses}`}>
-                                            <div className="flex items-center justify-between gap-3">
-                                              <div>
-                                                <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white">{package2ShelfLabel}</div>
-                                                <div className="mt-0.5 text-[10px] leading-relaxed text-slate-300">{warehouseTitle}</div>
+
+                                      {/* Acc gốc → Acc hiện tại (only if different) */}
+                                      {showMarketplaceManagementCard && soldMarketplaceUsername && currentMarketplaceUsername && soldMarketplaceUsername !== currentMarketplaceUsername && (
+                                        <div className="rounded-lg bg-slate-950/50 border border-slate-700/30 px-2.5 py-1.5 text-[10px]">
+                                          <div className="flex items-center justify-between gap-3">
+                                            <span className="text-slate-500">Acc gốc</span>
+                                            <span className="font-mono text-slate-300 break-all">{soldMarketplaceUsername}</span>
+                                          </div>
+                                          <div className="flex items-center justify-between gap-3 mt-0.5">
+                                            <span className="text-slate-500">Acc hiện tại</span>
+                                            <span className={`font-mono font-semibold break-all ${warrantyInfo?.role === "current" ? "text-cyan-200" : "text-emerald-200"}`}>{currentMarketplaceUsername}</span>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Warranty timeline — shows only if have warranty rounds */}
+                                      {warrantyCase && warrantyRounds.length > 0 && (
+                                        <div className="space-y-1">
+                                          <div className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-500">Lịch sử thay acc</div>
+                                          {warrantyRounds.map((round, ri) => {
+                                            const isTarget = String(round?.toAccountId || "") === String(acc.id || "");
+                                            const isSource = String(round?.fromAccountId || "") === String(acc.id || "");
+                                            return (
+                                              <div key={ri} className={`flex items-center gap-2 rounded-lg border px-2 py-1 text-[10px] ${
+                                                isTarget ? "border-cyan-500/30 bg-cyan-500/10"
+                                                : isSource ? "border-amber-500/30 bg-amber-500/10"
+                                                : "border-slate-700/40 bg-slate-950/30"
+                                              }`}>
+                                                <span className="shrink-0 rounded bg-slate-900/70 px-1 text-[9px] font-black text-slate-400">#{round?.sequence || ri + 1}</span>
+                                                <span className="text-slate-400 truncate max-w-[80px]">{round?.fromUsername || round?.fromAccountId || "?"}</span>
+                                                <span className="text-slate-600 shrink-0">→</span>
+                                                <span className={`font-semibold truncate flex-1 ${isTarget ? "text-cyan-200" : "text-white"}`}>{round?.toUsername || round?.toAccountId || "?"}</span>
+                                                {isTarget && <span className="shrink-0 text-[9px] font-bold text-cyan-300">← nick này</span>}
+                                                {isSource && !isTarget && <span className="shrink-0 text-[9px] font-bold text-amber-300">đã đổi →</span>}
                                               </div>
-                                              <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${warehouseChipClasses}`}>Trong</span>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+
+                                      {/* Footer notice for marketplace accounts */}
+                                      {showMarketplaceManagementCard && (
+                                        <div className="text-[9px] text-slate-600 italic">Acc đã bán qua sàn · không chuyển tay. Dùng nút BH để đổi acc.</div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    /* === EMPTY / WAREHOUSE STATE === */
+                                    <div className="space-y-2">
+                                      {/* Warranty case but no displayUser (edge case) */}
+                                      {warrantyCase && warrantyRounds.length > 0 && renderWarrantySummary()}
+                                      {/* Warehouse state card */}
+                                      {(() => {
+                                        const wcCls = hasActiveStoreReservation ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
+                                          : isOnDatammoShelf ? "border-emerald-700/50 bg-emerald-950/20 text-emerald-100"
+                                          : "border-slate-700/50 bg-slate-900/60 text-slate-100";
+                                        const wcChip = hasActiveStoreReservation ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-200"
+                                          : isOnDatammoShelf ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
+                                          : "border-slate-600/50 bg-slate-800 text-slate-200";
+                                        const wcTitle = hasActiveStoreReservation ? "Đơn web đang giữ chỗ"
+                                          : isOnDatammoShelf ? "Kho market (Datammo / Shopmini)"
+                                          : "Kho tổng";
+                                        return (
+                                          <div className={`rounded-xl border px-3 py-2.5 ${wcCls}`}>
+                                            <div className="flex items-center justify-between">
+                                              <div>
+                                                <div className="text-[11px] font-black uppercase tracking-[0.1em] text-white">{package2ShelfLabel}</div>
+                                                <div className="text-[10px] text-slate-400">{wcTitle}</div>
+                                              </div>
+                                              <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${wcChip}`}>Trống</span>
                                             </div>
                                             {hasActiveStoreReservation && (
-                                              <div className="mt-3 space-y-1.5">
+                                              <div className="mt-2 space-y-1">
                                                 {activeStoreReservationTraces.map((trace, i) => (
-                                                  <div key={i} className="flex items-center justify-between gap-3 text-[10px]">
-                                                    <span className="font-semibold text-cyan-200">{trace?.customerName || trace?.customerEmail || "Khach don web"}</span>
-                                                    <div className="flex items-center gap-2">
-                                                      {trace?.packageName && <span className="text-slate-400">{trace.packageName}</span>}
-                                                      <span className="rounded-full border border-cyan-600/40 bg-slate-900/70 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">Giu cho</span>
-                                                    </div>
+                                                  <div key={i} className="flex items-center justify-between text-[10px]">
+                                                    <span className="font-semibold text-cyan-200">{trace?.customerName || trace?.customerEmail || "Khách đơn web"}</span>
+                                                    <span className="rounded-full border border-cyan-600/40 bg-slate-900/60 px-2 py-0.5 text-[9px] font-bold text-cyan-200">Giữ chỗ</span>
                                                   </div>
                                                 ))}
                                               </div>
@@ -13984,22 +14044,25 @@ function App() {
                                           </div>
                                         );
                                       })()}
-                                      {hasActiveStoreReservation ? null : isLockedByStoreWarrantyHold ? (
-                                        <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
-                                          <div className="font-bold uppercase tracking-[0.08em] text-amber-200">Giu cho khach bao hanh</div>
-                                          <div className="mt-1 break-all text-slate-200">{storeWarrantyHoldInfo?.customerName || storeWarrantyHoldInfo?.customerEmail || "Khach bao hanh"}</div>
-                                          <div className="mt-1 text-[10px] text-slate-300">{[storeWarrantyHoldInfo?.orderId, storeWarrantyHoldInfo?.statusLabel].filter(Boolean).join(" · ") || "Acc nay dang bi khoa de tranh ban nham"}</div>
-                                        </div>
-                                      ) : isOnDatammoShelf ? (
-                                        <button type="button" onClick={() => openAddUserModal(acc.id, "[Datammo] Khach moi")} className="w-full text-center text-xs px-2 py-1.5 bg-teal-700 hover:bg-teal-600 font-bold rounded text-white transition-colors" title="Gán Khách và tự điền tên Datammo">+ Datammo</button>
-                                      ) : !marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
-                                        <button type="button" onClick={() => openAddUserModal(acc.id)} className="w-full text-center text-xs px-2 py-1.5 bg-blue-700 hover:bg-blue-600 font-bold rounded text-white transition-colors" title="Thêm khách thường">+ Khách</button>
-                                      ) : null}
+                                      {/* Add buttons */}
+                                      {!hasActiveStoreReservation && !marketplaceTrackedAccountIds.has(String(acc?.id || "")) && (
+                                        isOnDatammoShelf ? (
+                                          <button type="button" onClick={() => openAddUserModal(acc.id, "[Datammo] Khach moi")}
+                                            className="w-full rounded-lg border border-teal-600/50 bg-teal-900/30 px-2 py-1.5 text-[11px] font-bold text-teal-200 transition hover:bg-teal-700/40">
+                                            + Gán khách Datammo
+                                          </button>
+                                        ) : (
+                                          <button type="button" onClick={() => openAddUserModal(acc.id)}
+                                            className="w-full rounded-lg border border-blue-600/50 bg-blue-900/30 px-2 py-1.5 text-[11px] font-bold text-blue-200 transition hover:bg-blue-700/40">
+                                            + Thêm khách
+                                          </button>
+                                        )
+                                      )}
                                     </div>
                                   )}
                                 </div>
-                              );
-                            })()
+                               );
+                             })()
                           ) : (
                             <span className="text-yellow-600 text-xs italic">Chọn gói trước</span>
                           )}
