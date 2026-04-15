@@ -12592,10 +12592,13 @@ function App() {
               getChatgptCopyButtonText={getChatgptCopyButtonText}
               getChatgptCopySuccessText={getChatgptCopySuccessText}
               marketplaceTrackedAccountIds={marketplaceTrackedAccountIds}
+              marketplaceTrackedAccountMap={marketplaceTrackedAccountMap}
               focusChatgptAccountById={focusChatgptAccountById}
               onTypeChange={handleTypeChange}
               onShelfChange={handlePackage2ShelfChange}
               handleRunSelectedChatgptMailCheck={handleRunSelectedChatgptMailCheck}
+              storeOrders={storeOrders}
+              onOpenWarranty={(acc) => openWarrantyModal(acc)}
             />
             {/* ── End ChatGPT Admin Panel V2 ── */}
             {(() => {
