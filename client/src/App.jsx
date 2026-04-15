@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import HotmailInboxModal from "./HotmailInboxModal";
+import ChatgptAdminPanel from "./components/ChatgptAdminPanel";
 import { startTransition } from "react";
 import {
   canUseRealtimeRuntime,
@@ -12516,6 +12517,84 @@ function App() {
 
         {activeTab === "chatgpt" && (
           <div>
+            {/* ── ChatGPT Admin Panel V2 (New Premium UI) ── */}
+            <ChatgptAdminPanel
+              accounts={filteredChatgptAccounts}
+              chatgptAdminPagination={chatgptAdminPagination}
+              chatgptAdminPageLoading={chatgptAdminPageLoading}
+              dashboardSummary={dashboardSummary}
+              datammoOrderHistory={datammoOrderHistory}
+              datammoWarrantyCases={datammoWarrantyCases}
+              selectedChatgptIds={selectedChatgptIds}
+              setSelectedChatgptIds={setSelectedChatgptIds}
+              expandedChatgptAccountId={expandedChatgptAccountId}
+              setExpandedChatgptAccountId={setExpandedChatgptAccountId}
+              highlightedChatgptAccountId={highlightedChatgptAccountId}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              gptSubTab={gptSubTab}
+              setGptSubTab={setGptSubTab}
+              chatgptTotalTypeTab={chatgptTotalTypeTab}
+              setChatgptTotalTypeTab={setChatgptTotalTypeTab}
+              package2ShelfTab={package2ShelfTab}
+              setPackage2ShelfTab={setPackage2ShelfTab}
+              chatgptMailCheckFilter={chatgptMailCheckFilter}
+              setChatgptMailCheckFilter={setChatgptMailCheckFilter}
+              chatgptCustomerFilter={chatgptCustomerFilter}
+              setChatgptCustomerFilter={setChatgptCustomerFilter}
+              chatgptExpiryFilter={chatgptExpiryFilter}
+              setChatgptExpiryFilter={setChatgptExpiryFilter}
+              chatgptExpiryMin={chatgptExpiryMin}
+              setChatgptExpiryMin={setChatgptExpiryMin}
+              chatgptExpiryMax={chatgptExpiryMax}
+              setChatgptExpiryMax={setChatgptExpiryMax}
+              chatgptCreatedFrom={chatgptCreatedFrom}
+              setChatgptCreatedFrom={setChatgptCreatedFrom}
+              chatgptCreatedTo={chatgptCreatedTo}
+              setChatgptCreatedTo={setChatgptCreatedTo}
+              soldPackage2ProviderFilter={soldPackage2ProviderFilter}
+              setSoldPackage2ProviderFilter={setSoldPackage2ProviderFilter}
+              chatgptAppliedFilters={chatgptAppliedFilters}
+              applyCurrentChatgptDraftFilters={applyCurrentChatgptDraftFilters}
+              resetChatgptAdminFilters={resetChatgptAdminFilters}
+              requestChatgptAdminPage={requestChatgptAdminPage}
+              loadAdminChatgptAccounts={loadAdminChatgptAccounts}
+              openAddModal={() => setShowAddModal(true)}
+              openEditModal={(acc) => { setEditingAcc(acc); setShowEditModal(true); }}
+              handleDeleteAccount={(acc) => { setDeletingId(acc?.id || acc); setShowDeleteModal(true); }}
+              handleBulkDeleteChatgpt={() => {
+                if (!selectedChatgptIds.length) return;
+                showConfirm("Xóa batch", `Bạn có chắc muốn xóa ${selectedChatgptIds.length} acc đã chọn không?`, async () => {
+                  for (const id of selectedChatgptIds) {
+                    try { await axios.delete(`/api/chatgpt/${id}`); } catch {}
+                  }
+                  setSelectedChatgptIds([]);
+                  await loadAdminChatgptAccounts({ silent: true, force: true });
+                });
+              }}
+              handleBulkWarehouseChange={() => setLoadingStates(prev => ({ ...prev, bulkWarehouseMove: true }))}
+              setShowImportGPTModal={setShowImportGPTModal}
+              openAddUserModal={openAddUserModal}
+              openEditUserModal={openEditUserModal}
+              handleDeleteUser={handleDeleteUser}
+              openMoveUserModal={openMoveUserModal}
+              handleExtendUser={handleExtendUser}
+              handleRunOneChatgptMailCheck={handleRunOneChatgptMailCheck}
+              handleCopy={handleCopy}
+              loadingStates={loadingStates}
+              getVisibleAccountUserEntries={getVisibleAccountUserEntries}
+              getActiveStoreReservationTraces={getActiveStoreReservationTraces}
+              getActiveStoreReservationCount={getActiveStoreReservationCount}
+              getStoreWarrantyHoldInfo={getStoreWarrantyHoldInfo}
+              getStoreOrderIdentityForAccountUser={getStoreOrderIdentityForAccountUser}
+              buildChatgpt2faLiveUrl={buildChatgpt2faLiveUrl}
+              buildChatgptCopyText={buildChatgptCopyText}
+              getChatgptCopyButtonText={getChatgptCopyButtonText}
+              getChatgptCopySuccessText={getChatgptCopySuccessText}
+              marketplaceTrackedAccountIds={marketplaceTrackedAccountIds}
+              focusChatgptAccountById={focusChatgptAccountById}
+            />
+            {/* ── End ChatGPT Admin Panel V2 ── */}
             {(() => {
               const summary =
                 chatgptExpirySummary || buildDefaultChatgptExpirySummaryState();
