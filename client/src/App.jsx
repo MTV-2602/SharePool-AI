@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import axios, { subscribeToApiActivity } from "./axiosConfig";
 import HotmailInboxModal from "./HotmailInboxModal";
-import ChatgptAdminPanel from "./components/ChatgptAdminPanel";
 import { startTransition } from "react";
 import {
   canUseRealtimeRuntime,
@@ -12517,90 +12516,6 @@ function App() {
 
         {activeTab === "chatgpt" && (
           <div>
-            {/* ── ChatGPT Admin Panel V2 (New Premium UI) ── */}
-            <ChatgptAdminPanel
-              accounts={filteredChatgptAccounts}
-              chatgptAdminPagination={chatgptAdminPagination}
-              chatgptAdminPageLoading={chatgptAdminPageLoading}
-              dashboardSummary={dashboardSummary}
-              datammoOrderHistory={datammoOrderHistory}
-              datammoWarrantyCases={datammoWarrantyCases}
-              selectedChatgptIds={selectedChatgptIds}
-              setSelectedChatgptIds={setSelectedChatgptIds}
-              expandedChatgptAccountId={expandedChatgptAccountId}
-              setExpandedChatgptAccountId={setExpandedChatgptAccountId}
-              highlightedChatgptAccountId={highlightedChatgptAccountId}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              gptSubTab={gptSubTab}
-              setGptSubTab={setGptSubTab}
-              chatgptTotalTypeTab={chatgptTotalTypeTab}
-              setChatgptTotalTypeTab={setChatgptTotalTypeTab}
-              package2ShelfTab={package2ShelfTab}
-              setPackage2ShelfTab={setPackage2ShelfTab}
-              chatgptMailCheckFilter={chatgptMailCheckFilter}
-              setChatgptMailCheckFilter={setChatgptMailCheckFilter}
-              chatgptCustomerFilter={chatgptCustomerFilter}
-              setChatgptCustomerFilter={setChatgptCustomerFilter}
-              chatgptExpiryFilter={chatgptExpiryFilter}
-              setChatgptExpiryFilter={setChatgptExpiryFilter}
-              chatgptExpiryMin={chatgptExpiryMin}
-              setChatgptExpiryMin={setChatgptExpiryMin}
-              chatgptExpiryMax={chatgptExpiryMax}
-              setChatgptExpiryMax={setChatgptExpiryMax}
-              chatgptCreatedFrom={chatgptCreatedFrom}
-              setChatgptCreatedFrom={setChatgptCreatedFrom}
-              chatgptCreatedTo={chatgptCreatedTo}
-              setChatgptCreatedTo={setChatgptCreatedTo}
-              soldPackage2ProviderFilter={soldPackage2ProviderFilter}
-              setSoldPackage2ProviderFilter={setSoldPackage2ProviderFilter}
-              chatgptAppliedFilters={chatgptAppliedFilters}
-              applyCurrentChatgptDraftFilters={applyCurrentChatgptDraftFilters}
-              resetChatgptAdminFilters={resetChatgptAdminFilters}
-              requestChatgptAdminPage={requestChatgptAdminPage}
-              loadAdminChatgptAccounts={loadAdminChatgptAccounts}
-              openAddModal={() => setShowAddModal(true)}
-              openEditModal={(acc) => { setEditingAcc(acc); setShowEditModal(true); }}
-              handleDeleteAccount={(acc) => { setDeletingId(acc?.id || acc); setShowDeleteModal(true); }}
-              handleBulkDeleteChatgpt={() => {
-                if (!selectedChatgptIds.length) return;
-                showConfirm("Xóa batch", `Bạn có chắc muốn xóa ${selectedChatgptIds.length} acc đã chọn không?`, async () => {
-                  for (const id of selectedChatgptIds) {
-                    try { await axios.delete(`/api/chatgpt/${id}`); } catch {}
-                  }
-                  setSelectedChatgptIds([]);
-                  await loadAdminChatgptAccounts({ silent: true, force: true });
-                });
-              }}
-              handleBulkWarehouseChange={handleBulkWarehouseMove}
-              setShowImportGPTModal={setShowImportGPTModal}
-              openAddUserModal={openAddUserModal}
-              openEditUserModal={openEditUserModal}
-              handleDeleteUser={handleDeleteUser}
-              openMoveUserModal={openMoveUserModal}
-              handleExtendUser={handleExtendUser}
-              handleRunOneChatgptMailCheck={handleRunOneChatgptMailCheck}
-              handleCopy={handleCopy}
-              loadingStates={loadingStates}
-              getVisibleAccountUserEntries={getVisibleAccountUserEntries}
-              getActiveStoreReservationTraces={getActiveStoreReservationTraces}
-              getActiveStoreReservationCount={getActiveStoreReservationCount}
-              getStoreWarrantyHoldInfo={getStoreWarrantyHoldInfo}
-              getStoreOrderIdentityForAccountUser={getStoreOrderIdentityForAccountUser}
-              buildChatgpt2faLiveUrl={buildChatgpt2faLiveUrl}
-              buildChatgptCopyText={buildChatgptCopyText}
-              getChatgptCopyButtonText={getChatgptCopyButtonText}
-              getChatgptCopySuccessText={getChatgptCopySuccessText}
-              marketplaceTrackedAccountIds={marketplaceTrackedAccountIds}
-              marketplaceTrackedAccountMap={marketplaceTrackedAccountMap}
-              focusChatgptAccountById={focusChatgptAccountById}
-              onTypeChange={handleTypeChange}
-              onShelfChange={handlePackage2ShelfChange}
-              handleRunSelectedChatgptMailCheck={handleRunSelectedChatgptMailCheck}
-              storeOrders={storeOrders}
-              onOpenWarranty={(acc) => openWarrantyModal(acc)}
-            />
-            {/* ── End ChatGPT Admin Panel V2 ── */}
             {(() => {
               const summary =
                 chatgptExpirySummary || buildDefaultChatgptExpirySummaryState();
@@ -13564,1941 +13479,721 @@ function App() {
 
             {gptSubTab === "market" ? chatgptAdminPaginationControls : null}
 
-            <div
-              style={{
-                background: "#1e293b",
-                borderRadius: "20px",
-                padding: "0",
-                boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                border: "1px solid #334155",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                className={`overflow-x-auto w-full transition-opacity ${
-                  chatgptAdminPageLoading ? "opacity-60" : "opacity-100"
-                }`}
-              >
-                <table className="legacy-table w-full border-collapse min-w-[720px]">
-                  <thead>
-                    <tr style={{ background: "rgba(15, 23, 42, 0.6)" }}>
-                      <th className="w-12 text-center">
-                        <input
-                          type="checkbox"
-                          checked={allFilteredSelected}
-                          onChange={(e) =>
-                            handleToggleSelectAllFilteredChatgpt(
-                              e.target.checked,
-                              filteredChatgptIds,
-                            )
-                          }
-                          title="Chọn tất cả tài khoản đang lọc"
-                          className="w-4 h-4 accent-emerald-500 cursor-pointer"
-                        />
-                      </th>
-                      <th className="w-32">
-                        {gptSubTab === "market" ? "Kho / Trạng thái" : "Loại Gói"}
-                      </th>
-                      <th>Thông Tin</th>
-                      <th className="w-24">Link Mail</th>
-                      <th className="w-56">Slot / Khách (Sửa/Xóa)</th>
-                      <th className="text-center w-28">Hành Động</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredChatgptAccounts.map((acc) => {
-                        const activeStoreReservationTraces = getActiveStoreReservationTraces(acc);
-                        const activeStoreReservationCount = getActiveStoreReservationCount(acc);
-                        const latestStoreReservationTrace = getLatestStoreReservationTrace(acc);
-                        const storeWarrantyHoldInfo = getStoreWarrantyHoldInfo(acc);
-                        const visibleChatgptUserEntries = getVisibleAccountUserEntries(acc);
-                        const visibleChatgptUsers = visibleChatgptUserEntries.map(
-                          (entry) => entry.user,
-                        );
-                        const primaryVisibleChatgptUserEntry =
-                          visibleChatgptUserEntries[0] || null;
-                        const effectiveChatgptType = normalizeChatgptAccountType(
-                          acc?.effectiveType || acc?.type,
-                        );
-                        const effectiveChatgptCustomerViewType =
-                          effectiveChatgptType === "unassigned"
-                            ? visibleChatgptUsers.length > 1
-                              ? "package1"
-                              : visibleChatgptUsers.length === 1
-                                ? "package2"
-                                : "unassigned"
-                            : effectiveChatgptType;
-                        const hasActiveStoreReservation = activeStoreReservationCount > 0;
-                        const activeStoreReservationPackageName = String(
-                          latestStoreReservationTrace?.packageName || "",
-                        ).trim();
-                        const activeStoreReservationOrderId = String(
-                          latestStoreReservationTrace?.orderId || "",
-                        ).trim();
-                        const activeStoreReservationCustomer = String(
-                          latestStoreReservationTrace?.customerName ||
-                            latestStoreReservationTrace?.customerEmail ||
-                            "",
-                        ).trim();
-                        const activeStoreReservationStatusLabel = getStoreOrderStatusLabel(
-                          latestStoreReservationTrace?.status,
-                        );
-                        const activeStoreReservationExpiresAt = formatDate(
-                          latestStoreReservationTrace?.expiresAt,
-                        );
-                        const isAccountLockedByStoreOrder = hasActiveStoreReservation;
-                        const isAccountLockedByStoreWarrantyHold =
-                          !!storeWarrantyHoldInfo && !hasActiveStoreReservation;
-                        const displayedChatgptType = effectiveChatgptType;
-                        const isAccountLockedFromManualSale =
-                          isAccountLockedByStoreOrder || isAccountLockedByStoreWarrantyHold;
-                        const isChatgptRowExpanded =
-                          String(expandedChatgptAccountId || "").trim() ===
-                          String(acc?.id || "").trim();
-                        const previewChatgptUsers = visibleChatgptUsers.slice(0, 2);
-                        const hiddenPreviewChatgptUserCount = Math.max(
-                          0,
-                          visibleChatgptUsers.length - previewChatgptUsers.length,
-                        );
-                        const accountExpiryStatus = acc?.expiredAt
-                          ? getExpiryStatus(acc.expiredAt)
-                          : null;
-                        const mailCheckVisualState =
-                          getChatgptMailCheckVisualState(acc);
-                        const searchMatchHints = getChatgptSearchMatchHints(
-                          acc,
-                          chatgptAppliedFilters.search,
-                        );
-                        return (
-                        <tr
-                          id={`chatgpt-account-row-${acc.id}`}
-                          key={acc.id}
-                          className={`hover:bg-slate-800/50 transition-colors ${
-                            isChatgptRowExpanded
-                              ? "bg-slate-900/35"
-                              : ""
-                          } ${
-                            String(chatgptAppliedFilters?.search || "").trim() &&
-                            searchMatchHints.length > 0
-                              ? "bg-cyan-950/10"
-                              : ""
-                          } ${
-                            String(highlightedChatgptAccountId || "") ===
-                            String(acc.id || "")
-                              ? "bg-cyan-900/20 ring-1 ring-cyan-500/50"
-                              : ""
-                          }`}
-                        >
-                          <td className="align-top text-center">
-                            <input
-                              type="checkbox"
-                              checked={selectedChatgptIdSet.has(String(acc.id || ""))}
-                              onChange={(e) =>
-                                handleToggleChatgptSelection(acc.id, e.target.checked)
-                              }
-                              title="Chọn tài khoản"
-                              className="mt-1 w-4 h-4 accent-emerald-500 cursor-pointer"
-                            />
-                          </td>
-                          <td className="align-top">
-                            {gptSubTab === "market" && (
-                              <div
-                                className={`w-full rounded-md px-2 py-1.5 text-[10px] font-bold border text-center ${
-                                  marketplaceTrackedAccountIds.has(String(acc.id || ""))
-                                    ? "bg-amber-900/40 text-amber-300 border-amber-700/50"
-                                    : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"
-                                }`}
-                              >
-                                {marketplaceTrackedAccountIds.has(String(acc.id || ""))
-                                  ? "Acc da ban"
-                                  : "Acc market"}
-                              </div>
-                            )}
-                            <select
-                              id={`select-type-${acc.id}`}
-                              value={displayedChatgptType}
-                              onChange={(e) =>
-                                handleTypeChange(acc, e.target.value)
-                              }
-                              disabled={
-                                loadingStates.changeType[acc.id] ||
-                                isAccountLockedFromManualSale
-                              }
-                              className={`
-                                            ${gptSubTab === "market" ? "hidden" : "w-full"} rounded-md px-2 py-1.5 text-[10px] outline-none font-bold border cursor-pointer appearance-none text-center
-                                            ${loadingStates.changeType[acc.id] || isAccountLockedFromManualSale ? "opacity-50 cursor-not-allowed" : ""}
-                                            ${displayedChatgptType === "package1"
-                                  ? "bg-blue-900/40 text-blue-400 border-blue-700/50"
-                                  : displayedChatgptType === "package2"
-                                    ? "bg-purple-900/40 text-purple-400 border-purple-700/50"
-                                    : "bg-slate-800 text-slate-400 border-slate-700"
+            {/* ── Account Cards List ── */}
+            <div className={`space-y-2 transition-opacity ${chatgptAdminPageLoading ? "opacity-60" : "opacity-100"}`}>
+              {/* Table header row - now as sticky pill bar */}
+              <div className="flex items-center gap-2 rounded-xl border border-slate-700/50 bg-slate-900/60 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                <div className="w-5 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={(e) => handleToggleSelectAllFilteredChatgpt(e.target.checked, filteredChatgptIds)}
+                    title="Chọn tất cả"
+                    className="w-4 h-4 accent-emerald-500 cursor-pointer"
+                  />
+                </div>
+                <div className="flex-1">Tài khoản · Thông tin</div>
+                <div className="hidden sm:block w-28">{gptSubTab === "market" ? "Kho / Trạng thái" : "Loại Gói"}</div>
+                <div className="hidden md:block w-28">Khách / Slot</div>
+                <div className="w-28 text-right">Hành động</div>
+              </div>
+
+              {filteredChatgptAccounts.map((acc) => {
+                const activeStoreReservationTraces = getActiveStoreReservationTraces(acc);
+                const activeStoreReservationCount = getActiveStoreReservationCount(acc);
+                const latestStoreReservationTrace = getLatestStoreReservationTrace(acc);
+                const storeWarrantyHoldInfo = getStoreWarrantyHoldInfo(acc);
+                const visibleChatgptUserEntries = getVisibleAccountUserEntries(acc);
+                const visibleChatgptUsers = visibleChatgptUserEntries.map((entry) => entry.user);
+                const primaryVisibleChatgptUserEntry = visibleChatgptUserEntries[0] || null;
+                const effectiveChatgptType = normalizeChatgptAccountType(acc?.effectiveType || acc?.type);
+                const effectiveChatgptCustomerViewType =
+                  effectiveChatgptType === "unassigned"
+                    ? visibleChatgptUsers.length > 1 ? "package1"
+                      : visibleChatgptUsers.length === 1 ? "package2"
+                      : "unassigned"
+                    : effectiveChatgptType;
+                const hasActiveStoreReservation = activeStoreReservationCount > 0;
+                const activeStoreReservationPackageName = String(latestStoreReservationTrace?.packageName || "").trim();
+                const activeStoreReservationOrderId = String(latestStoreReservationTrace?.orderId || "").trim();
+                const activeStoreReservationCustomer = String(latestStoreReservationTrace?.customerName || latestStoreReservationTrace?.customerEmail || "").trim();
+                const activeStoreReservationStatusLabel = getStoreOrderStatusLabel(latestStoreReservationTrace?.status);
+                const activeStoreReservationExpiresAt = formatDate(latestStoreReservationTrace?.expiresAt);
+                const isAccountLockedByStoreOrder = hasActiveStoreReservation;
+                const isAccountLockedByStoreWarrantyHold = !!storeWarrantyHoldInfo && !hasActiveStoreReservation;
+                const displayedChatgptType = effectiveChatgptType;
+                const isAccountLockedFromManualSale = isAccountLockedByStoreOrder || isAccountLockedByStoreWarrantyHold;
+                const isChatgptRowExpanded = String(expandedChatgptAccountId || "").trim() === String(acc?.id || "").trim();
+                const previewChatgptUsers = visibleChatgptUsers.slice(0, 2);
+                const hiddenPreviewChatgptUserCount = Math.max(0, visibleChatgptUsers.length - previewChatgptUsers.length);
+                const accountExpiryStatus = acc?.expiredAt ? getExpiryStatus(acc.expiredAt) : null;
+                const mailCheckVisualState = getChatgptMailCheckVisualState(acc);
+                const searchMatchHints = getChatgptSearchMatchHints(acc, chatgptAppliedFilters.search);
+                const isMarketSold = marketplaceTrackedAccountIds.has(String(acc?.id || ""));
+
+                const typeBadgeCls = effectiveChatgptType === "package1"
+                  ? "border-blue-700/50 bg-blue-900/30 text-blue-300"
+                  : effectiveChatgptType === "package2"
+                  ? "border-violet-700/50 bg-violet-900/30 text-violet-300"
+                  : "border-slate-700 bg-slate-800 text-slate-400";
+                const typeLabel = effectiveChatgptType === "package1" ? "Gói 1"
+                  : effectiveChatgptType === "package2" ? "Gói 2" : "Chưa chọn";
+
+                return (
+                  <div
+                    id={`chatgpt-account-row-${acc.id}`}
+                    key={acc.id}
+                    className={`group rounded-2xl border transition-all duration-150 ${
+                      isChatgptRowExpanded
+                        ? "border-slate-600/70 bg-slate-800/60"
+                        : String(highlightedChatgptAccountId || "") === String(acc.id || "")
+                        ? "border-cyan-500/50 bg-cyan-900/10 ring-1 ring-cyan-500/30"
+                        : String(chatgptAppliedFilters?.search || "").trim() && searchMatchHints.length > 0
+                        ? "border-cyan-700/40 bg-cyan-950/10"
+                        : "border-slate-700/50 bg-slate-800/30 hover:border-slate-600/60 hover:bg-slate-800/50"
+                    }`}
+                  >
+                    {/* ── Card Header ── */}
+                    <div className="flex items-start gap-2.5 p-3">
+                      {/* Checkbox */}
+                      <input
+                        type="checkbox"
+                        checked={selectedChatgptIdSet.has(String(acc.id || ""))}
+                        onChange={(e) => handleToggleChatgptSelection(acc.id, e.target.checked)}
+                        title="Chọn tài khoản"
+                        className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-emerald-500 rounded"
+                      />
+
+                      {/* Main info */}
+                      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                        {/* Row 1: username + badges */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-mono text-sm font-bold text-white break-all">{acc.username}</span>
+                          <button
+                            onClick={() => handleCopy(acc.username, "Đã copy Tên Tài Khoản")}
+                            className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-1.5 py-0.5 text-[10px] font-bold text-white transition hover:bg-slate-600"
+                          >
+                            <Copy size={9} /> Copy
+                          </button>
+                          {/* Type badge */}
+                          {gptSubTab !== "market" && (
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${typeBadgeCls}`}>{typeLabel}</span>
+                          )}
+                          {/* Market badge */}
+                          {gptSubTab === "market" && (
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                              isMarketSold ? "border-amber-700/60 bg-amber-900/30 text-amber-300"
+                                : hasActiveStoreReservation ? "border-cyan-700/60 bg-cyan-900/30 text-cyan-300"
+                                : isAccountLockedByStoreWarrantyHold ? "border-amber-700/60 bg-amber-900/30 text-amber-300"
+                                : "border-emerald-700/60 bg-emerald-900/30 text-emerald-300"
+                            }`}>
+                              {isMarketSold ? "Đã bán" : hasActiveStoreReservation ? "Đơn web giữ" : isAccountLockedByStoreWarrantyHold ? "Giữ BH" : "Sẵn bán"}
+                            </span>
+                          )}
+                          {/* Mail state */}
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${mailCheckVisualState.tone}`} title={acc?.mailCheckLastSubject ? `Mail check: ${acc.mailCheckLastSubject}` : "Trạng thái mail check"}>
+                            {mailCheckVisualState.label}
+                          </span>
+                          {/* Expiry */}
+                          {accountExpiryStatus && (
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                              accountExpiryStatus.color.includes("red") ? "border-red-700/60 bg-red-900/20 text-red-300"
+                                : accountExpiryStatus.color.includes("yellow") ? "border-yellow-700/60 bg-yellow-900/20 text-yellow-300"
+                                : "border-emerald-700/60 bg-emerald-900/20 text-emerald-300"
+                            }`}>
+                              {accountExpiryStatus.text}
+                            </span>
+                          )}
+                          {acc.otpSecret && <span className="rounded-full border border-cyan-700/60 bg-cyan-950/20 px-2 py-0.5 text-[10px] text-cyan-200">2FA</span>}
+                          {getVisibleAccountNote(acc.note) && <span className="rounded-full border border-yellow-700/60 bg-yellow-900/20 px-2 py-0.5 text-[10px] text-yellow-200">Ghi chú</span>}
+                          {hasActiveStoreReservation && <span className="rounded-full border border-cyan-600/60 bg-cyan-900/20 px-2 py-0.5 text-[10px] text-cyan-200">Giữ chỗ web</span>}
+                          {isAccountLockedByStoreWarrantyHold && <span className="rounded-full border border-amber-700/60 bg-amber-900/20 px-2 py-0.5 text-[10px] text-amber-200">BH web</span>}
+                          {/* Search hints */}
+                          {searchMatchHints.length > 0 && searchMatchHints.map((hint) => (
+                            <span key={`${acc.id}-${hint}`} className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-2 py-0.5 text-[10px] font-semibold text-cyan-100">{hint}</span>
+                          ))}
+                        </div>
+
+                        {/* Row 2: user preview (collapsed) */}
+                        {!isChatgptRowExpanded && previewChatgptUsers.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {previewChatgptUsers.map((user, i) => {
+                              const name = typeof user === "object" ? (user.name || "") : String(user || "");
+                              const daysRem = (() => {
+                                if (typeof user !== "object" || !user) return null;
+                                if (user.expiredAt) return Math.ceil((new Date(user.expiredAt) - new Date()) / 86400000);
+                                if (user.joinedAt) {
+                                  const exp = new Date(user.joinedAt);
+                                  exp.setMonth(exp.getMonth() + 1);
+                                  return Math.ceil((exp - new Date()) / 86400000);
                                 }
-                                        `}
-                            >
-                              <option value="unassigned">❓ Chọn Gói...</option>
-                              <option value="package1">
-                                👥 Gói 1: Chia sẻ
-                              </option>
-                              <option value="package2">
-                                🔒 Gói 2: Linh hoạt
-                              </option>
-                            </select>
-                            {supportsChatgptMarketType(acc.type) && (
-                              <div className="mt-2">
-                                {marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
-                                  <div className="w-full rounded-md px-2 py-1.5 text-center text-[10px] font-semibold border bg-amber-900/40 text-amber-200 border-amber-700/60">
-                                    Khoa don san
-                                  </div>
-                                ) : hasActiveStoreReservation ? (
-                                  <div className="w-full rounded-md px-2 py-1.5 text-center text-[10px] font-semibold border bg-cyan-900/40 text-cyan-200 border-cyan-700/60">
-                                    Don web dang giu cho
-                                  </div>
-                                ) : isAccountLockedByStoreWarrantyHold ? (
-                                  <div
-                                    className="w-full rounded-md px-2 py-1.5 text-center text-[10px] font-semibold border bg-amber-900/40 text-amber-200 border-amber-700/60"
-                                    title="Nick loi dang duoc giu lai de doi chieu lich su bao hanh web"
-                                  >
-                                    Nick loi bao hanh
-                                  </div>
-                                ) : (
-                                  <select
-                                    value={normalizeChatgptWarehouseUiValue(acc.package2Shelf)}
-                                    onChange={(e) =>
-                                      handlePackage2ShelfChange(acc, e.target.value)
-                                    }
-                                    title={
-                                      hasAssignedCustomer(acc)
-                                        ? "Tai khoan dang co khach nen khong the doi kho"
-                                        : "Doi kho tai khoan"
-                                    }
-                                    disabled={
-                                      loadingStates.changeType[acc.id] ||
-                                      loadingStates.changeShelf[acc.id] ||
-                                      hasAssignedCustomer(acc) ||
-                                      isAccountLockedFromManualSale
-                                    }
-                                    className={`
-                                      w-full rounded-md px-2 py-1.5 text-[10px] outline-none font-semibold border text-center
-                                      ${normalizeChatgptWarehouseUiValue(acc.package2Shelf) === "none"
-                                        ? "bg-slate-800 text-slate-300 border-slate-600"
-                                        : "bg-emerald-900/40 text-emerald-300 border-emerald-700/60"}
-                                    `}
-                                  >
-                                    <option value="none">Kho tong</option>
-                                    <option value="cheap">Kho market</option>
-                                  </select>
-                                )}
-                                {loadingStates.changeShelf[acc.id] && (
-                                  <div className="text-center mt-1 text-[10px] text-emerald-300">Dang cap nhat kho...</div>
-                                )}
-                              </div>
-                            )}
-                            {loadingStates.changeType[acc.id] && (
-                              <div className="text-center mt-1">
-                                <Loader2
-                                  size={14}
-                                  className="animate-spin inline text-blue-400"
-                                />
-                              </div>
-                            )}
-                          </td>
-                          <td className="align-top py-3">
-                            <div className="space-y-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-300">
-                                  <User size={13} />
-                                </span>
-                                <span className="font-mono text-sm font-bold text-white break-all">
-                                  {acc.username}
-                                </span>
-                                <button
-                                  className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-slate-600"
-                                  onClick={() =>
-                                    handleCopy(
-                                      acc.username,
-                                      "Đã copy Tên Tài Khoản",
-                                    )
-                                  }
-                                  title="Copy Username"
-                                >
-                                  <Copy size={11} /> Copy
-                                </button>
-                              </div>
-
-                              <div className="flex flex-wrap gap-1.5 text-[10px]">
-                                <span
-                                  className={`rounded-full border px-2 py-0.5 font-semibold ${mailCheckVisualState.tone}`}
-                                  title={
-                                    acc?.mailCheckLastSubject
-                                      ? `Mail check: ${acc.mailCheckLastSubject}`
-                                      : "Trang thai mail check"
-                                  }
-                                >
-                                  {mailCheckVisualState.label}
-                                </span>
-                                {accountExpiryStatus && (
-                                  <span
-                                    className={`rounded-full border px-2 py-0.5 font-semibold ${
-                                      accountExpiryStatus.color.includes("red")
-                                        ? "border-red-700/60 bg-red-900/20 text-red-300"
-                                        : accountExpiryStatus.color.includes("yellow")
-                                          ? "border-yellow-700/60 bg-yellow-900/20 text-yellow-300"
-                                          : "border-emerald-700/60 bg-emerald-900/20 text-emerald-300"
-                                    }`}
-                                  >
-                                    {accountExpiryStatus.text}
-                                  </span>
-                                )}
-                                {acc.password && (
-                                  <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-slate-300">
-                                    Có mật khẩu
-                                  </span>
-                                )}
-                                {acc.otpSecret && (
-                                  <span className="rounded-full border border-cyan-700/60 bg-cyan-950/20 px-2 py-0.5 text-cyan-200">
-                                    Có 2FA
-                                  </span>
-                                )}
-                                {getVisibleAccountNote(acc.note) && (
-                                  <span className="rounded-full border border-yellow-700/60 bg-yellow-900/20 px-2 py-0.5 text-yellow-200">
-                                    Có ghi chú
-                                  </span>
-                                )}
-                              </div>
-
-                              {searchMatchHints.length > 0 && (
-                                <div className="flex flex-wrap gap-1.5 text-[10px]">
-                                  <span className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-2 py-0.5 font-bold text-cyan-100">
-                                    Ket qua tim
-                                  </span>
-                                  {searchMatchHints.map((hint) => (
-                                    <span
-                                      key={`${acc.id}-${hint}`}
-                                      className="rounded-full border border-cyan-400/50 bg-cyan-500/15 px-2 py-0.5 font-semibold text-cyan-100"
-                                    >
-                                      {hint}
+                                return null;
+                              })();
+                              return (
+                                <span key={i} className="inline-flex items-center gap-1 rounded-full border border-slate-700/60 bg-slate-900/50 px-2 py-0.5 text-[10px] text-slate-300">
+                                  <User size={9} />{name}
+                                  {daysRem !== null && (
+                                    <span className={daysRem <= 0 ? "text-red-400" : daysRem <= 7 ? "text-amber-400" : "text-emerald-400"}>
+                                      ({daysRem <= 0 ? `HH${Math.abs(daysRem)}d` : `${daysRem}d`})
                                     </span>
-                                  ))}
-                                </div>
-                              )}
-
-                              {isChatgptRowExpanded && (
-                                <div className="space-y-2 rounded-xl border border-slate-700/60 bg-slate-950/35 p-2.5">
-                                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
-                                    <span className="w-16 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                                      Mật khẩu
-                                    </span>
-                                    <span className="rounded-md bg-slate-800 px-2 py-1 font-mono font-bold text-white break-all">
-                                      {acc.password}
-                                    </span>
-                                    <button
-                                      className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-slate-600"
-                                      onClick={() =>
-                                        handleCopy(
-                                          acc.password,
-                                          "Đã copy Mật khẩu",
-                                        )
-                                      }
-                                      title="Copy Password"
-                                    >
-                                      <Copy size={11} /> Copy
-                                    </button>
-                                  </div>
-
-                                  {acc.otpSecret && (
-                                    <>
-                                      <div className="flex flex-wrap items-start gap-2 text-xs text-slate-300">
-                                        <span className="w-16 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                                          2FA
-                                        </span>
-                                        <span className="min-w-[120px] rounded-md bg-slate-800 px-2 py-1 font-mono font-bold text-cyan-200 break-all">
-                                          {acc.otpSecret}
-                                        </span>
-                                        <button
-                                          className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-slate-600"
-                                          onClick={() =>
-                                            handleCopy(
-                                              buildChatgpt2faCopyText(
-                                                acc.otpSecret,
-                                              ),
-                                              "Đã copy mã 2FA & hướng dẫn lấy mã đăng nhập",
-                                            )
-                                          }
-                                          title="Copy 2FA Secret"
-                                        >
-                                          <Copy size={11} /> Copy
-                                        </button>
-                                        <a
-                                          href={buildChatgpt2faLiveUrl(
-                                            acc.otpSecret,
-                                          )}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="inline-flex items-center gap-1 rounded-md bg-cyan-700 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-cyan-600"
-                                          title="Mở 2fa.live"
-                                        >
-                                          <ExternalLink size={11} /> 2fa.live
-                                        </a>
-                                      </div>
-                                      <div className="ml-[72px] text-[10px] text-cyan-300/80">
-                                        Dùng 2FA này trên 2fa.live để lấy mã đăng nhập.
-                                      </div>
-                                    </>
                                   )}
+                                </span>
+                              );
+                            })}
+                            {hiddenPreviewChatgptUserCount > 0 && (
+                              <span className="rounded-full border border-slate-700 bg-slate-900/50 px-2 py-0.5 text-[10px] text-slate-400">+{hiddenPreviewChatgptUserCount}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
 
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <button
-                                      className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600/80 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-md transition-colors hover:bg-indigo-500"
-                                      onClick={() =>
-                                        handleCopy(
-                                          buildChatgptCopyText(acc),
-                                          getChatgptCopySuccessText(acc),
-                                        )
-                                      }
-                                    >
-                                      <Copy size={12} />{" "}
-                                      {getChatgptCopyButtonText(acc)}
-                                    </button>
-                                    {acc.expiredAt && (
-                                      <div
-                                        className={`flex items-center gap-1 text-[10px] ${getExpiryStatus(acc.expiredAt).color}`}
-                                      >
-                                        <Calendar size={10} />
-                                        <span>
-                                          {formatDate(acc.expiredAt)}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
+                      {/* Right action group */}
+                      <div className="flex shrink-0 flex-col items-end gap-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleCopy(buildChatgptCopyText(acc), getChatgptCopySuccessText(acc))}
+                            className="inline-flex items-center gap-1 rounded-lg bg-indigo-600/80 px-2.5 py-1.5 text-[10px] font-bold text-white transition hover:bg-indigo-500 shadow-sm"
+                          >
+                            <Copy size={11} /> {getChatgptCopyButtonText(acc)}
+                          </button>
+                          <button
+                            onClick={() => setExpandedChatgptAccountId((prev) => String(prev || "").trim() === String(acc?.id || "").trim() ? "" : String(acc?.id || "").trim())}
+                            className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-all ${isChatgptRowExpanded ? "border-slate-500 bg-slate-700 text-white" : "border-slate-700 bg-slate-800 text-slate-400 hover:text-white"}`}
+                            title={isChatgptRowExpanded ? "Thu gọn" : "Xem chi tiết"}
+                          >
+                            <ChevronUp size={13} className={`transition-transform ${isChatgptRowExpanded ? "" : "rotate-180"}`} />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {/* Warranty button */}
+                          {(() => {
+                            const primaryUser = Array.isArray(acc.users) ? acc.users[0] : null;
+                            const trackedEntry = marketplaceTrackedAccountMap.get(String(acc?.id || ""));
+                            const trackedRole = String(trackedEntry?.role || "").trim();
+                            const hasActiveTracking = trackedRole === "sold" || trackedRole === "current";
+                            const hasActualManagedUser = !!primaryUser && isActiveMarketplaceManagedUser(primaryUser);
+                            const managedOrderInfo = getMarketplaceOrderInfoFromUser(primaryUser);
+                            const latestOrder = findMarketplaceOrderForAccount(acc.id, datammoOrderHistory, managedOrderInfo.provider);
+                            const orderIdForWarranty = String(managedOrderInfo.orderId || trackedEntry?.orderId || latestOrder?.orderId || "").trim();
+                            const warrantyInfo = getDatammoWarrantyInfoForAccount(acc.id, datammoWarrantyCases);
+                            const canOpenWarranty = (!!orderIdForWarranty && (hasActualManagedUser || hasActiveTracking)) || warrantyInfo?.role === "current";
+                            if (!canOpenWarranty) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => openWarrantyModal(acc)}
+                                className="flex h-6 w-6 items-center justify-center rounded-md border border-cyan-700/50 bg-cyan-900/30 text-cyan-300 transition hover:bg-cyan-700/50"
+                                title="Bảo hành đơn sàn"
+                              >
+                                <Shield size={11} />
+                              </button>
+                            );
+                          })()}
+                          <button
+                            type="button"
+                            onClick={() => handleRunOneChatgptMailCheck(acc)}
+                            disabled={normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) === "died" || loadingStates.runChatgptMailCheckOne === String(acc?.id || "")}
+                            className="flex h-6 w-6 items-center justify-center rounded-md border border-rose-700/50 bg-rose-900/20 text-rose-300 transition hover:bg-rose-700/40 disabled:cursor-not-allowed disabled:opacity-50"
+                            title={normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) === "died" ? "Mail đã die" : `Đọc mail ${getChatgptMailCheckSourceLabel(acc)}`}
+                          >
+                            {loadingStates.runChatgptMailCheckOne === String(acc?.id || "") ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setEditingAcc({ ...acc, note: getVisibleAccountNote(acc.note), package2Shelf: supportsChatgptMarketType(acc.type) ? normalizePackage2Shelf(acc.package2Shelf) : "none" }); setShowEditModal(true); }}
+                            disabled={isAccountLockedFromManualSale}
+                            className={`flex h-6 w-6 items-center justify-center rounded-md transition ${isAccountLockedFromManualSale ? "border border-slate-700 bg-slate-800 text-slate-600 cursor-not-allowed" : "border border-blue-700/50 bg-blue-900/30 text-blue-300 hover:bg-blue-700/40"}`}
+                            title={isAccountLockedFromManualSale ? (isAccountLockedByStoreWarrantyHold ? "Acc đang giữ BH web" : "Acc bị đơn web giữ chỗ") : "Sửa tài khoản"}
+                          >
+                            <Pencil size={11} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setDeletingId(acc.id); setShowDeleteModal(true); }}
+                            disabled={isAccountLockedFromManualSale}
+                            className={`flex h-6 w-6 items-center justify-center rounded-md transition ${isAccountLockedFromManualSale ? "border border-slate-700 bg-slate-800 text-slate-600 cursor-not-allowed" : "border border-red-800/50 bg-red-900/20 text-red-400 hover:bg-red-800/40"}`}
+                            title={isAccountLockedFromManualSale ? "Đang bị khóa" : "Xóa tài khoản"}
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
 
-                                  {getVisibleAccountNote(acc.note) && (
-                                    <div className="rounded-lg border border-yellow-700/30 bg-yellow-900/10 px-2 py-1.5 text-[10px] italic text-yellow-200">
-                                      {getVisibleAccountNote(acc.note)}
-                                    </div>
-                                  )}
+                    {/* ── Expanded Content ── */}
+                    {isChatgptRowExpanded && (
+                      <div className="border-t border-slate-700/50 px-3 pb-3 pt-2.5 space-y-3">
 
-                                  <div className="rounded-lg border border-rose-700/30 bg-rose-950/10 px-2.5 py-2 text-[10px] text-slate-200">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <span className="font-black uppercase tracking-[0.12em] text-rose-200">
-                                          Mail check
-                                        </span>
-                                        <span
-                                          className={`rounded-full border px-2 py-0.5 ${mailCheckVisualState.tone}`}
-                                        >
-                                          {mailCheckVisualState.label}
-                                        </span>
-                                        {acc?.mailCheckLastCheckedAt && (
-                                          <span className="text-slate-400">
-                                            Check lan cuoi:{" "}
-                                            {formatDateTime(acc.mailCheckLastCheckedAt) || "--"}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRunOneChatgptMailCheck(acc)}
-                                        disabled={
-                                          normalizeChatgptMailCheckStatus(
-                                            acc?.mailCheckStatus,
-                                          ) === "died" ||
-                                          loadingStates.runChatgptMailCheckOne ===
-                                          String(acc?.id || "")
-                                        }
-                                        className="inline-flex items-center gap-1 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1 font-semibold text-rose-100 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-                                        title={
-                                          normalizeChatgptMailCheckStatus(
-                                            acc?.mailCheckStatus,
-                                          ) === "died"
-                                            ? "Acc da Mail die, khong doc lai"
-                                            : `Đọc mail ${getChatgptMailCheckSourceLabel(acc)}`
-                                        }
-                                      >
-                                        {loadingStates.runChatgptMailCheckOne ===
-                                        String(acc?.id || "") ? (
-                                          <Loader2 size={11} className="animate-spin" />
-                                        ) : (
-                                          <Mail size={11} />
-                                        )}
-                                        {normalizeChatgptMailCheckStatus(
-                                          acc?.mailCheckStatus,
-                                        ) === "died"
-                                          ? "Da die"
-                                          : "Đọc mail"}
-                                      </button>
-                                    </div>
-                                    {acc?.mailCheckLastSubject && (
-                                      <div className="mt-2 space-y-1">
-                                        <div className="font-semibold text-white">
-                                          {acc.mailCheckLastSubject}
-                                        </div>
-                                        <div className="text-slate-400">
-                                          {acc?.mailCheckLastSender || "--"}
-                                          {acc?.mailCheckLastMatchedAt
-                                            ? ` · ${formatDateTime(acc.mailCheckLastMatchedAt) || "--"}`
-                                            : ""}
-                                        </div>
-                                        {acc?.mailCheckLastSnippet && (
-                                          <div className="rounded-md border border-slate-700/70 bg-slate-900/70 px-2 py-1.5 text-slate-300">
-                                            {acc.mailCheckLastSnippet}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
+                        {/* Credentials */}
+                        <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 p-2.5 space-y-2">
+                          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Thông tin đăng nhập</span>
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="w-16 text-[10px] font-semibold uppercase text-slate-500">Mật khẩu</span>
+                            <span className="rounded-md bg-slate-800 px-2 py-1 font-mono font-bold text-white break-all">{acc.password}</span>
+                            <button onClick={() => handleCopy(acc.password, "Đã copy Mật khẩu")} className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-slate-600">
+                              <Copy size={10} /> Copy
+                            </button>
+                          </div>
+                          {acc.otpSecret && (
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="w-16 text-[10px] font-semibold uppercase text-slate-500">2FA</span>
+                              <span className="rounded-md bg-slate-800 px-2 py-1 font-mono font-bold text-cyan-200 break-all">{acc.otpSecret}</span>
+                              <button onClick={() => handleCopy(buildChatgpt2faCopyText(acc.otpSecret), "Đã copy mã 2FA")} className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-slate-600">
+                                <Copy size={10} /> Copy
+                              </button>
+                              <a href={buildChatgpt2faLiveUrl(acc.otpSecret)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md bg-cyan-700 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-cyan-600">
+                                <ExternalLink size={10} /> 2fa.live
+                              </a>
                             </div>
-                          </td>
-                          <td className="align-top py-3">
-                            {acc.link ? (
-                              <div className="flex flex-col gap-1.5">
-                                <a
-                                  href={acc.link}
-                                  target="_blank"
-                                  className="inline-flex items-center justify-center gap-1 rounded-md bg-teal-700/90 px-2 py-1 text-[10px] font-bold text-white no-underline transition-colors hover:bg-teal-600"
-                                >
-                                  <Mail size={11} /> Mail
-                                </a>
-                                <button
-                                  onClick={() => handleCopy(acc.link, "Đã copy Link Mail")}
-                                  className="inline-flex items-center justify-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition-colors hover:bg-slate-600"
-                                  title="Copy Link Mail"
-                                >
-                                  <Copy size={11} /> Copy
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-slate-600 text-xs">--</span>
-                            )}
-                          </td>
-                          <td>
-                            {effectiveChatgptCustomerViewType === "package1" ? (
-                              <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
-                                <div className="flex justify-between items-center text-xs mb-2 pb-1 border-b border-slate-700/50">
-                                  {(() => {
-                                    const currentUserCount =
-                                      visibleChatgptUserEntries.length;
-                                    const reservedSlotCount =
-                                      activeStoreReservationCount;
-                                    const occupiedSlotCount =
-                                      currentUserCount + reservedSlotCount;
-                                    return (
-                                      <>
-                                  <span
-                                    style={{
-                                      color:
-                                        occupiedSlotCount >= 3
-                                          ? "#ef4444"
-                                          : "#10b981",
-                                      fontWeight: "bold",
-                                    }}
-                                  >
-                                    {Math.min(3, occupiedSlotCount)}/3 Slot
-                                  </span>
-                                  {reservedSlotCount > 0 && (
-                                    <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                      Giu cho web {reservedSlotCount}
-                                    </span>
-                                  )}
-                                  {occupiedSlotCount < 3 ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => openAddUserModal(acc.id)}
-                                      className="text-[10px] sm:text-xs px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white whitespace-nowrap"
-                                    >
-                                      + Khach
-                                    </button>
-                                  ) : (
-                                    <span className="text-xs text-red-400 font-bold italic">Đã Đầy</span>
-                                  )}
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                                {!isChatgptRowExpanded ? (
-                                  <div className="space-y-1.5">
-                                    <div className="flex flex-wrap gap-1">
-                                      {isChatgptMarketWarehouse(acc) &&
-                                        !marketplaceTrackedAccountIds.has(
-                                          String(acc?.id || ""),
-                                        ) && (
-                                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-800/50 bg-emerald-900/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-300">
-                                            <Globe size={9} /> Kho market
-                                          </span>
-                                        )}
-                                      {hasActiveStoreReservation && (
-                                        <span className="inline-flex items-center gap-1 rounded-full border border-cyan-700/40 bg-cyan-950/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                          <Lock size={9} /> Giữ chỗ{" "}
-                                          {activeStoreReservationCount}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex flex-wrap gap-1">
-                                      {previewChatgptUsers.length > 0 ? (
-                                        previewChatgptUsers.map((u, index) => (
-                                          <span
-                                            key={`${acc.id}-preview-user-${index}`}
-                                            className="max-w-[150px] truncate rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] font-semibold text-white"
-                                            title={String(
-                                              getUserName(u) || "Khách",
-                                            )}
-                                          >
-                                            {getUserName(u) || "Khách"}
-                                          </span>
-                                        ))
-                                      ) : (
-                                        <span className="text-[10px] italic text-slate-500">
-                                          {hasAssignedCustomer(acc)
-                                            ? "Co khach / trace dang gan"
-                                            : "Chua co khach"}
-                                        </span>
-                                      )}
-                                      {hiddenPreviewChatgptUserCount > 0 && (
-                                        <span className="rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-300">
-                                          +{hiddenPreviewChatgptUserCount} nữa
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                {isChatgptMarketWarehouse(acc) && !marketplaceTrackedAccountIds.has(String(acc?.id || "")) && (
-                                  <div className="mb-2 w-full px-2 py-0.5 bg-emerald-900/40 text-emerald-300 font-bold rounded text-[10px] uppercase border border-emerald-800/50 flex items-center justify-center gap-1 shadow-sm">
-                                    <Globe size={10} /> Kho market - chua ban
-                                  </div>
-                                )}
-                                {hasActiveStoreReservation && (
-                                  <div className="mb-2 rounded-lg border border-cyan-700/40 bg-cyan-950/20 px-2.5 py-2 text-[10px] text-cyan-100">
-                                    <div className="font-black uppercase tracking-[0.1em] text-cyan-200">
-                                      Đơn web đang giữ chỗ
-                                    </div>
-                                    <div className="mt-1 text-[11px] font-semibold text-white">
-                                      {activeStoreReservationPackageName || "Đơn web giữ chỗ"}
-                                    </div>
-                                    <div className="mt-1 text-cyan-100">
-                                      {activeStoreReservationOrderId || "--"}
-                                      {activeStoreReservationCustomer
-                                        ? ` · ${activeStoreReservationCustomer}`
-                                        : ""}
-                                    </div>
-                                    <div className="mt-1 text-slate-300">
-                                      {activeStoreReservationStatusLabel || "Đang chờ thanh toán"}
-                                      {activeStoreReservationExpiresAt
-                                        ? ` · Giữ tới ${activeStoreReservationExpiresAt}`
-                                        : ""}
-                                    </div>
-                                  </div>
-                                )}
-                                <div className="space-y-1">
-                                  {visibleChatgptUserEntries.map(({ user: u, index }) => {
-                                    const name = getUserName(u);
-                                    const dateStr = getUserDate(u);
-                                    const daysRemaining = getDaysRemaining(u);
-                                    const linkedStoreOrder =
-                                      getStoreOrderIdentityForAccountUser(acc, u);
-                                    const displayUserTitle = String(
-                                      name ||
-                                        linkedStoreOrder?.customerName ||
-                                        linkedStoreOrder?.orderId ||
-                                        "",
-                                    ).trim();
-                                    const displayUserSubtitle = linkedStoreOrder
-                                      ? String(
-                                          linkedStoreOrder.orderId ||
-                                            linkedStoreOrder.contact ||
-                                            "",
-                                        ).trim()
-                                      : "";
-
-                                    // EXPIRY LOGIC (dựa trên ngày CÒN LẠI, không phải đã dùng)
-                                    const isExpired =
-                                      daysRemaining !== null && daysRemaining <= 0;
-                                    const isNearExpiry =
-                                      daysRemaining !== null &&
-                                      daysRemaining > 0 &&
-                                      daysRemaining <= 3;
-
-                                    return (
-                                      <div
-                                        key={index}
-                                        className={`flex justify-between items-center text-xs p-2 rounded border mb-1 ${isExpired ? "bg-red-900/20 border-red-700" : "bg-slate-800 border-slate-700/50"}`}
-                                      >
-                                        <div className="flex flex-col">
-                                          <span
-                                            className={`font-bold truncate max-w-[180px] flex items-center gap-1 ${isExpired ? "text-red-500" : isNearExpiry ? "text-yellow-400" : "text-white"}`}
-                                            title={displayUserTitle}
-                                          >
-                                            {isExpired && (
-                                              <AlertCircle size={12} />
-                                            )}
-                                            {isNearExpiry && (
-                                              <AlertTriangle size={12} />
-                                            )}
-                                            👤 {displayUserTitle}
-                                          </span>
-                                          {displayUserSubtitle ? (
-                                            <div
-                                              className="mt-1 max-w-[220px] truncate text-[10px] font-semibold text-cyan-200"
-                                              title={displayUserSubtitle}
-                                            >
-                                              {displayUserSubtitle}
-                                            </div>
-                                          ) : null}
-                                          {dateStr ? (
-                                            <span className="text-[10px] text-slate-400 flex items-center gap-1 flex-wrap">
-                                              <Calendar size={10} /> {dateStr}
-                                              {daysRemaining !== null && (
-                                                <span
-                                                  className={
-                                                    isExpired
-                                                      ? "text-red-400 font-bold"
-                                                      : isNearExpiry
-                                                        ? "text-yellow-500 font-bold"
-                                                        : daysRemaining > 30
-                                                          ? "text-purple-400 font-bold"
-                                                          : "text-blue-400"
-                                                  }
-                                                >
-                                                  {isExpired
-                                                    ? `(HH ${Math.abs(daysRemaining)}ngày)`
-                                                    : `(Còn ${daysRemaining}ngày)`}
-                                                </span>
-                                              )}
-                                            </span>
-                                          ) : (
-                                            <span className="text-[10px] text-slate-600 italic">
-                                              Chưa có ngày
-                                            </span>
-                                          )}
-                                          {/* Ngày hết hạn khách */}
-                                          {getUserExpiryDate(u) && (
-                                            <span className={`text-[10px] flex items-center gap-1 font-semibold ${isExpired ? "text-red-500" : isNearExpiry ? "text-yellow-500" : "text-emerald-500"
-                                              }`}>
-                                              🕑 HH: {getUserExpiryDate(u)}
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div className="flex gap-1">
-                                          {/* EXTEND BUTTON (Only for Expired/Near Expiry) */}
-                                          {(isExpired || isNearExpiry) && (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                handleExtendUser(
-                                                  acc.id,
-                                                  index,
-                                                  u,
-                                                )
-                                              }
-                                              className="bg-green-600 hover:bg-green-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105"
-                                              title="Gia hạn"
-                                            >
-                                              <RotateCw size={14} />
-                                            </button>
-                                          )}
-
-                                          {/* MOVE BUTTON (Blocked if Expired) */}
-                                          {!isExpired ? (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                openMoveUserModal(
-                                                  acc.id,
-                                                  index,
-                                                  u,
-                                                )
-                                              }
-                                              className="bg-orange-600 hover:bg-orange-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105"
-                                              title="Chuyển khách"
-                                            >
-                                              <ArrowRightLeft size={14} />
-                                            </button>
-                                          ) : (
-                                            <span
-                                              className="text-gray-500 cursor-not-allowed bg-slate-700 p-1.5 rounded"
-                                              title="Hết hạn: Không thể chuyển"
-                                            >
-                                              <ArrowRightLeft size={14} />
-                                            </span>
-                                          )}
-
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              openEditUserModal(
-                                                acc.id,
-                                                index,
-                                                u,
-                                              )
-                                            }
-                                            className="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105"
-                                            title="Sửa tên"
-                                          >
-                                            <Pencil size={14} />
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleDeleteUser(
-                                                acc.id,
-                                                index,
-                                                name,
-                                              )
-                                            }
-                                            className="bg-red-600 hover:bg-red-500 text-white p-1.5 rounded shadow-sm transition-transform hover:scale-105"
-                                            title="Xóa người này"
-                                          >
-                                            <X size={14} />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                  {activeStoreReservationTraces.map((trace, traceIndex) => (
-                                    <div
-                                      key={`${acc.id}-reserved-slot-${trace.orderId || traceIndex}`}
-                                      className="flex justify-between items-center text-xs p-2 rounded border mb-1 bg-cyan-950/20 border-cyan-700/40"
-                                    >
-                                      <div className="flex flex-col min-w-0">
-                                        <span
-                                          className="font-bold truncate max-w-[220px] flex items-center gap-1 text-cyan-100"
-                                          title={trace.orderId || "Đơn web giữ chỗ"}
-                                        >
-                                          <Lock size={12} />
-                                          {trace.orderId || "Đơn web giữ chỗ"}
-                                        </span>
-                                        {trace.customerName || trace.customerEmail ? (
-                                          <div
-                                            className="mt-1 max-w-[220px] truncate text-[10px] font-semibold text-white"
-                                            title={trace.customerName || trace.customerEmail}
-                                          >
-                                            {trace.customerName || trace.customerEmail}
-                                          </div>
-                                        ) : null}
-                                        <span className="text-[10px] text-slate-300">
-                                          {getStoreOrderStatusLabel(trace.status)}
-                                          {trace.expiresAt
-                                            ? ` · Giữ tới ${formatDate(trace.expiresAt)}`
-                                            : ""}
-                                        </span>
-                                      </div>
-                                      <div className="rounded-md border border-cyan-600/40 bg-cyan-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                        Giữ chỗ
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                                  </>
-                                )}
-                              </div>
-                            ) : effectiveChatgptCustomerViewType === "package2" ||
-                              hasActiveStoreReservation ||
-                              !!getStoreWarrantyHoldInfo(acc) ||
-                              isChatgptMarketWarehouse(acc) ||
-                              isChatgptShortDateWarehouse(acc) ||
-                              marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
-                              (() => {
-                                const u =
-                                  primaryVisibleChatgptUserEntry?.user ||
-                                  (Array.isArray(acc.users) ? acc.users[0] : null);
-                                const primaryUserIndex =
-                                  primaryVisibleChatgptUserEntry?.index ?? 0;
-                                const package2Shelf = normalizePackage2Shelf(acc.package2Shelf);
-                                const package2ShelfLabel = getChatgptWarehouseLabel(package2Shelf);
-                                const isTrackedMarketplaceAccount =
-                                  marketplaceTrackedAccountIds.has(String(acc?.id || ""));
-                                const trackedMarketplaceEntry =
-                                  marketplaceTrackedAccountMap.get(String(acc?.id || ""));
-                                const trackedMarketplaceSummary =
-                                  trackedMarketplaceEntry?.summary || null;
-                                const storeTraceSummary = acc?.storeTraceSummary || null;
-                                const marketplaceTraceSummary =
-                                  acc?.marketplaceTraceSummary || null;
-                                const isLockedByStoreWarrantyHold =
-                                  !!storeWarrantyHoldInfo &&
-                                  !u &&
-                                  !hasActiveStoreReservation;
-                                const isInMarketWarehouse = package2Shelf === "cheap";
-                                const isOnDatammoShelf = isInMarketWarehouse;
-                                const legacyMarketplaceInfo =
-                                  getLegacyMarketplaceInfoFromNote(acc.note);
-                                const managedOrderInfo = getMarketplaceOrderInfoFromUser(u);
-                                const latestMarketplaceOrder = findMarketplaceOrderForAccount(
-                                  acc.id,
-                                  datammoOrderHistory,
-                                  managedOrderInfo.provider,
-                                );
-                                const datammoOrderId = String(
-                                  managedOrderInfo.orderId ||
-                                    legacyMarketplaceInfo?.orderId ||
-                                    trackedMarketplaceEntry?.orderId ||
-                                    latestMarketplaceOrder?.orderId ||
-                                    "",
-                                ).trim();
-                                const managedProvider = normalizeMarketplaceProvider(
-                                  managedOrderInfo.provider ||
-                                    legacyMarketplaceInfo?.provider ||
-                                    trackedMarketplaceEntry?.provider ||
-                                    latestMarketplaceOrder?.provider,
-                                );
-                                const providerLabel = getMarketplaceProviderLabel(
-                                  managedProvider,
-                                );
-                                const warrantyInfo = getDatammoWarrantyInfoForAccount(
-                                  acc.id,
-                                  datammoWarrantyCases,
-                                );
-                                const trackedMarketplaceRole = String(
-                                  trackedMarketplaceEntry?.role || "",
-                                ).trim();
-                                const hasActiveMarketplaceTracking =
-                                  trackedMarketplaceRole === "sold" ||
-                                  trackedMarketplaceRole === "current";
-                                const warrantyCase = warrantyInfo?.warrantyCase;
-                                const hasVerifiedMarketplaceTrace =
-                                  !!trackedMarketplaceEntry ||
-                                  !!latestMarketplaceOrder ||
-                                  !!warrantyCase;
-                                const hasActualManagedMarketplaceUser =
-                                  !!u &&
-                                  isActiveMarketplaceManagedUser(u) &&
-                                  hasVerifiedMarketplaceTrace;
-                                const hasRegularVisibleUser =
-                                  !!u &&
-                                  (!isActiveMarketplaceManagedUser(u) ||
-                                    !hasVerifiedMarketplaceTrace);
-                                const warrantyProviderLabel = getMarketplaceProviderLabel(
-                                  warrantyCase?.provider || managedProvider,
-                                );
-                                const warrantyRounds = Array.isArray(warrantyCase?.rounds)
-                                  ? warrantyCase.rounds
-                                  : [];
-                                const warrantyRoleLabel =
-                                  warrantyInfo?.role === "current"
-                                    ? "Acc dang thay"
-                                    : warrantyInfo?.role === "history"
-                                      ? "Acc da thay"
-                                      : "Acc loi goc";
-                                const latestWarrantyTarget =
-                                  warrantyCase?.currentUsername ||
-                                  warrantyRounds[warrantyRounds.length - 1]?.toUsername ||
-                                  warrantyCase?.currentAccountId ||
-                                  "";
-                                const showMarketplaceManagementCard =
-                                  hasActualManagedMarketplaceUser ||
-                                  isTrackedMarketplaceAccount ||
-                                  !!warrantyCase;
-                                const displayMarketplaceUser = hasRegularVisibleUser
-                                  ? u
-                                  : hasActualManagedMarketplaceUser
-                                    ? u
-                                    : storeWarrantyHoldInfo
-                                      ? {
-                                          name:
-                                            storeWarrantyHoldInfo.customerName ||
-                                            storeWarrantyHoldInfo.customerEmail ||
-                                            `Don ${storeWarrantyHoldInfo.orderId || "bao-hanh"}`,
-                                          joinedAt: storeWarrantyHoldInfo.createdAt || "",
-                                          expiredAt: acc?.expiredAt || "",
-                                        }
-                                    : showMarketplaceManagementCard
-                                      ? {
-                                          name:
-                                            legacyMarketplaceInfo?.name ||
-                                            trackedMarketplaceEntry?.label ||
-                                            trackedMarketplaceSummary?.currentUsername ||
-                                            trackedMarketplaceSummary?.soldUsername ||
-                                            `${providerLabel}#${datammoOrderId || "order"}`,
-                                          joinedAt:
-                                            legacyMarketplaceInfo?.joinedAt ||
-                                            trackedMarketplaceEntry?.order?.createdAt ||
-                                            latestMarketplaceOrder?.createdAt ||
-                                            "",
-                                          expiredAt:
-                                            legacyMarketplaceInfo?.expiredAt ||
-                                            "",
-                                        }
-                                      : null;
-                                const displayMarketplaceName = String(
-                                  getUserName(displayMarketplaceUser) ||
-                                    trackedMarketplaceEntry?.label ||
-                                    trackedMarketplaceSummary?.currentUsername ||
-                                    trackedMarketplaceSummary?.soldUsername ||
-                                    "",
-                                ).trim();
-                                const linkedStoreOrderForDisplayUser =
-                                  displayMarketplaceUser
-                                    ? getStoreOrderIdentityForAccountUser(
-                                        acc,
-                                        displayMarketplaceUser,
-                                      )
-                                    : null;
-                                const displayMarketplacePrimaryLabel = String(
-                                  displayMarketplaceName ||
-                                    storeWarrantyHoldInfo?.customerName ||
-                                    storeWarrantyHoldInfo?.customerEmail ||
-                                    (storeWarrantyHoldInfo?.orderId
-                                      ? `Don ${storeWarrantyHoldInfo.orderId}`
-                                      : "") ||
-                                    linkedStoreOrderForDisplayUser?.customerName ||
-                                    linkedStoreOrderForDisplayUser?.orderId ||
-                                    "",
-                                ).trim();
-                                const displayMarketplaceSecondaryLabel = String(
-                                  (storeWarrantyHoldInfo
-                                    ? [
-                                        storeWarrantyHoldInfo.orderId,
-                                        storeWarrantyHoldInfo.statusLabel,
-                                        storeWarrantyHoldInfo.packageName,
-                                      ]
-                                        .filter(Boolean)
-                                        .join(" · ")
-                                    : "") ||
-                                    linkedStoreOrderForDisplayUser?.orderId ||
-                                    linkedStoreOrderForDisplayUser?.contact ||
-                                    "",
-                                ).trim();
-                                const soldMarketplaceUsername = String(
-                                  trackedMarketplaceSummary?.soldUsername ||
-                                    acc?.username ||
-                                    "",
-                                ).trim();
-                                const currentMarketplaceUsername = String(
-                                  warrantyCase?.currentUsername ||
-                                    trackedMarketplaceSummary?.currentUsername ||
-                                    soldMarketplaceUsername ||
-                                    acc?.username ||
-                                    "",
-                                ).trim();
-                                const displayMarketplaceJoinedDate =
-                                  getUserDate(displayMarketplaceUser) ||
-                                  formatDate(
-                                    trackedMarketplaceEntry?.order?.createdAt ||
-                                      latestMarketplaceOrder?.createdAt,
-                                  ) ||
-                                  "--";
-                                const displayMarketplaceExpiryDate =
-                                  getUserExpiryDate(displayMarketplaceUser) ||
-                                  formatDate(acc?.expiredAt) ||
-                                  "";
-                                const canOpenDatammoWarranty =
-                                  showMarketplaceManagementCard && !!datammoOrderId;
-                                const renderWarrantySummary = (extraClasses = "") => {
-                                  if (!warrantyCase || warrantyRounds.length === 0) {
-                                    return null;
-                                  }
-                                  return (
-                                    <div
-                                      className={`${extraClasses} rounded-md border px-2.5 py-2 text-[10px] shadow-sm ${
-                                        warrantyInfo?.role === "current"
-                                          ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
-                                          : "border-amber-700/50 bg-amber-950/20 text-amber-100"
-                                      }`}
-                                    >
-                                      <div className="flex flex-wrap items-center gap-1.5">
-                                        <span className="inline-flex items-center rounded-full border border-white/10 bg-slate-900/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white">
-                                          {warrantyProviderLabel}
-                                        </span>
-                                        <span className="text-[10px] font-bold text-white">
-                                          Bao hanh lan {warrantyRounds.length}
-                                        </span>
-                                      </div>
-                                      <div className="mt-1 text-[10px] text-slate-300">
-                                        Don {warrantyCase.orderId || datammoOrderId || "?"}
-                                      </div>
-                                      <div className="mt-0.5 text-[10px]">
-                                        <span
-                                          className={
-                                            warrantyInfo?.role === "current"
-                                              ? "text-cyan-200"
-                                              : "text-amber-200"
-                                          }
-                                        >
-                                          {warrantyRoleLabel}
-                                        </span>
-                                        {warrantyInfo?.role === "current" ? (
-                                          <span className="text-slate-300">
-                                            {" "}
-                                            • Acc hien tai cua don
-                                          </span>
-                                        ) : latestWarrantyTarget ? (
-                                          <span className="text-slate-300">
-                                            {" "}
-                                            • Hien tai:{" "}
-                                            <span className="font-semibold text-white">
-                                              {latestWarrantyTarget}
-                                            </span>
-                                          </span>
-                                        ) : null}
-                                      </div>
-                                      <div className="hidden mt-2 space-y-1.5">
-                                        {warrantyRounds.map((round, roundIndex) => {
-                                          const isRoundSource =
-                                            String(round?.fromAccountId || "") ===
-                                            String(acc.id || "");
-                                          const isRoundTarget =
-                                            String(round?.toAccountId || "") ===
-                                            String(acc.id || "");
-                                          return (
-                                            <div
-                                              key={`${acc.id}-warranty-round-${round?.sequence || round?.createdAt || roundIndex}`}
-                                              className={`rounded-md border px-2 py-1.5 ${
-                                                isRoundTarget
-                                                  ? "border-cyan-400/30 bg-cyan-500/10"
-                                                  : isRoundSource
-                                                    ? "border-amber-400/30 bg-amber-500/10"
-                                                    : "border-slate-700/60 bg-slate-950/40"
-                                              }`}
-                                            >
-                                              <div className="flex items-center justify-between gap-2">
-                                                <span className="text-[9px] font-black uppercase tracking-[0.08em] text-white/90">
-                                                  Lan {round?.sequence || roundIndex + 1}
-                                                </span>
-                                                {isRoundTarget && (
-                                                  <span className="text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                                    Acc nay
-                                                  </span>
-                                                )}
-                                                {isRoundSource && !isRoundTarget && (
-                                                  <span className="text-[9px] font-bold uppercase tracking-[0.08em] text-amber-200">
-                                                    Da doi ra
-                                                  </span>
-                                                )}
-                                              </div>
-                                              <div className="mt-1 break-all leading-relaxed text-slate-200">
-                                                <span className="text-slate-400">
-                                                  {round?.fromUsername ||
-                                                    round?.fromAccountId ||
-                                                    "Khong ro acc"}
-                                                </span>
-                                                <span className="mx-1 text-slate-500">→</span>
-                                                <span className="font-semibold text-white">
-                                                  {round?.toUsername ||
-                                                    round?.toAccountId ||
-                                                    "Khong ro acc"}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  );
-                                };
-                                const showAdminTraceSummary =
-                                  Number(storeTraceSummary?.totalOrders || 0) > 0 ||
-                                  Number(marketplaceTraceSummary?.orderCount || 0) > 0 ||
-                                  Number(marketplaceTraceSummary?.warrantyCount || 0) > 0;
-                                const renderAdminTraceSummary = () => {
-                                  if (!showAdminTraceSummary) return null;
-                                  const latestStoreTrace =
-                                    Array.isArray(storeTraceSummary?.traces) &&
-                                    storeTraceSummary.traces.length > 0
-                                      ? storeTraceSummary.traces[0]
-                                      : null;
-                                  return (
-                                    <div className="mb-2 rounded-xl border border-fuchsia-700/40 bg-fuchsia-950/15 px-3 py-3 text-fuchsia-100 shadow-sm">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <span className="inline-flex items-center rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-fuchsia-200">
-                                          Trace dang gan voi nick
-                                        </span>
-                                        {Number(storeTraceSummary?.totalOrders || 0) > 0 && (
-                                          <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                            Web {storeTraceSummary.totalOrders}
-                                          </span>
-                                        )}
-                                        {Number(marketplaceTraceSummary?.orderCount || 0) > 0 && (
-                                          <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-200">
-                                            San {marketplaceTraceSummary.orderCount}
-                                          </span>
-                                        )}
-                                        {Number(marketplaceTraceSummary?.warrantyCount || 0) > 0 && (
-                                          <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-amber-200">
-                                            Bao hanh {marketplaceTraceSummary.warrantyCount}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="mt-2 space-y-1 text-[11px] leading-relaxed text-slate-200">
-                                        {latestStoreTrace ? (
-                                          <div>
-                                            <span className="text-slate-400">Đơn web mới nhất:</span>{" "}
-                                            <span className="font-semibold text-white">
-                                              {latestStoreTrace.orderId}
-                                            </span>{" "}
-                                            · {getStoreOrderStatusLabel(latestStoreTrace.status)}
-                                            {latestStoreTrace.customerName ||
-                                            latestStoreTrace.customerEmail ? (
-                                              <>
-                                                {" "}
-                                                ·{" "}
-                                                <span className="text-fuchsia-200">
-                                                  {latestStoreTrace.customerName ||
-                                                    latestStoreTrace.customerEmail}
-                                                </span>
-                                              </>
-                                            ) : null}
-                                          </div>
-                                        ) : null}
-                                        {Number(marketplaceTraceSummary?.orderCount || 0) > 0 ? (
-                                          <div>
-                                            <span className="text-slate-400">Đơn sàn gần nhất:</span>{" "}
-                                            <span className="font-semibold text-white">
-                                              {getMarketplaceProviderLabel(
-                                                marketplaceTraceSummary?.latestProvider,
-                                              )}{" "}
-                                              {marketplaceTraceSummary?.latestOrderId || "--"}
-                                            </span>
-                                          </div>
-                                        ) : null}
-                                        {Number(marketplaceTraceSummary?.warrantyCount || 0) > 0 ? (
-                                          <div>
-                                            <span className="text-slate-400">
-                                              Đơn bảo hành gần nhất:
-                                            </span>{" "}
-                                            <span className="font-semibold text-white">
-                                              {marketplaceTraceSummary?.latestWarrantyOrderId ||
-                                                "--"}
-                                            </span>
-                                          </div>
-                                        ) : null}
-                                        <div className="text-[10px] text-slate-400">
-                                          Nếu đã xóa đơn mà khung này vẫn còn, nick này đang còn
-                                          dính trace ở collection khác.
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                };
-                                const daysRemaining = displayMarketplaceUser
-                                  ? getDaysRemaining(displayMarketplaceUser)
-                                  : null;
-                                const isExpired = daysRemaining !== null && daysRemaining <= 0;
-                                const isNearExpiry =
-                                  daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 3;
-                                const marketplaceCardClasses =
-                                  warrantyInfo?.role === "current"
-                                    ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
-                                    : warrantyCase
-                                      ? "border-amber-700/50 bg-amber-950/20 text-amber-100"
-                                      : "border-indigo-700/40 bg-indigo-950/20 text-indigo-100";
-                                const marketplaceChipClasses =
-                                  warrantyInfo?.role === "current"
-                                    ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-200"
-                                    : warrantyCase
-                                      ? "border-amber-500/30 bg-amber-500/15 text-amber-200"
-                                      : "border-indigo-500/30 bg-indigo-500/15 text-indigo-200";
-                                const marketplaceStatusLabel = warrantyCase
-                                  ? warrantyInfo?.role === "current"
-                                    ? "Dang bao hanh"
-                                    : "Lich su bao hanh"
-                                  : isLockedByStoreWarrantyHold
-                                    ? "Giu bao hanh"
-                                    : "Da ban";
-
-                                return (
-                                  <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
-                                    {!isChatgptRowExpanded ? (
-                                      <div className="space-y-1.5">
-                                        <div className="flex flex-wrap items-center justify-between gap-2">
-                                          <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-200">
-                                            {package2ShelfLabel}
-                                          </span>
-                                          {displayMarketplaceExpiryDate ? (
-                                            <span
-                                              className={`text-[10px] font-semibold ${
-                                                isExpired
-                                                  ? "text-red-300"
-                                                  : isNearExpiry
-                                                    ? "text-yellow-300"
-                                                    : "text-emerald-300"
-                                              }`}
-                                            >
-                                              {displayMarketplaceExpiryDate}
-                                            </span>
-                                          ) : null}
-                                        </div>
-                                        <div className="text-[11px] font-semibold text-white">
-                                          {displayMarketplacePrimaryLabel ||
-                                            activeStoreReservationPackageName ||
-                                            package2ShelfLabel}
-                                        </div>
-                                        <div className="text-[10px] text-slate-400">
-                                          {displayMarketplaceSecondaryLabel ||
-                                            (showMarketplaceManagementCard
-                                              ? `${providerLabel} · ${marketplaceStatusLabel}`
-                                              : hasActiveStoreReservation
-                                                ? `${activeStoreReservationStatusLabel || "Đang giữ chỗ"}${activeStoreReservationExpiresAt ? ` · ${activeStoreReservationExpiresAt}` : ""}`
-                                                : package2ShelfLabel)}
-                                        </div>
-                                        <div className="flex flex-wrap gap-1">
-                                          {showMarketplaceManagementCard && (
-                                            <>
-                                              <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                                {providerLabel}
-                                              </span>
-                                              <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-200">
-                                                {marketplaceStatusLabel}
-                                              </span>
-                                            </>
-                                          )}
-                                          {hasActiveStoreReservation && (
-                                            <span className="rounded-full border border-cyan-700/40 bg-cyan-950/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                              Giữ chỗ web
-                                            </span>
-                                          )}
-                                          {!showMarketplaceManagementCard &&
-                                            !hasActiveStoreReservation &&
-                                            !displayMarketplacePrimaryLabel && (
-                                              <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-slate-300">
-                                                Sẵn sàng
-                                              </span>
-                                            )}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <>
-                                    {renderAdminTraceSummary()}
-                                    {displayMarketplaceUser ? (
-                                      showMarketplaceManagementCard ? (
-                                        <div
-                                          className={`rounded-xl border px-3 py-3 shadow-sm ${marketplaceCardClasses}`}
-                                        >
-                                          <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0">
-                                              <div className="flex items-center gap-2">
-                                                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-slate-950/40">
-                                                  <Shield size={12} />
-                                                </span>
-                                                <div>
-                                                  <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white">
-                                                    Don san
-                                                  </div>
-                                                  <div className="mt-0.5 text-[10px] leading-relaxed text-slate-300">
-                                                    {providerLabel} · {displayMarketplaceName || "Khach san"}
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            </div>
-                                            <span
-                                              className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${marketplaceChipClasses}`}
-                                            >
-                                              {marketplaceStatusLabel}
-                                            </span>
-                                          </div>
-
-                                          <div className="mt-3 space-y-1.5 text-[10px]">
-                                            <div className="flex items-center justify-between gap-3">
-                                              <span className="text-slate-400">Order</span>
-                                              <span className="font-semibold text-white">
-                                                {datammoOrderId || "Khong ro"}
-                                              </span>
-                                            </div>
-                                            <div className="flex items-center justify-between gap-3">
-                                              <span className="text-slate-400">Khach san</span>
-                                              <span className="font-semibold text-white">
-                                                {displayMarketplaceName || "--"}
-                                              </span>
-                                            </div>
-                                            <div className="flex items-center justify-between gap-3">
-                                              <span className="text-slate-400">Acc da ban</span>
-                                              <span className="font-semibold text-white">
-                                                {soldMarketplaceUsername || "--"}
-                                              </span>
-                                            </div>
-                                            <div className="flex items-center justify-between gap-3">
-                                              <span className="text-slate-400">Acc hien tai</span>
-                                              <span className="font-semibold text-white">
-                                                {currentMarketplaceUsername || "--"}
-                                              </span>
-                                            </div>
-                                            <div className="flex items-center justify-between gap-3">
-                                              <span className="text-slate-400">Ngay vao</span>
-                                              <span className="font-semibold text-white">
-                                                {displayMarketplaceJoinedDate}
-                                              </span>
-                                            </div>
-                                            {displayMarketplaceExpiryDate && (
-                                              <div className="flex items-center justify-between gap-3">
-                                                <span className="text-slate-400">Het han</span>
-                                                <span
-                                                  className={`font-semibold ${
-                                                    isExpired
-                                                      ? "text-red-300"
-                                                      : isNearExpiry
-                                                        ? "text-yellow-300"
-                                                        : "text-emerald-300"
-                                                  }`}
-                                                >
-                                                  {displayMarketplaceExpiryDate}
-                                                </span>
-                                              </div>
-                                            )}
-                                            {daysRemaining !== null && (
-                                              <div className="flex items-center justify-between gap-3">
-                                                <span className="text-slate-400">Tinh trang</span>
-                                                <span
-                                                  className={`font-semibold ${
-                                                    isExpired
-                                                      ? "text-red-300"
-                                                      : isNearExpiry
-                                                        ? "text-yellow-300"
-                                                        : "text-cyan-200"
-                                                  }`}
-                                                >
-                                                  {isExpired
-                                                    ? `Het han ${Math.abs(daysRemaining)} ngay`
-                                                    : `Con ${daysRemaining} ngay`}
-                                                </span>
-                                              </div>
-                                            )}
-                                          </div>
-
-                                          <div className="mt-3 flex flex-wrap gap-1.5">
-                                            <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                              {providerLabel}
-                                            </span>
-                                            <span className="rounded-full border border-white/10 bg-slate-950/50 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white/80">
-                                              Da ban
-                                            </span>
-                                            {warrantyCase && (
-                                              <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-amber-200">
-                                                Bao hanh lan {warrantyRounds.length}
-                                              </span>
-                                            )}
-                                          </div>
-
-                                          {warrantyCase && (
-                                            <div className="mt-3 rounded-lg border border-white/10 bg-slate-950/30 px-2.5 py-2 text-[10px] text-slate-200">
-                                              <div className="font-semibold text-white">
-                                                {warrantyRoleLabel}
-                                              </div>
-                                              {warrantyInfo?.role === "current" ? (
-                                                <div className="mt-1 text-slate-300">
-                                                  Acc nay dang la acc hien tai cua don.
-                                                </div>
-                                              ) : latestWarrantyTarget ? (
-                                                <div className="mt-1 text-slate-300">
-                                                  Hien tai dang thay boi{" "}
-                                                  <span className="font-semibold text-white">
-                                                    {latestWarrantyTarget}
-                                                  </span>
-                                                </div>
-                                              ) : null}
-                                            </div>
-                                          )}
-
-                                          <div
-                                            className={`mt-3 grid gap-2 ${
-                                              hasActualManagedMarketplaceUser &&
-                                              (isExpired || isNearExpiry)
-                                                ? "grid-cols-2"
-                                                : "grid-cols-1"
-                                            }`}
-                                          >
-                                            {canOpenDatammoWarranty && (
-                                              <button
-                                                type="button"
-                                                onClick={() => openWarrantyModal(acc)}
-                                                className="rounded-lg bg-cyan-700 hover:bg-cyan-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
-                                                title={`Bảo hành ${providerLabel}`}
-                                              >
-                                                Bao hanh
-                                              </button>
-                                            )}
-                                            {(isExpired || isNearExpiry) && (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  handleExtendUser(
-                                                    acc.id,
-                                                    primaryUserIndex,
-                                                    u,
-                                                  )
-                                                }
-                                                className="rounded-lg bg-emerald-700 hover:bg-emerald-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors"
-                                                title="Gia hạn"
-                                              >
-                                                Gia han
-                                              </button>
-                                            )}
-                                            <div
-                                              className={`rounded-lg border border-slate-700 bg-slate-950/50 px-2.5 py-2 text-center text-[11px] font-bold text-slate-300 ${
-                                                canOpenDatammoWarranty ||
-                                                (hasActualManagedMarketplaceUser &&
-                                                  (isExpired || isNearExpiry))
-                                                  ? "col-span-2"
-                                                  : ""
-                                              }`}
-                                            >
-                                              Acc da ban qua san - khong chuyen tay. Neu can doi acc, hay dung Bao hanh.
-                                            </div>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div
-                                          className={`flex justify-between items-center text-sm font-bold p-1 rounded ${isExpired ? "bg-red-900/20" : ""}`}
-                                        >
-                                          <div
-                                            className={
-                                              isExpired
-                                                ? "text-red-400"
-                                                : "text-white"
-                                            }
-                                          >
-                                            <span className="flex items-center gap-2">
-                                              {isExpired && (
-                                                <AlertCircle
-                                                  size={14}
-                                                  className="text-red-500"
-                                                />
-                                              )}
-                                              {isNearExpiry && (
-                                                <AlertTriangle
-                                                  size={14}
-                                                  className="text-yellow-500"
-                                                />
-                                              )}
-                                              👤 {displayMarketplacePrimaryLabel}
-                                            </span>
-                                            {displayMarketplaceSecondaryLabel ? (
-                                              <span className="text-[10px] ml-6 block font-semibold text-cyan-200">
-                                                {displayMarketplaceSecondaryLabel}
-                                              </span>
-                                            ) : null}
-                                            <span
-                                              className={`text-[10px] block ml-6 ${isExpired
-                                                ? "text-red-300"
-                                                : isNearExpiry
-                                                  ? "text-yellow-400"
-                                                  : daysRemaining !== null && daysRemaining > 30
-                                                    ? "text-purple-400"
-                                                    : "text-slate-400"
-                                                }`}
-                                            >
-                                              {displayMarketplaceJoinedDate}
-                                              {daysRemaining !== null && (
-                                                <span className="ml-1">
-                                                  {isExpired
-                                                    ? `(HH ${Math.abs(daysRemaining)}ngày)`
-                                                    : `(Còn ${daysRemaining}ngày)`}
-                                                </span>
-                                              )}
-                                            </span>
-                                            {displayMarketplaceExpiryDate && (
-                                              <span className={`text-[10px] block ml-6 font-semibold ${isExpired ? "text-red-500" : isNearExpiry ? "text-yellow-500" : "text-emerald-500"
-                                                }`}>
-                                                🕑 HH: {displayMarketplaceExpiryDate}
-                                              </span>
-                                            )}
-                                            {renderWarrantySummary("mt-2 ml-6")}
-                                          </div>
-                                          <div className="flex gap-2">
-                                            {hasActualManagedMarketplaceUser &&
-                                              (isExpired || isNearExpiry) && (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  handleExtendUser(
-                                                    acc.id,
-                                                    primaryUserIndex,
-                                                    u,
-                                                  )
-                                                }
-                                                className="text-green-400 hover:text-white"
-                                                title="Gia hạn"
-                                              >
-                                                <RotateCw size={14} />
-                                              </button>
-                                            )}
-                                            {!showMarketplaceManagementCard &&
-                                            !isLockedByStoreWarrantyHold ? (
-                                              !isExpired ? (
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    openMoveUserModal(
-                                                      acc.id,
-                                                      primaryUserIndex,
-                                                      displayMarketplaceUser,
-                                                    )
-                                                  }
-                                                  className="text-orange-400 hover:text-white"
-                                                  title="Chuyen khach"
-                                                >
-                                                  <ArrowRightLeft size={14} />
-                                                </button>
-                                              ) : (
-                                                <span
-                                                  className="text-slate-500 cursor-not-allowed"
-                                                  title="Het han: Khong the chuyen"
-                                                >
-                                                  <ArrowRightLeft size={14} />
-                                                </span>
-                                              )
-                                            ) : (
-                                              <span
-                                                className="text-slate-500 cursor-not-allowed"
-                                                title={
-                                                  isLockedByStoreWarrantyHold
-                                                    ? "Acc dang duoc giu cho khach bao hanh"
-                                                    : "Acc da ban qua san khong duoc chuyen tay"
-                                                }
-                                              >
-                                                <ArrowRightLeft size={14} />
-                                              </span>
-                                            )}
-                                            {!showMarketplaceManagementCard &&
-                                              !isLockedByStoreWarrantyHold && (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    openEditUserModal(
-                                                      acc.id,
-                                                      primaryUserIndex,
-                                                      displayMarketplaceUser,
-                                                    )
-                                                  }
-                                                  className="text-blue-400 hover:text-white"
-                                                  title="Sua khach"
-                                                >
-                                                  <Pencil size={14} />
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    handleDeleteUser(
-                                                      acc.id,
-                                                      primaryUserIndex,
-                                                      getUserName(displayMarketplaceUser),
-                                                    )
-                                                  }
-                                                  className="text-red-400 hover:text-white"
-                                                  title="Xoa khach"
-                                                >
-                                                  <X size={14} />
-                                                </button>
-                                              </>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )
-                                    ) : (
-                                      <div className="flex flex-col gap-2">
-                                        {renderWarrantySummary()}
-                                        {(() => {
-                                          const warehouseCardClasses = hasActiveStoreReservation
-                                            ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100"
-                                            : isOnDatammoShelf
-                                              ? "border-emerald-700/50 bg-emerald-950/20 text-emerald-100"
-                                              : "border-slate-700/60 bg-slate-900/80 text-slate-100";
-                                          const warehouseChipClasses = hasActiveStoreReservation
-                                            ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-200"
-                                            : isOnDatammoShelf
-                                              ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
-                                              : "border-slate-600/60 bg-slate-800 text-slate-200";
-                                          const warehouseTitle = hasActiveStoreReservation
-                                            ? "Don web dang giu cho"
-                                            : isOnDatammoShelf
-                                              ? "Kho market"
-                                              : "Kho tong";
-                                          const warehouseStatus = hasActiveStoreReservation
-                                            ? "Da khoa"
-                                            : isOnDatammoShelf
-                                              ? "Chua ban"
-                                              : "San sang";
-                                          const warehouseDescription = hasActiveStoreReservation
-                                            ? "Acc nay dang duoc don web giu cho nen tam thoi khoa sua, xoa va doi kho."
-                                            : isOnDatammoShelf
-                                              ? "Acc dang nam trong kho market va se duoc ban tu dong qua Datammo + Shopmini."
-                                              : "Acc dang nam o kho tong, co the them khach tay hoac chuyen sang kho khac.";
-                                          return (
-                                            <div
-                                              className={`rounded-xl border px-3 py-3 shadow-sm ${warehouseCardClasses}`}
-                                            >
-                                              <div className="flex items-start justify-between gap-3">
-                                                <div className="min-w-0">
-                                                  <div className="flex items-center gap-2">
-                                                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-slate-950/40">
-                                                      <Globe size={12} />
-                                                    </span>
-                                                    <div>
-                                                      <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white">
-                                                        {warehouseTitle}
-                                                      </div>
-                                                      <div className="mt-0.5 text-[10px] leading-relaxed text-slate-300">
-                                                        {warehouseDescription}
-                                                      </div>
-                                                    </div>
-                                                  </div>
-                                                </div>
-                                                <span
-                                                  className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${warehouseChipClasses}`}
-                                                >
-                                                  {warehouseStatus}
-                                                </span>
-                                              </div>
-                                              {hasActiveStoreReservation ? (
-                                                <div className="mt-2 space-y-1.5">
-                                                  {activeStoreReservationTraces.map((trace, traceIndex) => (
-                                                    <div
-                                                      key={`${acc.id}-package2-reservation-${trace.orderId || trace.expiresAt || traceIndex}`}
-                                                      className="rounded-lg border border-cyan-500/25 bg-slate-950/35 px-2.5 py-2 text-[10px] text-cyan-50"
-                                                    >
-                                                      <div className="flex items-start justify-between gap-2">
-                                                        <div className="min-w-0">
-                                                          <div className="truncate font-black uppercase tracking-[0.08em] text-cyan-200">
-                                                            {trace.orderId || "Don web"}
-                                                          </div>
-                                                          <div className="mt-0.5 truncate text-slate-200">
-                                                            {trace.customerName || "Khach web"}
-                                                          </div>
-                                                        </div>
-                                                        <span className="shrink-0 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                                          Giữ chỗ
-                                                        </span>
-                                                      </div>
-                                                      <div className="mt-1 text-[10px] text-slate-300">
-                                                        {getStoreOrderStatusLabel(trace.status)}
-                                                        {trace.expiresAt
-                                                          ? ` · Giữ tới ${formatDate(trace.expiresAt)}`
-                                                          : ""}
-                                                      </div>
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                              ) : isOnDatammoShelf && (
-                                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                                  <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-emerald-200">
-                                                    Datammo
-                                                  </span>
-                                                  <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">
-                                                    Shopmini
-                                                  </span>
-                                                  <span className="rounded-full border border-white/10 bg-slate-950/50 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white/80">
-                                                    1 acc / 1 thang
-                                                  </span>
-                                                </div>
-                                              )}
-                                            </div>
-                                          );
-                                        })()}
-                                        {hasActiveStoreReservation ? null : isLockedByStoreWarrantyHold ? (
-                                          <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
-                                            <div className="font-bold uppercase tracking-[0.08em] text-amber-200">
-                                              Giu cho khach bao hanh
-                                            </div>
-                                            <div className="mt-1 break-all text-slate-200">
-                                              {storeWarrantyHoldInfo?.customerName ||
-                                                storeWarrantyHoldInfo?.customerEmail ||
-                                                "Khach bao hanh"}
-                                            </div>
-                                            <div className="mt-1 text-[10px] text-slate-300">
-                                              {[storeWarrantyHoldInfo?.orderId, storeWarrantyHoldInfo?.statusLabel]
-                                                .filter(Boolean)
-                                                .join(" · ") || "Acc nay dang bi khoa de tranh ban nham"}
-                                            </div>
-                                          </div>
-                                        ) : isOnDatammoShelf ? (
-                                          <div className="flex gap-1">
-                                            <button
-                                              type="button"
-                                              onClick={() => openAddUserModal(acc.id, "[Datammo] Khach moi")}
-                                              className="w-full text-center text-xs px-2 py-1.5 bg-teal-700 hover:bg-teal-600 font-bold rounded text-white transition-colors"
-                                              title="Gan Khach va tu dien ten Datammo"
-                                            >
-                                              + Datammo
-                                            </button>
-                                          </div>
-                                        ) : !marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
-                                          <div className="flex gap-1">
-                                            <button
-                                              type="button"
-                                              onClick={() => openAddUserModal(acc.id)}
-                                              className="w-full text-center text-xs px-2 py-1.5 bg-blue-700 hover:bg-blue-600 font-bold rounded text-white transition-colors"
-                                              title="Them khach thuong"
-                                            >
-                                              + Khach
-                                            </button>
-                                          </div>
-                                        ) : null}
-                                      </div>
-                                    )}
-                                      </>
-                                    )}
-                                  </div>
-                                );
-                              })()
-                            ) : (
-                              <span className="text-yellow-600 text-xs italic">
-                                Chọn gói trước
+                          )}
+                          {acc.link && (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="w-16 text-[10px] font-semibold uppercase text-slate-500">Link mail</span>
+                              <a href={acc.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md bg-teal-700/90 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-teal-600">
+                                <Mail size={10} /> Mở mail
+                              </a>
+                              <button onClick={() => handleCopy(acc.link, "Đã copy Link Mail")} className="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-slate-600">
+                                <Copy size={10} /> Copy
+                              </button>
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button onClick={() => handleCopy(buildChatgptCopyText(acc), getChatgptCopySuccessText(acc))} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600/80 px-2.5 py-1.5 text-[10px] font-bold text-white transition hover:bg-indigo-500">
+                              <Copy size={11} /> {getChatgptCopyButtonText(acc)}
+                            </button>
+                            {acc.expiredAt && (
+                              <span className={`flex items-center gap-1 text-[10px] ${getExpiryStatus(acc.expiredAt).color}`}>
+                                <Calendar size={10} /> {formatDate(acc.expiredAt)}
                               </span>
                             )}
-                          </td>
-                          <td className="text-center align-top py-3">
-                            <div className="flex flex-col items-center gap-1.5">
-                              <div className="flex justify-center gap-1.5">
-                              {(() => {
-                                const primaryUser = Array.isArray(acc.users)
-                                  ? acc.users[0]
-                                  : null;
-                                const trackedMarketplaceEntry =
-                                  marketplaceTrackedAccountMap.get(String(acc?.id || ""));
-                                const trackedMarketplaceRole = String(
-                                  trackedMarketplaceEntry?.role || "",
-                                ).trim();
-                                const hasActiveMarketplaceTracking =
-                                  trackedMarketplaceRole === "sold" ||
-                                  trackedMarketplaceRole === "current";
-                                const hasActualManagedMarketplaceUser =
-                                  !!primaryUser &&
-                                  isActiveMarketplaceManagedUser(primaryUser);
-                                const managedOrderInfo =
-                                  getMarketplaceOrderInfoFromUser(primaryUser);
-                                const latestMarketplaceOrder =
-                                  findMarketplaceOrderForAccount(
-                                    acc.id,
-                                    datammoOrderHistory,
-                                    managedOrderInfo.provider,
-                                  );
-                                const marketplaceOrderId = String(
-                                  managedOrderInfo.orderId ||
-                                    trackedMarketplaceEntry?.orderId ||
-                                    latestMarketplaceOrder?.orderId ||
-                                    "",
-                                ).trim();
-                                const warrantyInfo = getDatammoWarrantyInfoForAccount(
-                                  acc.id,
-                                  datammoWarrantyCases,
-                                );
-                                const canOpenWarranty =
-                                  (!!marketplaceOrderId &&
-                                    (hasActualManagedMarketplaceUser ||
-                                      hasActiveMarketplaceTracking)) ||
-                                  warrantyInfo?.role === "current";
-                                if (!canOpenWarranty) return null;
-                                return (
-                                  <button
-                                    type="button"
-                                    onClick={() => openWarrantyModal(acc)}
-                                    className="rounded-md bg-slate-700 p-1.5 text-slate-300 transition-colors hover:bg-cyan-600 hover:text-white"
-                                    title="Bao hanh don san"
-                                  >
-                                    <Shield size={14} />
-                                  </button>
-                                );
-                              })()}
-                              <button
-                                type="button"
-                                onClick={() => handleRunOneChatgptMailCheck(acc)}
-                                disabled={
-                                  normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) ===
-                                    "died" ||
-                                  loadingStates.runChatgptMailCheckOne ===
-                                  String(acc?.id || "")
-                                }
-                                className="rounded-md bg-slate-700 p-1.5 text-slate-300 transition-colors hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                                title={
-                                  normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) ===
-                                  "died"
-                                    ? "Acc da Mail die, khong doc lai"
-                                    : `Đọc mail ${getChatgptMailCheckSourceLabel(acc)}`
-                                }
+                          </div>
+                          {getVisibleAccountNote(acc.note) && (
+                            <div className="rounded-lg border border-yellow-700/30 bg-yellow-900/10 px-2 py-1.5 text-[10px] italic text-yellow-200">{getVisibleAccountNote(acc.note)}</div>
+                          )}
+                        </div>
+
+                        {/* Type & shelf dropdowns */}
+                        <div className="flex flex-wrap gap-3">
+                          {gptSubTab !== "market" && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-semibold text-slate-500">Loại gói:</span>
+                              <select
+                                id={`select-type-${acc.id}`}
+                                value={displayedChatgptType}
+                                onChange={(e) => handleTypeChange(acc, e.target.value)}
+                                disabled={loadingStates.changeType[acc.id] || isAccountLockedFromManualSale}
+                                className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold outline-none cursor-pointer appearance-none transition ${typeBadgeCls} ${loadingStates.changeType[acc.id] || isAccountLockedFromManualSale ? "opacity-50 cursor-not-allowed" : ""}`}
                               >
-                                {loadingStates.runChatgptMailCheckOne ===
-                                String(acc?.id || "") ? (
-                                  <Loader2 size={14} className="animate-spin" />
-                                ) : (
-                                  <Mail size={14} />
-                                )}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingAcc({
-                                    ...acc,
-                                    note: getVisibleAccountNote(acc.note),
-                                    package2Shelf:
-                                      supportsChatgptMarketType(acc.type) ? normalizePackage2Shelf(acc.package2Shelf) : "none",
-                                  });
-                                  setShowEditModal(true);
-                                }}
-                                disabled={isAccountLockedFromManualSale}
-                                className={`rounded-md p-1.5 transition-colors ${
-                                  isAccountLockedFromManualSale
-                                    ? "bg-slate-800 text-slate-500 cursor-not-allowed"
-                                    : "bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white"
-                                }`}
-                                title={
-                                  isAccountLockedFromManualSale
-                                    ? isAccountLockedByStoreWarrantyHold
-                                      ? "Acc dang duoc giu cho khach bao hanh"
-                                      : "Acc dang bi don web giu cho"
-                                    : "Sửa Tài Khoản"
-                                }
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDeletingId(acc.id);
-                                  setShowDeleteModal(true);
-                                }}
-                                disabled={isAccountLockedFromManualSale}
-                                className={`rounded-md p-1.5 transition-colors ${
-                                  isAccountLockedFromManualSale
-                                    ? "bg-slate-800 text-slate-500 cursor-not-allowed"
-                                    : "bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white"
-                                }`}
-                                title={
-                                  isAccountLockedFromManualSale
-                                    ? isAccountLockedByStoreWarrantyHold
-                                      ? "Acc dang duoc giu cho khach bao hanh"
-                                      : "Acc dang bi don web giu cho"
-                                    : "Xóa Tài Khoản"
-                                }
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExpandedChatgptAccountId((prev) =>
-                                    String(prev || "").trim() ===
-                                    String(acc?.id || "").trim()
-                                      ? ""
-                                      : String(acc?.id || "").trim(),
-                                  )
-                                }
-                                className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-200 transition-colors hover:bg-slate-700 hover:text-white"
-                                title={
-                                  isChatgptRowExpanded
-                                    ? "Thu gọn"
-                                    : "Xem chi tiết"
-                                }
-                              >
-                                <ChevronUp
-                                  size={12}
-                                  className={`transition-transform ${
-                                    isChatgptRowExpanded
-                                      ? ""
-                                      : "rotate-180"
-                                  }`}
-                                />
-                                {isChatgptRowExpanded ? "Ẩn" : "Xem"}
-                              </button>
+                                <option value="unassigned">❓ Chọn Gói...</option>
+                                <option value="package1">👥 Gói 1: Chia sẻ</option>
+                                <option value="package2">🔒 Gói 2: Linh hoạt</option>
+                              </select>
+                              {loadingStates.changeType[acc.id] && <Loader2 size={13} className="animate-spin text-blue-400" />}
                             </div>
-                          </td>
-                    </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          )}
+                          {supportsChatgptMarketType(acc.type) && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-semibold text-slate-500">Kho:</span>
+                              {marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
+                                <span className="rounded-lg border border-amber-700/60 bg-amber-900/30 px-2.5 py-1 text-[10px] font-bold text-amber-200">🔒 Khóa đơn sàn</span>
+                              ) : hasActiveStoreReservation ? (
+                                <span className="rounded-lg border border-cyan-700/60 bg-cyan-900/30 px-2.5 py-1 text-[10px] font-bold text-cyan-200">🔒 Đơn web giữ chỗ</span>
+                              ) : isAccountLockedByStoreWarrantyHold ? (
+                                <span className="rounded-lg border border-amber-700/60 bg-amber-900/30 px-2.5 py-1 text-[10px] font-bold text-amber-200" title="Nick lỗi đang giữ để đối chiếu lịch sử bảo hành web">🔒 Nick lỗi BH web</span>
+                              ) : (
+                                <select
+                                  value={normalizeChatgptWarehouseUiValue(acc.package2Shelf)}
+                                  onChange={(e) => handlePackage2ShelfChange(acc, e.target.value)}
+                                  title={hasAssignedCustomer(acc) ? "Tài khoản đang có khách nên không thể đổi kho" : "Đổi kho tài khoản"}
+                                  disabled={loadingStates.changeType[acc.id] || loadingStates.changeShelf[acc.id] || hasAssignedCustomer(acc) || isAccountLockedFromManualSale}
+                                  className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold outline-none cursor-pointer appearance-none transition ${normalizeChatgptWarehouseUiValue(acc.package2Shelf) === "none" ? "border-slate-600 bg-slate-800 text-slate-300" : "border-emerald-700/60 bg-emerald-900/30 text-emerald-300"} ${loadingStates.changeShelf[acc.id] ? "opacity-50" : ""}`}
+                                >
+                                  <option value="none">📦 Kho tổng</option>
+                                  <option value="cheap">🏪 Kho market</option>
+                                </select>
+                              )}
+                              {loadingStates.changeShelf[acc.id] && <Loader2 size={13} className="animate-spin text-emerald-400" />}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Mail check detail */}
+                        <div className="rounded-xl border border-rose-900/30 bg-rose-950/10 p-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[10px] font-black uppercase tracking-[0.12em] text-rose-300">Mail check</span>
+                              <span className={`rounded-full border px-2 py-0.5 text-[10px] ${mailCheckVisualState.tone}`}>{mailCheckVisualState.label}</span>
+                              {acc?.mailCheckLastCheckedAt && <span className="text-[10px] text-slate-400">Check lần cuối: {formatDateTime(acc.mailCheckLastCheckedAt) || "--"}</span>}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRunOneChatgptMailCheck(acc)}
+                              disabled={normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) === "died" || loadingStates.runChatgptMailCheckOne === String(acc?.id || "")}
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[10px] font-semibold text-rose-100 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                              title={normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) === "died" ? "Acc đã Mail die, không đọc lại" : `Đọc mail ${getChatgptMailCheckSourceLabel(acc)}`}
+                            >
+                              {loadingStates.runChatgptMailCheckOne === String(acc?.id || "") ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
+                              {normalizeChatgptMailCheckStatus(acc?.mailCheckStatus) === "died" ? "Đã die" : "Đọc mail"}
+                            </button>
+                          </div>
+                          {acc?.mailCheckLastSubject && (
+                            <div className="mt-2 space-y-1 text-[10px]">
+                              <div className="font-semibold text-white">{acc.mailCheckLastSubject}</div>
+                              <div className="text-slate-400">{acc?.mailCheckLastSender || "--"}{acc?.mailCheckLastMatchedAt ? ` · ${formatDateTime(acc.mailCheckLastMatchedAt) || "--"}` : ""}</div>
+                              {acc?.mailCheckLastSnippet && <div className="rounded-md border border-slate-700/70 bg-slate-900/70 px-2 py-1.5 text-slate-300">{acc.mailCheckLastSnippet}</div>}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Store warranty hold info */}
+                        {isAccountLockedByStoreWarrantyHold && storeWarrantyHoldInfo && (
+                          <div className="rounded-xl border border-amber-700/30 bg-amber-900/10 px-3 py-2 text-[10px]">
+                            <div className="font-bold uppercase tracking-[0.1em] text-amber-300 mb-1">Giữ chỗ khách bảo hành web</div>
+                            <div className="text-slate-200">{storeWarrantyHoldInfo?.customerName || storeWarrantyHoldInfo?.customerEmail || "Khách bảo hành"}</div>
+                            <div className="mt-0.5 text-slate-400">{[storeWarrantyHoldInfo?.orderId, storeWarrantyHoldInfo?.statusLabel].filter(Boolean).join(" · ") || "Acc này đang bị khóa để tránh bán nhầm"}</div>
+                          </div>
+                        )}
+
+                        {/* Customer slots section */}
+                        <div>
+                          <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                            {effectiveChatgptCustomerViewType === "package1" ? `Khách (${visibleChatgptUserEntries.length}/3 slot)` : effectiveChatgptCustomerViewType === "package2" ? "Khách gói 2" : "Khách"}
+                          </div>
+                          {/* The full customer slot rendering from original code is preserved below */}
+                          {effectiveChatgptCustomerViewType === "package1" ? (
+                            <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
+                              <div className="flex justify-between items-center text-xs mb-2 pb-1 border-b border-slate-700/50">
+                                {(() => {
+                                  const currentUserCount = visibleChatgptUserEntries.length;
+                                  const reservedSlotCount = activeStoreReservationCount;
+                                  const occupiedSlotCount = currentUserCount + reservedSlotCount;
+                                  const maxSlots = 3;
+                                  const isFull = occupiedSlotCount >= maxSlots;
+                                  return (
+                                    <>
+                                      <span className={`font-bold ${isFull ? "text-red-400" : "text-slate-300"}`}>
+                                        Slot: {Math.min(occupiedSlotCount, maxSlots)}/{maxSlots}
+                                        {isFull ? " (Đầy)" : ""}
+                                      </span>
+                                      {reservedSlotCount > 0 && (
+                                        <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 text-[9px] font-bold text-cyan-200">
+                                          Giữ chỗ: {reservedSlotCount}
+                                        </span>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                              {visibleChatgptUserEntries.map((entry) => {
+                                const { user, index, name } = entry;
+                                const daysRem = (() => {
+                                  if (typeof user !== "object" || !user) return null;
+                                  if (user.expiredAt) return Math.ceil((new Date(user.expiredAt) - new Date()) / 86400000);
+                                  if (user.joinedAt) { const e = new Date(user.joinedAt); e.setMonth(e.getMonth() + 1); return Math.ceil((e - new Date()) / 86400000); }
+                                  return null;
+                                })();
+                                const storeOrderId = getStoreOrderIdentityForAccountUser(acc, user);
+                                return (
+                                  <div key={index} className={`flex justify-between items-center text-sm font-bold p-1 rounded mb-1 ${daysRem !== null && daysRem <= 0 ? "bg-red-900/20" : ""}`}>
+                                    <div className={daysRem !== null && daysRem <= 0 ? "text-red-400" : "text-white"}>
+                                      <span className="flex items-center gap-2">
+                                        {daysRem !== null && daysRem <= 0 && <AlertCircle size={14} className="text-red-500" />}
+                                        {daysRem !== null && daysRem > 0 && daysRem <= 3 && <AlertTriangle size={14} className="text-yellow-500" />}
+                                        👤 {name}
+                                      </span>
+                                      <span className={`text-[10px] block ml-6 ${daysRem !== null && daysRem <= 0 ? "text-red-300" : daysRem !== null && daysRem <= 3 ? "text-yellow-400" : daysRem !== null && daysRem > 30 ? "text-purple-400" : "text-slate-400"}`}>
+                                        {user?.joinedAt ? new Date(user.joinedAt).toLocaleDateString("vi-VN") : "--"}
+                                        {daysRem !== null && <span className="ml-1">{daysRem <= 0 ? `(HH ${Math.abs(daysRem)}ngày)` : `(Còn ${daysRem}ngày)`}</span>}
+                                      </span>
+                                      {user?.expiredAt && (
+                                        <span className={`text-[10px] block ml-6 font-semibold ${daysRem !== null && daysRem <= 0 ? "text-red-500" : daysRem !== null && daysRem <= 3 ? "text-yellow-500" : "text-emerald-500"}`}>
+                                          🕑 HH: {new Date(user.expiredAt).toLocaleDateString("vi-VN")}
+                                        </span>
+                                      )}
+                                      {storeOrderId && (
+                                        <span className="block ml-6 mt-0.5 text-[10px] font-semibold text-cyan-200">
+                                          {storeOrderId.customerName || storeOrderId.orderId ? `Đơn web: ${storeOrderId.orderId || storeOrderId.customerName}` : ""}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-1.5">
+                                      <button onClick={() => handleExtendUser(acc.id, index, user)} className="text-green-400 hover:text-white" title="Gia hạn"><RotateCw size={14} /></button>
+                                      {daysRem !== null && daysRem > 0 ? (
+                                        <button onClick={() => openMoveUserModal(acc.id, index, user)} className="text-orange-400 hover:text-white" title="Chuyển khách"><ArrowRightLeft size={14} /></button>
+                                      ) : (
+                                        <span className="text-slate-600 cursor-not-allowed" title="Hết hạn: không thể chuyển"><ArrowRightLeft size={14} /></span>
+                                      )}
+                                      <button onClick={() => openEditUserModal(acc.id, index, user)} className="text-blue-400 hover:text-white" title="Sửa khách"><Pencil size={14} /></button>
+                                      <button onClick={() => handleDeleteUser(acc.id, index, name)} className="text-red-400 hover:text-white" title="Xóa khách"><X size={14} /></button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              {/* Reservation traces */}
+                              {activeStoreReservationTraces.length > 0 && (
+                                <div className="mt-1 space-y-1">
+                                  {activeStoreReservationTraces.map((trace, i) => (
+                                    <div key={i} className="flex items-center justify-between rounded-md border border-cyan-600/40 bg-cyan-500/10 px-2 py-1 text-[10px]">
+                                      <span className="font-semibold text-cyan-200">{trace?.customerName || trace?.customerEmail || "Khách đơn web"}</span>
+                                      <span className="rounded-full border border-cyan-600/40 bg-slate-900/70 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">Giữ chỗ</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {/* Add user button for package1 */}
+                              {!isAccountLockedFromManualSale && !marketplaceTrackedAccountIds.has(String(acc?.id || "")) && (
+                                <button onClick={() => openAddUserModal(acc.id)} className="mt-1 w-full text-center text-xs px-2 py-1.5 bg-blue-700 hover:bg-blue-600 font-bold rounded text-white transition-colors">+ Thêm khách</button>
+                              )}
+                            </div>
+                          ) : effectiveChatgptCustomerViewType === "package2" || hasActiveStoreReservation || !!storeWarrantyHoldInfo || isChatgptMarketWarehouse(acc) || marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
+                            (() => {
+                              /* Preserve full package2/market display logic from original */
+                              const u = primaryVisibleChatgptUserEntry?.user || (Array.isArray(acc.users) ? acc.users[0] : null);
+                              const primaryUserIndex = primaryVisibleChatgptUserEntry?.index ?? 0;
+                              const package2Shelf = normalizePackage2Shelf(acc.package2Shelf);
+                              const package2ShelfLabel = getChatgptWarehouseLabel(package2Shelf);
+                              const isTrackedMarketplaceAccount = marketplaceTrackedAccountIds.has(String(acc?.id || ""));
+                              const trackedMarketplaceEntry = marketplaceTrackedAccountMap.get(String(acc?.id || ""));
+                              const trackedMarketplaceSummary = trackedMarketplaceEntry?.summary || null;
+                              const storeTraceSummary = acc?.storeTraceSummary || null;
+                              const marketplaceTraceSummary = acc?.marketplaceTraceSummary || null;
+                              const isLockedByStoreWarrantyHold = !!storeWarrantyHoldInfo && !u && !hasActiveStoreReservation;
+                              const isInMarketWarehouse = package2Shelf === "cheap";
+                              const isOnDatammoShelf = isInMarketWarehouse;
+                              const legacyMarketplaceInfo = getLegacyMarketplaceInfoFromNote(acc.note);
+                              const managedOrderInfo = getMarketplaceOrderInfoFromUser(u);
+                              const latestMarketplaceOrder = findMarketplaceOrderForAccount(acc.id, datammoOrderHistory, managedOrderInfo.provider);
+                              const datammoOrderId = String(managedOrderInfo.orderId || legacyMarketplaceInfo?.orderId || trackedMarketplaceEntry?.orderId || latestMarketplaceOrder?.orderId || "").trim();
+                              const managedProvider = normalizeMarketplaceProvider(managedOrderInfo.provider || legacyMarketplaceInfo?.provider || trackedMarketplaceEntry?.provider || latestMarketplaceOrder?.provider);
+                              const providerLabel = getMarketplaceProviderLabel(managedProvider);
+                              const warrantyInfo = getDatammoWarrantyInfoForAccount(acc.id, datammoWarrantyCases);
+                              const trackedMarketplaceRole = String(trackedMarketplaceEntry?.role || "").trim();
+                              const hasActiveMarketplaceTracking = trackedMarketplaceRole === "sold" || trackedMarketplaceRole === "current";
+                              const warrantyCase = warrantyInfo?.warrantyCase;
+                              const hasVerifiedMarketplaceTrace = !!trackedMarketplaceEntry || !!latestMarketplaceOrder || !!warrantyCase;
+                              const hasActualManagedMarketplaceUser = !!u && isActiveMarketplaceManagedUser(u) && hasVerifiedMarketplaceTrace;
+                              const hasRegularVisibleUser = !!u && (!isActiveMarketplaceManagedUser(u) || !hasVerifiedMarketplaceTrace);
+                              const warrantyProviderLabel = getMarketplaceProviderLabel(warrantyCase?.provider || managedProvider);
+                              const warrantyRounds = Array.isArray(warrantyCase?.rounds) ? warrantyCase.rounds : [];
+                              const warrantyRoleLabel = warrantyInfo?.role === "current" ? "Acc đang thay" : warrantyInfo?.role === "history" ? "Acc đã thay" : "Acc lỗi gốc";
+                              const latestWarrantyTarget = warrantyCase?.currentUsername || warrantyRounds[warrantyRounds.length - 1]?.toUsername || warrantyCase?.currentAccountId || "";
+                              const showMarketplaceManagementCard = hasActualManagedMarketplaceUser || isTrackedMarketplaceAccount || !!warrantyCase;
+                              const displayMarketplaceUser = hasRegularVisibleUser ? u : hasActualManagedMarketplaceUser ? u : storeWarrantyHoldInfo ? { name: storeWarrantyHoldInfo.customerName || storeWarrantyHoldInfo.customerEmail || `Don ${storeWarrantyHoldInfo.orderId || "bao-hanh"}`, joinedAt: storeWarrantyHoldInfo.createdAt || "", expiredAt: acc?.expiredAt || "" } : showMarketplaceManagementCard ? { name: legacyMarketplaceInfo?.name || trackedMarketplaceEntry?.label || trackedMarketplaceSummary?.currentUsername || trackedMarketplaceSummary?.soldUsername || `${providerLabel}#${datammoOrderId || "order"}`, joinedAt: legacyMarketplaceInfo?.joinedAt || trackedMarketplaceEntry?.order?.createdAt || latestMarketplaceOrder?.createdAt || "", expiredAt: legacyMarketplaceInfo?.expiredAt || "" } : null;
+                              const displayMarketplaceName = String(getUserName(displayMarketplaceUser) || trackedMarketplaceEntry?.label || trackedMarketplaceSummary?.currentUsername || trackedMarketplaceSummary?.soldUsername || "").trim();
+                              const linkedStoreOrderForDisplayUser = displayMarketplaceUser ? getStoreOrderIdentityForAccountUser(acc, displayMarketplaceUser) : null;
+                              const displayMarketplacePrimaryLabel = String(displayMarketplaceName || storeWarrantyHoldInfo?.customerName || storeWarrantyHoldInfo?.customerEmail || (storeWarrantyHoldInfo?.orderId ? `Don ${storeWarrantyHoldInfo.orderId}` : "") || linkedStoreOrderForDisplayUser?.customerName || linkedStoreOrderForDisplayUser?.orderId || "").trim();
+                              const displayMarketplaceSecondaryLabel = String((storeWarrantyHoldInfo ? [storeWarrantyHoldInfo.orderId, storeWarrantyHoldInfo.statusLabel, storeWarrantyHoldInfo.packageName].filter(Boolean).join(" · ") : "") || linkedStoreOrderForDisplayUser?.orderId || linkedStoreOrderForDisplayUser?.contact || "").trim();
+                              const soldMarketplaceUsername = String(trackedMarketplaceSummary?.soldUsername || acc?.username || "").trim();
+                              const currentMarketplaceUsername = String(warrantyCase?.currentUsername || trackedMarketplaceSummary?.currentUsername || soldMarketplaceUsername || acc?.username || "").trim();
+                              const displayMarketplaceJoinedDate = getUserDate(displayMarketplaceUser) || formatDate(trackedMarketplaceEntry?.order?.createdAt || latestMarketplaceOrder?.createdAt) || "--";
+                              const displayMarketplaceExpiryDate = getUserExpiryDate(displayMarketplaceUser) || formatDate(acc?.expiredAt) || "";
+                              const canOpenDatammoWarranty = showMarketplaceManagementCard && !!datammoOrderId;
+                              const daysRemainingMarket = displayMarketplaceUser ? getDaysRemaining(displayMarketplaceUser) : null;
+                              const isExpiredMarket = daysRemainingMarket !== null && daysRemainingMarket <= 0;
+                              const isNearExpiryMarket = daysRemainingMarket !== null && daysRemainingMarket > 0 && daysRemainingMarket <= 3;
+                              const marketplaceCardClasses = warrantyInfo?.role === "current" ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100" : warrantyCase ? "border-amber-700/50 bg-amber-950/20 text-amber-100" : "border-indigo-700/40 bg-indigo-950/20 text-indigo-100";
+                              const marketplaceChipClasses = warrantyInfo?.role === "current" ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-200" : warrantyCase ? "border-amber-500/30 bg-amber-500/15 text-amber-200" : "border-indigo-500/30 bg-indigo-500/15 text-indigo-200";
+                              const marketplaceStatusLabel = warrantyCase ? (warrantyInfo?.role === "current" ? "Dang bao hanh" : "Lich su bao hanh") : isLockedByStoreWarrantyHold ? "Giu bao hanh" : "Da ban";
+                              const showAdminTraceSummary = Number(storeTraceSummary?.totalOrders || 0) > 0 || Number(marketplaceTraceSummary?.orderCount || 0) > 0 || Number(marketplaceTraceSummary?.warrantyCount || 0) > 0;
+                              const renderWarrantySummary = (extraClasses = "") => {
+                                if (!warrantyCase || warrantyRounds.length === 0) return null;
+                                return (
+                                  <div className={`${extraClasses} rounded-md border px-2.5 py-2 text-[10px] shadow-sm ${warrantyInfo?.role === "current" ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100" : "border-amber-700/50 bg-amber-950/20 text-amber-100"}`}>
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="inline-flex items-center rounded-full border border-white/10 bg-slate-900/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white">{warrantyProviderLabel}</span>
+                                      <span className="text-[10px] font-bold text-white">Bao hanh lan {warrantyRounds.length}</span>
+                                    </div>
+                                    <div className="mt-1 text-[10px] text-slate-300">Don {warrantyCase.orderId || datammoOrderId || "?"}</div>
+                                    <div className="mt-0.5 text-[10px]">
+                                      <span className={warrantyInfo?.role === "current" ? "text-cyan-200" : "text-amber-200"}>{warrantyRoleLabel}</span>
+                                      {warrantyInfo?.role === "current" ? <span className="text-slate-300"> • Acc hien tai cua don</span> : latestWarrantyTarget ? <span className="text-slate-300"> • Hien tai: <span className="font-semibold text-white">{latestWarrantyTarget}</span></span> : null}
+                                    </div>
+                                  </div>
+                                );
+                              };
+                              return (
+                                <div className="bg-slate-900/40 p-2 rounded border border-slate-700/50">
+                                  {/* Admin trace summary */}
+                                  {showAdminTraceSummary && (
+                                    <div className="mb-2 rounded-xl border border-fuchsia-700/40 bg-fuchsia-950/15 px-3 py-3 text-fuchsia-100">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="inline-flex items-center rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-fuchsia-200">Trace gắn với nick</span>
+                                        {Number(storeTraceSummary?.totalOrders || 0) > 0 && <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase text-cyan-200">Web {storeTraceSummary.totalOrders}</span>}
+                                        {Number(marketplaceTraceSummary?.orderCount || 0) > 0 && <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold uppercase text-emerald-200">San {marketplaceTraceSummary.orderCount}</span>}
+                                        {Number(marketplaceTraceSummary?.warrantyCount || 0) > 0 && <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase text-amber-200">Bao hanh {marketplaceTraceSummary.warrantyCount}</span>}
+                                      </div>
+                                      <div className="mt-2 space-y-1 text-[11px] text-slate-200">
+                                        {(() => { const t = Array.isArray(storeTraceSummary?.traces) && storeTraceSummary.traces[0]; return t ? <div><span className="text-slate-400">Đơn web mới nhất: </span><span className="font-semibold text-white">{t.orderId}</span>{t.customerName || t.customerEmail ? <span className="text-fuchsia-200"> · {t.customerName || t.customerEmail}</span> : null}</div> : null; })()}
+                                        {Number(marketplaceTraceSummary?.orderCount || 0) > 0 && <div><span className="text-slate-400">Đơn sàn gần nhất: </span><span className="font-semibold text-white">{getMarketplaceProviderLabel(marketplaceTraceSummary?.latestProvider)} {marketplaceTraceSummary?.latestOrderId || "--"}</span></div>}
+                                        {Number(marketplaceTraceSummary?.warrantyCount || 0) > 0 && <div><span className="text-slate-400">Đơn BH gần nhất: </span><span className="font-semibold text-white">{marketplaceTraceSummary?.latestWarrantyOrderId || "--"}</span></div>}
+                                        <div className="text-[10px] text-slate-400">Nếu đã xóa đơn mà khung này còn, nick đang dính trace ở collection khác.</div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {displayMarketplaceUser ? (
+                                    showMarketplaceManagementCard ? (
+                                      <div className={`rounded-xl border px-3 py-3 shadow-sm ${marketplaceCardClasses}`}>
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-slate-950/40"><Shield size={12} /></span>
+                                              <div>
+                                                <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Don san</div>
+                                                <div className="mt-0.5 text-[10px] leading-relaxed text-slate-300">{providerLabel} · {displayMarketplaceName || "Khach san"}</div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${marketplaceChipClasses}`}>{marketplaceStatusLabel}</span>
+                                        </div>
+                                        <div className="mt-3 space-y-1.5 text-[10px]">
+                                          {[["Order", datammoOrderId || "Khong ro"], ["Khach san", displayMarketplaceName || "--"], ["Acc da ban", soldMarketplaceUsername || "--"], ["Acc hien tai", currentMarketplaceUsername || "--"], ["Ngay vao", displayMarketplaceJoinedDate]].map(([label, val]) => (
+                                            <div key={label} className="flex items-center justify-between gap-3"><span className="text-slate-400">{label}</span><span className="font-semibold text-white">{val}</span></div>
+                                          ))}
+                                          {displayMarketplaceExpiryDate && <div className="flex items-center justify-between gap-3"><span className="text-slate-400">Het han</span><span className={`font-semibold ${isExpiredMarket ? "text-red-300" : isNearExpiryMarket ? "text-yellow-300" : "text-emerald-300"}`}>{displayMarketplaceExpiryDate}</span></div>}
+                                          {daysRemainingMarket !== null && <div className="flex items-center justify-between gap-3"><span className="text-slate-400">Tinh trang</span><span className={`font-semibold ${isExpiredMarket ? "text-red-300" : isNearExpiryMarket ? "text-yellow-300" : "text-cyan-200"}`}>{isExpiredMarket ? `Het han ${Math.abs(daysRemainingMarket)} ngay` : `Con ${daysRemainingMarket} ngay`}</span></div>}
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-1.5">
+                                          <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-bold uppercase text-cyan-200">{providerLabel}</span>
+                                          <span className="rounded-full border border-white/10 bg-slate-950/50 px-2 py-1 text-[9px] font-bold uppercase text-white/80">Da ban</span>
+                                          {warrantyCase && <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase text-amber-200">Bao hanh lan {warrantyRounds.length}</span>}
+                                        </div>
+                                        {warrantyCase && (
+                                          <div className="mt-3 rounded-lg border border-white/10 bg-slate-950/30 px-2.5 py-2 text-[10px] text-slate-200">
+                                            <div className="font-semibold text-white">{warrantyRoleLabel}</div>
+                                            {warrantyInfo?.role === "current" ? <div className="mt-1 text-slate-300">Acc nay dang la acc hien tai cua don.</div> : latestWarrantyTarget ? <div className="mt-1 text-slate-300">Hien tai dang thay boi <span className="font-semibold text-white">{latestWarrantyTarget}</span></div> : null}
+                                            {/* Warranty rounds */}
+                                            {warrantyRounds.length > 0 && (
+                                              <div className="mt-2 space-y-1">
+                                                {warrantyRounds.map((round, ri) => {
+                                                  const isTarget = String(round?.toAccountId || "") === String(acc.id || "");
+                                                  const isSource = String(round?.fromAccountId || "") === String(acc.id || "");
+                                                  return (
+                                                    <div key={ri} className={`rounded-md border px-2 py-1.5 text-[10px] ${isTarget ? "border-cyan-400/30 bg-cyan-500/10" : isSource ? "border-amber-400/30 bg-amber-500/10" : "border-slate-700/60 bg-slate-950/40"}`}>
+                                                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                                                        <span className="text-[9px] font-black uppercase text-white/90">Lan {round?.sequence || ri + 1}</span>
+                                                        {isTarget && <span className="text-[9px] font-bold text-cyan-200">Acc nay</span>}
+                                                        {isSource && !isTarget && <span className="text-[9px] font-bold text-amber-200">Da doi ra</span>}
+                                                      </div>
+                                                      <div className="break-all text-slate-200">
+                                                        <span className="text-slate-400">{round?.fromUsername || round?.fromAccountId || "Khong ro"}</span>
+                                                        <span className="mx-1 text-slate-500">→</span>
+                                                        <span className="font-semibold text-white">{round?.toUsername || round?.toAccountId || "Khong ro"}</span>
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                        <div className={`mt-3 grid gap-2 ${canOpenDatammoWarranty && hasActualManagedMarketplaceUser && (isExpiredMarket || isNearExpiryMarket) ? "grid-cols-2" : "grid-cols-1"}`}>
+                                          {canOpenDatammoWarranty && <button type="button" onClick={() => openWarrantyModal(acc)} className="rounded-lg bg-cyan-700 hover:bg-cyan-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors" title={`Bảo hành ${providerLabel}`}>🛡 Bao hanh</button>}
+                                          {hasActualManagedMarketplaceUser && (isExpiredMarket || isNearExpiryMarket) && <button type="button" onClick={() => handleExtendUser(acc.id, primaryUserIndex, u)} className="rounded-lg bg-emerald-700 hover:bg-emerald-600 px-2.5 py-2 text-[11px] font-bold text-white transition-colors" title="Gia hạn">Gia han</button>}
+                                          <div className={`rounded-lg border border-slate-700 bg-slate-950/50 px-2.5 py-2 text-center text-[11px] font-bold text-slate-300 ${canOpenDatammoWarranty || (hasActualManagedMarketplaceUser && (isExpiredMarket || isNearExpiryMarket)) ? "col-span-2" : ""}`}>Acc da ban qua san - khong chuyen tay. Neu can doi acc, hay dung Bao hanh.</div>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className={`flex justify-between items-center text-sm font-bold p-1 rounded ${isExpiredMarket ? "bg-red-900/20" : ""}`}>
+                                        <div className={isExpiredMarket ? "text-red-400" : "text-white"}>
+                                          <span className="flex items-center gap-2">
+                                            {isExpiredMarket && <AlertCircle size={14} className="text-red-500" />}
+                                            {isNearExpiryMarket && <AlertTriangle size={14} className="text-yellow-500" />}
+                                            👤 {displayMarketplacePrimaryLabel}
+                                          </span>
+                                          {displayMarketplaceSecondaryLabel && <span className="text-[10px] ml-6 block font-semibold text-cyan-200">{displayMarketplaceSecondaryLabel}</span>}
+                                          <span className={`text-[10px] block ml-6 ${isExpiredMarket ? "text-red-300" : isNearExpiryMarket ? "text-yellow-400" : daysRemainingMarket !== null && daysRemainingMarket > 30 ? "text-purple-400" : "text-slate-400"}`}>
+                                            {displayMarketplaceJoinedDate}
+                                            {daysRemainingMarket !== null && <span className="ml-1">{isExpiredMarket ? `(HH ${Math.abs(daysRemainingMarket)}ngày)` : `(Còn ${daysRemainingMarket}ngày)`}</span>}
+                                          </span>
+                                          {displayMarketplaceExpiryDate && <span className={`text-[10px] block ml-6 font-semibold ${isExpiredMarket ? "text-red-500" : isNearExpiryMarket ? "text-yellow-500" : "text-emerald-500"}`}>🕑 HH: {displayMarketplaceExpiryDate}</span>}
+                                          {renderWarrantySummary("mt-2 ml-6")}
+                                        </div>
+                                        <div className="flex gap-2">
+                                          {hasActualManagedMarketplaceUser && (isExpiredMarket || isNearExpiryMarket) && <button type="button" onClick={() => handleExtendUser(acc.id, primaryUserIndex, u)} className="text-green-400 hover:text-white" title="Gia hạn"><RotateCw size={14} /></button>}
+                                          {!showMarketplaceManagementCard && !isLockedByStoreWarrantyHold ? (
+                                            !isExpiredMarket ? <button type="button" onClick={() => openMoveUserModal(acc.id, primaryUserIndex, displayMarketplaceUser)} className="text-orange-400 hover:text-white" title="Chuyển khách"><ArrowRightLeft size={14} /></button>
+                                            : <span className="text-slate-500 cursor-not-allowed" title="Hết hạn: Không thể chuyển"><ArrowRightLeft size={14} /></span>
+                                          ) : <span className="text-slate-500 cursor-not-allowed" title={isLockedByStoreWarrantyHold ? "Acc đang được giữ cho khách bảo hành" : "Acc đã bán qua sàn không được chuyển tay"}><ArrowRightLeft size={14} /></span>}
+                                          {!showMarketplaceManagementCard && !isLockedByStoreWarrantyHold && (
+                                            <>
+                                              <button type="button" onClick={() => openEditUserModal(acc.id, primaryUserIndex, displayMarketplaceUser)} className="text-blue-400 hover:text-white" title="Sửa khách"><Pencil size={14} /></button>
+                                              <button type="button" onClick={() => handleDeleteUser(acc.id, primaryUserIndex, getUserName(displayMarketplaceUser))} className="text-red-400 hover:text-white" title="Xóa khách"><X size={14} /></button>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )
+                                  ) : (
+                                    <div className="flex flex-col gap-2">
+                                      {renderWarrantySummary()}
+                                      {(() => {
+                                        const warehouseCardClasses = hasActiveStoreReservation ? "border-cyan-700/50 bg-cyan-950/20 text-cyan-100" : isOnDatammoShelf ? "border-emerald-700/50 bg-emerald-950/20 text-emerald-100" : "border-slate-700/60 bg-slate-900/80 text-slate-100";
+                                        const warehouseChipClasses = hasActiveStoreReservation ? "border-cyan-500/30 bg-cyan-500/15 text-cyan-200" : isOnDatammoShelf ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200" : "border-slate-600/60 bg-slate-800 text-slate-200";
+                                        const warehouseTitle = hasActiveStoreReservation ? "Don web dang giu cho" : isOnDatammoShelf ? "San datammo / shopmini" : "Kho tong";
+                                        return (
+                                          <div className={`rounded-xl border px-3 py-3 shadow-sm ${warehouseCardClasses}`}>
+                                            <div className="flex items-center justify-between gap-3">
+                                              <div>
+                                                <div className="text-[11px] font-black uppercase tracking-[0.14em] text-white">{package2ShelfLabel}</div>
+                                                <div className="mt-0.5 text-[10px] leading-relaxed text-slate-300">{warehouseTitle}</div>
+                                              </div>
+                                              <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] ${warehouseChipClasses}`}>Trong</span>
+                                            </div>
+                                            {hasActiveStoreReservation && (
+                                              <div className="mt-3 space-y-1.5">
+                                                {activeStoreReservationTraces.map((trace, i) => (
+                                                  <div key={i} className="flex items-center justify-between gap-3 text-[10px]">
+                                                    <span className="font-semibold text-cyan-200">{trace?.customerName || trace?.customerEmail || "Khach don web"}</span>
+                                                    <div className="flex items-center gap-2">
+                                                      {trace?.packageName && <span className="text-slate-400">{trace.packageName}</span>}
+                                                      <span className="rounded-full border border-cyan-600/40 bg-slate-900/70 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-cyan-200">Giu cho</span>
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                      {hasActiveStoreReservation ? null : isLockedByStoreWarrantyHold ? (
+                                        <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                                          <div className="font-bold uppercase tracking-[0.08em] text-amber-200">Giu cho khach bao hanh</div>
+                                          <div className="mt-1 break-all text-slate-200">{storeWarrantyHoldInfo?.customerName || storeWarrantyHoldInfo?.customerEmail || "Khach bao hanh"}</div>
+                                          <div className="mt-1 text-[10px] text-slate-300">{[storeWarrantyHoldInfo?.orderId, storeWarrantyHoldInfo?.statusLabel].filter(Boolean).join(" · ") || "Acc nay dang bi khoa de tranh ban nham"}</div>
+                                        </div>
+                                      ) : isOnDatammoShelf ? (
+                                        <button type="button" onClick={() => openAddUserModal(acc.id, "[Datammo] Khach moi")} className="w-full text-center text-xs px-2 py-1.5 bg-teal-700 hover:bg-teal-600 font-bold rounded text-white transition-colors" title="Gán Khách và tự điền tên Datammo">+ Datammo</button>
+                                      ) : !marketplaceTrackedAccountIds.has(String(acc?.id || "")) ? (
+                                        <button type="button" onClick={() => openAddUserModal(acc.id)} className="w-full text-center text-xs px-2 py-1.5 bg-blue-700 hover:bg-blue-600 font-bold rounded text-white transition-colors" title="Thêm khách thường">+ Khách</button>
+                                      ) : null}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            <span className="text-yellow-600 text-xs italic">Chọn gói trước</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {filteredChatgptAccounts.length === 0 && !chatgptAdminPageLoading && (
+                <div className="rounded-2xl border border-slate-700/50 bg-slate-800/30 py-12 text-center">
+                  <p className="text-slate-500">Không có tài khoản nào khớp bộ lọc hiện tại.</p>
+                </div>
+              )}
+              {chatgptAdminPageLoading && filteredChatgptAccounts.length === 0 && (
+                <div className="flex items-center justify-center gap-2 py-12 text-slate-400">
+                  <Loader2 size={20} className="animate-spin" /><span>Đang tải...</span>
+                </div>
+              )}
             </div>
+
+
           </div>
         )}
 
