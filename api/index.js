@@ -9856,10 +9856,6 @@ const TEST_MARKETPLACE_STOCK = Math.max(
   1,
   Number(process.env.TEST_MARKETPLACE_STOCK || 9999),
 );
-const TEST_MARKETPLACE_PRICE = Math.max(
-  1,
-  Number(process.env.TEST_MARKETPLACE_PRICE || 100000),
-);
 
 const normalizePackage2Shelf = (shelf, fallback = CHATGPT_TOTAL_VALUE) => {
   if (shelf === PACKAGE2_SHELF_CHEAP) return PACKAGE2_SHELF_CHEAP;
@@ -13204,7 +13200,6 @@ app.get(
   async (req, res) => {
     return res.json({
       stock: TEST_MARKETPLACE_STOCK,
-      price: TEST_MARKETPLACE_PRICE,
       test: true,
       provider: "datammo",
     });
