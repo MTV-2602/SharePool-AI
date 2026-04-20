@@ -1725,6 +1725,11 @@ const expiryCleanupBatchItemSchema = new mongoose.Schema(
     expiredUserCount: { type: Number, default: 0 },
     activeSlotCount: { type: Number, default: 0 },
     expiredSlotCount: { type: Number, default: 0 },
+    deleteEligible: { type: Boolean, default: false },
+    blockerCodes: { type: [String], default: [] },
+    sourceTags: { type: [String], default: [] },
+    sourceLabel: { type: String, default: "" },
+    searchTokens: { type: [String], default: [] },
     expectedUpdatedAt: { type: String, default: "" },
     note: { type: String, default: "" },
   },
@@ -7575,8 +7580,228 @@ const getExpiryCleanupReasonLabel = (reasonCode = "") => {
       return String(reasonCode || "").trim() || "khong ro";
   }
 };
+const getExpiryCleanupBlockerLabel = (blockerCode = "") => {
+  switch (String(blockerCode || "").trim()) {
+    case "active_users":
+      return "khach con han";
+    case "active_reservation":
+      return "dang reserve";
+    case "warranty_hold":
+      return "giu warranty";
+    case "warranty_replacement":
+      return "acc thay the";
+    case "marketplace_busy":
+      return "dang dính san";
+    case "active_slots":
+      return "slot con han";
+    default:
+      return String(blockerCode || "").trim() || "khong ro";
+  }
+};
 const getExpiryCleanupItemScopeLabel = (scope = "") =>
   String(scope || "").trim().toLowerCase() === "team" ? "Team" : "ChatGPT";
+const normalizeExpiryCleanupStringList = (values = []) =>
+  Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [values])
+        .flatMap((value) =>
+          Array.isArray(value)
+            ? value
+            : String(value || "")
+                .split("|")
+                .map((item) => String(item || "").trim()),
+        )
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+const buildExpiryCleanupSourceLabel = (tags = []) => {
+  const normalizedTags = normalizeExpiryCleanupStringList(tags);
+  return normalizedTags.length > 0 ? normalizedTags.join(" | ") : "manual";
+};
+const buildExpiryCleanupBlockerText = (blockerCodes = []) => {
+  const labels = normalizeExpiryCleanupStringList(blockerCodes).map(
+    getExpiryCleanupBlockerLabel,
+  );
+  return labels.length > 0 ? labels.join(", ") : "khong du dieu kien xoa";
+};
+const hasLegacyDatammoCleanupNote = (value = "") =>
+  /\[legacy datammo customer\]/i.test(String(value || "").trim());
+const buildChatgptExpiryCleanupSourceTags = (account = {}) => {
+  const tags = [];
+  if (hasStoreTraceHistoryForAccount(account)) {
+    tags.push("web");
+  }
+  if (hasMarketplaceTraceSummary(account?.marketplaceTraceSummary)) {
+    tags.push("marketplace");
+  }
+  if (hasLegacyDatammoCleanupNote(account?.note)) {
+    tags.push("legacy");
+  }
+  if (tags.length === 0) {
+    tags.push("manual");
+  }
+  return normalizeExpiryCleanupStringList(tags);
+};
+const buildTeamExpiryCleanupSourceTags = (
+  account = {},
+  marketplaceTraceSummary = null,
+) => {
+  const tags = [];
+  if (hasMarketplaceTraceSummary(marketplaceTraceSummary)) {
+    tags.push("marketplace");
+  }
+  if (hasLegacyDatammoCleanupNote(account?.note)) {
+    tags.push("legacy");
+  }
+  if (tags.length === 0) {
+    tags.push("manual");
+  }
+  return normalizeExpiryCleanupStringList(tags);
+};
+const buildChatgptExpiryCleanupSearchTokens = (account = {}) => {
+  const storeTraceSummary =
+    account?.storeTraceSummary && typeof account.storeTraceSummary === "object"
+      ? account.storeTraceSummary
+      : null;
+  const marketplaceTraceSummary =
+    account?.marketplaceTraceSummary &&
+    typeof account.marketplaceTraceSummary === "object"
+      ? account.marketplaceTraceSummary
+      : null;
+  const storeTraceValues = Array.isArray(storeTraceSummary?.traces)
+    ? storeTraceSummary.traces.flatMap((trace) => [
+        trace?.orderId,
+        trace?.packageName,
+        trace?.customerName,
+        trace?.customerEmail,
+      ])
+    : [];
+  const userNames = Array.isArray(account?.users)
+    ? account.users.map((user) => user?.name)
+    : [];
+  return normalizeExpiryCleanupStringList([
+    account?.username,
+    account?.note,
+    storeTraceSummary?.latestOrderId,
+    storeTraceSummary?.latestPackageName,
+    storeTraceSummary?.latestCustomerName,
+    storeTraceSummary?.latestCustomerEmail,
+    Array.isArray(marketplaceTraceSummary?.searchValues)
+      ? marketplaceTraceSummary.searchValues
+      : [],
+    storeTraceValues,
+    userNames,
+    buildChatgptExpiryCleanupSourceTags(account),
+  ]);
+};
+const buildTeamExpiryCleanupSearchTokens = (
+  account = {},
+  marketplaceTraceSummary = null,
+) => {
+  const slots = normalizeTeamSlots(account?.slots);
+  const slotValues = slots.flatMap((slot) => [
+    slot?.customerName,
+    slot?.gmail,
+    slot?.status,
+  ]);
+  return normalizeExpiryCleanupStringList([
+    account?.username,
+    account?.note,
+    account?.saleMode,
+    account?.warehouse,
+    slotValues,
+    Array.isArray(marketplaceTraceSummary?.searchValues)
+      ? marketplaceTraceSummary.searchValues
+      : [],
+    buildTeamExpiryCleanupSourceTags(account, marketplaceTraceSummary),
+  ]);
+};
+const assessChatgptExpiryCleanupAccount = (account = {}) => {
+  const currentState = pickChatgptCurrentStatePayload(account);
+  const userStats = getChatgptExpiryUserStats(account);
+  const isExpired = !!currentState?.isExpired;
+  const isEmpty = userStats.totalUserCount === 0;
+  const hasExpiredUsersOnly =
+    userStats.totalUserCount > 0 && userStats.activeUserCount === 0;
+  const hasActiveUsers = userStats.activeUserCount > 0;
+  const hasActiveReservation =
+    Number(account?.storeTraceSummary?.activeReservedOrders || 0) > 0 ||
+    (Array.isArray(account?.storeTraceSummary?.activeReservationTraces) &&
+      account.storeTraceSummary.activeReservationTraces.length > 0) ||
+    !!currentState?.isReservedForWeb;
+  const hasWarrantyHold =
+    hasStoreWarrantyHoldNote(account?.note) || !!currentState?.isWarrantyHold;
+  const hasWarrantyReplacement =
+    Array.isArray(account?.storeTraceSummary?.traces) &&
+    account.storeTraceSummary.traces.some(
+      (trace) => String(trace?.role || "").trim() === "warranty_to",
+    );
+  const hasMarketplaceBusy = !!currentState?.isBusyInMarketplace;
+  const blockerCodes = [];
+  if (hasActiveUsers) blockerCodes.push("active_users");
+  if (hasActiveReservation) blockerCodes.push("active_reservation");
+  if (hasWarrantyHold) blockerCodes.push("warranty_hold");
+  if (hasWarrantyReplacement) blockerCodes.push("warranty_replacement");
+  if (hasMarketplaceBusy) blockerCodes.push("marketplace_busy");
+  const deleteEligible =
+    isExpired &&
+    (isEmpty || hasExpiredUsersOnly) &&
+    normalizeExpiryCleanupStringList(blockerCodes).length === 0;
+  const reasonCode = deleteEligible
+    ? isEmpty
+      ? "chatgpt_empty_expired"
+      : "chatgpt_with_expired_users_only"
+    : "chatgpt_blocked_expired";
+  return {
+    currentState,
+    userStats,
+    isExpired,
+    isEmpty,
+    hasExpiredUsersOnly,
+    hasActiveUsers,
+    hasActiveReservation,
+    hasWarrantyHold,
+    hasWarrantyReplacement,
+    hasMarketplaceBusy,
+    blockerCodes: normalizeExpiryCleanupStringList(blockerCodes),
+    deleteEligible,
+    reasonCode,
+  };
+};
+const assessTeamExpiryCleanupAccount = (
+  account = {},
+  marketplaceTraceSummary = null,
+) => {
+  const slotStats = getTeamExpirySlotStats(account);
+  const isExpired = isDateExpiredNow(account?.expiredAt);
+  const isEmpty = slotStats.filledSlotCount === 0;
+  const hasExpiredSlotsOnly =
+    slotStats.filledSlotCount > 0 && slotStats.activeSlotCount === 0;
+  const hasActiveSlots = slotStats.activeSlotCount > 0;
+  const blockerCodes = [];
+  if (hasActiveSlots) blockerCodes.push("active_slots");
+  const deleteEligible =
+    isExpired &&
+    (isEmpty || hasExpiredSlotsOnly) &&
+    normalizeExpiryCleanupStringList(blockerCodes).length === 0;
+  const reasonCode = deleteEligible
+    ? isEmpty
+      ? "team_empty_expired"
+      : "team_with_expired_slots_only"
+    : "team_blocked_expired";
+  return {
+    slotStats,
+    isExpired,
+    isEmpty,
+    hasExpiredSlotsOnly,
+    hasActiveSlots,
+    hasMarketplaceHistory: hasMarketplaceTraceSummary(marketplaceTraceSummary),
+    blockerCodes: normalizeExpiryCleanupStringList(blockerCodes),
+    deleteEligible,
+    reasonCode,
+  };
+};
 const sanitizeExpiryCleanupItem = (item = {}) => ({
   scope:
     String(item?.scope || "chatgpt").trim().toLowerCase() === "team"
@@ -7596,6 +7821,11 @@ const sanitizeExpiryCleanupItem = (item = {}) => ({
   expiredUserCount: Math.max(0, Number(item?.expiredUserCount || 0)),
   activeSlotCount: Math.max(0, Number(item?.activeSlotCount || 0)),
   expiredSlotCount: Math.max(0, Number(item?.expiredSlotCount || 0)),
+  deleteEligible: !!item?.deleteEligible,
+  blockerCodes: normalizeExpiryCleanupStringList(item?.blockerCodes),
+  sourceTags: normalizeExpiryCleanupStringList(item?.sourceTags),
+  sourceLabel: String(item?.sourceLabel || "").trim(),
+  searchTokens: normalizeExpiryCleanupStringList(item?.searchTokens),
   expectedUpdatedAt: String(item?.expectedUpdatedAt || "").trim(),
   note: String(item?.note || "").trim(),
 });
@@ -7881,8 +8111,14 @@ const buildExpiryCleanupBatchTelegramText = (batch = {}) => {
     "Preview:",
   ];
   safeBatch.items.forEach((item, index) => {
+    const scopeLabel = getExpiryCleanupItemScopeLabel(item.scope);
+    const usageText =
+      item.scope === "team"
+        ? `slot ${Number(item.activeSlotCount || 0)}/${Number(item.expiredSlotCount || 0)}`
+        : `khach ${Number(item.activeUserCount || 0)}/${Number(item.expiredUserCount || 0)}`;
+    const sourceText = String(item?.sourceLabel || "").trim();
     lines.push(
-      `${index + 1}. ${getExpiryCleanupItemScopeLabel(item.scope)} | ${item.username || item.itemId} | ${item.reasonLabel} | ${item.expiredAt || "--"}`,
+      `${index + 1}. ${scopeLabel} | ${item.username || item.itemId} | ${item.reasonLabel} | HH ${item.expiredAt || "--"} | ${usageText}${sourceText ? ` | nguon ${sourceText}` : ""}`,
     );
   });
   if (safeBatch.itemCount > safeBatch.items.length) {
@@ -7911,6 +8147,81 @@ const notifyAdminsAboutExpiryCleanupBatch = async (batch = {}) => {
         chatId: Number(recipient),
         messageId: Number(result?.message_id || 0) || null,
         date: Number(result?.date || 0) || null,
+      });
+    }
+  }
+  return {
+    sent: messages.length > 0,
+    recipients: recipients.length,
+    messages,
+  };
+};
+const buildExpiryCleanupManualExecutionTelegramText = ({
+  actor = "",
+  result = null,
+} = {}) => {
+  const deleted = Array.isArray(result?.deleted) ? result.deleted : [];
+  const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
+  const errors = Array.isArray(result?.errors) ? result.errors : [];
+  if (
+    deleted.length === 0 &&
+    skipped.length === 0 &&
+    errors.length === 0
+  ) {
+    return "";
+  }
+  const lines = [
+    "[CLEANUP WEB]",
+    `Admin: ${String(actor || "admin_panel").trim() || "admin_panel"}`,
+    `Da xoa: ${Number(result?.deletedCount || deleted.length || 0)}`,
+    `Bo qua: ${Number(result?.skippedCount || skipped.length || 0)}`,
+    `Loi: ${Number(result?.errorCount || errors.length || 0)}`,
+  ];
+  if (deleted.length > 0) {
+    lines.push("", "Deleted:");
+    deleted.slice(0, 8).forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${getExpiryCleanupItemScopeLabel(item?.scope)} | ${String(item?.username || item?.itemId || "--").trim()}`,
+      );
+    });
+    if (deleted.length > 8) {
+      lines.push(`+${deleted.length - 8} item nua`);
+    }
+  }
+  if (skipped.length > 0) {
+    lines.push("", "Skipped:");
+    skipped.slice(0, 5).forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${getExpiryCleanupItemScopeLabel(item?.scope)} | ${String(item?.username || item?.itemId || "--").trim()} | ${String(item?.reason || "").trim() || "bo qua"}`,
+      );
+    });
+    if (skipped.length > 5) {
+      lines.push(`+${skipped.length - 5} item nua`);
+    }
+  }
+  return lines.join("\n");
+};
+const notifyAdminsAboutExpiryCleanupManualExecution = async ({
+  actor = "",
+  result = null,
+} = {}) => {
+  const recipients = getTelegramNotificationRecipients();
+  if (!TELEGRAM_BOT_TOKEN || recipients.length === 0) {
+    return { sent: false, recipients: 0, messages: [] };
+  }
+  const text = buildExpiryCleanupManualExecutionTelegramText({
+    actor,
+    result,
+  });
+  if (!text) return { sent: false, recipients: recipients.length, messages: [] };
+  const messages = [];
+  for (const recipient of recipients) {
+    const resultMessage = await sendTelegramNotificationMessage(recipient, text);
+    if (resultMessage) {
+      messages.push({
+        chatId: Number(recipient),
+        messageId: Number(resultMessage?.message_id || 0) || null,
+        date: Number(resultMessage?.date || 0) || null,
       });
     }
   }
@@ -8009,23 +8320,20 @@ const scanChatgptExpiryCleanupState = async () => {
   const warnings = [];
 
   decoratedMap.forEach((account) => {
-    const currentState = pickChatgptCurrentStatePayload(account);
-    const userStats = getChatgptExpiryUserStats(account);
-    const isEmpty = userStats.totalUserCount === 0;
-    const hasExpiredUsersOnly =
-      userStats.totalUserCount > 0 && userStats.activeUserCount === 0;
-    const hasActiveUsers = userStats.activeUserCount > 0;
-    const hasActiveReservation =
-      Number(account?.storeTraceSummary?.activeReservedOrders || 0) > 0 ||
-      (Array.isArray(account?.storeTraceSummary?.activeReservationTraces) &&
-        account.storeTraceSummary.activeReservationTraces.length > 0);
-    const hasWarrantyHold = hasStoreWarrantyHoldNote(account?.note);
-    const hasMarketplaceBusy = !!currentState?.isBusyInMarketplace;
-    const hasWarrantyReplacement = Array.isArray(account?.storeTraceSummary?.traces)
-      ? account.storeTraceSummary.traces.some(
-          (trace) => String(trace?.role || "").trim() === "warranty_to",
-        )
-      : false;
+    const assessment = assessChatgptExpiryCleanupAccount(account);
+    const {
+      userStats,
+      isEmpty,
+      hasExpiredUsersOnly,
+      hasActiveUsers,
+      hasActiveReservation,
+      hasWarrantyHold,
+      hasWarrantyReplacement,
+      hasMarketplaceBusy,
+      blockerCodes,
+      deleteEligible,
+      reasonCode,
+    } = assessment;
     if (isEmpty) {
       summary.chatgptEmptyExpired += 1;
     } else {
@@ -8046,20 +8354,17 @@ const scanChatgptExpiryCleanupState = async () => {
       expiredAt: String(account?.expiredAt || "").trim(),
       activeUserCount: userStats.activeUserCount,
       expiredUserCount: userStats.expiredUserCount,
+      deleteEligible,
+      blockerCodes,
+      sourceTags: buildChatgptExpiryCleanupSourceTags(account),
+      sourceLabel: buildExpiryCleanupSourceLabel(
+        buildChatgptExpiryCleanupSourceTags(account),
+      ),
+      searchTokens: buildChatgptExpiryCleanupSearchTokens(account),
       expectedUpdatedAt: String(account?.updatedAt || "").trim(),
       note: String(account?.note || "").trim(),
     });
-    if (
-      (isEmpty || hasExpiredUsersOnly) &&
-      !hasActiveUsers &&
-      !hasActiveReservation &&
-      !hasWarrantyHold &&
-      !hasMarketplaceBusy &&
-      !hasWarrantyReplacement
-    ) {
-      const reasonCode = isEmpty
-        ? "chatgpt_empty_expired"
-        : "chatgpt_with_expired_users_only";
+    if (deleteEligible) {
       candidates.push({
         ...baseItem,
         reasonCode,
@@ -8075,8 +8380,11 @@ const scanChatgptExpiryCleanupState = async () => {
     if (hasWarrantyReplacement) warningReasons.push("acc thay the");
     warnings.push({
       ...baseItem,
-      reasonCode: "chatgpt_blocked_expired",
-      reasonLabel: warningReasons.join(", ") || "khong du dieu kien xoa",
+      reasonCode,
+      reasonLabel:
+        warningReasons.join(", ") ||
+        buildExpiryCleanupBlockerText(blockerCodes) ||
+        "khong du dieu kien xoa",
     });
   });
 
@@ -8109,6 +8417,12 @@ const scanChatgptExpiryCleanupState = async () => {
         expiredAt: String(account?.expiredAt || "").trim(),
         reasonCode: "pkg2_market_expiring_soon",
         reasonLabel: getExpiryCleanupReasonLabel("pkg2_market_expiring_soon"),
+        deleteEligible: false,
+        sourceTags: buildChatgptExpiryCleanupSourceTags(account),
+        sourceLabel: buildExpiryCleanupSourceLabel(
+          buildChatgptExpiryCleanupSourceTags(account),
+        ),
+        searchTokens: buildChatgptExpiryCleanupSearchTokens(account),
         expectedUpdatedAt: String(account?.updatedAt || "").trim(),
       }),
     );
@@ -8140,14 +8454,18 @@ const scanTeamExpiryCleanupState = async () => {
   const warnings = [];
 
   expiredTeamAccounts.forEach((account) => {
-    const slotStats = getTeamExpirySlotStats(account);
-    const isEmpty = slotStats.filledSlotCount === 0;
-    const hasExpiredSlotsOnly =
-      slotStats.filledSlotCount > 0 && slotStats.activeSlotCount === 0;
-    const hasActiveSlots = slotStats.activeSlotCount > 0;
-    const hasMarketplaceBusy = hasMarketplaceTraceSummary(
-      traceMap.get(String(account?.id || "").trim()) || null,
-    );
+    const accountTraceSummary =
+      traceMap.get(String(account?.id || "").trim()) || null;
+    const assessment = assessTeamExpiryCleanupAccount(account, accountTraceSummary);
+    const {
+      slotStats,
+      isEmpty,
+      hasExpiredSlotsOnly,
+      hasActiveSlots,
+      blockerCodes,
+      deleteEligible,
+      reasonCode,
+    } = assessment;
     if (isEmpty) {
       summary.teamEmptyExpired += 1;
     } else {
@@ -8165,13 +8483,20 @@ const scanTeamExpiryCleanupState = async () => {
       expiredAt: String(account?.expiredAt || "").trim(),
       activeSlotCount: slotStats.activeSlotCount,
       expiredSlotCount: slotStats.expiredSlotCount,
+      deleteEligible,
+      blockerCodes,
+      sourceTags: buildTeamExpiryCleanupSourceTags(account, accountTraceSummary),
+      sourceLabel: buildExpiryCleanupSourceLabel(
+        buildTeamExpiryCleanupSourceTags(account, accountTraceSummary),
+      ),
+      searchTokens: buildTeamExpiryCleanupSearchTokens(
+        account,
+        accountTraceSummary,
+      ),
       expectedUpdatedAt: String(account?.updatedAt || "").trim(),
       note: String(account?.note || "").trim(),
     });
-    if ((isEmpty || hasExpiredSlotsOnly) && !hasActiveSlots && !hasMarketplaceBusy) {
-      const reasonCode = isEmpty
-        ? "team_empty_expired"
-        : "team_with_expired_slots_only";
+    if (deleteEligible) {
       candidates.push({
         ...baseItem,
         reasonCode,
@@ -8181,11 +8506,13 @@ const scanTeamExpiryCleanupState = async () => {
     }
     const warningReasons = [];
     if (hasActiveSlots) warningReasons.push("slot con han");
-    if (hasMarketplaceBusy) warningReasons.push("dang ban san");
     warnings.push({
       ...baseItem,
-      reasonCode: "team_blocked_expired",
-      reasonLabel: warningReasons.join(", ") || "khong du dieu kien xoa",
+      reasonCode,
+      reasonLabel:
+        warningReasons.join(", ") ||
+        buildExpiryCleanupBlockerText(blockerCodes) ||
+        "khong du dieu kien xoa",
     });
   });
 
@@ -8461,6 +8788,189 @@ const buildExpiryCleanupExecutionSkipReason = (item = {}, reason = "") => ({
   scope: String(item?.scope || "").trim(),
   reason: String(reason || "skip").trim(),
 });
+const deleteExpiryCleanupItems = async (
+  items = [],
+  { actor = "", actorSource = "" } = {},
+) => {
+  const normalizedItems = Array.from(
+    new Map(
+      (Array.isArray(items) ? items : [])
+        .map((item) => sanitizeExpiryCleanupItem(item))
+        .filter((item) => item?.itemId && item?.expectedUpdatedAt)
+        .map((item) => [
+          `${item.scope}:${item.itemId}:${item.expectedUpdatedAt}`,
+          item,
+        ]),
+    ).values(),
+  );
+  const deleted = [];
+  const skipped = [];
+  const errors = [];
+  const teamIds = normalizedItems
+    .filter((item) => item.scope === "team")
+    .map((item) => item.itemId);
+  const chatgptIds = normalizedItems
+    .filter((item) => item.scope !== "team")
+    .map((item) => item.itemId);
+  const [teamAccounts, teamTraceMap, chatgptDecoratedMap] = await Promise.all([
+    teamIds.length > 0
+      ? TeamAccount.find({ id: { $in: teamIds } })
+          .select("id username saleMode warehouse note slots expiredAt updatedAt")
+          .lean()
+      : [],
+    teamIds.length > 0 ? buildTeamMarketplaceTraceMap(teamIds) : new Map(),
+    chatgptIds.length > 0
+      ? loadChatgptAccountOperationalStateMap(chatgptIds)
+      : new Map(),
+  ]);
+  const teamAccountMap = new Map(
+    (Array.isArray(teamAccounts) ? teamAccounts : []).map((account) => [
+      String(account?.id || "").trim(),
+      account,
+    ]),
+  );
+
+  for (const item of normalizedItems) {
+    try {
+      const itemId = String(item?.itemId || "").trim();
+      const expectedUpdatedAt = getExpectedUpdatedAtValue(item?.expectedUpdatedAt);
+      if (!itemId || !expectedUpdatedAt) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(
+            item,
+            "thieu itemId hoac expectedUpdatedAt",
+          ),
+        );
+        continue;
+      }
+
+      if (String(item?.scope || "").trim() === "team") {
+        const teamAccount = teamAccountMap.get(itemId) || null;
+        if (!teamAccount) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(item, "team da bi xoa truoc do"),
+          );
+          continue;
+        }
+        if (getExpectedUpdatedAtValue(teamAccount?.updatedAt) !== expectedUpdatedAt) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(
+              item,
+              "team vua bi cap nhat boi thao tac khac",
+            ),
+          );
+          continue;
+        }
+        if (!isDateExpiredNow(teamAccount?.expiredAt)) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(item, "team khong con het han"),
+          );
+          continue;
+        }
+        const assessment = assessTeamExpiryCleanupAccount(
+          teamAccount,
+          teamTraceMap.get(itemId) || null,
+        );
+        if (!assessment.deleteEligible) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(
+              item,
+              buildExpiryCleanupBlockerText(assessment.blockerCodes),
+            ),
+          );
+          continue;
+        }
+        const deletedDoc = await TeamAccount.findOneAndDelete(
+          buildConditionalUpdateFilter(itemId, expectedUpdatedAt),
+        ).lean();
+        if (!deletedDoc) {
+          skipped.push(
+            buildExpiryCleanupExecutionSkipReason(
+              item,
+              "team khong con khop version khi xoa",
+            ),
+          );
+          continue;
+        }
+        deleted.push({
+          scope: "team",
+          itemId,
+          username: String(deletedDoc?.username || "").trim(),
+        });
+        continue;
+      }
+
+      const account = chatgptDecoratedMap.get(itemId) || null;
+      if (!account) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(item, "acc da bi xoa truoc do"),
+        );
+        continue;
+      }
+      if (getExpectedUpdatedAtValue(account?.updatedAt) !== expectedUpdatedAt) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(
+            item,
+            "acc vua bi cap nhat boi thao tac khac",
+          ),
+        );
+        continue;
+      }
+      if (!isDateExpiredNow(account?.expiredAt)) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(item, "acc khong con het han"),
+        );
+        continue;
+      }
+      const assessment = assessChatgptExpiryCleanupAccount(account);
+      if (!assessment.deleteEligible) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(
+            item,
+            buildExpiryCleanupBlockerText(assessment.blockerCodes),
+          ),
+        );
+        continue;
+      }
+      const deletedDoc = await Account.findOneAndDelete(
+        buildConditionalUpdateFilter(itemId, expectedUpdatedAt),
+      ).lean();
+      if (!deletedDoc) {
+        skipped.push(
+          buildExpiryCleanupExecutionSkipReason(
+            item,
+            "acc khong con khop version khi xoa",
+          ),
+        );
+        continue;
+      }
+      deleted.push({
+        scope: "chatgpt",
+        itemId,
+        username: String(deletedDoc?.username || "").trim(),
+      });
+    } catch (error) {
+      errors.push({
+        itemId: String(item?.itemId || "").trim(),
+        username: String(item?.username || "").trim(),
+        scope: String(item?.scope || "").trim(),
+        error: String(error?.message || error || "cleanup_error").trim(),
+      });
+    }
+  }
+
+  return {
+    state: "executed",
+    actorSource: String(actorSource || "").trim(),
+    actor: String(actor || "").trim(),
+    deletedCount: deleted.length,
+    skippedCount: skipped.length,
+    errorCount: errors.length,
+    deleted,
+    skipped,
+    errors,
+  };
+};
 const executeExpiryCleanupBatch = async (
   batchId = "",
   { actor = "", actorSource = "" } = {},
@@ -8519,187 +9029,15 @@ const executeExpiryCleanupBatch = async (
       ? lockedBatch.toObject()
       : snapshotDocument(lockedBatch);
   const items = Array.isArray(rawBatch?.items) ? rawBatch.items : [];
-  const deleted = [];
-  const skipped = [];
-  const errors = [];
-
-  for (const item of items) {
-    try {
-      const itemId = String(item?.itemId || "").trim();
-      const expectedUpdatedAt = getExpectedUpdatedAtValue(item?.expectedUpdatedAt);
-      if (!itemId || !expectedUpdatedAt) {
-        skipped.push(
-          buildExpiryCleanupExecutionSkipReason(
-            item,
-            "thieu itemId hoac expectedUpdatedAt",
-          ),
-        );
-        continue;
-      }
-      if (String(item?.scope || "").trim() === "team") {
-        const teamAccount = await TeamAccount.findOne({ id: itemId }).lean();
-        if (!teamAccount) {
-          skipped.push(
-            buildExpiryCleanupExecutionSkipReason(item, "team da bi xoa truoc do"),
-          );
-          continue;
-        }
-        if (getExpectedUpdatedAtValue(teamAccount?.updatedAt) !== expectedUpdatedAt) {
-          skipped.push(
-            buildExpiryCleanupExecutionSkipReason(
-              item,
-              "team vua bi cap nhat boi thao tac khac",
-            ),
-          );
-          continue;
-        }
-        if (!isDateExpiredNow(teamAccount?.expiredAt)) {
-          skipped.push(
-            buildExpiryCleanupExecutionSkipReason(item, "team khong con het han"),
-          );
-          continue;
-        }
-        const slotStats = getTeamExpirySlotStats(teamAccount);
-        if (slotStats.activeSlotCount > 0) {
-          skipped.push(
-            buildExpiryCleanupExecutionSkipReason(item, "team con slot con han"),
-          );
-          continue;
-        }
-        const teamTraceMap = await buildTeamMarketplaceTraceMap([itemId]);
-        if (hasMarketplaceTraceSummary(teamTraceMap.get(itemId) || null)) {
-          skipped.push(
-            buildExpiryCleanupExecutionSkipReason(item, "team dang ban san"),
-          );
-          continue;
-        }
-        const deletedDoc = await TeamAccount.findOneAndDelete(
-          buildConditionalUpdateFilter(itemId, expectedUpdatedAt),
-        ).lean();
-        if (!deletedDoc) {
-          skipped.push(
-            buildExpiryCleanupExecutionSkipReason(
-              item,
-              "team khong con khop version khi xoa",
-            ),
-          );
-          continue;
-        }
-        deleted.push({
-          scope: "team",
-          itemId,
-          username: String(deletedDoc?.username || "").trim(),
-        });
-        continue;
-      }
-
-      const decoratedMap = await loadChatgptAccountOperationalStateMap([itemId]);
-      const account = decoratedMap.get(itemId) || null;
-      if (!account) {
-        skipped.push(
-          buildExpiryCleanupExecutionSkipReason(item, "acc da bi xoa truoc do"),
-        );
-        continue;
-      }
-      if (getExpectedUpdatedAtValue(account?.updatedAt) !== expectedUpdatedAt) {
-        skipped.push(
-          buildExpiryCleanupExecutionSkipReason(
-            item,
-            "acc vua bi cap nhat boi thao tac khac",
-          ),
-        );
-        continue;
-      }
-      if (!isDateExpiredNow(account?.expiredAt)) {
-        skipped.push(
-          buildExpiryCleanupExecutionSkipReason(item, "acc khong con het han"),
-        );
-        continue;
-      }
-      const userStats = getChatgptExpiryUserStats(account);
-      const hasActiveReservation =
-        Number(account?.storeTraceSummary?.activeReservedOrders || 0) > 0 ||
-        (Array.isArray(account?.storeTraceSummary?.activeReservationTraces) &&
-          account.storeTraceSummary.activeReservationTraces.length > 0);
-      const hasWarrantyHold = hasStoreWarrantyHoldNote(account?.note);
-      const hasMarketplaceBusy = hasMarketplaceTraceSummary(
-        account?.marketplaceTraceSummary,
-      );
-      const hasWarrantyReplacement = Array.isArray(account?.storeTraceSummary?.traces)
-        ? account.storeTraceSummary.traces.some(
-            (trace) => String(trace?.role || "").trim() === "warranty_to",
-          )
-        : false;
-      if (userStats.activeUserCount > 0) {
-        skipped.push(
-          buildExpiryCleanupExecutionSkipReason(item, "acc con khach con han"),
-        );
-        continue;
-      }
-      if (hasActiveReservation) {
-        skipped.push(
-          buildExpiryCleanupExecutionSkipReason(item, "acc dang duoc reserve"),
-        );
-        continue;
-      }
-      if (hasWarrantyHold) {
-        skipped.push(
-          buildExpiryCleanupExecutionSkipReason(item, "acc dang giu warranty"),
-        );
-        continue;
-      }
-      if (hasMarketplaceBusy) {
-        skipped.push(
-          buildExpiryCleanupExecutionSkipReason(item, "acc dang ban san"),
-        );
-        continue;
-      }
-      if (hasWarrantyReplacement) {
-        skipped.push(
-          buildExpiryCleanupExecutionSkipReason(item, "acc dang la acc thay the"),
-        );
-        continue;
-      }
-      const deletedDoc = await Account.findOneAndDelete(
-        buildConditionalUpdateFilter(itemId, expectedUpdatedAt),
-      ).lean();
-      if (!deletedDoc) {
-        skipped.push(
-          buildExpiryCleanupExecutionSkipReason(
-            item,
-            "acc khong con khop version khi xoa",
-          ),
-        );
-        continue;
-      }
-      deleted.push({
-        scope: "chatgpt",
-        itemId,
-        username: String(deletedDoc?.username || "").trim(),
-      });
-    } catch (error) {
-      errors.push({
-        itemId: String(item?.itemId || "").trim(),
-        username: String(item?.username || "").trim(),
-        scope: String(item?.scope || "").trim(),
-        error: String(error?.message || error || "cleanup_error").trim(),
-      });
-    }
-  }
-
   const finishedAt = new Date().toISOString();
+  const deletionResult = await deleteExpiryCleanupItems(items, {
+    actor,
+    actorSource,
+  });
   const executionResult = {
-    state: "executed",
-    actorSource: String(actorSource || "").trim(),
-    actor: String(actor || "").trim(),
+    ...deletionResult,
     startedAt: String(rawBatch?.executionResult?.startedAt || nowIso).trim(),
     finishedAt,
-    deletedCount: deleted.length,
-    skippedCount: skipped.length,
-    errorCount: errors.length,
-    deleted,
-    skipped,
-    errors,
     lockToken,
   };
   await ExpiryCleanupBatch.updateOne(
@@ -8716,7 +9054,7 @@ const executeExpiryCleanupBatch = async (
       },
     },
   );
-  if (deleted.length > 0) {
+  if (Number(executionResult.deletedCount || 0) > 0) {
     bumpDataVersion();
     notifyClients();
   }
@@ -14533,6 +14871,59 @@ app.get(
   },
 );
 
+app.post(
+  "/api/admin/chatgpt-expiry-cleanup-delete",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
+      const safeItems = items
+        .slice(0, 200)
+        .map((item) =>
+          sanitizeExpiryCleanupItem({
+            scope: item?.scope,
+            itemId: item?.itemId,
+            expectedUpdatedAt: item?.expectedUpdatedAt,
+            username: item?.username,
+          }),
+        )
+        .filter((item) => item?.itemId && item?.expectedUpdatedAt);
+      if (safeItems.length === 0) {
+        return res.status(400).json({
+          error: "Chua co acc cleanup hop le de xoa.",
+        });
+      }
+      const actor = String(req.user?.email || "admin_panel").trim();
+      const result = await deleteExpiryCleanupItems(safeItems, {
+        actor,
+        actorSource: "admin_panel_cleanup",
+      });
+      if (Number(result?.deletedCount || 0) > 0) {
+        bumpDataVersion();
+        notifyClients();
+      }
+      await refreshExpiryCleanupSnapshot({
+        createBatch: false,
+        notifyTelegram: false,
+      });
+      const telegramResult = await notifyAdminsAboutExpiryCleanupManualExecution({
+        actor,
+        result,
+      });
+      return res.json({
+        success: true,
+        result,
+        telegramNotified: !!telegramResult?.sent,
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong the xoa nhanh acc het han.",
+      });
+    }
+  },
+);
+
 app.get(
   "/api/admin/chatgpt-expiry-cleanup-batches",
   verifyAdminOrBotInternalToken,
@@ -16261,26 +16652,22 @@ app.delete("/api/chatgpt/:id", verifyToken, async (req, res) => {
     const currentState = decoratedExisting
       ? pickChatgptCurrentStatePayload(decoratedExisting)
       : null;
-    const canDeleteExpiredMarketplaceAccount = !!(
-      decoratedExisting &&
-      currentState?.isExpired &&
-      currentState?.hasMarketplaceHistory &&
-      !hasStoreTraceHistoryForAccount(decoratedExisting) &&
-      !currentState?.hasActiveAssignedUsers &&
-      !currentState?.isReservedForWeb &&
-      !currentState?.isWarrantyHold &&
-      !currentState?.isBusyInWarrantyReplacement &&
-      !currentState?.isBusyInMarketplace
-    );
+    const cleanupAssessment = decoratedExisting
+      ? assessChatgptExpiryCleanupAccount(decoratedExisting)
+      : null;
+    const canDeleteExpiredMarketplaceAccount = !!cleanupAssessment?.deleteEligible;
     if (
       currentState &&
       ((currentState.hasAssignedUsers && !canDeleteExpiredMarketplaceAccount) ||
+        !!cleanupAssessment?.hasActiveReservation ||
         currentState.isWarrantyHold ||
+        !!cleanupAssessment?.hasWarrantyReplacement ||
         currentState.isBusyInWarrantyReplacement ||
         currentState.isBusyInMarketplace)
     ) {
       return res.status(409).json({
         error:
+          buildExpiryCleanupBlockerText(cleanupAssessment?.blockerCodes) ||
           String(currentState?.busyReason || "").trim() ||
           "Tai khoan nay dang ban hoac dang bi giu nen khong duoc xoa.",
         sourceState: currentState,
@@ -17524,11 +17911,23 @@ app.put("/api/team/:id", verifyToken, async (req, res) => {
 // DELETE team account
 app.delete("/api/team/:id", verifyToken, async (req, res) => {
   try {
+    const teamId = String(req.params?.id || "").trim();
     const expectedUpdatedAt = getExpectedUpdatedAtValue(
       req.body?.expectedUpdatedAt || req.query?.expectedUpdatedAt,
     );
+    const existingForGuard = await TeamAccount.findOne({ id: teamId })
+      .select("id username saleMode warehouse note slots expiredAt updatedAt")
+      .lean();
+    if (existingForGuard) {
+      const assessment = assessTeamExpiryCleanupAccount(existingForGuard, null);
+      if (assessment?.hasActiveSlots) {
+        return res.status(409).json({
+          error: "Team dang con slot con han nen khong duoc xoa.",
+        });
+      }
+    }
     const existing = await TeamAccount.findOneAndDelete(
-      buildConditionalUpdateFilter(req.params.id, expectedUpdatedAt),
+      buildConditionalUpdateFilter(teamId, expectedUpdatedAt),
     );
     if (!existing && expectedUpdatedAt) {
       return res.status(409).json({

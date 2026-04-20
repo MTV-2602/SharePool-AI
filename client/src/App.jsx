@@ -1808,6 +1808,118 @@ const buildDefaultChatgptExpiryPreviewState = () => ({
   pkg2MarketExpiringSoon: [],
   scannedAt: "",
 });
+const buildExpiryCleanupSelectionKey = (item = {}) =>
+  `${String(item?.scope || "chatgpt").trim().toLowerCase()}:${String(
+    item?.itemId || "",
+  ).trim()}`;
+const getExpiryCleanupFilterKind = (item = {}) => {
+  const reasonCode = String(item?.reasonCode || "").trim();
+  const blockerCodes = Array.isArray(item?.blockerCodes) ? item.blockerCodes : [];
+  if (
+    reasonCode === "chatgpt_empty_expired" ||
+    reasonCode === "team_empty_expired"
+  ) {
+    return "empty";
+  }
+  if (
+    reasonCode === "chatgpt_with_expired_users_only" ||
+    reasonCode === "team_with_expired_slots_only"
+  ) {
+    return "expired_only";
+  }
+  if (reasonCode === "pkg2_market_expiring_soon") {
+    return "pkg2";
+  }
+  if (blockerCodes.includes("active_users")) return "active_users";
+  if (blockerCodes.includes("active_slots")) return "active_slots";
+  if (blockerCodes.includes("active_reservation")) return "reserved";
+  if (blockerCodes.includes("warranty_hold")) return "warranty";
+  if (blockerCodes.includes("warranty_replacement")) return "replacement";
+  if (blockerCodes.includes("marketplace_busy")) return "marketplace";
+  return "other";
+};
+const buildExpiryCleanupSearchText = (item = {}) =>
+  toNonAccentVietnamese(
+    [
+      item?.username,
+      item?.note,
+      item?.reasonLabel,
+      item?.sourceLabel,
+      item?.warehouse,
+      ...(Array.isArray(item?.sourceTags) ? item.sourceTags : []),
+      ...(Array.isArray(item?.searchTokens) ? item.searchTokens : []),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+const getExpiryCleanupBlockerUiLabel = (code = "") => {
+  switch (String(code || "").trim()) {
+    case "active_users":
+      return "Khach con han";
+    case "active_slots":
+      return "Slot con han";
+    case "active_reservation":
+      return "Dang reserve";
+    case "warranty_hold":
+      return "Dang warranty";
+    case "warranty_replacement":
+      return "Acc thay the";
+    case "marketplace_busy":
+      return "Dang dinh san";
+    default:
+      return String(code || "").trim() || "Khac";
+  }
+};
+const getExpiryCleanupSourceTagUiLabel = (tag = "") => {
+  switch (String(tag || "").trim()) {
+    case "web":
+      return "Web";
+    case "marketplace":
+      return "San";
+    case "legacy":
+      return "Legacy";
+    case "manual":
+      return "Manual";
+    default:
+      return String(tag || "").trim() || "Khac";
+  }
+};
+const getExpiryCleanupStatusUiLabel = (status = "") => {
+  switch (String(status || "").trim()) {
+    case "candidate":
+      return "Candidate";
+    case "warning":
+      return "Warning";
+    case "pkg2":
+      return "Pkg2";
+    default:
+      return "Khac";
+  }
+};
+const getExpiryCleanupKindUiLabel = (kind = "") => {
+  switch (String(kind || "").trim()) {
+    case "empty":
+      return "Rong";
+    case "expired_only":
+      return "Chi con het han";
+    case "active_users":
+      return "Con khach han";
+    case "active_slots":
+      return "Con slot han";
+    case "reserved":
+      return "Dang reserve";
+    case "warranty":
+      return "Dang warranty";
+    case "replacement":
+      return "Acc thay the";
+    case "marketplace":
+      return "Dang dinh san";
+    case "pkg2":
+      return "Pkg2 canh bao";
+    default:
+      return "Khac";
+  }
+};
 const buildDefaultChatgptMailCheckSummaryState = () => ({
   totalCount: 0,
   autoEnabledCount: 0,
@@ -2951,6 +3063,18 @@ function App() {
   const [chatgptExpiryPreview, setChatgptExpiryPreview] = useState(
     buildDefaultChatgptExpiryPreviewState(),
   );
+  const [chatgptExpiryPreviewSearch, setChatgptExpiryPreviewSearch] =
+    useState("");
+  const [chatgptExpiryPreviewScopeFilter, setChatgptExpiryPreviewScopeFilter] =
+    useState("all");
+  const [chatgptExpiryPreviewStatusFilter, setChatgptExpiryPreviewStatusFilter] =
+    useState("all");
+  const [chatgptExpiryPreviewKindFilter, setChatgptExpiryPreviewKindFilter] =
+    useState("all");
+  const [chatgptExpiryPreviewWarehouseFilter, setChatgptExpiryPreviewWarehouseFilter] =
+    useState("all");
+  const [chatgptExpiryPreviewSelectedKeys, setChatgptExpiryPreviewSelectedKeys] =
+    useState([]);
   const [chatgptExpiryBatches, setChatgptExpiryBatches] = useState([]);
   const [chatgptExpiryLogBatches, setChatgptExpiryLogBatches] = useState([]);
   const [chatgptMailCheckHistory, setChatgptMailCheckHistory] = useState([]);
@@ -3089,6 +3213,7 @@ function App() {
     repairStoreOrderState: false,
     fetchChatgptExpirySummary: false,
     fetchChatgptExpiryPreview: false,
+    deleteExpiryCleanupItems: false,
     fetchChatgptExpiryBatches: false,
     fetchChatgptExpiryLogs: false,
     fetchChatgptMailCheckSummary: false,
@@ -6087,6 +6212,90 @@ function App() {
     } finally {
       setLoadingStates((prev) => ({ ...prev, fetchChatgptExpiryPreview: false }));
     }
+  };
+  const executeExpiryCleanupDelete = async (items = []) => {
+    const safeItems = (Array.isArray(items) ? items : [])
+      .map((item) => ({
+        scope: String(item?.scope || "chatgpt").trim().toLowerCase(),
+        itemId: String(item?.itemId || "").trim(),
+        expectedUpdatedAt: String(item?.expectedUpdatedAt || "").trim(),
+        username: String(item?.username || "").trim(),
+      }))
+      .filter((item) => item.itemId && item.expectedUpdatedAt);
+    if (safeItems.length === 0) {
+      showAlert(
+        "Chưa có acc",
+        "Chưa có acc cleanup hợp lệ để xóa.",
+        "warning",
+      );
+      return;
+    }
+
+    setLoadingStates((prev) => ({ ...prev, deleteExpiryCleanupItems: true }));
+    try {
+      const response = await axios.post(
+        "/api/admin/chatgpt-expiry-cleanup-delete",
+        { items: safeItems },
+        {
+          timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS,
+          skipGlobalLoading: true,
+        },
+      );
+      const result =
+        response?.data?.result && typeof response.data.result === "object"
+          ? response.data.result
+          : {};
+      const deletedCount = Number(result?.deletedCount || 0);
+      const skippedCount = Number(result?.skippedCount || 0);
+      const errorCount = Number(result?.errorCount || 0);
+      setChatgptExpiryPreviewSelectedKeys((prev) =>
+        prev.filter(
+          (key) =>
+            !safeItems.some(
+              (item) => buildExpiryCleanupSelectionKey(item) === key,
+            ),
+        ),
+      );
+      await syncAdminDataAfterMutation("Dang dong bo don het han");
+      broadcastDataChange();
+      await openChatgptExpiryPreview();
+      const parts = [`Da xoa ${deletedCount} acc.`];
+      if (skippedCount > 0) parts.push(`Bo qua ${skippedCount}.`);
+      if (errorCount > 0) parts.push(`Loi ${errorCount}.`);
+      showAlert(
+        deletedCount > 0 ? "Dọn hết hạn xong" : "Không xóa được acc nào",
+        parts.join(" "),
+        deletedCount > 0 ? "info" : "warning",
+      );
+    } catch (error) {
+      showAlert(
+        "Lỗi",
+        getApiErrorMessage(error, "Khong the xoa acc het han."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, deleteExpiryCleanupItems: false }));
+    }
+  };
+  const handleDeleteExpiryCleanupItems = (
+    items = [],
+    {
+      title = "Xóa acc hết hạn",
+      message = "Bạn có chắc muốn xóa các acc đã chọn không?",
+    } = {},
+  ) => {
+    const safeItems = (Array.isArray(items) ? items : []).filter(
+      (item) => item?.itemId && item?.expectedUpdatedAt,
+    );
+    if (safeItems.length === 0) {
+      showAlert(
+        "Chưa chọn acc",
+        "Hãy chọn candidate an toàn trước khi xóa.",
+        "warning",
+      );
+      return;
+    }
+    showConfirm(title, message, () => executeExpiryCleanupDelete(safeItems));
   };
 
   const openChatgptExpiryBatches = async ({
@@ -18312,6 +18521,133 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         const pkg2Items = Array.isArray(preview?.pkg2MarketExpiringSoon)
           ? preview.pkg2MarketExpiringSoon
           : [];
+        const allItems = [
+          ...candidateItems.map((item) => ({ ...item, listStatus: "candidate" })),
+          ...warningItems.map((item) => ({ ...item, listStatus: "warning" })),
+          ...pkg2Items.map((item) => ({ ...item, listStatus: "pkg2" })),
+        ];
+        const normalizedCleanupSearch = toNonAccentVietnamese(
+          String(chatgptExpiryPreviewSearch || "").trim(),
+        );
+        const getCleanupWarehouseFilterValue = (item = {}) =>
+          `${String(item?.scope || "chatgpt").trim().toLowerCase()}:${String(
+            item?.warehouse || "",
+          ).trim()}`;
+        const getCleanupWarehouseLabel = (item = {}) =>
+          String(item?.scope || "").trim() === "team"
+            ? getTeamWarehouseLabel(item?.warehouse)
+            : getPackage2ShelfLabel(item?.warehouse);
+        const warehouseOptions = Array.from(
+          allItems.reduce((map, item) => {
+            const key = getCleanupWarehouseFilterValue(item);
+            if (!map.has(key)) {
+              map.set(key, {
+                value: key,
+                label: `${String(item?.scope || "").trim() === "team" ? "Team" : "ChatGPT"} - ${getCleanupWarehouseLabel(item)}`,
+              });
+            }
+            return map;
+          }, new Map()).values(),
+        ).sort((left, right) => left.label.localeCompare(right.label));
+        const filteredItems = allItems
+          .filter((item) => {
+            if (
+              chatgptExpiryPreviewScopeFilter !== "all" &&
+              String(item?.scope || "").trim() !== chatgptExpiryPreviewScopeFilter
+            ) {
+              return false;
+            }
+            if (
+              chatgptExpiryPreviewStatusFilter !== "all" &&
+              String(item?.listStatus || "").trim() !==
+                chatgptExpiryPreviewStatusFilter
+            ) {
+              return false;
+            }
+            if (chatgptExpiryPreviewKindFilter !== "all") {
+              const itemKind = getExpiryCleanupFilterKind(item);
+              if (itemKind !== chatgptExpiryPreviewKindFilter) {
+                return false;
+              }
+            }
+            if (
+              chatgptExpiryPreviewWarehouseFilter !== "all" &&
+              getCleanupWarehouseFilterValue(item) !==
+                chatgptExpiryPreviewWarehouseFilter
+            ) {
+              return false;
+            }
+            if (!normalizedCleanupSearch) return true;
+            return buildExpiryCleanupSearchText(item).includes(
+              normalizedCleanupSearch,
+            );
+          })
+          .sort((left, right) => {
+            const leftExpiry = Date.parse(String(left?.expiredAt || "").trim());
+            const rightExpiry = Date.parse(String(right?.expiredAt || "").trim());
+            const leftValue = Number.isFinite(leftExpiry)
+              ? leftExpiry
+              : Number.MAX_SAFE_INTEGER;
+            const rightValue = Number.isFinite(rightExpiry)
+              ? rightExpiry
+              : Number.MAX_SAFE_INTEGER;
+            if (leftValue !== rightValue) return leftValue - rightValue;
+            return String(left?.username || "").localeCompare(
+              String(right?.username || ""),
+            );
+          });
+        const filteredCounts = filteredItems.reduce(
+          (summary, item) => {
+            const status = String(item?.listStatus || "").trim();
+            if (status === "candidate") summary.candidate += 1;
+            if (status === "warning") summary.warning += 1;
+            if (status === "pkg2") summary.pkg2 += 1;
+            return summary;
+          },
+          { candidate: 0, warning: 0, pkg2: 0 },
+        );
+        const candidateKeyMap = new Map(
+          candidateItems.map((item) => [buildExpiryCleanupSelectionKey(item), item]),
+        );
+        const selectedKeySet = new Set(
+          Array.isArray(chatgptExpiryPreviewSelectedKeys)
+            ? chatgptExpiryPreviewSelectedKeys
+            : [],
+        );
+        const selectedCandidateItems = Array.from(selectedKeySet)
+          .map((key) => candidateKeyMap.get(key))
+          .filter(Boolean);
+        const filteredCandidateItems = filteredItems.filter(
+          (item) =>
+            String(item?.listStatus || "").trim() === "candidate" &&
+            !!item?.deleteEligible,
+        );
+        const filteredCandidateKeys = filteredCandidateItems.map((item) =>
+          buildExpiryCleanupSelectionKey(item),
+        );
+        const allVisibleCandidatesSelected =
+          filteredCandidateKeys.length > 0 &&
+          filteredCandidateKeys.every((key) => selectedKeySet.has(key));
+        const selectedVisibleCount = filteredCandidateKeys.filter((key) =>
+          selectedKeySet.has(key),
+        ).length;
+        const hasActiveCleanupFilters =
+          !!normalizedCleanupSearch ||
+          chatgptExpiryPreviewScopeFilter !== "all" ||
+          chatgptExpiryPreviewStatusFilter !== "all" ||
+          chatgptExpiryPreviewKindFilter !== "all" ||
+          chatgptExpiryPreviewWarehouseFilter !== "all";
+        const focusCleanupAccount = (item = {}) => {
+          const isTeam = String(item?.scope || "").trim() === "team";
+          setShowChatgptExpiryPreviewModal(false);
+          window.setTimeout(() => {
+            if (isTeam) {
+              focusTeamAccountFromMarketplace(item?.itemId, item?.username);
+              return;
+            }
+            focusChatgptAccountById(item?.itemId);
+          }, 120);
+        };
 
         const renderCleanupItem = (item = {}, tone = "default") => {
           const scopeLabel = String(item?.scope || "").trim() === "team" ? "Team" : "ChatGPT";
@@ -18345,7 +18681,28 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
             >
               {/* Header row */}
               <div className="flex items-start justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <div className="flex flex-wrap items-start gap-2 min-w-0">
+                  {tone === "candidate" && item?.deleteEligible ? (
+                    <label className="mt-0.5 inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedKeySet.has(buildExpiryCleanupSelectionKey(item))}
+                        onChange={() =>
+                          setChatgptExpiryPreviewSelectedKeys((prev) => {
+                            const next = new Set(Array.isArray(prev) ? prev : []);
+                            const key = buildExpiryCleanupSelectionKey(item);
+                            if (next.has(key)) {
+                              next.delete(key);
+                            } else {
+                              next.add(key);
+                            }
+                            return Array.from(next);
+                          })
+                        }
+                        className="h-4 w-4 rounded border-slate-500 bg-slate-950 text-cyan-400 focus:ring-cyan-500"
+                      />
+                    </label>
+                  ) : null}
                   <span className="rounded-full border border-slate-600 bg-slate-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-200">{scopeLabel}</span>
                   <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] ${toneBadge}`}>{item?.reasonLabel || "--"}</span>
                   <span className="rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-300">{warehouseLabel || "--"}</span>
@@ -18356,14 +18713,18 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   )}
                 </div>
                 {/* Delete button */}
-                {item?.itemId && !isTeam && (
+                {item?.itemId && tone === "candidate" && item?.deleteEligible && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowChatgptExpiryPreviewModal(false);
-                      setDeletingId(item.itemId);
-                      setShowDeleteModal(true);
-                    }}
+                    onClick={() =>
+                      handleDeleteExpiryCleanupItems([item], {
+                        title: "Xoa acc het han",
+                        message: `Ban co chac muon xoa acc "${String(
+                          item?.username || "--",
+                        )}" khong?`,
+                      })
+                    }
+                    disabled={loadingStates.deleteExpiryCleanupItems}
                     className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-red-600/50 bg-red-900/30 px-2.5 py-1.5 text-[11px] font-bold text-red-200 transition hover:bg-red-700/50"
                     title="Xóa acc + toàn bộ khách"
                   >
@@ -18392,10 +18753,10 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                 )}
                 <div className="flex items-center gap-3 pt-0.5">
                   <span className="text-[10px] text-slate-500">
-                    Khách còn hạn: <span className="font-bold text-white">{Number(item?.activeUserCount || 0)}</span>
+                    {isTeam ? "Slot còn hạn" : "Khách còn hạn"}: <span className="font-bold text-white">{isTeam ? Number(item?.activeSlotCount || 0) : Number(item?.activeUserCount || 0)}</span>
                   </span>
                   <span className="text-[10px] text-slate-500">
-                    Hết hạn: <span className={`font-bold ${Number(item?.expiredUserCount || 0) > 0 ? "text-red-300" : "text-slate-300"}`}>{Number(item?.expiredUserCount || 0)}</span>
+                    Hết hạn: <span className={`font-bold ${Number(isTeam ? item?.expiredSlotCount || 0 : item?.expiredUserCount || 0) > 0 ? "text-red-300" : "text-slate-300"}`}>{isTeam ? Number(item?.expiredSlotCount || 0) : Number(item?.expiredUserCount || 0)}</span>
                   </span>
                 </div>
               </div>
@@ -18436,23 +18797,14 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
               )}
 
               {/* Bottom actions */}
-              {item?.itemId && !isTeam && (
+              {item?.itemId && (
                 <div className="flex gap-2 pt-0.5">
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowChatgptExpiryPreviewModal(false);
-                      setSearchQuery(String(item?.username || "").trim());
-                      setHighlightedChatgptAccountId(String(item?.itemId || ""));
-                      setTimeout(() => {
-                        const el = document.getElementById(`chatgpt-account-row-${item?.itemId}`);
-                        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-                        setTimeout(() => setHighlightedChatgptAccountId(null), 3000);
-                      }, 500);
-                    }}
+                    onClick={() => focusCleanupAccount(item)}
                     className="inline-flex items-center gap-1 rounded-lg border border-cyan-600/40 bg-cyan-900/20 px-2.5 py-1 text-[10px] font-bold text-cyan-200 transition hover:bg-cyan-700/40"
                   >
-                    <ExternalLink size={10} /> Tới acc trong DB
+                    <ExternalLink size={10} /> {isTeam ? "Tới team trong DB" : "Tới acc trong DB"}
                   </button>
                 </div>
               )}
@@ -18463,8 +18815,8 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
             <div
-              className="max-h-[90vh] w-full overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 shadow-2xl"
-              style={{ maxWidth: "980px" }}
+              className="max-h-[92vh] w-full overflow-hidden rounded-3xl border border-slate-700 bg-slate-800 shadow-2xl"
+              style={{ maxWidth: "1180px" }}
             >
               <div className="flex items-center justify-between border-b border-slate-700 px-5 py-4">
                 <div>
@@ -18472,7 +18824,11 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                     Xem danh sach het han ChatGPT / Team
                   </h2>
                   <div className="mt-1 text-xs text-slate-400">
-                    Scan luc {formatDateTime(preview?.scannedAt) || "--"}
+                    Scan luc {formatDateTime(preview?.scannedAt) || "--"} • Dang hien{" "}
+                    <span className="font-semibold text-white">
+                      {filteredItems.length}
+                    </span>{" "}
+                    / {allItems.length} muc
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -18499,7 +18855,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                 </div>
               </div>
 
-              <div className="max-h-[calc(90vh-88px)] overflow-y-auto px-5 py-5">
+              <div className="max-h-[calc(92vh-88px)] overflow-y-auto px-5 py-5">
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
                     <div className="text-[11px] uppercase tracking-[0.18em] text-emerald-100/80">
@@ -18543,70 +18899,211 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                   </div>
                 </div>
 
-                <div className="mt-5 space-y-6">
-                  <section>
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-emerald-200">
-                        Candidate co the dua vao batch xoa
-                      </h3>
-                      <div className="text-xs text-slate-400">
-                        {candidateItems.length} item
-                      </div>
+                <div className="mt-5 space-y-5">
+                  <div className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                      <label className="xl:col-span-2">
+                        <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                          Tim nhanh
+                        </div>
+                        <input
+                          type="text"
+                          value={chatgptExpiryPreviewSearch}
+                          onChange={(event) =>
+                            setChatgptExpiryPreviewSearch(event.target.value)
+                          }
+                          placeholder="Tim email, note, order trace, customer..."
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400/50"
+                        />
+                      </label>
+                      <label>
+                        <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                          Scope
+                        </div>
+                        <select
+                          value={chatgptExpiryPreviewScopeFilter}
+                          onChange={(event) =>
+                            setChatgptExpiryPreviewScopeFilter(event.target.value)
+                          }
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/50"
+                        >
+                          <option value="all">Tat ca</option>
+                          <option value="chatgpt">ChatGPT</option>
+                          <option value="team">Team</option>
+                        </select>
+                      </label>
+                      <label>
+                        <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                          Trang thai
+                        </div>
+                        <select
+                          value={chatgptExpiryPreviewStatusFilter}
+                          onChange={(event) =>
+                            setChatgptExpiryPreviewStatusFilter(event.target.value)
+                          }
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/50"
+                        >
+                          <option value="all">Tat ca</option>
+                          <option value="candidate">Candidate</option>
+                          <option value="warning">Warning</option>
+                          <option value="pkg2">Pkg2 canh bao</option>
+                        </select>
+                      </label>
+                      <label>
+                        <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                          Kieu
+                        </div>
+                        <select
+                          value={chatgptExpiryPreviewKindFilter}
+                          onChange={(event) =>
+                            setChatgptExpiryPreviewKindFilter(event.target.value)
+                          }
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/50"
+                        >
+                          <option value="all">Tat ca</option>
+                          <option value="empty">Rong</option>
+                          <option value="expired_only">Chi con het han</option>
+                          <option value="active_users">Con khach han</option>
+                          <option value="active_slots">Con slot han</option>
+                          <option value="reserved">Dang reserve</option>
+                          <option value="warranty">Dang warranty</option>
+                          <option value="replacement">Acc thay the</option>
+                          <option value="marketplace">Dang dinh san</option>
+                          <option value="pkg2">Pkg2 canh bao</option>
+                        </select>
+                      </label>
                     </div>
-                    {candidateItems.length === 0 ? (
-                      <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-5 text-sm text-slate-400">
-                        Chua co candidate nao an toan de dua vao batch xoa.
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {candidateItems.map((item) =>
-                          renderCleanupItem(item, "candidate"),
-                        )}
-                      </div>
-                    )}
-                  </section>
 
-                  <section>
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-amber-200">
-                        Warning dang het han nhung dang ban/nghi vu
-                      </h3>
-                      <div className="text-xs text-slate-400">
-                        {warningItems.length} item
+                    <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_260px]">
+                      <label>
+                        <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                          Kho / Shelf
+                        </div>
+                        <select
+                          value={chatgptExpiryPreviewWarehouseFilter}
+                          onChange={(event) =>
+                            setChatgptExpiryPreviewWarehouseFilter(
+                              event.target.value,
+                            )
+                          }
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/50"
+                        >
+                          <option value="all">Tat ca kho</option>
+                          {warehouseOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <div className="rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs text-slate-300">
+                          Candidate {filteredCounts.candidate} • Warning{" "}
+                          {filteredCounts.warning} • Pkg2 {filteredCounts.pkg2}
+                        </div>
+                        {hasActiveCleanupFilters ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setChatgptExpiryPreviewSearch("");
+                              setChatgptExpiryPreviewScopeFilter("all");
+                              setChatgptExpiryPreviewStatusFilter("all");
+                              setChatgptExpiryPreviewKindFilter("all");
+                              setChatgptExpiryPreviewWarehouseFilter("all");
+                            }}
+                            className="rounded-xl border border-slate-600 bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-cyan-400/40 hover:text-white"
+                          >
+                            Bo loc
+                          </button>
+                        ) : null}
                       </div>
                     </div>
-                    {warningItems.length === 0 ? (
-                      <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-5 text-sm text-slate-400">
-                        Khong co warning nao can xem them.
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {warningItems.map((item) =>
-                          renderCleanupItem(item, "warning"),
-                        )}
-                      </div>
-                    )}
-                  </section>
+                  </div>
 
-                  <section>
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-yellow-200">
-                        Goi 2 market can canh bao
-                      </h3>
-                      <div className="text-xs text-slate-400">
-                        {pkg2Items.length} item
+                  <div className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-200">
+                          Bulk cleanup candidate
+                        </div>
+                        <div className="mt-1 text-sm text-slate-300">
+                          Dang chon{" "}
+                          <span className="font-semibold text-white">
+                            {selectedCandidateItems.length}
+                          </span>{" "}
+                          item. Candidate dang hien: {filteredCandidateItems.length}.
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={filteredCandidateItems.length === 0}
+                          onClick={() =>
+                            setChatgptExpiryPreviewSelectedKeys((prev) => {
+                              const next = new Set(Array.isArray(prev) ? prev : []);
+                              if (allVisibleCandidatesSelected) {
+                                filteredCandidateKeys.forEach((key) =>
+                                  next.delete(key),
+                                );
+                              } else {
+                                filteredCandidateKeys.forEach((key) =>
+                                  next.add(key),
+                                );
+                              }
+                              return Array.from(next);
+                            })
+                          }
+                          className="rounded-xl border border-slate-600 bg-slate-950/80 px-3 py-2 text-xs font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {allVisibleCandidatesSelected
+                            ? `Bo chon ${selectedVisibleCount} item dang loc`
+                            : `Chon tat ca ${filteredCandidateItems.length} candidate`}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={selectedCandidateItems.length === 0}
+                          onClick={() => setChatgptExpiryPreviewSelectedKeys([])}
+                          className="rounded-xl border border-slate-600 bg-slate-950/80 px-3 py-2 text-xs font-semibold text-white transition hover:border-slate-400 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Bo chon
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            selectedCandidateItems.length === 0 ||
+                            loadingStates.deleteExpiryCleanupItems
+                          }
+                          onClick={() =>
+                            handleDeleteExpiryCleanupItems(selectedCandidateItems, {
+                              title: "Xoa candidate dang chon",
+                              message: `Ban co chac muon xoa ${selectedCandidateItems.length} acc het han du dieu kien khong?`,
+                            })
+                          }
+                          className="inline-flex items-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-100 transition hover:bg-red-500/15 disabled:cursor-wait disabled:opacity-50"
+                        >
+                          <Trash2 size={12} />
+                          {loadingStates.deleteExpiryCleanupItems
+                            ? "Dang xoa..."
+                            : "Xoa acc dang chon"}
+                        </button>
                       </div>
                     </div>
-                    {pkg2Items.length === 0 ? (
-                      <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-5 text-sm text-slate-400">
-                        Khong co acc goi 2 market nao canh bao trong snapshot nay.
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {pkg2Items.map((item) => renderCleanupItem(item, "pkg2"))}
-                      </div>
-                    )}
-                  </section>
+                  </div>
+
+                  {filteredItems.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-10 text-center text-sm text-slate-400">
+                      Khong co item nao hop voi bo loc hien tai.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredItems.map((item) =>
+                        renderCleanupItem(
+                          item,
+                          String(item?.listStatus || "warning").trim(),
+                        ),
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

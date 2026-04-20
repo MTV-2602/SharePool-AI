@@ -338,8 +338,13 @@ const formatCleanupBatchTelegramMessage = (batch = {}) => {
   if (previewItems.length > 0) {
     lines.push("", "<b>Preview:</b>");
     previewItems.forEach((item, index) => {
+      const usageText =
+        item?.scope === "team"
+          ? `slot ${Number(item?.activeSlotCount || 0)}/${Number(item?.expiredSlotCount || 0)}`
+          : `khach ${Number(item?.activeUserCount || 0)}/${Number(item?.expiredUserCount || 0)}`;
+      const sourceText = String(item?.sourceLabel || "").trim();
       lines.push(
-        `${index + 1}. ${escapeTelegramHtml(item?.scope === "team" ? "Team" : "ChatGPT")} | ${escapeTelegramHtml(item?.username || item?.itemId || "--")} | ${escapeTelegramHtml(item?.reasonLabel || item?.reasonCode || "--")} | ${escapeTelegramHtml(item?.expiredAt || "--")}`,
+        `${index + 1}. ${escapeTelegramHtml(item?.scope === "team" ? "Team" : "ChatGPT")} | ${escapeTelegramHtml(item?.username || item?.itemId || "--")} | ${escapeTelegramHtml(item?.reasonLabel || item?.reasonCode || "--")} | HH ${escapeTelegramHtml(item?.expiredAt || "--")} | ${escapeTelegramHtml(usageText)}${sourceText ? ` | nguon ${escapeTelegramHtml(sourceText)}` : ""}`,
       );
     });
     if (items.length > previewItems.length) {
