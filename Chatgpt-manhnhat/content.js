@@ -4193,7 +4193,7 @@ function injectEmailQuickDock() {
   updateActiveEmailLabel();
   updateActiveHotmailLabel();
 
-  document.getElementById("af-eq-clear").addEventListener("click", () => {
+  const clearQuickDockInput = (options = {}) => {
     inputEl.value = "";
     lastFormatted = "";
     lastAutoCopied = "";
@@ -4201,7 +4201,11 @@ function injectEmailQuickDock() {
     hotmailUsedEmails = new Set();
     build();
     updateSwitchModeButton().catch(() => {});
-    inputEl.focus();
+    if (options.focus) inputEl.focus();
+  };
+
+  document.getElementById("af-eq-clear").addEventListener("click", () => {
+    clearQuickDockInput({ focus: true });
   });
 
   document.getElementById("af-eq-copy-full").addEventListener("click", async () => {
@@ -4820,8 +4824,9 @@ function injectEmailQuickDock() {
       const pushedUser = String(json?.account?.username || credential.username).trim();
       btn.textContent = "Da day";
       btn.style.background = "#16a34a";
+      clearQuickDockInput();
       toast(
-        `Da day len inventory: ${pushedUser}${getHotmailLinkStatusText(json?.hotmailLink)}`,
+        `Da day len inventory va clear o nhap: ${pushedUser}${getHotmailLinkStatusText(json?.hotmailLink)}`,
         "#27ae60",
       );
     } catch (err) {
