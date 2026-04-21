@@ -1706,7 +1706,7 @@ function findButtonByPatterns(scopes, patterns) {
   for (const scope of scopes) {
     const found = Array.from(scope.querySelectorAll(selectors)).find(
       (el) =>
-        isInteractable(el) && matchesUiPatterns(getActionText(el), patterns),
+        isEnabledActionButton(el) && matchesUiPatterns(getActionText(el), patterns),
     );
     if (found) return found;
   }
@@ -1921,40 +1921,90 @@ function clickVerifyIfEnabled() {
     const txt = String(el.textContent || "").trim().toLowerCase();
     return txt === "verify";
   });
-  if (!btn || btn.disabled) return false;
+  if (!isEnabledActionButton(btn)) return false;
   clickLikeMouse(btn);
   return true;
 }
 
-function clickContinueIfEnabled() {
-  const byAction = document.querySelector(
-    'form[action*="email-verification"] button[type="submit"][name="intent"][value="validate"]',
-  );
-  if (byAction && !byAction.disabled) {
+function normalizeActionSearchScopes(scopes) {
+  const source = Array.isArray(scopes) && scopes.length ? scopes : [document];
+  const out = [];
+  const seen = new Set();
+  for (const scope of source) {
+    if (!scope || typeof scope.querySelectorAll !== "function") continue;
+    if (seen.has(scope)) continue;
+    seen.add(scope);
+    out.push(scope);
+  }
+  return out.length ? out : [document];
+}
+
+function isEnabledActionButton(el) {
+  if (!el) return false;
+  if (el.disabled) return false;
+  const hasTruthyAttr = (name) => {
+    const value = el.getAttribute?.(name);
+    if (value == null) return false;
+    const normalized = String(value).trim().toLowerCase();
+    return normalized === "" || normalized === "true";
+  };
+  if (hasTruthyAttr("disabled")) return false;
+  if (hasTruthyAttr("aria-disabled"))
+    return false;
+  if (hasTruthyAttr("data-disabled"))
+    return false;
+  if (typeof el.closest === "function") {
+    const disabledParent = el.closest('[aria-disabled="true"], [data-disabled="true"]');
+    if (disabledParent && disabledParent !== el) return false;
+  }
+  return isInteractable(el);
+}
+
+function clickContinueIfEnabled(options = {}) {
+  const scopes = normalizeActionSearchScopes(options.scopes);
+  const byAction = scopes
+    .map((scope) =>
+      scope.querySelector(
+        'form[action*="email-verification"] button[type="submit"][name="intent"][value="validate"]',
+      ),
+    )
+    .find(isEnabledActionButton);
+  if (byAction) {
     clickLikeMouse(byAction);
     return true;
   }
 
-  const btn = Array.from(document.querySelectorAll("button")).find((el) => {
-    const txt = String(el.textContent || "").trim().toLowerCase();
-    if (txt !== "continue") return false;
-    if (el.disabled) return false;
-    return true;
-  });
+  const selectors =
+    'button, [role="button"], input[type="submit"], input[type="button"]';
+  const btn = scopes
+    .flatMap((scope) => Array.from(scope.querySelectorAll(selectors)))
+    .find((el) => {
+      const txt = String(getActionText(el) || "").trim().toLowerCase();
+      if (txt !== "continue") return false;
+      return isEnabledActionButton(el);
+    });
   if (!btn) return false;
   clickLikeMouse(btn);
   return true;
 }
 
-function clickContinueWithRetry(maxAttempts = 10, delayMs = 140) {
-  let attempt = 0;
-  const run = () => {
-    if (clickContinueIfEnabled()) return;
-    attempt += 1;
-    if (attempt >= maxAttempts) return;
-    setTimeout(run, delayMs);
-  };
-  run();
+function clickContinueWithRetry(maxAttempts = 10, delayMs = 140, options = {}) {
+  return new Promise((resolve) => {
+    let attempt = 0;
+    const run = () => {
+      if (clickContinueIfEnabled(options)) {
+        resolve(true);
+        return;
+      }
+      attempt += 1;
+      if (attempt >= maxAttempts) {
+        resolve(false);
+        return;
+      }
+      setTimeout(run, delayMs);
+    };
+    run();
+  });
 }
 
 function setAutoSubmitStatus(status) {
@@ -3801,7 +3851,7 @@ function injectEmailQuickDock() {
   };
 
 
-  const fillHotmailNow = async (target) => {
+  const fillHotmailNow = async (target, options = {}) => {
     const normalizedEmail = String(target?.email || "").trim().toLowerCase();
     if (!normalizedEmail) {
       throw new Error("Chua co email Hotmail. Hay paste email hoac line day du");
@@ -3818,21 +3868,68 @@ function injectEmailQuickDock() {
     const emailEl = findVisibleEmailField();
     const passEl = findVisiblePasswordField();
     let filled = false;
+    let emailFilled = false;
+    let passwordFilled = false;
     if (emailEl) {
       typeInto(emailEl, normalizedEmail);
       filled = true;
+      emailFilled = true;
     }
     if (passEl && target.password) {
       typeInto(passEl, target.password);
       filled = true;
+      passwordFilled = true;
     }
+
+    const result = {
+      email: normalizedEmail,
+      filled,
+      emailFilled,
+      passwordFilled,
+      emailEl,
+      passEl,
+      hasPasswordField: !!passEl,
+      passwordValue: String(passEl?.value || ""),
+      messageCount: Number(inbox.count || 0),
+    };
 
     if (!filled) {
       await navigator.clipboard.writeText(normalizedEmail);
-      toast(`Hotmail copied: ${normalizedEmail}`, "#27ae60");
-      return;
+      if (!options.silent) toast(`Hotmail copied: ${normalizedEmail}`, "#27ae60");
+      return { ...result, copied: true };
     }
-    toast(`Da dien Hotmail: ${normalizedEmail} (${Number(inbox.count || 0)} mail)`, "#27ae60");
+    if (!options.silent) {
+      toast(`Da dien Hotmail: ${normalizedEmail} (${result.messageCount} mail)`, "#27ae60");
+    }
+    return result;
+  };
+
+  const getFormScopeForField = (field) => {
+    if (!field || typeof field.closest !== "function") return null;
+    return field.closest("form");
+  };
+
+  const autoContinueAfterHotmailUse = async (fillResult) => {
+    if (!isMainFrame || !fillResult?.filled) return false;
+
+    const emailEl = fillResult.emailEl && document.contains(fillResult.emailEl)
+      ? fillResult.emailEl
+      : findVisibleEmailField();
+    const passEl = fillResult.passEl && document.contains(fillResult.passEl)
+      ? fillResult.passEl
+      : findVisiblePasswordField();
+
+    if (!emailEl && !passEl) return false;
+    if (passEl && !String(passEl.value || "").trim()) return false;
+
+    const scopes = [
+      getFormScopeForField(passEl),
+      getFormScopeForField(emailEl),
+      document,
+    ].filter(Boolean);
+
+    await sleep(120);
+    return clickContinueWithRetry(12, 160, { scopes });
   };
 
   const fetchLatestHotmailCode = async () => {
@@ -4392,7 +4489,21 @@ function injectEmailQuickDock() {
       
       let usedEmail = String(target.email || "").trim();
       try {
-        await fillHotmailNow(target);
+        const fillResult = await fillHotmailNow(target, { silent: true });
+        const autoContinued = await autoContinueAfterHotmailUse(fillResult);
+        const countText = Number.isFinite(fillResult?.messageCount)
+          ? ` (${fillResult.messageCount} mail)`
+          : "";
+        if (fillResult?.filled) {
+          toast(
+            autoContinued
+              ? `Da dien Hotmail va bam Continue: ${usedEmail}${countText}`
+              : `Da dien Hotmail: ${usedEmail}${countText}`,
+            "#27ae60",
+          );
+        } else if (fillResult?.copied) {
+          toast(`Hotmail copied: ${usedEmail}`, "#27ae60");
+        }
         
         // Danh dau "used" tren web ngay lap tuc - khong doi, khong can biet thanh cong hay khong
         markHotmailUsedViaProxy(usedEmail);
