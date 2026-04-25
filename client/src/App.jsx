@@ -3199,6 +3199,7 @@ function App() {
     moveUser: false,
     extendUser: false,
     bulkWarehouseMove: false,
+    deleteSelectedChatgpt: false,
     addAccount: false,
     editAccount: false,
     deleteAccount: false,
@@ -8340,6 +8341,116 @@ function App() {
     );
   };
 
+  const handleDeleteSelectedChatgptAccounts = () => {
+    if (loadingStates.deleteSelectedChatgpt) return;
+
+    const selectedIds = selectedChatgptIds
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+    if (selectedIds.length === 0) {
+      showAlert("Chua chon acc", "Hay tick acc can xoa truoc.", "warning");
+      return;
+    }
+
+    const selectedIdSet = new Set(selectedIds);
+    const selectedAccounts = accounts.filter((acc) =>
+      selectedIdSet.has(String(acc?.id || "")),
+    );
+    const missingCount = Math.max(0, selectedIds.length - selectedAccounts.length);
+    if (selectedAccounts.length === 0) {
+      showAlert(
+        "Khong co acc tren trang",
+        "Cac acc dang chon khong nam trong du lieu dang hien thi. Hay tai lai hoac chon lai tren trang hien tai.",
+        "warning",
+      );
+      return;
+    }
+
+    showConfirm(
+      "Xoa acc da chon",
+      [
+        `Se goi thao tac xoa binh thuong cho ${selectedAccounts.length} acc dang chon.`,
+        missingCount > 0
+          ? `Bo qua ${missingCount} acc khong co du lieu tren trang hien tai.`
+          : "",
+        "Acc nao backend dang chan thi se duoc giu lai va bao loi.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      async () => {
+        setLoadingStates((prev) => ({ ...prev, deleteSelectedChatgpt: true }));
+
+        const deletedIds = new Set();
+        const failedLabels = [];
+        let hasVersionConflict = false;
+
+        try {
+          for (const acc of selectedAccounts) {
+            const id = String(acc?.id || "").trim();
+            if (!id) continue;
+            try {
+              await axios.delete(`/api/chatgpt/${id}`, {
+                data: withExpectedUpdatedAt({}, acc),
+                requestLabel: "Dang xoa acc da chon",
+                skipGlobalLoading: true,
+              });
+              deletedIds.add(id);
+            } catch (error) {
+              if (isAdminVersionConflictError(error)) {
+                hasVersionConflict = true;
+              }
+              failedLabels.push(
+                `${acc.username || id}: ${getApiErrorMessage(
+                  error,
+                  "Khong the xoa acc",
+                )}`,
+              );
+            }
+          }
+
+          if (hasVersionConflict) {
+            await Promise.allSettled([
+              refreshAdminSurface({ includeSummary: true, forceFull: true }),
+            ]);
+          } else if (deletedIds.size > 0) {
+            await syncAdminDataAfterMutation("Dang dong bo xoa acc da chon");
+          }
+
+          setSelectedChatgptIds((prev) =>
+            prev.filter((id) => !deletedIds.has(String(id || ""))),
+          );
+          if (deletedIds.size > 0) {
+            broadcastDataChange();
+          }
+
+          const failedPreview = failedLabels.slice(0, 6);
+          const hiddenFailed = Math.max(0, failedLabels.length - failedPreview.length);
+          if (hiddenFailed > 0) {
+            failedPreview.push(`... va ${hiddenFailed} loi khac`);
+          }
+
+          showAlert(
+            failedLabels.length === 0 ? "Da xoa acc" : "Xoa xong nhung co acc bi chan",
+            [
+              `Da xoa: ${deletedIds.size}`,
+              `Khong xoa duoc: ${failedLabels.length}`,
+              missingCount > 0 ? `Bo qua khong co du lieu: ${missingCount}` : "",
+              hasVersionConflict
+                ? "Da tu tai lai du lieu moi vi co admin khac vua cap nhat."
+                : "",
+              ...failedPreview,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            failedLabels.length === 0 ? "success" : "warning",
+          );
+        } finally {
+          setLoadingStates((prev) => ({ ...prev, deleteSelectedChatgpt: false }));
+        }
+      },
+    );
+  };
+
   const handleRunSelectedChatgptMailCheck = async () => {
     const accountIds = selectedChatgptIds
       .map((id) => String(id || "").trim())
@@ -12922,6 +13033,11 @@ function App() {
                   disabled={selectedChatgptIds.length === 0 || loadingStates.runChatgptMailCheck}
                   className="inline-flex items-center gap-1 rounded-lg bg-rose-700 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50">
                   {loadingStates.runChatgptMailCheck ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />} Mail die
+                </button>
+                <button onClick={handleDeleteSelectedChatgptAccounts}
+                  disabled={selectedChatgptIds.length === 0 || loadingStates.deleteSelectedChatgpt}
+                  className="inline-flex items-center gap-1 rounded-lg bg-red-700 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50">
+                  {loadingStates.deleteSelectedChatgpt ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} {loadingStates.deleteSelectedChatgpt ? "Dang xoa..." : "Xoa da chon"}
                 </button>
                 <button onClick={() => setShowImportGPTModal(true)}
                   className="inline-flex items-center gap-1 rounded-lg bg-purple-600 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-purple-500">
