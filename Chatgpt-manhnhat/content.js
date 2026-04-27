@@ -3798,7 +3798,12 @@ function injectEmailQuickDock() {
     if (storedWorker?.id && !storedStillActive) {
       await setStoredExtensionWorker(null);
     }
-    workerSelectEl.innerHTML = '<option value="">Worker...</option>';
+    workerSelectEl.innerHTML = "";
+    const placeholderOpt = document.createElement("option");
+    placeholderOpt.value = "";
+    placeholderOpt.textContent = "Worker...";
+    placeholderOpt.disabled = true;
+    workerSelectEl.appendChild(placeholderOpt);
     extensionWorkerOptions.forEach((worker) => {
       const opt = document.createElement("option");
       opt.value = String(worker?.id || "");
@@ -3839,6 +3844,7 @@ function injectEmailQuickDock() {
     );
     if (!nextId || !nextWorker) {
       hideExtensionWorkerCode();
+      await renderExtensionWorkerSelect();
       return;
     }
     const currentWorker = await getStoredExtensionWorker();
