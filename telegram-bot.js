@@ -97,6 +97,7 @@ const TELEGRAM_WELCOME_MESSAGE = [
   '',
   '*Lenh:*',
   '/stats - thong ke tong quan',
+  '/workerstats - thong ke nguoi lam extension',
   '/help - huong dan',
   '/cleanup show <batchId> - xem batch don het han',
   '/cleanup approve <batchId> - duyet xoa batch',
@@ -124,6 +125,17 @@ const TELEGRAM_WELCOME_MESSAGE = [
   'email,password,courseCode',
   '```',
 ].join('\n');
+
+const TELEGRAM_COMMAND_KEYBOARD_OPTIONS = {
+  reply_markup: {
+    keyboard: [
+      [{ text: '/stats' }, { text: '/workerstats' }],
+      [{ text: '/help' }],
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false,
+  },
+};
 
 console.log('🤖 Telegram Bot đang chạy...');
 
@@ -473,18 +485,6 @@ const formatCompactStatsMessage = (summary = {}) => {
   const market = summary?.marketplace || {};
   const providers = market?.providers || {};
   const web = summary?.web || {};
-  const extensionWorkers = summary?.extensionWorkers || {};
-  const extensionWorkerItems = Array.isArray(extensionWorkers?.items)
-    ? extensionWorkers.items
-    : [];
-  const extensionWorkerLines = extensionWorkerItems.length
-    ? extensionWorkerItems
-        .slice(0, 12)
-        .map(
-          (item, index) =>
-            `- ${index + 1}. ${item?.name || "Chua gan"}: hom nay ${Number(item?.today || 0)} | tong ${Number(item?.total || 0)}`,
-        )
-    : ["- Chua co du lieu push theo nguoi lam"];
   const updatedAt = summary?.updatedAt
     ? new Date(summary.updatedAt)
     : new Date();
@@ -516,12 +516,51 @@ const formatCompactStatsMessage = (summary = {}) => {
     '🌐 Web',
     `- User ${Number(web.totalUsers || 0)} | Don ${Number(web.totalOrders || 0)} | Pending ${Number(web.pendingOrders || 0)} | Fulfilled ${Number(web.fulfilledOrders || 0)}`,
     '',
-    'Nguoi lam extension',
-    `- Hom nay ${Number(extensionWorkers.today || 0)} | Tong ${Number(extensionWorkers.total || 0)}`,
-    ...extensionWorkerLines,
-    '',
     `🕒 Updated: ${updatedLabel}`,
   ].join('\n');
+};
+
+const sanitizeTelegramStatsText = (value = '') =>
+  String(value || '')
+    .trim()
+    .replace(/[_*`[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .slice(0, 90);
+
+const formatExtensionWorkerStatsMessage = (summary = {}) => {
+  const extensionWorkers = summary?.extensionWorkers || {};
+  const extensionWorkerItems = Array.isArray(extensionWorkers?.items)
+    ? extensionWorkers.items
+    : [];
+  const updatedAt = summary?.updatedAt
+    ? new Date(summary.updatedAt)
+    : new Date();
+  const updatedLabel = Number.isNaN(updatedAt.getTime())
+    ? new Date().toLocaleString('vi-VN')
+    : updatedAt.toLocaleString('vi-VN');
+  const lines = [
+    'THONG KE NGUOI LAM EXTENSION',
+    '',
+    `Ngay: ${extensionWorkers.todayKey || 'Asia/Bangkok'}`,
+    `Hom nay: ${Number(extensionWorkers.today || 0)}`,
+    `Tong: ${Number(extensionWorkers.total || 0)}`,
+    '',
+  ];
+  if (extensionWorkerItems.length === 0) {
+    lines.push('Chua co du lieu push theo nguoi lam.');
+  } else {
+    lines.push('Chi tiet:');
+    extensionWorkerItems.slice(0, 30).forEach((item, index) => {
+      lines.push(
+        `${index + 1}. ${sanitizeTelegramStatsText(item?.name || 'Chua gan')}: hom nay ${Number(item?.today || 0)} | tong ${Number(item?.total || 0)}`,
+      );
+    });
+    if (extensionWorkerItems.length > 30) {
+      lines.push(`+${extensionWorkerItems.length - 30} nguoi nua`);
+    }
+  }
+  lines.push('', `Updated: ${updatedLabel}`);
+  return lines.join('\n');
 };
 
 // Command: /start
@@ -533,7 +572,10 @@ bot.onText(/\/start/, (msg) => {
     return;
   }
 
-  bot.sendMessage(chatId, TELEGRAM_WELCOME_MESSAGE, { parse_mode: 'Markdown' });
+  bot.sendMessage(chatId, TELEGRAM_WELCOME_MESSAGE, {
+    parse_mode: 'Markdown',
+    ...TELEGRAM_COMMAND_KEYBOARD_OPTIONS,
+  });
   return;
 
   const welcomeMessage = `
@@ -578,7 +620,10 @@ bot.onText(/\/help/, (msg) => {
     return;
   }
 
-  bot.sendMessage(chatId, TELEGRAM_WELCOME_MESSAGE, { parse_mode: 'Markdown' });
+  bot.sendMessage(chatId, TELEGRAM_WELCOME_MESSAGE, {
+    parse_mode: 'Markdown',
+    ...TELEGRAM_COMMAND_KEYBOARD_OPTIONS,
+  });
   return;
 
   const helpMessage = `
@@ -682,6 +727,28 @@ _Cập nhật: ${new Date().toLocaleString('vi-VN')}_
   } catch (error) {
     console.error('Error calculating stats:', error.message);
     bot.sendMessage(chatId, '❌ Lỗi khi tính thống kê!');
+  }
+});
+
+bot.onText(/\/(?:workerstats|workers)/, async (msg) => {
+  const chatId = msg.chat.id;
+
+  if (!isAuthorizedTelegramMessage(msg)) {
+    bot.sendMessage(chatId, 'âŒ Báº¡n khÃ´ng cÃ³ quyá»n sá»­ dá»¥ng bot nÃ y!');
+    return;
+  }
+
+  try {
+    bot.sendMessage(chatId, 'Dang tai thong ke nguoi lam...');
+    const summaryResponse = await axios.get(
+      `${API_URL}/api/chatgpt/stats-public`,
+      buildInternalApiConfig(),
+    );
+    const summary = summaryResponse?.data?.summary || {};
+    bot.sendMessage(chatId, formatExtensionWorkerStatsMessage(summary));
+  } catch (error) {
+    console.error('Worker stats error:', error.message);
+    bot.sendMessage(chatId, 'Khong the tai thong ke nguoi lam.');
   }
 });
 
