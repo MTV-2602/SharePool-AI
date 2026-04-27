@@ -595,6 +595,26 @@ const sendMessage = async (chatId, text, options = {}) => {
     console.error("Error sending message:", error.message);
   }
 };
+const TELEGRAM_BOT_COMMANDS = Object.freeze([
+  { command: "stats", description: "Thong ke tong quan" },
+  { command: "workers", description: "Thong ke nhanh nguoi lam extension" },
+  { command: "workerstats", description: "Thong ke chi tiet nguoi lam extension" },
+  { command: "help", description: "Huong dan su dung bot" },
+  { command: "cleanup", description: "Quan ly batch don het han" },
+]);
+let telegramCommandMenuSyncPromise = null;
+const syncTelegramCommandMenu = () => {
+  if (telegramCommandMenuSyncPromise) return telegramCommandMenuSyncPromise;
+  telegramCommandMenuSyncPromise = axios
+    .post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
+      commands: TELEGRAM_BOT_COMMANDS,
+    })
+    .catch((error) => {
+      telegramCommandMenuSyncPromise = null;
+      console.error("Khong the cap nhat menu lenh Telegram:", error.message);
+    });
+  return telegramCommandMenuSyncPromise;
+};
 const TELEGRAM_WELCOME_MESSAGE = [
   "*CHATGPT & COURSERA MANAGER BOT*",
   "",
@@ -654,6 +674,7 @@ module.exports = async (req, res) => {
       console.error("Telegram webhook config error:", configError);
       return res.status(503).json({ error: configError });
     }
+    void syncTelegramCommandMenu();
     const { message } = req.body;
 
     if (!message) {

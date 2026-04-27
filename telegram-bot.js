@@ -92,6 +92,18 @@ axios.defaults.headers.common['x-bot-internal-token'] =
   EFFECTIVE_BOT_INTERNAL_TOKEN;
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+const TELEGRAM_BOT_COMMANDS = Object.freeze([
+  { command: 'stats', description: 'Thong ke tong quan' },
+  { command: 'workers', description: 'Thong ke nhanh nguoi lam extension' },
+  { command: 'workerstats', description: 'Thong ke chi tiet nguoi lam extension' },
+  { command: 'help', description: 'Huong dan su dung bot' },
+  { command: 'cleanup', description: 'Quan ly batch don het han' },
+]);
+
+bot.setMyCommands(TELEGRAM_BOT_COMMANDS).catch((error) => {
+  console.error('Khong the cap nhat menu lenh Telegram:', error.message);
+});
+
 const TELEGRAM_WELCOME_MESSAGE = [
   '*CHATGPT & COURSERA MANAGER BOT*',
   '',
