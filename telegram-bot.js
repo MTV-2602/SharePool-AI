@@ -99,8 +99,20 @@ const TELEGRAM_BOT_COMMANDS = Object.freeze([
   { command: 'help', description: 'Huong dan su dung bot' },
   { command: 'cleanup', description: 'Quan ly batch don het han' },
 ]);
+const TELEGRAM_BOT_COMMAND_SCOPES = Object.freeze([
+  { type: 'default' },
+  { type: 'all_private_chats' },
+  ...TELEGRAM_ALLOWED_CHAT_IDS.map((chatId) => ({
+    type: 'chat',
+    chat_id: chatId,
+  })),
+]);
 
-bot.setMyCommands(TELEGRAM_BOT_COMMANDS).catch((error) => {
+Promise.all(
+  TELEGRAM_BOT_COMMAND_SCOPES.map((scope) =>
+    bot.setMyCommands(TELEGRAM_BOT_COMMANDS, { scope }),
+  ),
+).catch((error) => {
   console.error('Khong the cap nhat menu lenh Telegram:', error.message);
 });
 

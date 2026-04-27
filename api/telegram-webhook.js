@@ -602,13 +602,25 @@ const TELEGRAM_BOT_COMMANDS = Object.freeze([
   { command: "help", description: "Huong dan su dung bot" },
   { command: "cleanup", description: "Quan ly batch don het han" },
 ]);
+const TELEGRAM_BOT_COMMAND_SCOPES = Object.freeze([
+  { type: "default" },
+  { type: "all_private_chats" },
+  ...ALLOWED_CHAT_IDS.map((chatId) => ({
+    type: "chat",
+    chat_id: chatId,
+  })),
+]);
 let telegramCommandMenuSyncPromise = null;
 const syncTelegramCommandMenu = () => {
   if (telegramCommandMenuSyncPromise) return telegramCommandMenuSyncPromise;
-  telegramCommandMenuSyncPromise = axios
-    .post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
-      commands: TELEGRAM_BOT_COMMANDS,
-    })
+  telegramCommandMenuSyncPromise = Promise.all(
+    TELEGRAM_BOT_COMMAND_SCOPES.map((scope) =>
+      axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands`, {
+        commands: TELEGRAM_BOT_COMMANDS,
+        scope,
+      }),
+    ),
+  )
     .catch((error) => {
       telegramCommandMenuSyncPromise = null;
       console.error("Khong the cap nhat menu lenh Telegram:", error.message);
