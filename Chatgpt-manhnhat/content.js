@@ -3592,19 +3592,22 @@ function injectEmailQuickDock() {
           <button id="af-eq-hotmail-code" style="${dockFullWidthButtonStyle};background:#f97316">HM Code</button>
         </div>
       </div>
-      <div style="${dockSectionStyle}">
-        <div style="${dockSectionTitleStyle}">TempMail</div>
-        <div style="${dockGridStyle}">
-          <button id="af-eq-tempmail" style="${dockButtonBaseStyle};background:#0ea5e9">TM Use</button>
-          <button id="af-eq-tempmail-new" style="${dockButtonBaseStyle};background:#8b5cf6">TM New</button>
-          <button id="af-eq-get-code" style="${dockFullWidthButtonStyle};background:#f59e0b">TM Code</button>
+      <button id="af-eq-test-toggle" style="${dockFullWidthButtonStyle};min-height:20px;padding:3px 7px;background:#1f2a44;color:#b9c4df;border:1px solid rgba(148,163,184,.18)">Test</button>
+      <div id="af-eq-test-tools-panel" style="display:none;gap:5px">
+        <div style="${dockSectionStyle}">
+          <div style="${dockSectionTitleStyle}">TempMail</div>
+          <div style="${dockGridStyle}">
+            <button id="af-eq-tempmail" style="${dockButtonBaseStyle};background:#0ea5e9">TM Use</button>
+            <button id="af-eq-tempmail-new" style="${dockButtonBaseStyle};background:#8b5cf6">TM New</button>
+            <button id="af-eq-get-code" style="${dockFullWidthButtonStyle};background:#f59e0b">TM Code</button>
+          </div>
         </div>
-      </div>
-      <div style="${dockSectionStyle}">
-        <div style="${dockSectionTitleStyle}">Tools</div>
-        <div style="${dockGridStyle}">
-          <button id="af-eq-switch-mode" style="${dockButtonBaseStyle};background:#0f766e">Switch</button>
-          <button id="af-eq-clear" style="${dockButtonBaseStyle};background:#23314c;color:#cbd5e1">Clear</button>
+        <div style="${dockSectionStyle}">
+          <div style="${dockSectionTitleStyle}">Tools</div>
+          <div style="${dockGridStyle}">
+            <button id="af-eq-switch-mode" style="${dockButtonBaseStyle};background:#0f766e">Switch</button>
+            <button id="af-eq-clear" style="${dockButtonBaseStyle};background:#23314c;color:#cbd5e1">Clear</button>
+          </div>
         </div>
       </div>
     </div>
@@ -3621,11 +3624,29 @@ function injectEmailQuickDock() {
   const inputEl = document.getElementById("af-eq-input");
   const activeEmailEl = document.getElementById("af-eq-active-email");
   const activeHotmailEl = document.getElementById("af-eq-active-hotmail");
+  const testToggleBtn = document.getElementById("af-eq-test-toggle");
+  const testToolsPanel = document.getElementById("af-eq-test-tools-panel");
   let lastFormatted = "";
   let lastAutoCopied = "";
   let autoCopyTimer = null;
   let lastParsedCredentials = [];
   let hotmailUsedEmails = new Set();
+
+  if (testToggleBtn && testToolsPanel) {
+    let isTestToolsOpen = false;
+    const renderTestToolsState = () => {
+      testToolsPanel.style.display = isTestToolsOpen ? "grid" : "none";
+      testToggleBtn.textContent = isTestToolsOpen ? "Hide test" : "Test";
+      testToggleBtn.title = isTestToolsOpen
+        ? "Hide TempMail and Tools"
+        : "Show TempMail and Tools";
+    };
+    testToggleBtn.addEventListener("click", () => {
+      isTestToolsOpen = !isTestToolsOpen;
+      renderTestToolsState();
+    });
+    renderTestToolsState();
+  }
 
   const sanitizeHotmailQueueLines = (value = "") =>
     String(value || "")
