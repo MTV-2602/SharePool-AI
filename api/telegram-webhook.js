@@ -518,33 +518,49 @@ const formatExtensionWorkerStatsMessage = (summary = {}) => {
   const updatedLabel = Number.isNaN(updatedAt.getTime())
     ? new Date().toLocaleString("vi-VN")
     : updatedAt.toLocaleString("vi-VN");
+  const activeItems = extensionWorkerItems.filter(
+    (item) =>
+      Number(item?.today || 0) > 0 ||
+      Number(item?.total7Days || 0) > 0 ||
+      Number(item?.total || 0) > 0,
+  );
+  const formatDayText = (item) => {
+    if (!Array.isArray(item?.days)) return "";
+    return item.days
+      .slice(0, 7)
+      .map((day) => {
+        const label = String(day?.dateKey || "").slice(5).replace("-", "/");
+        const count = Number(day?.count || 0);
+        return count > 0 ? `${label}: ${count}` : "";
+      })
+      .filter(Boolean)
+      .join(" | ");
+  };
   const lines = [
-    "THONG KE NGUOI LAM EXTENSION",
+    "THONG KE WORKER EXTENSION",
     "",
-    `Ngay: ${extensionWorkers.todayKey || "Asia/Bangkok"}`,
-    `Hom nay: ${Number(extensionWorkers.today || 0)}`,
-    `7 ngay: ${Number(extensionWorkers.total7Days || 0)}`,
-    `Tong: ${Number(extensionWorkers.total || 0)}`,
+    `Hom nay (${extensionWorkers.todayKey || "Asia/Bangkok"}): ${Number(extensionWorkers.today || 0)} nick`,
+    `7 ngay gan nhat: ${Number(extensionWorkers.total7Days || 0)} nick`,
+    `Tong da push: ${Number(extensionWorkers.total || 0)} nick`,
     "",
   ];
-  if (extensionWorkerItems.length === 0) {
+  if (activeItems.length === 0) {
     lines.push("Chua co du lieu push theo nguoi lam.");
   } else {
-    lines.push("Chi tiet:");
-    extensionWorkerItems.slice(0, 30).forEach((item, index) => {
-      const dayText = Array.isArray(item?.days)
-        ? item.days
-            .slice(0, 7)
-            .map((day) => `${String(day?.dateKey || "").slice(5)}:${Number(day?.count || 0)}`)
-            .join(" ")
-        : "";
+    lines.push("Theo nguoi lam:");
+    activeItems.slice(0, 20).forEach((item, index) => {
+      const dayText = formatDayText(item);
       lines.push(
-        `${index + 1}. ${sanitizeTelegramStatsText(item?.name || "Chua gan")}: hom nay ${Number(item?.today || 0)} | 7d ${Number(item?.total7Days || 0)} | tong ${Number(item?.total || 0)}`,
+        `${index + 1}. ${sanitizeTelegramStatsText(item?.name || "Chua gan")}: ${Number(item?.today || 0)} hom nay | ${Number(item?.total7Days || 0)} trong 7 ngay | tong ${Number(item?.total || 0)}`,
       );
-      if (dayText) lines.push(`   ${dayText}`);
+      if (dayText) lines.push(`   Ngay co push: ${dayText}`);
     });
-    if (extensionWorkerItems.length > 30) {
-      lines.push(`+${extensionWorkerItems.length - 30} nguoi nua`);
+    if (activeItems.length > 20) {
+      lines.push(`+${activeItems.length - 20} nguoi nua`);
+    }
+    const zeroCount = extensionWorkerItems.length - activeItems.length;
+    if (zeroCount > 0) {
+      lines.push(`An ${zeroCount} worker chua co push de tin nhan gon hon.`);
     }
   }
   lines.push("", `Updated: ${updatedLabel}`);
