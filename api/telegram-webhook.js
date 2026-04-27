@@ -508,12 +508,12 @@ const sanitizeTelegramStatsText = (value = "") =>
     .slice(0, 90);
 
 const formatExtensionWorkerStatsMessage = (summary = {}) => {
-  const extensionWorkers = summary?.extensionWorkers || {};
+  const extensionWorkers = summary?.extensionWorkers || summary?.stats || summary || {};
   const extensionWorkerItems = Array.isArray(extensionWorkers?.items)
     ? extensionWorkers.items
     : [];
-  const updatedAt = summary?.updatedAt
-    ? new Date(summary.updatedAt)
+  const updatedAt = extensionWorkers?.generatedAt || summary?.updatedAt
+    ? new Date(extensionWorkers?.generatedAt || summary.updatedAt)
     : new Date();
   const updatedLabel = Number.isNaN(updatedAt.getTime())
     ? new Date().toLocaleString("vi-VN")
@@ -523,6 +523,7 @@ const formatExtensionWorkerStatsMessage = (summary = {}) => {
     "",
     `Ngay: ${extensionWorkers.todayKey || "Asia/Bangkok"}`,
     `Hom nay: ${Number(extensionWorkers.today || 0)}`,
+    `7 ngay: ${Number(extensionWorkers.total7Days || 0)}`,
     `Tong: ${Number(extensionWorkers.total || 0)}`,
     "",
   ];
@@ -531,9 +532,16 @@ const formatExtensionWorkerStatsMessage = (summary = {}) => {
   } else {
     lines.push("Chi tiet:");
     extensionWorkerItems.slice(0, 30).forEach((item, index) => {
+      const dayText = Array.isArray(item?.days)
+        ? item.days
+            .slice(0, 7)
+            .map((day) => `${String(day?.dateKey || "").slice(5)}:${Number(day?.count || 0)}`)
+            .join(" ")
+        : "";
       lines.push(
-        `${index + 1}. ${sanitizeTelegramStatsText(item?.name || "Chua gan")}: hom nay ${Number(item?.today || 0)} | tong ${Number(item?.total || 0)}`,
+        `${index + 1}. ${sanitizeTelegramStatsText(item?.name || "Chua gan")}: hom nay ${Number(item?.today || 0)} | 7d ${Number(item?.total7Days || 0)} | tong ${Number(item?.total || 0)}`,
       );
+      if (dayText) lines.push(`   ${dayText}`);
     });
     if (extensionWorkerItems.length > 30) {
       lines.push(`+${extensionWorkerItems.length - 30} nguoi nua`);
@@ -875,10 +883,10 @@ email,password,courseCode
       try {
         await sendMessage(chatId, "Dang tai thong ke nguoi lam...");
         const summaryResponse = await axios.get(
-          `${API_URL}/api/chatgpt/stats-public`,
+          `${API_URL}/api/admin/extension-worker-stats`,
           buildInternalApiConfig(),
         );
-        const summary = summaryResponse?.data?.summary || {};
+        const summary = summaryResponse?.data?.stats || {};
         await sendMessage(chatId, formatExtensionWorkerStatsMessage(summary));
       } catch (error) {
         console.error("Worker stats error:", error.message);

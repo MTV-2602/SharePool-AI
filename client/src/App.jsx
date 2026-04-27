@@ -1602,6 +1602,27 @@ const buildDefaultDashboardSummary = () => ({
   openSupportConversations: 0,
   totalVouchers: 0,
 });
+const buildDefaultExtensionWorkerStatsState = () => ({
+  days: [],
+  todayKey: "",
+  today: 0,
+  total7Days: 0,
+  total: 0,
+  retentionDays: 7,
+  generatedAt: "",
+  items: [],
+});
+const buildDefaultExtensionWorkerAccountSearchState = () => ({
+  workerId: "all",
+  query: "",
+  from: "",
+  to: "",
+  page: 1,
+  limit: 30,
+  total: 0,
+  totalPages: 1,
+  accounts: [],
+});
 const SUPPORT_NOTICE_GRACE_MS = 10000;
 const buildDefaultSupportPaginationState = () => ({
   nextCursor: "",
@@ -3106,6 +3127,11 @@ function App() {
   const [extensionWorkerNameDraft, setExtensionWorkerNameDraft] = useState("");
   const [extensionWorkerEditDrafts, setExtensionWorkerEditDrafts] = useState({});
   const [extensionWorkerChangeCode, setExtensionWorkerChangeCode] = useState(null);
+  const [extensionWorkerStats, setExtensionWorkerStats] = useState(
+    buildDefaultExtensionWorkerStatsState(),
+  );
+  const [extensionWorkerAccountSearch, setExtensionWorkerAccountSearch] =
+    useState(buildDefaultExtensionWorkerAccountSearchState());
   const [supportConversations, setSupportConversations] = useState([]);
   const [supportMessages, setSupportMessages] = useState([]);
   const [supportPagination, setSupportPagination] = useState(
@@ -3295,6 +3321,8 @@ function App() {
     saveVoucher: false,
     saveStoreConfig: false,
     fetchExtensionWorkers: false,
+    fetchExtensionWorkerStats: false,
+    fetchExtensionWorkerAccounts: false,
     saveExtensionWorker: false,
     toggleExtensionWorker: "",
     createExtensionWorkerCode: "",
@@ -3810,6 +3838,8 @@ function App() {
     }
     if (activeTab === "extension-workers") {
       loadExtensionWorkers({ silent: true }).catch(() => {});
+      loadExtensionWorkerStats({ silent: true }).catch(() => {});
+      loadExtensionWorkerAccounts({ page: 1, silent: true }).catch(() => {});
       return;
     }
     if (activeTab === "support") {
@@ -6510,6 +6540,81 @@ function App() {
     }
   };
 
+  const loadExtensionWorkerStats = async ({ silent = true } = {}) => {
+    setLoadingStates((prev) => ({ ...prev, fetchExtensionWorkerStats: true }));
+    try {
+      const response = await axios.get("/api/admin/extension-worker-stats", {
+        params: { days: 7 },
+        timeout: 15000,
+        skipGlobalLoading: silent,
+      });
+      setExtensionWorkerStats({
+        ...buildDefaultExtensionWorkerStatsState(),
+        ...(response?.data?.stats || {}),
+      });
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Loi",
+          getApiErrorMessage(error, "Khong the tai thong ke nguoi lam."),
+          "error",
+        );
+      }
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, fetchExtensionWorkerStats: false }));
+    }
+  };
+
+  const loadExtensionWorkerAccounts = async ({
+    page = extensionWorkerAccountSearch.page,
+    filters = null,
+    silent = true,
+  } = {}) => {
+    const nextPage = Math.max(1, Number(page || 1));
+    const effectiveFilters = {
+      ...extensionWorkerAccountSearch,
+      ...(filters || {}),
+      page: nextPage,
+    };
+    setLoadingStates((prev) => ({ ...prev, fetchExtensionWorkerAccounts: true }));
+    try {
+      const response = await axios.get("/api/admin/extension-worker-accounts", {
+        params: {
+          workerId: effectiveFilters.workerId || "all",
+          query: effectiveFilters.query || "",
+          from: effectiveFilters.from || "",
+          to: effectiveFilters.to || "",
+          page: nextPage,
+          limit: effectiveFilters.limit || 30,
+        },
+        timeout: 15000,
+        skipGlobalLoading: silent,
+      });
+      const pagination = response?.data?.pagination || {};
+      setExtensionWorkerAccountSearch((prev) => ({
+        ...prev,
+        ...effectiveFilters,
+        page: Number(pagination.page || nextPage),
+        limit: Number(pagination.limit || prev.limit || 30),
+        total: Number(pagination.total || 0),
+        totalPages: Number(pagination.totalPages || 1),
+        accounts: Array.isArray(response?.data?.accounts)
+          ? response.data.accounts
+          : [],
+      }));
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Loi",
+          getApiErrorMessage(error, "Khong the tim nick theo nguoi lam."),
+          "error",
+        );
+      }
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, fetchExtensionWorkerAccounts: false }));
+    }
+  };
+
   const loadSupportConversations = async ({
     silent = true,
     limit = DEFAULT_SUPPORT_CONVERSATION_PAGE_SIZE,
@@ -7126,6 +7231,7 @@ function App() {
         response?.data?.worker,
       ].filter(Boolean));
       await loadExtensionWorkers({ silent: true });
+      await loadExtensionWorkerStats({ silent: true });
       broadcastDataChange();
       showAlert("Thanh cong", "Da them nguoi lam extension.", "success");
     } catch (error) {
@@ -7156,6 +7262,8 @@ function App() {
           [workerId]: response.data.worker.name,
         }));
       }
+      await loadExtensionWorkerStats({ silent: true });
+      await loadExtensionWorkerAccounts({ silent: true });
       broadcastDataChange();
       showAlert("Thanh cong", "Da cap nhat nguoi lam extension.", "success");
     } catch (error) {
@@ -7192,6 +7300,21 @@ function App() {
     } finally {
       setLoadingStates((prev) => ({ ...prev, createExtensionWorkerCode: "" }));
     }
+  };
+
+  const handleSearchExtensionWorkerAccounts = async (e) => {
+    e.preventDefault();
+    await loadExtensionWorkerAccounts({ page: 1, silent: false });
+  };
+
+  const handleResetExtensionWorkerAccountSearch = async () => {
+    const nextState = buildDefaultExtensionWorkerAccountSearchState();
+    setExtensionWorkerAccountSearch(nextState);
+    await loadExtensionWorkerAccounts({
+      page: 1,
+      filters: nextState,
+      silent: false,
+    });
   };
 
   const handleDeleteStoreVoucher = (voucher) => {
@@ -12165,6 +12288,293 @@ function App() {
                     })}
                   </div>
                 )}
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  {[
+                    ["Hom nay", extensionWorkerStats.today],
+                    ["7 ngay gan nhat", extensionWorkerStats.total7Days],
+                    ["Tong nick da Push", extensionWorkerStats.total],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-4"
+                    >
+                      <div className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-200/80">
+                        {label}
+                      </div>
+                      <div className="mt-2 text-3xl font-black text-white">
+                        {Number(value || 0)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/70">
+                  <div className="flex flex-col gap-2 border-b border-slate-800 p-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-[0.28em] text-cyan-300/80">
+                        Thong ke 7 ngay
+                      </div>
+                      <div className="mt-1 text-sm text-slate-400">
+                        Log tu xoa sau {Number(extensionWorkerStats.retentionDays || 7)} ngay. Field worker tren acc van giu de tra nick lau dai.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => loadExtensionWorkerStats({ silent: false })}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 hover:border-cyan-500/50 disabled:opacity-60"
+                      disabled={loadingStates.fetchExtensionWorkerStats}
+                    >
+                      {loadingStates.fetchExtensionWorkerStats ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <RefreshCw size={14} />
+                      )}
+                      Tai lai
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="bg-slate-900/80 text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                        <tr>
+                          <th className="px-4 py-3">Worker</th>
+                          <th className="px-4 py-3">Hom nay</th>
+                          <th className="px-4 py-3">7 ngay</th>
+                          <th className="px-4 py-3">Tong</th>
+                          {(extensionWorkerStats.days || []).map((dateKey) => (
+                            <th key={dateKey} className="px-4 py-3">
+                              {String(dateKey || "").slice(5)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {(extensionWorkerStats.items || []).length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={4 + (extensionWorkerStats.days || []).length}
+                              className="px-4 py-8 text-center text-slate-500"
+                            >
+                              Chua co du lieu Push theo worker.
+                            </td>
+                          </tr>
+                        ) : (
+                          (extensionWorkerStats.items || []).map((item) => {
+                            const dailyMap = new Map(
+                              (item.days || []).map((day) => [
+                                day.dateKey,
+                                Number(day.count || 0),
+                              ]),
+                            );
+                            return (
+                              <tr key={item.workerId || "unassigned"} className="text-slate-200">
+                                <td className="px-4 py-3">
+                                  <div className="font-black text-white">
+                                    {item.name || "Chua gan"}
+                                  </div>
+                                  <div className="mt-0.5 text-[11px] text-slate-500">
+                                    {item.workerId || "unassigned"}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 font-bold text-cyan-200">
+                                  {Number(item.today || 0)}
+                                </td>
+                                <td className="px-4 py-3 font-bold text-emerald-200">
+                                  {Number(item.total7Days || 0)}
+                                </td>
+                                <td className="px-4 py-3 font-bold text-white">
+                                  {Number(item.total || 0)}
+                                </td>
+                                {(extensionWorkerStats.days || []).map((dateKey) => (
+                                  <td key={`${item.workerId || "unassigned"}-${dateKey}`} className="px-4 py-3">
+                                    {Number(dailyMap.get(dateKey) || 0)}
+                                  </td>
+                                ))}
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/70">
+                  <div className="border-b border-slate-800 p-4">
+                    <div className="text-[11px] font-black uppercase tracking-[0.28em] text-cyan-300/80">
+                      Tra nick do ai lam
+                    </div>
+                    <form
+                      onSubmit={handleSearchExtensionWorkerAccounts}
+                      className="mt-3 grid gap-2 lg:grid-cols-[180px_1fr_150px_150px_auto_auto]"
+                    >
+                      <select
+                        value={extensionWorkerAccountSearch.workerId}
+                        onChange={(e) =>
+                          setExtensionWorkerAccountSearch((prev) => ({
+                            ...prev,
+                            workerId: e.target.value,
+                            page: 1,
+                          }))
+                        }
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-cyan-500"
+                      >
+                        <option value="all">Tat ca worker</option>
+                        <option value="unassigned">Chua gan</option>
+                        {extensionWorkers.map((worker) => (
+                          <option key={worker.id} value={worker.id}>
+                            {worker.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={extensionWorkerAccountSearch.query}
+                        onChange={(e) =>
+                          setExtensionWorkerAccountSearch((prev) => ({
+                            ...prev,
+                            query: e.target.value,
+                            page: 1,
+                          }))
+                        }
+                        placeholder="Tim email/nick..."
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-cyan-500"
+                      />
+                      <input
+                        type="date"
+                        value={extensionWorkerAccountSearch.from}
+                        onChange={(e) =>
+                          setExtensionWorkerAccountSearch((prev) => ({
+                            ...prev,
+                            from: e.target.value,
+                            page: 1,
+                          }))
+                        }
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-cyan-500"
+                      />
+                      <input
+                        type="date"
+                        value={extensionWorkerAccountSearch.to}
+                        onChange={(e) =>
+                          setExtensionWorkerAccountSearch((prev) => ({
+                            ...prev,
+                            to: e.target.value,
+                            page: 1,
+                          }))
+                        }
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-cyan-500"
+                      />
+                      <button
+                        type="submit"
+                        disabled={loadingStates.fetchExtensionWorkerAccounts}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-2 text-sm font-black text-white hover:bg-cyan-500 disabled:opacity-60"
+                      >
+                        {loadingStates.fetchExtensionWorkerAccounts ? (
+                          <Loader2 size={15} className="animate-spin" />
+                        ) : (
+                          <Search size={15} />
+                        )}
+                        Tim
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleResetExtensionWorkerAccountSearch}
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-200 hover:border-cyan-500/50"
+                      >
+                        Reset
+                      </button>
+                    </form>
+                  </div>
+                  <div className="divide-y divide-slate-800">
+                    {extensionWorkerAccountSearch.accounts.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-sm text-slate-500">
+                        Chua co ket qua. Nhap email hoac chon worker de tim.
+                      </div>
+                    ) : (
+                      extensionWorkerAccountSearch.accounts.map((account) => (
+                        <div
+                          key={account.id}
+                          className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[1fr_180px_180px]"
+                        >
+                          <div className="min-w-0">
+                            <div className="break-all font-black text-white">
+                              {account.username || "--"}
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
+                              <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-slate-300">
+                                {account.type || "unassigned"}
+                              </span>
+                              <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 text-cyan-200">
+                                {account.createdBySource || "extension"}
+                              </span>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                              Worker
+                            </div>
+                            <div className="mt-1 font-bold text-slate-100">
+                              {account.createdByWorkerName || "Chua gan"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                              Push luc
+                            </div>
+                            <div className="mt-1 text-slate-300">
+                              {formatDateTime(account.extensionPushedAt || account.createdAt) || "--"}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 border-t border-slate-800 p-4 text-sm text-slate-400 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      Dang hien {extensionWorkerAccountSearch.accounts.length} / {Number(extensionWorkerAccountSearch.total || 0)} nick
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          loadExtensionWorkerAccounts({
+                            page: Math.max(1, extensionWorkerAccountSearch.page - 1),
+                            silent: false,
+                          })
+                        }
+                        disabled={
+                          loadingStates.fetchExtensionWorkerAccounts ||
+                          extensionWorkerAccountSearch.page <= 1
+                        }
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50"
+                      >
+                        Truoc
+                      </button>
+                      <span className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-300">
+                        Trang {extensionWorkerAccountSearch.page}/{extensionWorkerAccountSearch.totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          loadExtensionWorkerAccounts({
+                            page: Math.min(
+                              extensionWorkerAccountSearch.totalPages,
+                              extensionWorkerAccountSearch.page + 1,
+                            ),
+                            silent: false,
+                          })
+                        }
+                        disabled={
+                          loadingStates.fetchExtensionWorkerAccounts ||
+                          extensionWorkerAccountSearch.page >=
+                            extensionWorkerAccountSearch.totalPages
+                        }
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 disabled:opacity-50"
+                      >
+                        Sau
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

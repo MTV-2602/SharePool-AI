@@ -1459,6 +1459,30 @@ const ExtensionWorkerChangeCode =
     "extension_worker_change_codes",
   );
 
+const extensionWorkerPushLogSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  accountId: { type: String, default: "", index: true },
+  username: { type: String, default: "", index: true },
+  workerId: { type: String, default: "", index: true },
+  workerName: { type: String, default: "" },
+  source: { type: String, default: "extension" },
+  originHost: { type: String, default: "" },
+  pushedAt: { type: String, default: () => new Date().toISOString(), index: true },
+  expiresAt: { type: Date, required: true, index: true },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+extensionWorkerPushLogSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+extensionWorkerPushLogSchema.index({ workerId: 1, pushedAt: -1 });
+extensionWorkerPushLogSchema.index({ username: 1, pushedAt: -1 });
+const ExtensionWorkerPushLog =
+  mongoose.models.ExtensionWorkerPushLog ||
+  mongoose.model(
+    "ExtensionWorkerPushLog",
+    extensionWorkerPushLogSchema,
+    "extension_worker_push_logs",
+  );
+
 // Team Account Schema (ChatGPT Team - up to 4 Gmail slots)
 const teamSlotSchema = new mongoose.Schema({
   gmail: { type: String, default: "" },         // Gmail của khách
@@ -3660,6 +3684,227 @@ const getBangkokDateKey = (value = new Date()) => {
   const pick = (type) => parts.find((item) => item.type === type)?.value || "";
   return `${pick("year")}-${pick("month")}-${pick("day")}`;
 };
+const EXTENSION_WORKER_LOG_RETENTION_DAYS = 7;
+const clampExtensionWorkerStatsDays = (value = EXTENSION_WORKER_LOG_RETENTION_DAYS) => {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  if (!Number.isFinite(parsed)) return EXTENSION_WORKER_LOG_RETENTION_DAYS;
+  return Math.min(30, Math.max(1, parsed));
+};
+const buildRecentBangkokDateKeys = (
+  days = EXTENSION_WORKER_LOG_RETENTION_DAYS,
+) => {
+  const safeDays = clampExtensionWorkerStatsDays(days);
+  const now = Date.now();
+  return Array.from({ length: safeDays }, (_, index) =>
+    getBangkokDateKey(new Date(now - index * 24 * 60 * 60 * 1000)),
+  ).filter(Boolean);
+};
+const parseBangkokDateKey = (dateKey = "") => {
+  const match = String(dateKey || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!year || !month || !day) return null;
+  return { year, month, day };
+};
+const getBangkokDateKeyUtcRange = (dateKey = "") => {
+  const parsed = parseBangkokDateKey(dateKey);
+  if (!parsed) return null;
+  const start = new Date(
+    Date.UTC(parsed.year, parsed.month - 1, parsed.day, -7, 0, 0, 0),
+  );
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { start, end };
+};
+const getExtensionPushTimestamp = (account = {}) =>
+  String(account?.extensionPushedAt || account?.createdAt || "").trim();
+const isExtensionPushedAccount = (account = {}) =>
+  String(account?.createdBySource || "").trim().toLowerCase() === "extension" ||
+  !!String(account?.extensionPushedAt || "").trim() ||
+  !!String(account?.createdByWorkerId || "").trim() ||
+  !!String(account?.createdByWorkerName || "").trim();
+const buildExtensionPushedAccountQuery = () => ({
+  $or: [
+    { createdBySource: "extension" },
+    { extensionPushedAt: { $exists: true, $nin: ["", null] } },
+    { createdByWorkerId: { $exists: true, $nin: ["", null] } },
+    { createdByWorkerName: { $exists: true, $nin: ["", null] } },
+  ],
+});
+const getExtensionWorkerBucketKey = (workerId = "") =>
+  String(workerId || "").trim() || "unassigned";
+const buildExtensionWorkerStatsSummary = async ({
+  days = EXTENSION_WORKER_LOG_RETENTION_DAYS,
+} = {}) => {
+  const safeDays = clampExtensionWorkerStatsDays(days);
+  const dateKeys = buildRecentBangkokDateKeys(safeDays);
+  const todayKey = dateKeys[0] || getBangkokDateKey(new Date());
+  const oldestKey = dateKeys[dateKeys.length - 1] || todayKey;
+  const oldestRange = getBangkokDateKeyUtcRange(oldestKey);
+  const sinceIso = oldestRange?.start?.toISOString?.() || "";
+  const dateKeySet = new Set(dateKeys);
+  const [workers, logs, accounts] = await Promise.all([
+    ExtensionWorker.find({}).select("id name active createdAt updatedAt").lean(),
+    ExtensionWorkerPushLog.find(
+      sinceIso ? { pushedAt: { $gte: sinceIso } } : {},
+    )
+      .select("id accountId username workerId workerName pushedAt")
+      .lean(),
+    Account.find(buildExtensionPushedAccountQuery())
+      .select(
+        "id username type status package2Shelf createdAt updatedAt createdByWorkerId createdByWorkerName createdBySource extensionPushedAt mailCheckStatus",
+      )
+      .lean(),
+  ]);
+
+  const blankDaily = () =>
+    dateKeys.reduce((acc, dateKey) => {
+      acc[dateKey] = 0;
+      return acc;
+    }, {});
+  const buckets = new Map();
+  const touchBucket = (workerId = "", workerName = "", active = true) => {
+    const key = getExtensionWorkerBucketKey(workerId);
+    const safeName =
+      normalizeExtensionWorkerName(workerName) ||
+      (key === "unassigned" ? "Chua gan" : key);
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        workerId: key === "unassigned" ? "" : key,
+        name: safeName,
+        active: key === "unassigned" ? false : active !== false,
+        today: 0,
+        total7Days: 0,
+        total: 0,
+        daily: blankDaily(),
+      });
+    }
+    const bucket = buckets.get(key);
+    if (!bucket.name || bucket.name === bucket.workerId) bucket.name = safeName;
+    if (key !== "unassigned") bucket.active = active !== false;
+    return bucket;
+  };
+
+  (Array.isArray(workers) ? workers : []).forEach((worker) => {
+    touchBucket(worker?.id, worker?.name, worker?.active);
+  });
+
+  (Array.isArray(accounts) ? accounts : []).forEach((account) => {
+    if (!isExtensionPushedAccount(account)) return;
+    const bucket = touchBucket(
+      account?.createdByWorkerId,
+      account?.createdByWorkerName,
+      true,
+    );
+    bucket.total += 1;
+  });
+
+  const loggedAccountIds = new Set();
+  const incrementRecent = (payload = {}) => {
+    const dateKey = getBangkokDateKey(payload?.pushedAt);
+    if (!dateKeySet.has(dateKey)) return;
+    const bucket = touchBucket(
+      payload?.workerId,
+      payload?.workerName,
+      true,
+    );
+    bucket.daily[dateKey] = Number(bucket.daily[dateKey] || 0) + 1;
+    bucket.total7Days += 1;
+    if (dateKey === todayKey) bucket.today += 1;
+  };
+
+  (Array.isArray(logs) ? logs : []).forEach((log) => {
+    const accountId = String(log?.accountId || "").trim();
+    if (accountId) loggedAccountIds.add(accountId);
+    incrementRecent(log);
+  });
+
+  (Array.isArray(accounts) ? accounts : []).forEach((account) => {
+    if (!isExtensionPushedAccount(account)) return;
+    const accountId = String(account?.id || "").trim();
+    if (accountId && loggedAccountIds.has(accountId)) return;
+    incrementRecent({
+      pushedAt: getExtensionPushTimestamp(account),
+      workerId: account?.createdByWorkerId,
+      workerName: account?.createdByWorkerName,
+    });
+  });
+
+  const items = Array.from(buckets.values())
+    .filter(
+      (item) =>
+        item.workerId ||
+        Number(item.total || 0) > 0 ||
+        Number(item.total7Days || 0) > 0,
+    )
+    .map((item) => ({
+      ...item,
+      days: dateKeys.map((dateKey) => ({
+        dateKey,
+        count: Number(item.daily?.[dateKey] || 0),
+      })),
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.today || 0) - Number(a.today || 0) ||
+        Number(b.total7Days || 0) - Number(a.total7Days || 0) ||
+        Number(b.total || 0) - Number(a.total || 0) ||
+        String(a.name || "").localeCompare(String(b.name || "")),
+    );
+
+  return {
+    days: dateKeys,
+    todayKey,
+    retentionDays: EXTENSION_WORKER_LOG_RETENTION_DAYS,
+    generatedAt: new Date().toISOString(),
+    today: items.reduce((sum, item) => sum + Number(item.today || 0), 0),
+    total7Days: items.reduce((sum, item) => sum + Number(item.total7Days || 0), 0),
+    total: items.reduce((sum, item) => sum + Number(item.total || 0), 0),
+    items,
+  };
+};
+const createExtensionWorkerPushLog = async ({
+  account = {},
+  worker = {},
+  username = "",
+  source = "extension_quick_dock",
+  originHost = "",
+} = {}) => {
+  const nowIso = new Date().toISOString();
+  const expiresAt = new Date(
+    Date.now() + EXTENSION_WORKER_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  );
+  return ExtensionWorkerPushLog.create({
+    id: createStoreId("worker_push"),
+    accountId: String(account?.id || "").trim(),
+    username: String(username || account?.username || "").trim(),
+    workerId: String(worker?.id || account?.createdByWorkerId || "").trim(),
+    workerName: normalizeExtensionWorkerName(
+      worker?.name || account?.createdByWorkerName || "",
+    ),
+    source: String(source || "extension_quick_dock").trim().slice(0, 80),
+    originHost: String(originHost || "").trim().slice(0, 120),
+    pushedAt: String(account?.extensionPushedAt || nowIso).trim() || nowIso,
+    expiresAt,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  });
+};
+const sanitizeExtensionWorkerAccount = (account = {}) => ({
+  id: String(account?.id || "").trim(),
+  username: String(account?.username || "").trim(),
+  type: normalizeChatgptAccountType(account?.type || "unassigned"),
+  status: String(account?.status || "").trim(),
+  package2Shelf: String(account?.package2Shelf || "none").trim(),
+  createdByWorkerId: String(account?.createdByWorkerId || "").trim(),
+  createdByWorkerName: normalizeExtensionWorkerName(account?.createdByWorkerName),
+  createdBySource: String(account?.createdBySource || "").trim(),
+  extensionPushedAt: String(account?.extensionPushedAt || "").trim(),
+  createdAt: String(account?.createdAt || "").trim(),
+  updatedAt: String(account?.updatedAt || "").trim(),
+  mailCheckStatus: String(account?.mailCheckStatus || "").trim(),
+});
 const upsertStringIntoList = (list = [], value = "") => {
   const normalized = String(value || "").trim();
   const current = Array.isArray(list)
@@ -14469,6 +14714,118 @@ app.get("/api/admin/extension-workers", verifyToken, async (req, res) => {
   }
 });
 
+app.get(
+  "/api/admin/extension-worker-stats",
+  verifyAdminOrBotInternalToken,
+  async (req, res) => {
+    try {
+      const stats = await buildExtensionWorkerStatsSummary({
+        days: req.query?.days || EXTENSION_WORKER_LOG_RETENTION_DAYS,
+      });
+      return res.json({
+        success: true,
+        stats,
+        version: latestDataVersion,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong the tai thong ke nguoi lam extension.",
+      });
+    }
+  },
+);
+
+app.get("/api/admin/extension-worker-accounts", verifyToken, async (req, res) => {
+  try {
+    const workerId = String(req.query?.workerId || "all").trim();
+    const search = String(req.query?.query || req.query?.search || "")
+      .trim()
+      .slice(0, 120);
+    const page = Math.max(1, Number.parseInt(String(req.query?.page || "1"), 10) || 1);
+    const limit = Math.min(
+      100,
+      Math.max(1, Number.parseInt(String(req.query?.limit || "30"), 10) || 30),
+    );
+    const filters = [buildExtensionPushedAccountQuery()];
+    if (workerId && workerId !== "all") {
+      if (workerId === "unassigned") {
+        filters.push({
+          $or: [
+            { createdByWorkerId: "" },
+            { createdByWorkerId: { $exists: false } },
+            { createdByWorkerId: null },
+          ],
+        });
+      } else {
+        filters.push({ createdByWorkerId: workerId });
+      }
+    }
+    if (search) {
+      const regex = new RegExp(escapeRegex(search), "i");
+      filters.push({
+        $or: [
+          { username: regex },
+          { createdByWorkerName: regex },
+          { note: regex },
+        ],
+      });
+    }
+    const fromKey = String(req.query?.from || "").trim();
+    const toKey = String(req.query?.to || "").trim();
+    const fromRange = getBangkokDateKeyUtcRange(fromKey);
+    const toRange = getBangkokDateKeyUtcRange(toKey);
+    const timeRange = {};
+    if (fromRange?.start) timeRange.$gte = fromRange.start.toISOString();
+    if (toRange?.end) timeRange.$lte = toRange.end.toISOString();
+    if (Object.keys(timeRange).length) {
+      filters.push({
+        $or: [
+          { extensionPushedAt: timeRange },
+          {
+            $and: [
+              {
+                $or: [
+                  { extensionPushedAt: "" },
+                  { extensionPushedAt: { $exists: false } },
+                  { extensionPushedAt: null },
+                ],
+              },
+              { createdAt: timeRange },
+            ],
+          },
+        ],
+      });
+    }
+
+    const query = filters.length > 1 ? { $and: filters } : filters[0];
+    const [total, accounts] = await Promise.all([
+      Account.countDocuments(query),
+      Account.find(query)
+        .select(
+          "id username type status package2Shelf createdAt updatedAt createdByWorkerId createdByWorkerName createdBySource extensionPushedAt mailCheckStatus",
+        )
+        .sort({ extensionPushedAt: -1, createdAt: -1, updatedAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+    ]);
+    return res.json({
+      success: true,
+      accounts: accounts.map(sanitizeExtensionWorkerAccount),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the tim account theo nguoi lam.",
+    });
+  }
+});
+
 app.post("/api/admin/extension-workers", verifyToken, async (req, res) => {
   try {
     const name = normalizeExtensionWorkerName(req.body?.name);
@@ -16685,6 +17042,16 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
       },
       { source },
     );
+
+    await createExtensionWorkerPushLog({
+      account,
+      worker: workerInfo,
+      username,
+      source,
+      originHost,
+    }).catch((logError) => {
+      console.error("Extension worker push log failed:", logError?.message || logError);
+    });
 
     const telegramResult = await notifyAdminsAboutExtensionPush({
       username,

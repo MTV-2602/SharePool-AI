@@ -3658,6 +3658,7 @@ function injectEmailQuickDock() {
       </select>
       <input id="af-eq-worker-code" maxlength="6" inputmode="numeric" placeholder="Code" style="display:none;box-sizing:border-box;width:100%;height:26px;border-radius:8px;border:1px solid rgba(250,204,21,.35);background:#241a0a;color:#fde68a;font:700 10px monospace;padding:0 6px;outline:none" />
     </div>
+    <div id="af-eq-worker-lock" style="display:none;margin:0 0 5px 0;padding:5px 7px;border-radius:9px;border:1px solid rgba(250,204,21,.25);background:rgba(120,83,14,.18);color:#fde68a;font:700 9px/1.35 'Segoe UI',Arial,sans-serif">Chon nguoi lam de mo khoa toolbar.</div>
     <textarea id="af-eq-input" rows="1" style="width:100%;box-sizing:border-box;background:#10284a;border:1px solid rgba(59,130,246,.28);border-radius:9px;color:#f8fbff;font:11px monospace;padding:7px;resize:none;outline:none;height:34px;min-height:34px;line-height:1.2" placeholder="Paste tk|mk|2fa..."></textarea>
     <div style="display:grid;gap:5px;margin-top:5px">
       <div style="${dockSectionStyle}">
@@ -3714,6 +3715,7 @@ function injectEmailQuickDock() {
   const testToolsPanel = document.getElementById("af-eq-test-tools-panel");
   const workerSelectEl = document.getElementById("af-eq-worker-select");
   const workerCodeEl = document.getElementById("af-eq-worker-code");
+  const workerLockEl = document.getElementById("af-eq-worker-lock");
   let lastFormatted = "";
   let lastAutoCopied = "";
   let autoCopyTimer = null;
@@ -3721,6 +3723,7 @@ function injectEmailQuickDock() {
   let hotmailUsedEmails = new Set();
   let extensionWorkerOptions = [];
   let pendingWorkerChangeId = "";
+  let isQuickDockWorkerLocked = true;
 
   if (testToggleBtn && testToolsPanel) {
     let isTestToolsOpen = false;
@@ -3737,6 +3740,54 @@ function injectEmailQuickDock() {
     });
     renderTestToolsState();
   }
+
+  const workerLockedActionIds = [
+    "af-eq-input",
+    "af-eq-copy-full",
+    "af-eq-copy-pass",
+    "af-eq-gen-2fa",
+    "af-eq-rand-pass",
+    "af-eq-push-chatgpt",
+    "af-eq-hotmail-new",
+    "af-eq-hotmail-use",
+    "af-eq-hotmail-code",
+    "af-eq-test-toggle",
+    "af-eq-tempmail",
+    "af-eq-tempmail-new",
+    "af-eq-get-code",
+    "af-eq-switch-mode",
+    "af-eq-clear",
+  ];
+
+  const renderWorkerLockState = async () => {
+    const storedWorker = await getStoredExtensionWorker();
+    const storedStillActive =
+      storedWorker?.id &&
+      extensionWorkerOptions.some((worker) => worker?.id === storedWorker.id);
+    isQuickDockWorkerLocked = !storedStillActive;
+    workerLockedActionIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.disabled = isQuickDockWorkerLocked;
+      el.style.opacity = isQuickDockWorkerLocked ? "0.42" : "1";
+      el.style.cursor = isQuickDockWorkerLocked
+        ? "not-allowed"
+        : id === "af-eq-input"
+          ? "text"
+          : "pointer";
+    });
+    if (inputEl) {
+      inputEl.placeholder = isQuickDockWorkerLocked
+        ? "Chon worker truoc..."
+        : "Paste tk|mk|2fa...";
+    }
+    if (workerLockEl) {
+      workerLockEl.style.display = isQuickDockWorkerLocked ? "block" : "none";
+      workerLockEl.textContent = extensionWorkerOptions.length
+        ? "Chon nguoi lam de mo khoa toolbar."
+        : "Khong tai duoc worker. Kiem tra Push token/API.";
+    }
+  };
 
   const renderExtensionWorkerSelect = async () => {
     if (!workerSelectEl) return;
@@ -3758,6 +3809,7 @@ function injectEmailQuickDock() {
     workerSelectEl.title = storedStillActive
       ? `Nguoi lam: ${storedWorker.name || storedWorker.id}`
       : "Chon nguoi lam truoc khi Push";
+    await renderWorkerLockState();
   };
 
   const hideExtensionWorkerCode = () => {
@@ -3775,6 +3827,8 @@ function injectEmailQuickDock() {
     } catch (err) {
       workerSelectEl.innerHTML = '<option value="">Worker loi</option>';
       workerSelectEl.title = err?.message || "Khong tai duoc worker";
+      extensionWorkerOptions = [];
+      await renderWorkerLockState();
     }
   };
 
@@ -3791,6 +3845,7 @@ function injectEmailQuickDock() {
     if (!currentWorker?.id) {
       await setStoredExtensionWorker(nextWorker);
       hideExtensionWorkerCode();
+      await renderExtensionWorkerSelect();
       toast(`Da chon nguoi lam: ${nextWorker.name || nextWorker.id}`, "#27ae60");
       return;
     }
