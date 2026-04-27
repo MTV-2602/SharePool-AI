@@ -93,11 +93,11 @@ axios.defaults.headers.common['x-bot-internal-token'] =
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 const TELEGRAM_BOT_COMMANDS = Object.freeze([
-  { command: 'stats', description: 'Thong ke tong quan' },
-  { command: 'workers', description: 'Thong ke nhanh nguoi lam extension' },
-  { command: 'workerstats', description: 'Thong ke chi tiet nguoi lam extension' },
-  { command: 'help', description: 'Huong dan su dung bot' },
-  { command: 'cleanup', description: 'Quan ly batch don het han' },
+  { command: 'stats', description: '📊 Thống kê tổng quan' },
+  { command: 'workers', description: '📊 Thống kê nhanh người làm' },
+  { command: 'workerstats', description: '📈 Thống kê chi tiết người làm' },
+  { command: 'help', description: '📘 Hướng dẫn sử dụng bot' },
+  { command: 'cleanup', description: '🧹 Quản lý batch đơn hết hạn' },
 ]);
 const TELEGRAM_BOT_COMMAND_SCOPES = Object.freeze([
   { type: 'default' },
@@ -581,33 +581,36 @@ const formatExtensionWorkerStatsMessage = (summary = {}) => {
       .join(' | ');
   };
   const lines = [
-    'THONG KE WORKER EXTENSION',
+    '📊 Thống kê người làm extension',
     '',
-    `Hom nay (${extensionWorkers.todayKey || 'Asia/Bangkok'}): ${Number(extensionWorkers.today || 0)} nick`,
-    `7 ngay gan nhat: ${Number(extensionWorkers.total7Days || 0)} nick`,
-    `Tong da push: ${Number(extensionWorkers.total || 0)} nick`,
+    `📅 Hôm nay (${extensionWorkers.todayKey || 'Asia/Bangkok'}): ${Number(extensionWorkers.today || 0)} nick`,
+    `🗓 7 ngày gần nhất: ${Number(extensionWorkers.total7Days || 0)} nick`,
+    `📦 Tổng đã push: ${Number(extensionWorkers.total || 0)} nick`,
     '',
   ];
   if (activeItems.length === 0) {
-    lines.push('Chua co du lieu push theo nguoi lam.');
+    lines.push('Chưa có dữ liệu push theo người làm.');
   } else {
-    lines.push('Theo nguoi lam:');
+    lines.push('👤 Theo người làm:');
     activeItems.slice(0, 20).forEach((item, index) => {
       const dayText = formatDayText(item);
       lines.push(
-        `${index + 1}. ${sanitizeTelegramStatsText(item?.name || 'Chua gan')}: ${Number(item?.today || 0)} hom nay | ${Number(item?.total7Days || 0)} trong 7 ngay | tong ${Number(item?.total || 0)}`,
+        `${index + 1}. 👤 ${sanitizeTelegramStatsText(item?.name || 'Chưa gán')}`,
+        `   • Hôm nay: ${Number(item?.today || 0)} nick`,
+        `   • 7 ngày: ${Number(item?.total7Days || 0)} nick`,
+        `   • Tổng: ${Number(item?.total || 0)} nick`,
       );
-      if (dayText) lines.push(`   Ngay co push: ${dayText}`);
+      if (dayText) lines.push(`   • Ngày có push: ${dayText}`);
     });
     if (activeItems.length > 20) {
-      lines.push(`+${activeItems.length - 20} nguoi nua`);
+      lines.push(`+${activeItems.length - 20} người nữa`);
     }
     const zeroCount = extensionWorkerItems.length - activeItems.length;
     if (zeroCount > 0) {
-      lines.push(`An ${zeroCount} worker chua co push de tin nhan gon hon.`);
+      lines.push(`🙈 Đã ẩn ${zeroCount} worker chưa có lượt push để tin nhắn gọn hơn.`);
     }
   }
-  lines.push('', `Updated: ${updatedLabel}`);
+  lines.push('', `🕒 Cập nhật: ${updatedLabel}`);
   return lines.join('\n');
 };
 
@@ -787,7 +790,7 @@ bot.onText(/\/(?:workerstats|workers)/, async (msg) => {
   }
 
   try {
-    bot.sendMessage(chatId, 'Dang tai thong ke nguoi lam...');
+    bot.sendMessage(chatId, '⏳ Đang tải thống kê người làm...');
     const summaryResponse = await axios.get(
       `${API_URL}/api/admin/extension-worker-stats`,
       buildInternalApiConfig(),
@@ -796,7 +799,7 @@ bot.onText(/\/(?:workerstats|workers)/, async (msg) => {
     bot.sendMessage(chatId, formatExtensionWorkerStatsMessage(summary));
   } catch (error) {
     console.error('Worker stats error:', error.message);
-    bot.sendMessage(chatId, 'Khong the tai thong ke nguoi lam.');
+    bot.sendMessage(chatId, '❌ Không thể tải thống kê người làm.');
   }
 });
 
