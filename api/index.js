@@ -18421,13 +18421,39 @@ function sendHotmailReadError(res, error) {
 
 app.get("/api/hotmail/accounts", async (req, res) => {
   try {
-    const accounts = await HotmailAccount.find({}).sort({ state: 1, updatedAt: -1 }).lean();
+    const rawLimit = Number.parseInt(String(req.query.limit || "50"), 10);
+    const limit = Math.min(50, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 50));
+    const rawPage = Number.parseInt(String(req.query.page || "1"), 10);
+    const requestedPage = Math.max(1, Number.isFinite(rawPage) ? rawPage : 1);
+    const state = String(req.query.state || "all").trim().toLowerCase();
+    const search = String(req.query.search || "").trim();
+    const query = {};
+    if (["available", "reserved", "used"].includes(state)) {
+      query.state = state;
+    }
+    if (search) {
+      query.email = { $regex: escapeRegex(search), $options: "i" };
+    }
+    const [total, filteredTotal] = await Promise.all([
+      HotmailAccount.countDocuments({}),
+      HotmailAccount.countDocuments(query),
+    ]);
+    const totalPages = Math.max(1, Math.ceil(filteredTotal / limit));
+    const page = Math.min(requestedPage, totalPages);
+    const accounts = await HotmailAccount.find(query)
+      .sort({ state: 1, updatedAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
     const emails = accounts.map((account) => normalizeHotmailEmail(account.email)).filter(Boolean);
-    const emailSet = new Set(emails);
     const chatgptAccounts = emails.length
-      ? (await Account.find({ username: /@/i })
+      ? (await Account.find({
+          $or: emails.map((email) => ({
+            username: new RegExp(`^${escapeRegex(email)}$`, "i"),
+          })),
+        })
           .select("id username type status mailCheckProvider mailCheckStatus mailCheckLastCheckedAt mailCheckLastSubject")
-          .lean()).filter((account) => emailSet.has(normalizeHotmailEmail(account?.username)))
+          .lean())
       : [];
     const chatgptByEmail = new Map(
       chatgptAccounts.map((account) => [
@@ -18447,7 +18473,16 @@ app.get("/api/hotmail/accounts", async (req, res) => {
           : "",
       };
     });
-    res.json({ ok: true, count: enrichedAccounts.length, accounts: enrichedAccounts });
+    res.json({
+      ok: true,
+      count: enrichedAccounts.length,
+      total,
+      filteredTotal,
+      page,
+      limit,
+      totalPages,
+      accounts: enrichedAccounts,
+    });
   } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 

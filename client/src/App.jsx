@@ -2471,27 +2471,47 @@ const HotmailAdminTab = ({ showAlert, showConfirm }) => {
 };
 
 const HotmailAdminTabClean = ({ showAlert, showConfirm }) => {
+  const HOTMAIL_PAGE_SIZE = 50;
   const [accounts, setAccounts] = useState([]);
   const [inputLine, setInputLine] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hotmailLoading, setHotmailLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filterState, setFilterState] = useState("all");
+  const [hotmailPage, setHotmailPage] = useState(1);
+  const [hotmailTotal, setHotmailTotal] = useState(0);
+  const [hotmailFilteredTotal, setHotmailFilteredTotal] = useState(0);
+  const [hotmailTotalPages, setHotmailTotalPages] = useState(1);
   const [modal, setModal] = useState(null);
 
-  const loadAccounts = async () => {
+  const loadAccounts = async ({ page = hotmailPage } = {}) => {
+    setHotmailLoading(true);
     try {
-      const res = await axios.get("/api/hotmail/accounts");
+      const res = await axios.get("/api/hotmail/accounts", {
+        params: {
+          page,
+          limit: HOTMAIL_PAGE_SIZE,
+          state: filterState,
+          search: search.trim(),
+        },
+      });
       if (res.data?.ok) {
         setAccounts(Array.isArray(res.data.accounts) ? res.data.accounts : []);
+        setHotmailTotal(Number(res.data.total || 0));
+        setHotmailFilteredTotal(Number(res.data.filteredTotal || 0));
+        setHotmailTotalPages(Math.max(1, Number(res.data.totalPages || 1)));
+        setHotmailPage(Math.max(1, Number(res.data.page || page || 1)));
       }
     } catch (error) {
       console.error(error);
+    } finally {
+      setHotmailLoading(false);
     }
   };
 
   useEffect(() => {
-    loadAccounts();
-  }, []);
+    loadAccounts({ page: hotmailPage });
+  }, [hotmailPage, filterState, search]);
 
   const getErrorMessage = (error, fallback = "Có lỗi xảy ra.") =>
     error?.response?.data?.error ||
@@ -2749,13 +2769,49 @@ const HotmailAdminTabClean = ({ showAlert, showConfirm }) => {
     return <span className="text-xs italic text-slate-600">Chưa dùng</span>;
   };
 
-  const filtered = accounts.filter((acc) => {
-    if (filterState !== "all" && acc.state !== filterState) return false;
-    if (search && !acc.email.toLowerCase().includes(search.toLowerCase())) {
-      return false;
-    }
-    return true;
-  });
+  const filtered = accounts;
+  const hotmailCurrentPage = Math.min(
+    Math.max(1, hotmailPage),
+    Math.max(1, hotmailTotalPages),
+  );
+  const hotmailPageStart =
+    hotmailFilteredTotal > 0
+      ? (hotmailCurrentPage - 1) * HOTMAIL_PAGE_SIZE + 1
+      : 0;
+  const hotmailPageEnd =
+    hotmailFilteredTotal > 0
+      ? Math.min(hotmailPageStart + filtered.length - 1, hotmailFilteredTotal)
+      : 0;
+  const hotmailPagination = (
+    <div className="flex flex-col gap-2 rounded-2xl border border-slate-700/60 bg-slate-950/50 px-3 py-2 text-xs text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+      <span>
+        Dang hien {hotmailPageStart}-{hotmailPageEnd}/{hotmailFilteredTotal} acc khop loc · Tong {hotmailTotal}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setHotmailPage((prev) => Math.max(1, prev - 1))}
+          disabled={hotmailLoading || hotmailCurrentPage <= 1}
+          className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          Truoc
+        </button>
+        <span className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 font-semibold">
+          Trang {hotmailCurrentPage}/{Math.max(1, hotmailTotalPages)}
+        </span>
+        <button
+          type="button"
+          onClick={() =>
+            setHotmailPage((prev) => Math.min(hotmailTotalPages, prev + 1))
+          }
+          disabled={hotmailLoading || hotmailCurrentPage >= hotmailTotalPages}
+          className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 font-semibold text-slate-200 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          Sau
+        </button>
+      </div>
+    </div>
+  );
 
   const renderHotmailNote = (acc) =>
     acc.takenNote ? (
@@ -2860,8 +2916,9 @@ const HotmailAdminTabClean = ({ showAlert, showConfirm }) => {
             {loading ? "Đang xử lý..." : "Import & Lưu"}
           </button>
           <button
-            onClick={loadAccounts}
-            className="w-full rounded-2xl border border-slate-600 px-4 py-3 text-sm font-medium text-slate-300 transition hover:border-slate-500 hover:text-white sm:w-auto"
+            onClick={() => loadAccounts()}
+            disabled={hotmailLoading}
+            className="w-full rounded-2xl border border-slate-600 px-4 py-3 text-sm font-medium text-slate-300 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             Làm mới
           </button>
@@ -2879,19 +2936,25 @@ const HotmailAdminTabClean = ({ showAlert, showConfirm }) => {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setHotmailPage(1);
+            }}
             placeholder="Tìm email..."
             className="w-full rounded-2xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-slate-200 outline-none transition focus:border-violet-500 sm:w-72"
           />
           <span className="inline-flex self-start rounded-full border border-slate-700 bg-slate-950/80 px-3 py-1 text-[11px] font-semibold text-slate-300">
-            {filtered.length}/{accounts.length} acc
+            {filtered.length}/{hotmailFilteredTotal} acc - Tong {hotmailTotal}
           </span>
         </div>
         <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
           {["all", "available", "reserved", "used"].map((state) => (
             <button
               key={state}
-              onClick={() => setFilterState(state)}
+              onClick={() => {
+                setFilterState(state);
+                setHotmailPage(1);
+              }}
               className={`shrink-0 rounded-2xl border px-3 py-2 text-sm font-medium transition ${
                 filterState === state
                   ? "border-violet-500 bg-violet-600 text-white"
@@ -2903,6 +2966,8 @@ const HotmailAdminTabClean = ({ showAlert, showConfirm }) => {
           ))}
         </div>
       </div>
+
+      {hotmailPagination}
 
       <div className="space-y-3 md:hidden">
         {filtered.map((acc) => (
@@ -3005,6 +3070,8 @@ const HotmailAdminTabClean = ({ showAlert, showConfirm }) => {
           </tbody>
         </table>
       </div>
+
+      {hotmailPagination}
 
       {modal && (
         <MailModal
