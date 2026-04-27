@@ -40,6 +40,74 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const EXTENSION_PUSH_API_URL_DEFAULT =
+    "https://vinhaccplus.vercel.app/api/chatgpt-extension-push";
+  const EXTENSION_PUSH_TOKEN_DEFAULT =
+    "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
+  const EXTENSION_WORKER_ID_KEY = "extensionWorkerId";
+  const EXTENSION_WORKER_NAME_KEY = "extensionWorkerName";
+
+  const storageGet = (keys) =>
+    new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+  const storageSet = (payload) =>
+    new Promise((resolve) => chrome.storage.local.set(payload, resolve));
+
+  function extensionWorkerEndpointFromPushUrl(apiUrl, path) {
+    const raw = String(apiUrl || "").trim() || EXTENSION_PUSH_API_URL_DEFAULT;
+    if (/\/api\/chatgpt-extension-push\/?$/i.test(raw)) {
+      return raw.replace(/\/api\/chatgpt-extension-push\/?$/i, `/api${path}`);
+    }
+    if (/\/chatgpt-extension-push\/?$/i.test(raw)) {
+      return raw.replace(/\/chatgpt-extension-push\/?$/i, path);
+    }
+    return raw.replace(/\/$/, "") + path;
+  }
+
+  async function getExtensionPushConfigForPopup() {
+    const data = await storageGet(["extensionPushApiUrl", "extensionPushToken"]);
+    return {
+      apiUrl:
+        String(data.extensionPushApiUrl || "").trim() ||
+        EXTENSION_PUSH_API_URL_DEFAULT,
+      token:
+        String(data.extensionPushToken || "").trim() ||
+        EXTENSION_PUSH_TOKEN_DEFAULT,
+    };
+  }
+
+  async function fetchExtensionWorkersForPopup() {
+    const { apiUrl, token } = await getExtensionPushConfigForPopup();
+    if (!apiUrl || !token) throw new Error("Chua cau hinh Push URL/Token");
+    const resp = await fetch(extensionWorkerEndpointFromPushUrl(apiUrl, "/extension-workers"), {
+      headers: { "x-extension-push-token": token },
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json?.ok) {
+      throw new Error(json?.error || `Load workers HTTP ${resp.status}`);
+    }
+    return Array.isArray(json.workers) ? json.workers : [];
+  }
+
+  async function verifyExtensionWorkerForPopup(workerId, code) {
+    const { apiUrl, token } = await getExtensionPushConfigForPopup();
+    const resp = await fetch(
+      extensionWorkerEndpointFromPushUrl(apiUrl, "/extension-workers/verify-change-code"),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-extension-push-token": token,
+        },
+        body: JSON.stringify({ workerId, code }),
+      },
+    );
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json?.ok) {
+      throw new Error(json?.error || `Verify worker HTTP ${resp.status}`);
+    }
+    return json.worker || null;
+  }
+
   // Luhn algorithm
   function luhnCheckDigit(partial) {
     let digits = partial.split("").map(Number).reverse();
@@ -711,6 +779,129 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  let extensionWorkerOptions = [];
+  let pendingExtensionWorkerId = "";
+
+  async function renderExtensionWorkerSelect() {
+    const selectEl = document.getElementById("extension-worker-select");
+    const codeEl = document.getElementById("extension-worker-code");
+    const statusEl = document.getElementById("extension-worker-status");
+    if (!selectEl) return;
+    const data = await storageGet([
+      EXTENSION_WORKER_ID_KEY,
+      EXTENSION_WORKER_NAME_KEY,
+    ]);
+    const storedId = String(data[EXTENSION_WORKER_ID_KEY] || "").trim();
+    const storedName = String(data[EXTENSION_WORKER_NAME_KEY] || "").trim();
+    const storedActive =
+      storedId && extensionWorkerOptions.some((worker) => worker?.id === storedId);
+    if (storedId && !storedActive) {
+      await storageSet({
+        [EXTENSION_WORKER_ID_KEY]: "",
+        [EXTENSION_WORKER_NAME_KEY]: "",
+      });
+    }
+    selectEl.innerHTML = '<option value="">-- Chon nguoi lam --</option>';
+    extensionWorkerOptions.forEach((worker) => {
+      const opt = document.createElement("option");
+      opt.value = String(worker?.id || "");
+      opt.textContent = String(worker?.name || worker?.id || "Worker");
+      selectEl.appendChild(opt);
+    });
+    selectEl.value = storedActive ? storedId : "";
+    if (codeEl) {
+      codeEl.value = "";
+      codeEl.style.display = "none";
+    }
+    if (statusEl) {
+      statusEl.textContent = storedActive
+        ? `Dang chon nguoi lam: ${storedName || storedId}`
+        : "Chon nguoi lam lan dau khong can ma; doi nguoi lam moi can ma admin.";
+    }
+  }
+
+  async function loadExtensionWorkerOptions() {
+    const selectEl = document.getElementById("extension-worker-select");
+    const statusEl = document.getElementById("extension-worker-status");
+    if (!selectEl) return;
+    try {
+      extensionWorkerOptions = await fetchExtensionWorkersForPopup();
+      await renderExtensionWorkerSelect();
+    } catch (err) {
+      selectEl.innerHTML = '<option value="">Khong tai duoc worker</option>';
+      if (statusEl) {
+        statusEl.textContent = err?.message || "Khong tai duoc danh sach nguoi lam.";
+      }
+    }
+  }
+
+  document
+    .getElementById("extension-worker-select")
+    ?.addEventListener("change", async (event) => {
+      const selectEl = event.currentTarget;
+      const codeEl = document.getElementById("extension-worker-code");
+      const statusEl = document.getElementById("extension-worker-status");
+      const nextId = String(selectEl.value || "").trim();
+      const nextWorker = extensionWorkerOptions.find(
+        (worker) => String(worker?.id || "") === nextId,
+      );
+      if (!nextId || !nextWorker) return;
+      const data = await storageGet([EXTENSION_WORKER_ID_KEY]);
+      const currentId = String(data[EXTENSION_WORKER_ID_KEY] || "").trim();
+      if (!currentId) {
+        await storageSet({
+          [EXTENSION_WORKER_ID_KEY]: nextWorker.id,
+          [EXTENSION_WORKER_NAME_KEY]: nextWorker.name || "",
+        });
+        pendingExtensionWorkerId = "";
+        await renderExtensionWorkerSelect();
+        showToast(`Da chon nguoi lam: ${nextWorker.name || nextWorker.id}`, "#27ae60");
+        return;
+      }
+      if (currentId === nextId) {
+        pendingExtensionWorkerId = "";
+        if (codeEl) codeEl.style.display = "none";
+        return;
+      }
+      pendingExtensionWorkerId = nextId;
+      if (codeEl) {
+        codeEl.value = "";
+        codeEl.style.display = "block";
+        codeEl.focus();
+      }
+      if (statusEl) statusEl.textContent = "Nhap ma 6 so admin tao de doi nguoi lam.";
+    });
+
+  document
+    .getElementById("extension-worker-code")
+    ?.addEventListener("input", async (event) => {
+      const codeEl = event.currentTarget;
+      const code = String(codeEl.value || "").replace(/\D/g, "").slice(0, 6);
+      codeEl.value = code;
+      if (code.length !== 6 || !pendingExtensionWorkerId) return;
+      const data = await storageGet([EXTENSION_WORKER_ID_KEY]);
+      const currentId = String(data[EXTENSION_WORKER_ID_KEY] || "").trim();
+      try {
+        const worker = await verifyExtensionWorkerForPopup(
+          pendingExtensionWorkerId,
+          code,
+        );
+        await storageSet({
+          [EXTENSION_WORKER_ID_KEY]: worker?.id || "",
+          [EXTENSION_WORKER_NAME_KEY]: worker?.name || "",
+        });
+        pendingExtensionWorkerId = "";
+        await renderExtensionWorkerSelect();
+        showToast(`Da doi nguoi lam: ${worker?.name || worker?.id}`, "#27ae60");
+      } catch (err) {
+        pendingExtensionWorkerId = "";
+        const selectEl = document.getElementById("extension-worker-select");
+        if (selectEl) selectEl.value = currentId;
+        await renderExtensionWorkerSelect();
+        showToast(err?.message || "Ma doi nguoi lam khong hop le", "#e74c3c");
+      }
+    });
+
   chrome.storage.local.get(
     ["hotmailProxyUrl", "extensionPushApiUrl", "extensionPushToken"],
     (data) => {
@@ -730,6 +921,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (currentProxy) {
       loadHotmailAccountsToSelect(currentProxy).catch(() => {});
     }
+    loadExtensionWorkerOptions().catch(() => {});
     },
   );
 
@@ -755,6 +947,7 @@ document.addEventListener("DOMContentLoaded", () => {
               : "✅ Da luu Push URL. Se dung token mac dinh",
             "#27ae60",
           );
+          loadExtensionWorkerOptions().catch(() => {});
         },
       );
     });

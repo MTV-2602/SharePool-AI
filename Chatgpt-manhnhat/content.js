@@ -78,6 +78,8 @@ const EXTENSION_PUSH_API_URL_KEY = "extensionPushApiUrl";
 const EXTENSION_PUSH_TOKEN_KEY = "extensionPushToken";
 const EXTENSION_PUSH_TOKEN_DEFAULT =
   "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
+const EXTENSION_WORKER_ID_KEY = "extensionWorkerId";
+const EXTENSION_WORKER_NAME_KEY = "extensionWorkerName";
 
 function getTwofaStoreHostKey() {
   try {
@@ -398,6 +400,84 @@ async function getExtensionPushConfig() {
       String(data[EXTENSION_PUSH_TOKEN_KEY] || "").trim() ||
       EXTENSION_PUSH_TOKEN_DEFAULT,
   };
+}
+
+function extensionWorkerEndpointFromPushUrl(apiUrl, path) {
+  const raw =
+    String(apiUrl || "").trim() || EXTENSION_PUSH_API_URL_DEFAULT;
+  if (/\/api\/chatgpt-extension-push\/?$/i.test(raw)) {
+    return raw.replace(/\/api\/chatgpt-extension-push\/?$/i, `/api${path}`);
+  }
+  if (/\/chatgpt-extension-push\/?$/i.test(raw)) {
+    return raw.replace(/\/chatgpt-extension-push\/?$/i, path);
+  }
+  return raw.replace(/\/$/, "") + path;
+}
+
+async function getStoredExtensionWorker() {
+  const data = await storageLocalGet([
+    EXTENSION_WORKER_ID_KEY,
+    EXTENSION_WORKER_NAME_KEY,
+  ]);
+  const id = String(data[EXTENSION_WORKER_ID_KEY] || "").trim();
+  const name = String(data[EXTENSION_WORKER_NAME_KEY] || "").trim();
+  if (!id) return null;
+  return { id, name };
+}
+
+async function setStoredExtensionWorker(worker) {
+  const id = String(worker?.id || "").trim();
+  const name = String(worker?.name || "").trim();
+  if (!id) {
+    await storageLocalSet({
+      [EXTENSION_WORKER_ID_KEY]: "",
+      [EXTENSION_WORKER_NAME_KEY]: "",
+    });
+    return null;
+  }
+  await storageLocalSet({
+    [EXTENSION_WORKER_ID_KEY]: id,
+    [EXTENSION_WORKER_NAME_KEY]: name,
+  });
+  return { id, name };
+}
+
+async function fetchExtensionWorkersForPush() {
+  const { apiUrl, token } = await getExtensionPushConfig();
+  if (!apiUrl || !token) {
+    throw new Error("Chua cau hinh Push URL/Token");
+  }
+  const resp = await fetch(extensionWorkerEndpointFromPushUrl(apiUrl, "/extension-workers"), {
+    headers: { "x-extension-push-token": token },
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok || !json?.ok) {
+    throw new Error(json?.error || `Load workers HTTP ${resp.status}`);
+  }
+  return Array.isArray(json.workers) ? json.workers : [];
+}
+
+async function verifyExtensionWorkerChangeCode(workerId, code) {
+  const { apiUrl, token } = await getExtensionPushConfig();
+  if (!apiUrl || !token) {
+    throw new Error("Chua cau hinh Push URL/Token");
+  }
+  const resp = await fetch(
+    extensionWorkerEndpointFromPushUrl(apiUrl, "/extension-workers/verify-change-code"),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-extension-push-token": token,
+      },
+      body: JSON.stringify({ workerId, code }),
+    },
+  );
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok || !json?.ok) {
+    throw new Error(json?.error || `Verify worker HTTP ${resp.status}`);
+  }
+  return json.worker || null;
 }
 
 
@@ -3572,6 +3652,12 @@ function injectEmailQuickDock() {
     </div>
     <div id="af-eq-active-email" style="margin:0 0 4px 0;padding:3px 6px;border-radius:8px;background:#10223c;color:#9ec9ff;font:600 9px/1.2 monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">TempMail: (none)</div>
     <div id="af-eq-active-hotmail" style="margin:0 0 5px 0;padding:3px 6px;border-radius:8px;background:#14241b;color:#9ae6b4;font:600 9px/1.2 monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Hotmail: (none)</div>
+    <div style="display:grid;grid-template-columns:1fr 54px;gap:4px;margin:0 0 5px 0">
+      <select id="af-eq-worker-select" style="box-sizing:border-box;width:100%;height:26px;border-radius:8px;border:1px solid rgba(148,163,184,.22);background:#0f1f38;color:#dbeafe;font:700 10px 'Segoe UI',Arial,sans-serif;padding:0 6px;outline:none">
+        <option value="">Worker...</option>
+      </select>
+      <input id="af-eq-worker-code" maxlength="6" inputmode="numeric" placeholder="Code" style="display:none;box-sizing:border-box;width:100%;height:26px;border-radius:8px;border:1px solid rgba(250,204,21,.35);background:#241a0a;color:#fde68a;font:700 10px monospace;padding:0 6px;outline:none" />
+    </div>
     <textarea id="af-eq-input" rows="1" style="width:100%;box-sizing:border-box;background:#10284a;border:1px solid rgba(59,130,246,.28);border-radius:9px;color:#f8fbff;font:11px monospace;padding:7px;resize:none;outline:none;height:34px;min-height:34px;line-height:1.2" placeholder="Paste tk|mk|2fa..."></textarea>
     <div style="display:grid;gap:5px;margin-top:5px">
       <div style="${dockSectionStyle}">
@@ -3626,11 +3712,15 @@ function injectEmailQuickDock() {
   const activeHotmailEl = document.getElementById("af-eq-active-hotmail");
   const testToggleBtn = document.getElementById("af-eq-test-toggle");
   const testToolsPanel = document.getElementById("af-eq-test-tools-panel");
+  const workerSelectEl = document.getElementById("af-eq-worker-select");
+  const workerCodeEl = document.getElementById("af-eq-worker-code");
   let lastFormatted = "";
   let lastAutoCopied = "";
   let autoCopyTimer = null;
   let lastParsedCredentials = [];
   let hotmailUsedEmails = new Set();
+  let extensionWorkerOptions = [];
+  let pendingWorkerChangeId = "";
 
   if (testToggleBtn && testToolsPanel) {
     let isTestToolsOpen = false;
@@ -3647,6 +3737,98 @@ function injectEmailQuickDock() {
     });
     renderTestToolsState();
   }
+
+  const renderExtensionWorkerSelect = async () => {
+    if (!workerSelectEl) return;
+    const storedWorker = await getStoredExtensionWorker();
+    const storedStillActive =
+      storedWorker &&
+      extensionWorkerOptions.some((worker) => worker?.id === storedWorker.id);
+    if (storedWorker?.id && !storedStillActive) {
+      await setStoredExtensionWorker(null);
+    }
+    workerSelectEl.innerHTML = '<option value="">Worker...</option>';
+    extensionWorkerOptions.forEach((worker) => {
+      const opt = document.createElement("option");
+      opt.value = String(worker?.id || "");
+      opt.textContent = String(worker?.name || worker?.id || "Worker");
+      workerSelectEl.appendChild(opt);
+    });
+    workerSelectEl.value = storedStillActive ? storedWorker.id : "";
+    workerSelectEl.title = storedStillActive
+      ? `Nguoi lam: ${storedWorker.name || storedWorker.id}`
+      : "Chon nguoi lam truoc khi Push";
+  };
+
+  const hideExtensionWorkerCode = () => {
+    pendingWorkerChangeId = "";
+    if (!workerCodeEl) return;
+    workerCodeEl.value = "";
+    workerCodeEl.style.display = "none";
+  };
+
+  const loadExtensionWorkerSelector = async () => {
+    if (!workerSelectEl) return;
+    try {
+      extensionWorkerOptions = await fetchExtensionWorkersForPush();
+      await renderExtensionWorkerSelect();
+    } catch (err) {
+      workerSelectEl.innerHTML = '<option value="">Worker loi</option>';
+      workerSelectEl.title = err?.message || "Khong tai duoc worker";
+    }
+  };
+
+  workerSelectEl?.addEventListener("change", async () => {
+    const nextId = String(workerSelectEl.value || "").trim();
+    const nextWorker = extensionWorkerOptions.find(
+      (worker) => String(worker?.id || "") === nextId,
+    );
+    if (!nextId || !nextWorker) {
+      hideExtensionWorkerCode();
+      return;
+    }
+    const currentWorker = await getStoredExtensionWorker();
+    if (!currentWorker?.id) {
+      await setStoredExtensionWorker(nextWorker);
+      hideExtensionWorkerCode();
+      toast(`Da chon nguoi lam: ${nextWorker.name || nextWorker.id}`, "#27ae60");
+      return;
+    }
+    if (currentWorker.id === nextId) {
+      hideExtensionWorkerCode();
+      return;
+    }
+    pendingWorkerChangeId = nextId;
+    if (workerCodeEl) {
+      workerCodeEl.value = "";
+      workerCodeEl.style.display = "block";
+      workerCodeEl.focus();
+    }
+    toast("Nhap ma 6 so admin tao de doi nguoi lam", "#e67e22");
+  });
+
+  workerCodeEl?.addEventListener("input", async () => {
+    const code = String(workerCodeEl.value || "").replace(/\D/g, "").slice(0, 6);
+    workerCodeEl.value = code;
+    if (code.length !== 6 || !pendingWorkerChangeId) return;
+    const currentWorker = await getStoredExtensionWorker();
+    try {
+      const worker = await verifyExtensionWorkerChangeCode(
+        pendingWorkerChangeId,
+        code,
+      );
+      await setStoredExtensionWorker(worker);
+      hideExtensionWorkerCode();
+      await renderExtensionWorkerSelect();
+      toast(`Da doi nguoi lam: ${worker?.name || worker?.id}`, "#27ae60");
+    } catch (err) {
+      hideExtensionWorkerCode();
+      if (workerSelectEl) workerSelectEl.value = currentWorker?.id || "";
+      toast(err?.message || "Ma doi nguoi lam khong hop le", "#e74c3c");
+    }
+  });
+
+  loadExtensionWorkerSelector().catch(() => {});
 
   const sanitizeHotmailQueueLines = (value = "") =>
     String(value || "")
@@ -4808,6 +4990,13 @@ function injectEmailQuickDock() {
       return;
     }
 
+    const worker = await getStoredExtensionWorker();
+    if (!worker?.id) {
+      toast("Chua chon nguoi lam truoc khi Push", "#e67e22");
+      workerSelectEl?.focus();
+      return;
+    }
+
     const oldText = btn.textContent;
     const oldBg = btn.style.background;
     btn.disabled = true;
@@ -4825,6 +5014,7 @@ function injectEmailQuickDock() {
           username: credential.username,
           password: credential.password,
           otpSecret: credential.otpSecret,
+          workerId: worker.id,
           source: "extension_quick_dock",
           originHost: String(location.hostname || location.href || "").slice(0, 120),
         }),
@@ -4843,6 +5033,10 @@ function injectEmailQuickDock() {
       }
 
       const pushedUser = String(json?.account?.username || credential.username).trim();
+      if (json?.worker?.id) {
+        await setStoredExtensionWorker(json.worker);
+        await renderExtensionWorkerSelect();
+      }
       btn.textContent = "Da day";
       btn.style.background = "#16a34a";
       clearQuickDockInput();

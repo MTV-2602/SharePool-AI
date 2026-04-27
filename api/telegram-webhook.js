@@ -465,6 +465,18 @@ const formatCompactStatsMessage = (summary = {}) => {
   const market = summary?.marketplace || {};
   const providers = market?.providers || {};
   const web = summary?.web || {};
+  const extensionWorkers = summary?.extensionWorkers || {};
+  const extensionWorkerItems = Array.isArray(extensionWorkers?.items)
+    ? extensionWorkers.items
+    : [];
+  const extensionWorkerLines = extensionWorkerItems.length
+    ? extensionWorkerItems
+        .slice(0, 12)
+        .map(
+          (item, index) =>
+            `- ${index + 1}. ${item?.name || "Chua gan"}: hom nay ${Number(item?.today || 0)} | tong ${Number(item?.total || 0)}`,
+        )
+    : ["- Chua co du lieu push theo nguoi lam"];
   const updatedAt = summary?.updatedAt
     ? new Date(summary.updatedAt)
     : new Date();
@@ -495,6 +507,10 @@ const formatCompactStatsMessage = (summary = {}) => {
     "",
     "🌐 Web",
     `- User ${Number(web.totalUsers || 0)} | Don ${Number(web.totalOrders || 0)} | Pending ${Number(web.pendingOrders || 0)} | Fulfilled ${Number(web.fulfilledOrders || 0)}`,
+    "",
+    "Nguoi lam extension",
+    `- Hom nay ${Number(extensionWorkers.today || 0)} | Tong ${Number(extensionWorkers.total || 0)}`,
+    ...extensionWorkerLines,
     "",
     `🕒 Updated: ${updatedLabel}`,
   ].join("\n");

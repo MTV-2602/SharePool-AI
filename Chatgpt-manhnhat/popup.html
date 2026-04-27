@@ -529,6 +529,22 @@
           placeholder="Extension push token (de trong de dung mac dinh)"
           style="margin-top: 8px"
         />
+        <div style="display:grid;grid-template-columns:1fr 80px;gap:6px;margin-top:8px">
+          <select id="extension-worker-select" style="margin:0">
+            <option value="">-- Chon nguoi lam --</option>
+          </select>
+          <input
+            id="extension-worker-code"
+            type="text"
+            inputmode="numeric"
+            maxlength="6"
+            placeholder="Ma 6 so"
+            style="margin:0;display:none"
+          />
+        </div>
+        <div id="extension-worker-status" style="margin-top:6px;font-size:12px;color:#64748b">
+          Chon nguoi lam lan dau khong can ma; doi nguoi lam moi can ma admin.
+        </div>
         <button id="btn-save-extension-push-config" class="btn-primary" style="background:#7c3aed;margin-top:8px">
           Luu Push Config
         </button>

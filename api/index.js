@@ -1366,6 +1366,10 @@ const accountSchema = new mongoose.Schema({
   mailCheckLastSubject: { type: String, default: "" },
   mailCheckLastSender: { type: String, default: "" },
   mailCheckLastSnippet: { type: String, default: "" },
+  createdByWorkerId: { type: String, default: "" },
+  createdByWorkerName: { type: String, default: "" },
+  createdBySource: { type: String, default: "" },
+  extensionPushedAt: { type: String, default: "" },
   createdAt: { type: String },
   expiredAt: { type: String },
   updatedAt: { type: String, default: () => new Date().toISOString() },
@@ -1424,6 +1428,36 @@ const hotmailAccountSchema = new mongoose.Schema({
 const HotmailAccount =
   mongoose.models.HotmailAccount ||
   mongoose.model("HotmailAccount", hotmailAccountSchema, "hotmail_accounts");
+
+const extensionWorkerSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  name: { type: String, required: true },
+  active: { type: Boolean, default: true },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+extensionWorkerSchema.index({ active: 1, name: 1 });
+const ExtensionWorker =
+  mongoose.models.ExtensionWorker ||
+  mongoose.model("ExtensionWorker", extensionWorkerSchema, "extension_workers");
+
+const extensionWorkerChangeCodeSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  workerId: { type: String, index: true },
+  codeHash: { type: String, required: true, index: true },
+  usedAt: { type: String, default: "" },
+  expiresAt: { type: String, default: "" },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+extensionWorkerChangeCodeSchema.index({ workerId: 1, usedAt: 1, expiresAt: 1 });
+const ExtensionWorkerChangeCode =
+  mongoose.models.ExtensionWorkerChangeCode ||
+  mongoose.model(
+    "ExtensionWorkerChangeCode",
+    extensionWorkerChangeCodeSchema,
+    "extension_worker_change_codes",
+  );
 
 // Team Account Schema (ChatGPT Team - up to 4 Gmail slots)
 const teamSlotSchema = new mongoose.Schema({
@@ -3593,6 +3627,39 @@ const createStoreManualPassword = () =>
   `web${crypto.randomBytes(4).toString("hex")}`;
 const hashSha256 = (value) =>
   crypto.createHash("sha256").update(String(value || "")).digest("hex");
+const EXTENSION_WORKER_CODE_TTL_MS = 10 * 60 * 1000;
+const normalizeExtensionWorkerName = (value = "") =>
+  String(value || "").trim().replace(/\s+/g, " ").slice(0, 80);
+const sanitizeExtensionWorker = (worker = null) => {
+  if (!worker) return null;
+  return {
+    id: String(worker?.id || "").trim(),
+    name: normalizeExtensionWorkerName(worker?.name),
+    active: worker?.active !== false,
+    createdAt: String(worker?.createdAt || "").trim(),
+    updatedAt: String(worker?.updatedAt || "").trim(),
+  };
+};
+const buildExtensionWorkerCodeHash = (workerId = "", code = "") =>
+  hashSha256(
+    `${String(workerId || "").trim()}:${String(code || "")
+      .trim()
+      .replace(/\D/g, "")}`,
+  );
+const createExtensionWorkerCode = () =>
+  String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+const getBangkokDateKey = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const pick = (type) => parts.find((item) => item.type === type)?.value || "";
+  return `${pick("year")}-${pick("month")}-${pick("day")}`;
+};
 const upsertStringIntoList = (list = [], value = "") => {
   const normalized = String(value || "").trim();
   const current = Array.isArray(list)
@@ -6051,9 +6118,14 @@ const buildChatgptPublicStatsSummary = async () => {
     marketplaceWarrantyCases,
     webSummary,
     chatgptSnapshot,
+    extensionWorkers,
   ] =
     await Promise.all([
-      Account.find({}).select("type users expiredAt duration").lean(),
+      Account.find({})
+        .select(
+          "type users expiredAt duration createdAt createdByWorkerId createdByWorkerName createdBySource extensionPushedAt",
+        )
+        .lean(),
       TeamAccount.find({})
         .select("saleMode warehouse slots expiredAt")
         .lean(),
@@ -6065,8 +6137,10 @@ const buildChatgptPublicStatsSummary = async () => {
         .lean(),
       buildAdminDashboardSummary(),
       getCachedChatgptAdminSnapshot(),
+      ExtensionWorker.find({}).select("id name active").sort({ name: 1 }).lean(),
     ]);
   const now = new Date();
+  const todayBangkokKey = getBangkokDateKey(now);
   const safeChatgptSnapshot = chatgptSnapshot || {};
   const chatgptEnrichedAccounts = Array.isArray(safeChatgptSnapshot.enrichedAccounts)
     ? safeChatgptSnapshot.enrichedAccounts
@@ -6152,7 +6226,35 @@ const buildChatgptPublicStatsSummary = async () => {
       fulfilledOrders: Number(webSummary?.fulfilledStoreOrders || 0),
       pendingOrders: Number(webSummary?.pendingStoreOrders || 0),
     },
+    extensionWorkers: {
+      todayKey: todayBangkokKey,
+      today: 0,
+      total: 0,
+      items: [],
+    },
   };
+
+  const extensionWorkerStats = new Map();
+  const touchExtensionWorkerStats = (workerId = "", name = "") => {
+    const safeId = String(workerId || "").trim() || "unassigned";
+    const safeName =
+      normalizeExtensionWorkerName(name) ||
+      (safeId === "unassigned" ? "Chua gan" : safeId);
+    if (!extensionWorkerStats.has(safeId)) {
+      extensionWorkerStats.set(safeId, {
+        workerId: safeId === "unassigned" ? "" : safeId,
+        name: safeName,
+        today: 0,
+        total: 0,
+      });
+    }
+    const item = extensionWorkerStats.get(safeId);
+    if (!item.name || item.name === item.workerId) item.name = safeName;
+    return item;
+  };
+  (Array.isArray(extensionWorkers) ? extensionWorkers : []).forEach((worker) => {
+    touchExtensionWorkerStats(worker?.id, worker?.name);
+  });
 
   (Array.isArray(accounts) ? accounts : []).forEach((account) => {
     const type = normalizeChatgptAccountType(account?.effectiveType || account?.type);
@@ -6183,6 +6285,28 @@ const buildChatgptPublicStatsSummary = async () => {
       else summary.users.expired += 1;
     });
 
+    const isExtensionPush =
+      String(account?.createdBySource || "").trim().toLowerCase() ===
+        "extension" ||
+      !!String(account?.extensionPushedAt || "").trim() ||
+      !!String(account?.createdByWorkerId || "").trim() ||
+      !!String(account?.createdByWorkerName || "").trim();
+    if (isExtensionPush) {
+      const workerStat = touchExtensionWorkerStats(
+        account?.createdByWorkerId,
+        account?.createdByWorkerName,
+      );
+      workerStat.total += 1;
+      summary.extensionWorkers.total += 1;
+      const pushedAt = String(
+        account?.extensionPushedAt || account?.createdAt || "",
+      ).trim();
+      if (pushedAt && getBangkokDateKey(pushedAt) === todayBangkokKey) {
+        workerStat.today += 1;
+        summary.extensionWorkers.today += 1;
+      }
+    }
+
     const expiredAt = String(account?.expiredAt || "").trim();
     if (!expiredAt) return;
     const daysLeft = Math.ceil(
@@ -6192,6 +6316,20 @@ const buildChatgptPublicStatsSummary = async () => {
     if (daysLeft >= 0 && daysLeft <= 3) summary.expiry.within3Days += 1;
     if (daysLeft >= 0 && daysLeft <= 7) summary.expiry.within7Days += 1;
   });
+
+  summary.extensionWorkers.items = Array.from(extensionWorkerStats.values())
+    .filter(
+      (item) =>
+        item.workerId ||
+        Number(item.total || 0) > 0 ||
+        Number(item.today || 0) > 0,
+    )
+    .sort(
+      (a, b) =>
+        Number(b.today || 0) - Number(a.today || 0) ||
+        Number(b.total || 0) - Number(a.total || 0) ||
+        String(a.name || "").localeCompare(String(b.name || "")),
+    );
 
   chatgptTotalPoolAccounts.forEach((account) => {
     const type = normalizeChatgptAccountType(account?.effectiveType || account?.type);
@@ -8054,6 +8192,9 @@ const buildExtensionPushTelegramText = (payload = {}) => {
   if (!username || !password || !otpSecret) return "";
   const host = String(payload?.originHost || "").trim();
   const source = String(payload?.source || "extension").trim();
+  const workerName = normalizeExtensionWorkerName(
+    payload?.worker?.name || payload?.createdByWorkerName || "",
+  );
   const hotmailText = formatTelegramHotmailLinkText(payload?.hotmailLink);
   const lines = [
     "[EXTENSION PUSH THANH CONG]",
@@ -8061,6 +8202,7 @@ const buildExtensionPushTelegramText = (payload = {}) => {
     `Email: ${username}`,
     `Password: ${password}`,
     `2FA: ${otpSecret}`,
+    `Nguoi lam: ${workerName || "Chua gan"}`,
     `Nguon: ${host ? `${source} | ${host}` : source}`,
   ];
   if (hotmailText) lines.push(`Hotmail: ${hotmailText}`);
@@ -14307,6 +14449,240 @@ app.put("/api/admin/store-config", verifyToken, async (req, res) => {
   }
 });
 
+app.get("/api/admin/extension-workers", verifyToken, async (req, res) => {
+  try {
+    const includeInactive =
+      String(req.query?.includeInactive || "1").trim() !== "0";
+    const query = includeInactive ? {} : { active: true };
+    const workers = await ExtensionWorker.find(query)
+      .sort({ active: -1, name: 1, createdAt: 1 })
+      .lean();
+    return res.json({
+      success: true,
+      workers: workers.map(sanitizeExtensionWorker),
+      version: latestDataVersion,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the tai danh sach nguoi lam extension.",
+    });
+  }
+});
+
+app.post("/api/admin/extension-workers", verifyToken, async (req, res) => {
+  try {
+    const name = normalizeExtensionWorkerName(req.body?.name);
+    if (!name) {
+      return res.status(400).json({ error: "Thieu ten nguoi lam." });
+    }
+    const existing = await ExtensionWorker.findOne({
+      name: new RegExp(`^${escapeRegex(name)}$`, "i"),
+    }).lean();
+    if (existing) {
+      return res.status(409).json({ error: "Ten nguoi lam da ton tai." });
+    }
+    const nowIso = new Date().toISOString();
+    const worker = await ExtensionWorker.create({
+      id: createStoreId("worker"),
+      name,
+      active: true,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+    bumpDataVersion();
+    notifyClients();
+    return res.status(201).json({
+      success: true,
+      worker: sanitizeExtensionWorker(worker),
+      version: latestDataVersion,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the tao nguoi lam extension.",
+    });
+  }
+});
+
+app.put("/api/admin/extension-workers/:id", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    const current = await ExtensionWorker.findOne({ id });
+    if (!current) {
+      return res.status(404).json({ error: "Khong tim thay nguoi lam." });
+    }
+    const payload = { updatedAt: new Date().toISOString() };
+    if (req.body?.name !== undefined) {
+      const name = normalizeExtensionWorkerName(req.body?.name);
+      if (!name) {
+        return res.status(400).json({ error: "Ten nguoi lam khong hop le." });
+      }
+      const duplicate = await ExtensionWorker.findOne({
+        id: { $ne: id },
+        name: new RegExp(`^${escapeRegex(name)}$`, "i"),
+      }).lean();
+      if (duplicate) {
+        return res.status(409).json({ error: "Ten nguoi lam da ton tai." });
+      }
+      payload.name = name;
+    }
+    if (req.body?.active !== undefined) {
+      payload.active = req.body.active !== false;
+    }
+    const worker = await ExtensionWorker.findOneAndUpdate(
+      { id },
+      { $set: payload },
+      { new: true },
+    ).lean();
+    bumpDataVersion();
+    notifyClients();
+    return res.json({
+      success: true,
+      worker: sanitizeExtensionWorker(worker),
+      version: latestDataVersion,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the cap nhat nguoi lam extension.",
+    });
+  }
+});
+
+app.delete("/api/admin/extension-workers/:id", verifyToken, async (req, res) => {
+  try {
+    const id = String(req.params?.id || "").trim();
+    const worker = await ExtensionWorker.findOneAndUpdate(
+      { id },
+      { $set: { active: false, updatedAt: new Date().toISOString() } },
+      { new: true },
+    ).lean();
+    if (!worker) {
+      return res.status(404).json({ error: "Khong tim thay nguoi lam." });
+    }
+    bumpDataVersion();
+    notifyClients();
+    return res.json({
+      success: true,
+      worker: sanitizeExtensionWorker(worker),
+      version: latestDataVersion,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the an nguoi lam extension.",
+    });
+  }
+});
+
+app.post(
+  "/api/admin/extension-workers/change-codes",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const workerId = String(req.body?.workerId || "").trim();
+      const worker = await ExtensionWorker.findOne({
+        id: workerId,
+        active: true,
+      }).lean();
+      if (!worker) {
+        return res.status(404).json({
+          error: "Nguoi lam khong ton tai hoac dang bi an.",
+        });
+      }
+      const code = createExtensionWorkerCode();
+      const nowIso = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + EXTENSION_WORKER_CODE_TTL_MS)
+        .toISOString();
+      await ExtensionWorkerChangeCode.create({
+        id: createStoreId("worker_code"),
+        workerId,
+        codeHash: buildExtensionWorkerCodeHash(workerId, code),
+        expiresAt,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+      return res.json({
+        success: true,
+        code,
+        expiresAt,
+        worker: sanitizeExtensionWorker(worker),
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong the tao ma doi nguoi lam.",
+      });
+    }
+  },
+);
+
+app.get("/api/extension-workers", cors(), verifyExtensionPushToken, async (req, res) => {
+  try {
+    const workers = await ExtensionWorker.find({ active: true })
+      .sort({ name: 1, createdAt: 1 })
+      .lean();
+    return res.json({
+      ok: true,
+      workers: workers.map(sanitizeExtensionWorker),
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message || "Khong the tai danh sach nguoi lam.",
+    });
+  }
+});
+
+app.post(
+  "/api/extension-workers/verify-change-code",
+  cors(),
+  verifyExtensionPushToken,
+  async (req, res) => {
+    try {
+      const workerId = String(req.body?.workerId || "").trim();
+      const code = String(req.body?.code || "").trim().replace(/\D/g, "");
+      if (!workerId || code.length !== 6) {
+        return res.status(400).json({
+          ok: false,
+          error: "Ma 6 so khong hop le.",
+        });
+      }
+      const worker = await ExtensionWorker.findOne({
+        id: workerId,
+        active: true,
+      }).lean();
+      if (!worker) {
+        return res.status(404).json({
+          ok: false,
+          error: "Nguoi lam khong ton tai hoac dang bi an.",
+        });
+      }
+      const now = new Date();
+      const record = await ExtensionWorkerChangeCode.findOne({
+        workerId,
+        codeHash: buildExtensionWorkerCodeHash(workerId, code),
+        usedAt: "",
+        expiresAt: { $gt: now.toISOString() },
+      }).sort({ createdAt: -1 });
+      if (!record) {
+        return res.status(403).json({
+          ok: false,
+          error: "Ma doi nguoi lam sai hoac da het han.",
+        });
+      }
+      record.usedAt = now.toISOString();
+      record.updatedAt = now.toISOString();
+      await record.save();
+      return res.json({
+        ok: true,
+        worker: sanitizeExtensionWorker(worker),
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        ok: false,
+        error: error.message || "Khong the xac thuc ma doi nguoi lam.",
+      });
+    }
+  },
+);
+
 app.post("/api/store-vouchers", verifyToken, async (req, res) => {
   try {
     const payload = buildStoreVoucherWritePayload(req.body);
@@ -16254,6 +16630,7 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
       .slice(0, 80);
     const link = String(req.body?.link || "").trim();
     const note = String(req.body?.note || "").trim();
+    const workerId = String(req.body?.workerId || "").trim();
 
     if (!username || !password || !otpSecret) {
       return res.status(400).json({
@@ -16261,6 +16638,24 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
         error: "Thieu username, password hoac 2FA de day.",
       });
     }
+    if (!workerId) {
+      return res.status(400).json({
+        ok: false,
+        error: "Chua chon nguoi lam extension.",
+      });
+    }
+
+    const worker = await ExtensionWorker.findOne({
+      id: workerId,
+      active: true,
+    }).lean();
+    if (!worker) {
+      return res.status(403).json({
+        ok: false,
+        error: "Nguoi lam extension khong hop le hoac da bi an.",
+      });
+    }
+    const workerInfo = sanitizeExtensionWorker(worker);
 
     const duplicate = await findChatgptAccountByUsernameExact(username);
     if (duplicate) {
@@ -16272,6 +16667,7 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
       });
     }
 
+    const nowIso = new Date().toISOString();
     const { account, hotmailLink } = await createPublicChatgptAccount(
       {
         username,
@@ -16280,6 +16676,12 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
         link,
         type: "unassigned",
         note,
+        createdByWorkerId: workerInfo.id,
+        createdByWorkerName: workerInfo.name,
+        createdBySource: "extension",
+        extensionPushedAt: nowIso,
+        createdAt: nowIso,
+        updatedAt: nowIso,
       },
       { source },
     );
@@ -16293,6 +16695,7 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
       note,
       account,
       hotmailLink,
+      worker: workerInfo,
     });
 
     bumpDataVersion();
@@ -16303,6 +16706,7 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
       message: "Day account thanh cong.",
       account,
       hotmailLink,
+      worker: workerInfo,
       telegramNotified: !!telegramResult?.sent,
       duplicate: false,
     });
