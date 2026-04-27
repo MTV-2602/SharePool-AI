@@ -3808,6 +3808,10 @@ function App() {
       loadDashboardSummary({ silent: true, allowCached: true }).catch(() => {});
       return;
     }
+    if (activeTab === "extension-workers") {
+      loadExtensionWorkers({ silent: true }).catch(() => {});
+      return;
+    }
     if (activeTab === "support") {
       loadSupportConversations({
         silent: true,
@@ -10912,6 +10916,12 @@ function App() {
               ) : null}
             </button>
             <button
+              onClick={() => setActiveTab("extension-workers")}
+              className={`whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${activeTab === "extension-workers" ? "bg-cyan-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+            >
+              Worker
+            </button>
+            <button
               onClick={() => setActiveTab("netflix")}
               className={`whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${activeTab === "netflix" ? "bg-red-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
@@ -12010,6 +12020,154 @@ function App() {
             showAlert={showAlert}
             showConfirm={showConfirm}
           />
+        )}
+
+        {activeTab === "extension-workers" && (
+          <div className="space-y-6">
+            <div className="overflow-hidden rounded-[24px] border border-cyan-500/20 bg-slate-900/90 shadow-[0_18px_55px_rgba(8,15,40,0.38)]">
+              <div className="flex flex-col gap-3 border-b border-slate-800/80 p-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="text-[11px] font-black uppercase tracking-[0.34em] text-cyan-300/90">
+                    Worker
+                  </div>
+                  <h2 className="mt-1.5 text-xl font-black text-white">
+                    Quản lý người làm extension
+                  </h2>
+                  <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-400">
+                    Thêm tên người làm, ẩn/bật lại, và tạo mã 6 số để đổi worker trong extension. Push từ extension sẽ thống kê theo người này trên Telegram.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadExtensionWorkers({ silent: false })}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm font-bold text-slate-200 transition-colors hover:border-cyan-500/50 hover:text-cyan-100 disabled:opacity-60"
+                  disabled={loadingStates.fetchExtensionWorkers}
+                >
+                  {loadingStates.fetchExtensionWorkers ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={16} />
+                  )}
+                  Làm mới
+                </button>
+              </div>
+
+              <div className="space-y-4 p-4">
+                <form onSubmit={handleCreateExtensionWorker} className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 md:flex-row">
+                  <input
+                    value={extensionWorkerNameDraft}
+                    onChange={(e) => setExtensionWorkerNameDraft(e.target.value)}
+                    placeholder="Nhập tên người làm..."
+                    className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm font-semibold text-white outline-none transition focus:border-cyan-500"
+                    disabled={loadingStates.saveExtensionWorker}
+                  />
+                  <button
+                    type="submit"
+                    className="inline-flex items-center justify-center rounded-xl bg-cyan-600 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-cyan-500 disabled:opacity-60"
+                    disabled={loadingStates.saveExtensionWorker}
+                  >
+                    {loadingStates.saveExtensionWorker ? "Đang thêm..." : "Thêm worker"}
+                  </button>
+                </form>
+
+                {extensionWorkerChangeCode?.code && (
+                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+                    <div className="text-[11px] font-black uppercase tracking-[0.28em] text-amber-200/80">
+                      Mã đổi worker
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-end gap-3">
+                      <div className="font-mono text-3xl font-black tracking-[0.25em] text-white">
+                        {extensionWorkerChangeCode.code}
+                      </div>
+                      <div className="pb-1 text-slate-300">
+                        Cho: {extensionWorkerChangeCode?.worker?.name || "--"} · Hết hạn: {formatDateTime(extensionWorkerChangeCode.expiresAt) || "--"}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {extensionWorkers.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-10 text-center text-sm text-slate-400">
+                    Chưa có worker nào. Thêm người làm đầu tiên để extension có thể Push.
+                  </div>
+                ) : (
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {extensionWorkers.map((worker) => {
+                      const workerId = String(worker?.id || "").trim();
+                      const isBusy = loadingStates.toggleExtensionWorker === workerId;
+                      const isCodeBusy = loadingStates.createExtensionWorkerCode === workerId;
+                      return (
+                        <div
+                          key={workerId}
+                          className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <input
+                                value={extensionWorkerEditDrafts?.[workerId] ?? worker?.name ?? ""}
+                                onChange={(e) =>
+                                  setExtensionWorkerEditDrafts((prev) => ({
+                                    ...prev,
+                                    [workerId]: e.target.value,
+                                  }))
+                                }
+                                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-black text-white outline-none transition focus:border-cyan-500"
+                                disabled={isBusy}
+                              />
+                              <div className="mt-1 font-mono text-[11px] text-slate-500">
+                                {workerId}
+                              </div>
+                            </div>
+                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
+                              worker?.active !== false
+                                ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
+                                : "border-slate-700 bg-slate-800 text-slate-300"
+                            }`}>
+                              {worker?.active !== false ? "Đang bật" : "Đã ẩn"}
+                            </span>
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateExtensionWorker(worker, {
+                                  name: String(extensionWorkerEditDrafts?.[workerId] || "").trim(),
+                                })
+                              }
+                              className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 hover:border-cyan-500/50 disabled:opacity-60"
+                              disabled={isBusy}
+                            >
+                              Lưu tên
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateExtensionWorker(worker, {
+                                  active: worker?.active === false,
+                                })
+                              }
+                              className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 hover:border-cyan-500/50 disabled:opacity-60"
+                              disabled={isBusy}
+                            >
+                              {isBusy ? "Đang lưu..." : worker?.active !== false ? "Ẩn" : "Bật lại"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCreateExtensionWorkerCode(worker)}
+                              className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-500 disabled:opacity-60"
+                              disabled={isCodeBusy || worker?.active === false}
+                            >
+                              {isCodeBusy ? "Đang tạo..." : "Tạo mã 6 số"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         {activeTab === "store-config" && (() => {
