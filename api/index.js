@@ -2342,16 +2342,7 @@ app.get(
         reconcileTeamMarketInventory(),
       ]);
       const inventoryChanged = inventoryResults.some(Boolean);
-      const expiryCleanup = await refreshExpiryCleanupSnapshot({
-        createBatch: true,
-        notifyTelegram: true,
-      });
-      const audit = await runChatgptMailDieAuditBatch({
-        source: "cron_nightly_hobby",
-        limit: CHATGPT_MAIL_DIE_AUDIT_BATCH_LIMIT,
-        concurrency: CHATGPT_MAIL_DIE_AUDIT_CONCURRENCY,
-      });
-      if (inventoryChanged || Number(audit?.summary?.changedCount || 0) > 0) {
+      if (inventoryChanged) {
         bumpDataVersion();
         notifyClients();
       }
@@ -2362,29 +2353,9 @@ app.get(
         version: latestDataVersion,
         maintenanceResults,
         inventoryChanged,
-        expiryCleanup: {
-          pendingBatchId: String(
-            expiryCleanup?.snapshot?.latestPendingBatchId || "",
-          ).trim(),
-          createdBatchId: String(
-            expiryCleanup?.createdBatch?.batchId || "",
-          ).trim(),
-          candidateCount: Number(
-            expiryCleanup?.scan?.summary?.candidateCount || 0,
-          ),
-          warningCount: Number(
-            expiryCleanup?.scan?.summary?.warningCount || 0,
-          ),
-          notified: !!expiryCleanup?.telegramResult?.sent,
-        },
-        mailAudit: {
-          scannedCount: Number(audit?.scannedCount || 0),
-          diedCount: Number(audit?.summary?.diedCount || 0),
-          cleanCount: Number(audit?.summary?.cleanCount || 0),
-          skippedCount: Number(audit?.summary?.skippedCount || 0),
-          errorCount: Number(audit?.summary?.errorCount || 0),
-          changedCount: Number(audit?.summary?.changedCount || 0),
-        },
+        expiryCleanupSkipped: true,
+        mailAuditSkipped: true,
+        reason: "manual_only_to_save_vercel_duration",
       });
     } catch (error) {
       return res.status(error.statusCode || 500).json({
