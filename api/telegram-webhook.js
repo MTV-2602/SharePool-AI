@@ -599,11 +599,11 @@ const sendMessage = async (chatId, text, options = {}) => {
   }
 };
 const TELEGRAM_BOT_COMMANDS = Object.freeze([
-  { command: "stats", description: "📊 Thống kê tổng quan" },
-  { command: "workers", description: "📊 Thống kê nhanh người làm" },
-  { command: "workerstats", description: "📈 Thống kê chi tiết người làm" },
-  { command: "help", description: "📘 Hướng dẫn sử dụng bot" },
-  { command: "cleanup", description: "🧹 Quản lý batch đơn hết hạn" },
+  { command: "stats", description: "Thong ke tong quan" },
+  { command: "workers", description: "Thong ke nhanh nguoi lam" },
+  { command: "workerstats", description: "Thong ke chi tiet nguoi lam" },
+  { command: "help", description: "Huong dan su dung bot" },
+  { command: "cleanup", description: "Quan ly batch don het han" },
 ]);
 const TELEGRAM_BOT_COMMAND_SCOPES = Object.freeze([
   { type: "default" },
