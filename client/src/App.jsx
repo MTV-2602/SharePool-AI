@@ -9701,7 +9701,7 @@ function App() {
       const response = await axios.post(
         "/api/admin/chatgpt-warranty-queue/bulk-load-candidates",
         { ids },
-        { timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+        { timeout: 120000, skipGlobalLoading: true },
       );
       const results = Array.isArray(response?.data?.results)
         ? response.data.results
