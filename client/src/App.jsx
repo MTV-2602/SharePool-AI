@@ -53,6 +53,9 @@ const DEFAULT_SUPPORT_PAGE_SIZE = 6;
 const DEFAULT_SUPPORT_RETENTION_DAYS = 7;
 const ADMIN_HEAVY_REQUEST_TIMEOUT_MS = 30000;
 const ADMIN_MEDIUM_REQUEST_TIMEOUT_MS = 20000;
+const HOTMAIL_DIE_BATCH_CHUNK_SIZE = 50;
+const HOTMAIL_DIE_BATCH_MAX_EMAILS = 500;
+const HOTMAIL_DIE_BATCH_REQUEST_TIMEOUT_MS = 120000;
 const WEB_ADMIN_TABS = [
   "store-users",
   "store-config",
@@ -2013,6 +2016,12 @@ const getHotmailDieBatchStatusMeta = (status = "") => {
       tone: "border-slate-600 bg-slate-800 text-slate-300",
     };
   }
+  if (normalized === "pending") {
+    return {
+      label: "Đang check",
+      tone: "border-sky-500/40 bg-sky-500/10 text-sky-200",
+    };
+  }
   return {
     label: "Lỗi",
     tone: "border-rose-500/40 bg-rose-500/10 text-rose-200",
@@ -3226,6 +3235,12 @@ function App() {
     useState(false);
   const [hotmailDieBatchInput, setHotmailDieBatchInput] = useState("");
   const [hotmailDieBatchResults, setHotmailDieBatchResults] = useState([]);
+  const [hotmailDieBatchProgress, setHotmailDieBatchProgress] = useState({
+    batchIndex: 0,
+    batchTotal: 0,
+    checked: 0,
+    total: 0,
+  });
   const [adminRealtime, setAdminRealtime] = useState(
     buildDefaultAdminRealtimeConfig(),
   );
@@ -8902,27 +8917,95 @@ function App() {
       showAlert("Không có email hợp lệ", "Hãy kiểm tra lại danh sách vừa dán.", "warning");
       return;
     }
-    if (validEmails.length > 100) {
-      showAlert("Quá nhiều email", "Chỉ check tối đa 100 Hotmail/Outlook mỗi lần.", "warning");
+    if (validEmails.length > HOTMAIL_DIE_BATCH_MAX_EMAILS) {
+      showAlert(
+        "Quá nhiều email",
+        `Chỉ check tối đa ${HOTMAIL_DIE_BATCH_MAX_EMAILS} Hotmail/Outlook mỗi lần để tránh quá tải.`,
+        "warning",
+      );
       return;
     }
 
     try {
       setLoadingStates((prev) => ({ ...prev, checkHotmailDieBatch: true }));
-      const response = await axios.post(
-        "/api/admin/hotmail/check-die-batch",
-        { emails: validEmails },
-        {
-          timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS,
-          skipGlobalLoading: true,
-        },
+      setHotmailDieBatchProgress({
+        batchIndex: 0,
+        batchTotal: Math.ceil(validEmails.length / HOTMAIL_DIE_BATCH_CHUNK_SIZE),
+        checked: 0,
+        total: validEmails.length,
+      });
+      setHotmailDieBatchResults(
+        parsedRows.map((row) =>
+          row.status === "pending"
+            ? { ...row, reason: "Đang chờ check..." }
+            : row,
+        ),
       );
-      const resultByEmail = new Map(
-        (Array.isArray(response?.data?.items) ? response.data.items : []).map((item) => [
-          String(item?.email || "").trim().toLowerCase(),
-          item,
-        ]),
-      );
+
+      const chunks = [];
+      for (let index = 0; index < validEmails.length; index += HOTMAIL_DIE_BATCH_CHUNK_SIZE) {
+        chunks.push(validEmails.slice(index, index + HOTMAIL_DIE_BATCH_CHUNK_SIZE));
+      }
+      const resultByEmail = new Map();
+      const mergeRowsWithResults = () =>
+        parsedRows.map((row) => {
+          if (row.status !== "pending") return row;
+          const result = resultByEmail.get(row.email);
+          if (!result) {
+            return {
+              ...row,
+              reason: "Đang chờ check...",
+            };
+          }
+          return {
+            ...row,
+            ...result,
+            line: row.line,
+            email: row.email,
+          };
+        });
+
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+        const emails = chunks[chunkIndex];
+        setHotmailDieBatchProgress({
+          batchIndex: chunkIndex + 1,
+          batchTotal: chunks.length,
+          checked: resultByEmail.size,
+          total: validEmails.length,
+        });
+        try {
+          const response = await axios.post(
+            "/api/admin/hotmail/check-die-batch",
+            { emails },
+            {
+              timeout: HOTMAIL_DIE_BATCH_REQUEST_TIMEOUT_MS,
+              skipGlobalLoading: true,
+            },
+          );
+          (Array.isArray(response?.data?.items) ? response.data.items : []).forEach((item) => {
+            const email = String(item?.email || "").trim().toLowerCase();
+            if (email) resultByEmail.set(email, item);
+          });
+        } catch (error) {
+          const reason = getApiErrorMessage(error, "Không thể check lô Hotmail.");
+          emails.forEach((email) => {
+            resultByEmail.set(email, {
+              email,
+              status: "error",
+              reason,
+              checkedAt: new Date().toISOString(),
+            });
+          });
+        }
+        setHotmailDieBatchProgress({
+          batchIndex: chunkIndex + 1,
+          batchTotal: chunks.length,
+          checked: Math.min(resultByEmail.size, validEmails.length),
+          total: validEmails.length,
+        });
+        setHotmailDieBatchResults(mergeRowsWithResults());
+      }
+
       const mergedRows = parsedRows.map((row) => {
         if (row.status !== "pending") return row;
         const result = resultByEmail.get(row.email);
@@ -8947,6 +9030,7 @@ function App() {
         "Check Hotmail xong",
         [
           `Tổng dòng: ${mergedRows.length}`,
+          `Email hợp lệ: ${validEmails.length}`,
           `Die: ${countByStatus(["died"])}`,
           `Clean: ${countByStatus(["clean"])}`,
           `Chưa import: ${countByStatus(["missing_hotmail"])}`,
@@ -8961,6 +9045,12 @@ function App() {
         "error",
       );
     } finally {
+      setHotmailDieBatchProgress({
+        batchIndex: 0,
+        batchTotal: 0,
+        checked: 0,
+        total: 0,
+      });
       setLoadingStates((prev) => ({ ...prev, checkHotmailDieBatch: false }));
     }
   };
@@ -20466,6 +20556,14 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         const countStatus = (statusList) =>
           results.filter((item) => statusList.includes(String(item?.status || ""))).length;
         const hasResults = results.length > 0;
+        const isCheckingHotmailDieBatch = !!loadingStates.checkHotmailDieBatch;
+        const progressTotal = Number(hotmailDieBatchProgress?.total || 0);
+        const progressChecked = Math.min(
+          Number(hotmailDieBatchProgress?.checked || 0),
+          progressTotal,
+        );
+        const progressPercent =
+          progressTotal > 0 ? Math.round((progressChecked / progressTotal) * 100) : 0;
         const copyButtons = [
           { key: "died", label: "Copy Die", count: countStatus(["died"]), tone: "bg-red-600 hover:bg-red-500" },
           { key: "clean", label: "Copy Clean", count: countStatus(["clean"]), tone: "bg-emerald-600 hover:bg-emerald-500" },
@@ -20490,7 +20588,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                     Check die nhanh Hotmail / Outlook
                   </h2>
                   <p className="mt-1 text-xs text-slate-400">
-                    Dán email hoặc email|pass|2FA. Hệ thống chỉ gửi email lên API và chỉ đọc kho Hotmail đã import.
+                    Dán email hoặc email|pass|2FA. Tối đa {HOTMAIL_DIE_BATCH_MAX_EMAILS} email, hệ thống tự chia lô {HOTMAIL_DIE_BATCH_CHUNK_SIZE} email để tránh timeout.
                   </p>
                 </div>
                 <button
@@ -20523,13 +20621,21 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                       ) : (
                         <Search size={16} />
                       )}
-                      Check die
+                      {isCheckingHotmailDieBatch && progressTotal > 0
+                        ? `Đang check ${progressChecked}/${progressTotal}`
+                        : "Check die"}
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         setHotmailDieBatchInput("");
                         setHotmailDieBatchResults([]);
+                        setHotmailDieBatchProgress({
+                          batchIndex: 0,
+                          batchTotal: 0,
+                          checked: 0,
+                          total: 0,
+                        });
                       }}
                       disabled={loadingStates.checkHotmailDieBatch}
                       className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-300 transition hover:text-white disabled:opacity-60"
@@ -20553,6 +20659,29 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                     </div>
                   ) : null}
                 </div>
+
+                {isCheckingHotmailDieBatch && progressTotal > 0 ? (
+                  <div className="mt-3 rounded-2xl border border-sky-500/25 bg-sky-500/10 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-sky-100">
+                      <span className="font-bold">
+                        Đang check lô {Number(hotmailDieBatchProgress?.batchIndex || 0)}/
+                        {Number(hotmailDieBatchProgress?.batchTotal || 0)}
+                      </span>
+                      <span className="font-mono text-sky-200">
+                        {progressChecked}/{progressTotal} email · {progressPercent}%
+                      </span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-900">
+                      <div
+                        className="h-full rounded-full bg-sky-400 transition-all"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-400">
+                      Mỗi lô có timeout {Math.round(HOTMAIL_DIE_BATCH_REQUEST_TIMEOUT_MS / 1000)}s. Lô nào lỗi sẽ được đánh dấu riêng, các lô còn lại vẫn chạy tiếp.
+                    </div>
+                  </div>
+                ) : null}
 
                 {hasResults ? (
                   <>
