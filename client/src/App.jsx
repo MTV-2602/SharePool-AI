@@ -9795,6 +9795,45 @@ function App() {
     }
   };
 
+  const buildWarrantyQueueReplacementCopyLine = (item = {}) =>
+    [
+      item?.replacementUsername,
+      item?.replacementPassword,
+      item?.replacementOtpSecret,
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join("|");
+
+  const handleCopySelectedWarrantyQueueReplacements = (items = []) => {
+    const safeItems = Array.isArray(items) ? items : [];
+    const seenLines = new Set();
+    const lines = safeItems
+      .map(buildWarrantyQueueReplacementCopyLine)
+      .filter(Boolean)
+      .filter((line) => {
+        const key = line.toLowerCase();
+        if (seenLines.has(key)) return false;
+        seenLines.add(key);
+        return true;
+      });
+    if (lines.length === 0) {
+      showAlert(
+        "Chua co acc moi",
+        "Chon cac dong da bao hanh co acc thay the roi bam copy.",
+        "warning",
+      );
+      return;
+    }
+    const skippedCount = Math.max(0, safeItems.length - lines.length);
+    handleCopy(
+      lines.join("\n"),
+      skippedCount > 0
+        ? `Da copy ${lines.length} acc moi, bo qua ${skippedCount} dong`
+        : `Da copy ${lines.length} acc moi`,
+    );
+  };
+
   const handleMarkWarrantyQueueSent = async (item = {}) => {
     const queueId = String(item?.id || "").trim();
     if (!queueId) return;
@@ -12322,6 +12361,10 @@ function App() {
     chatgptWarrantyQueueVisibleItems.filter((item) =>
       chatgptWarrantyQueueSelectedIdSet.has(String(item?.id || "").trim()),
     );
+  const selectedWarrantyReplacementCopyCount =
+    selectedChatgptWarrantyQueueItems.filter((item) =>
+      !!buildWarrantyQueueReplacementCopyLine(item),
+    ).length;
   const warrantiedChatgptWarrantyQueueItems =
     chatgptWarrantyQueueVisibleItems.filter(
       (item) => String(item?.status || "") === "warrantied",
@@ -15893,6 +15936,9 @@ function App() {
                       </button>
                       <button type="button" onClick={() => handleBulkSubmitWarrantyQueueItems(selectedChatgptWarrantyQueueItems)} disabled={loadingStates.bulkWarrantyQueueSubmit || selectedChatgptWarrantyQueueItems.filter((item) => String(item?.status || "pending") !== "warrantied").length === 0} className="inline-flex items-center gap-1 rounded-lg border border-emerald-600/50 bg-emerald-900/35 px-3 py-2 text-xs font-black text-emerald-100 transition hover:bg-emerald-700/45 disabled:opacity-50">
                         {loadingStates.bulkWarrantyQueueSubmit ? <Loader2 size={13} className="animate-spin" /> : <Shield size={13} />} {loadingStates.bulkWarrantyQueueSubmit ? "Dang BH..." : "BH da chon"}
+                      </button>
+                      <button type="button" onClick={() => handleCopySelectedWarrantyQueueReplacements(selectedChatgptWarrantyQueueItems)} disabled={selectedWarrantyReplacementCopyCount === 0} className="inline-flex items-center gap-1 rounded-lg border border-sky-600/50 bg-sky-900/30 px-3 py-2 text-xs font-black text-sky-100 transition hover:bg-sky-700/40 disabled:opacity-50">
+                        <Copy size={13} /> {selectedWarrantyReplacementCopyCount > 0 ? `Copy ${selectedWarrantyReplacementCopyCount} acc moi` : "Copy acc moi"}
                       </button>
                       <button type="button" onClick={() => setSelectedChatgptWarrantyQueueIds(warrantiedChatgptWarrantyQueueItems.map((item) => String(item?.id || "").trim()).filter(Boolean))} disabled={warrantiedChatgptWarrantyQueueItems.length === 0} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-black text-slate-100 transition hover:bg-slate-800 disabled:opacity-50">
                         Chon Da BH
