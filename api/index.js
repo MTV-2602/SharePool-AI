@@ -1162,6 +1162,73 @@ async function checkHotmailDieBatch(rawEmails = [], options = {}) {
   };
 }
 
+async function getHotmailDieBatchMarketplaceTraceByEmail(rawEmails = []) {
+  const emails = (Array.isArray(rawEmails) ? rawEmails : [])
+    .map((email) => normalizeHotmailEmail(email))
+    .filter(Boolean);
+  if (emails.length === 0) return new Map();
+
+  const accounts = await Account.find({
+    $or: emails.map((email) => ({
+      username: new RegExp(`^${escapeRegex(email)}$`, "i"),
+    })),
+  })
+    .select("id username")
+    .lean();
+  const accountIds = accounts
+    .map((account) => String(account?.id || "").trim())
+    .filter(Boolean);
+  if (accountIds.length === 0) return new Map();
+
+  const [orders, warrantyCases] = await Promise.all([
+    DatammoOrder.find({
+      scope: "chatgpt",
+      "accounts.accountId": { $in: accountIds },
+    })
+      .sort({ createdAt: -1 })
+      .select("provider orderId accounts.accountId accounts.username")
+      .lean(),
+    DatammoWarrantyCase.find({
+      scope: "chatgpt",
+      $or: [
+        { rootAccountId: { $in: accountIds } },
+        { currentAccountId: { $in: accountIds } },
+        { "rounds.fromAccountId": { $in: accountIds } },
+        { "rounds.toAccountId": { $in: accountIds } },
+      ],
+    })
+      .sort({ updatedAt: -1 })
+      .select(
+        "provider orderId rootAccountId rootUsername currentAccountId currentUsername rounds.fromAccountId rounds.fromUsername rounds.toAccountId rounds.toUsername",
+      )
+      .lean(),
+  ]);
+  const traceMap = buildMarketplaceAccountTraceMap(orders, warrantyCases);
+  const traceByEmail = new Map();
+
+  accounts.forEach((account) => {
+    const email = normalizeHotmailEmail(account?.username);
+    const accountId = String(account?.id || "").trim();
+    if (!email || !accountId) return;
+    const trace = traceMap.get(accountId) || null;
+    const marketplaceOrderId = String(
+      trace?.latestWarrantyOrderId || trace?.latestOrderId || "",
+    ).trim();
+    traceByEmail.set(email, {
+      chatgptAccountId: accountId,
+      chatgptUsername: String(account?.username || "").trim(),
+      marketplaceOrderId,
+      marketplaceProvider: String(
+        trace?.latestProvider || trace?.providers?.[0] || "",
+      ).trim(),
+      marketplaceLatestOrderId: String(trace?.latestOrderId || "").trim(),
+      marketplaceWarrantyOrderId: String(trace?.latestWarrantyOrderId || "").trim(),
+    });
+  });
+
+  return traceByEmail;
+}
+
 const transformLegacyChatgptAccountForMigration = (doc = {}) => {
   const migrated = { ...doc };
   const users = Array.isArray(doc.users) ? doc.users : [];
@@ -14658,14 +14725,23 @@ app.post(
         1,
         Math.min(Number(req.body?.top || CHATGPT_MAIL_DIE_LIST_LIMIT || 12), 20),
       );
+      const marketplaceTraceByEmail =
+        await getHotmailDieBatchMarketplaceTraceByEmail(uniqueEmails);
       const run = await checkHotmailDieBatch(uniqueEmails, {
         source: "admin_hotmail_batch",
         top,
         concurrency: CHATGPT_MAIL_DIE_AUDIT_CONCURRENCY,
       });
+      const items = (Array.isArray(run?.items) ? run.items : []).map((item) => {
+        const trace =
+          marketplaceTraceByEmail.get(normalizeHotmailEmail(item?.email)) || null;
+        return trace ? { ...item, ...trace } : item;
+      });
       return res.json({
         success: true,
         ...run,
+        items,
+        summary: buildHotmailDieBatchSummary(items),
       });
     } catch (error) {
       return res.status(error.statusCode || 500).json({

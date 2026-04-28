@@ -1990,6 +1990,20 @@ const extractEmailFromHotmailDieLine = (line = "") =>
   String(line || "").split("|")[0].trim().toLowerCase();
 const isBasicEmail = (value = "") =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+const getHotmailDieBatchOrderId = (item = {}) =>
+  String(
+    item?.marketplaceOrderId ||
+      item?.marketplaceWarrantyOrderId ||
+      item?.marketplaceLatestOrderId ||
+      "",
+  ).trim();
+const buildHotmailDieBatchCopyLine = (item = {}) => {
+  const email = String(item?.email || extractEmailFromHotmailDieLine(item?.line) || "")
+    .trim()
+    .toLowerCase();
+  const orderId = getHotmailDieBatchOrderId(item);
+  return [email, orderId].filter(Boolean).join("|");
+};
 const getHotmailDieBatchStatusMeta = (status = "") => {
   const normalized = String(status || "").trim();
   if (normalized === "died") {
@@ -9065,7 +9079,7 @@ function App() {
     const statuses = statusGroups[groupKey] || [];
     const lines = hotmailDieBatchResults
       .filter((item) => statuses.includes(String(item?.status || "")))
-      .map((item) => String(item?.line || item?.email || "").trim())
+      .map((item) => buildHotmailDieBatchCopyLine(item))
       .filter(Boolean);
     if (lines.length === 0) {
       showAlert("Không có dữ liệu", "Nhóm này chưa có dòng nào để copy.", "warning");
@@ -20708,6 +20722,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                           <thead className="sticky top-0 bg-slate-900 text-[11px] uppercase tracking-[0.14em] text-slate-400">
                             <tr>
                               <th className="px-3 py-3">Email</th>
+                              <th className="px-3 py-3">Mã đơn</th>
                               <th className="px-3 py-3">Trạng thái</th>
                               <th className="px-3 py-3">Lý do</th>
                               <th className="px-3 py-3">Mail match</th>
@@ -20716,6 +20731,8 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                           <tbody>
                             {results.map((item, index) => {
                               const meta = getHotmailDieBatchStatusMeta(item?.status);
+                              const orderId = getHotmailDieBatchOrderId(item);
+                              const provider = getMarketplaceProviderLabel(item?.marketplaceProvider);
                               return (
                                 <tr
                                   key={`${item?.email || "row"}-${index}`}
@@ -20726,6 +20743,20 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                     <div className="mt-1 line-clamp-1 text-[10px] font-normal text-slate-500">
                                       {item?.line || ""}
                                     </div>
+                                  </td>
+                                  <td className="px-3 py-3 text-xs">
+                                    {orderId ? (
+                                      <div className="space-y-1">
+                                        <div className="font-mono font-bold text-amber-100">
+                                          {orderId}
+                                        </div>
+                                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                          {provider}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-600">--</span>
+                                    )}
                                   </td>
                                   <td className="px-3 py-3">
                                     <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-black ${meta.tone}`}>
