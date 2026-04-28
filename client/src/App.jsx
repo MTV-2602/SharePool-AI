@@ -56,6 +56,7 @@ const ADMIN_MEDIUM_REQUEST_TIMEOUT_MS = 20000;
 const HOTMAIL_DIE_BATCH_CHUNK_SIZE = 50;
 const HOTMAIL_DIE_BATCH_MAX_EMAILS = 500;
 const HOTMAIL_DIE_BATCH_REQUEST_TIMEOUT_MS = 120000;
+const HOTMAIL_DIE_QUEUE_SAVE_CHUNK_SIZE = 10;
 const WEB_ADMIN_TABS = [
   "store-users",
   "store-config",
@@ -9027,6 +9028,78 @@ function App() {
     }
   };
 
+  const buildHotmailDieWarrantyQueuePayload = (item = {}) => {
+    const sourceAccountId = String(item?.chatgptAccountId || "").trim();
+    const orderId = getHotmailDieBatchOrderId(item);
+    if (!sourceAccountId || !orderId) return null;
+    return {
+      sourceAccountId,
+      sourceUsername:
+        item?.chatgptUsername ||
+        item?.email ||
+        extractEmailFromHotmailDieLine(item?.line),
+      provider: item?.marketplaceProvider,
+      orderId,
+      mailStatus: item?.status,
+      mailMatchedSubject: item?.mailCheckLastSubject,
+      mailMatchedSender: item?.mailCheckLastSender,
+      mailMatchedAt: item?.mailCheckLastMatchedAt,
+      mailMatchedSnippet: item?.mailCheckLastSnippet,
+    };
+  };
+
+  const autoSaveHotmailDieBatchWarrantyQueue = async (rows = []) => {
+    const diedRows = (Array.isArray(rows) ? rows : []).filter(
+      (item) => String(item?.status || "") === "died",
+    );
+    const payloads = diedRows.map(buildHotmailDieWarrantyQueuePayload).filter(Boolean);
+    const skippedCount = Math.max(0, diedRows.length - payloads.length);
+    if (payloads.length === 0) {
+      return {
+        savedCount: 0,
+        skippedCount,
+        failedCount: 0,
+      };
+    }
+
+    let savedCount = 0;
+    let failedCount = 0;
+    for (let index = 0; index < payloads.length; index += HOTMAIL_DIE_QUEUE_SAVE_CHUNK_SIZE) {
+      const chunk = payloads.slice(index, index + HOTMAIL_DIE_QUEUE_SAVE_CHUNK_SIZE);
+      const results = await Promise.allSettled(
+        chunk.map((payload) =>
+          axios.post("/api/admin/chatgpt-warranty-queue/upsert", payload, {
+            timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
+            skipGlobalLoading: true,
+          }),
+        ),
+      );
+      results.forEach((result) => {
+        if (result.status === "fulfilled") {
+          savedCount += 1;
+          const queueItem = result.value?.data?.item;
+          if (queueItem) mergeChatgptWarrantyQueueItem(queueItem);
+        } else {
+          failedCount += 1;
+        }
+      });
+    }
+
+    if (savedCount > 0) {
+      setChatgptWarrantyQueueStatus("all");
+      setChatgptWarrantyQueueSearch("");
+      await loadChatgptWarrantyQueue({ silent: true, status: "all", search: "" }).catch(
+        () => {},
+      );
+    }
+
+    return {
+      savedCount,
+      skippedCount,
+      failedCount,
+    };
+  };
+
   const handleRunHotmailDieBatchCheck = async () => {
     const rawLines = String(hotmailDieBatchInput || "")
       .split(/\r?\n/)
@@ -9179,6 +9252,19 @@ function App() {
       setHotmailDieBatchResults(mergedRows);
       const countByStatus = (statusList) =>
         mergedRows.filter((item) => statusList.includes(String(item?.status || ""))).length;
+      const queueSaveResult = await autoSaveHotmailDieBatchWarrantyQueue(mergedRows);
+      const queueSaveLines = [];
+      if (queueSaveResult.savedCount > 0) {
+        queueSaveLines.push(`Đã tự lưu Bảo hành: ${queueSaveResult.savedCount}`);
+      }
+      if (queueSaveResult.skippedCount > 0) {
+        queueSaveLines.push(
+          `Chưa lưu Bảo hành: ${queueSaveResult.skippedCount} dòng thiếu acc hoặc mã đơn`,
+        );
+      }
+      if (queueSaveResult.failedCount > 0) {
+        queueSaveLines.push(`Lỗi lưu Bảo hành: ${queueSaveResult.failedCount}`);
+      }
       showAlert(
         "Check Hotmail xong",
         [
@@ -9188,8 +9274,13 @@ function App() {
           `Clean: ${countByStatus(["clean"])}`,
           `Chưa import: ${countByStatus(["missing_hotmail"])}`,
           `Lỗi/bỏ qua: ${countByStatus(["error", "skipped", "invalid"])}`,
+          ...queueSaveLines,
         ].join("\n"),
-        countByStatus(["error", "skipped", "invalid"]) > 0 ? "warning" : "success",
+        countByStatus(["error", "skipped", "invalid"]) > 0 ||
+          queueSaveResult.failedCount > 0 ||
+          queueSaveResult.skippedCount > 0
+          ? "warning"
+          : "success",
       );
     } catch (error) {
       showAlert(
