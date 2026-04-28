@@ -14983,6 +14983,29 @@ function App() {
                                         <button
                                           type="button"
                                           onClick={() =>
+                                            handleCopyMarketplaceCurrentChatgptAccount(item)
+                                          }
+                                          disabled={
+                                            !currentAccountId ||
+                                            isCopyingCurrentAccount
+                                          }
+                                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-400/40 bg-emerald-600 hover:bg-emerald-500 disabled:cursor-wait disabled:opacity-60 px-2.5 py-1.5 text-[11px] font-black text-white shadow-sm shadow-emerald-950/30 transition-colors"
+                                          title="Copy tài khoản hiện tại của đơn, nếu đã bảo hành thì đây là acc mới"
+                                        >
+                                          {isCopyingCurrentAccount ? (
+                                            <Loader2 size={11} className="animate-spin" />
+                                          ) : (
+                                            <Copy size={11} />
+                                          )}
+                                          {isCopyingCurrentAccount
+                                            ? "Đang copy..."
+                                            : isReplaced
+                                              ? "Copy acc mới"
+                                              : "Copy acc"}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
                                             openWarrantyFromMarketplaceOrder(item)
                                           }
                                           className="rounded-lg bg-cyan-600 hover:bg-cyan-500 px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
@@ -14999,26 +15022,6 @@ function App() {
                                           className="rounded-lg bg-slate-700 hover:bg-slate-600 px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
                                         >
                                           Toi acc
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleCopyMarketplaceCurrentChatgptAccount(item)
-                                          }
-                                          disabled={
-                                            !currentAccountId ||
-                                            isCopyingCurrentAccount
-                                          }
-                                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-700 hover:bg-indigo-600 disabled:opacity-60 disabled:cursor-wait px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
-                                        >
-                                          {isCopyingCurrentAccount ? (
-                                            <Loader2 size={11} className="animate-spin" />
-                                          ) : (
-                                            <Copy size={11} />
-                                          )}
-                                          {isCopyingCurrentAccount
-                                            ? "Dang copy..."
-                                            : "Copy acc"}
                                         </button>
                                       </div>
                                     </div>
