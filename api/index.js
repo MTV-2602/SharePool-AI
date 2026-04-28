@@ -1214,6 +1214,7 @@ async function getHotmailDieBatchMarketplaceTraceByEmail(rawEmails = []) {
     const marketplaceOrderId = String(
       trace?.latestWarrantyOrderId || trace?.latestOrderId || "",
     ).trim();
+    const marketplaceWarrantyCount = Number(trace?.warrantyCount || 0);
     traceByEmail.set(email, {
       chatgptAccountId: accountId,
       chatgptUsername: String(account?.username || "").trim(),
@@ -1223,6 +1224,8 @@ async function getHotmailDieBatchMarketplaceTraceByEmail(rawEmails = []) {
       ).trim(),
       marketplaceLatestOrderId: String(trace?.latestOrderId || "").trim(),
       marketplaceWarrantyOrderId: String(trace?.latestWarrantyOrderId || "").trim(),
+      marketplaceWarrantyCount,
+      hasMarketplaceWarranty: marketplaceWarrantyCount > 0,
     });
   });
 

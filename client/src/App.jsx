@@ -1997,6 +1997,10 @@ const getHotmailDieBatchOrderId = (item = {}) =>
       item?.marketplaceLatestOrderId ||
       "",
   ).trim();
+const hasHotmailDieBatchWarranty = (item = {}) =>
+  !!item?.hasMarketplaceWarranty ||
+  Number(item?.marketplaceWarrantyCount || 0) > 0 ||
+  !!String(item?.marketplaceWarrantyOrderId || "").trim();
 const buildHotmailDieBatchCopyLine = (item = {}) => {
   const email = String(item?.email || extractEmailFromHotmailDieLine(item?.line) || "")
     .trim()
@@ -20569,6 +20573,9 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
           : [];
         const countStatus = (statusList) =>
           results.filter((item) => statusList.includes(String(item?.status || ""))).length;
+        const warrantyCount = results.filter((item) =>
+          hasHotmailDieBatchWarranty(item),
+        ).length;
         const hasResults = results.length > 0;
         const isCheckingHotmailDieBatch = !!loadingStates.checkHotmailDieBatch;
         const progressTotal = Number(hotmailDieBatchProgress?.total || 0);
@@ -20706,6 +20713,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         ["Clean", countStatus(["clean"]), "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"],
                         ["Chưa import", countStatus(["missing_hotmail"]), "border-amber-500/40 bg-amber-500/10 text-amber-100"],
                         ["Lỗi/bỏ qua", countStatus(["error", "skipped", "invalid"]), "border-rose-500/40 bg-rose-500/10 text-rose-200"],
+                        ["Đã BH", warrantyCount, "border-cyan-500/40 bg-cyan-500/10 text-cyan-100"],
                       ].map(([label, value, tone]) => (
                         <div key={label} className={`rounded-2xl border px-3 py-2 ${tone}`}>
                           <div className="text-[10px] font-black uppercase tracking-[0.18em] opacity-80">
@@ -20733,6 +20741,7 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                               const meta = getHotmailDieBatchStatusMeta(item?.status);
                               const orderId = getHotmailDieBatchOrderId(item);
                               const provider = getMarketplaceProviderLabel(item?.marketplaceProvider);
+                              const hasWarranty = hasHotmailDieBatchWarranty(item);
                               return (
                                 <tr
                                   key={`${item?.email || "row"}-${index}`}
@@ -20750,8 +20759,21 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                         <div className="font-mono font-bold text-amber-100">
                                           {orderId}
                                         </div>
-                                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                                          {provider}
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                            {provider}
+                                          </span>
+                                          <span
+                                            className={`rounded-full border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] ${
+                                              hasWarranty
+                                                ? "border-cyan-500/40 bg-cyan-500/15 text-cyan-100"
+                                                : "border-slate-600 bg-slate-800 text-slate-400"
+                                            }`}
+                                          >
+                                            {hasWarranty
+                                              ? `Đã BH${Number(item?.marketplaceWarrantyCount || 0) > 0 ? ` ${Number(item.marketplaceWarrantyCount)}` : ""}`
+                                              : "Chưa BH"}
+                                          </span>
                                         </div>
                                       </div>
                                     ) : (
