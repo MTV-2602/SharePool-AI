@@ -3419,6 +3419,7 @@ function App() {
     refreshWarrantyQueueItem: {},
     deleteWarrantyQueueItem: {},
     warrantyQueueSubmit: {},
+    copyMarketplaceCurrentAccount: {},
     saveVoucher: false,
     saveStoreConfig: false,
     fetchExtensionWorkers: false,
@@ -5733,6 +5734,58 @@ function App() {
       return null;
     }
   };
+
+  const handleCopyMarketplaceCurrentChatgptAccount = async (item = {}) => {
+    const accountId = String(item?.currentAccountId || "").trim();
+    if (!accountId) {
+      showAlert(
+        "Thiếu dữ liệu",
+        "Dòng này chưa có ID acc hiện tại để copy.",
+        "warning",
+      );
+      return;
+    }
+    setLoadingStates((prev) => ({
+      ...prev,
+      copyMarketplaceCurrentAccount: {
+        ...(prev.copyMarketplaceCurrentAccount || {}),
+        [accountId]: true,
+      },
+    }));
+    try {
+      const payload = await fetchChatgptAccountFocus(accountId);
+      if (!payload?.found || !payload?.account) {
+        showAlert(
+          "Không tìm thấy acc",
+          getChatgptFocusMissingMessage(
+            payload,
+            "Không tìm thấy acc hiện tại của đơn này.",
+          ),
+          "warning",
+        );
+        return;
+      }
+      handleCopy(
+        buildChatgptCopyText(payload.account),
+        getChatgptCopySuccessText(payload.account),
+      );
+    } catch (error) {
+      showAlert(
+        "Không copy được",
+        getApiErrorMessage(error, "Không thể tải acc hiện tại để copy."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        copyMarketplaceCurrentAccount: {
+          ...(prev.copyMarketplaceCurrentAccount || {}),
+          [accountId]: false,
+        },
+      }));
+    }
+  };
+
   const invalidateAdminCaches = (nextVersion = 0) => {
     const normalizedVersion = Number(nextVersion || 0);
     if (Number.isFinite(normalizedVersion) && normalizedVersion > 0) {
@@ -14803,6 +14856,13 @@ function App() {
                                   const isReplaced =
                                     String(item.currentAccountId || "") !==
                                     String(item.soldAccountId || "");
+                                  const currentAccountId = String(
+                                    item.currentAccountId || "",
+                                  ).trim();
+                                  const isCopyingCurrentAccount =
+                                    !!loadingStates.copyMarketplaceCurrentAccount?.[
+                                      currentAccountId
+                                    ];
                                   return (
                                     <div
                                       key={`${buildDatammoOrderKey(order)}-current-${index}`}
@@ -14848,6 +14908,26 @@ function App() {
                                           className="rounded-lg bg-slate-700 hover:bg-slate-600 px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
                                         >
                                           Toi acc
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleCopyMarketplaceCurrentChatgptAccount(item)
+                                          }
+                                          disabled={
+                                            !currentAccountId ||
+                                            isCopyingCurrentAccount
+                                          }
+                                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-700 hover:bg-indigo-600 disabled:opacity-60 disabled:cursor-wait px-2.5 py-1.5 text-[11px] font-bold text-white transition-colors"
+                                        >
+                                          {isCopyingCurrentAccount ? (
+                                            <Loader2 size={11} className="animate-spin" />
+                                          ) : (
+                                            <Copy size={11} />
+                                          )}
+                                          {isCopyingCurrentAccount
+                                            ? "Dang copy..."
+                                            : "Copy acc"}
                                         </button>
                                       </div>
                                     </div>
