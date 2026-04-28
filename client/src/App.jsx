@@ -905,6 +905,14 @@ const buildChatgptCopyText = (account = {}) => {
   }
   return lines.join("\n");
 };
+const buildChatgptPipeCopyText = (account = {}) =>
+  [
+    String(account?.username || "").trim(),
+    String(account?.password || "").trim(),
+    String(account?.otpSecret || account?.replacementOtpSecret || "").trim(),
+  ]
+    .filter(Boolean)
+    .join("|");
 const addParsedChatgptImportRecord = (records, seenKeys, candidate = {}) => {
   const normalized = {
     username: String(candidate?.username || "").trim(),
@@ -3259,6 +3267,20 @@ function App() {
     checked: 0,
     total: 0,
   });
+  const [chatgptWarrantyQueue, setChatgptWarrantyQueue] = useState([]);
+  const [chatgptWarrantyQueueSummary, setChatgptWarrantyQueueSummary] = useState({
+    all: 0,
+    pending: 0,
+    loaded: 0,
+    warrantied: 0,
+    skipped: 0,
+    error: 0,
+  });
+  const [chatgptWarrantyQueueSearch, setChatgptWarrantyQueueSearch] = useState("");
+  const [chatgptWarrantyQueueStatus, setChatgptWarrantyQueueStatus] = useState("all");
+  const [chatgptWarrantyQueueCandidates, setChatgptWarrantyQueueCandidates] = useState({});
+  const [chatgptWarrantyQueueReplacementIds, setChatgptWarrantyQueueReplacementIds] = useState({});
+  const [chatgptWarrantyQueueReasons, setChatgptWarrantyQueueReasons] = useState({});
   const [adminRealtime, setAdminRealtime] = useState(
     buildDefaultAdminRealtimeConfig(),
   );
@@ -3391,6 +3413,12 @@ function App() {
     runChatgptMailCheck: false,
     checkHotmailDieBatch: false,
     runChatgptMailCheckOne: "",
+    fetchChatgptWarrantyQueue: false,
+    addHotmailDieWarrantyQueue: "",
+    loadWarrantyQueueCandidates: {},
+    refreshWarrantyQueueItem: {},
+    deleteWarrantyQueueItem: {},
+    warrantyQueueSubmit: {},
     saveVoucher: false,
     saveStoreConfig: false,
     fetchExtensionWorkers: false,
@@ -4025,6 +4053,11 @@ function App() {
     chatgptAdminPagination.page,
     chatgptAdminPagination.limit,
   ]);
+
+  useEffect(() => {
+    if (!isAuthenticated || activeTab !== "chatgpt" || gptSubTab !== "warranty") return;
+    loadChatgptWarrantyQueue({ silent: true }).catch(() => {});
+  }, [activeTab, gptSubTab, isAuthenticated, chatgptWarrantyQueueStatus]);
 
   useEffect(() => {
     if (!expandedChatgptAccountId) return;
@@ -6093,6 +6126,55 @@ function App() {
       if (chatgptListInFlightRef.current.promise === runRequest) {
         chatgptListInFlightRef.current = { key: "", promise: null };
       }
+    }
+  };
+
+  const mergeChatgptWarrantyQueueItem = (item = {}) => {
+    if (!item?.id) return;
+    setChatgptWarrantyQueue((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const exists = list.some((row) => String(row?.id || "") === String(item.id || ""));
+      const next = exists
+        ? list.map((row) => (String(row?.id || "") === String(item.id || "") ? item : row))
+        : [item, ...list];
+      return next;
+    });
+  };
+
+  const loadChatgptWarrantyQueue = async ({
+    silent = true,
+    status = chatgptWarrantyQueueStatus,
+    search = chatgptWarrantyQueueSearch,
+  } = {}) => {
+    setLoadingStates((prev) => ({ ...prev, fetchChatgptWarrantyQueue: true }));
+    try {
+      const response = await axios.get("/api/admin/chatgpt-warranty-queue", {
+        params: { status, search, limit: 300 },
+        timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
+        skipGlobalLoading: silent,
+      });
+      setChatgptWarrantyQueue(Array.isArray(response?.data?.items) ? response.data.items : []);
+      setChatgptWarrantyQueueSummary({
+        all: 0,
+        pending: 0,
+        loaded: 0,
+        warrantied: 0,
+        skipped: 0,
+        error: 0,
+        ...(response?.data?.summary || {}),
+      });
+      return response?.data || null;
+    } catch (error) {
+      if (!silent) {
+        showAlert(
+          "Lỗi",
+          getApiErrorMessage(error, "Không thể tải danh sách bảo hành."),
+          "error",
+        );
+      }
+      return null;
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, fetchChatgptWarrantyQueue: false }));
     }
   };
 
@@ -9094,58 +9176,258 @@ function App() {
 
   const handleOpenHotmailDieBatchWarranty = async (item = {}) => {
     const accountId = String(item?.chatgptAccountId || "").trim();
-    const fallbackEmail = String(
-      item?.chatgptUsername ||
-        item?.email ||
-        extractEmailFromHotmailDieLine(item?.line) ||
-        "",
-    )
-      .trim()
-      .toLowerCase();
-    const loadingKey = accountId || fallbackEmail;
-    if (!loadingKey) {
-      showAlert("Thiếu dữ liệu", "Dòng này chưa nối được acc ChatGPT để bảo hành.", "warning");
+    const orderId = getHotmailDieBatchOrderId(item);
+    if (!accountId || !orderId) {
+      showAlert("Thiếu dữ liệu", "Dòng này chưa có acc ChatGPT hoặc mã đơn để thêm vào Bảo hành.", "warning");
       return;
     }
+    const loadingKey = accountId;
     setLoadingStates((prev) => ({ ...prev, openHotmailDieBatchWarranty: loadingKey }));
     try {
-      let sourceAccount = null;
-      if (accountId) {
-        const payload = await fetchChatgptAccountFocus(accountId);
-        if (!payload?.found || !payload?.account) {
-          showAlert(
-            "Không tìm thấy acc",
-            getChatgptFocusMissingMessage(payload, "Không tìm thấy acc ChatGPT của dòng này."),
-            "warning",
-          );
-          return;
-        }
-        sourceAccount = {
-          ...payload.account,
-          __warrantyOrderOverride: {
-            orderId: getHotmailDieBatchOrderId(item),
-            provider: normalizeMarketplaceProvider(item?.marketplaceProvider, ""),
-          },
-        };
-      } else {
-        sourceAccount = accounts.find(
-          (acc) => String(acc?.username || "").trim().toLowerCase() === fallbackEmail,
-        );
-      }
-      if (!sourceAccount?.id) {
-        showAlert("Không tìm thấy acc", "Không tìm thấy acc ChatGPT đầy đủ để mở bảo hành.", "warning");
-        return;
-      }
-      setShowHotmailDieBatchModal(false);
-      await openWarrantyModal(sourceAccount, "chatgpt");
+      const response = await axios.post(
+        "/api/admin/chatgpt-warranty-queue/upsert",
+        {
+          sourceAccountId: accountId,
+          sourceUsername:
+            item?.chatgptUsername ||
+            item?.email ||
+            extractEmailFromHotmailDieLine(item?.line),
+          provider: item?.marketplaceProvider,
+          orderId,
+          mailStatus: item?.status,
+          mailMatchedSubject: item?.mailCheckLastSubject,
+          mailMatchedSender: item?.mailCheckLastSender,
+          mailMatchedAt: item?.mailCheckLastMatchedAt,
+          mailMatchedSnippet: item?.mailCheckLastSnippet,
+        },
+        {
+          timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
+          skipGlobalLoading: true,
+        },
+      );
+      const queueItem = response?.data?.item;
+      if (queueItem) mergeChatgptWarrantyQueueItem(queueItem);
+      setChatgptWarrantyQueueStatus("all");
+      setChatgptWarrantyQueueSearch("");
+      setGptSubTab("warranty");
+      await loadChatgptWarrantyQueue({ silent: true, status: "all", search: "" });
+      showAlert(
+        "Đã thêm vào Bảo hành",
+        "Dòng này đã được lưu vào tab Bảo hành. Checker vẫn giữ nguyên để bạn xử lý tiếp các acc khác.",
+        "success",
+      );
     } catch (error) {
       showAlert(
-        "Không mở được bảo hành",
-        getApiErrorMessage(error, "Không thể mở bảo hành nhanh cho dòng này."),
+        "Không thêm được",
+        getApiErrorMessage(error, "Không thể thêm dòng này vào tab Bảo hành."),
         "error",
       );
     } finally {
       setLoadingStates((prev) => ({ ...prev, openHotmailDieBatchWarranty: "" }));
+    }
+  };
+
+  const handleLoadWarrantyQueueCandidates = async (item = {}) => {
+    const queueId = String(item?.id || "").trim();
+    if (!queueId) return;
+    setLoadingStates((prev) => ({
+      ...prev,
+      loadWarrantyQueueCandidates: {
+        ...(prev.loadWarrantyQueueCandidates || {}),
+        [queueId]: true,
+      },
+    }));
+    try {
+      const response = await axios.post(
+        `/api/admin/chatgpt-warranty-queue/${encodeURIComponent(queueId)}/load-candidates`,
+        {},
+        { timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+      );
+      const queueItem = response?.data?.item;
+      if (queueItem) mergeChatgptWarrantyQueueItem(queueItem);
+      setChatgptWarrantyQueueCandidates((prev) => ({
+        ...prev,
+        [queueId]: Array.isArray(response?.data?.candidates)
+          ? response.data.candidates
+          : [],
+      }));
+      showAlert(
+        "Đã load acc thay thế",
+        `Tìm thấy ${Array.isArray(response?.data?.candidates) ? response.data.candidates.length : 0} acc sạch.`,
+        "success",
+      );
+    } catch (error) {
+      showAlert(
+        "Không load được",
+        getApiErrorMessage(error, "Không thể tải acc thay thế."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        loadWarrantyQueueCandidates: {
+          ...(prev.loadWarrantyQueueCandidates || {}),
+          [queueId]: false,
+        },
+      }));
+    }
+  };
+
+  const handleRefreshWarrantyQueueItem = async (item = {}) => {
+    const queueId = String(item?.id || "").trim();
+    if (!queueId) return;
+    setLoadingStates((prev) => ({
+      ...prev,
+      refreshWarrantyQueueItem: {
+        ...(prev.refreshWarrantyQueueItem || {}),
+        [queueId]: true,
+      },
+    }));
+    try {
+      const response = await axios.post(
+        `/api/admin/chatgpt-warranty-queue/${encodeURIComponent(queueId)}/refresh`,
+        {},
+        { timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+      );
+      if (response?.data?.item) mergeChatgptWarrantyQueueItem(response.data.item);
+    } catch (error) {
+      showAlert(
+        "Không làm mới được",
+        getApiErrorMessage(error, "Không thể làm mới dòng bảo hành."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        refreshWarrantyQueueItem: {
+          ...(prev.refreshWarrantyQueueItem || {}),
+          [queueId]: false,
+        },
+      }));
+    }
+  };
+
+  const handleDeleteWarrantyQueueItem = (item = {}) => {
+    const queueId = String(item?.id || "").trim();
+    if (!queueId) return;
+    showConfirm(
+      "Xóa khỏi queue",
+      `Xóa ${item?.sourceUsername || item?.orderId || queueId} khỏi tab Bảo hành?`,
+      async () => {
+        setLoadingStates((prev) => ({
+          ...prev,
+          deleteWarrantyQueueItem: {
+            ...(prev.deleteWarrantyQueueItem || {}),
+            [queueId]: true,
+          },
+        }));
+        try {
+          await axios.delete(
+            `/api/admin/chatgpt-warranty-queue/${encodeURIComponent(queueId)}`,
+            { timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+          );
+          setChatgptWarrantyQueue((prev) =>
+            (Array.isArray(prev) ? prev : []).filter(
+              (row) => String(row?.id || "") !== queueId,
+            ),
+          );
+          setChatgptWarrantyQueueCandidates((prev) => {
+            const next = { ...(prev || {}) };
+            delete next[queueId];
+            return next;
+          });
+        } catch (error) {
+          showAlert(
+            "Không xóa được",
+            getApiErrorMessage(error, "Không thể xóa dòng bảo hành."),
+            "error",
+          );
+        } finally {
+          setLoadingStates((prev) => ({
+            ...prev,
+            deleteWarrantyQueueItem: {
+              ...(prev.deleteWarrantyQueueItem || {}),
+              [queueId]: false,
+            },
+          }));
+        }
+      },
+    );
+  };
+
+  const handleSubmitWarrantyQueueItem = async (item = {}) => {
+    const queueId = String(item?.id || "").trim();
+    const replacementAccountId = String(
+      chatgptWarrantyQueueReplacementIds?.[queueId] || "",
+    ).trim();
+    if (!queueId || !item?.sourceAccountId || !replacementAccountId) {
+      showAlert("Thiếu dữ liệu", "Vui lòng load và chọn acc thay thế trước.", "warning");
+      return;
+    }
+    const candidates = Array.isArray(chatgptWarrantyQueueCandidates?.[queueId])
+      ? chatgptWarrantyQueueCandidates[queueId]
+      : [];
+    const replacementAcc = candidates.find(
+      (acc) => String(acc?.id || "") === replacementAccountId,
+    );
+    if (!replacementAcc) {
+      showAlert("Thiếu dữ liệu", "Không tìm thấy acc thay thế đã chọn.", "warning");
+      return;
+    }
+    setLoadingStates((prev) => ({
+      ...prev,
+      warrantyQueueSubmit: {
+        ...(prev.warrantyQueueSubmit || {}),
+        [queueId]: true,
+      },
+    }));
+    try {
+      const sourcePayload = await fetchChatgptAccountFocus(item.sourceAccountId);
+      const sourceAccount = sourcePayload?.account || {};
+      const response = await axios.post(
+        `/api/chatgpt/${encodeURIComponent(item.sourceAccountId)}/warranty`,
+        {
+          replacementAccountId,
+          reason: chatgptWarrantyQueueReasons?.[queueId] || "",
+          sourceExpectedUpdatedAt: getRecordUpdatedAt(sourceAccount),
+          replacementExpectedUpdatedAt: getRecordUpdatedAt(replacementAcc),
+        },
+        {
+          requestLabel: "Đang tạo bảo hành",
+          timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
+        },
+      );
+      const queueResponse = await axios.post(
+        `/api/admin/chatgpt-warranty-queue/${encodeURIComponent(queueId)}/refresh`,
+        {},
+        { timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+      );
+      if (queueResponse?.data?.item) mergeChatgptWarrantyQueueItem(queueResponse.data.item);
+      await Promise.allSettled([
+        loadAdminChatgptAccounts({ silent: true, force: true }),
+        loadChatgptWarrantyQueue({ silent: true }),
+      ]);
+      broadcastDataChange();
+      const replacement = response?.data?.replacement || replacementAcc;
+      handleCopy(
+        buildChatgptPipeCopyText(replacement),
+        "Đã bảo hành và copy acc mới",
+      );
+      showAlert("Thành công", "Đã bảo hành và lưu acc thay thế trong tab Bảo hành.", "success");
+    } catch (error) {
+      showAlert(
+        "Không bảo hành được",
+        getApiErrorMessage(error, "Không thể tạo bảo hành cho dòng này."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        warrantyQueueSubmit: {
+          ...(prev.warrantyQueueSubmit || {}),
+          [queueId]: false,
+        },
+      }));
     }
   };
 
@@ -14068,7 +14350,7 @@ function App() {
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:opacity-60">
                 {loadingStates.fetchChatgptMailCheckHistory ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />} Xem die
               </button>
-              <button type="button" onClick={() => setShowHotmailDieBatchModal(true)} disabled={loadingStates.checkHotmailDieBatch}
+              <button type="button" onClick={() => { setShowHotmailDieBatchModal(true); loadChatgptWarrantyQueue({ silent: true, status: "all", search: "" }).catch(() => {}); }} disabled={loadingStates.checkHotmailDieBatch}
                 className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:opacity-60">
                 {loadingStates.checkHotmailDieBatch ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} Check die Hotmail
               </button>
@@ -14200,7 +14482,7 @@ function App() {
                 </span>
               </div>
             </div>
-            {gptSubTab !== "market" ? chatgptAdminPaginationControls : null}
+            {!["market", "warranty"].includes(gptSubTab) ? chatgptAdminPaginationControls : null}
 
             {/* SUB-TABS: Tat ca / Kho tong / Kho market */}
             {(() => {
@@ -14211,6 +14493,7 @@ function App() {
                 { key: "all", label: "Tat ca", count: summaryTabs.all, color: "bg-slate-600" },
                 { key: "total", label: "Kho tong", count: summaryTabs.total, color: "bg-blue-600" },
                 { key: "market", label: "Kho market", count: summaryTabs.market, color: "bg-emerald-600" },
+                { key: "warranty", label: "Bao hanh", count: Number(chatgptWarrantyQueueSummary?.pending || 0) + Number(chatgptWarrantyQueueSummary?.loaded || 0), color: "bg-rose-600" },
               ];
               return (
                 <div className="flex gap-2 flex-wrap mb-4">
@@ -14224,6 +14507,9 @@ function App() {
                           setSoldPackage2ProviderFilter("all");
                         }
                         if (t.key !== "total") setChatgptTotalTypeTab("all");
+                        if (t.key === "warranty") {
+                          loadChatgptWarrantyQueue({ silent: true }).catch(() => {});
+                        }
                       }}
                       className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full font-bold text-sm transition-all shadow-sm border ${gptSubTab === t.key
                           ? `${t.color} text-white border-transparent`
@@ -14645,7 +14931,118 @@ function App() {
 
             {gptSubTab === "market" ? chatgptAdminPaginationControls : null}
 
+            {gptSubTab === "warranty" && (
+              <div className="mb-5 rounded-2xl border border-rose-500/20 bg-slate-900/70 shadow-lg overflow-hidden">
+                <div className="border-b border-slate-800 px-4 py-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-300">Bao hanh Hotmail die</div>
+                      <h3 className="mt-1 text-lg font-black text-white">Queue bao hanh don san</h3>
+                      <p className="mt-1 text-xs text-slate-400">Luu DB, khong mat khi reload. Bam Load acc rieng tung dong truoc khi bao hanh.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => { setShowHotmailDieBatchModal(true); loadChatgptWarrantyQueue({ silent: true, status: "all", search: "" }).catch(() => {}); }} className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white transition hover:bg-amber-500">
+                        <Mail size={13} /> Check die
+                      </button>
+                      <button type="button" onClick={() => loadChatgptWarrantyQueue({ silent: false })} disabled={loadingStates.fetchChatgptWarrantyQueue} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-black text-white transition hover:bg-slate-700 disabled:opacity-60">
+                        {loadingStates.fetchChatgptWarrantyQueue ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Lam moi
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-col gap-2 lg:flex-row lg:items-center">
+                    <input value={chatgptWarrantyQueueSearch} onChange={(event) => setChatgptWarrantyQueueSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") loadChatgptWarrantyQueue({ silent: false }).catch(() => {}); }} placeholder="Tim email hoac ma don..." className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-rose-400" />
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { key: "all", label: "Tat ca", count: chatgptWarrantyQueueSummary.all },
+                        { key: "pending", label: "Cho BH", count: Number(chatgptWarrantyQueueSummary.pending || 0) + Number(chatgptWarrantyQueueSummary.loaded || 0) },
+                        { key: "warrantied", label: "Da BH", count: chatgptWarrantyQueueSummary.warrantied },
+                        { key: "error", label: "Loi", count: chatgptWarrantyQueueSummary.error },
+                      ].map((option) => (
+                        <button key={option.key} type="button" onClick={() => { setChatgptWarrantyQueueStatus(option.key); loadChatgptWarrantyQueue({ status: option.key, silent: true }).catch(() => {}); }} className={`rounded-full border px-3 py-1 text-[11px] font-bold transition ${chatgptWarrantyQueueStatus === option.key ? "border-rose-400/60 bg-rose-500/20 text-rose-100" : "border-slate-700 bg-slate-800 text-slate-300 hover:text-white"}`}>
+                          {option.label} <span className="ml-1 text-[10px] opacity-80">{Number(option.count || 0)}</span>
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => loadChatgptWarrantyQueue({ silent: false })} className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-1 text-[11px] font-bold text-slate-200 hover:text-white">Loc</button>
+                    </div>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-left text-sm">
+                    <thead className="bg-slate-950/70 text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3">Acc loi</th>
+                        <th className="px-4 py-3">Don</th>
+                        <th className="px-4 py-3">Trang thai</th>
+                        <th className="px-4 py-3">Acc thay the</th>
+                        <th className="px-4 py-3 text-right">Thao tac</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {chatgptWarrantyQueue.length > 0 ? chatgptWarrantyQueue.map((item) => {
+                        const queueId = String(item?.id || "");
+                        const status = String(item?.status || "pending");
+                        const candidates = Array.isArray(chatgptWarrantyQueueCandidates?.[queueId]) ? chatgptWarrantyQueueCandidates[queueId] : [];
+                        const selectedReplacementId = String(chatgptWarrantyQueueReplacementIds?.[queueId] || "");
+                        const isWarrantied = status === "warrantied";
+                        const isLoadingCandidates = !!loadingStates.loadWarrantyQueueCandidates?.[queueId];
+                        const isRefreshing = !!loadingStates.refreshWarrantyQueueItem?.[queueId];
+                        const isSubmitting = !!loadingStates.warrantyQueueSubmit?.[queueId];
+                        const replacementCopyText = [item?.replacementUsername, item?.replacementPassword, item?.replacementOtpSecret].filter(Boolean).join("|");
+                        const statusTone = isWarrantied ? "border-cyan-500/40 bg-cyan-500/15 text-cyan-100" : status === "error" ? "border-red-500/40 bg-red-500/15 text-red-100" : status === "loaded" ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-100" : "border-amber-500/40 bg-amber-500/15 text-amber-100";
+                        const statusLabel = isWarrantied ? "Da BH" : status === "loaded" ? "Da load" : status === "error" ? "Loi" : "Cho BH";
+                        return (
+                          <tr key={queueId} className="border-t border-slate-800 align-top">
+                            <td className="px-4 py-3">
+                              <div className="break-all font-mono text-xs font-bold text-white">{item?.sourceUsername || "--"}</div>
+                              {item?.mailMatchedSubject ? <div className="mt-1 line-clamp-2 text-[11px] text-slate-500">{item.mailMatchedSubject}</div> : null}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="font-mono text-xs font-bold text-amber-100">{item?.orderId || "--"}</div>
+                              <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{item?.providerLabel || getMarketplaceProviderLabel(item?.provider)}</div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-black ${statusTone}`}>{statusLabel}</span>
+                              {item?.error ? <div className="mt-1 max-w-[220px] text-[11px] text-red-200">{item.error}</div> : null}
+                            </td>
+                            <td className="px-4 py-3">
+                              {isWarrantied ? (
+                                <div>
+                                  <div className="break-all font-mono text-xs font-bold text-cyan-100">{item?.replacementUsername || "--"}</div>
+                                  <div className="mt-1 text-[11px] text-slate-500">Lan BH #{Number(item?.warrantyRoundSequence || 0) || 1}</div>
+                                </div>
+                              ) : candidates.length > 0 ? (
+                                <select value={selectedReplacementId} onChange={(event) => setChatgptWarrantyQueueReplacementIds((prev) => ({ ...prev, [queueId]: event.target.value }))} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-white outline-none focus:border-cyan-400">
+                                  <option value="">Chon acc thay the...</option>
+                                  {candidates.map((acc) => <option key={acc.id} value={acc.id}>{acc.username} · {getPackage2ShelfLabel(acc.package2Shelf)} · {formatDate(acc.expiredAt)}</option>)}
+                                </select>
+                              ) : <span className="text-xs text-slate-500">Chua load acc</span>}
+                              {!isWarrantied ? <input value={chatgptWarrantyQueueReasons?.[queueId] || ""} onChange={(event) => setChatgptWarrantyQueueReasons((prev) => ({ ...prev, [queueId]: event.target.value }))} placeholder="Ly do BH..." className="mt-2 w-full rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-cyan-500" /> : null}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                <button type="button" onClick={() => handleCopy(item?.orderId || "", "Da copy ma don")} disabled={!item?.orderId} className="rounded-lg border border-amber-600/50 bg-amber-900/25 px-2 py-1 text-[11px] font-bold text-amber-100 hover:bg-amber-700/40 disabled:opacity-50">Ma don</button>
+                                {replacementCopyText ? <button type="button" onClick={() => handleCopy(replacementCopyText, "Da copy acc moi")} className="rounded-lg border border-cyan-600/50 bg-cyan-900/30 px-2 py-1 text-[11px] font-bold text-cyan-100 hover:bg-cyan-700/40">Copy acc moi</button> : null}
+                                {!isWarrantied ? <>
+                                  <button type="button" onClick={() => handleLoadWarrantyQueueCandidates(item)} disabled={isLoadingCandidates} className="rounded-lg bg-slate-700 px-2 py-1 text-[11px] font-bold text-white hover:bg-slate-600 disabled:opacity-60">{isLoadingCandidates ? "Dang load..." : "Load acc"}</button>
+                                  <button type="button" onClick={() => handleSubmitWarrantyQueueItem(item)} disabled={!selectedReplacementId || isSubmitting} className="rounded-lg bg-cyan-700 px-2 py-1 text-[11px] font-bold text-white hover:bg-cyan-600 disabled:opacity-50">{isSubmitting ? "Dang BH..." : "Bao hanh"}</button>
+                                </> : null}
+                                <button type="button" onClick={() => handleRefreshWarrantyQueueItem(item)} disabled={isRefreshing} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-bold text-slate-200 hover:text-white disabled:opacity-60">{isRefreshing ? "Dang lam moi..." : "Lam moi"}</button>
+                                <button type="button" onClick={() => handleDeleteWarrantyQueueItem(item)} disabled={!!loadingStates.deleteWarrantyQueueItem?.[queueId]} className="rounded-lg border border-red-700/50 bg-red-900/20 px-2 py-1 text-[11px] font-bold text-red-200 hover:bg-red-800/40 disabled:opacity-60">Xoa</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }) : (
+                        <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">Chua co acc nao trong queue bao hanh.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* ── Account Cards List ── */}
+            {gptSubTab !== "warranty" && (
             <div className={`space-y-2 transition-opacity ${chatgptAdminPageLoading ? "opacity-60" : "opacity-100"}`}>
               {/* Table header row - now as sticky pill bar */}
               <div className="flex items-center gap-2 rounded-xl border border-slate-700/50 bg-slate-900/60 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
@@ -15487,7 +15884,7 @@ function App() {
                 </div>
               )}
             </div>
-
+            )}
 
           </div>
         )}
@@ -20798,6 +21195,19 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                           {button.label} ({button.count})
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGptSubTab("warranty");
+                          setChatgptWarrantyQueueStatus("all");
+                          setChatgptWarrantyQueueSearch("");
+                          setShowHotmailDieBatchModal(false);
+                          loadChatgptWarrantyQueue({ silent: true, status: "all", search: "" }).catch(() => {});
+                        }}
+                        className="rounded-xl bg-rose-700 px-3 py-2 text-xs font-black text-white transition hover:bg-rose-600"
+                      >
+                        Mo tab Bao hanh
+                      </button>
                     </div>
                   ) : null}
                 </div>
@@ -20864,6 +21274,11 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                               const provider = getMarketplaceProviderLabel(item?.marketplaceProvider);
                               const hasWarranty = hasHotmailDieBatchWarranty(item);
                               const chatgptAccountId = String(item?.chatgptAccountId || "").trim();
+                              const queueMatch = (Array.isArray(chatgptWarrantyQueue) ? chatgptWarrantyQueue : []).find(
+                                (row) =>
+                                  String(row?.sourceAccountId || "").trim() === chatgptAccountId &&
+                                  String(row?.orderId || "").trim() === orderId,
+                              );
                               const warrantyLoadingKey =
                                 chatgptAccountId ||
                                 String(
@@ -20909,6 +21324,11 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                               ? `Đã BH${Number(item?.marketplaceWarrantyCount || 0) > 0 ? ` ${Number(item.marketplaceWarrantyCount)}` : ""}`
                                               : "Chưa BH"}
                                           </span>
+                                          {queueMatch ? (
+                                            <span className="rounded-full border border-rose-500/40 bg-rose-500/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-rose-100">
+                                              {String(queueMatch?.status || "") === "warrantied" ? "Queue da BH" : "Da them queue"}
+                                            </span>
+                                          ) : null}
                                         </div>
                                         <div className="flex flex-wrap items-center gap-1.5 pt-1">
                                           <button

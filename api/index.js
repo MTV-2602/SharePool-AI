@@ -1778,6 +1778,43 @@ const DatammoWarrantyCase =
     "marketplace_warranty_cases",
   );
 
+const chatgptWarrantyQueueSchema = new mongoose.Schema({
+  id: { type: String, unique: true, index: true },
+  sourceAccountId: { type: String, default: "", index: true },
+  sourceUsername: { type: String, default: "", index: true },
+  provider: { type: String, default: "datammo", index: true },
+  orderId: { type: String, default: "", index: true },
+  mailStatus: { type: String, default: "" },
+  mailMatchedSubject: { type: String, default: "" },
+  mailMatchedSender: { type: String, default: "" },
+  mailMatchedAt: { type: String, default: "" },
+  mailMatchedSnippet: { type: String, default: "" },
+  status: { type: String, default: "pending", index: true },
+  candidateCount: { type: Number, default: 0 },
+  replacementAccountId: { type: String, default: "" },
+  replacementUsername: { type: String, default: "" },
+  replacementPassword: { type: String, default: "" },
+  replacementOtpSecret: { type: String, default: "" },
+  warrantyCaseId: { type: String, default: "" },
+  warrantyRoundSequence: { type: Number, default: 0 },
+  error: { type: String, default: "" },
+  lastLoadedAt: { type: String, default: "" },
+  lastRefreshedAt: { type: String, default: "" },
+  createdAt: { type: String, default: () => new Date().toISOString() },
+  updatedAt: { type: String, default: () => new Date().toISOString() },
+});
+chatgptWarrantyQueueSchema.index(
+  { sourceAccountId: 1, orderId: 1 },
+  { unique: true },
+);
+const ChatgptWarrantyQueue =
+  mongoose.models.ChatgptWarrantyQueue ||
+  mongoose.model(
+    "ChatgptWarrantyQueue",
+    chatgptWarrantyQueueSchema,
+    "chatgpt_warranty_queue",
+  );
+
 const storeUserSchema = new mongoose.Schema({
   id: { type: String, unique: true },
   fullName: { type: String, required: true },
@@ -11712,6 +11749,158 @@ const hasTrackedMarketplaceChatgptAccount = async (accountId = "") => {
   ]);
   return !!(order || warrantyCase);
 };
+const normalizeChatgptWarrantyQueueStatus = (value = "") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["pending", "loaded", "warrantied", "skipped", "error"].includes(
+    normalized,
+  )
+    ? normalized
+    : "pending";
+};
+const buildChatgptWarrantyQueueId = () => createStoreId("cwq");
+const sanitizeChatgptWarrantyQueueItem = (item = {}) => ({
+  id: String(item?.id || "").trim(),
+  sourceAccountId: String(item?.sourceAccountId || "").trim(),
+  sourceUsername: String(item?.sourceUsername || "").trim(),
+  provider: normalizeMarketplaceProvider(item?.provider),
+  providerLabel: getMarketplaceProviderLabel(item?.provider),
+  orderId: String(item?.orderId || "").trim(),
+  mailStatus: String(item?.mailStatus || "").trim(),
+  mailMatchedSubject: String(item?.mailMatchedSubject || "").trim(),
+  mailMatchedSender: String(item?.mailMatchedSender || "").trim(),
+  mailMatchedAt: String(item?.mailMatchedAt || "").trim(),
+  mailMatchedSnippet: String(item?.mailMatchedSnippet || "").trim(),
+  status: normalizeChatgptWarrantyQueueStatus(item?.status),
+  candidateCount: Math.max(0, Number(item?.candidateCount || 0)),
+  replacementAccountId: String(item?.replacementAccountId || "").trim(),
+  replacementUsername: String(item?.replacementUsername || "").trim(),
+  replacementPassword: String(item?.replacementPassword || "").trim(),
+  replacementOtpSecret: String(item?.replacementOtpSecret || "").trim(),
+  warrantyCaseId: String(item?.warrantyCaseId || "").trim(),
+  warrantyRoundSequence: Math.max(0, Number(item?.warrantyRoundSequence || 0)),
+  error: String(item?.error || "").trim(),
+  lastLoadedAt: String(item?.lastLoadedAt || "").trim(),
+  lastRefreshedAt: String(item?.lastRefreshedAt || "").trim(),
+  createdAt: String(item?.createdAt || "").trim(),
+  updatedAt: String(item?.updatedAt || "").trim(),
+});
+const buildChatgptWarrantyCaseFilterForQueue = (queue = {}) => {
+  const sourceAccountId = String(queue?.sourceAccountId || "").trim();
+  const orderId = String(queue?.orderId || "").trim();
+  if (!sourceAccountId || !orderId) return null;
+  const provider = normalizeMarketplaceProvider(queue?.provider, "");
+  const filter = {
+    scope: "chatgpt",
+    orderId,
+    $or: [
+      { rootAccountId: sourceAccountId },
+      { currentAccountId: sourceAccountId },
+      { "rounds.fromAccountId": sourceAccountId },
+      { "rounds.toAccountId": sourceAccountId },
+    ],
+  };
+  if (provider) filter.provider = provider;
+  return filter;
+};
+const buildChatgptWarrantyQueuePatchFromCase = async (queue = {}) => {
+  const filter = buildChatgptWarrantyCaseFilterForQueue(queue);
+  if (!filter) return null;
+  const warrantyCase = await DatammoWarrantyCase.findOne(filter).lean();
+  if (!warrantyCase) return null;
+  const sourceAccountId = String(queue?.sourceAccountId || "").trim();
+  const rounds = Array.isArray(warrantyCase?.rounds)
+    ? warrantyCase.rounds
+    : [];
+  const latestRound =
+    [...rounds]
+      .reverse()
+      .find(
+        (round) =>
+          String(round?.fromAccountId || "").trim() === sourceAccountId,
+      ) || null;
+  const replacementAccountId = String(
+    latestRound?.toAccountId ||
+      (String(warrantyCase?.currentAccountId || "").trim() !== sourceAccountId
+        ? warrantyCase?.currentAccountId
+        : "") ||
+      "",
+  ).trim();
+  if (!replacementAccountId) return null;
+  const replacementAcc = await Account.findOne({ id: replacementAccountId })
+    .select("id username password otpSecret")
+    .lean();
+  return {
+    status: "warrantied",
+    replacementAccountId,
+    replacementUsername: String(
+      replacementAcc?.username || latestRound?.toUsername || warrantyCase?.currentUsername || "",
+    ).trim(),
+    replacementPassword: String(replacementAcc?.password || "").trim(),
+    replacementOtpSecret: String(replacementAcc?.otpSecret || "").trim(),
+    warrantyCaseId: String(warrantyCase?._id || "").trim(),
+    warrantyRoundSequence: Math.max(
+      1,
+      Number(latestRound?.sequence || rounds.length || 1),
+    ),
+    error: "",
+  };
+};
+const refreshChatgptWarrantyQueueItem = async (queueDoc) => {
+  if (!queueDoc) return null;
+  const patch = await buildChatgptWarrantyQueuePatchFromCase(queueDoc);
+  const nowIso = new Date().toISOString();
+  if (!patch) {
+    queueDoc.lastRefreshedAt = nowIso;
+    queueDoc.updatedAt = nowIso;
+    await queueDoc.save();
+    return queueDoc;
+  }
+  Object.assign(queueDoc, patch, {
+    lastRefreshedAt: nowIso,
+    updatedAt: nowIso,
+  });
+  await queueDoc.save();
+  return queueDoc;
+};
+const markChatgptWarrantyQueueWarrantied = async ({
+  sourceAcc,
+  replacementAcc,
+  provider = "",
+  orderId = "",
+  warrantyCase = null,
+  round = null,
+  nowIso = new Date().toISOString(),
+} = {}) => {
+  const sourceAccountId = String(sourceAcc?.id || "").trim();
+  const normalizedOrderId = String(orderId || "").trim();
+  if (!sourceAccountId || !normalizedOrderId) return null;
+  return ChatgptWarrantyQueue.findOneAndUpdate(
+    { sourceAccountId, orderId: normalizedOrderId },
+    {
+      $set: {
+        status: "warrantied",
+        provider: normalizeMarketplaceProvider(provider),
+        sourceUsername: String(sourceAcc?.username || "").trim(),
+        replacementAccountId: String(replacementAcc?.id || "").trim(),
+        replacementUsername: String(replacementAcc?.username || "").trim(),
+        replacementPassword: String(replacementAcc?.password || "").trim(),
+        replacementOtpSecret: String(replacementAcc?.otpSecret || "").trim(),
+        warrantyCaseId: String(warrantyCase?._id || "").trim(),
+        warrantyRoundSequence: Math.max(1, Number(round?.sequence || 1)),
+        error: "",
+        lastRefreshedAt: nowIso,
+        updatedAt: nowIso,
+      },
+      $setOnInsert: {
+        id: buildChatgptWarrantyQueueId(),
+        orderId: normalizedOrderId,
+        sourceAccountId,
+        createdAt: nowIso,
+      },
+    },
+    { new: true, upsert: true },
+  );
+};
 const canChatgptAccountReceiveMovedUser = (account = {}, sourceType = "") => {
   const destinationType = String(account?.type || "").trim();
   const currentUsers = Array.isArray(account?.users) ? account.users.length : 0;
@@ -14582,6 +14771,208 @@ app.get("/api/admin/chatgpt-account-focus/:id", verifyToken, async (req, res) =>
     console.error("Admin /api/admin/chatgpt-account-focus failed:", error);
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong the dinh vi tai khoan ChatGPT.",
+    });
+  }
+});
+
+app.get("/api/admin/chatgpt-warranty-queue", verifyToken, async (req, res) => {
+  try {
+    const status = normalizeChatgptWarrantyQueueStatus(req.query?.status);
+    const rawStatus = String(req.query?.status || "all").trim().toLowerCase();
+    const search = String(req.query?.search || "").trim();
+    const limit = Math.min(parsePositiveLimit(req.query?.limit, 100, 300), 300);
+    const filter = {};
+    if (rawStatus && rawStatus !== "all") {
+      filter.status =
+        status === "pending" ? { $in: ["pending", "loaded"] } : status;
+    }
+    if (search) {
+      const regex = new RegExp(escapeRegex(search), "i");
+      filter.$or = [
+        { sourceUsername: regex },
+        { orderId: regex },
+        { mailMatchedSubject: regex },
+        { replacementUsername: regex },
+      ];
+    }
+    const [items, total, summaryAgg] = await Promise.all([
+      ChatgptWarrantyQueue.find(filter)
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .limit(limit)
+        .lean(),
+      ChatgptWarrantyQueue.countDocuments(filter),
+      ChatgptWarrantyQueue.aggregate([
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+    ]);
+    const summary = {
+      all: 0,
+      pending: 0,
+      loaded: 0,
+      warrantied: 0,
+      skipped: 0,
+      error: 0,
+    };
+    (Array.isArray(summaryAgg) ? summaryAgg : []).forEach((item) => {
+      const key = normalizeChatgptWarrantyQueueStatus(item?._id);
+      summary[key] = Number(item?.count || 0);
+      summary.all += Number(item?.count || 0);
+    });
+    return res.json({
+      ok: true,
+      items: items.map(sanitizeChatgptWarrantyQueueItem),
+      total,
+      summary,
+    });
+  } catch (error) {
+    console.error("GET /api/admin/chatgpt-warranty-queue failed:", error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the tai queue bao hanh.",
+    });
+  }
+});
+
+app.post("/api/admin/chatgpt-warranty-queue/upsert", verifyToken, async (req, res) => {
+  try {
+    const sourceAccountId = String(req.body?.sourceAccountId || "").trim();
+    const orderId = String(req.body?.orderId || "").trim();
+    if (!sourceAccountId || !orderId) {
+      return res.status(400).json({
+        error: "Thieu acc hoac ma don de them vao queue bao hanh.",
+      });
+    }
+    const provider = normalizeMarketplaceProvider(req.body?.provider);
+    const sourceAcc = await Account.findOne({ id: sourceAccountId })
+      .select("id username")
+      .lean();
+    const nowIso = new Date().toISOString();
+    const basePayload = {
+      sourceAccountId,
+      sourceUsername: String(
+        sourceAcc?.username || req.body?.sourceUsername || "",
+      ).trim(),
+      provider,
+      orderId,
+      mailStatus: String(req.body?.mailStatus || "").trim(),
+      mailMatchedSubject: String(req.body?.mailMatchedSubject || "").trim(),
+      mailMatchedSender: String(req.body?.mailMatchedSender || "").trim(),
+      mailMatchedAt: String(req.body?.mailMatchedAt || "").trim(),
+      mailMatchedSnippet: String(req.body?.mailMatchedSnippet || "").trim(),
+      error: "",
+      updatedAt: nowIso,
+    };
+    let item = await ChatgptWarrantyQueue.findOneAndUpdate(
+      { sourceAccountId, orderId },
+      {
+        $set: basePayload,
+        $setOnInsert: {
+          id: buildChatgptWarrantyQueueId(),
+          status: "pending",
+          createdAt: nowIso,
+        },
+      },
+      { new: true, upsert: true },
+    );
+    const patch = await buildChatgptWarrantyQueuePatchFromCase(item);
+    if (patch) {
+      Object.assign(item, patch, { updatedAt: nowIso, lastRefreshedAt: nowIso });
+      await item.save();
+    }
+    return res.json({
+      ok: true,
+      item: sanitizeChatgptWarrantyQueueItem(item),
+    });
+  } catch (error) {
+    console.error("POST /api/admin/chatgpt-warranty-queue/upsert failed:", error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the them vao queue bao hanh.",
+    });
+  }
+});
+
+app.post(
+  "/api/admin/chatgpt-warranty-queue/:id/load-candidates",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const queueId = String(req.params?.id || "").trim();
+      const item = await ChatgptWarrantyQueue.findOne({ id: queueId });
+      if (!item) {
+        return res.status(404).json({ error: "Khong tim thay dong bao hanh." });
+      }
+      const refreshed = await refreshChatgptWarrantyQueueItem(item);
+      if (normalizeChatgptWarrantyQueueStatus(refreshed?.status) === "warrantied") {
+        return res.json({
+          ok: true,
+          item: sanitizeChatgptWarrantyQueueItem(refreshed),
+          candidates: [],
+        });
+      }
+      const source = await Account.findOne({ id: refreshed.sourceAccountId })
+        .select("id username type package2Shelf users expiredAt createdAt updatedAt")
+        .lean();
+      if (!source) {
+        refreshed.status = "error";
+        refreshed.error = "Khong tim thay acc loi trong kho.";
+        refreshed.updatedAt = new Date().toISOString();
+        await refreshed.save();
+        return res.status(404).json({
+          error: "Khong tim thay acc loi trong kho.",
+          item: sanitizeChatgptWarrantyQueueItem(refreshed),
+        });
+      }
+      const candidates = await listChatgptWarrantyCandidates(source);
+      const nowIso = new Date().toISOString();
+      refreshed.status = "loaded";
+      refreshed.candidateCount = candidates.length;
+      refreshed.lastLoadedAt = nowIso;
+      refreshed.updatedAt = nowIso;
+      refreshed.error = "";
+      await refreshed.save();
+      return res.json({
+        ok: true,
+        item: sanitizeChatgptWarrantyQueueItem(refreshed),
+        candidates,
+      });
+    } catch (error) {
+      console.error("POST /api/admin/chatgpt-warranty-queue/:id/load-candidates failed:", error);
+      return res.status(error.statusCode || 500).json({
+        error: error.message || "Khong the tai acc thay the.",
+      });
+    }
+  },
+);
+
+app.post("/api/admin/chatgpt-warranty-queue/:id/refresh", verifyToken, async (req, res) => {
+  try {
+    const queueId = String(req.params?.id || "").trim();
+    const item = await ChatgptWarrantyQueue.findOne({ id: queueId });
+    if (!item) {
+      return res.status(404).json({ error: "Khong tim thay dong bao hanh." });
+    }
+    const refreshed = await refreshChatgptWarrantyQueueItem(item);
+    return res.json({
+      ok: true,
+      item: sanitizeChatgptWarrantyQueueItem(refreshed),
+    });
+  } catch (error) {
+    console.error("POST /api/admin/chatgpt-warranty-queue/:id/refresh failed:", error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the lam moi dong bao hanh.",
+    });
+  }
+});
+
+app.delete("/api/admin/chatgpt-warranty-queue/:id", verifyToken, async (req, res) => {
+  try {
+    const queueId = String(req.params?.id || "").trim();
+    if (!queueId) return res.status(400).json({ error: "Thieu ID dong bao hanh." });
+    await ChatgptWarrantyQueue.deleteOne({ id: queueId });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("DELETE /api/admin/chatgpt-warranty-queue/:id failed:", error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the xoa dong bao hanh.",
     });
   }
 });
@@ -17943,6 +18334,15 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       warrantyCase.updatedAt = nowIso;
       await warrantyCase.save();
     }
+    await markChatgptWarrantyQueueWarrantied({
+      sourceAcc,
+      replacementAcc: persistedReplacement,
+      provider,
+      orderId,
+      warrantyCase,
+      round: nextRound,
+      nowIso,
+    });
 
     res.json({
       message: `Đã tạo bảo hành ${getMarketplaceProviderLabel(provider)}`,
