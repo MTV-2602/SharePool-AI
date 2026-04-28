@@ -1033,6 +1033,135 @@ async function runChatgptMailDieAuditBatch(options = {}) {
   };
 }
 
+function extractEmailFromHotmailDieBatchInput(value = "") {
+  return normalizeHotmailEmail(String(value || "").split("|")[0]);
+}
+
+function buildHotmailDieBatchSummary(items = []) {
+  const safeItems = Array.isArray(items) ? items : [];
+  return {
+    total: safeItems.length,
+    diedCount: safeItems.filter((item) => item?.status === "died").length,
+    cleanCount: safeItems.filter((item) => item?.status === "clean").length,
+    missingHotmailCount: safeItems.filter((item) => item?.status === "missing_hotmail").length,
+    skippedCount: safeItems.filter((item) => item?.status === "skipped").length,
+    errorCount: safeItems.filter((item) => item?.status === "error").length,
+  };
+}
+
+async function checkHotmailDieForEmail(emailValue = "", options = {}) {
+  const email = extractEmailFromHotmailDieBatchInput(emailValue);
+  const checkedAt = new Date().toISOString();
+  if (!email || !isValidEmailAddress(email)) {
+    return {
+      email,
+      status: "skipped",
+      reason: "Email khong hop le.",
+      checkedAt,
+    };
+  }
+  if (!isMicrosoftInboxDomain(email)) {
+    return {
+      email,
+      status: "skipped",
+      reason: "Chi check Hotmail, Outlook, Live va MSN.",
+      checkedAt,
+    };
+  }
+
+  const cred = await HotmailAccount.findOne({ email }).lean();
+  if (!cred) {
+    return {
+      email,
+      status: "missing_hotmail",
+      reason: "Chua co acc trong Hotmail.",
+      checkedAt,
+    };
+  }
+
+  try {
+    const result = await readStoredHotmailInbox(
+      cred,
+      options?.top || CHATGPT_MAIL_DIE_LIST_LIMIT || 12,
+    );
+    const messages = (Array.isArray(result?.messages) ? result.messages : []).map(
+      (message) => ({
+        id: String(message?.id || "").trim(),
+        sender: String(message?.from || "").trim(),
+        subject: String(message?.subject || "").trim(),
+        body: String(message?.bodyPreview || "").trim(),
+        html_body: String(message?.bodyPreview || "").trim(),
+        date: String(message?.receivedDateTime || "").trim(),
+      }),
+    );
+    const matchedEmail = messages.find((message) =>
+      isPotentialOpenAiDeactivationMail(message),
+    );
+    return {
+      email,
+      status: matchedEmail ? "died" : "clean",
+      reason: matchedEmail
+        ? "Phat hien mail OpenAI khoa acc."
+        : "Khong thay mail khoa OpenAI trong inbox gan nhat.",
+      checkedAt,
+      lastReadAt: String(result?.lastReadAt || "").trim(),
+      messageCount: messages.length,
+      mailCheckLastMatchedEmailId: String(matchedEmail?.id || "").trim(),
+      mailCheckLastMatchedAt: String(matchedEmail?.date || checkedAt).trim(),
+      mailCheckLastSubject: String(matchedEmail?.subject || "").trim(),
+      mailCheckLastSender: String(matchedEmail?.sender || "").trim(),
+      mailCheckLastSnippet: matchedEmail
+        ? buildMailCheckSnippet(matchedEmail?.body, matchedEmail?.html_body)
+        : "",
+    };
+  } catch (error) {
+    return {
+      email,
+      status: "error",
+      reason:
+        error?.response?.data?.detail ||
+        error?.response?.data?.error ||
+        error?.message ||
+        "Khong the doc inbox Hotmail.",
+      checkedAt,
+    };
+  }
+}
+
+async function checkHotmailDieBatch(rawEmails = [], options = {}) {
+  const normalizedEmails = [];
+  const seenEmails = new Set();
+  for (const rawEmail of Array.isArray(rawEmails) ? rawEmails : []) {
+    const email = extractEmailFromHotmailDieBatchInput(rawEmail);
+    if (!email || seenEmails.has(email)) continue;
+    seenEmails.add(email);
+    normalizedEmails.push(email);
+  }
+
+  const results = new Array(normalizedEmails.length);
+  const safeConcurrency = Math.max(
+    1,
+    Math.min(Number(options?.concurrency || 2), normalizedEmails.length || 1),
+  );
+  let nextIndex = 0;
+  const runWorker = async () => {
+    while (nextIndex < normalizedEmails.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      // eslint-disable-next-line no-await-in-loop
+      results[currentIndex] = await checkHotmailDieForEmail(
+        normalizedEmails[currentIndex],
+        options,
+      );
+    }
+  };
+  await Promise.all(Array.from({ length: safeConcurrency }, () => runWorker()));
+  return {
+    items: results,
+    summary: buildHotmailDieBatchSummary(results),
+  };
+}
+
 const transformLegacyChatgptAccountForMigration = (doc = {}) => {
   const migrated = { ...doc };
   const users = Array.isArray(doc.users) ? doc.users : [];
@@ -14488,6 +14617,60 @@ app.post(
     } catch (error) {
       return res.status(error.statusCode || 500).json({
         error: error.message || "Khong the doc mail cho account nay.",
+      });
+    }
+  },
+);
+
+app.post(
+  "/api/admin/hotmail/check-die-batch",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const rawInput = Array.isArray(req.body?.emails)
+        ? req.body.emails
+        : String(req.body?.lines || req.body?.input || "")
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+      const uniqueEmails = [];
+      const seenEmails = new Set();
+      for (const item of rawInput) {
+        const email = extractEmailFromHotmailDieBatchInput(item);
+        if (!email || seenEmails.has(email)) continue;
+        seenEmails.add(email);
+        uniqueEmails.push(email);
+      }
+      if (uniqueEmails.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "Chua co email hop le de check.",
+        });
+      }
+      if (uniqueEmails.length > 100) {
+        return res.status(400).json({
+          success: false,
+          error: "Chi check toi da 100 email moi lan de tranh ton duration.",
+        });
+      }
+
+      const top = Math.max(
+        1,
+        Math.min(Number(req.body?.top || CHATGPT_MAIL_DIE_LIST_LIMIT || 12), 20),
+      );
+      const run = await checkHotmailDieBatch(uniqueEmails, {
+        source: "admin_hotmail_batch",
+        top,
+        concurrency: CHATGPT_MAIL_DIE_AUDIT_CONCURRENCY,
+      });
+      return res.json({
+        success: true,
+        ...run,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        success: false,
+        error: error.message || "Khong the check die Hotmail.",
       });
     }
   },

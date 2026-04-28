@@ -1983,6 +1983,41 @@ const getChatgptMailCheckVisualState = (account = {}) => {
     tone: "border-slate-700 bg-slate-800 text-slate-300",
   };
 };
+const extractEmailFromHotmailDieLine = (line = "") =>
+  String(line || "").split("|")[0].trim().toLowerCase();
+const isBasicEmail = (value = "") =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+const getHotmailDieBatchStatusMeta = (status = "") => {
+  const normalized = String(status || "").trim();
+  if (normalized === "died") {
+    return {
+      label: "Die",
+      tone: "border-red-500/40 bg-red-500/10 text-red-200",
+    };
+  }
+  if (normalized === "clean") {
+    return {
+      label: "Clean",
+      tone: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+    };
+  }
+  if (normalized === "missing_hotmail") {
+    return {
+      label: "Chưa import",
+      tone: "border-amber-500/40 bg-amber-500/10 text-amber-100",
+    };
+  }
+  if (normalized === "skipped") {
+    return {
+      label: "Bỏ qua",
+      tone: "border-slate-600 bg-slate-800 text-slate-300",
+    };
+  }
+  return {
+    label: "Lỗi",
+    tone: "border-rose-500/40 bg-rose-500/10 text-rose-200",
+  };
+};
 const getExpiryCleanupBatchStatusLabel = (value = "") => {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "pending_approval") return "Chờ duyệt";
@@ -3187,6 +3222,10 @@ function App() {
     useState("");
   const [expandedChatgptMailHistoryId, setExpandedChatgptMailHistoryId] =
     useState("");
+  const [showHotmailDieBatchModal, setShowHotmailDieBatchModal] =
+    useState(false);
+  const [hotmailDieBatchInput, setHotmailDieBatchInput] = useState("");
+  const [hotmailDieBatchResults, setHotmailDieBatchResults] = useState([]);
   const [adminRealtime, setAdminRealtime] = useState(
     buildDefaultAdminRealtimeConfig(),
   );
@@ -3317,6 +3356,7 @@ function App() {
     fetchChatgptMailCheckSummary: false,
     fetchChatgptMailCheckHistory: false,
     runChatgptMailCheck: false,
+    checkHotmailDieBatch: false,
     runChatgptMailCheckOne: "",
     saveVoucher: false,
     saveStoreConfig: false,
@@ -8819,6 +8859,131 @@ function App() {
     }
   };
 
+  const handleRunHotmailDieBatchCheck = async () => {
+    const rawLines = String(hotmailDieBatchInput || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (rawLines.length === 0) {
+      showAlert("Chưa có dữ liệu", "Dán mỗi dòng 1 Hotmail/Outlook cần check.", "warning");
+      return;
+    }
+
+    const parsedRows = rawLines.map((line, index) => {
+      const email = extractEmailFromHotmailDieLine(line);
+      if (!isBasicEmail(email)) {
+        return {
+          index,
+          line,
+          email,
+          status: "invalid",
+          reason: "Email không hợp lệ.",
+        };
+      }
+      return {
+        index,
+        line,
+        email,
+        status: "pending",
+        reason: "",
+      };
+    });
+    const validEmails = [];
+    const seenEmails = new Set();
+    parsedRows.forEach((row) => {
+      if (row.status !== "pending") return;
+      if (seenEmails.has(row.email)) return;
+      seenEmails.add(row.email);
+      validEmails.push(row.email);
+    });
+
+    if (validEmails.length === 0) {
+      setHotmailDieBatchResults(parsedRows);
+      showAlert("Không có email hợp lệ", "Hãy kiểm tra lại danh sách vừa dán.", "warning");
+      return;
+    }
+    if (validEmails.length > 100) {
+      showAlert("Quá nhiều email", "Chỉ check tối đa 100 Hotmail/Outlook mỗi lần.", "warning");
+      return;
+    }
+
+    try {
+      setLoadingStates((prev) => ({ ...prev, checkHotmailDieBatch: true }));
+      const response = await axios.post(
+        "/api/admin/hotmail/check-die-batch",
+        { emails: validEmails },
+        {
+          timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS,
+          skipGlobalLoading: true,
+        },
+      );
+      const resultByEmail = new Map(
+        (Array.isArray(response?.data?.items) ? response.data.items : []).map((item) => [
+          String(item?.email || "").trim().toLowerCase(),
+          item,
+        ]),
+      );
+      const mergedRows = parsedRows.map((row) => {
+        if (row.status !== "pending") return row;
+        const result = resultByEmail.get(row.email);
+        if (!result) {
+          return {
+            ...row,
+            status: "error",
+            reason: "Không có kết quả từ server.",
+          };
+        }
+        return {
+          ...row,
+          ...result,
+          line: row.line,
+          email: row.email,
+        };
+      });
+      setHotmailDieBatchResults(mergedRows);
+      const countByStatus = (statusList) =>
+        mergedRows.filter((item) => statusList.includes(String(item?.status || ""))).length;
+      showAlert(
+        "Check Hotmail xong",
+        [
+          `Tổng dòng: ${mergedRows.length}`,
+          `Die: ${countByStatus(["died"])}`,
+          `Clean: ${countByStatus(["clean"])}`,
+          `Chưa import: ${countByStatus(["missing_hotmail"])}`,
+          `Lỗi/bỏ qua: ${countByStatus(["error", "skipped", "invalid"])}`,
+        ].join("\n"),
+        countByStatus(["error", "skipped", "invalid"]) > 0 ? "warning" : "success",
+      );
+    } catch (error) {
+      showAlert(
+        "Check Hotmail thất bại",
+        getApiErrorMessage(error, "Không thể check die Hotmail."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, checkHotmailDieBatch: false }));
+    }
+  };
+
+  const handleCopyHotmailDieBatchGroup = (groupKey) => {
+    const statusGroups = {
+      died: ["died"],
+      clean: ["clean"],
+      missing: ["missing_hotmail"],
+      error: ["error", "skipped", "invalid"],
+    };
+    const statuses = statusGroups[groupKey] || [];
+    const lines = hotmailDieBatchResults
+      .filter((item) => statuses.includes(String(item?.status || "")))
+      .map((item) => String(item?.line || item?.email || "").trim())
+      .filter(Boolean);
+    if (lines.length === 0) {
+      showAlert("Không có dữ liệu", "Nhóm này chưa có dòng nào để copy.", "warning");
+      return;
+    }
+    handleCopy(lines.join("\n"), `Đã copy ${lines.length} dòng`);
+  };
+
   const handleRunOneChatgptMailCheck = async (acc = {}) => {
     const accountId = String(acc?.id || "").trim();
     if (!accountId || loadingStates.runChatgptMailCheckOne === accountId) return;
@@ -13732,6 +13897,10 @@ function App() {
               <button type="button" onClick={openChatgptMailCheckHistory} disabled={loadingStates.fetchChatgptMailCheckHistory}
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:border-cyan-400/50 hover:text-cyan-200 disabled:opacity-60">
                 {loadingStates.fetchChatgptMailCheckHistory ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />} Xem die
+              </button>
+              <button type="button" onClick={() => setShowHotmailDieBatchModal(true)} disabled={loadingStates.checkHotmailDieBatch}
+                className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:opacity-60">
+                {loadingStates.checkHotmailDieBatch ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} Check die Hotmail
               </button>
               <button type="button" onClick={() => loadChatgptMailCheckSummary({ silent: false, forceFresh: true })} disabled={loadingStates.fetchChatgptMailCheckSummary}
                 className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-60">
@@ -20238,6 +20407,194 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                         </div>
                       );
                     })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showHotmailDieBatchModal && (() => {
+        const results = Array.isArray(hotmailDieBatchResults)
+          ? hotmailDieBatchResults
+          : [];
+        const countStatus = (statusList) =>
+          results.filter((item) => statusList.includes(String(item?.status || ""))).length;
+        const hasResults = results.length > 0;
+        const copyButtons = [
+          { key: "died", label: "Copy Die", count: countStatus(["died"]), tone: "bg-red-600 hover:bg-red-500" },
+          { key: "clean", label: "Copy Clean", count: countStatus(["clean"]), tone: "bg-emerald-600 hover:bg-emerald-500" },
+          { key: "missing", label: "Copy Chưa import", count: countStatus(["missing_hotmail"]), tone: "bg-amber-600 hover:bg-amber-500" },
+          { key: "error", label: "Copy Lỗi", count: countStatus(["error", "skipped", "invalid"]), tone: "bg-slate-700 hover:bg-slate-600" },
+        ];
+        return (
+          <div
+            className="fixed inset-0 z-[9997] flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm"
+            onClick={() => setShowHotmailDieBatchModal(false)}
+          >
+            <div
+              className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex flex-col gap-3 border-b border-slate-800 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="text-[11px] font-black uppercase tracking-[0.26em] text-amber-300">
+                    Hotmail die checker
+                  </div>
+                  <h2 className="mt-1 text-xl font-black text-white">
+                    Check die nhanh Hotmail / Outlook
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Dán email hoặc email|pass|2FA. Hệ thống chỉ gửi email lên API và chỉ đọc kho Hotmail đã import.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowHotmailDieBatchModal(false)}
+                  className="self-end rounded-xl border border-slate-700 bg-slate-900 p-2 text-slate-300 transition hover:text-white sm:self-auto"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="min-h-0 overflow-y-auto px-4 py-4">
+                <textarea
+                  value={hotmailDieBatchInput}
+                  onChange={(event) => setHotmailDieBatchInput(event.target.value)}
+                  placeholder={"email@hotmail.com|pass|2FA\nemail@outlook.com"}
+                  className="min-h-[180px] w-full rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-3 font-mono text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-amber-400"
+                  spellCheck={false}
+                />
+                <div className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRunHotmailDieBatchCheck}
+                      disabled={loadingStates.checkHotmailDieBatch}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-black text-white transition hover:bg-amber-500 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {loadingStates.checkHotmailDieBatch ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Search size={16} />
+                      )}
+                      Check die
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHotmailDieBatchInput("");
+                        setHotmailDieBatchResults([]);
+                      }}
+                      disabled={loadingStates.checkHotmailDieBatch}
+                      className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-300 transition hover:text-white disabled:opacity-60"
+                    >
+                      Xóa
+                    </button>
+                  </div>
+                  {hasResults ? (
+                    <div className="flex flex-wrap gap-2">
+                      {copyButtons.map((button) => (
+                        <button
+                          key={button.key}
+                          type="button"
+                          onClick={() => handleCopyHotmailDieBatchGroup(button.key)}
+                          disabled={button.count === 0}
+                          className={`rounded-xl px-3 py-2 text-xs font-black text-white transition disabled:cursor-not-allowed disabled:opacity-40 ${button.tone}`}
+                        >
+                          {button.label} ({button.count})
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                {hasResults ? (
+                  <>
+                    <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
+                      {[
+                        ["Tổng", results.length, "border-slate-600 bg-slate-800 text-slate-100"],
+                        ["Die", countStatus(["died"]), "border-red-500/40 bg-red-500/10 text-red-200"],
+                        ["Clean", countStatus(["clean"]), "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"],
+                        ["Chưa import", countStatus(["missing_hotmail"]), "border-amber-500/40 bg-amber-500/10 text-amber-100"],
+                        ["Lỗi/bỏ qua", countStatus(["error", "skipped", "invalid"]), "border-rose-500/40 bg-rose-500/10 text-rose-200"],
+                      ].map(([label, value, tone]) => (
+                        <div key={label} className={`rounded-2xl border px-3 py-2 ${tone}`}>
+                          <div className="text-[10px] font-black uppercase tracking-[0.18em] opacity-80">
+                            {label}
+                          </div>
+                          <div className="mt-1 text-xl font-black">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 overflow-hidden rounded-2xl border border-slate-800">
+                      <div className="max-h-[42vh] overflow-auto">
+                        <table className="w-full min-w-[760px] text-left text-sm">
+                          <thead className="sticky top-0 bg-slate-900 text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                            <tr>
+                              <th className="px-3 py-3">Email</th>
+                              <th className="px-3 py-3">Trạng thái</th>
+                              <th className="px-3 py-3">Lý do</th>
+                              <th className="px-3 py-3">Mail match</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {results.map((item, index) => {
+                              const meta = getHotmailDieBatchStatusMeta(item?.status);
+                              return (
+                                <tr
+                                  key={`${item?.email || "row"}-${index}`}
+                                  className="border-t border-slate-800 align-top"
+                                >
+                                  <td className="max-w-[260px] break-all px-3 py-3 font-mono text-xs font-bold text-white">
+                                    {item?.email || extractEmailFromHotmailDieLine(item?.line) || "--"}
+                                    <div className="mt-1 line-clamp-1 text-[10px] font-normal text-slate-500">
+                                      {item?.line || ""}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3">
+                                    <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-black ${meta.tone}`}>
+                                      {meta.label}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3 text-xs text-slate-300">
+                                    {item?.reason || "--"}
+                                  </td>
+                                  <td className="max-w-[300px] px-3 py-3 text-xs text-slate-300">
+                                    {item?.mailCheckLastSubject ? (
+                                      <div className="space-y-1">
+                                        <div className="font-semibold text-white">
+                                          {item.mailCheckLastSubject}
+                                        </div>
+                                        <div className="text-slate-400">
+                                          {item.mailCheckLastSender || "--"}
+                                          {item.mailCheckLastMatchedAt
+                                            ? ` · ${formatVietnamDateTime(item.mailCheckLastMatchedAt)}`
+                                            : ""}
+                                        </div>
+                                        {item.mailCheckLastSnippet ? (
+                                          <div className="line-clamp-2 text-slate-500">
+                                            {item.mailCheckLastSnippet}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    ) : (
+                                      "--"
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-4 rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-8 text-center text-sm text-slate-400">
+                    Chưa có kết quả. Dán danh sách Hotmail/Outlook rồi bấm Check die.
                   </div>
                 )}
               </div>
