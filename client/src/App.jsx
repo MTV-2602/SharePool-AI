@@ -11642,6 +11642,25 @@ function App() {
               ChatGPT
             </button>
             <button
+              onClick={() => {
+                setActiveTab("chatgpt");
+                setGptSubTab("warranty");
+                setChatgptWarrantyQueueStatus("all");
+                setChatgptWarrantyQueueSearch("");
+                loadChatgptWarrantyQueue({ silent: true, status: "all", search: "" }).catch(() => {});
+              }}
+              className={`inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${
+                activeTab === "chatgpt" && gptSubTab === "warranty"
+                  ? "bg-rose-600 text-white shadow-lg"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Bảo hành
+              <span className="rounded-full bg-white/15 px-1.5 text-[10px] font-black">
+                {Number(chatgptWarrantyQueueSummary?.pending || 0) + Number(chatgptWarrantyQueueSummary?.loaded || 0)}
+              </span>
+            </button>
+            <button
               onClick={() =>
                 setActiveTab(isActiveWebTab ? activeTab : "store-users")
               }
@@ -14353,6 +14372,10 @@ function App() {
               <button type="button" onClick={() => { setShowHotmailDieBatchModal(true); loadChatgptWarrantyQueue({ silent: true, status: "all", search: "" }).catch(() => {}); }} disabled={loadingStates.checkHotmailDieBatch}
                 className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:opacity-60">
                 {loadingStates.checkHotmailDieBatch ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} Check die Hotmail
+              </button>
+              <button type="button" onClick={() => { setGptSubTab("warranty"); setChatgptWarrantyQueueStatus("all"); setChatgptWarrantyQueueSearch(""); loadChatgptWarrantyQueue({ silent: true, status: "all", search: "" }).catch(() => {}); }}
+                className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-100 transition hover:bg-rose-500/20">
+                <Shield size={11} /> Khu bảo hành
               </button>
               <button type="button" onClick={() => loadChatgptMailCheckSummary({ silent: false, forceFresh: true })} disabled={loadingStates.fetchChatgptMailCheckSummary}
                 className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-60">
