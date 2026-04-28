@@ -14855,7 +14855,7 @@ function App() {
                                 "",
                             ).trim();
                             const canOpenWarranty = (!!orderIdForWarranty && (hasActualManagedUser || hasActiveTracking)) || warrantyInfo?.role === "current";
-                            if (!canOpenWarranty) return null;
+                            if (!orderIdForWarranty && !canOpenWarranty) return null;
                             const marketplaceCopyLine = orderIdForWarranty
                               ? `${String(acc?.username || "").trim()}|${orderIdForWarranty}`
                               : "";
@@ -14873,14 +14873,26 @@ function App() {
                                     <Copy size={10} /> Email+đơn
                                   </button>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={() => openWarrantyModal(acc)}
-                                  className="inline-flex h-6 items-center gap-1 rounded-md border border-cyan-700/50 bg-cyan-900/30 px-2 text-[10px] font-bold text-cyan-200 transition hover:bg-cyan-700/50"
-                                  title="Bảo hành nhanh đơn sàn"
-                                >
-                                  <Shield size={10} /> BH nhanh
-                                </button>
+                                {orderIdForWarranty && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopy(orderIdForWarranty, "Đã copy mã đơn")}
+                                    className="inline-flex h-6 items-center gap-1 rounded-md border border-amber-700/50 bg-amber-900/25 px-2 text-[10px] font-bold text-amber-100 transition hover:bg-amber-700/40"
+                                    title="Copy mã đơn"
+                                  >
+                                    <Copy size={10} /> Mã đơn
+                                  </button>
+                                )}
+                                {canOpenWarranty && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openWarrantyModal(acc)}
+                                    className="inline-flex h-6 items-center gap-1 rounded-md border border-cyan-700/50 bg-cyan-900/30 px-2 text-[10px] font-bold text-cyan-200 transition hover:bg-cyan-700/50"
+                                    title="Bảo hành nhanh đơn sàn"
+                                  >
+                                    <Shield size={10} /> BH nhanh
+                                  </button>
+                                )}
                               </>
                             );
                           })()}
@@ -15312,6 +15324,16 @@ function App() {
                                               title="Copy email + mã đơn"
                                             >
                                               <Copy size={11} /> Email+đơn
+                                            </button>
+                                          )}
+                                          {datammoOrderId && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleCopy(datammoOrderId, "Đã copy mã đơn")}
+                                              className="inline-flex items-center gap-1 rounded-lg border border-amber-600/50 bg-amber-900/25 px-2 py-1 text-[10px] font-bold text-amber-100 transition hover:bg-amber-700/40"
+                                              title="Copy mã đơn"
+                                            >
+                                              <Copy size={11} /> Mã đơn
                                             </button>
                                           )}
                                           {canOpenDatammoWarranty && (
