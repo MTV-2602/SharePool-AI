@@ -1503,7 +1503,10 @@ const buildMoveExpectedPayload = (payload = {}, fromRecord = {}, toRecord = {}) 
   };
 };
 const getApiErrorMessage = (error, fallback) => {
-  const rawMessage = error?.response?.data?.error || error?.message || fallback;
+  let rawMessage = error?.response?.data?.error || error?.message || fallback;
+  if (rawMessage && typeof rawMessage === "object") {
+    rawMessage = rawMessage.message || JSON.stringify(rawMessage);
+  }
   const normalizedMessage = toNonAccentVietnamese(
     String(rawMessage || "").toLowerCase(),
   )
@@ -1516,7 +1519,7 @@ const getApiErrorMessage = (error, fallback) => {
   ) {
     return "Ket noi bao mat toi server tam thoi loi. Du lieu khong bi hong, ban thu lai sau vai giay.";
   }
-  return rawMessage;
+  return String(rawMessage || fallback);
 };
 const getApiErrorMessageWithDiagnostics = (error, fallback) => {
   const baseMessage = getApiErrorMessage(error, fallback);
@@ -3323,6 +3326,8 @@ function App() {
   });
   const [activeTab, setActiveTab] = useState("chatgpt");
   const [gptSubTab, setGptSubTab] = useState("all");
+  const isChatgptWarrantyView =
+    activeTab === "chatgpt" && gptSubTab === "warranty";
   const [chatgptTotalTypeTab, setChatgptTotalTypeTab] = useState("all");
   const [package2ShelfTab, setPackage2ShelfTab] = useState("all");
   const [chatgptMailCheckFilter, setChatgptMailCheckFilter] = useState("all");
@@ -3459,10 +3464,12 @@ function App() {
   const chatgptPageEffectPrimedRef = useRef(false);
   const skipNextChatgptPageEffectRef = useRef(false);
   const skipNextChatgptFilterEffectRef = useRef(false);
-  const chatgptForceFreshOnNextLoadRef = useRef(true);
+  const chatgptForceFreshOnNextLoadRef = useRef(false);
   const chatgptListRequestSeqRef = useRef(0);
   const chatgptListAppliedSeqRef = useRef(0);
   const chatgptListInFlightRef = useRef({ key: "", promise: null });
+  const chatgptWarrantyQueueInFlightRef = useRef({ key: "", promise: null });
+  const bulkLoadWarrantyQueueInFlightRef = useRef(null);
   const chatgptAdminQueryRef = useRef(buildDefaultChatgptAdminQueryState());
   const skipNextAdminTabBootstrapRef = useRef(false);
   const seenDatammoOrderKeysRef = useRef(null);
@@ -3843,7 +3850,7 @@ function App() {
       }
       channel.close();
     };
-  }, [isAuthenticated, activeTab, selectedSupportConversationId]);
+  }, [isAuthenticated, activeTab, isChatgptWarrantyView, selectedSupportConversationId]);
 
   const broadcastDataChange = () => {
     if (!channelRef.current) return;
@@ -3870,9 +3877,12 @@ function App() {
     const handleVisibilityChange = () => {
       if (document.hidden) return;
       if (shouldSkipAutoRefresh()) return;
+      if (isChatgptWarrantyView) {
+        loadChatgptWarrantyQueue({ silent: true }).catch(() => {});
+        return;
+      }
       if (activeTab === "chatgpt") {
-        chatgptForceFreshOnNextLoadRef.current = true;
-        refreshAdminSurface({ includeSummary: true, forceFull: true }).catch(() => {});
+        refreshAdminSurface({ includeSummary: true, forceFull: false }).catch(() => {});
         return;
       }
       refreshAdminSurface({ includeSummary: true }).catch(() => {});
@@ -3888,7 +3898,7 @@ function App() {
       window.removeEventListener("pageshow", handleVisibilityChange);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [isAuthenticated, activeTab, selectedSupportConversationId]);
+  }, [isAuthenticated, activeTab, isChatgptWarrantyView, selectedSupportConversationId]);
 
   useEffect(() => {
     if (!isAuthenticated || activeTab === "chatgpt") return undefined;
@@ -3910,6 +3920,10 @@ function App() {
     if (skipNextAdminTabBootstrapRef.current) {
       skipNextAdminTabBootstrapRef.current = false;
       if (activeTab === "chatgpt") {
+        if (isChatgptWarrantyView) {
+          loadChatgptWarrantyQueue({ silent: true }).catch(() => {});
+          return;
+        }
         loadChatgptAuxiliaryData({ allowCached: true }).catch(() => {});
         loadChatgptExpirySummary({ silent: true }).catch(() => {});
         loadChatgptMailCheckSummary({ silent: true }).catch(() => {});
@@ -3917,6 +3931,10 @@ function App() {
       return;
     }
     if (activeTab === "chatgpt") {
+      if (isChatgptWarrantyView) {
+        loadChatgptWarrantyQueue({ silent: true }).catch(() => {});
+        return;
+      }
       loadChatgptAuxiliaryData({ allowCached: true }).catch(() => {});
       loadChatgptExpirySummary({ silent: true }).catch(() => {});
       loadChatgptMailCheckSummary({ silent: true }).catch(() => {});
@@ -3958,7 +3976,7 @@ function App() {
       }).catch(() => {});
       loadDashboardSummary({ silent: true, allowCached: true }).catch(() => {});
     }
-  }, [activeTab, isAuthenticated]);
+  }, [activeTab, isAuthenticated, isChatgptWarrantyView]);
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
@@ -4020,7 +4038,7 @@ function App() {
   ].join("|");
 
   useEffect(() => {
-    if (!isAuthenticated || activeTab !== "chatgpt") return;
+    if (!isAuthenticated || activeTab !== "chatgpt" || isChatgptWarrantyView) return;
     if (skipNextChatgptFilterEffectRef.current) {
       skipNextChatgptFilterEffectRef.current = false;
       return;
@@ -4036,10 +4054,10 @@ function App() {
       allowCached: !shouldForceFresh,
       force: shouldForceFresh,
     }).catch(() => {});
-  }, [activeTab, chatgptListFilterKey, isAuthenticated]);
+  }, [activeTab, chatgptListFilterKey, isAuthenticated, isChatgptWarrantyView]);
 
   useEffect(() => {
-    if (!isAuthenticated || activeTab !== "chatgpt") return;
+    if (!isAuthenticated || activeTab !== "chatgpt" || isChatgptWarrantyView) return;
     if (skipNextChatgptPageEffectRef.current) {
       skipNextChatgptPageEffectRef.current = false;
       return;
@@ -4060,6 +4078,7 @@ function App() {
     isAuthenticated,
     chatgptAdminPagination.page,
     chatgptAdminPagination.limit,
+    isChatgptWarrantyView,
   ]);
 
   useEffect(() => {
@@ -4144,7 +4163,7 @@ function App() {
     if (isAuthenticated && activeTab === "chatgpt") return;
     chatgptPageEffectPrimedRef.current = false;
     skipNextChatgptPageEffectRef.current = false;
-    chatgptForceFreshOnNextLoadRef.current = true;
+    chatgptForceFreshOnNextLoadRef.current = false;
   }, [activeTab, isAuthenticated]);
 
   useEffect(() => {
@@ -4341,12 +4360,17 @@ function App() {
           if (!shouldRefreshInventorySurface) {
             return;
           }
+          if (isChatgptWarrantyView) {
+            loadChatgptWarrantyQueue({ silent: true }).catch(() => {});
+            return;
+          }
           if (activeTab === "chatgpt") {
             Promise.allSettled([
-              loadAdminChatgptAccounts({ silent: true, force: true }),
+              loadAdminChatgptAccounts({ silent: true, force: false }),
               loadChatgptAuxiliaryData({
                 silent: true,
-                force: true,
+                force: false,
+                allowCached: false,
               }),
             ]).catch(() => {});
             return;
@@ -4358,6 +4382,7 @@ function App() {
   }, [
     activeTab,
     adminRealtime,
+    isChatgptWarrantyView,
     isAuthenticated,
     selectedSupportConversationId,
   ]);
@@ -6080,6 +6105,10 @@ function App() {
   const syncAdminDataAfterMutation = async (
     requestLabel = "Đang tải lại dữ liệu sau cập nhật",
   ) => {
+    if (isChatgptWarrantyView) {
+      await loadChatgptWarrantyQueue({ silent: true });
+      return;
+    }
     if (activeTab === "chatgpt") {
       await Promise.allSettled([
         fetchData({
@@ -6257,6 +6286,17 @@ function App() {
     status = chatgptWarrantyQueueStatus,
     search = chatgptWarrantyQueueSearch,
   } = {}) => {
+    const requestKey = JSON.stringify({
+      status: String(status || "all").trim(),
+      search: String(search || "").trim(),
+    });
+    if (
+      chatgptWarrantyQueueInFlightRef.current.promise &&
+      chatgptWarrantyQueueInFlightRef.current.key === requestKey
+    ) {
+      return chatgptWarrantyQueueInFlightRef.current.promise;
+    }
+    const runRequest = (async () => {
     setLoadingStates((prev) => ({ ...prev, fetchChatgptWarrantyQueue: true }));
     try {
       const response = await axios.get("/api/admin/chatgpt-warranty-queue", {
@@ -6286,6 +6326,15 @@ function App() {
       return null;
     } finally {
       setLoadingStates((prev) => ({ ...prev, fetchChatgptWarrantyQueue: false }));
+    }
+    })();
+    chatgptWarrantyQueueInFlightRef.current = { key: requestKey, promise: runRequest };
+    try {
+      return await runRequest;
+    } finally {
+      if (chatgptWarrantyQueueInFlightRef.current.promise === runRequest) {
+        chatgptWarrantyQueueInFlightRef.current = { key: "", promise: null };
+      }
     }
   };
 
@@ -6324,8 +6373,8 @@ function App() {
     const responseData = await loadAdminChatgptAccounts({
       silent: true,
       showError: true,
-      allowCached: false,
-      force: true,
+      allowCached: true,
+      force: false,
       page: nextPage,
       limit: nextLimit,
     });
@@ -7051,6 +7100,10 @@ function App() {
     if (!isAuthenticated) return;
 
     const tasks = [];
+    if (isChatgptWarrantyView) {
+      await loadChatgptWarrantyQueue({ silent: true });
+      return;
+    }
     if (activeTab === "chatgpt") {
       tasks.push(
         loadAdminChatgptAccounts({
@@ -9688,40 +9741,57 @@ function App() {
   };
 
   const handleBulkLoadWarrantyQueueCandidates = async (items = []) => {
-    const ids = (Array.isArray(items) ? items : [])
+    const allIds = (Array.isArray(items) ? items : [])
       .filter((item) => String(item?.status || "pending") !== "warrantied")
       .map((item) => String(item?.id || "").trim())
       .filter(Boolean);
+    const ids = allIds.slice(0, 50);
     if (ids.length === 0) {
       showAlert("Khong co dong can load", "Danh sach hien tai khong co dong cho bao hanh can load acc.", "info");
       return;
     }
-    setLoadingStates((prev) => ({ ...prev, bulkLoadWarrantyQueueCandidates: true }));
+    if (bulkLoadWarrantyQueueInFlightRef.current) {
+      return bulkLoadWarrantyQueueInFlightRef.current;
+    }
+    const runRequest = (async () => {
+      setLoadingStates((prev) => ({ ...prev, bulkLoadWarrantyQueueCandidates: true }));
+      try {
+        const response = await axios.post(
+          "/api/admin/chatgpt-warranty-queue/bulk-load-candidates",
+          { ids },
+          { timeout: 120000, skipGlobalLoading: true },
+        );
+        const results = Array.isArray(response?.data?.results)
+          ? response.data.results
+          : [];
+        applyWarrantyQueueCandidateLoadResults(results);
+        const loadedCount = results.filter((result) => result?.ok && !result?.skipped).length;
+        const errorCount = results.filter((result) => !result?.ok).length;
+        const skippedCount =
+          results.filter((result) => result?.skipped).length +
+          Math.max(0, allIds.length - ids.length);
+        showAlert(
+          "Da load acc sach",
+          `Da load ${loadedCount}/${ids.length} dong. Bo qua: ${skippedCount}. Loi: ${errorCount}.`,
+          errorCount > 0 ? "warning" : "success",
+        );
+      } catch (error) {
+        showAlert(
+          "Khong load duoc",
+          getApiErrorMessage(error, "Khong the load acc thay the hang loat."),
+          "error",
+        );
+      } finally {
+        setLoadingStates((prev) => ({ ...prev, bulkLoadWarrantyQueueCandidates: false }));
+      }
+    })();
+    bulkLoadWarrantyQueueInFlightRef.current = runRequest;
     try {
-      const response = await axios.post(
-        "/api/admin/chatgpt-warranty-queue/bulk-load-candidates",
-        { ids },
-        { timeout: 120000, skipGlobalLoading: true },
-      );
-      const results = Array.isArray(response?.data?.results)
-        ? response.data.results
-        : [];
-      applyWarrantyQueueCandidateLoadResults(results);
-      const loadedCount = results.filter((result) => result?.ok && !result?.skipped).length;
-      const errorCount = results.filter((result) => !result?.ok).length;
-      showAlert(
-        "Da load acc sach",
-        `Da load ${loadedCount}/${ids.length} dong. Loi: ${errorCount}.`,
-        errorCount > 0 ? "warning" : "success",
-      );
-    } catch (error) {
-      showAlert(
-        "Khong load duoc",
-        getApiErrorMessage(error, "Khong the load acc thay the hang loat."),
-        "error",
-      );
+      return await runRequest;
     } finally {
-      setLoadingStates((prev) => ({ ...prev, bulkLoadWarrantyQueueCandidates: false }));
+      if (bulkLoadWarrantyQueueInFlightRef.current === runRequest) {
+        bulkLoadWarrantyQueueInFlightRef.current = null;
+      }
     }
   };
 
@@ -10027,10 +10097,14 @@ function App() {
         { timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
       );
       if (queueResponse?.data?.item) mergeChatgptWarrantyQueueItem(queueResponse.data.item);
-      await Promise.allSettled([
-        loadAdminChatgptAccounts({ silent: true, force: true }),
-        loadChatgptWarrantyQueue({ silent: true }),
-      ]);
+      await Promise.allSettled(
+        isChatgptWarrantyView
+          ? [loadChatgptWarrantyQueue({ silent: true })]
+          : [
+              loadAdminChatgptAccounts({ silent: true, force: false }),
+              loadChatgptWarrantyQueue({ silent: true }),
+            ],
+      );
       broadcastDataChange();
       const replacement = response?.data?.replacement || replacementAcc;
       await refreshWarrantyQueueCandidatesAfterReplacementUsed({
@@ -10171,10 +10245,14 @@ function App() {
         }
 
         try {
-          await Promise.allSettled([
-            loadAdminChatgptAccounts({ silent: true, force: true }),
-            loadChatgptWarrantyQueue({ silent: true }),
-          ]);
+          await Promise.allSettled(
+            isChatgptWarrantyView
+              ? [loadChatgptWarrantyQueue({ silent: true })]
+              : [
+                  loadAdminChatgptAccounts({ silent: true, force: false }),
+                  loadChatgptWarrantyQueue({ silent: true }),
+                ],
+          );
           broadcastDataChange();
         } finally {
           setLoadingStates((prev) => ({ ...prev, bulkWarrantyQueueSubmit: false }));
@@ -12443,8 +12521,11 @@ function App() {
           </div>
           <div className="flex w-full max-w-full items-center gap-1.5 overflow-x-auto rounded-3xl border border-slate-700 bg-slate-900 p-1 no-scrollbar snap-x snap-mandatory">
             <button
-              onClick={() => setActiveTab("chatgpt")}
-              className={`whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${activeTab === "chatgpt" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
+              onClick={() => {
+                setActiveTab("chatgpt");
+                setGptSubTab("all");
+              }}
+              className={`whitespace-nowrap shrink-0 snap-start rounded-3xl px-4 py-2 font-medium transition-all md:px-6 ${activeTab === "chatgpt" && gptSubTab !== "warranty" ? "bg-blue-600 text-white shadow-lg" : "text-slate-400 hover:text-white"}`}
             >
               ChatGPT
             </button>

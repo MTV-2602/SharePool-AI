@@ -1580,6 +1580,7 @@ accountSchema.index({
   mailCheckNextAuditAt: 1,
 });
 accountSchema.index({ mailCheckStatus: 1, mailCheckLastMatchedAt: -1 });
+accountSchema.index({ type: 1, package2Shelf: 1, createdAt: -1 });
 const Account =
   mongoose.models.Account ||
   mongoose.model("Account", accountSchema, "chatgpt_accounts");
@@ -1730,6 +1731,9 @@ const datammoOrderSchema = new mongoose.Schema({
   accounts: { type: [datammoOrderAccountSchema], default: [] },
   createdAt: { type: String, default: () => new Date().toISOString() },
 });
+datammoOrderSchema.index({ scope: 1, "accounts.accountId": 1, createdAt: -1 });
+datammoOrderSchema.index({ scope: 1, createdAt: -1 });
+datammoOrderSchema.index({ scope: 1, provider: 1, createdAt: -1 });
 const DatammoOrder =
   mongoose.models.DatammoOrder ||
   mongoose.model("DatammoOrder", datammoOrderSchema, "marketplace_orders");
@@ -1770,6 +1774,11 @@ const datammoWarrantyCaseSchema = new mongoose.Schema({
   createdAt: { type: String, default: () => new Date().toISOString() },
   updatedAt: { type: String, default: () => new Date().toISOString() },
 });
+datammoWarrantyCaseSchema.index({ scope: 1, rootAccountId: 1, updatedAt: -1 });
+datammoWarrantyCaseSchema.index({ scope: 1, currentAccountId: 1, updatedAt: -1 });
+datammoWarrantyCaseSchema.index({ scope: 1, "rounds.fromAccountId": 1, updatedAt: -1 });
+datammoWarrantyCaseSchema.index({ scope: 1, "rounds.toAccountId": 1, updatedAt: -1 });
+datammoWarrantyCaseSchema.index({ scope: 1, provider: 1, orderId: 1, updatedAt: -1 });
 const DatammoWarrantyCase =
   mongoose.models.DatammoWarrantyCase ||
   mongoose.model(
@@ -1925,6 +1934,11 @@ const storeOrderSchema = new mongoose.Schema({
 });
 storeOrderSchema.index({ userId: 1, createdAt: -1 });
 storeOrderSchema.index({ status: 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, reservedAccountId: 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, assignedAccountId: 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, rootAssignedAccountId: 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, "warrantyRounds.fromAccountId": 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, "warrantyRounds.toAccountId": 1, createdAt: -1 });
 const StoreOrder =
   mongoose.models.StoreOrder ||
   mongoose.model("StoreOrder", storeOrderSchema, "store_orders");
@@ -6051,7 +6065,7 @@ const CHATGPT_ADMIN_ACCOUNT_SELECT =
 const CHATGPT_ADMIN_MARKETPLACE_ORDER_TRACE_SELECT =
   "provider orderId accounts.accountId";
 const CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT =
-  "provider orderId rootAccountId currentAccountId rounds.fromAccountId rounds.toAccountId";
+  "provider orderId status rootAccountId rootUsername currentAccountId currentUsername rounds.sequence rounds.fromAccountId rounds.fromUsername rounds.toAccountId rounds.toUsername updatedAt";
 const CHATGPT_ADMIN_STORE_ORDER_TRACE_SELECT = [
   "id",
   "userId",
@@ -6141,23 +6155,57 @@ const buildEmptyStoreChatgptWarehouseSummary = () => ({
   },
 });
 const loadFreshChatgptAdminSnapshot = async () => {
-  const [accounts, datammoOrders, datammoWarrantyCases, rawStoreOrders] =
+  const accounts = await Account.find({})
+    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .lean();
+  const accountIds = Array.from(
+    new Set(
+      (Array.isArray(accounts) ? accounts : [])
+        .map((account) => String(account?.id || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const hasAccountIds = accountIds.length > 0;
+  const [datammoOrders, datammoWarrantyCases, rawStoreOrders] =
     await Promise.all([
-      Account.find({}).select(CHATGPT_ADMIN_ACCOUNT_SELECT).lean(),
-      DatammoOrder.find({})
-        .sort({ createdAt: -1 })
-        .select(CHATGPT_ADMIN_MARKETPLACE_ORDER_TRACE_SELECT)
-        .lean(),
-      DatammoWarrantyCase.find({})
-        .sort({ updatedAt: -1 })
-        .select(CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT)
-        .lean(),
-      StoreOrder.find({
-        status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
-      })
-        .sort({ createdAt: -1 })
-        .select(CHATGPT_ADMIN_STORE_ORDER_TRACE_SELECT)
-        .lean(),
+      hasAccountIds
+        ? DatammoOrder.find({
+            scope: "chatgpt",
+            "accounts.accountId": { $in: accountIds },
+          })
+            .sort({ createdAt: -1 })
+            .select(CHATGPT_ADMIN_MARKETPLACE_ORDER_TRACE_SELECT)
+            .lean()
+        : Promise.resolve([]),
+      hasAccountIds
+        ? DatammoWarrantyCase.find({
+            scope: "chatgpt",
+            $or: [
+              { rootAccountId: { $in: accountIds } },
+              { currentAccountId: { $in: accountIds } },
+              { "rounds.fromAccountId": { $in: accountIds } },
+              { "rounds.toAccountId": { $in: accountIds } },
+            ],
+          })
+            .sort({ updatedAt: -1 })
+            .select(CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT)
+            .lean()
+        : Promise.resolve([]),
+      hasAccountIds
+        ? StoreOrder.find({
+            status: { $nin: Array.from(STORE_HIDDEN_ORDER_STATUSES) },
+            $or: [
+              { assignedAccountId: { $in: accountIds } },
+              { reservedAccountId: { $in: accountIds } },
+              { rootAssignedAccountId: { $in: accountIds } },
+              { "warrantyRounds.fromAccountId": { $in: accountIds } },
+              { "warrantyRounds.toAccountId": { $in: accountIds } },
+            ],
+          })
+            .sort({ createdAt: -1 })
+            .select(CHATGPT_ADMIN_STORE_ORDER_TRACE_SELECT)
+            .lean()
+        : Promise.resolve([]),
     ]);
 
   const storeUsers = await loadStoreUsersForTraceOrders(rawStoreOrders);
@@ -6305,6 +6353,223 @@ const getCachedChatgptAdminSnapshot = async (
   };
   return loadPromise;
 };
+const addChatgptMarketplaceProviderMeta = (providerMap, accountId, provider) => {
+  const normalizedId = String(accountId || "").trim();
+  if (!normalizedId) return;
+  const normalizedProvider = normalizeMarketplaceProvider(provider, "datammo");
+  if (!providerMap.has(normalizedId)) {
+    providerMap.set(normalizedId, new Set());
+  }
+  providerMap.get(normalizedId).add(normalizedProvider);
+};
+const loadChatgptMarketplaceProviderMap = async () => {
+  const [orders, warrantyCases] = await Promise.all([
+    DatammoOrder.find({ scope: "chatgpt" })
+      .select("provider accounts.accountId")
+      .lean(),
+    DatammoWarrantyCase.find({ scope: "chatgpt" })
+      .select("provider rootAccountId currentAccountId rounds.fromAccountId rounds.toAccountId")
+      .lean(),
+  ]);
+  const providerMap = new Map();
+  (Array.isArray(orders) ? orders : []).forEach((order) => {
+    const provider = normalizeMarketplaceProvider(order?.provider, "datammo");
+    (Array.isArray(order?.accounts) ? order.accounts : []).forEach((account) => {
+      addChatgptMarketplaceProviderMeta(
+        providerMap,
+        account?.accountId,
+        provider,
+      );
+    });
+  });
+  (Array.isArray(warrantyCases) ? warrantyCases : []).forEach((warrantyCase) => {
+    const provider = normalizeMarketplaceProvider(warrantyCase?.provider, "datammo");
+    addChatgptMarketplaceProviderMeta(providerMap, warrantyCase?.rootAccountId, provider);
+    addChatgptMarketplaceProviderMeta(providerMap, warrantyCase?.currentAccountId, provider);
+    (Array.isArray(warrantyCase?.rounds) ? warrantyCase.rounds : []).forEach((round) => {
+      addChatgptMarketplaceProviderMeta(providerMap, round?.fromAccountId, provider);
+      addChatgptMarketplaceProviderMeta(providerMap, round?.toAccountId, provider);
+    });
+  });
+  return providerMap;
+};
+const getChatgptMarketplaceProviderMap = async ({ forceFresh = false } = {}) => {
+  if (forceFresh) return loadChatgptMarketplaceProviderMap();
+  return getCachedAdminRead(
+    "admin:chatgpt-marketplace-provider-map",
+    {},
+    loadChatgptMarketplaceProviderMap,
+    chatgptAdminSnapshotCacheTtlMs,
+  );
+};
+const getCachedStoreChatgptWarehouseSummary = async ({ forceFresh = false } = {}) => {
+  if (forceFresh) return buildStoreChatgptWarehouseSummary();
+  return getCachedAdminRead(
+    "admin:chatgpt-store-warehouse-summary",
+    {},
+    buildStoreChatgptWarehouseSummary,
+    chatgptAdminSnapshotCacheTtlMs,
+  );
+};
+const buildLightChatgptAdminSummary = (
+  accounts = [],
+  providerMap = new Map(),
+  storeWarehouseSummary = buildEmptyStoreChatgptWarehouseSummary(),
+) => {
+  const safeAccounts = Array.isArray(accounts) ? accounts : [];
+  const hasProviderTrace = (account = {}) =>
+    providerMap instanceof Map &&
+    providerMap.has(String(account?.id || "").trim());
+  const providerList = (account = {}) =>
+    Array.from(
+      providerMap instanceof Map
+        ? providerMap.get(String(account?.id || "").trim()) || []
+        : [],
+    );
+  const isMarketAccount = (account = {}) =>
+    supportsChatgptMarket(account?.type) &&
+    normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
+      CHATGPT_MARKET_VALUE;
+  const isShortAccount = (account = {}) =>
+    supportsChatgptMarket(account?.type) &&
+    normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
+      CHATGPT_MANUAL_MARKET_VALUE;
+  const totalPoolAccounts = safeAccounts.filter((account) => {
+    if (!supportsChatgptMarket(account?.type)) return false;
+    if (hasProviderTrace(account)) return false;
+    if (isMarketAccount(account)) return false;
+    return true;
+  });
+  const marketUnsoldAccounts = safeAccounts.filter(
+    (account) => !hasProviderTrace(account) && isMarketAccount(account),
+  );
+  const marketSoldAccounts = safeAccounts.filter(hasProviderTrace);
+  return {
+    tabs: {
+      all: safeAccounts.length,
+      total: totalPoolAccounts.length,
+      market: marketUnsoldAccounts.length + marketSoldAccounts.length,
+      short: 0,
+    },
+    totalTypeTabs: {
+      all: totalPoolAccounts.length,
+      package1: totalPoolAccounts.filter(
+        (account) => normalizeChatgptAccountType(account?.type) === "package1",
+      ).length,
+      package2: totalPoolAccounts.filter(
+        (account) => normalizeChatgptAccountType(account?.type) === "package2",
+      ).length,
+      unassigned: totalPoolAccounts.filter(
+        (account) => normalizeChatgptAccountType(account?.type) === "unassigned",
+      ).length,
+    },
+    mailCheckTabs: {
+      all: safeAccounts.length,
+      died: safeAccounts.filter(
+        (account) => normalizeChatgptMailCheckStatus(account?.mailCheckStatus) === "died",
+      ).length,
+      checked: safeAccounts.filter((account) => {
+        const status = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
+        const lastCheckedAt = String(account?.mailCheckLastCheckedAt || "").trim();
+        return !!lastCheckedAt && status !== "died";
+      }).length,
+      unchecked: safeAccounts.filter(
+        (account) => !String(account?.mailCheckLastCheckedAt || "").trim(),
+      ).length,
+    },
+    marketShelfTabs: {
+      all: marketUnsoldAccounts.length,
+      sold: marketSoldAccounts.length,
+      soldDatammo: marketSoldAccounts.filter((account) =>
+        providerList(account).includes("datammo"),
+      ).length,
+      soldShopmini: marketSoldAccounts.filter((account) =>
+        providerList(account).includes("shopmini"),
+      ).length,
+    },
+    storeWarehouse: storeWarehouseSummary || buildEmptyStoreChatgptWarehouseSummary(),
+  };
+};
+const canUseLightChatgptAdminList = ({
+  normalizedSubTab = "all",
+  normalizedTotalType = "all",
+  normalizedMailCheckFilter = "all",
+  normalizedCustomerFilter = "all",
+  expiryFilter = "all",
+  expiryMin = "",
+  expiryMax = "",
+  createdFromTime = null,
+  createdToTime = null,
+  normalizedSearch = "",
+  normalizedPackage2ShelfTab = "all",
+  normalizedSoldProvider = "all",
+} = {}) =>
+  normalizedSubTab === "all" &&
+  normalizedTotalType === "all" &&
+  normalizedMailCheckFilter === "all" &&
+  normalizedCustomerFilter === "all" &&
+  String(expiryFilter || "all").trim().toLowerCase() === "all" &&
+  !String(expiryMin || "").trim() &&
+  !String(expiryMax || "").trim() &&
+  createdFromTime === null &&
+  createdToTime === null &&
+  !normalizedSearch &&
+  normalizedPackage2ShelfTab === "all" &&
+  normalizedSoldProvider === "all";
+const listAdminChatgptAccountsLight = async ({
+  safePage = 1,
+  safeLimit = 10,
+  forceFresh = false,
+} = {}) => {
+  const [rawAccounts, providerMap, storeWarehouseSummary] = await Promise.all([
+    Account.find({}).select(CHATGPT_ADMIN_ACCOUNT_SELECT).lean(),
+    getChatgptMarketplaceProviderMap({ forceFresh }),
+    getCachedStoreChatgptWarehouseSummary({ forceFresh }),
+  ]);
+  const normalizedAccounts = (Array.isArray(rawAccounts) ? rawAccounts : []).map(
+    (account) => {
+      const accountId = String(account?.id || "").trim();
+      const rawType = normalizeChatgptAccountType(account?.type);
+      const hasMarketplaceTrace =
+        providerMap instanceof Map && providerMap.has(accountId);
+      return {
+        ...account,
+        effectiveType:
+          rawType === "unassigned" && hasMarketplaceTrace ? "package2" : rawType,
+        effectiveTypeSource:
+          rawType === "unassigned" && hasMarketplaceTrace
+            ? "marketplace_trace"
+            : "raw",
+        package2Shelf: normalizePackage2Shelf(
+          account?.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        ),
+      };
+    },
+  );
+  const sortedAccounts = sortAdminChatgptAccounts(normalizedAccounts);
+  const total = sortedAccounts.length;
+  const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+  const normalizedPage = Math.min(safePage, totalPages);
+  const skip = (normalizedPage - 1) * safeLimit;
+  const pageRawAccounts = sortedAccounts.slice(skip, skip + safeLimit);
+  const accounts = await decorateChatgptAccountsWithOperationalState(pageRawAccounts);
+  return {
+    accounts,
+    pagination: {
+      page: normalizedPage,
+      limit: safeLimit,
+      total,
+      totalPages,
+      hasMore: skip + safeLimit < total,
+    },
+    summary: buildLightChatgptAdminSummary(
+      normalizedAccounts,
+      providerMap,
+      storeWarehouseSummary,
+    ),
+  };
+};
 const listAdminChatgptAccounts = async ({
   page = 1,
   limit = 10,
@@ -6353,6 +6618,28 @@ const listAdminChatgptAccounts = async ({
       : String(soldProviderFilter || "").trim().toLowerCase() === "datammo"
         ? "datammo"
         : "all";
+  if (
+    canUseLightChatgptAdminList({
+      normalizedSubTab,
+      normalizedTotalType,
+      normalizedMailCheckFilter,
+      normalizedCustomerFilter,
+      expiryFilter,
+      expiryMin,
+      expiryMax,
+      createdFromTime,
+      createdToTime,
+      normalizedSearch,
+      normalizedPackage2ShelfTab,
+      normalizedSoldProvider,
+    })
+  ) {
+    return listAdminChatgptAccountsLight({
+      safePage,
+      safeLimit,
+      forceFresh,
+    });
+  }
   const {
     enrichedAccounts,
     totalPoolAccounts,
@@ -11859,6 +12146,23 @@ const sanitizeChatgptWarrantyQueueItemWithTrace = async (item = {}) => {
   const [sanitized] = await sanitizeChatgptWarrantyQueueItems(item ? [item] : []);
   return sanitized || sanitizeChatgptWarrantyQueueItem(item);
 };
+const sanitizeChatgptWarrantyQueueResults = async (results = []) => {
+  const safeResults = Array.isArray(results) ? results : [];
+  const items = safeResults.map((result) => result?.item).filter(Boolean);
+  const sanitizedItems = await sanitizeChatgptWarrantyQueueItems(items);
+  const sanitizedMap = new Map(
+    sanitizedItems.map((item) => [String(item?.id || "").trim(), item]),
+  );
+  return safeResults.map((result) => {
+    const itemId = String(result?.item?.id || result?.id || "").trim();
+    return {
+      ...result,
+      item: result?.item
+        ? sanitizedMap.get(itemId) || sanitizeChatgptWarrantyQueueItem(result.item)
+        : result?.item || null,
+    };
+  });
+};
 const buildChatgptWarrantyCaseFilterForQueue = (queue = {}) => {
   const sourceAccountId = String(queue?.sourceAccountId || "").trim();
   const orderId = String(queue?.orderId || "").trim();
@@ -11877,15 +12181,49 @@ const buildChatgptWarrantyCaseFilterForQueue = (queue = {}) => {
   if (provider) filter.provider = provider;
   return filter;
 };
-const buildChatgptWarrantyQueuePatchFromCase = async (queue = {}) => {
-  const filter = buildChatgptWarrantyCaseFilterForQueue(queue);
-  if (!filter) return null;
-  const warrantyCase = await DatammoWarrantyCase.findOne(filter).lean();
-  if (!warrantyCase) return null;
+const getChatgptWarrantyQueuePlainItem = (item = {}) => {
+  if (!item) return null;
+  if (typeof item.toObject === "function") {
+    return item.toObject({ depopulate: true });
+  }
+  if (typeof item === "object") return { ...item };
+  return null;
+};
+const chatgptWarrantyCaseMatchesQueue = (warrantyCase = {}, queue = {}) => {
   const sourceAccountId = String(queue?.sourceAccountId || "").trim();
-  const rounds = Array.isArray(warrantyCase?.rounds)
-    ? warrantyCase.rounds
-    : [];
+  const orderId = String(queue?.orderId || "").trim();
+  if (!sourceAccountId || !orderId) return false;
+  if (String(warrantyCase?.orderId || "").trim() !== orderId) return false;
+  const queueProvider = normalizeMarketplaceProvider(queue?.provider, "");
+  if (
+    queueProvider &&
+    normalizeMarketplaceProvider(warrantyCase?.provider, "") !== queueProvider
+  ) {
+    return false;
+  }
+  if (String(warrantyCase?.rootAccountId || "").trim() === sourceAccountId) {
+    return true;
+  }
+  if (String(warrantyCase?.currentAccountId || "").trim() === sourceAccountId) {
+    return true;
+  }
+  return (Array.isArray(warrantyCase?.rounds) ? warrantyCase.rounds : []).some(
+    (round) =>
+      String(round?.fromAccountId || "").trim() === sourceAccountId ||
+      String(round?.toAccountId || "").trim() === sourceAccountId,
+  );
+};
+const findChatgptWarrantyCaseForQueue = (queue = {}, warrantyCases = []) =>
+  (Array.isArray(warrantyCases) ? warrantyCases : []).find((warrantyCase) =>
+    chatgptWarrantyCaseMatchesQueue(warrantyCase, queue),
+  ) || null;
+const getChatgptWarrantyReplacementAccountIdFromCase = (
+  queue = {},
+  warrantyCase = {},
+) => {
+  const sourceAccountId = String(queue?.sourceAccountId || "").trim();
+  if (!sourceAccountId || !warrantyCase) return "";
+  const rounds = Array.isArray(warrantyCase?.rounds) ? warrantyCase.rounds : [];
   const latestRound =
     [...rounds]
       .reverse()
@@ -11893,22 +12231,46 @@ const buildChatgptWarrantyQueuePatchFromCase = async (queue = {}) => {
         (round) =>
           String(round?.fromAccountId || "").trim() === sourceAccountId,
       ) || null;
-  const replacementAccountId = String(
+  return String(
     latestRound?.toAccountId ||
       (String(warrantyCase?.currentAccountId || "").trim() !== sourceAccountId
         ? warrantyCase?.currentAccountId
         : "") ||
       "",
   ).trim();
+};
+const buildChatgptWarrantyQueuePatchFromCaseData = (
+  queue = {},
+  warrantyCase = {},
+  replacementAccountMap = new Map(),
+) => {
+  if (!warrantyCase) return null;
+  const sourceAccountId = String(queue?.sourceAccountId || "").trim();
+  const replacementAccountId = getChatgptWarrantyReplacementAccountIdFromCase(
+    queue,
+    warrantyCase,
+  );
   if (!replacementAccountId) return null;
-  const replacementAcc = await Account.findOne({ id: replacementAccountId })
-    .select("id username password otpSecret")
-    .lean();
+  const rounds = Array.isArray(warrantyCase?.rounds) ? warrantyCase.rounds : [];
+  const latestRound =
+    [...rounds]
+      .reverse()
+      .find(
+        (round) =>
+          String(round?.fromAccountId || "").trim() === sourceAccountId,
+      ) || null;
+  const replacementAcc =
+    replacementAccountMap instanceof Map
+      ? replacementAccountMap.get(replacementAccountId)
+      : null;
   return {
     status: "warrantied",
     replacementAccountId,
     replacementUsername: String(
-      replacementAcc?.username || latestRound?.toUsername || warrantyCase?.currentUsername || "",
+      replacementAcc?.username ||
+        latestRound?.toUsername ||
+        warrantyCase?.currentUsername ||
+        "",
     ).trim(),
     replacementPassword: String(replacementAcc?.password || "").trim(),
     replacementOtpSecret: String(replacementAcc?.otpSecret || "").trim(),
@@ -11919,6 +12281,25 @@ const buildChatgptWarrantyQueuePatchFromCase = async (queue = {}) => {
     ),
     error: "",
   };
+};
+const buildChatgptWarrantyQueuePatchFromCase = async (queue = {}) => {
+  const filter = buildChatgptWarrantyCaseFilterForQueue(queue);
+  if (!filter) return null;
+  const warrantyCase = await DatammoWarrantyCase.findOne(filter).lean();
+  if (!warrantyCase) return null;
+  const replacementAccountId = getChatgptWarrantyReplacementAccountIdFromCase(
+    queue,
+    warrantyCase,
+  );
+  if (!replacementAccountId) return null;
+  const replacementAcc = await Account.findOne({ id: replacementAccountId })
+    .select("id username password otpSecret")
+    .lean();
+  return buildChatgptWarrantyQueuePatchFromCaseData(
+    queue,
+    warrantyCase,
+    new Map([[replacementAccountId, replacementAcc]]),
+  );
 };
 const refreshChatgptWarrantyQueueItem = async (queueDoc) => {
   if (!queueDoc) return null;
@@ -11937,6 +12318,236 @@ const refreshChatgptWarrantyQueueItem = async (queueDoc) => {
   await queueDoc.save();
   return queueDoc;
 };
+const loadChatgptWarrantyQueueCandidatesForDocs = async (queueDocs = []) => {
+  const plainItems = (Array.isArray(queueDocs) ? queueDocs : [queueDocs])
+    .map((item) => getChatgptWarrantyQueuePlainItem(item))
+    .filter(Boolean);
+  if (plainItems.length === 0) return [];
+
+  const nowIso = new Date().toISOString();
+  const sourceIds = Array.from(
+    new Set(
+      plainItems
+        .map((item) => String(item?.sourceAccountId || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const orderIds = Array.from(
+    new Set(
+      plainItems
+        .map((item) => String(item?.orderId || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+  const warrantyCaseQuery =
+    sourceIds.length > 0 && orderIds.length > 0
+      ? {
+          scope: "chatgpt",
+          orderId: { $in: orderIds },
+          $or: [
+            { rootAccountId: { $in: sourceIds } },
+            { currentAccountId: { $in: sourceIds } },
+            { "rounds.fromAccountId": { $in: sourceIds } },
+            { "rounds.toAccountId": { $in: sourceIds } },
+          ],
+        }
+      : null;
+
+  const [sourceAccounts, warrantyCases, busyIdsRaw] = await Promise.all([
+    sourceIds.length > 0
+      ? Account.find({ id: { $in: sourceIds } })
+          .select("id username type package2Shelf users expiredAt createdAt updatedAt")
+          .lean()
+      : Promise.resolve([]),
+    warrantyCaseQuery
+      ? DatammoWarrantyCase.find(warrantyCaseQuery)
+          .sort({ updatedAt: -1, createdAt: -1 })
+          .select(CHATGPT_ADMIN_MARKETPLACE_WARRANTY_TRACE_SELECT)
+          .lean()
+      : Promise.resolve([]),
+    getBusyChatgptAccountIdsForStoreWarranty(),
+  ]);
+
+  const sourceAccountMap = new Map(
+    (Array.isArray(sourceAccounts) ? sourceAccounts : []).map((account) => [
+      String(account?.id || "").trim(),
+      account,
+    ]),
+  );
+  const matchedCaseMap = new Map();
+  const replacementIds = [];
+  plainItems.forEach((item) => {
+    const queueId = String(item?.id || "").trim();
+    if (!queueId) return;
+    const warrantyCase = findChatgptWarrantyCaseForQueue(item, warrantyCases);
+    if (!warrantyCase) return;
+    matchedCaseMap.set(queueId, warrantyCase);
+    const replacementId = getChatgptWarrantyReplacementAccountIdFromCase(
+      item,
+      warrantyCase,
+    );
+    if (replacementId) replacementIds.push(replacementId);
+  });
+
+  const replacementAccountIds = Array.from(new Set(replacementIds));
+  const replacementAccounts =
+    replacementAccountIds.length > 0
+      ? await Account.find({ id: { $in: replacementAccountIds } })
+          .select("id username password otpSecret")
+          .lean()
+      : [];
+  const replacementAccountMap = new Map(
+    (Array.isArray(replacementAccounts) ? replacementAccounts : []).map((account) => [
+      String(account?.id || "").trim(),
+      account,
+    ]),
+  );
+
+  const needsCandidatePool = plainItems.some((item) => {
+    const queueId = String(item?.id || "").trim();
+    if (!queueId) return false;
+    if (normalizeChatgptWarrantyQueueStatus(item?.status) === "warrantied") {
+      return false;
+    }
+    const patch = buildChatgptWarrantyQueuePatchFromCaseData(
+      item,
+      matchedCaseMap.get(queueId),
+      replacementAccountMap,
+    );
+    if (patch) return false;
+    return sourceAccountMap.has(String(item?.sourceAccountId || "").trim());
+  });
+
+  let decoratedCandidatePool = [];
+  if (needsCandidatePool) {
+    const rawCandidates = await Account.find({
+      type: { $in: ["package2", "unassigned"] },
+    })
+      .sort({ createdAt: 1, id: 1 })
+      .select("id username type package2Shelf users expiredAt createdAt updatedAt")
+      .lean();
+    decoratedCandidatePool = await decorateChatgptAccountsWithOperationalState(
+      rawCandidates,
+    );
+  }
+
+  const busyIds = new Set(Array.isArray(busyIdsRaw) ? busyIdsRaw : []);
+  const bulkOps = [];
+  const results = [];
+  plainItems.forEach((item) => {
+    const queueId = String(item?.id || "").trim();
+    if (!queueId) return;
+    if (normalizeChatgptWarrantyQueueStatus(item?.status) === "warrantied") {
+      results.push({
+        id: queueId,
+        ok: true,
+        skipped: true,
+        reason: "already_warrantied",
+        item,
+        candidates: [],
+      });
+      return;
+    }
+
+    const patch = buildChatgptWarrantyQueuePatchFromCaseData(
+      item,
+      matchedCaseMap.get(queueId),
+      replacementAccountMap,
+    );
+    if (patch) {
+      const updatePayload = {
+        ...patch,
+        lastRefreshedAt: nowIso,
+        updatedAt: nowIso,
+      };
+      const nextItem = { ...item, ...updatePayload };
+      bulkOps.push({
+        updateOne: {
+          filter: { id: queueId },
+          update: { $set: updatePayload },
+        },
+      });
+      results.push({
+        id: queueId,
+        ok: true,
+        skipped: true,
+        reason: "already_warrantied",
+        item: nextItem,
+        candidates: [],
+      });
+      return;
+    }
+
+    const source = sourceAccountMap.get(String(item?.sourceAccountId || "").trim());
+    if (!source) {
+      const updatePayload = {
+        status: "error",
+        error: "Khong tim thay acc loi trong kho.",
+        lastRefreshedAt: nowIso,
+        updatedAt: nowIso,
+      };
+      const nextItem = { ...item, ...updatePayload };
+      bulkOps.push({
+        updateOne: {
+          filter: { id: queueId },
+          update: { $set: updatePayload },
+        },
+      });
+      results.push({
+        id: queueId,
+        ok: false,
+        item: nextItem,
+        candidates: [],
+        error: updatePayload.error,
+      });
+      return;
+    }
+
+    const sourceId = String(source?.id || "").trim();
+    const candidates = (Array.isArray(decoratedCandidatePool)
+      ? decoratedCandidatePool
+      : []
+    )
+      .filter((account) => {
+        const accountId = String(account?.id || "").trim();
+        if (!accountId || accountId === sourceId) return false;
+        if (busyIds.has(accountId)) return false;
+        return buildChatgptActionDecision(
+          account,
+          "chatgpt_warranty_replacement",
+          { sourceId },
+        ).allowed;
+      })
+      .map(sanitizeChatgptMoveCandidate);
+    const updatePayload = {
+      status: "loaded",
+      candidateCount: candidates.length,
+      lastLoadedAt: nowIso,
+      lastRefreshedAt: nowIso,
+      updatedAt: nowIso,
+      error: "",
+    };
+    const nextItem = { ...item, ...updatePayload };
+    bulkOps.push({
+      updateOne: {
+        filter: { id: queueId },
+        update: { $set: updatePayload },
+      },
+    });
+    results.push({
+      id: queueId,
+      ok: true,
+      item: nextItem,
+      candidates,
+    });
+  });
+
+  if (bulkOps.length > 0) {
+    await ChatgptWarrantyQueue.bulkWrite(bulkOps, { ordered: false });
+  }
+  return results;
+};
 const loadChatgptWarrantyQueueCandidatesForDoc = async (queueDoc) => {
   if (!queueDoc) {
     return {
@@ -11946,44 +12557,15 @@ const loadChatgptWarrantyQueueCandidatesForDoc = async (queueDoc) => {
       error: "Khong tim thay dong bao hanh.",
     };
   }
-  const refreshed = await refreshChatgptWarrantyQueueItem(queueDoc);
-  if (normalizeChatgptWarrantyQueueStatus(refreshed?.status) === "warrantied") {
-    return {
-      ok: true,
-      item: refreshed,
-      candidates: [],
-      skipped: true,
-      reason: "already_warrantied",
-    };
-  }
-  const source = await Account.findOne({ id: refreshed.sourceAccountId })
-    .select("id username type package2Shelf users expiredAt createdAt updatedAt")
-    .lean();
-  if (!source) {
-    refreshed.status = "error";
-    refreshed.error = "Khong tim thay acc loi trong kho.";
-    refreshed.updatedAt = new Date().toISOString();
-    await refreshed.save();
-    return {
+  const [result] = await loadChatgptWarrantyQueueCandidatesForDocs([queueDoc]);
+  return (
+    result || {
       ok: false,
-      item: refreshed,
+      item: null,
       candidates: [],
-      error: "Khong tim thay acc loi trong kho.",
-    };
-  }
-  const candidates = await listChatgptWarrantyCandidates(source);
-  const nowIso = new Date().toISOString();
-  refreshed.status = "loaded";
-  refreshed.candidateCount = candidates.length;
-  refreshed.lastLoadedAt = nowIso;
-  refreshed.updatedAt = nowIso;
-  refreshed.error = "";
-  await refreshed.save();
-  return {
-    ok: true,
-    item: refreshed,
-    candidates,
-  };
+      error: "Khong tim thay dong bao hanh.",
+    }
+  );
 };
 const markChatgptWarrantyQueueWarrantied = async ({
   sourceAcc,
@@ -15027,22 +15609,23 @@ app.post(
         return res.status(404).json({ error: "Khong tim thay dong bao hanh." });
       }
       const result = await loadChatgptWarrantyQueueCandidatesForDoc(item);
+      const [safeResult] = await sanitizeChatgptWarrantyQueueResults([result]);
       if (!result.ok) {
         return res.status(404).json({
           error: result.error || "Khong the tai acc thay the.",
-          item: await sanitizeChatgptWarrantyQueueItemWithTrace(result.item),
+          item: safeResult?.item || null,
         });
       }
       if (result.skipped) {
         return res.json({
           ok: true,
-          item: await sanitizeChatgptWarrantyQueueItemWithTrace(result.item),
+          item: safeResult?.item || null,
           candidates: [],
         });
       }
       return res.json({
         ok: true,
-        item: await sanitizeChatgptWarrantyQueueItemWithTrace(result.item),
+        item: safeResult?.item || null,
         candidates: result.candidates,
       });
     } catch (error) {
@@ -15066,40 +15649,37 @@ app.post("/api/admin/chatgpt-warranty-queue/bulk-load-candidates", verifyToken, 
     if (ids.length === 0) {
       return res.status(400).json({ error: "Thieu danh sach dong can load." });
     }
-    const items = await ChatgptWarrantyQueue.find({ id: { $in: ids } });
+    const items = await ChatgptWarrantyQueue.find({ id: { $in: ids } }).lean();
     const itemMap = new Map(items.map((item) => [String(item?.id || ""), item]));
-    const results = [];
-    for (const queueId of ids) {
-      const item = itemMap.get(queueId);
-      if (!item) {
-        results.push({
-          id: queueId,
-          ok: false,
-          candidates: [],
-          error: "Khong tim thay dong bao hanh.",
-        });
-        continue;
-      }
-      try {
-        const result = await loadChatgptWarrantyQueueCandidatesForDoc(item);
-        results.push({
-          id: queueId,
-          ok: !!result.ok,
-          skipped: !!result.skipped,
-          reason: String(result.reason || "").trim(),
-          item: await sanitizeChatgptWarrantyQueueItemWithTrace(result.item),
-          candidates: Array.isArray(result.candidates) ? result.candidates : [],
-          error: String(result.error || "").trim(),
-        });
-      } catch (error) {
-        results.push({
-          id: queueId,
-          ok: false,
-          candidates: [],
-          error: error.message || "Khong the load acc thay the.",
-        });
-      }
-    }
+    const loadableItems = ids.map((queueId) => itemMap.get(queueId)).filter(Boolean);
+    const loadedResults = await loadChatgptWarrantyQueueCandidatesForDocs(loadableItems);
+    const safeLoadedResults = await sanitizeChatgptWarrantyQueueResults(
+      loadedResults.map((result) => ({
+        id: String(result?.id || result?.item?.id || "").trim(),
+        ok: !!result?.ok,
+        skipped: !!result?.skipped,
+        reason: String(result?.reason || "").trim(),
+        item: result?.item || null,
+        candidates: Array.isArray(result?.candidates) ? result.candidates : [],
+        error: String(result?.error || "").trim(),
+      })),
+    );
+    const resultMap = new Map(
+      safeLoadedResults.map((result) => [
+        String(result?.id || result?.item?.id || "").trim(),
+        result,
+      ]),
+    );
+    const results = ids.map((queueId) => {
+      const loadedResult = resultMap.get(queueId);
+      if (loadedResult) return loadedResult;
+      return {
+        id: queueId,
+        ok: false,
+        candidates: [],
+        error: "Khong tim thay dong bao hanh.",
+      };
+    });
     return res.json({
       ok: true,
       results,
