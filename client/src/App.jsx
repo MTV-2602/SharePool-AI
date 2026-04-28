@@ -4078,6 +4078,46 @@ function App() {
   }, [chatgptWarrantyQueue]);
 
   useEffect(() => {
+    setChatgptWarrantyQueueReplacementIds((prev) => {
+      const next = { ...(prev || {}) };
+      const usedIds = new Set();
+      let changed = false;
+      const rows = Array.isArray(chatgptWarrantyQueue) ? chatgptWarrantyQueue : [];
+      rows.forEach((row) => {
+        const replacementId = String(row?.replacementAccountId || "").trim();
+        if (replacementId) usedIds.add(replacementId);
+      });
+      rows.forEach((row) => {
+        const queueId = String(row?.id || "").trim();
+        if (!queueId || String(row?.status || "pending") === "warrantied") return;
+        const candidates = Array.isArray(chatgptWarrantyQueueCandidates?.[queueId])
+          ? chatgptWarrantyQueueCandidates[queueId]
+          : [];
+        if (candidates.length === 0) return;
+        const currentId = String(next?.[queueId] || "").trim();
+        const availableCandidates = candidates.filter((acc) => {
+          const accountId = String(acc?.id || "").trim();
+          return accountId && !usedIds.has(accountId);
+        });
+        if (
+          currentId &&
+          availableCandidates.some((acc) => String(acc?.id || "").trim() === currentId)
+        ) {
+          usedIds.add(currentId);
+          return;
+        }
+        const replacementId = String(availableCandidates[0]?.id || "").trim();
+        if ((next[queueId] || "") !== replacementId) {
+          next[queueId] = replacementId;
+          changed = true;
+        }
+        if (replacementId) usedIds.add(replacementId);
+      });
+      return changed ? next : prev;
+    });
+  }, [chatgptWarrantyQueue, chatgptWarrantyQueueCandidates]);
+
+  useEffect(() => {
     if (!expandedChatgptAccountId) return;
     const stillVisible = (Array.isArray(accounts) ? accounts : []).some(
       (acc) =>
@@ -9454,6 +9494,45 @@ function App() {
     }) || null;
   };
 
+  const getBlockedWarrantyQueueReplacementIds = (
+    currentQueueId = "",
+    replacementIds = chatgptWarrantyQueueReplacementIds,
+    extraUsedIds = [],
+  ) => {
+    const normalizedQueueId = String(currentQueueId || "").trim();
+    const blockedIds = new Set(
+      (Array.isArray(extraUsedIds) ? extraUsedIds : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    );
+    (Array.isArray(chatgptWarrantyQueue) ? chatgptWarrantyQueue : []).forEach((row) => {
+      const rowId = String(row?.id || "").trim();
+      if (!rowId || rowId === normalizedQueueId) return;
+      const selectedId = String(replacementIds?.[rowId] || "").trim();
+      const warrantiedId = String(row?.replacementAccountId || "").trim();
+      if (selectedId) blockedIds.add(selectedId);
+      if (warrantiedId) blockedIds.add(warrantiedId);
+    });
+    return blockedIds;
+  };
+
+  const getAvailableWarrantyQueueCandidates = (
+    queueId = "",
+    candidates = [],
+    replacementIds = chatgptWarrantyQueueReplacementIds,
+    extraUsedIds = [],
+  ) => {
+    const blockedIds = getBlockedWarrantyQueueReplacementIds(
+      queueId,
+      replacementIds,
+      extraUsedIds,
+    );
+    return (Array.isArray(candidates) ? candidates : []).filter((acc) => {
+      const accountId = String(acc?.id || "").trim();
+      return accountId && !blockedIds.has(accountId);
+    });
+  };
+
   const pickUniqueWarrantyQueueReplacementId = (
     queueId = "",
     candidates = [],
@@ -9461,7 +9540,12 @@ function App() {
     replacementIds = chatgptWarrantyQueueReplacementIds,
   ) => {
     const normalizedQueueId = String(queueId || "").trim();
-    const safeCandidates = Array.isArray(candidates) ? candidates : [];
+    const safeCandidates = getAvailableWarrantyQueueCandidates(
+      normalizedQueueId,
+      candidates,
+      replacementIds,
+      Array.from(usedReplacementIds || []),
+    );
     const currentSelectedId = String(
       replacementIds?.[normalizedQueueId] || "",
     ).trim();
@@ -9546,7 +9630,10 @@ function App() {
     }
   };
 
-  const applyWarrantyQueueCandidateLoadResults = (results = []) => {
+  const applyWarrantyQueueCandidateLoadResults = (
+    results = [],
+    { extraUsedIds = [] } = {},
+  ) => {
     const safeResults = Array.isArray(results) ? results : [];
     const resultQueueIds = new Set(
       safeResults
@@ -9569,7 +9656,11 @@ function App() {
     });
     setChatgptWarrantyQueueReplacementIds((prev) => {
       const next = { ...(prev || {}) };
-      const usedIds = new Set();
+      const usedIds = new Set(
+        (Array.isArray(extraUsedIds) ? extraUsedIds : [])
+          .map((id) => String(id || "").trim())
+          .filter(Boolean),
+      );
       (Array.isArray(chatgptWarrantyQueue) ? chatgptWarrantyQueue : []).forEach((row) => {
         const replacementId = String(row?.replacementAccountId || "").trim();
         if (replacementId) usedIds.add(replacementId);
@@ -9776,6 +9867,7 @@ function App() {
       );
       applyWarrantyQueueCandidateLoadResults(
         Array.isArray(response?.data?.results) ? response.data.results : [],
+        { extraUsedIds: [normalizedReplacementId] },
       );
     } catch (error) {
       // Bao hanh da thanh cong; neu reload candidate loi thi admin co the bam Load acc sach lai.
@@ -15619,6 +15711,13 @@ function App() {
                         const status = String(item?.status || "pending");
                         const candidates = Array.isArray(chatgptWarrantyQueueCandidates?.[queueId]) ? chatgptWarrantyQueueCandidates[queueId] : [];
                         const selectedReplacementId = String(chatgptWarrantyQueueReplacementIds?.[queueId] || "");
+                        const availableCandidates = getAvailableWarrantyQueueCandidates(queueId, candidates);
+                        const effectiveSelectedReplacementId = availableCandidates.some(
+                          (acc) => String(acc?.id || "").trim() === selectedReplacementId,
+                        )
+                          ? selectedReplacementId
+                          : "";
+                        const hiddenCandidateCount = Math.max(0, candidates.length - availableCandidates.length);
                         const isWarrantied = status === "warrantied";
                         const isSentToCustomer = !!String(item?.sentToCustomerAt || "").trim();
                         const hasCheckedAt = !!String(item?.checkedAt || "").trim();
@@ -15688,8 +15787,9 @@ function App() {
                                     </div>
                                   ) : null}
                                 </div>
-                              ) : candidates.length > 0 ? (
-                                <select value={selectedReplacementId} onChange={(event) => {
+                              ) : availableCandidates.length > 0 ? (
+                                <>
+                                <select value={effectiveSelectedReplacementId} onChange={(event) => {
                                   const nextReplacementId = String(event.target.value || "").trim();
                                   const duplicateOwner = getWarrantyQueueReplacementOwner(nextReplacementId, queueId);
                                   if (duplicateOwner) {
@@ -15703,8 +15803,16 @@ function App() {
                                   setChatgptWarrantyQueueReplacementIds((prev) => ({ ...prev, [queueId]: nextReplacementId }));
                                 }} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-white outline-none focus:border-cyan-400">
                                   <option value="">Chon acc thay the...</option>
-                                  {candidates.map((acc) => <option key={acc.id} value={acc.id}>{acc.username} · {getPackage2ShelfLabel(acc.package2Shelf)} · {formatDate(acc.expiredAt)}</option>)}
+                                  {availableCandidates.map((acc) => <option key={acc.id} value={acc.id}>{acc.username} · {getPackage2ShelfLabel(acc.package2Shelf)} · {formatDate(acc.expiredAt)}</option>)}
                                 </select>
+                                {hiddenCandidateCount > 0 ? <div className="mt-1 text-[10px] font-semibold text-amber-200">Da loai {hiddenCandidateCount} acc dang duoc dong khac giu/dung.</div> : null}
+                                {!effectiveSelectedReplacementId ? <div className="mt-1 text-[10px] font-semibold text-amber-200">Chon acc thay the khac truoc khi bao hanh.</div> : null}
+                                </>
+                              ) : candidates.length > 0 ? (
+                                <div>
+                                  <span className="text-xs font-semibold text-amber-200">Chua co acc khac</span>
+                                  <div className="mt-1 text-[10px] text-slate-500">Tat ca acc vua load dang duoc dong khac giu/dung. Bam Load acc sach de lay lai danh sach moi.</div>
+                                </div>
                               ) : <span className="text-xs text-slate-500">Chua load acc</span>}
                               {!isWarrantied ? <input value={chatgptWarrantyQueueReasons?.[queueId] || ""} onChange={(event) => setChatgptWarrantyQueueReasons((prev) => ({ ...prev, [queueId]: event.target.value }))} placeholder="Ly do BH..." className="mt-2 w-full rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white outline-none focus:border-cyan-500" /> : null}
                             </td>
@@ -15715,7 +15823,7 @@ function App() {
                                 {isWarrantied && !isSentToCustomer ? <button type="button" onClick={() => handleMarkWarrantyQueueSent(item)} disabled={!!loadingStates.markWarrantyQueueSent?.[queueId]} className="rounded-lg border border-emerald-600/50 bg-emerald-900/25 px-2 py-1 text-[11px] font-bold text-emerald-100 hover:bg-emerald-700/40 disabled:opacity-60">{loadingStates.markWarrantyQueueSent?.[queueId] ? "Dang luu..." : "Da gui khach"}</button> : null}
                                 {!isWarrantied ? <>
                                   <button type="button" onClick={() => handleLoadWarrantyQueueCandidates(item)} disabled={isLoadingCandidates} className="rounded-lg bg-slate-700 px-2 py-1 text-[11px] font-bold text-white hover:bg-slate-600 disabled:opacity-60">{isLoadingCandidates ? "Dang load..." : "Load acc"}</button>
-                                  <button type="button" onClick={() => handleSubmitWarrantyQueueItem(item)} disabled={!selectedReplacementId || isSubmitting} className="rounded-lg bg-cyan-700 px-2 py-1 text-[11px] font-bold text-white hover:bg-cyan-600 disabled:opacity-50">{isSubmitting ? "Dang BH..." : "Bao hanh"}</button>
+                                  <button type="button" onClick={() => handleSubmitWarrantyQueueItem(item)} disabled={!effectiveSelectedReplacementId || isSubmitting} className="rounded-lg bg-cyan-700 px-2 py-1 text-[11px] font-bold text-white hover:bg-cyan-600 disabled:opacity-50">{isSubmitting ? "Dang BH..." : "Bao hanh"}</button>
                                 </> : null}
                                 <button type="button" onClick={() => handleRefreshWarrantyQueueItem(item)} disabled={isRefreshing} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] font-bold text-slate-200 hover:text-white disabled:opacity-60">{isRefreshing ? "Dang lam moi..." : "Lam moi"}</button>
                                 <button type="button" onClick={() => handleDeleteWarrantyQueueItem(item)} disabled={!!loadingStates.deleteWarrantyQueueItem?.[queueId]} className="rounded-lg border border-red-700/50 bg-red-900/20 px-2 py-1 text-[11px] font-bold text-red-200 hover:bg-red-800/40 disabled:opacity-60">Xoa</button>
