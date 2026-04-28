@@ -19514,6 +19514,11 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
         const hasVisibleReplacementSelected = filteredReplacementAccounts.some(
           (acc) => String(acc?.id || "") === String(warrantyReplacementId || ""),
         );
+        const selectedReplacementAccount = hasVisibleReplacementSelected
+          ? filteredReplacementAccounts.find(
+              (acc) => String(acc?.id || "") === String(warrantyReplacementId || ""),
+            )
+          : null;
         const sourceManagedInfo = isTeamWarranty
           ? getMarketplaceOrderInfoFromUser({
               name: sourceTeamCustomer?.customerName || "",
@@ -19668,6 +19673,28 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                           : null}
                       </div>
                     )}
+                  {selectedReplacementAccount && !isTeamWarranty ? (
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-700/40 bg-emerald-950/20 px-3 py-2">
+                      <div className="min-w-0 text-xs">
+                        <div className="font-bold text-emerald-100">Acc mới đã chọn</div>
+                        <div className="mt-0.5 break-all font-mono text-slate-300">
+                          {selectedReplacementAccount.username}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCopy(
+                            buildChatgptCopyText(selectedReplacementAccount),
+                            getChatgptCopySuccessText(selectedReplacementAccount),
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600/50 bg-emerald-700/70 px-3 py-1.5 text-[11px] font-black text-white transition hover:bg-emerald-600"
+                      >
+                        <Copy size={12} /> Copy acc mới
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div>
@@ -20742,6 +20769,18 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                               const orderId = getHotmailDieBatchOrderId(item);
                               const provider = getMarketplaceProviderLabel(item?.marketplaceProvider);
                               const hasWarranty = hasHotmailDieBatchWarranty(item);
+                              const chatgptAccountId = String(item?.chatgptAccountId || "").trim();
+                              const warrantySourceAccount = chatgptAccountId
+                                ? accounts.find(
+                                    (acc) => String(acc?.id || "").trim() === chatgptAccountId,
+                                  ) || {
+                                    id: chatgptAccountId,
+                                    username:
+                                      item?.chatgptUsername ||
+                                      item?.email ||
+                                      extractEmailFromHotmailDieLine(item?.line),
+                                  }
+                                : null;
                               return (
                                 <tr
                                   key={`${item?.email || "row"}-${index}`}
@@ -20774,6 +20813,31 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                               ? `Đã BH${Number(item?.marketplaceWarrantyCount || 0) > 0 ? ` ${Number(item.marketplaceWarrantyCount)}` : ""}`
                                               : "Chưa BH"}
                                           </span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleCopy(
+                                                buildHotmailDieBatchCopyLine(item),
+                                                "Đã copy email + mã đơn",
+                                              )
+                                            }
+                                            className="inline-flex items-center gap-1 rounded-md border border-emerald-700/50 bg-emerald-900/25 px-2 py-1 text-[10px] font-black text-emerald-100 transition hover:bg-emerald-700/40"
+                                            title="Copy Hotmail + mã đơn"
+                                          >
+                                            <Copy size={10} /> Copy
+                                          </button>
+                                          {warrantySourceAccount ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => openWarrantyModal(warrantySourceAccount)}
+                                              className="inline-flex items-center gap-1 rounded-md border border-cyan-700/50 bg-cyan-900/30 px-2 py-1 text-[10px] font-black text-cyan-100 transition hover:bg-cyan-700/50"
+                                              title="Mở bảo hành nhanh cho đơn sàn"
+                                            >
+                                              <Shield size={10} /> BH nhanh
+                                            </button>
+                                          ) : null}
                                         </div>
                                       </div>
                                     ) : (
