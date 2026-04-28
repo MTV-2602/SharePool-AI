@@ -9437,6 +9437,51 @@ function App() {
     }
   };
 
+  const getWarrantyQueueReplacementOwner = (
+    replacementAccountId = "",
+    currentQueueId = "",
+    replacementIds = chatgptWarrantyQueueReplacementIds,
+  ) => {
+    const normalizedReplacementId = String(replacementAccountId || "").trim();
+    const normalizedQueueId = String(currentQueueId || "").trim();
+    if (!normalizedReplacementId) return null;
+    return (Array.isArray(chatgptWarrantyQueue) ? chatgptWarrantyQueue : []).find((row) => {
+      const rowId = String(row?.id || "").trim();
+      if (!rowId || rowId === normalizedQueueId) return false;
+      const selectedId = String(replacementIds?.[rowId] || "").trim();
+      const warrantiedId = String(row?.replacementAccountId || "").trim();
+      return selectedId === normalizedReplacementId || warrantiedId === normalizedReplacementId;
+    }) || null;
+  };
+
+  const pickUniqueWarrantyQueueReplacementId = (
+    queueId = "",
+    candidates = [],
+    usedReplacementIds = new Set(),
+    replacementIds = chatgptWarrantyQueueReplacementIds,
+  ) => {
+    const normalizedQueueId = String(queueId || "").trim();
+    const safeCandidates = Array.isArray(candidates) ? candidates : [];
+    const currentSelectedId = String(
+      replacementIds?.[normalizedQueueId] || "",
+    ).trim();
+    if (
+      currentSelectedId &&
+      safeCandidates.some((acc) => String(acc?.id || "").trim() === currentSelectedId) &&
+      !usedReplacementIds.has(currentSelectedId)
+    ) {
+      usedReplacementIds.add(currentSelectedId);
+      return currentSelectedId;
+    }
+    const nextCandidate = safeCandidates.find((acc) => {
+      const candidateId = String(acc?.id || "").trim();
+      return candidateId && !usedReplacementIds.has(candidateId);
+    });
+    const nextId = String(nextCandidate?.id || "").trim();
+    if (nextId) usedReplacementIds.add(nextId);
+    return nextId;
+  };
+
   const handleLoadWarrantyQueueCandidates = async (item = {}) => {
     const queueId = String(item?.id || "").trim();
     if (!queueId) return;
@@ -9462,11 +9507,23 @@ function App() {
         ...prev,
         [queueId]: nextCandidates,
       }));
-      if (nextCandidates[0]?.id) {
-        setChatgptWarrantyQueueReplacementIds((prev) =>
-          prev?.[queueId] ? prev : { ...(prev || {}), [queueId]: nextCandidates[0].id },
+      setChatgptWarrantyQueueReplacementIds((prev) => {
+        const usedIds = new Set(
+          Object.entries(prev || {})
+            .filter(([otherQueueId]) => String(otherQueueId || "").trim() !== queueId)
+            .map(([, replacementId]) => String(replacementId || "").trim())
+            .filter(Boolean),
         );
-      }
+        (Array.isArray(chatgptWarrantyQueue) ? chatgptWarrantyQueue : []).forEach((row) => {
+          const rowId = String(row?.id || "").trim();
+          const replacementId = String(row?.replacementAccountId || "").trim();
+          if (rowId !== queueId && replacementId) usedIds.add(replacementId);
+        });
+        return {
+          ...(prev || {}),
+          [queueId]: pickUniqueWarrantyQueueReplacementId(queueId, nextCandidates, usedIds, prev),
+        };
+      });
       showAlert(
         "Đã load acc thay thế",
         `Tìm thấy ${Array.isArray(response?.data?.candidates) ? response.data.candidates.length : 0} acc sạch.`,
@@ -9491,20 +9548,50 @@ function App() {
 
   const applyWarrantyQueueCandidateLoadResults = (results = []) => {
     const safeResults = Array.isArray(results) ? results : [];
+    const resultQueueIds = new Set(
+      safeResults
+        .map((result) => String(result?.id || result?.item?.id || "").trim())
+        .filter(Boolean),
+    );
     safeResults.forEach((result) => {
       const queueId = String(result?.id || result?.item?.id || "").trim();
       if (!queueId) return;
       if (result?.item) mergeChatgptWarrantyQueueItem(result.item);
-      const candidates = Array.isArray(result?.candidates) ? result.candidates : [];
-      setChatgptWarrantyQueueCandidates((prev) => ({
-        ...(prev || {}),
-        [queueId]: candidates,
-      }));
-      if (candidates[0]?.id) {
-        setChatgptWarrantyQueueReplacementIds((prev) =>
-          prev?.[queueId] ? prev : { ...(prev || {}), [queueId]: candidates[0].id },
+    });
+    setChatgptWarrantyQueueCandidates((prev) => {
+      const next = { ...(prev || {}) };
+      safeResults.forEach((result) => {
+        const queueId = String(result?.id || result?.item?.id || "").trim();
+        if (!queueId) return;
+        next[queueId] = Array.isArray(result?.candidates) ? result.candidates : [];
+      });
+      return next;
+    });
+    setChatgptWarrantyQueueReplacementIds((prev) => {
+      const next = { ...(prev || {}) };
+      const usedIds = new Set();
+      (Array.isArray(chatgptWarrantyQueue) ? chatgptWarrantyQueue : []).forEach((row) => {
+        const replacementId = String(row?.replacementAccountId || "").trim();
+        if (replacementId) usedIds.add(replacementId);
+      });
+      Object.entries(prev || {}).forEach(([queueId, replacementId]) => {
+        const normalizedQueueId = String(queueId || "").trim();
+        const normalizedReplacementId = String(replacementId || "").trim();
+        if (!normalizedReplacementId || resultQueueIds.has(normalizedQueueId)) return;
+        usedIds.add(normalizedReplacementId);
+      });
+      safeResults.forEach((result) => {
+        const queueId = String(result?.id || result?.item?.id || "").trim();
+        if (!queueId) return;
+        const candidates = Array.isArray(result?.candidates) ? result.candidates : [];
+        next[queueId] = pickUniqueWarrantyQueueReplacementId(
+          queueId,
+          candidates,
+          usedIds,
+          next,
         );
-      }
+      });
+      return next;
     });
   };
 
@@ -9644,6 +9731,57 @@ function App() {
     );
   };
 
+  const refreshWarrantyQueueCandidatesAfterReplacementUsed = async ({
+    queueId = "",
+    replacementAccountId = "",
+  } = {}) => {
+    const normalizedQueueId = String(queueId || "").trim();
+    const normalizedReplacementId = String(replacementAccountId || "").trim();
+    if (!normalizedReplacementId) return;
+    setChatgptWarrantyQueueCandidates((prev) => {
+      const next = { ...(prev || {}) };
+      Object.keys(next).forEach((candidateQueueId) => {
+        if (String(candidateQueueId || "").trim() === normalizedQueueId) return;
+        next[candidateQueueId] = (Array.isArray(next[candidateQueueId])
+          ? next[candidateQueueId]
+          : []
+        ).filter(
+          (acc) => String(acc?.id || "").trim() !== normalizedReplacementId,
+        );
+      });
+      return next;
+    });
+    setChatgptWarrantyQueueReplacementIds((prev) => {
+      const next = { ...(prev || {}) };
+      Object.entries(next).forEach(([candidateQueueId, selectedId]) => {
+        if (String(candidateQueueId || "").trim() === normalizedQueueId) return;
+        if (String(selectedId || "").trim() === normalizedReplacementId) {
+          next[candidateQueueId] = "";
+        }
+      });
+      return next;
+    });
+    const pendingItems = (Array.isArray(chatgptWarrantyQueue) ? chatgptWarrantyQueue : [])
+      .filter((row) => {
+        const rowId = String(row?.id || "").trim();
+        return rowId && rowId !== normalizedQueueId && String(row?.status || "pending") !== "warrantied";
+      });
+    const ids = pendingItems.map((row) => String(row?.id || "").trim()).filter(Boolean);
+    if (ids.length === 0) return;
+    try {
+      const response = await axios.post(
+        "/api/admin/chatgpt-warranty-queue/bulk-load-candidates",
+        { ids },
+        { timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+      );
+      applyWarrantyQueueCandidateLoadResults(
+        Array.isArray(response?.data?.results) ? response.data.results : [],
+      );
+    } catch (error) {
+      // Bao hanh da thanh cong; neu reload candidate loi thi admin co the bam Load acc sach lai.
+    }
+  };
+
   const handleRefreshWarrantyQueueItem = async (item = {}) => {
     const queueId = String(item?.id || "").trim();
     if (!queueId) return;
@@ -9755,6 +9893,18 @@ function App() {
       showAlert("Thiếu dữ liệu", "Không tìm thấy acc thay thế đã chọn.", "warning");
       return;
     }
+    const duplicateOwner = getWarrantyQueueReplacementOwner(
+      replacementAccountId,
+      queueId,
+    );
+    if (duplicateOwner) {
+      showAlert(
+        "Acc thay the dang duoc chon",
+        `Acc nay dang duoc gan cho ${duplicateOwner?.sourceUsername || duplicateOwner?.orderId || "dong khac"}. Hay bam Load acc sach de lay acc khac.`,
+        "warning",
+      );
+      return;
+    }
     setLoadingStates((prev) => ({
       ...prev,
       warrantyQueueSubmit: {
@@ -9790,6 +9940,10 @@ function App() {
       ]);
       broadcastDataChange();
       const replacement = response?.data?.replacement || replacementAcc;
+      await refreshWarrantyQueueCandidatesAfterReplacementUsed({
+        queueId,
+        replacementAccountId,
+      });
       handleCopy(
         buildChatgptPipeCopyText(replacement),
         "Đã bảo hành và copy acc mới",
@@ -15535,7 +15689,19 @@ function App() {
                                   ) : null}
                                 </div>
                               ) : candidates.length > 0 ? (
-                                <select value={selectedReplacementId} onChange={(event) => setChatgptWarrantyQueueReplacementIds((prev) => ({ ...prev, [queueId]: event.target.value }))} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-white outline-none focus:border-cyan-400">
+                                <select value={selectedReplacementId} onChange={(event) => {
+                                  const nextReplacementId = String(event.target.value || "").trim();
+                                  const duplicateOwner = getWarrantyQueueReplacementOwner(nextReplacementId, queueId);
+                                  if (duplicateOwner) {
+                                    showAlert(
+                                      "Acc thay the dang duoc chon",
+                                      `Acc nay dang gan cho ${duplicateOwner?.sourceUsername || duplicateOwner?.orderId || "dong khac"}. Chon acc khac de tranh bam nham.`,
+                                      "warning",
+                                    );
+                                    return;
+                                  }
+                                  setChatgptWarrantyQueueReplacementIds((prev) => ({ ...prev, [queueId]: nextReplacementId }));
+                                }} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-white outline-none focus:border-cyan-400">
                                   <option value="">Chon acc thay the...</option>
                                   {candidates.map((acc) => <option key={acc.id} value={acc.id}>{acc.username} · {getPackage2ShelfLabel(acc.package2Shelf)} · {formatDate(acc.expiredAt)}</option>)}
                                 </select>
