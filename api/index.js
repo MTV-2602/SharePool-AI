@@ -11758,32 +11758,99 @@ const normalizeChatgptWarrantyQueueStatus = (value = "") => {
     : "pending";
 };
 const buildChatgptWarrantyQueueId = () => createStoreId("cwq");
-const sanitizeChatgptWarrantyQueueItem = (item = {}) => ({
-  id: String(item?.id || "").trim(),
-  sourceAccountId: String(item?.sourceAccountId || "").trim(),
-  sourceUsername: String(item?.sourceUsername || "").trim(),
-  provider: normalizeMarketplaceProvider(item?.provider),
-  providerLabel: getMarketplaceProviderLabel(item?.provider),
-  orderId: String(item?.orderId || "").trim(),
-  mailStatus: String(item?.mailStatus || "").trim(),
-  mailMatchedSubject: String(item?.mailMatchedSubject || "").trim(),
-  mailMatchedSender: String(item?.mailMatchedSender || "").trim(),
-  mailMatchedAt: String(item?.mailMatchedAt || "").trim(),
-  mailMatchedSnippet: String(item?.mailMatchedSnippet || "").trim(),
-  status: normalizeChatgptWarrantyQueueStatus(item?.status),
-  candidateCount: Math.max(0, Number(item?.candidateCount || 0)),
-  replacementAccountId: String(item?.replacementAccountId || "").trim(),
-  replacementUsername: String(item?.replacementUsername || "").trim(),
-  replacementPassword: String(item?.replacementPassword || "").trim(),
-  replacementOtpSecret: String(item?.replacementOtpSecret || "").trim(),
-  warrantyCaseId: String(item?.warrantyCaseId || "").trim(),
-  warrantyRoundSequence: Math.max(0, Number(item?.warrantyRoundSequence || 0)),
-  error: String(item?.error || "").trim(),
-  lastLoadedAt: String(item?.lastLoadedAt || "").trim(),
-  lastRefreshedAt: String(item?.lastRefreshedAt || "").trim(),
-  createdAt: String(item?.createdAt || "").trim(),
-  updatedAt: String(item?.updatedAt || "").trim(),
-});
+const buildChatgptWarrantyQueueReplacementWebTrace = (account = {}) => {
+  const storeTraceSummary =
+    account?.storeTraceSummary && typeof account.storeTraceSummary === "object"
+      ? account.storeTraceSummary
+      : null;
+  const traces = Array.isArray(storeTraceSummary?.traces)
+    ? storeTraceSummary.traces
+    : [];
+  const latestTrace = traces[0] || null;
+  if (!latestTrace && Number(storeTraceSummary?.totalOrders || 0) <= 0) return null;
+  return {
+    orderId: String(latestTrace?.orderId || storeTraceSummary?.latestOrderId || "").trim(),
+    status: String(latestTrace?.status || storeTraceSummary?.latestStatus || "").trim(),
+    role: String(latestTrace?.role || "").trim(),
+    packageName: String(
+      latestTrace?.packageName || storeTraceSummary?.latestPackageName || "",
+    ).trim(),
+    customerName: String(
+      latestTrace?.customerName || storeTraceSummary?.latestCustomerName || "",
+    ).trim(),
+    customerEmail: String(
+      latestTrace?.customerEmail || storeTraceSummary?.latestCustomerEmail || "",
+    ).trim(),
+    at: String(
+      latestTrace?.fulfilledAt ||
+        latestTrace?.paidAt ||
+        latestTrace?.createdAt ||
+        "",
+    ).trim(),
+    totalOrders: Math.max(0, Number(storeTraceSummary?.totalOrders || 0)),
+  };
+};
+const sanitizeChatgptWarrantyQueueItem = (
+  item = {},
+  { replacementAccountMap = new Map() } = {},
+) => {
+  const replacementAccountId = String(item?.replacementAccountId || "").trim();
+  const replacementAccount =
+    replacementAccountMap instanceof Map
+      ? replacementAccountMap.get(replacementAccountId)
+      : null;
+  const replacementWebTrace = replacementAccount
+    ? buildChatgptWarrantyQueueReplacementWebTrace(replacementAccount)
+    : null;
+  return {
+    id: String(item?.id || "").trim(),
+    sourceAccountId: String(item?.sourceAccountId || "").trim(),
+    sourceUsername: String(item?.sourceUsername || "").trim(),
+    provider: normalizeMarketplaceProvider(item?.provider),
+    providerLabel: getMarketplaceProviderLabel(item?.provider),
+    orderId: String(item?.orderId || "").trim(),
+    mailStatus: String(item?.mailStatus || "").trim(),
+    mailMatchedSubject: String(item?.mailMatchedSubject || "").trim(),
+    mailMatchedSender: String(item?.mailMatchedSender || "").trim(),
+    mailMatchedAt: String(item?.mailMatchedAt || "").trim(),
+    mailMatchedSnippet: String(item?.mailMatchedSnippet || "").trim(),
+    status: normalizeChatgptWarrantyQueueStatus(item?.status),
+    candidateCount: Math.max(0, Number(item?.candidateCount || 0)),
+    replacementAccountId,
+    replacementUsername: String(item?.replacementUsername || "").trim(),
+    replacementPassword: String(item?.replacementPassword || "").trim(),
+    replacementOtpSecret: String(item?.replacementOtpSecret || "").trim(),
+    replacementWebTrace,
+    warrantyCaseId: String(item?.warrantyCaseId || "").trim(),
+    warrantyRoundSequence: Math.max(0, Number(item?.warrantyRoundSequence || 0)),
+    error: String(item?.error || "").trim(),
+    lastLoadedAt: String(item?.lastLoadedAt || "").trim(),
+    lastRefreshedAt: String(item?.lastRefreshedAt || "").trim(),
+    createdAt: String(item?.createdAt || "").trim(),
+    updatedAt: String(item?.updatedAt || "").trim(),
+  };
+};
+const sanitizeChatgptWarrantyQueueItems = async (items = []) => {
+  const safeItems = Array.isArray(items) ? items : [];
+  const replacementIds = Array.from(
+    new Set(
+      safeItems
+        .map((item) => String(item?.replacementAccountId || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const replacementAccountMap =
+    replacementIds.length > 0
+      ? await loadChatgptAccountOperationalStateMap(replacementIds)
+      : new Map();
+  return safeItems.map((item) =>
+    sanitizeChatgptWarrantyQueueItem(item, { replacementAccountMap }),
+  );
+};
+const sanitizeChatgptWarrantyQueueItemWithTrace = async (item = {}) => {
+  const [sanitized] = await sanitizeChatgptWarrantyQueueItems(item ? [item] : []);
+  return sanitized || sanitizeChatgptWarrantyQueueItem(item);
+};
 const buildChatgptWarrantyCaseFilterForQueue = (queue = {}) => {
   const sourceAccountId = String(queue?.sourceAccountId || "").trim();
   const orderId = String(queue?.orderId || "").trim();
@@ -14818,9 +14885,10 @@ app.get("/api/admin/chatgpt-warranty-queue", verifyToken, async (req, res) => {
       summary[key] = Number(item?.count || 0);
       summary.all += Number(item?.count || 0);
     });
+    const sanitizedItems = await sanitizeChatgptWarrantyQueueItems(items);
     return res.json({
       ok: true,
-      items: items.map(sanitizeChatgptWarrantyQueueItem),
+      items: sanitizedItems,
       total,
       summary,
     });
@@ -14880,7 +14948,7 @@ app.post("/api/admin/chatgpt-warranty-queue/upsert", verifyToken, async (req, re
     }
     return res.json({
       ok: true,
-      item: sanitizeChatgptWarrantyQueueItem(item),
+      item: await sanitizeChatgptWarrantyQueueItemWithTrace(item),
     });
   } catch (error) {
     console.error("POST /api/admin/chatgpt-warranty-queue/upsert failed:", error);
@@ -14904,7 +14972,7 @@ app.post(
       if (normalizeChatgptWarrantyQueueStatus(refreshed?.status) === "warrantied") {
         return res.json({
           ok: true,
-          item: sanitizeChatgptWarrantyQueueItem(refreshed),
+          item: await sanitizeChatgptWarrantyQueueItemWithTrace(refreshed),
           candidates: [],
         });
       }
@@ -14918,7 +14986,7 @@ app.post(
         await refreshed.save();
         return res.status(404).json({
           error: "Khong tim thay acc loi trong kho.",
-          item: sanitizeChatgptWarrantyQueueItem(refreshed),
+          item: await sanitizeChatgptWarrantyQueueItemWithTrace(refreshed),
         });
       }
       const candidates = await listChatgptWarrantyCandidates(source);
@@ -14931,7 +14999,7 @@ app.post(
       await refreshed.save();
       return res.json({
         ok: true,
-        item: sanitizeChatgptWarrantyQueueItem(refreshed),
+        item: await sanitizeChatgptWarrantyQueueItemWithTrace(refreshed),
         candidates,
       });
     } catch (error) {
@@ -14953,7 +15021,7 @@ app.post("/api/admin/chatgpt-warranty-queue/:id/refresh", verifyToken, async (re
     const refreshed = await refreshChatgptWarrantyQueueItem(item);
     return res.json({
       ok: true,
-      item: sanitizeChatgptWarrantyQueueItem(refreshed),
+      item: await sanitizeChatgptWarrantyQueueItemWithTrace(refreshed),
     });
   } catch (error) {
     console.error("POST /api/admin/chatgpt-warranty-queue/:id/refresh failed:", error);

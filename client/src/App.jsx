@@ -15185,6 +15185,14 @@ function App() {
                         const isRefreshing = !!loadingStates.refreshWarrantyQueueItem?.[queueId];
                         const isSubmitting = !!loadingStates.warrantyQueueSubmit?.[queueId];
                         const replacementCopyText = [item?.replacementUsername, item?.replacementPassword, item?.replacementOtpSecret].filter(Boolean).join("|");
+                        const replacementWebTrace = item?.replacementWebTrace && typeof item.replacementWebTrace === "object" ? item.replacementWebTrace : null;
+                        const replacementWebTraceTitle = replacementWebTrace
+                          ? [
+                              replacementWebTrace.customerName || replacementWebTrace.customerEmail || "Khách web",
+                              replacementWebTrace.orderId ? `Đơn ${replacementWebTrace.orderId}` : "",
+                              replacementWebTrace.at ? formatDateTime(replacementWebTrace.at) : "",
+                            ].filter(Boolean).join(" · ")
+                          : "";
                         const statusTone = isWarrantied ? "border-cyan-500/40 bg-cyan-500/15 text-cyan-100" : status === "error" ? "border-red-500/40 bg-red-500/15 text-red-100" : status === "loaded" ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-100" : "border-amber-500/40 bg-amber-500/15 text-amber-100";
                         const statusLabel = isWarrantied ? "Da BH" : status === "loaded" ? "Da load" : status === "error" ? "Loi" : "Cho BH";
                         return (
@@ -15206,6 +15214,14 @@ function App() {
                                 <div>
                                   <div className="break-all font-mono text-xs font-bold text-cyan-100">{item?.replacementUsername || "--"}</div>
                                   <div className="mt-1 text-[11px] text-slate-500">Lan BH #{Number(item?.warrantyRoundSequence || 0) || 1}</div>
+                                  {replacementWebTrace ? (
+                                    <div className="mt-1 rounded-lg border border-sky-500/25 bg-sky-500/10 px-2 py-1 text-[10px] font-semibold text-sky-100">
+                                      Web gần nhất: {replacementWebTraceTitle || "Có lịch sử web"}
+                                      {Number(replacementWebTrace.totalOrders || 0) > 1
+                                        ? ` · ${Number(replacementWebTrace.totalOrders || 0)} đơn`
+                                        : ""}
+                                    </div>
+                                  ) : null}
                                 </div>
                               ) : candidates.length > 0 ? (
                                 <select value={selectedReplacementId} onChange={(event) => setChatgptWarrantyQueueReplacementIds((prev) => ({ ...prev, [queueId]: event.target.value }))} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-white outline-none focus:border-cyan-400">
