@@ -1797,6 +1797,10 @@ const chatgptWarrantyQueueSchema = new mongoose.Schema({
   replacementOtpSecret: { type: String, default: "" },
   warrantyCaseId: { type: String, default: "" },
   warrantyRoundSequence: { type: Number, default: 0 },
+  adminNote: { type: String, default: "" },
+  checkedAt: { type: String, default: "" },
+  sentToCustomerAt: { type: String, default: "" },
+  sentToCustomerNote: { type: String, default: "" },
   error: { type: String, default: "" },
   lastLoadedAt: { type: String, default: "" },
   lastRefreshedAt: { type: String, default: "" },
@@ -11823,6 +11827,10 @@ const sanitizeChatgptWarrantyQueueItem = (
     replacementWebTrace,
     warrantyCaseId: String(item?.warrantyCaseId || "").trim(),
     warrantyRoundSequence: Math.max(0, Number(item?.warrantyRoundSequence || 0)),
+    adminNote: String(item?.adminNote || "").trim(),
+    checkedAt: String(item?.checkedAt || "").trim(),
+    sentToCustomerAt: String(item?.sentToCustomerAt || "").trim(),
+    sentToCustomerNote: String(item?.sentToCustomerNote || "").trim(),
     error: String(item?.error || "").trim(),
     lastLoadedAt: String(item?.lastLoadedAt || "").trim(),
     lastRefreshedAt: String(item?.lastRefreshedAt || "").trim(),
@@ -11928,6 +11936,54 @@ const refreshChatgptWarrantyQueueItem = async (queueDoc) => {
   });
   await queueDoc.save();
   return queueDoc;
+};
+const loadChatgptWarrantyQueueCandidatesForDoc = async (queueDoc) => {
+  if (!queueDoc) {
+    return {
+      ok: false,
+      item: null,
+      candidates: [],
+      error: "Khong tim thay dong bao hanh.",
+    };
+  }
+  const refreshed = await refreshChatgptWarrantyQueueItem(queueDoc);
+  if (normalizeChatgptWarrantyQueueStatus(refreshed?.status) === "warrantied") {
+    return {
+      ok: true,
+      item: refreshed,
+      candidates: [],
+      skipped: true,
+      reason: "already_warrantied",
+    };
+  }
+  const source = await Account.findOne({ id: refreshed.sourceAccountId })
+    .select("id username type package2Shelf users expiredAt createdAt updatedAt")
+    .lean();
+  if (!source) {
+    refreshed.status = "error";
+    refreshed.error = "Khong tim thay acc loi trong kho.";
+    refreshed.updatedAt = new Date().toISOString();
+    await refreshed.save();
+    return {
+      ok: false,
+      item: refreshed,
+      candidates: [],
+      error: "Khong tim thay acc loi trong kho.",
+    };
+  }
+  const candidates = await listChatgptWarrantyCandidates(source);
+  const nowIso = new Date().toISOString();
+  refreshed.status = "loaded";
+  refreshed.candidateCount = candidates.length;
+  refreshed.lastLoadedAt = nowIso;
+  refreshed.updatedAt = nowIso;
+  refreshed.error = "";
+  await refreshed.save();
+  return {
+    ok: true,
+    item: refreshed,
+    candidates,
+  };
 };
 const markChatgptWarrantyQueueWarrantied = async ({
   sourceAcc,
@@ -14926,6 +14982,7 @@ app.post("/api/admin/chatgpt-warranty-queue/upsert", verifyToken, async (req, re
       mailMatchedSender: String(req.body?.mailMatchedSender || "").trim(),
       mailMatchedAt: String(req.body?.mailMatchedAt || "").trim(),
       mailMatchedSnippet: String(req.body?.mailMatchedSnippet || "").trim(),
+      checkedAt: nowIso,
       error: "",
       updatedAt: nowIso,
     };
@@ -14936,6 +14993,7 @@ app.post("/api/admin/chatgpt-warranty-queue/upsert", verifyToken, async (req, re
         $setOnInsert: {
           id: buildChatgptWarrantyQueueId(),
           status: "pending",
+          adminNote: "Moi check die - chua gui acc moi.",
           createdAt: nowIso,
         },
       },
@@ -14968,39 +15026,24 @@ app.post(
       if (!item) {
         return res.status(404).json({ error: "Khong tim thay dong bao hanh." });
       }
-      const refreshed = await refreshChatgptWarrantyQueueItem(item);
-      if (normalizeChatgptWarrantyQueueStatus(refreshed?.status) === "warrantied") {
+      const result = await loadChatgptWarrantyQueueCandidatesForDoc(item);
+      if (!result.ok) {
+        return res.status(404).json({
+          error: result.error || "Khong the tai acc thay the.",
+          item: await sanitizeChatgptWarrantyQueueItemWithTrace(result.item),
+        });
+      }
+      if (result.skipped) {
         return res.json({
           ok: true,
-          item: await sanitizeChatgptWarrantyQueueItemWithTrace(refreshed),
+          item: await sanitizeChatgptWarrantyQueueItemWithTrace(result.item),
           candidates: [],
         });
       }
-      const source = await Account.findOne({ id: refreshed.sourceAccountId })
-        .select("id username type package2Shelf users expiredAt createdAt updatedAt")
-        .lean();
-      if (!source) {
-        refreshed.status = "error";
-        refreshed.error = "Khong tim thay acc loi trong kho.";
-        refreshed.updatedAt = new Date().toISOString();
-        await refreshed.save();
-        return res.status(404).json({
-          error: "Khong tim thay acc loi trong kho.",
-          item: await sanitizeChatgptWarrantyQueueItemWithTrace(refreshed),
-        });
-      }
-      const candidates = await listChatgptWarrantyCandidates(source);
-      const nowIso = new Date().toISOString();
-      refreshed.status = "loaded";
-      refreshed.candidateCount = candidates.length;
-      refreshed.lastLoadedAt = nowIso;
-      refreshed.updatedAt = nowIso;
-      refreshed.error = "";
-      await refreshed.save();
       return res.json({
         ok: true,
-        item: await sanitizeChatgptWarrantyQueueItemWithTrace(refreshed),
-        candidates,
+        item: await sanitizeChatgptWarrantyQueueItemWithTrace(result.item),
+        candidates: result.candidates,
       });
     } catch (error) {
       console.error("POST /api/admin/chatgpt-warranty-queue/:id/load-candidates failed:", error);
@@ -15010,6 +15053,66 @@ app.post(
     }
   },
 );
+
+app.post("/api/admin/chatgpt-warranty-queue/bulk-load-candidates", verifyToken, async (req, res) => {
+  try {
+    const ids = Array.from(
+      new Set(
+        (Array.isArray(req.body?.ids) ? req.body.ids : [])
+          .map((id) => String(id || "").trim())
+          .filter(Boolean),
+      ),
+    ).slice(0, 50);
+    if (ids.length === 0) {
+      return res.status(400).json({ error: "Thieu danh sach dong can load." });
+    }
+    const items = await ChatgptWarrantyQueue.find({ id: { $in: ids } });
+    const itemMap = new Map(items.map((item) => [String(item?.id || ""), item]));
+    const results = [];
+    for (const queueId of ids) {
+      const item = itemMap.get(queueId);
+      if (!item) {
+        results.push({
+          id: queueId,
+          ok: false,
+          candidates: [],
+          error: "Khong tim thay dong bao hanh.",
+        });
+        continue;
+      }
+      try {
+        const result = await loadChatgptWarrantyQueueCandidatesForDoc(item);
+        results.push({
+          id: queueId,
+          ok: !!result.ok,
+          skipped: !!result.skipped,
+          reason: String(result.reason || "").trim(),
+          item: await sanitizeChatgptWarrantyQueueItemWithTrace(result.item),
+          candidates: Array.isArray(result.candidates) ? result.candidates : [],
+          error: String(result.error || "").trim(),
+        });
+      } catch (error) {
+        results.push({
+          id: queueId,
+          ok: false,
+          candidates: [],
+          error: error.message || "Khong the load acc thay the.",
+        });
+      }
+    }
+    return res.json({
+      ok: true,
+      results,
+      loadedCount: results.filter((item) => item.ok && !item.skipped).length,
+      errorCount: results.filter((item) => !item.ok).length,
+    });
+  } catch (error) {
+    console.error("POST /api/admin/chatgpt-warranty-queue/bulk-load-candidates failed:", error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the load acc thay the hang loat.",
+    });
+  }
+});
 
 app.post("/api/admin/chatgpt-warranty-queue/:id/refresh", verifyToken, async (req, res) => {
   try {
@@ -15027,6 +15130,73 @@ app.post("/api/admin/chatgpt-warranty-queue/:id/refresh", verifyToken, async (re
     console.error("POST /api/admin/chatgpt-warranty-queue/:id/refresh failed:", error);
     return res.status(error.statusCode || 500).json({
       error: error.message || "Khong the lam moi dong bao hanh.",
+    });
+  }
+});
+
+app.post("/api/admin/chatgpt-warranty-queue/:id/mark-sent", verifyToken, async (req, res) => {
+  try {
+    const queueId = String(req.params?.id || "").trim();
+    const item = await ChatgptWarrantyQueue.findOne({ id: queueId });
+    if (!item) {
+      return res.status(404).json({ error: "Khong tim thay dong bao hanh." });
+    }
+    if (normalizeChatgptWarrantyQueueStatus(item?.status) !== "warrantied") {
+      return res.status(409).json({
+        error: "Dong nay chua bao hanh xong nen chua the danh dau da gui khach.",
+      });
+    }
+    const nowIso = new Date().toISOString();
+    item.sentToCustomerAt = nowIso;
+    item.sentToCustomerNote = String(req.body?.note || "").trim();
+    item.updatedAt = nowIso;
+    await item.save();
+    return res.json({
+      ok: true,
+      item: await sanitizeChatgptWarrantyQueueItemWithTrace(item),
+    });
+  } catch (error) {
+    console.error("POST /api/admin/chatgpt-warranty-queue/:id/mark-sent failed:", error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the danh dau da gui khach.",
+    });
+  }
+});
+
+app.post("/api/admin/chatgpt-warranty-queue/bulk-delete", verifyToken, async (req, res) => {
+  try {
+    const ids = Array.from(
+      new Set(
+        (Array.isArray(req.body?.ids) ? req.body.ids : [])
+          .map((id) => String(id || "").trim())
+          .filter(Boolean),
+      ),
+    ).slice(0, 200);
+    if (ids.length === 0) {
+      return res.status(400).json({ error: "Thieu danh sach dong can xoa." });
+    }
+    const items = await ChatgptWarrantyQueue.find({ id: { $in: ids } })
+      .select("id status")
+      .lean();
+    const itemMap = new Map(items.map((item) => [String(item?.id || ""), item]));
+    const deletableIds = ids.filter(
+      (id) => normalizeChatgptWarrantyQueueStatus(itemMap.get(id)?.status) === "warrantied",
+    );
+    const skippedIds = ids.filter((id) => !deletableIds.includes(id));
+    if (deletableIds.length > 0) {
+      await ChatgptWarrantyQueue.deleteMany({ id: { $in: deletableIds } });
+    }
+    return res.json({
+      ok: true,
+      deletedCount: deletableIds.length,
+      skippedCount: skippedIds.length,
+      deletedIds: deletableIds,
+      skippedIds,
+    });
+  } catch (error) {
+    console.error("POST /api/admin/chatgpt-warranty-queue/bulk-delete failed:", error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "Khong the xoa nhanh queue bao hanh.",
     });
   }
 });

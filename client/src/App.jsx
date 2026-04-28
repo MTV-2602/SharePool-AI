@@ -3282,6 +3282,8 @@ function App() {
   const [chatgptWarrantyQueueCandidates, setChatgptWarrantyQueueCandidates] = useState({});
   const [chatgptWarrantyQueueReplacementIds, setChatgptWarrantyQueueReplacementIds] = useState({});
   const [chatgptWarrantyQueueReasons, setChatgptWarrantyQueueReasons] = useState({});
+  const [selectedChatgptWarrantyQueueIds, setSelectedChatgptWarrantyQueueIds] =
+    useState([]);
   const [adminRealtime, setAdminRealtime] = useState(
     buildDefaultAdminRealtimeConfig(),
   );
@@ -3420,6 +3422,9 @@ function App() {
     refreshWarrantyQueueItem: {},
     deleteWarrantyQueueItem: {},
     warrantyQueueSubmit: {},
+    bulkLoadWarrantyQueueCandidates: false,
+    bulkDeleteWarrantyQueueItems: false,
+    markWarrantyQueueSent: {},
     copyMarketplaceCurrentAccount: {},
     saveVoucher: false,
     saveStoreConfig: false,
@@ -4060,6 +4065,17 @@ function App() {
     if (!isAuthenticated || activeTab !== "chatgpt" || gptSubTab !== "warranty") return;
     loadChatgptWarrantyQueue({ silent: true }).catch(() => {});
   }, [activeTab, gptSubTab, isAuthenticated, chatgptWarrantyQueueStatus]);
+
+  useEffect(() => {
+    const visibleIds = new Set(
+      (Array.isArray(chatgptWarrantyQueue) ? chatgptWarrantyQueue : [])
+        .map((item) => String(item?.id || "").trim())
+        .filter(Boolean),
+    );
+    setSelectedChatgptWarrantyQueueIds((prev) =>
+      (Array.isArray(prev) ? prev : []).filter((id) => visibleIds.has(String(id || ""))),
+    );
+  }, [chatgptWarrantyQueue]);
 
   useEffect(() => {
     if (!expandedChatgptAccountId) return;
@@ -9064,6 +9080,9 @@ function App() {
 
     let savedCount = 0;
     let failedCount = 0;
+    let autoLoadedCount = 0;
+    let autoLoadFailedCount = 0;
+    const savedItems = [];
     for (let index = 0; index < payloads.length; index += HOTMAIL_DIE_QUEUE_SAVE_CHUNK_SIZE) {
       const chunk = payloads.slice(index, index + HOTMAIL_DIE_QUEUE_SAVE_CHUNK_SIZE);
       const results = await Promise.allSettled(
@@ -9078,11 +9097,35 @@ function App() {
         if (result.status === "fulfilled") {
           savedCount += 1;
           const queueItem = result.value?.data?.item;
-          if (queueItem) mergeChatgptWarrantyQueueItem(queueItem);
+          if (queueItem) {
+            savedItems.push(queueItem);
+            mergeChatgptWarrantyQueueItem(queueItem);
+          }
         } else {
           failedCount += 1;
         }
       });
+    }
+
+    const loadableSavedIds = savedItems
+      .filter((item) => String(item?.status || "pending") !== "warrantied")
+      .map((item) => String(item?.id || "").trim())
+      .filter(Boolean);
+    if (loadableSavedIds.length > 0) {
+      try {
+        const response = await axios.post(
+          "/api/admin/chatgpt-warranty-queue/bulk-load-candidates",
+          { ids: loadableSavedIds },
+          { timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+        );
+        const results = Array.isArray(response?.data?.results)
+          ? response.data.results
+          : [];
+        applyWarrantyQueueCandidateLoadResults(results);
+        autoLoadedCount = results.filter((result) => result?.ok && !result?.skipped).length;
+      } catch (error) {
+        autoLoadFailedCount = loadableSavedIds.length;
+      }
     }
 
     if (savedCount > 0) {
@@ -9097,6 +9140,8 @@ function App() {
       savedCount,
       skippedCount,
       failedCount,
+      autoLoadedCount,
+      autoLoadFailedCount,
     };
   };
 
@@ -9257,6 +9302,12 @@ function App() {
       if (queueSaveResult.savedCount > 0) {
         queueSaveLines.push(`Đã tự lưu Bảo hành: ${queueSaveResult.savedCount}`);
       }
+      if (queueSaveResult.autoLoadedCount > 0) {
+        queueSaveLines.push(`Da tu load acc sach: ${queueSaveResult.autoLoadedCount}`);
+      }
+      if (queueSaveResult.autoLoadFailedCount > 0) {
+        queueSaveLines.push(`Chua tu load duoc acc sach: ${queueSaveResult.autoLoadFailedCount}`);
+      }
       if (queueSaveResult.skippedCount > 0) {
         queueSaveLines.push(
           `Chưa lưu Bảo hành: ${queueSaveResult.skippedCount} dòng thiếu acc hoặc mã đơn`,
@@ -9278,6 +9329,7 @@ function App() {
         ].join("\n"),
         countByStatus(["error", "skipped", "invalid"]) > 0 ||
           queueSaveResult.failedCount > 0 ||
+          queueSaveResult.autoLoadFailedCount > 0 ||
           queueSaveResult.skippedCount > 0
           ? "warning"
           : "success",
@@ -9351,6 +9403,20 @@ function App() {
       );
       const queueItem = response?.data?.item;
       if (queueItem) mergeChatgptWarrantyQueueItem(queueItem);
+      if (queueItem?.id && String(queueItem?.status || "pending") !== "warrantied") {
+        try {
+          const loadResponse = await axios.post(
+            "/api/admin/chatgpt-warranty-queue/bulk-load-candidates",
+            { ids: [queueItem.id] },
+            { timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+          );
+          applyWarrantyQueueCandidateLoadResults(
+            Array.isArray(loadResponse?.data?.results) ? loadResponse.data.results : [],
+          );
+        } catch (loadError) {
+          // Queue da luu thanh cong; admin van co the bam Load acc lai trong tab Bao hanh.
+        }
+      }
       setChatgptWarrantyQueueStatus("all");
       setChatgptWarrantyQueueSearch("");
       setGptSubTab("warranty");
@@ -9389,12 +9455,18 @@ function App() {
       );
       const queueItem = response?.data?.item;
       if (queueItem) mergeChatgptWarrantyQueueItem(queueItem);
+      const nextCandidates = Array.isArray(response?.data?.candidates)
+        ? response.data.candidates
+        : [];
       setChatgptWarrantyQueueCandidates((prev) => ({
         ...prev,
-        [queueId]: Array.isArray(response?.data?.candidates)
-          ? response.data.candidates
-          : [],
+        [queueId]: nextCandidates,
       }));
+      if (nextCandidates[0]?.id) {
+        setChatgptWarrantyQueueReplacementIds((prev) =>
+          prev?.[queueId] ? prev : { ...(prev || {}), [queueId]: nextCandidates[0].id },
+        );
+      }
       showAlert(
         "Đã load acc thay thế",
         `Tìm thấy ${Array.isArray(response?.data?.candidates) ? response.data.candidates.length : 0} acc sạch.`,
@@ -9415,6 +9487,161 @@ function App() {
         },
       }));
     }
+  };
+
+  const applyWarrantyQueueCandidateLoadResults = (results = []) => {
+    const safeResults = Array.isArray(results) ? results : [];
+    safeResults.forEach((result) => {
+      const queueId = String(result?.id || result?.item?.id || "").trim();
+      if (!queueId) return;
+      if (result?.item) mergeChatgptWarrantyQueueItem(result.item);
+      const candidates = Array.isArray(result?.candidates) ? result.candidates : [];
+      setChatgptWarrantyQueueCandidates((prev) => ({
+        ...(prev || {}),
+        [queueId]: candidates,
+      }));
+      if (candidates[0]?.id) {
+        setChatgptWarrantyQueueReplacementIds((prev) =>
+          prev?.[queueId] ? prev : { ...(prev || {}), [queueId]: candidates[0].id },
+        );
+      }
+    });
+  };
+
+  const handleBulkLoadWarrantyQueueCandidates = async (items = []) => {
+    const ids = (Array.isArray(items) ? items : [])
+      .filter((item) => String(item?.status || "pending") !== "warrantied")
+      .map((item) => String(item?.id || "").trim())
+      .filter(Boolean);
+    if (ids.length === 0) {
+      showAlert("Khong co dong can load", "Danh sach hien tai khong co dong cho bao hanh can load acc.", "info");
+      return;
+    }
+    setLoadingStates((prev) => ({ ...prev, bulkLoadWarrantyQueueCandidates: true }));
+    try {
+      const response = await axios.post(
+        "/api/admin/chatgpt-warranty-queue/bulk-load-candidates",
+        { ids },
+        { timeout: ADMIN_HEAVY_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+      );
+      const results = Array.isArray(response?.data?.results)
+        ? response.data.results
+        : [];
+      applyWarrantyQueueCandidateLoadResults(results);
+      const loadedCount = results.filter((result) => result?.ok && !result?.skipped).length;
+      const errorCount = results.filter((result) => !result?.ok).length;
+      showAlert(
+        "Da load acc sach",
+        `Da load ${loadedCount}/${ids.length} dong. Loi: ${errorCount}.`,
+        errorCount > 0 ? "warning" : "success",
+      );
+    } catch (error) {
+      showAlert(
+        "Khong load duoc",
+        getApiErrorMessage(error, "Khong the load acc thay the hang loat."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, bulkLoadWarrantyQueueCandidates: false }));
+    }
+  };
+
+  const handleMarkWarrantyQueueSent = async (item = {}) => {
+    const queueId = String(item?.id || "").trim();
+    if (!queueId) return;
+    setLoadingStates((prev) => ({
+      ...prev,
+      markWarrantyQueueSent: {
+        ...(prev.markWarrantyQueueSent || {}),
+        [queueId]: true,
+      },
+    }));
+    try {
+      const response = await axios.post(
+        `/api/admin/chatgpt-warranty-queue/${encodeURIComponent(queueId)}/mark-sent`,
+        {},
+        { timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+      );
+      if (response?.data?.item) mergeChatgptWarrantyQueueItem(response.data.item);
+      showAlert("Da danh dau", "Dong nay da duoc danh dau la da gui acc moi cho khach.", "success");
+    } catch (error) {
+      showAlert(
+        "Khong danh dau duoc",
+        getApiErrorMessage(error, "Khong the danh dau da gui khach."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({
+        ...prev,
+        markWarrantyQueueSent: {
+          ...(prev.markWarrantyQueueSent || {}),
+          [queueId]: false,
+        },
+      }));
+    }
+  };
+
+  const handleBulkDeleteWarrantyQueueItems = (items = []) => {
+    const ids = (Array.isArray(items) ? items : [])
+      .map((item) => String(item?.id || "").trim())
+      .filter(Boolean);
+    if (ids.length === 0) {
+      showAlert("Chua chon dong", "Chon cac dong da bao hanh truoc khi xoa nhanh.", "warning");
+      return;
+    }
+    showConfirm(
+      "Xoa nhanh queue",
+      `Xoa ${ids.length} dong da chon khoi queue Bao hanh? Viec nay khong xoa acc ChatGPT that.`,
+      async () => {
+        setLoadingStates((prev) => ({ ...prev, bulkDeleteWarrantyQueueItems: true }));
+        try {
+          const response = await axios.post(
+            "/api/admin/chatgpt-warranty-queue/bulk-delete",
+            { ids },
+            { timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS, skipGlobalLoading: true },
+          );
+          const deletedIds = new Set(
+            (Array.isArray(response?.data?.deletedIds) ? response.data.deletedIds : [])
+              .map((id) => String(id || "").trim())
+              .filter(Boolean),
+          );
+          setChatgptWarrantyQueue((prev) =>
+            (Array.isArray(prev) ? prev : []).filter(
+              (row) => !deletedIds.has(String(row?.id || "").trim()),
+            ),
+          );
+          setSelectedChatgptWarrantyQueueIds((prev) =>
+            (Array.isArray(prev) ? prev : []).filter(
+              (id) => !deletedIds.has(String(id || "").trim()),
+            ),
+          );
+          setChatgptWarrantyQueueCandidates((prev) => {
+            const next = { ...(prev || {}) };
+            deletedIds.forEach((id) => delete next[id]);
+            return next;
+          });
+          setChatgptWarrantyQueueReplacementIds((prev) => {
+            const next = { ...(prev || {}) };
+            deletedIds.forEach((id) => delete next[id]);
+            return next;
+          });
+          await loadChatgptWarrantyQueue({ silent: true }).catch(() => {});
+          showAlert(
+            "Da xoa queue",
+            `Da xoa ${Number(response?.data?.deletedCount || 0)} dong. Bo qua ${Number(response?.data?.skippedCount || 0)} dong chua bao hanh.`,
+            Number(response?.data?.skippedCount || 0) > 0 ? "warning" : "success",
+          );
+        } catch (error) {
+          showAlert(
+            "Khong xoa duoc",
+            getApiErrorMessage(error, "Khong the xoa nhanh queue bao hanh."),
+            "error",
+          );
+        } finally {
+          setLoadingStates((prev) => ({ ...prev, bulkDeleteWarrantyQueueItems: false }));
+        }
+      },
+    );
   };
 
   const handleRefreshWarrantyQueueItem = async (item = {}) => {
@@ -9480,6 +9707,16 @@ function App() {
             delete next[queueId];
             return next;
           });
+          setChatgptWarrantyQueueReplacementIds((prev) => {
+            const next = { ...(prev || {}) };
+            delete next[queueId];
+            return next;
+          });
+          setSelectedChatgptWarrantyQueueIds((prev) =>
+            (Array.isArray(prev) ? prev : []).filter(
+              (id) => String(id || "").trim() !== queueId,
+            ),
+          );
         } catch (error) {
           showAlert(
             "Không xóa được",
@@ -11589,6 +11826,27 @@ function App() {
   const allFilteredSelected =
     filteredChatgptIds.length > 0 &&
     selectedInFilteredCount === filteredChatgptIds.length;
+  const chatgptWarrantyQueueVisibleItems = Array.isArray(chatgptWarrantyQueue)
+    ? chatgptWarrantyQueue
+    : [];
+  const chatgptWarrantyQueueSelectedIdSet = new Set(
+    (Array.isArray(selectedChatgptWarrantyQueueIds)
+      ? selectedChatgptWarrantyQueueIds
+      : []
+    ).map((id) => String(id || "").trim()),
+  );
+  const selectedChatgptWarrantyQueueItems =
+    chatgptWarrantyQueueVisibleItems.filter((item) =>
+      chatgptWarrantyQueueSelectedIdSet.has(String(item?.id || "").trim()),
+    );
+  const warrantiedChatgptWarrantyQueueItems =
+    chatgptWarrantyQueueVisibleItems.filter(
+      (item) => String(item?.status || "") === "warrantied",
+    );
+  const pendingChatgptWarrantyQueueItems =
+    chatgptWarrantyQueueVisibleItems.filter(
+      (item) => String(item?.status || "pending") !== "warrantied",
+    );
   const filteredTeamAccounts = teamAccounts
     .filter((acc) => {
       if (!searchQuery.trim()) return true;
@@ -15135,7 +15393,7 @@ function App() {
                     <div>
                       <div className="text-[11px] font-black uppercase tracking-[0.18em] text-rose-300">Bao hanh Hotmail die</div>
                       <h3 className="mt-1 text-lg font-black text-white">Queue bao hanh don san</h3>
-                      <p className="mt-1 text-xs text-slate-400">Luu DB, khong mat khi reload. Bam Load acc rieng tung dong truoc khi bao hanh.</p>
+                      <p className="mt-1 text-xs text-slate-400">Luu DB, khong mat khi reload. Dong moi check se duoc note va co the load acc sach hang loat.</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button type="button" onClick={() => { setShowHotmailDieBatchModal(true); loadChatgptWarrantyQueue({ silent: true, status: "all", search: "" }).catch(() => {}); }} className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white transition hover:bg-amber-500">
@@ -15143,6 +15401,15 @@ function App() {
                       </button>
                       <button type="button" onClick={() => loadChatgptWarrantyQueue({ silent: false })} disabled={loadingStates.fetchChatgptWarrantyQueue} className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-black text-white transition hover:bg-slate-700 disabled:opacity-60">
                         {loadingStates.fetchChatgptWarrantyQueue ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Lam moi
+                      </button>
+                      <button type="button" onClick={() => handleBulkLoadWarrantyQueueCandidates(pendingChatgptWarrantyQueueItems)} disabled={loadingStates.bulkLoadWarrantyQueueCandidates || pendingChatgptWarrantyQueueItems.length === 0} className="inline-flex items-center gap-1 rounded-lg border border-cyan-600/50 bg-cyan-900/30 px-3 py-2 text-xs font-black text-cyan-100 transition hover:bg-cyan-700/40 disabled:opacity-60">
+                        {loadingStates.bulkLoadWarrantyQueueCandidates ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Load acc sach
+                      </button>
+                      <button type="button" onClick={() => setSelectedChatgptWarrantyQueueIds(warrantiedChatgptWarrantyQueueItems.map((item) => String(item?.id || "").trim()).filter(Boolean))} disabled={warrantiedChatgptWarrantyQueueItems.length === 0} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-black text-slate-100 transition hover:bg-slate-800 disabled:opacity-50">
+                        Chon Da BH
+                      </button>
+                      <button type="button" onClick={() => handleBulkDeleteWarrantyQueueItems(selectedChatgptWarrantyQueueItems)} disabled={loadingStates.bulkDeleteWarrantyQueueItems || selectedChatgptWarrantyQueueItems.length === 0} className="inline-flex items-center gap-1 rounded-lg border border-red-700/60 bg-red-900/30 px-3 py-2 text-xs font-black text-red-100 transition hover:bg-red-800/50 disabled:opacity-50">
+                        {loadingStates.bulkDeleteWarrantyQueueItems ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Xoa da chon
                       </button>
                     </div>
                   </div>
@@ -15167,6 +15434,23 @@ function App() {
                   <table className="w-full min-w-[980px] text-left text-sm">
                     <thead className="bg-slate-950/70 text-[11px] uppercase tracking-[0.14em] text-slate-400">
                       <tr>
+                        <th className="w-10 px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={
+                              chatgptWarrantyQueueVisibleItems.length > 0 &&
+                              selectedChatgptWarrantyQueueItems.length === chatgptWarrantyQueueVisibleItems.length
+                            }
+                            onChange={(event) =>
+                              setSelectedChatgptWarrantyQueueIds(
+                                event.target.checked
+                                  ? chatgptWarrantyQueueVisibleItems.map((item) => String(item?.id || "").trim()).filter(Boolean)
+                                  : [],
+                              )
+                            }
+                            className="h-4 w-4 accent-rose-500"
+                          />
+                        </th>
                         <th className="px-4 py-3">Acc loi</th>
                         <th className="px-4 py-3">Don</th>
                         <th className="px-4 py-3">Trang thai</th>
@@ -15177,10 +15461,13 @@ function App() {
                     <tbody>
                       {chatgptWarrantyQueue.length > 0 ? chatgptWarrantyQueue.map((item) => {
                         const queueId = String(item?.id || "");
+                        const isQueueSelected = chatgptWarrantyQueueSelectedIdSet.has(queueId);
                         const status = String(item?.status || "pending");
                         const candidates = Array.isArray(chatgptWarrantyQueueCandidates?.[queueId]) ? chatgptWarrantyQueueCandidates[queueId] : [];
                         const selectedReplacementId = String(chatgptWarrantyQueueReplacementIds?.[queueId] || "");
                         const isWarrantied = status === "warrantied";
+                        const isSentToCustomer = !!String(item?.sentToCustomerAt || "").trim();
+                        const hasCheckedAt = !!String(item?.checkedAt || "").trim();
                         const isLoadingCandidates = !!loadingStates.loadWarrantyQueueCandidates?.[queueId];
                         const isRefreshing = !!loadingStates.refreshWarrantyQueueItem?.[queueId];
                         const isSubmitting = !!loadingStates.warrantyQueueSubmit?.[queueId];
@@ -15198,6 +15485,23 @@ function App() {
                         return (
                           <tr key={queueId} className="border-t border-slate-800 align-top">
                             <td className="px-4 py-3">
+                              <input
+                                type="checkbox"
+                                checked={isQueueSelected}
+                                onChange={(event) =>
+                                  setSelectedChatgptWarrantyQueueIds((prev) => {
+                                    const current = new Set(
+                                      (Array.isArray(prev) ? prev : []).map((id) => String(id || "").trim()),
+                                    );
+                                    if (event.target.checked) current.add(queueId);
+                                    else current.delete(queueId);
+                                    return Array.from(current);
+                                  })
+                                }
+                                className="h-4 w-4 accent-rose-500"
+                              />
+                            </td>
+                            <td className="px-4 py-3">
                               <div className="break-all font-mono text-xs font-bold text-white">{item?.sourceUsername || "--"}</div>
                               {item?.mailMatchedSubject ? <div className="mt-1 line-clamp-2 text-[11px] text-slate-500">{item.mailMatchedSubject}</div> : null}
                             </td>
@@ -15207,6 +15511,13 @@ function App() {
                             </td>
                             <td className="px-4 py-3">
                               <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-black ${statusTone}`}>{statusLabel}</span>
+                              {hasCheckedAt ? <span className="ml-1 inline-flex rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[10px] font-black text-rose-100">Moi check</span> : null}
+                              {isWarrantied ? (
+                                <span className={`ml-1 inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${isSentToCustomer ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100" : "border-amber-500/40 bg-amber-500/10 text-amber-100"}`}>
+                                  {isSentToCustomer ? "Da gui khach" : "Chua gui khach"}
+                                </span>
+                              ) : null}
+                              {item?.adminNote ? <div className="mt-1 max-w-[220px] text-[11px] text-slate-400">{item.adminNote}</div> : null}
                               {item?.error ? <div className="mt-1 max-w-[220px] text-[11px] text-red-200">{item.error}</div> : null}
                             </td>
                             <td className="px-4 py-3">
@@ -15235,6 +15546,7 @@ function App() {
                               <div className="flex flex-wrap justify-end gap-1.5">
                                 <button type="button" onClick={() => handleCopy(item?.orderId || "", "Da copy ma don")} disabled={!item?.orderId} className="rounded-lg border border-amber-600/50 bg-amber-900/25 px-2 py-1 text-[11px] font-bold text-amber-100 hover:bg-amber-700/40 disabled:opacity-50">Ma don</button>
                                 {replacementCopyText ? <button type="button" onClick={() => handleCopy(replacementCopyText, "Da copy acc moi")} className="rounded-lg border border-cyan-600/50 bg-cyan-900/30 px-2 py-1 text-[11px] font-bold text-cyan-100 hover:bg-cyan-700/40">Copy acc moi</button> : null}
+                                {isWarrantied && !isSentToCustomer ? <button type="button" onClick={() => handleMarkWarrantyQueueSent(item)} disabled={!!loadingStates.markWarrantyQueueSent?.[queueId]} className="rounded-lg border border-emerald-600/50 bg-emerald-900/25 px-2 py-1 text-[11px] font-bold text-emerald-100 hover:bg-emerald-700/40 disabled:opacity-60">{loadingStates.markWarrantyQueueSent?.[queueId] ? "Dang luu..." : "Da gui khach"}</button> : null}
                                 {!isWarrantied ? <>
                                   <button type="button" onClick={() => handleLoadWarrantyQueueCandidates(item)} disabled={isLoadingCandidates} className="rounded-lg bg-slate-700 px-2 py-1 text-[11px] font-bold text-white hover:bg-slate-600 disabled:opacity-60">{isLoadingCandidates ? "Dang load..." : "Load acc"}</button>
                                   <button type="button" onClick={() => handleSubmitWarrantyQueueItem(item)} disabled={!selectedReplacementId || isSubmitting} className="rounded-lg bg-cyan-700 px-2 py-1 text-[11px] font-bold text-white hover:bg-cyan-600 disabled:opacity-50">{isSubmitting ? "Dang BH..." : "Bao hanh"}</button>
@@ -15246,7 +15558,7 @@ function App() {
                           </tr>
                         );
                       }) : (
-                        <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">Chua co acc nao trong queue bao hanh.</td></tr>
+                        <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">Chua co acc nao trong queue bao hanh.</td></tr>
                       )}
                     </tbody>
                   </table>
