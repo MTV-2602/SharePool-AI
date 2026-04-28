@@ -14668,21 +14668,50 @@ function App() {
                             const trackedRole = String(trackedEntry?.role || "").trim();
                             const hasActiveTracking = trackedRole === "sold" || trackedRole === "current";
                             const hasActualManagedUser = !!primaryUser && isActiveMarketplaceManagedUser(primaryUser);
+                            const legacyMarketplaceInfo = getLegacyMarketplaceInfoFromNote(acc.note);
                             const managedOrderInfo = getMarketplaceOrderInfoFromUser(primaryUser);
-                            const latestOrder = findMarketplaceOrderForAccount(acc.id, datammoOrderHistory, managedOrderInfo.provider);
-                            const orderIdForWarranty = String(managedOrderInfo.orderId || trackedEntry?.orderId || latestOrder?.orderId || "").trim();
+                            const latestOrder = findMarketplaceOrderForAccount(
+                              acc.id,
+                              datammoOrderHistory,
+                              managedOrderInfo.provider || legacyMarketplaceInfo?.provider || trackedEntry?.provider,
+                            );
                             const warrantyInfo = getDatammoWarrantyInfoForAccount(acc.id, datammoWarrantyCases);
+                            const orderIdForWarranty = String(
+                              managedOrderInfo.orderId ||
+                                legacyMarketplaceInfo?.orderId ||
+                                trackedEntry?.orderId ||
+                                latestOrder?.orderId ||
+                                warrantyInfo?.warrantyCase?.orderId ||
+                                "",
+                            ).trim();
                             const canOpenWarranty = (!!orderIdForWarranty && (hasActualManagedUser || hasActiveTracking)) || warrantyInfo?.role === "current";
                             if (!canOpenWarranty) return null;
+                            const marketplaceCopyLine = orderIdForWarranty
+                              ? `${String(acc?.username || "").trim()}|${orderIdForWarranty}`
+                              : "";
                             return (
-                              <button
-                                type="button"
-                                onClick={() => openWarrantyModal(acc)}
-                                className="flex h-6 w-6 items-center justify-center rounded-md border border-cyan-700/50 bg-cyan-900/30 text-cyan-300 transition hover:bg-cyan-700/50"
-                                title="Bảo hành đơn sàn"
-                              >
-                                <Shield size={11} />
-                              </button>
+                              <>
+                                {marketplaceCopyLine && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCopy(marketplaceCopyLine, "Đã copy email + mã đơn")
+                                    }
+                                    className="inline-flex h-6 items-center gap-1 rounded-md border border-emerald-700/50 bg-emerald-900/25 px-2 text-[10px] font-bold text-emerald-200 transition hover:bg-emerald-700/40"
+                                    title="Copy email + mã đơn"
+                                  >
+                                    <Copy size={10} /> Email+đơn
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => openWarrantyModal(acc)}
+                                  className="inline-flex h-6 items-center gap-1 rounded-md border border-cyan-700/50 bg-cyan-900/30 px-2 text-[10px] font-bold text-cyan-200 transition hover:bg-cyan-700/50"
+                                  title="Bảo hành nhanh đơn sàn"
+                                >
+                                  <Shield size={10} /> BH nhanh
+                                </button>
+                              </>
                             );
                           })()}
                           <button
@@ -15100,11 +15129,26 @@ function App() {
                                         </div>
                                         {/* Action buttons column */}
                                         <div className="flex shrink-0 items-center gap-1">
+                                          {datammoOrderId && (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleCopy(
+                                                  `${String(acc?.username || "").trim()}|${datammoOrderId}`,
+                                                  "Đã copy email + mã đơn",
+                                                )
+                                              }
+                                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-600/50 bg-emerald-900/25 px-2 py-1 text-[10px] font-bold text-emerald-200 transition hover:bg-emerald-700/40"
+                                              title="Copy email + mã đơn"
+                                            >
+                                              <Copy size={11} /> Email+đơn
+                                            </button>
+                                          )}
                                           {canOpenDatammoWarranty && (
                                             <button type="button" onClick={() => openWarrantyModal(acc)}
                                               className="inline-flex items-center gap-1 rounded-lg border border-cyan-600/50 bg-cyan-900/30 px-2 py-1 text-[10px] font-bold text-cyan-200 transition hover:bg-cyan-700/40"
-                                              title={`Bảo hành ${providerLabel}`}>
-                                              <Shield size={11} /> BH
+                                              title={`Bảo hành nhanh ${providerLabel}`}>
+                                              <Shield size={11} /> BH nhanh
                                             </button>
                                           )}
                                           {hasActualManagedMarketplaceUser && (isExpiredMarket || isNearExpiryMarket) && (
