@@ -10122,6 +10122,8 @@ function App() {
         {
           replacementAccountId,
           reason: chatgptWarrantyQueueReasons?.[queueId] || "",
+          provider: item?.provider,
+          orderId: item?.orderId,
           sourceExpectedUpdatedAt: getRecordUpdatedAt(sourceAccount),
           replacementExpectedUpdatedAt: getRecordUpdatedAt(replacementAcc),
         },
@@ -10246,6 +10248,8 @@ function App() {
               {
                 replacementAccountId,
                 reason: reasonsSnapshot?.[queueId] || "",
+                provider: item?.provider,
+                orderId: item?.orderId,
                 sourceExpectedUpdatedAt: getRecordUpdatedAt(sourceAccount),
                 replacementExpectedUpdatedAt: getRecordUpdatedAt(replacementAcc),
               },
@@ -11052,6 +11056,8 @@ function App() {
         {
           replacementAccountId: warrantyReplacementId,
           reason: warrantyReason,
+          provider: sourceManagedInfo.provider || sourceOrderOverride.provider,
+          orderId: sourceManagedInfo.orderId || sourceOrderOverride.orderId,
           sourceExpectedUpdatedAt: getRecordUpdatedAt(warrantySourceAcc),
           replacementExpectedUpdatedAt: getRecordUpdatedAt(replacementAcc),
         },

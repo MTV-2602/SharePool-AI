@@ -18914,6 +18914,8 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       req.body?.replacementAccountId || "",
     ).trim();
     const reason = String(req.body?.reason || "").trim();
+    const requestProvider = normalizeMarketplaceProvider(req.body?.provider, "");
+    const requestOrderId = String(req.body?.orderId || "").trim();
 
     if (!replacementAccountId) {
       return res.status(400).json({ error: "Thiếu tài khoản thay thế" });
@@ -19000,23 +19002,44 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
       });
     }
     const sourceManagedInfo = getMarketplaceOrderInfoFromUser(sourceUser);
-    const fallbackOrder = await findLatestMarketplaceOrderForAccount(
-      sourceAcc.id,
-      sourceManagedInfo.provider,
-      "chatgpt",
-    );
+    const contextProvider =
+      requestProvider || normalizeMarketplaceProvider(sourceManagedInfo.provider, "");
+    let fallbackOrder = null;
+    if (requestOrderId) {
+      const explicitOrderFilter = {
+        scope: "chatgpt",
+        orderId: requestOrderId,
+        "accounts.accountId": sourceAcc.id,
+      };
+      if (contextProvider) {
+        explicitOrderFilter.provider = contextProvider;
+      }
+      fallbackOrder = await DatammoOrder.findOne(explicitOrderFilter)
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+    if (!fallbackOrder) {
+      fallbackOrder = await findLatestMarketplaceOrderForAccount(
+        sourceAcc.id,
+        contextProvider || sourceManagedInfo.provider,
+        "chatgpt",
+      );
+    }
     const orderId = String(
-      sourceManagedInfo.orderId || fallbackOrder?.orderId || "",
+      requestOrderId || sourceManagedInfo.orderId || fallbackOrder?.orderId || "",
     ).trim();
     const provider = normalizeMarketplaceProvider(
-      sourceManagedInfo.provider || fallbackOrder?.provider,
+      requestProvider || sourceManagedInfo.provider || fallbackOrder?.provider,
     );
     if (!orderId) {
       return res.status(400).json({
         error: "Không xác định được order seller từ tài khoản lỗi",
       });
     }
-    const sourceUsersForWarranty = hasManagedSourceUser
+    const sourceUsersForWarranty =
+      hasManagedSourceUser &&
+      (!requestOrderId ||
+        String(sourceManagedInfo.orderId || "").trim() === orderId)
       ? sourceUsers
       : [
           buildManagedMarketplaceUser({
@@ -19118,6 +19141,7 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
     }
 
     let warrantyCase = await DatammoWarrantyCase.findOne({
+      scope: "chatgpt",
       provider,
       status: "active",
       currentAccountId: sourceAcc.id,
@@ -19135,6 +19159,8 @@ app.post("/api/chatgpt/:id/warranty", verifyToken, async (req, res) => {
 
     if (!warrantyCase) {
       warrantyCase = await DatammoWarrantyCase.create({
+        scope: "chatgpt",
+        itemType: "chatgpt_account",
         provider,
         orderId,
         rootAccountId: sourceAcc.id,
@@ -19185,6 +19211,8 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
       req.body?.replacementAccountId || "",
     ).trim();
     const reason = String(req.body?.reason || "").trim();
+    const requestProvider = normalizeMarketplaceProvider(req.body?.provider, "");
+    const requestOrderId = String(req.body?.orderId || "").trim();
 
     if (!replacementAccountId) {
       return res.status(400).json({ error: "Thieu tai khoan thay the" });
@@ -19233,23 +19261,44 @@ app.post("/api/team/:id/warranty", verifyToken, async (req, res) => {
       });
     }
     const sourceManagedInfo = getMarketplaceOrderInfoFromTeamSlot(sourceSlot);
-    const fallbackOrder = await findLatestMarketplaceOrderForAccount(
-      sourceAcc.id,
-      sourceManagedInfo.provider,
-      "team",
-    );
+    const contextProvider =
+      requestProvider || normalizeMarketplaceProvider(sourceManagedInfo.provider, "");
+    let fallbackOrder = null;
+    if (requestOrderId) {
+      const explicitOrderFilter = {
+        scope: "team",
+        orderId: requestOrderId,
+        "accounts.accountId": sourceAcc.id,
+      };
+      if (contextProvider) {
+        explicitOrderFilter.provider = contextProvider;
+      }
+      fallbackOrder = await DatammoOrder.findOne(explicitOrderFilter)
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+    if (!fallbackOrder) {
+      fallbackOrder = await findLatestMarketplaceOrderForAccount(
+        sourceAcc.id,
+        contextProvider || sourceManagedInfo.provider,
+        "team",
+      );
+    }
     const orderId = String(
-      sourceManagedInfo.orderId || fallbackOrder?.orderId || "",
+      requestOrderId || sourceManagedInfo.orderId || fallbackOrder?.orderId || "",
     ).trim();
     const provider = normalizeMarketplaceProvider(
-      sourceManagedInfo.provider || fallbackOrder?.provider,
+      requestProvider || sourceManagedInfo.provider || fallbackOrder?.provider,
     );
     if (!orderId) {
       return res.status(400).json({
         error: "Khong xac dinh duoc order seller cua Team loi",
       });
     }
-    const sourceSlotForWarranty = hasManagedSourceSlot
+    const sourceSlotForWarranty =
+      hasManagedSourceSlot &&
+      (!requestOrderId ||
+        String(sourceManagedInfo.orderId || "").trim() === orderId)
       ? sourceSlot
       : buildManagedTeamCustomer(
           provider,
