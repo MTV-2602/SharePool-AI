@@ -9092,6 +9092,63 @@ function App() {
     handleCopy(lines.join("\n"), `Đã copy ${lines.length} dòng`);
   };
 
+  const handleOpenHotmailDieBatchWarranty = async (item = {}) => {
+    const accountId = String(item?.chatgptAccountId || "").trim();
+    const fallbackEmail = String(
+      item?.chatgptUsername ||
+        item?.email ||
+        extractEmailFromHotmailDieLine(item?.line) ||
+        "",
+    )
+      .trim()
+      .toLowerCase();
+    const loadingKey = accountId || fallbackEmail;
+    if (!loadingKey) {
+      showAlert("Thiếu dữ liệu", "Dòng này chưa nối được acc ChatGPT để bảo hành.", "warning");
+      return;
+    }
+    setLoadingStates((prev) => ({ ...prev, openHotmailDieBatchWarranty: loadingKey }));
+    try {
+      let sourceAccount = null;
+      if (accountId) {
+        const payload = await fetchChatgptAccountFocus(accountId);
+        if (!payload?.found || !payload?.account) {
+          showAlert(
+            "Không tìm thấy acc",
+            getChatgptFocusMissingMessage(payload, "Không tìm thấy acc ChatGPT của dòng này."),
+            "warning",
+          );
+          return;
+        }
+        sourceAccount = {
+          ...payload.account,
+          __warrantyOrderOverride: {
+            orderId: getHotmailDieBatchOrderId(item),
+            provider: normalizeMarketplaceProvider(item?.marketplaceProvider, ""),
+          },
+        };
+      } else {
+        sourceAccount = accounts.find(
+          (acc) => String(acc?.username || "").trim().toLowerCase() === fallbackEmail,
+        );
+      }
+      if (!sourceAccount?.id) {
+        showAlert("Không tìm thấy acc", "Không tìm thấy acc ChatGPT đầy đủ để mở bảo hành.", "warning");
+        return;
+      }
+      setShowHotmailDieBatchModal(false);
+      await openWarrantyModal(sourceAccount, "chatgpt");
+    } catch (error) {
+      showAlert(
+        "Không mở được bảo hành",
+        getApiErrorMessage(error, "Không thể mở bảo hành nhanh cho dòng này."),
+        "error",
+      );
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, openHotmailDieBatchWarranty: "" }));
+    }
+  };
+
   const handleRunOneChatgptMailCheck = async (acc = {}) => {
     const accountId = String(acc?.id || "").trim();
     if (!accountId || loadingStates.runChatgptMailCheckOne === accountId) return;
@@ -9790,8 +9847,13 @@ function App() {
               ? warrantySourceAcc.users[0]
               : null,
           );
+    const sourceOrderOverride =
+      warrantySourceAcc?.__warrantyOrderOverride &&
+      typeof warrantySourceAcc.__warrantyOrderOverride === "object"
+        ? warrantySourceAcc.__warrantyOrderOverride
+        : {};
     const sourceProviderLabel = getMarketplaceProviderLabel(
-      sourceManagedInfo.provider || "datammo",
+      sourceManagedInfo.provider || sourceOrderOverride.provider || "datammo",
     );
     const warrantyUrl =
       sourceScope === "team"
@@ -19524,17 +19586,27 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
               name: sourceTeamCustomer?.customerName || "",
             })
           : getMarketplaceOrderInfoFromUser(sourceUser);
+        const sourceOrderOverride =
+          warrantySourceAcc?.__warrantyOrderOverride &&
+          typeof warrantySourceAcc.__warrantyOrderOverride === "object"
+            ? warrantySourceAcc.__warrantyOrderOverride
+            : {};
         const latestMarketplaceOrder = findMarketplaceOrderForAccount(
           warrantySourceAcc?.id,
           datammoOrderHistory,
-          sourceManagedInfo.provider,
+          sourceManagedInfo.provider || sourceOrderOverride.provider,
           sourceScope,
         );
         const orderId = String(
-          sourceManagedInfo.orderId || latestMarketplaceOrder?.orderId || "",
+          sourceManagedInfo.orderId ||
+            latestMarketplaceOrder?.orderId ||
+            sourceOrderOverride.orderId ||
+            "",
         ).trim();
         const providerLabel = getMarketplaceProviderLabel(
-          sourceManagedInfo.provider || latestMarketplaceOrder?.provider,
+          sourceManagedInfo.provider ||
+            latestMarketplaceOrder?.provider ||
+            sourceOrderOverride.provider,
         );
 
         return (
@@ -20770,17 +20842,19 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                               const provider = getMarketplaceProviderLabel(item?.marketplaceProvider);
                               const hasWarranty = hasHotmailDieBatchWarranty(item);
                               const chatgptAccountId = String(item?.chatgptAccountId || "").trim();
-                              const warrantySourceAccount = chatgptAccountId
-                                ? accounts.find(
-                                    (acc) => String(acc?.id || "").trim() === chatgptAccountId,
-                                  ) || {
-                                    id: chatgptAccountId,
-                                    username:
-                                      item?.chatgptUsername ||
-                                      item?.email ||
-                                      extractEmailFromHotmailDieLine(item?.line),
-                                  }
-                                : null;
+                              const warrantyLoadingKey =
+                                chatgptAccountId ||
+                                String(
+                                  item?.chatgptUsername ||
+                                    item?.email ||
+                                    extractEmailFromHotmailDieLine(item?.line) ||
+                                    "",
+                                )
+                                  .trim()
+                                  .toLowerCase();
+                              const isOpeningWarranty =
+                                !!warrantyLoadingKey &&
+                                loadingStates.openHotmailDieBatchWarranty === warrantyLoadingKey;
                               return (
                                 <tr
                                   key={`${item?.email || "row"}-${index}`}
@@ -20828,14 +20902,20 @@ Mã 2FA: N6U2JOXGY6M4Z33UXY5NKYSXUL3JCAOO"
                                           >
                                             <Copy size={10} /> Copy
                                           </button>
-                                          {warrantySourceAccount ? (
+                                          {chatgptAccountId ? (
                                             <button
                                               type="button"
-                                              onClick={() => openWarrantyModal(warrantySourceAccount)}
+                                              onClick={() => handleOpenHotmailDieBatchWarranty(item)}
+                                              disabled={isOpeningWarranty}
                                               className="inline-flex items-center gap-1 rounded-md border border-cyan-700/50 bg-cyan-900/30 px-2 py-1 text-[10px] font-black text-cyan-100 transition hover:bg-cyan-700/50"
                                               title="Mở bảo hành nhanh cho đơn sàn"
                                             >
-                                              <Shield size={10} /> BH nhanh
+                                              {isOpeningWarranty ? (
+                                                <Loader2 size={10} className="animate-spin" />
+                                              ) : (
+                                                <Shield size={10} />
+                                              )}
+                                              BH nhanh
                                             </button>
                                           ) : null}
                                         </div>
