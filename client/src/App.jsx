@@ -3350,7 +3350,7 @@ function App() {
   const chatgptPageEffectPrimedRef = useRef(false);
   const skipNextChatgptPageEffectRef = useRef(false);
   const skipNextChatgptFilterEffectRef = useRef(false);
-  const chatgptForceFreshOnNextLoadRef = useRef(true);
+  const chatgptForceFreshOnNextLoadRef = useRef(false);
   const chatgptListRequestSeqRef = useRef(0);
   const chatgptListAppliedSeqRef = useRef(0);
   const chatgptListInFlightRef = useRef({ key: "", promise: null });
@@ -3762,8 +3762,8 @@ function App() {
       if (document.hidden) return;
       if (shouldSkipAutoRefresh()) return;
       if (activeTab === "chatgpt") {
-        chatgptForceFreshOnNextLoadRef.current = true;
-        refreshAdminSurface({ includeSummary: true, forceFull: true }).catch(() => {});
+        chatgptForceFreshOnNextLoadRef.current = false;
+        refreshAdminSurface({ includeSummary: true, forceFull: false }).catch(() => {});
         return;
       }
       refreshAdminSurface({ includeSummary: true }).catch(() => {});
@@ -3979,7 +3979,7 @@ function App() {
     if (isAuthenticated && activeTab === "chatgpt") return;
     chatgptPageEffectPrimedRef.current = false;
     skipNextChatgptPageEffectRef.current = false;
-    chatgptForceFreshOnNextLoadRef.current = true;
+    chatgptForceFreshOnNextLoadRef.current = false;
   }, [activeTab, isAuthenticated]);
 
   useEffect(() => {
@@ -4178,10 +4178,10 @@ function App() {
           }
           if (activeTab === "chatgpt") {
             Promise.allSettled([
-              loadAdminChatgptAccounts({ silent: true, force: true }),
+              loadAdminChatgptAccounts({ silent: true, allowCached: false, force: false }),
               loadChatgptAuxiliaryData({
                 silent: true,
-                force: true,
+                force: false,
               }),
             ]).catch(() => {});
             return;
@@ -5386,7 +5386,7 @@ function App() {
       buildChatgptAdminFilterDiffKey(nextDraftState) ===
         buildChatgptAdminFilterDiffKey(chatgptAppliedFilters) &&
       Number(chatgptAdminPagination.page || 1) === 1;
-    chatgptForceFreshOnNextLoadRef.current = true;
+    chatgptForceFreshOnNextLoadRef.current = false;
     const normalizedQuery = applyChatgptAdminQueryState({
       page: 1,
       limit: chatgptAdminPagination.limit || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
@@ -5395,7 +5395,8 @@ function App() {
     if (shouldForceReload) {
       await loadAdminChatgptAccounts({
         silent: true,
-        force: true,
+        allowCached: false,
+        force: false,
         page: normalizedQuery.page,
         limit: normalizedQuery.limit,
       });
@@ -5408,7 +5409,7 @@ function App() {
       buildChatgptAdminFilterDiffKey(defaultFilterState) ===
         buildChatgptAdminFilterDiffKey(chatgptAppliedFilters) &&
       Number(chatgptAdminPagination.page || 1) === 1;
-    chatgptForceFreshOnNextLoadRef.current = true;
+    chatgptForceFreshOnNextLoadRef.current = false;
     const normalizedQuery = applyChatgptAdminQueryState({
       page: 1,
       limit: chatgptAdminPagination.limit || DEFAULT_CHATGPT_ADMIN_PAGE_SIZE,
@@ -5417,7 +5418,8 @@ function App() {
     if (shouldForceReload) {
       await loadAdminChatgptAccounts({
         silent: true,
-        force: true,
+        allowCached: false,
+        force: false,
         page: normalizedQuery.page,
         limit: normalizedQuery.limit,
       });
@@ -5560,10 +5562,9 @@ function App() {
       ? Number(options?.limit || chatgptAdminPagination.limit)
       : DEFAULT_CHATGPT_ADMIN_PAGE_SIZE;
     const response = await axios.get(`/api/admin/chatgpt-account-focus/${normalizedId}`, {
-      params: { limit: safeLimit, forceFresh: 1 },
+      params: { limit: safeLimit },
       timeout: ADMIN_MEDIUM_REQUEST_TIMEOUT_MS,
       skipGlobalLoading: true,
-      headers: { "Cache-Control": "no-cache" },
     });
     return response?.data || null;
   };
@@ -5590,6 +5591,7 @@ function App() {
         payload?.targetView && typeof payload.targetView === "object"
           ? payload.targetView
           : {};
+      const focusSearch = String(payload?.focusSearch || normalizedId).trim();
       skipNextChatgptFilterEffectRef.current = true;
       skipNextChatgptPageEffectRef.current = true;
       setActiveTab("chatgpt");
@@ -5607,11 +5609,12 @@ function App() {
         expiryMax: "",
         createdFrom: "",
         createdTo: "",
-        search: "",
+        search: focusSearch,
       });
       await loadAdminChatgptAccounts({
         silent: true,
-        force: true,
+        allowCached: false,
+        force: false,
         showError: true,
         page: nextQuery.page,
         limit: nextQuery.limit,
@@ -5943,7 +5946,6 @@ function App() {
       }
     }
     if (
-      !force &&
       chatgptListInFlightRef.current.promise &&
       chatgptListInFlightRef.current.key === requestKey
     ) {
@@ -5974,7 +5976,7 @@ function App() {
           },
           timeout: 30000,
           skipGlobalLoading: true,
-          headers: { "Cache-Control": "no-cache" },
+          headers: forceFresh ? { "Cache-Control": "no-cache" } : undefined,
         });
         if (requestSeq !== chatgptListRequestSeqRef.current) {
           return response?.data || null;
@@ -6059,7 +6061,7 @@ function App() {
       silent: true,
       showError: true,
       allowCached: false,
-      force: true,
+      force: false,
       page: nextPage,
       limit: nextLimit,
     });
@@ -9544,7 +9546,11 @@ function App() {
       setWarrantyReason("");
       setWarrantyReplacementSearch("");
       setWarrantyWarehouseFilter("all");
-      await fetchData();
+      if (sourceScope === "chatgpt" || activeTab === "chatgpt") {
+        await refreshAdminSurface({ includeSummary: true, forceFull: false });
+      } else {
+        await fetchData();
+      }
       broadcastDataChange();
       showAlert(
         "Thành công",

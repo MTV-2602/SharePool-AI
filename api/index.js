@@ -1381,6 +1381,9 @@ accountSchema.index({
   mailCheckNextAuditAt: 1,
 });
 accountSchema.index({ mailCheckStatus: 1, mailCheckLastMatchedAt: -1 });
+accountSchema.index({ type: 1, package2Shelf: 1, createdAt: -1 });
+accountSchema.index({ type: 1, expiredAt: 1, createdAt: 1 });
+accountSchema.index({ username: 1 });
 const Account =
   mongoose.models.Account ||
   mongoose.model("Account", accountSchema, "chatgpt_accounts");
@@ -1531,6 +1534,7 @@ const datammoOrderSchema = new mongoose.Schema({
   accounts: { type: [datammoOrderAccountSchema], default: [] },
   createdAt: { type: String, default: () => new Date().toISOString() },
 });
+datammoOrderSchema.index({ scope: 1, "accounts.accountId": 1 });
 const DatammoOrder =
   mongoose.models.DatammoOrder ||
   mongoose.model("DatammoOrder", datammoOrderSchema, "marketplace_orders");
@@ -1571,6 +1575,10 @@ const datammoWarrantyCaseSchema = new mongoose.Schema({
   createdAt: { type: String, default: () => new Date().toISOString() },
   updatedAt: { type: String, default: () => new Date().toISOString() },
 });
+datammoWarrantyCaseSchema.index({ scope: 1, rootAccountId: 1, updatedAt: -1 });
+datammoWarrantyCaseSchema.index({ scope: 1, currentAccountId: 1, updatedAt: -1 });
+datammoWarrantyCaseSchema.index({ scope: 1, "rounds.fromAccountId": 1, updatedAt: -1 });
+datammoWarrantyCaseSchema.index({ scope: 1, "rounds.toAccountId": 1, updatedAt: -1 });
 const DatammoWarrantyCase =
   mongoose.models.DatammoWarrantyCase ||
   mongoose.model(
@@ -1685,6 +1693,11 @@ const storeOrderSchema = new mongoose.Schema({
 });
 storeOrderSchema.index({ userId: 1, createdAt: -1 });
 storeOrderSchema.index({ status: 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, assignedAccountId: 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, reservedAccountId: 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, rootAssignedAccountId: 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, "warrantyRounds.fromAccountId": 1, createdAt: -1 });
+storeOrderSchema.index({ status: 1, "warrantyRounds.toAccountId": 1, createdAt: -1 });
 const StoreOrder =
   mongoose.models.StoreOrder ||
   mongoose.model("StoreOrder", storeOrderSchema, "store_orders");
@@ -6094,6 +6107,270 @@ const getCachedChatgptAdminSnapshot = async (
   };
   return loadPromise;
 };
+
+const loadChatgptMarketplaceProviderMap = async () =>
+  getCachedAdminRead(
+    "admin:chatgpt-marketplace-provider-map",
+    {},
+    async () => {
+      const [orders, warrantyCases] = await Promise.all([
+        DatammoOrder.find({ scope: "chatgpt" })
+          .select("provider accounts.accountId")
+          .lean(),
+        DatammoWarrantyCase.find({ scope: "chatgpt" })
+          .select("provider rootAccountId currentAccountId rounds.fromAccountId rounds.toAccountId")
+          .lean(),
+      ]);
+      const providerMap = new Map();
+      const addProvider = (accountId = "", provider = "") => {
+        const normalizedId = String(accountId || "").trim();
+        if (!normalizedId) return;
+        const normalizedProvider = normalizeMarketplaceProvider(provider);
+        if (!providerMap.has(normalizedId)) {
+          providerMap.set(normalizedId, new Set());
+        }
+        providerMap.get(normalizedId).add(normalizedProvider);
+      };
+      (Array.isArray(orders) ? orders : []).forEach((order) => {
+        (Array.isArray(order?.accounts) ? order.accounts : []).forEach((item) => {
+          addProvider(item?.accountId, order?.provider);
+        });
+      });
+      (Array.isArray(warrantyCases) ? warrantyCases : []).forEach((item) => {
+        addProvider(item?.rootAccountId, item?.provider);
+        addProvider(item?.currentAccountId, item?.provider);
+        (Array.isArray(item?.rounds) ? item.rounds : []).forEach((round) => {
+          addProvider(round?.fromAccountId, item?.provider);
+          addProvider(round?.toAccountId, item?.provider);
+        });
+      });
+      return providerMap;
+    },
+    chatgptAdminSnapshotCacheTtlMs,
+  );
+
+const getCachedStoreChatgptWarehouseSummary = async () =>
+  getCachedAdminRead(
+    "admin:store-chatgpt-warehouse-summary",
+    {},
+    async () => buildStoreChatgptWarehouseSummary(),
+    chatgptAdminSnapshotCacheTtlMs,
+  ).catch((error) => {
+    console.error("Admin ChatGPT light warehouse summary failed:", error);
+    return buildEmptyStoreChatgptWarehouseSummary();
+  });
+
+const buildLightChatgptAdminSummary = (
+  accounts = [],
+  providerMap = new Map(),
+  storeWarehouseSummary = buildEmptyStoreChatgptWarehouseSummary(),
+) => {
+  const safeAccounts = Array.isArray(accounts) ? accounts : [];
+  const safeProviderMap = providerMap instanceof Map ? providerMap : new Map();
+  const hasProviderTrace = (account = {}) =>
+    safeProviderMap.has(String(account?.id || "").trim());
+  const providerList = (account = {}) =>
+    Array.from(safeProviderMap.get(String(account?.id || "").trim()) || []);
+  const isMarketAccount = (account = {}) =>
+    supportsChatgptMarket(account?.type) &&
+    normalizePackage2Shelf(account?.package2Shelf, CHATGPT_TOTAL_VALUE) ===
+      CHATGPT_MARKET_VALUE;
+  const totalPoolAccounts = safeAccounts.filter((account) => {
+    if (!supportsChatgptMarket(account?.type)) return false;
+    if (hasProviderTrace(account)) return false;
+    if (isMarketAccount(account)) return false;
+    return true;
+  });
+  const marketUnsoldAccounts = safeAccounts.filter(
+    (account) => !hasProviderTrace(account) && isMarketAccount(account),
+  );
+  const marketSoldAccounts = safeAccounts.filter(hasProviderTrace);
+  return {
+    tabs: {
+      all: safeAccounts.length,
+      total: totalPoolAccounts.length,
+      market: marketUnsoldAccounts.length + marketSoldAccounts.length,
+      short: 0,
+    },
+    totalTypeTabs: {
+      all: totalPoolAccounts.length,
+      package1: totalPoolAccounts.filter(
+        (account) => normalizeChatgptAccountType(account?.effectiveType || account?.type) === "package1",
+      ).length,
+      package2: totalPoolAccounts.filter(
+        (account) => normalizeChatgptAccountType(account?.effectiveType || account?.type) === "package2",
+      ).length,
+      unassigned: totalPoolAccounts.filter(
+        (account) => normalizeChatgptAccountType(account?.effectiveType || account?.type) === "unassigned",
+      ).length,
+    },
+    mailCheckTabs: {
+      all: safeAccounts.length,
+      died: safeAccounts.filter(
+        (account) => normalizeChatgptMailCheckStatus(account?.mailCheckStatus) === "died",
+      ).length,
+      checked: safeAccounts.filter((account) => {
+        const status = normalizeChatgptMailCheckStatus(account?.mailCheckStatus);
+        const lastCheckedAt = String(account?.mailCheckLastCheckedAt || "").trim();
+        return !!lastCheckedAt && status !== "died";
+      }).length,
+      unchecked: safeAccounts.filter(
+        (account) => !String(account?.mailCheckLastCheckedAt || "").trim(),
+      ).length,
+    },
+    marketShelfTabs: {
+      all: marketUnsoldAccounts.length,
+      sold: marketSoldAccounts.length,
+      soldDatammo: marketSoldAccounts.filter((account) =>
+        providerList(account).includes("datammo"),
+      ).length,
+      soldShopmini: marketSoldAccounts.filter((account) =>
+        providerList(account).includes("shopmini"),
+      ).length,
+    },
+    storeWarehouse: storeWarehouseSummary || buildEmptyStoreChatgptWarehouseSummary(),
+  };
+};
+
+const canUseLightChatgptAdminList = ({
+  normalizedSubTab = "all",
+  normalizedTotalType = "all",
+  normalizedMailCheckFilter = "all",
+  normalizedCustomerFilter = "all",
+  expiryFilter = "all",
+  expiryMin = "",
+  expiryMax = "",
+  createdFromTime = null,
+  createdToTime = null,
+  normalizedPackage2ShelfTab = "all",
+  normalizedSoldProvider = "all",
+} = {}) =>
+  normalizedSubTab === "all" &&
+  normalizedTotalType === "all" &&
+  normalizedMailCheckFilter === "all" &&
+  normalizedCustomerFilter === "all" &&
+  String(expiryFilter || "all").trim().toLowerCase() === "all" &&
+  !String(expiryMin || "").trim() &&
+  !String(expiryMax || "").trim() &&
+  createdFromTime === null &&
+  createdToTime === null &&
+  normalizedPackage2ShelfTab === "all" &&
+  normalizedSoldProvider === "all";
+
+const findExactChatgptAdminSearchAccount = async (search = "") => {
+  const rawSearch = String(search || "").trim();
+  if (!rawSearch) return null;
+  const lowerSearch = rawSearch.toLowerCase();
+  return Account.findOne({
+    $or: [
+      { id: rawSearch },
+      { username: rawSearch },
+      ...(lowerSearch !== rawSearch ? [{ username: lowerSearch }] : []),
+    ],
+  })
+    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .lean();
+};
+
+const listAdminChatgptAccountsLight = async ({
+  safePage = 1,
+  safeLimit = 10,
+  exactAccount = null,
+} = {}) => {
+  const [summaryAccounts, providerMap, storeWarehouseSummary] = await Promise.all([
+    Account.find({})
+      .select("id type package2Shelf mailCheckStatus mailCheckLastCheckedAt createdAt")
+      .lean(),
+    loadChatgptMarketplaceProviderMap(),
+    getCachedStoreChatgptWarehouseSummary(),
+  ]);
+  const safeProviderMap = providerMap instanceof Map ? providerMap : new Map();
+  const normalizedAccounts = (Array.isArray(summaryAccounts) ? summaryAccounts : []).map(
+    (account) => {
+      const accountId = String(account?.id || "").trim();
+      const rawType = normalizeChatgptAccountType(account?.type);
+      const hasMarketplaceTrace = safeProviderMap.has(accountId);
+      return {
+        ...account,
+        effectiveType:
+          rawType === "unassigned" && hasMarketplaceTrace ? "package2" : rawType,
+        effectiveTypeSource:
+          rawType === "unassigned" && hasMarketplaceTrace
+            ? "marketplace_trace"
+            : "raw",
+        package2Shelf: normalizePackage2Shelf(
+          account?.package2Shelf,
+          CHATGPT_TOTAL_VALUE,
+        ),
+      };
+    },
+  );
+  const sortedAccounts = exactAccount
+    ? [
+        {
+          ...exactAccount,
+          ...(normalizedAccounts.find(
+            (item) =>
+              String(item?.id || "").trim() ===
+              String(exactAccount?.id || "").trim(),
+          ) || {}),
+        },
+      ]
+    : sortAdminChatgptAccounts(normalizedAccounts);
+  const total = sortedAccounts.length;
+  const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+  const normalizedPage = Math.min(safePage, totalPages);
+  const skip = (normalizedPage - 1) * safeLimit;
+  const pageIds = sortedAccounts
+    .slice(skip, skip + safeLimit)
+    .map((account) => String(account?.id || "").trim())
+    .filter(Boolean);
+  const pageRawAccounts =
+    exactAccount && pageIds.includes(String(exactAccount?.id || "").trim())
+      ? [exactAccount]
+      : pageIds.length > 0
+        ? await Account.find({ id: { $in: pageIds } })
+            .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+            .lean()
+        : [];
+  const pageOrderMap = new Map(pageIds.map((id, index) => [id, index]));
+  const orderedPageAccounts = (Array.isArray(pageRawAccounts) ? pageRawAccounts : [])
+    .map((account) => {
+      const accountId = String(account?.id || "").trim();
+      const summaryAccount =
+        normalizedAccounts.find(
+          (item) => String(item?.id || "").trim() === accountId,
+        ) || {};
+      return {
+        ...account,
+        effectiveType: summaryAccount?.effectiveType,
+        effectiveTypeSource: summaryAccount?.effectiveTypeSource,
+      };
+    })
+    .sort(
+      (left, right) =>
+        Number(pageOrderMap.get(String(left?.id || "").trim()) ?? 0) -
+        Number(pageOrderMap.get(String(right?.id || "").trim()) ?? 0),
+    );
+  const accounts = await decorateChatgptAccountsWithOperationalState(
+    orderedPageAccounts,
+  );
+  return {
+    accounts,
+    pagination: {
+      page: normalizedPage,
+      limit: safeLimit,
+      total,
+      totalPages,
+      hasMore: skip + safeLimit < total,
+    },
+    summary: buildLightChatgptAdminSummary(
+      normalizedAccounts,
+      safeProviderMap,
+      storeWarehouseSummary,
+    ),
+  };
+};
 const listAdminChatgptAccounts = async ({
   page = 1,
   limit = 10,
@@ -6142,6 +6419,36 @@ const listAdminChatgptAccounts = async ({
       : String(soldProviderFilter || "").trim().toLowerCase() === "datammo"
         ? "datammo"
         : "all";
+  if (
+    canUseLightChatgptAdminList({
+      normalizedSubTab,
+      normalizedTotalType,
+      normalizedMailCheckFilter,
+      normalizedCustomerFilter,
+      expiryFilter,
+      expiryMin,
+      expiryMax,
+      createdFromTime,
+      createdToTime,
+      normalizedPackage2ShelfTab,
+      normalizedSoldProvider,
+    })
+  ) {
+    if (!normalizedSearch) {
+      return listAdminChatgptAccountsLight({
+        safePage,
+        safeLimit,
+      });
+    }
+    const exactAccount = await findExactChatgptAdminSearchAccount(search);
+    if (exactAccount) {
+      return listAdminChatgptAccountsLight({
+        safePage: 1,
+        safeLimit,
+        exactAccount,
+      });
+    }
+  }
   const {
     enrichedAccounts,
     totalPoolAccounts,
@@ -8253,7 +8560,6 @@ const sanitizeExpiryCleanupBatch = (
 const buildAdminChatgptAccountFocus = async ({
   accountId = "",
   limit = 10,
-  forceFresh = false,
 } = {}) => {
   const normalizedId = String(accountId || "").trim();
   if (!normalizedId) {
@@ -8264,18 +8570,13 @@ const buildAdminChatgptAccountFocus = async ({
     };
   }
   const safeLimit = parsePositiveLimit(limit, 10, 50);
-  const {
-    enrichedAccounts,
-    totalPoolAccounts,
-    marketUnsoldAccounts,
-    marketSoldAccounts,
-  } = await getCachedChatgptAdminSnapshot(chatgptAdminSnapshotCacheTtlMs, {
-    forceFresh,
-  });
-  const targetAccount =
-    (Array.isArray(enrichedAccounts) ? enrichedAccounts : []).find(
-      (account) => String(account?.id || "").trim() === normalizedId,
-    ) || null;
+  const rawTargetAccount = await Account.findOne({ id: normalizedId })
+    .select(CHATGPT_ADMIN_ACCOUNT_SELECT)
+    .lean();
+  const [decoratedTargetAccount] = rawTargetAccount
+    ? await decorateChatgptAccountsWithOperationalState([rawTargetAccount])
+    : [];
+  const targetAccount = decoratedTargetAccount || rawTargetAccount || null;
   if (!targetAccount) {
     return {
       found: false,
@@ -8284,58 +8585,20 @@ const buildAdminChatgptAccountFocus = async ({
     };
   }
 
-  const normalizedType = normalizeChatgptAccountType(
-    targetAccount?.effectiveType || targetAccount?.type,
-  );
-  const isTrackedMarketplaceAccount = hasMarketplaceTraceSummary(
-    targetAccount?.marketplaceTraceSummary,
-  );
-  const isMarketAccount =
-    supportsChatgptMarket(targetAccount?.type) &&
-    normalizePackage2Shelf(
-      targetAccount?.package2Shelf,
-      CHATGPT_TOTAL_VALUE,
-    ) === CHATGPT_MARKET_VALUE;
-  const targetSubTab =
-    isTrackedMarketplaceAccount || isMarketAccount ? "market" : "total";
-  const targetTotalType =
-    targetSubTab === "total" &&
-    ["package1", "package2", "unassigned"].includes(normalizedType)
-      ? normalizedType
-      : "all";
-  const targetPackage2ShelfTab =
-    targetSubTab === "market" && isTrackedMarketplaceAccount ? "sold" : "all";
-  const focusList =
-    targetSubTab === "market"
-      ? targetPackage2ShelfTab === "sold"
-        ? marketSoldAccounts
-        : marketUnsoldAccounts
-      : totalPoolAccounts.filter((account) => {
-          if (targetTotalType === "all") return true;
-          return (
-            normalizeChatgptAccountType(account?.effectiveType || account?.type) ===
-            targetTotalType
-          );
-        });
-  const targetIndex = Math.max(
-    0,
-    (Array.isArray(focusList) ? focusList : []).findIndex(
-      (account) => String(account?.id || "").trim() === normalizedId,
-    ),
-  );
   return {
     found: true,
     reason: "",
     message: "",
     account: targetAccount,
+    focusSearch: normalizedId,
     targetView: {
-      subTab: targetSubTab,
-      totalType: targetTotalType,
-      package2ShelfTab: targetPackage2ShelfTab,
+      subTab: "all",
+      totalType: "all",
+      package2ShelfTab: "all",
       soldProviderFilter: "all",
-      warehouse: targetSubTab === "market" ? "market" : "total",
+      warehouse: "all",
     },
-    targetPage: Math.max(1, Math.floor(targetIndex / safeLimit) + 1),
+    targetPage: 1,
     targetLimit: safeLimit,
   };
 };
@@ -11601,14 +11864,32 @@ const listChatgptMoveCandidates = async (sourceAccount = {}) => {
     })
     .map(sanitizeChatgptMoveCandidate);
 };
-const listChatgptWarrantyCandidates = async (sourceAccount = {}) => {
+const listChatgptWarrantyCandidates = async (sourceAccount = {}, options = {}) => {
   const sourceId = String(sourceAccount?.id || "").trim();
+  const safeLimit = parsePositiveLimit(options?.limit, 300, 500);
   const busyIds = new Set(await getBusyChatgptAccountIdsForStoreWarranty());
+  const nowIso = new Date().toISOString();
   const candidates = await Account.find({
     id: { $ne: sourceId },
     type: { $in: ["package2", "unassigned"] },
+    $and: [
+      {
+        $or: [
+          { users: { $exists: false } },
+          { users: { $size: 0 } },
+        ],
+      },
+      {
+        $or: [
+          { expiredAt: { $exists: false } },
+          { expiredAt: "" },
+          { expiredAt: { $gt: nowIso } },
+        ],
+      },
+    ],
   })
     .sort({ createdAt: 1, id: 1 })
+    .limit(safeLimit)
     .select("id username type package2Shelf users expiredAt createdAt updatedAt")
     .lean();
   const decoratedCandidates = await decorateChatgptAccountsWithOperationalState(
@@ -14382,7 +14663,6 @@ app.get("/api/admin/chatgpt-accounts", verifyToken, async (req, res) => {
 app.get("/api/admin/chatgpt-account-focus/:id", verifyToken, async (req, res) => {
   try {
     const normalizedId = String(req.params?.id || "").trim();
-    const forceFresh = isTruthyRequestFlag(req.query?.forceFresh);
     if (!normalizedId) {
       return res.status(400).json({
         error: "Thieu ID tai khoan can dieu huong.",
@@ -14395,18 +14675,15 @@ app.get("/api/admin/chatgpt-account-focus/:id", verifyToken, async (req, res) =>
           await buildAdminChatgptAccountFocus({
             accountId: normalizedId,
             limit: safeLimit,
-            forceFresh,
           })
         ),
         version: latestDataVersion,
       });
-    const payload = forceFresh
-      ? await loadPayload()
-      : await getCachedAdminRead(
-          "admin:chatgpt-account-focus",
-          { id: normalizedId, limit: safeLimit },
-          loadPayload,
-        );
+    const payload = await getCachedAdminRead(
+      "admin:chatgpt-account-focus",
+      { id: normalizedId, limit: safeLimit },
+      loadPayload,
+    );
     return res.json(payload);
   } catch (error) {
     console.error("Admin /api/admin/chatgpt-account-focus failed:", error);
@@ -17198,7 +17475,9 @@ app.get("/api/chatgpt/:id/warranty-candidates", verifyToken, async (req, res) =>
     const [decoratedSource] = await decorateChatgptAccountsWithOperationalState([
       source,
     ]);
-    const candidates = await listChatgptWarrantyCandidates(source);
+    const candidates = await listChatgptWarrantyCandidates(source, {
+      limit: parsePositiveLimit(req.query?.limit, 300, 500),
+    });
     return res.json({
       success: true,
       source: sanitizeChatgptMoveCandidate(decoratedSource || source),
