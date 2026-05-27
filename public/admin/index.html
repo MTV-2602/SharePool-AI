@@ -843,6 +843,9 @@ input[type="date"] { color-scheme: dark; }
         <span class="nav-icon">📧</span> Hotmail
         <span class="nav-badge" id="hotmailBadge">—</span>
       </div>
+      <div class="nav-item" onclick="showSection('coursera')">
+        <span class="nav-icon">🎓</span> Coursera
+      </div>
       <div class="nav-item" onclick="showSection('settings')">
         <span class="nav-icon">⚙️</span> Settings
       </div>
@@ -1114,6 +1117,50 @@ input[type="date"] { color-scheme: dark; }
           </div>
         </div>
 
+      <!-- ===== COURSERA SECTION ===== -->
+      <div class="section" id="section-coursera">
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; align-items: start;">
+          <!-- Left: Import Form -->
+          <div class="card">
+            <div class="card-head" style="border-bottom: 1px solid var(--border);">
+              <div>
+                <div class="card-head-title">Import Coursera</div>
+                <div class="card-head-sub">Gửi tài khoản Coursera lên Google Sheet</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="form-group" style="margin-bottom:16px;">
+                <label class="form-label" style="font-size:11px;">Tên Sheet (VD: Sp26)</label>
+                <input type="text" class="form-input" id="courseraSheetName" placeholder="Ví dụ: Sp26">
+              </div>
+              <div class="form-group" style="margin-bottom:16px;">
+                <label class="form-label" style="font-size:11px;">Dữ Liệu (email,pass,mã_môn hoặc email|pass|mã_môn)</label>
+                <textarea class="form-input" id="courseraBulkData" rows="6" placeholder="user1@gmail.com,pass123,MATH101&#10;user2@gmail.com,pass456,ENW492" style="font-family:monospace; font-size:11px; resize:vertical; height: 120px;"></textarea>
+              </div>
+              <button class="btn-primary" id="btnCourseraImport" onclick="importCoursera()" style="width:100%; justify-content:center;">🚀 Gửi Vào Sheet</button>
+            </div>
+          </div>
+          
+          <!-- Right: Sheet Preview -->
+          <div class="card" style="grid-column: span 2;">
+            <div class="card-head" style="border-bottom: 1px solid var(--border);">
+              <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                <div>
+                  <div class="card-head-title">Bản xem trước Google Sheet</div>
+                  <div class="card-head-sub">Xem trực tiếp nội dung trên Google Sheets</div>
+                </div>
+                <a href="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit" target="_blank" class="btn-secondary" style="font-size:12px; padding:6px 12px; text-decoration:none; display:flex; align-items:center; gap:6px;">
+                  🔗 Mở Sheet
+                </a>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0;">
+              <iframe src="https://docs.google.com/spreadsheets/d/1Z-dUFrSTxM-rGuHcDUzJs-_A-6VntMHrEc5Lwh6Tg3M/edit?gid=1338679857&rm=minimal" style="width:100%; height:550px; border:none; background:white; display:block;"></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ===== HOTMAIL SECTION ===== -->
       <div class="section" id="section-hotmail">
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; align-items: start;">
@@ -1338,6 +1385,7 @@ const sectionMeta = {
   keys: { title: 'API Keys', sub: 'Manage and monitor all API keys', showCreate: true },
   upstream: { title: 'Upstream Accounts', sub: 'ChatGPT account pool status', showCreate: false },
   hotmail: { title: 'Hotmail Inbox', sub: 'Manage Outlook/Hotmail accounts & read inbox', showCreate: false },
+  coursera: { title: 'Coursera Sheets', sub: 'Gửi dữ liệu Coursera vào Google Sheet', showCreate: false },
   settings: { title: 'Settings', sub: 'System configuration', showCreate: false }
 };
 
@@ -1367,6 +1415,70 @@ function showSection(name) {
   if (name === 'upstream') loadUpstream();
   if (name === 'hotmail') loadHotmail();
   if (name === 'settings') loadSystemSettings();
+}
+
+async function importCoursera() {
+  const sheetName = document.getElementById('courseraSheetName').value.trim();
+  const rawText = document.getElementById('courseraBulkData').value.trim();
+  if (!rawText) {
+    showToast('Vui lòng nhập dữ liệu Coursera!', 'error');
+    return;
+  }
+  
+  // Parse lines
+  const lines = rawText.split('\n');
+  const parsedData = [];
+  lines.forEach(line => {
+    const clean = line.trim();
+    if (!clean) return;
+    let parts;
+    if (clean.includes(',')) parts = clean.split(',');
+    else if (clean.includes('|')) parts = clean.split('|');
+    else parts = [clean];
+    
+    const email = parts[0]?.trim();
+    const pass = parts[1]?.trim() || '';
+    const sub = parts[2]?.trim() || '';
+    if (email) parsedData.push([email, pass, sub]);
+  });
+  
+  if (parsedData.length === 0) {
+    showToast('Không đọc được dòng nào hợp lệ!', 'error');
+    return;
+  }
+  
+  const btn = document.getElementById('btnCourseraImport');
+  const originalText = btn.textContent;
+  btn.textContent = 'Đang gửi...';
+  btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/proxy-sheet', {
+      method: 'POST',
+      headers: {
+        'x-admin-key': adminKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        sheetName,
+        data: parsedData
+      })
+    });
+    
+    const data = await res.json();
+    if (res.ok && (data.success || data.ok || !data.error)) {
+      showToast(`Đã gửi thành công ${parsedData.length} dòng lên Google Sheets!`, 'success');
+      document.getElementById('courseraBulkData').value = '';
+    } else {
+      showToast(data.error || 'Lỗi gửi dữ liệu', 'error');
+    }
+  } catch (e) {
+    console.error(e);
+    showToast('Lỗi kết nối khi gửi dữ liệu', 'error');
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
 }
 
 // ===== DASHBOARD =====
@@ -2221,33 +2333,70 @@ async function saveHotmailManual() {
 }
 
 async function importHotmailBulk() {
-  const lines = document.getElementById('hotmailBulkLines').value.trim();
-  if (!lines) {
+  const rawText = document.getElementById('hotmailBulkLines').value.trim();
+  if (!rawText) {
     showToast('Vui lòng nhập danh sách tài khoản!', 'error');
     return;
   }
   
-  try {
-    const res = await fetch('/admin-api/hotmail/bulk-import', {
-      method: 'POST',
-      headers: {
-        'x-admin-key': adminKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ lines })
-    });
+  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+  const btn = document.querySelector('#hm-import-tab-bulk button') || document.querySelector('button[onclick="importHotmailBulk()"]');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  
+  const successes = [];
+  const failures = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    btn.textContent = `Importing... (${i + 1}/${lines.length})`;
     
-    const data = await res.json();
-    if (res.ok && data.ok) {
-      showToast(`Đã import thành công ${data.total} tài khoản!`, 'success');
-      document.getElementById('hotmailBulkLines').value = '';
-      loadHotmail();
-    } else {
-      showToast(data.error || 'Lỗi bulk import', 'error');
+    try {
+      const res = await fetch('/admin-api/hotmail/save', {
+        method: 'POST',
+        headers: {
+          'x-admin-key': adminKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ line })
+      });
+      
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        successes.push({
+          line,
+          email: data.email || line.split('|')[0]
+        });
+      } else {
+        failures.push({
+          line,
+          email: line.split('|')[0] || `Dòng ${i + 1}`,
+          error: data.error || 'Live check thất bại'
+        });
+      }
+    } catch (err) {
+      failures.push({
+        line,
+        email: line.split('|')[0] || `Dòng ${i + 1}`,
+        error: 'Lỗi kết nối'
+      });
     }
-  } catch (e) {
-    console.error(e);
-    showToast('Lỗi mạng khi bulk import', 'error');
+  }
+  
+  btn.textContent = originalText;
+  btn.disabled = false;
+  
+  if (successes.length > 0) {
+    loadHotmail();
+  }
+  
+  if (failures.length === 0) {
+    document.getElementById('hotmailBulkLines').value = '';
+    showToast(`Đã import thành công tất cả ${successes.length} tài khoản!`, 'success');
+  } else {
+    document.getElementById('hotmailBulkLines').value = failures.map(f => f.line).join('\n');
+    const details = failures.slice(0, 3).map(f => `${f.email}: ${f.error}`).join('\n');
+    alert(`Import hoàn tất!\nThành công: ${successes.length}/${lines.length}\nThất bại: ${failures.length}\n\nChi tiết một số lỗi đầu:\n${details}\n\nCác dòng lỗi đã được giữ lại để bạn chỉnh sửa và thử lại.`);
   }
 }
 

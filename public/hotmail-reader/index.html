@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Microsoft Mail Reader — Đọc Hòm Thư Nhanh</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #070a13;
+      --surface: rgba(13, 17, 28, 0.7);
+      --surface2: rgba(22, 27, 44, 0.85);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(14, 165, 233, 0.4);
+      --accent: #0ea5e9;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --text: #f1f5f9;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --success: #10b981;
+      --error: #ef4444;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* Gradient Background Lights */
+    .bg-glow {
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      filter: blur(120px);
+      z-index: -1;
+      pointer-events: none;
+      opacity: 0.5;
+    }
+    .glow-cyan {
+      background: rgba(14, 165, 233, 0.25);
+      top: -100px;
+      left: -100px;
+    }
+    .glow-emerald {
+      background: rgba(16, 185, 129, 0.15);
+      bottom: -100px;
+      right: -100px;
+    }
+
+    /* Grid layout */
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+      position: relative;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 24px;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      background: linear-gradient(135deg, #fff 30%, var(--text2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+
+    header p {
+      font-size: 14px;
+      color: var(--text2);
+    }
+
+    /* Input form */
+    .search-box {
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto 32px auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      transition: all 0.3s ease;
+      flex-shrink: 0;
+    }
+
+    .search-box:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px rgba(14, 165, 233, 0.2);
+    }
+
+    .search-box input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      padding: 12px 18px;
+      font-size: 15px;
+      font-family: monospace;
+      color: #fff;
+      outline: none;
+    }
+
+    .search-box input::placeholder {
+      color: var(--text3);
+      font-family: 'Inter', sans-serif;
+    }
+
+    .search-box button {
+      background: var(--accent);
+      color: #070a13;
+      border: none;
+      border-radius: 14px;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .search-box button:hover {
+      background: #38bdf8;
+      box-shadow: 0 0 15px rgba(14, 165, 233, 0.4);
+    }
+
+    .search-box button:active {
+      transform: scale(0.98);
+    }
+
+    .search-box button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Main Content Layout */
+    .workspace {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      gap: 24px;
+      flex: 1;
+      min-height: 0; /* Important for flex child scrolling */
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+      box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+    }
+
+    .list-header, .detail-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      flex-shrink: 0;
+    }
+
+    .list-header-title, .detail-header-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .mailbox-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    .mailbox-list::-webkit-scrollbar, .email-content-view::-webkit-scrollbar {
+      width: 6px;
+    }
+    .mailbox-list::-webkit-scrollbar-thumb, .email-content-view::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+    }
+
+    .mail-item {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 12px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: block;
+      color: inherit;
+      outline: none;
+    }
+
+    .mail-item:hover {
+      border-color: var(--border-hover);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .mail-item.active {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+    }
+
+    .mail-subject {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 8px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.4;
+    }
+
+    .mail-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--text2);
+    }
+
+    .service-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 10px;
+      text-transform: uppercase;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .badge-chatgpt {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+    }
+    .badge-microsoft {
+      background: rgba(14, 165, 233, 0.1);
+      border-color: rgba(14, 165, 233, 0.2);
+      color: #38bdf8;
+    }
+    .badge-other {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text2);
+    }
+
+    /* Detail View Styles */
+    .detail-view {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .email-content-view {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* OTP Banner styling */
+    .otp-banner {
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.15) 0%, rgba(16, 185, 129, 0.05) 100%);
+      border: 1px solid rgba(14, 165, 233, 0.25);
+      border-radius: 18px;
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 8px 24px rgba(14, 165, 233, 0.1);
+      animation: pulseGlow 3s infinite alternate;
+    }
+
+    @keyframes pulseGlow {
+      from { box-shadow: 0 8px 24px rgba(14, 165, 233, 0.1); }
+      to { box-shadow: 0 8px 32px rgba(14, 165, 233, 0.25); }
+    }
+
+    .otp-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .otp-code {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: 4px;
+      font-family: monospace;
+      color: #fff;
+    }
+
+    .btn-copy {
+      background: #fff;
+      color: #070a13;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .btn-copy:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(255,255,255,0.25);
+    }
+    .btn-copy:active {
+      transform: translateY(0);
+    }
+
+    /* Email details fields */
+    .meta-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+    }
+
+    .meta-row {
+      display: flex;
+      font-size: 13px;
+    }
+
+    .meta-label {
+      width: 80px;
+      color: var(--text3);
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .meta-value {
+      color: var(--text);
+      word-break: break-all;
+    }
+
+    /* HTML Iframe container */
+    .html-container {
+      flex: 1;
+      min-height: 400px;
+      background: #fff;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .html-container iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #fff;
+    }
+
+    .plain-text-container {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-y: auto;
+    }
+
+    /* Empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 48px;
+      color: var(--text3);
+      text-align: center;
+    }
+
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+
+    .empty-state-text {
+      font-size: 15px;
+      max-width: 320px;
+      line-height: 1.5;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+      .workspace.showing-detail .card-list-aside {
+        display: none;
+      }
+      .workspace:not(.showing-detail) .card-detail-view {
+        display: none;
+      }
+      html, body {
+        overflow: auto;
+      }
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(13, 17, 28, 0.95);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 12px 24px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      z-index: 10000;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      display: none;
+      animation: slideIn 0.3s ease forwards;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-glow glow-cyan"></div>
+  <div class="bg-glow glow-emerald"></div>
+
+  <div class="container">
+    <header>
+      <h1>Microsoft Mail Reader</h1>
+      <p>Nhập email Hotmail/Outlook trong hệ thống để xem mã đăng nhập OTP</p>
+    </header>
+
+    <form class="search-box" id="searchForm" onsubmit="handleSearch(event)">
+      <input type="text" id="emailInput" placeholder="nhập_email@hotmail.com hoặc outlook.com..." required autocomplete="off">
+      <button type="submit" id="btnSubmit">
+        <span>🔍</span> <span id="btnText">Đọc Hòm Thư</span>
+      </button>
+    </form>
+
+    <div class="workspace" id="workspace">
+      <!-- SIDEBAR LIST -->
+      <div class="card card-list-aside">
+        <div class="list-header">
+          <div class="list-header-title">Hộp Thư Đến</div>
+        </div>
+        <div class="mailbox-list" id="mailboxList">
+          <div class="empty-state">
+            <div class="empty-state-icon">📧</div>
+            <div class="empty-state-text">Chưa có dữ liệu. Hãy nhập email ở trên để tải hòm thư.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DETAILS PANEL -->
+      <div class="card card-detail-view">
+        <div class="detail-header">
+          <div class="detail-header-title">Chi Tiết Email</div>
+        </div>
+        <div class="detail-view" id="emailDetailView">
+          <div class="empty-state">
+            <div class="empty-state-icon">🔍</div>
+            <div class="empty-state-text">Chọn một email ở danh sách bên trái để đọc nội dung.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let currentMessages = [];
+    let currentEmail = "";
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.style.display = 'block';
+      setTimeout(() => {
+        toast.style.display = 'none';
+      }, 3000);
+    }
+
+    // Helper functions to parse OTP code
+    function decodeHtmlEntities(str) {
+      if (!str) return "";
+      return str
+        .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n) || 0))
+        .replace(/&#x([\da-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16) || 0))
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/&quot;/gi, '"')
+        .replace(/&apos;/gi, "'")
+        .replace(/&#39;/g, "'");
+    }
+
+    function getVisibleText(html) {
+      if (!html) return "";
+      const stripped = html
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<!--[\s\S]*?-->/g, " ")
+        .replace(/<[^>]+>/g, " ");
+      return decodeHtmlEntities(stripped)
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/(\d)[\s\-.](?=\d)/g, "$1") // normalize spacing inside numbers
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function extractCode(message) {
+      const sender = String(message.sender || message.from || "").toLowerCase();
+      const subject = String(message.subject || "").toLowerCase();
+      const body = String(message.html_body || message.body || message.bodyPreview || message.preview || "");
+      const fullText = getVisibleText(`${sender} ${subject} ${body}`);
+      if (!fullText) return null;
+
+      // Try pattern for ChatGPT/verification codes
+      const patterns = [
+        /(?:temporary\s+verification\s+code|verification\s+code\s+to\s+continue|temporary\s+chatgpt\s+(?:login\s+)?code|login\s+code|one[-\s]?time\s+(?:code|password)|security\s+code|authentication\s+code|verification\s+code|otp)[^\d]{0,140}((?:\d[\s\-.]*){6})/i,
+        /((?:\d[\s\-.]*){6})[^\w]{0,100}(?:is\s+your|your)\s+(?:temporary\s+)?(?:verification|security|login|one[-\s]?time|otp)\s+code/i
+      ];
+
+      for (const pattern of patterns) {
+        const match = fullText.match(pattern);
+        if (match) {
+          const digits = match[1].replace(/\D/g, "");
+          if (digits.length === 6) return digits;
+        }
+      }
+
+      // OpenAI/ChatGPT login messages shouldn't match raw numbers if not matched above
+      if (/\b(openai|chatgpt)\b/i.test(fullText)) {
+        return null;
+      }
+
+      // Fallback: match first 6 digits or 4 digits
+      const sixDigits = fullText.match(/\b(\d{6})\b/);
+      if (sixDigits) return sixDigits[1];
+      
+      const fourDigits = fullText.match(/\b(\d{4})\b/);
+      if (fourDigits) return fourDigits[1];
+
+      return null;
+    }
+
+    function classifyService(sender = "", subject = "") {
+      const normalized = `${sender} ${subject}`.toLowerCase();
+      if (normalized.includes("chatgpt") || normalized.includes("openai")) {
+        return "ChatGPT";
+      }
+      if (normalized.includes("microsoft") || normalized.includes("outlook") || normalized.includes("hotmail")) {
+        return "Microsoft";
+      }
+      if (normalized.includes("google")) return "Google";
+      if (normalized.includes("facebook") || normalized.includes("meta")) return "Facebook";
+      return "Other";
+    }
+
+    function formatTime(value) {
+      if (!value) return "";
+      const date = new Date(value);
+      if (isNaN(date.getTime())) return value;
+      return date.toLocaleString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric"
+      });
+    }
+
+    // Call API to fetch public mailbox
+    async function handleSearch(event) {
+      event.preventDefault();
+      const email = document.getElementById('emailInput').value.trim();
+      if (!email) return;
+
+      const btn = document.getElementById('btnSubmit');
+      const btnText = document.getElementById('btnText');
+      btn.disabled = true;
+      btnText.textContent = "Đang đọc...";
+
+      try {
+        const res = await fetch('/api/hotmail/public-read', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ email, top: 15 })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          currentEmail = email;
+          currentMessages = data.messages || [];
+          renderMailList();
+          showToast(`Đã tải xong hòm thư (${currentMessages.length} email)`);
+        } else {
+          showToast(data.error || 'Không tìm thấy hoặc lỗi hòm thư');
+          renderEmptyList("Không thể đọc hòm thư. Tài khoản không có hoặc lỗi token.");
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('Lỗi mạng khi tải hòm thư');
+        renderEmptyList("Không thể kết nối đến máy chủ.");
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = "Đọc Hòm Thư";
+      }
+    }
+
+    function renderEmptyList(message) {
+      const container = document.getElementById('mailboxList');
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <div class="empty-state-text">${message}</div>
+        </div>
+      `;
+      document.getElementById('emailDetailView').innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🔍</div>
+          <div class="empty-state-text">Chọn một email ở danh sách bên trái để đọc nội dung.</div>
+        </div>
+      `;
+      document.getElementById('workspace').classList.remove('showing-detail');
+    }
+
+    function renderMailList() {
+      const container = document.getElementById('mailboxList');
+      if (currentMessages.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <div class="empty-state-text">Hòm thư này hiện đang trống. Thử lại sau ít phút.</div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = "";
+      currentMessages.forEach((msg, idx) => {
+        const subject = msg.subject || "(Không có chủ đề)";
+        const sender = msg.sender || msg.from || "(Không rõ người gửi)";
+        const receivedTime = msg.receivedDateTime || msg.receivedAt || msg.date || "";
+        const formattedDate = formatTime(receivedTime);
+        const service = classifyService(sender, subject);
+        
+        let badgeClass = "badge-other";
+        if (service === "ChatGPT") badgeClass = "badge-chatgpt";
+        if (service === "Microsoft") badgeClass = "badge-microsoft";
+
+        const btn = document.createElement('button');
+        btn.className = 'mail-item';
+        btn.id = `mail-item-${idx}`;
+        btn.onclick = () => selectMail(idx);
+        btn.innerHTML = `
+          <div class="mail-subject">${subject}</div>
+          <div class="mail-meta">
+            <span class="service-badge ${badgeClass}">${service}</span>
+            <span>${formattedDate}</span>
+          </div>
+        `;
+        container.appendChild(btn);
+      });
+
+      // Select first mail by default
+      selectMail(0);
+    }
+
+    function selectMail(idx) {
+      // Highlight in list
+      document.querySelectorAll('.mail-item').forEach(el => el.classList.remove('active'));
+      const activeEl = document.getElementById(`mail-item-${idx}`);
+      if (activeEl) activeEl.classList.add('active');
+
+      const msg = currentMessages[idx];
+      if (!msg) return;
+
+      const container = document.getElementById('emailDetailView');
+      const subject = msg.subject || "(Không có chủ đề)";
+      const sender = msg.sender || msg.from || "(Không rõ người gửi)";
+      const receivedTime = msg.receivedDateTime || msg.receivedAt || msg.date || "";
+      const formattedDate = formatTime(receivedTime);
+      const htmlBody = msg.html_body || msg.body || "";
+      const isHtml = /<[a-z][\s\S]*>/i.test(htmlBody);
+
+      // Extract code/OTP
+      const code = extractCode(msg);
+
+      let otpBlock = "";
+      if (code) {
+        otpBlock = `
+          <div class="otp-banner">
+            <div>
+              <div class="otp-label">Mã xác nhận (OTP) phát hiện được</div>
+              <div class="otp-code">${code.split("").join(" ")}</div>
+            </div>
+            <button class="btn-copy" onclick="copyText('${code}')">
+              📋 Copy OTP
+            </button>
+          </div>
+        `;
+      }
+
+      let contentBlock = "";
+      if (isHtml) {
+        const frameDoc = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.5; color: #333; padding: 15px; }
+  img { max-width: 100% !important; height: auto !important; }
+  a { color: #0284c7; }
+</style>
+</head>
+<body>${htmlBody}</body>
+</html>`;
+        contentBlock = `
+          <div class="html-container">
+            <iframe id="mailIframe" srcdoc="${escapeHtml(frameDoc)}" sandbox="allow-same-origin"></iframe>
+          </div>
+        `;
+      } else {
+        contentBlock = `
+          <div class="plain-text-container">${escapeText(htmlBody || "(Email này không có nội dung văn bản)")}</div>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="email-content-view">
+          ${otpBlock}
+          <div class="meta-fields">
+            <div class="meta-row">
+              <div class="meta-label">Người gửi:</div>
+              <div class="meta-value">${escapeText(sender)}</div>
+            </div>
+            <div class="meta-row">
+              <div class="meta-label">Tiêu đề:</div>
+              <div class="meta-value" style="font-weight:600;">${escapeText(subject)}</div>
+            </div>
+            <div class="meta-row">
+              <div class="meta-label">Thời gian:</div>
+              <div class="meta-value">${formattedDate}</div>
+            </div>
+          </div>
+          ${contentBlock}
+        </div>
+      `;
+
+      document.getElementById('workspace').classList.add('showing-detail');
+    }
+
+    function escapeText(str) {
+      if (!str) return "";
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return str.replace(/"/g, "&quot;");
+    }
+
+    function copyText(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("Đã copy thành công: " + text);
+      }).catch(err => {
+        console.error(err);
+        showToast("Không thể tự động copy");
+      });
+    }
+  </script>
+</body>
+</html>

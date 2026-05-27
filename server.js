@@ -84,6 +84,7 @@ async function bootstrap() {
   app.get('/login',     sendPage('login'));
   app.get('/dashboard', sendPage('dashboard'));
   app.get('/admin',     sendPage('admin'));
+  app.get('/hotmail-reader', sendPage('hotmail-reader'));
 
   // ── API routes ────────────────────────────────────────────────
   app.use('/v1',        require('./src/routes/proxy'));
