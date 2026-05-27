@@ -75,17 +75,17 @@ function globalErrorHandler(err, req, res, next) {
     });
   }
 
-  // Unexpected / programming errors — do NOT leak details in production
-  const isDev = process.env.NODE_ENV !== 'production';
+  // Unexpected / programming errors — temporarily leak details to debug
+  const isDev = true; // process.env.NODE_ENV !== 'production';
 
   console.error('[ERROR] [globalErrorHandler] Unhandled error:', err);
 
   return res.status(500).json({
     error: {
-      message:    isDev ? err.message : 'Internal server error',
+      message:    err.message,
       code:       'INTERNAL_ERROR',
       statusCode: 500,
-      ...(isDev && { stack: err.stack }),
+      stack:      err.stack,
     },
   });
 }

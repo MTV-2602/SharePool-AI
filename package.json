@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "build": "cd client && npm install && npm run build",
-    "vercel-build": "npm run build"
+    "vercel-build": "echo 'Using pre-built assets'"
   },
   "dependencies": {
     "cors": "^2.8.5",
