@@ -212,7 +212,7 @@ async function getTopKeys(limit = 10) {
        SUM(ul.tokens_total) AS total_tokens
      FROM usage_logs ul
      LEFT JOIN api_keys ak ON ak.key = ul.api_key
-     GROUP BY ul.api_key
+     GROUP BY ul.api_key, ak.name
      ORDER BY total_tokens DESC
      LIMIT ?`,
     [safeLimit]
