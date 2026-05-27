@@ -100,11 +100,7 @@ app.get('/health', (_, res) => res.json({
 
 // ── SPA fallback — serve React index.html for all non-API routes ──
 app.use((req, res, next) => {
-  const isApi = req.path.startsWith('/admin-api') ||
-                req.path.startsWith('/user-api') ||
-                req.path.startsWith('/api') ||
-                req.path.startsWith('/v1') ||
-                req.path.startsWith('/health');
+  const isApi = /^\/(admin-api|user-api|api|v1|health)($|\/)/.test(req.path);
   if (isApi) return next();
   res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
 });
