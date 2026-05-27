@@ -71,20 +71,9 @@ async function bootstrap() {
     next();
   });
 
-  // ── Static files ──────────────────────────────────────────────
-  app.use(express.static(path.join(__dirname, 'public'), {
-    index: false, // don't auto-serve index.html
-  }));
-
-  // ── Page routes ───────────────────────────────────────────────
-  const sendPage = (page) => (_, res) =>
-    res.sendFile(path.join(__dirname, 'public', page, 'index.html'));
-
-  app.get('/',          (_, res) => res.redirect('/login'));
-  app.get('/login',     sendPage('login'));
-  app.get('/dashboard', sendPage('dashboard'));
-  app.get('/admin',     sendPage('admin'));
-  app.get('/hotmail-reader', sendPage('hotmail-reader'));
+  // ── Serve React frontend (client/dist) ───────────────────────
+  const clientDist = path.join(__dirname, 'client', 'dist');
+  app.use(express.static(clientDist));
 
   // ── API routes ────────────────────────────────────────────────
   app.use('/v1',        require('./src/routes/proxy'));
@@ -103,7 +92,18 @@ async function bootstrap() {
     time: new Date().toISOString(),
   }));
 
-  // ── 404 handler ───────────────────────────────────────────────
+  // ── SPA fallback — serve React index.html for all non-API routes ──
+  app.use((req, res, next) => {
+    const isApi = req.path.startsWith('/admin-api') ||
+                  req.path.startsWith('/user-api') ||
+                  req.path.startsWith('/api') ||
+                  req.path.startsWith('/v1') ||
+                  req.path.startsWith('/health');
+    if (isApi) return next();
+    res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
+  });
+
+  // ── API 404 handler ───────────────────────────────────────────
   app.use((req, res) => {
     res.status(404).json({
       error: {

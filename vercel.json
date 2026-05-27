@@ -13,10 +13,9 @@
     }
   ],
   "routes": [
-    { "src": "/admin-api/(.*)", "dest": "server.js" },
-    { "src": "/api/(.*)", "dest": "server.js" },
-    { "src": "/assets/(.*)", "dest": "client/dist/assets/$1" },
-    { "src": "/(.*\\.(js|css|png|jpg|svg|ico|woff|woff2|ttf|json))", "dest": "client/dist/$1" },
-    { "src": "/(.*)", "dest": "client/dist/index.html" }
+    {
+      "src": "/(.*)",
+      "dest": "server.js"
+    }
   ]
 }
