@@ -1,0 +1,83 @@
+{
+  "manifest_version": 3,
+  "name": "AutoReg Unified",
+  "version": "1.0.0",
+  "description": "Unified mail, 2FA, checkout link and manual push workflow",
+  "permissions": [
+    "storage",
+    "tabs",
+    "windows",
+    "scripting",
+    "sidePanel",
+    "cookies",
+    "browsingData",
+    "history",
+    "declarativeNetRequest",
+    "activeTab",
+    "downloads",
+    "proxy",
+    "webRequest",
+    "webRequestAuthProvider"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:5000/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
+    "https://vinhaccplus.vercel.app/*",
+    "https://api.zingproxy.com/*",
+    "https://*.openai.com/*",
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*",
+    "https://*.chatgpt.com/*",
+    "https://*.paypal.com/*",
+    "https://*.paypalobjects.com/*",
+    "https://*.stripe.com/*",
+    "https://js.stripe.com/*",
+    "https://*.midtrans.com/*",
+    "https://*.gopayapi.com/*",
+    "https://*.gopay1.com/*",
+    "https://tempmailmmo.com/*",
+    "https://tempmailvip.online/*",
+    "https://api.tempmail.lol/*",
+    "https://webmail.loveyuna.today/*",
+    "https://api.dmobot.store/*",
+    "https://web.whatsapp.com/*",
+    "https://login.microsoftonline.com/*",
+    "https://outlook.office.com/*",
+    "https://graph.microsoft.com/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [{
+      "id": "ruleset_1",
+      "enabled": true,
+      "path": "rules.json"
+    }]
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "action": {
+    "default_title": "Open AutoReg Unified"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://auth.openai.com/*",
+        "https://pay.openai.com/*",
+        "https://*.midtrans.com/*",
+        "https://*.gopayapi.com/*",
+        "https://*.gopay1.com/*"
+      ],
+      "js": ["totp.js", "content.js"],
+      "run_at": "document_end",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    { "resources": ["popup.html"], "matches": ["<all_urls>"] }
+  ]
+}

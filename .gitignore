@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Database
+data/
+
+# Environment
+.env
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Agent internal files
+.antigravity/
+

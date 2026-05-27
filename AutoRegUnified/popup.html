@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoReg Unified</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #172033;
+      --surface-2: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --green: #22c55e;
+      --yellow: #f59e0b;
+      --red: #ef4444;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      width: 100%;
+      min-width: 330px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+    }
+
+    .header {
+      padding: 14px 16px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    .header p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .wrap { padding: 14px; }
+
+    .card {
+      margin-bottom: 12px;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .field { margin-bottom: 10px; }
+
+    label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 34px;
+      padding: 7px 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      outline: none;
+      background: #0b1220;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    textarea {
+      min-height: 76px;
+      resize: vertical;
+      line-height: 1.35;
+      font-family: Arial, sans-serif;
+    }
+
+    input[type="checkbox"] {
+      width: 16px;
+      min-height: 16px;
+      padding: 0;
+    }
+
+    .inline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .inline label {
+      margin: 0;
+      text-transform: none;
+      font-weight: 600;
+    }
+
+    .hint {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    button {
+      flex: 1;
+      min-height: 36px;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    .primary { background: #2563eb; }
+    .danger { background: #7f1d1d; border-color: #991b1b; }
+    .soft { background: #1f2937; border-color: var(--border); }
+    .sub { background: #0e7490; }
+    .push { background: #15803d; }
+    .running { background: #b45309 !important; }
+
+    .job {
+      display: none;
+      padding: 10px;
+      border-left: 3px solid var(--accent);
+      background: rgba(56, 189, 248, .08);
+      border-radius: 6px;
+      margin-bottom: 10px;
+      line-height: 1.45;
+    }
+
+    .job b { color: var(--accent); }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .step {
+      padding: 6px 8px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: var(--muted);
+      background: rgba(255,255,255,.03);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .step.done { color: var(--green); }
+    .step.active {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: rgba(56,189,248,.1);
+    }
+    .step.warn {
+      color: var(--yellow);
+      border-color: var(--yellow);
+    }
+
+    .log {
+      height: 190px;
+      padding: 10px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #020617;
+      color: #7dd3fc;
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>AutoReg Hợp Nhất</h1>
+    <p>Mail + 2FA + link thanh toán + Push thủ công</p>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="field">
+        <label for="password">Mật khẩu</label>
+        <input type="text" id="password" value="" />
+        <div class="inline" style="margin-top:8px;">
+          <input type="checkbox" id="autoPassword" checked />
+          <label for="autoPassword">Tự tạo mật khẩu mỗi job</label>
+        </div>
+        <button id="regenPasswordBtn" class="soft" type="button" style="margin-top:8px;width:100%;">Tạo lại mật khẩu</button>
+      </div>
+
+      <div class="field">
+        <label for="mailSite">Nguồn mail</label>
+        <select id="mailSite">
+          <option value="hotmail_backend">Hotmail backend - lấy trực tiếp</option>
+          <option value="hotmail_txt">Hotmail TXT thủ công</option>
+          <option value="tempmailvip">tempmailvip.online</option>
+          <option value="tempmailmmo">tempmailmmo.com</option>
+          <option value="loveyuna">loveyuna.today</option>
+          <option value="dmobot">dmobot.store</option>
+          <option value="tempmaillol">tempmail.lol</option>
+          <option value="gmail_dot">Gmail dot trick</option>
+        </select>
+      </div>
+
+      <div id="gmail_dot_config" class="field" style="display:none;">
+        <label for="gmail_root">Gmail gốc</label>
+        <input type="text" id="gmail_root" placeholder="example@gmail.com" />
+        <div style="height:8px;"></div>
+        <label for="gmail_script_url">Google Apps Script URL</label>
+        <input type="text" id="gmail_script_url" placeholder="https://script.google.com/macros/s/..." />
+      </div>
+
+      <div id="hotmailGroup" class="field" style="display:none;">
+        <label for="hotmailFile">File Hotmail TXT</label>
+        <input type="file" id="hotmailFile" accept=".txt" />
+        <div class="hint">Format: email|pass|refresh_token|client_id|secret2fa</div>
+        <div id="hotmailCount" class="hint">Sẵn sàng: 0 tài khoản</div>
+      </div>
+
+      <div class="field">
+        <label for="proxyString">Proxy trình duyệt</label>
+        <input type="text" id="proxyString" placeholder="ip:port:user:pass" />
+      </div>
+
+      <div class="field">
+        <label for="rotateUrl">Link đổi IP</label>
+        <input type="text" id="rotateUrl" placeholder="https://api.zingproxy.com/open/change-ip/..." />
+      </div>
+
+      <div class="inline">
+        <input type="checkbox" id="autoRestart" />
+        <label for="autoRestart">Tự chạy lại sau lỗi/kết thúc</label>
+      </div>
+
+      <div class="btn-row">
+        <button id="startBtn" class="primary">Bắt đầu</button>
+        <button id="stopBtn" class="danger">Dừng</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="field">
+        <label for="backendBaseUrl">Backend URL</label>
+        <input type="text" id="backendBaseUrl" placeholder="https://vinhaccplus.vercel.app" />
+      </div>
+      <div class="field">
+        <label for="extensionPushToken">Token extension</label>
+        <input type="password" id="extensionPushToken" />
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label for="extensionWorkerId">Worker ID</label>
+          <input type="text" id="extensionWorkerId" placeholder="worker id" />
+        </div>
+        <div class="field">
+          <label for="trialCountry">Quốc gia</label>
+          <select id="trialCountry">
+            <option value="ID">ID / IDR</option>
+            <option value="AUTO">AUTO/IP</option>
+            <option value="VN">VN</option>
+            <option value="US">US</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="trialProxyMode">Proxy link trial</label>
+        <select id="trialProxyMode">
+          <option value="default">Dùng /trialproxy mặc định</option>
+          <option value="direct">Không dùng proxy</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="addr-mode">Mode dia chi Sub</label>
+        <select id="addr-mode">
+          <option value="random_indonesia">Default Indonesia</option>
+          <option value="random_kr_indo_mix">Random KR top + Indo random</option>
+          <option value="random_us_indo_mix">Random US top + Indo random</option>
+          <option value="random_uk_indo_mix">Random UK top + Indo random</option>
+          <option value="random_kr">Random KR</option>
+          <option value="random_us">Random US</option>
+          <option value="random_uk">Random UK</option>
+          <option value="random_jp">Random JP</option>
+          <option value="random_india">Random India</option>
+          <option value="random_algeria">Random Algeria</option>
+          <option value="random_kazakhstan">Random Kazakhstan</option>
+          <option value="random_chile">Random Chile</option>
+          <option value="random_any">Random Any (Global)</option>
+          <option value="fixed_kr">Fixed KR</option>
+          <option value="fixed_us">Fixed US</option>
+          <option value="fixed_uk">Fixed UK</option>
+          <option value="fixed_jp">Fixed JP</option>
+          <option value="fixed_indonesia">Fixed Indonesia</option>
+          <option value="fixed_india">Fixed India</option>
+          <option value="fixed_algeria">Fixed Algeria</option>
+          <option value="fixed_kazakhstan">Fixed Kazakhstan</option>
+          <option value="fixed_chile">Fixed Chile</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="addr-input">Dia chi Sub</label>
+        <textarea id="addr-input" rows="4" placeholder="Budi Santoso|Indonesia|Jawa Timur|Sidoarjo|Jl. Pahlawan No. 31|61212"></textarea>
+        <div class="hint">Format nhu Chatgpt-manhnhat: name|country|state|city|address|postal</div>
+      </div>
+      <div class="btn-row">
+        <button id="btn-save-addr" class="soft">Luu dia chi</button>
+        <button id="btn-reset-addr" class="soft">Reset ID</button>
+      </div>
+      <div class="btn-row">
+        <button id="subBtn" class="sub" disabled>Sub</button>
+        <button id="pushBtn" class="push" disabled>Push</button>
+      </div>
+    </div>
+
+    <div class="job" id="setupJobInfo">
+      <b>Email:</b> <span id="setupCurrentEmail">...</span>
+      <div id="statusText">Sẵn sàng</div>
+      <div id="checkoutInfo" class="hint"></div>
+    </div>
+
+    <div class="steps">
+      <div class="step" id="step-reg">1. Đăng ký</div>
+      <div class="step" id="step-otp">2. OTP</div>
+      <div class="step" id="step-profile">3. Hồ sơ</div>
+      <div class="step" id="step-2fa">4. 2FA</div>
+      <div class="step" id="step-checkout">5. Link</div>
+      <div class="step" id="step-payment">6. Thanh toán</div>
+      <div class="step" id="step-push">7. Push</div>
+      <div class="step" id="step-manual">Cần xử lý</div>
+    </div>
+
+    <div class="card">
+      <div class="btn-row" style="margin-top:0;">
+        <button id="downloadDataBtn" class="soft">Tải data cũ</button>
+        <button id="clearBtn" class="soft">Xóa dữ liệu extension</button>
+      </div>
+      <div id="logBox" class="log">Sẵn sàng.</div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Hub — Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #07090f;
+  --surface: #0d1117;
+  --surface2: #161b22;
+  --surface3: #1c2333;
+  --border: #21262d;
+  --border2: #30363d;
+  --accent: #2563eb;
+  --accent2: #7c3aed;
+  --accent-glow: rgba(37,99,235,0.15);
+  --text: #f0f6fc;
+  --text2: #8b949e;
+  --text3: #484f58;
+  --success: #2ea043;
+  --warning: #d29922;
+  --error: #da3633;
+}
+
+html, body {
+  height: 100%;
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* Animated Grid Background */
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(37,99,235,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37,99,235,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: gridShift 20s linear infinite;
+}
+
+@keyframes gridShift {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 40px; }
+}
+
+.bg-glow {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 50%, rgba(37,99,235,0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 40% at 80% 50%, rgba(124,58,237,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Layout */
+.layout {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100vh;
+}
+
+/* Left Panel */
+.left-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 60px 64px;
+  animation: slideInLeft 0.8s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 60px;
+}
+
+.logo-icon {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  box-shadow: 0 0 30px rgba(37,99,235,0.4);
+}
+
+.logo-text {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.logo-text span {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.tagline {
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -1.5px;
+  margin-bottom: 20px;
+}
+
+.tagline span {
+  background: linear-gradient(135deg, #60a5fa, var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle {
+  font-size: 16px;
+  color: var(--text2);
+  line-height: 1.6;
+  margin-bottom: 52px;
+  max-width: 360px;
+}
+
+.features {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  opacity: 0;
+  animation: fadeInUp 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+
+.feature-item:nth-child(1) { animation-delay: 0.3s; }
+.feature-item:nth-child(2) { animation-delay: 0.45s; }
+.feature-item:nth-child(3) { animation-delay: 0.6s; }
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.feature-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.feature-icon.blue { background: rgba(37,99,235,0.15); border: 1px solid rgba(37,99,235,0.25); }
+.feature-icon.purple { background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.25); }
+.feature-icon.green { background: rgba(46,160,67,0.15); border: 1px solid rgba(46,160,67,0.25); }
+
+.feature-text strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.feature-text span {
+  font-size: 13px;
+  color: var(--text2);
+}
+
+/* Right Panel */
+.right-panel {
+  width: 480px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  animation: slideInRight 0.8s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: rgba(13,17,23,0.8);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 40px;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(37,99,235,0.5), transparent);
+}
+
+.card-header {
+  margin-bottom: 32px;
+}
+
+.card-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 8px;
+}
+
+.card-subtitle {
+  font-size: 14px;
+  color: var(--text2);
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  margin-bottom: 8px;
+  letter-spacing: 0.3px;
+}
+
+.input-wrapper {
+  position: relative;
+}
+
+.input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  font-size: 16px;
+  pointer-events: none;
+  transition: color 0.15s ease;
+}
+
+.form-input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 13px 14px 13px 42px;
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  color: var(--text);
+  outline: none;
+  transition: all 0.15s ease;
+  letter-spacing: 0.5px;
+}
+
+.form-input:focus {
+  border-color: var(--accent);
+  background: var(--surface3);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.form-input:focus + .input-icon,
+.input-wrapper:focus-within .input-icon {
+  color: var(--accent);
+}
+
+.form-input::placeholder {
+  color: var(--text3);
+  letter-spacing: 0;
+}
+
+.eye-toggle {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  padding: 4px;
+  font-size: 15px;
+  transition: color 0.15s ease;
+}
+
+.eye-toggle:hover { color: var(--text2); }
+
+.btn-login {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--accent), #1d4ed8);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.3px;
+  margin-top: 8px;
+}
+
+.btn-login::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.btn-login:hover:not(:disabled)::before { opacity: 1; }
+.btn-login:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 25px rgba(37,99,235,0.4);
+}
+.btn-login:active:not(:disabled) { transform: translateY(0); }
+.btn-login:disabled { opacity: 0.7; cursor: not-allowed; }
+
+.btn-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* Spinner */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: none;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error / Success messages */
+.msg-box {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 20px;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  animation: msgIn 0.2s ease;
+}
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msg-box.error {
+  background: rgba(218,54,51,0.12);
+  border: 1px solid rgba(218,54,51,0.3);
+  color: #ff6b6b;
+}
+
+.msg-box.success {
+  background: rgba(46,160,67,0.12);
+  border: 1px solid rgba(46,160,67,0.3);
+  color: #4ade80;
+}
+
+.msg-box.show { display: flex; }
+
+.divider {
+  margin: 28px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.divider::before, .divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.divider span {
+  font-size: 12px;
+  color: var(--text3);
+  white-space: nowrap;
+}
+
+.info-note {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.info-note-icon {
+  font-size: 16px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.info-note-text {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+
+/* Redirect overlay */
+.redirect-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.redirect-overlay.show {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.redirect-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.redirect-text {
+  font-size: 15px;
+  color: var(--text2);
+}
+
+/* Particles */
+.particles {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  animation: particleFloat linear infinite;
+}
+
+@keyframes particleFloat {
+  0% { transform: translateY(100vh) translateX(0); opacity: 0; }
+  10% { opacity: 0.6; }
+  90% { opacity: 0.3; }
+  100% { transform: translateY(-10vh) translateX(var(--drift)); opacity: 0; }
+}
+
+@media (max-width: 900px) {
+  .left-panel { display: none; }
+  .right-panel { width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+<div class="particles" id="particles"></div>
+
+<div class="redirect-overlay" id="redirectOverlay">
+  <div class="redirect-spinner"></div>
+  <div class="redirect-text">Signing you in…</div>
+</div>
+
+<div class="layout">
+  <!-- Left Panel -->
+  <div class="left-panel">
+    <div class="brand-logo">
+      <div class="logo-icon">⚡</div>
+      <div class="logo-text">API<span>Hub</span></div>
+    </div>
+
+    <h1 class="tagline">Your gateway to<br><span>unlimited AI power</span></h1>
+    <p class="subtitle">Manage, monitor, and configure your API keys with a single unified dashboard built for developers.</p>
+
+    <div class="features">
+      <div class="feature-item">
+        <div class="feature-icon blue">∞</div>
+        <div class="feature-text">
+          <strong>Unlimited Tokens</strong>
+          <span>No artificial caps — use exactly what you need</span>
+        </div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon purple">🤖</div>
+        <div class="feature-text">
+          <strong>Multiple Models</strong>
+          <span>GPT-4o, Claude, Gemini and more in one place</span>
+        </div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon green">⚙️</div>
+        <div class="feature-text">
+          <strong>1-Click Config</strong>
+          <span>Copy ready-made scripts for any platform instantly</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Panel -->
+  <div class="right-panel">
+    <div class="login-card">
+      <div class="card-header">
+        <h2 class="card-title">Welcome back</h2>
+        <p class="card-subtitle">Enter your API key to access the dashboard</p>
+      </div>
+
+      <div class="msg-box error" id="errorMsg">
+        <span>⚠️</span>
+        <span id="errorText">Invalid API key. Please try again.</span>
+      </div>
+
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label class="form-label" for="apiKey">API Key</label>
+          <div class="input-wrapper">
+            <input
+              type="password"
+              id="apiKey"
+              class="form-input"
+              placeholder="sk-••••••••••••••••••••••••"
+              autocomplete="off"
+              spellcheck="false"
+              required
+            >
+            <span class="input-icon" style="pointer-events:none;">🔑</span>
+            <button type="button" class="eye-toggle" id="eyeToggle" onclick="toggleVisibility()" title="Show/hide key">👁</button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-login" id="loginBtn">
+          <div class="btn-content" id="btnContent">
+            <span>Sign In to Dashboard</span>
+            <span>→</span>
+          </div>
+          <div class="btn-content" id="btnLoading" style="display:none;">
+            <div class="spinner" style="display:block;"></div>
+            <span>Authenticating…</span>
+          </div>
+        </button>
+      </form>
+
+      <div class="divider"><span>how to get a key</span></div>
+
+      <div class="info-note">
+        <span class="info-note-icon">💡</span>
+        <div class="info-note-text">
+          Your API key starts with <strong style="color:var(--text);">sk-</strong>. Contact your administrator if you don't have one yet.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Generate floating particles
+(function() {
+  const container = document.getElementById('particles');
+  for (let i = 0; i < 25; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    const dur = 8 + Math.random() * 12;
+    const delay = Math.random() * 15;
+    const left = Math.random() * 100;
+    const drift = (Math.random() - 0.5) * 200;
+    p.style.cssText = `
+      left: ${left}%;
+      animation-duration: ${dur}s;
+      animation-delay: ${delay}s;
+      --drift: ${drift}px;
+      opacity: 0;
+      width: ${1 + Math.random() * 2}px;
+      height: ${1 + Math.random() * 2}px;
+      background: ${Math.random() > 0.5 ? 'var(--accent)' : 'var(--accent2)'};
+    `;
+    container.appendChild(p);
+  }
+})();
+
+let showingKey = false;
+
+function toggleVisibility() {
+  showingKey = !showingKey;
+  const input = document.getElementById('apiKey');
+  const btn = document.getElementById('eyeToggle');
+  input.type = showingKey ? 'text' : 'password';
+  btn.textContent = showingKey ? '🙈' : '👁';
+}
+
+function showError(msg) {
+  const box = document.getElementById('errorMsg');
+  const text = document.getElementById('errorText');
+  text.textContent = msg;
+  box.classList.add('show');
+  box.className = 'msg-box error show';
+}
+
+function hideMessages() {
+  document.getElementById('errorMsg').classList.remove('show');
+}
+
+function setLoading(loading) {
+  const btn = document.getElementById('loginBtn');
+  const btnContent = document.getElementById('btnContent');
+  const btnLoading = document.getElementById('btnLoading');
+  btn.disabled = loading;
+  btnContent.style.display = loading ? 'none' : 'flex';
+  btnLoading.style.display = loading ? 'flex' : 'none';
+}
+
+function showRedirect() {
+  document.getElementById('redirectOverlay').classList.add('show');
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  hideMessages();
+
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) {
+    showError('Please enter your API key.');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const res = await fetch('/user-api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key })
+    });
+
+    if (res.ok) {
+      sessionStorage.setItem('apiKey', key);
+      showRedirect();
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 800);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      showError(data.message || data.error || 'Invalid API key. Please try again.');
+      setLoading(false);
+    }
+  } catch (err) {
+    showError('Unable to connect to server. Please try again.');
+    setLoading(false);
+  }
+}
+
+// Focus input on load
+window.addEventListener('load', () => {
+  setTimeout(() => document.getElementById('apiKey').focus(), 600);
+});
+</script>
+</body>
+</html>

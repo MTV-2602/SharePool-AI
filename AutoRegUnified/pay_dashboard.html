@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ChatGPT Pay Dashboard - Indonesia (+62)</title>
+  <style>
+    :root {
+      --primary: #f59e0b;
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #f8fafc;
+      --border: #334155;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 900px;
+      background: var(--card);
+      padding: 25px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+    }
+    h1 {
+      text-align: center;
+      margin-top: 0;
+      color: var(--primary);
+      font-size: 24px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      padding: 15px;
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 10px;
+      margin-bottom: 20px;
+      border: 1px solid var(--border);
+    }
+    .status-item span {
+      display: block;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .status-item b {
+      font-size: 18px;
+      color: var(--primary);
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .btn {
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: var(--primary); color: #000; }
+    .btn-success { background: #10b981; color: #fff; }
+    .btn-danger { background: #ef4444; color: #fff; }
+    .btn-secondary { background: #64748b; color: #fff; }
+    
+    .main-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+    
+    #logs {
+      background: #000;
+      color: #10b981;
+      padding: 15px;
+      border-radius: 8px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      margin-top: 20px;
+      border: 1px solid #334155;
+    }
+    .acc-info {
+      padding: 15px;
+      background: rgba(245, 158, 11, 0.1);
+      border-left: 4px solid var(--primary);
+      margin-bottom: 20px;
+      border-radius: 0 8px 8px 0;
+    }
+    input[type="file"] { display: none; }
+    .file-label {
+      background: #334155;
+      padding: 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: center;
+      margin-bottom: 15px;
+      display: block;
+      border: 1px dashed #64748b;
+    }
+    .file-label:hover { background: #475569; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>💳 ChatGPT Pay Dashboard</h1>
+
+    <div class="status-bar">
+      <div class="status-item">
+        <span>Tổng acc nạp</span>
+        <b id="stat-total">0</b>
+      </div>
+      <div class="status-item">
+        <span>Đang chờ</span>
+        <b id="stat-pending">0</b>
+      </div>
+      <div class="status-item">
+        <span>Thành công</span>
+        <b id="stat-success">0</b>
+      </div>
+    </div>
+
+    <label for="file-input" class="file-label">📂 Nhấp để nạp file Reg (email|pass|...|json)</label>
+    <input type="file" id="file-input" accept=".txt">
+
+    <div id="current-acc-section" style="display: none;">
+      <div class="acc-info">
+        <div style="font-size: 12px; color: #94a3b8;">Đang xử lý:</div>
+        <div id="current-email" style="font-size: 18px; font-weight: bold;">...</div>
+      </div>
+
+      <div class="controls">
+        <button id="btn-get-link" class="btn btn-primary">🔗 1. Lấy link Midtrans & Mở Tab</button>
+        <button id="btn-download-success" class="btn btn-secondary">📥 Tải acc Success</button>
+      </div>
+
+      <div class="main-actions">
+        <button id="btn-next" class="btn btn-success" style="flex: 2;">✅ Acc tiếp (Lưu & Tiếp)</button>
+        <button id="btn-skip" class="btn btn-danger" style="flex: 1;">❌ Dừng & Làm acc khác</button>
+      </div>
+    </div>
+
+    <div id="logs">Chưa có dữ liệu. Hãy nạp file để bắt đầu!</div>
+  </div>
+
+  <script src="pay_dashboard.js"></script>
+</body>
+</html>

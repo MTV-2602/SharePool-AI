@@ -1,0 +1,2520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Panel — API Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #07090f;
+  --surface: #0d1117;
+  --surface2: #161b22;
+  --surface3: #1c2333;
+  --border: #21262d;
+  --border2: #30363d;
+  --accent: #2563eb;
+  --accent2: #7c3aed;
+  --accent-glow: rgba(37,99,235,0.15);
+  --text: #f0f6fc;
+  --text2: #8b949e;
+  --text3: #484f58;
+  --success: #2ea043;
+  --warning: #d29922;
+  --error: #da3633;
+}
+
+html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+/* ============ AUTH OVERLAY ============ */
+.auth-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.4s ease;
+}
+
+.auth-overlay.hide { opacity: 0; pointer-events: none; }
+
+.auth-card {
+  width: 420px;
+  background: rgba(13,17,23,0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 40px;
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(124,58,237,0.6), transparent);
+}
+
+.auth-logo {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 32px;
+}
+
+.auth-logo-icon {
+  width: 44px; height: 44px;
+  background: linear-gradient(135deg, var(--accent2), var(--accent));
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+  box-shadow: 0 0 30px rgba(124,58,237,0.4);
+}
+
+.auth-title { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+.auth-sub { font-size: 14px; color: var(--text2); margin-bottom: 28px; }
+
+.form-label { display: block; font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.form-input {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 13px 16px;
+  font-size: 14px; font-family: 'Inter', sans-serif;
+  color: var(--text); outline: none; transition: all 0.15s ease;
+  letter-spacing: 1px;
+}
+.form-input:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }
+.form-input::placeholder { color: var(--text3); letter-spacing: 0; }
+
+.btn-auth {
+  width: 100%; margin-top: 16px;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--accent2), #5b21b6);
+  border: none; border-radius: 8px;
+  color: white; font-size: 15px; font-weight: 600;
+  font-family: 'Inter', sans-serif; cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-auth:hover { transform: translateY(-1px); box-shadow: 0 8px 25px rgba(124,58,237,0.4); }
+.btn-auth:active { transform: translateY(0); }
+.btn-auth:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.auth-error {
+  margin-top: 12px; padding: 10px 14px;
+  background: rgba(218,54,51,0.12); border: 1px solid rgba(218,54,51,0.3);
+  border-radius: 8px; color: #ff6b6b;
+  font-size: 13px; display: none;
+}
+.auth-error.show { display: block; }
+
+/* BG grid for auth overlay */
+.auth-overlay-bg {
+  position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: gridShift 20s linear infinite;
+}
+@keyframes gridShift { to { background-position: 40px 40px; } }
+.auth-overlay-glow {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(124,58,237,0.1) 0%, transparent 70%);
+}
+
+/* ============ LAYOUT ============ */
+.app { display: flex; height: 100vh; }
+
+/* ============ SIDEBAR ============ */
+.sidebar {
+  width: 240px; flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  padding: 20px 0;
+  position: relative; z-index: 10;
+}
+
+.sidebar-logo {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 20px 24px;
+  border-bottom: 1px solid var(--border); margin-bottom: 16px;
+}
+
+.logo-icon {
+  width: 38px; height: 38px;
+  background: linear-gradient(135deg, var(--accent2), var(--accent));
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; box-shadow: 0 0 20px rgba(124,58,237,0.4);
+}
+
+.logo-name { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+.logo-name span { background: linear-gradient(135deg, var(--accent2), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.logo-badge {
+  display: inline-block; margin-left: 4px;
+  background: rgba(124,58,237,0.2); border: 1px solid rgba(124,58,237,0.3);
+  color: #c4b5fd; font-size: 9px; font-weight: 700;
+  padding: 1px 5px; border-radius: 4px; vertical-align: middle;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+.nav-section { margin-bottom: 8px; }
+.nav-label { font-size: 10px; font-weight: 600; letter-spacing: 1px; color: var(--text3); text-transform: uppercase; padding: 0 20px 8px; }
+
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px; margin: 1px 10px;
+  border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 500; color: var(--text2);
+  transition: all 0.15s ease; border: 1px solid transparent;
+  text-decoration: none; position: relative;
+}
+.nav-item:hover { background: var(--surface2); color: var(--text); }
+.nav-item.active {
+  background: rgba(124,58,237,0.12); color: #c4b5fd;
+  border-color: rgba(124,58,237,0.2);
+}
+.nav-item.active::before {
+  content: '';
+  position: absolute; left: -10px; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 18px;
+  background: var(--accent2); border-radius: 0 3px 3px 0;
+}
+
+.nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+.nav-badge {
+  margin-left: auto;
+  background: var(--surface3); border: 1px solid var(--border2);
+  color: var(--text2); font-size: 10px; font-weight: 600;
+  padding: 1px 7px; border-radius: 10px; min-width: 20px; text-align: center;
+}
+
+.sidebar-bottom {
+  margin-top: auto; border-top: 1px solid var(--border);
+  padding: 16px 20px 0;
+}
+.admin-info { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.admin-avatar {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, var(--accent2), var(--accent));
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; flex-shrink: 0;
+}
+.admin-name { font-size: 13px; font-weight: 600; }
+.admin-role { font-size: 11px; color: #c4b5fd; }
+
+.btn-logout {
+  width: 100%; padding: 9px;
+  background: rgba(218,54,51,0.1); border: 1px solid rgba(218,54,51,0.2);
+  border-radius: 8px; color: #ff6b6b;
+  font-size: 13px; font-weight: 500; font-family: 'Inter', sans-serif;
+  cursor: pointer; transition: all 0.15s ease;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-logout:hover { background: rgba(218,54,51,0.18); border-color: rgba(218,54,51,0.4); }
+
+/* ============ MAIN ============ */
+.main { flex: 1; overflow-y: auto; background: var(--bg); scroll-behavior: smooth; }
+.main::-webkit-scrollbar { width: 6px; }
+.main::-webkit-scrollbar-track { background: transparent; }
+.main::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+.topbar {
+  position: sticky; top: 0; z-index: 5;
+  background: rgba(7,9,15,0.9); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 32px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.page-title { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+.page-sub { font-size: 13px; color: var(--text2); margin-top: 2px; }
+
+.topbar-actions { display: flex; gap: 10px; align-items: center; }
+
+.btn-primary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 18px;
+  background: linear-gradient(135deg, var(--accent), #1d4ed8);
+  border: none; border-radius: 8px;
+  color: white; font-size: 13px; font-weight: 600;
+  font-family: 'Inter', sans-serif; cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,0.4); }
+
+.btn-secondary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 16px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text2);
+  font-size: 13px; font-family: 'Inter', sans-serif; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-secondary:hover { border-color: var(--border2); color: var(--text); }
+.btn-secondary.spin span:first-child { animation: spin 0.8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.content { padding: 28px 32px; }
+
+/* ============ SECTIONS ============ */
+.section { display: none; animation: sectionIn 0.3s ease; }
+.section.active { display: block; }
+@keyframes sectionIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ============ STAT CARDS ============ */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 14px; margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px;
+  position: relative; overflow: hidden;
+  transition: all 0.2s ease; cursor: default;
+}
+.stat-card:hover { border-color: var(--border2); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+
+.stat-card::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+  opacity: 0; transition: opacity 0.2s ease;
+}
+.stat-card:hover::after { opacity: 1; }
+.stat-card.c1::after { background: linear-gradient(90deg, var(--accent), #60a5fa); }
+.stat-card.c2::after { background: linear-gradient(90deg, var(--success), #4ade80); }
+.stat-card.c3::after { background: linear-gradient(90deg, var(--accent2), #c4b5fd); }
+.stat-card.c4::after { background: linear-gradient(90deg, var(--warning), #fbbf24); }
+.stat-card.c5::after { background: linear-gradient(90deg, #ec4899, #f9a8d4); }
+
+.stat-icon-abs { position: absolute; top: 16px; right: 16px; font-size: 22px; opacity: 0.15; }
+.stat-lbl { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+.stat-val { font-size: 26px; font-weight: 800; letter-spacing: -1px; line-height: 1; margin-bottom: 4px; }
+.stat-val.c1 { color: #60a5fa; }
+.stat-val.c2 { color: #4ade80; }
+.stat-val.c3 { color: #c4b5fd; }
+.stat-val.c4 { color: #fbbf24; }
+.stat-val.c5 { color: #f9a8d4; }
+.stat-foot { font-size: 11px; color: var(--text3); }
+
+/* ============ CARD ============ */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+}
+.card-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-head-title { font-size: 14px; font-weight: 600; }
+.card-head-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.card-body { padding: 20px; }
+
+/* ============ TABLE ============ */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left; font-size: 11px; font-weight: 600;
+  color: var(--text3); text-transform: uppercase; letter-spacing: 0.8px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface2); white-space: nowrap;
+}
+td {
+  padding: 13px 16px; font-size: 13px;
+  color: var(--text2); border-bottom: 1px solid rgba(33,38,45,0.6);
+  vertical-align: middle;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface2); }
+tr.clickable { cursor: pointer; }
+
+/* ============ BADGES ============ */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.badge-active { background: rgba(46,160,67,0.15); color: #4ade80; border: 1px solid rgba(46,160,67,0.25); }
+.badge-expired { background: rgba(218,54,51,0.12); color: #ff6b6b; border: 1px solid rgba(218,54,51,0.2); }
+.badge-disabled { background: rgba(72,79,88,0.3); color: var(--text3); border: 1px solid var(--border); }
+.badge-ready { background: rgba(46,160,67,0.15); color: #4ade80; border: 1px solid rgba(46,160,67,0.25); }
+.badge-cooldown { background: rgba(210,153,34,0.15); color: #fbbf24; border: 1px solid rgba(210,153,34,0.25); }
+.badge-invalid { background: rgba(218,54,51,0.12); color: #ff6b6b; border: 1px solid rgba(218,54,51,0.2); }
+
+/* ============ USAGE BAR ============ */
+.usage-bar-wrap { display: flex; align-items: center; gap: 10px; min-width: 120px; }
+.usage-bar-bg { flex: 1; height: 6px; background: var(--surface3); border-radius: 3px; overflow: hidden; }
+.usage-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+.usage-bar-pct { font-size: 11px; color: var(--text2); width: 32px; text-align: right; flex-shrink: 0; }
+
+/* ============ ACTION BUTTONS ============ */
+.actions { display: flex; gap: 6px; align-items: center; }
+.action-btn {
+  padding: 5px 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text2);
+  font-size: 12px; font-family: 'Inter', sans-serif;
+  cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
+}
+.action-btn:hover { border-color: var(--border2); color: var(--text); }
+.action-btn.danger:hover { border-color: rgba(218,54,51,0.4); color: #ff6b6b; background: rgba(218,54,51,0.08); }
+.action-btn.success:hover { border-color: rgba(46,160,67,0.4); color: #4ade80; background: rgba(46,160,67,0.08); }
+.action-btn.primary:hover { border-color: rgba(37,99,235,0.4); color: #60a5fa; background: rgba(37,99,235,0.08); }
+
+/* ============ SEARCH & FILTER ============ */
+.toolbar { display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
+.search-wrap { position: relative; flex: 1; min-width: 240px; }
+.search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: 14px; pointer-events: none; }
+.search-input {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 12px 9px 36px;
+  font-size: 13px; font-family: 'Inter', sans-serif;
+  color: var(--text); outline: none; transition: all 0.15s ease;
+}
+.search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+.search-input::placeholder { color: var(--text3); }
+
+.filter-select {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 12px;
+  font-size: 13px; font-family: 'Inter', sans-serif; color: var(--text2);
+  outline: none; cursor: pointer; transition: border-color 0.15s ease;
+}
+.filter-select:focus { border-color: var(--accent); }
+
+/* ============ PAGINATION ============ */
+.pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-top: 1px solid var(--border);
+}
+.page-info { font-size: 13px; color: var(--text2); }
+.page-btns { display: flex; gap: 6px; }
+.page-btn {
+  width: 32px; height: 32px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text2);
+  font-size: 13px; font-family: 'Inter', sans-serif;
+  cursor: pointer; transition: all 0.15s ease;
+  display: flex; align-items: center; justify-content: center;
+}
+.page-btn:hover { border-color: var(--accent); color: var(--text); }
+.page-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ============ EXPANDED ROW ============ */
+.expanded-row td { padding: 0; }
+.expanded-content {
+  padding: 20px; background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  animation: expandIn 0.2s ease;
+}
+@keyframes expandIn { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 400px; } }
+.expanded-chart { max-height: 160px; }
+
+/* ============ MODAL ============ */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+}
+.modal-overlay.show { opacity: 1; pointer-events: all; }
+
+.modal {
+  width: 480px; max-width: 95vw;
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 16px; overflow: hidden;
+  transform: scale(0.95) translateY(10px);
+  transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+  max-height: 90vh; overflow-y: auto;
+}
+.modal::-webkit-scrollbar { width: 4px; }
+.modal::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.modal-overlay.show .modal { transform: scale(1) translateY(0); }
+
+.modal-header {
+  padding: 20px 24px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; background: var(--surface); z-index: 1;
+}
+.modal-title { font-size: 16px; font-weight: 700; }
+.modal-close {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text2); font-size: 16px;
+  transition: all 0.15s ease;
+}
+.modal-close:hover { border-color: var(--border2); color: var(--text); }
+
+.modal-body { padding: 24px; }
+
+.form-group { margin-bottom: 20px; }
+.form-label { display: block; font-size: 12px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.form-input {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 11px 14px;
+  font-size: 14px; font-family: 'Inter', sans-serif; color: var(--text);
+  outline: none; transition: all 0.15s ease;
+}
+.form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+.quota-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+}
+.quota-opt {
+  padding: 10px; border: 1px solid var(--border); border-radius: 8px;
+  text-align: center; cursor: pointer;
+  font-size: 13px; font-weight: 500; color: var(--text2);
+  transition: all 0.15s ease; background: var(--surface2);
+}
+.quota-opt:hover { border-color: var(--accent); color: var(--text); }
+.quota-opt.selected { border-color: var(--accent); background: var(--accent-glow); color: #60a5fa; }
+
+.modal-footer {
+  padding: 16px 24px; border-top: 1px solid var(--border);
+  display: flex; gap: 10px; justify-content: flex-end;
+  position: sticky; bottom: 0; background: var(--surface);
+}
+
+.btn-cancel {
+  padding: 10px 20px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text2);
+  font-size: 14px; font-family: 'Inter', sans-serif; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-cancel:hover { border-color: var(--border2); color: var(--text); }
+
+.btn-create {
+  padding: 10px 24px;
+  background: linear-gradient(135deg, var(--accent), #1d4ed8);
+  border: none; border-radius: 8px; color: white;
+  font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif;
+  cursor: pointer; transition: all 0.2s ease;
+}
+.btn-create:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,0.4); }
+.btn-create:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+/* Key result box */
+.key-result {
+  background: rgba(46,160,67,0.08);
+  border: 1px solid rgba(46,160,67,0.3);
+  border-radius: 10px; padding: 16px;
+  margin-top: 16px; display: none;
+}
+.key-result.show { display: block; }
+.key-result-label { font-size: 12px; font-weight: 600; color: #4ade80; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+.key-result-val {
+  font-family: 'Courier New', monospace; font-size: 13px;
+  color: var(--text); background: var(--surface3);
+  border: 1px solid var(--border2); border-radius: 6px;
+  padding: 10px 14px; word-break: break-all; margin-bottom: 10px;
+}
+.btn-copy-key {
+  padding: 8px 16px;
+  background: rgba(46,160,67,0.15); border: 1px solid rgba(46,160,67,0.3);
+  border-radius: 6px; color: #4ade80;
+  font-size: 12px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-copy-key:hover { background: rgba(46,160,67,0.25); }
+
+/* Confirm modal */
+.confirm-modal { width: 380px; }
+.confirm-body { padding: 24px; }
+.confirm-icon { font-size: 32px; margin-bottom: 12px; }
+.confirm-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.confirm-msg { font-size: 14px; color: var(--text2); line-height: 1.5; }
+.confirm-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
+
+.btn-danger {
+  padding: 10px 24px;
+  background: rgba(218,54,51,0.15); border: 1px solid rgba(218,54,51,0.3);
+  border-radius: 8px; color: #ff6b6b;
+  font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-danger:hover { background: rgba(218,54,51,0.25); border-color: rgba(218,54,51,0.5); }
+
+/* Upstream cards */
+.upstream-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.upstream-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; position: relative; overflow: hidden;
+}
+.upstream-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+.upstream-card.ready::before { background: linear-gradient(90deg, var(--success), #4ade80); }
+.upstream-card.cooldown::before { background: linear-gradient(90deg, var(--warning), #fbbf24); }
+.upstream-card.invalid::before { background: linear-gradient(90deg, var(--error), #ff6b6b); }
+
+.upstream-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.upstream-name { font-size: 14px; font-weight: 600; }
+.upstream-meta { font-size: 12px; color: var(--text3); margin-top: 6px; }
+.upstream-timer { font-size: 12px; color: var(--warning); font-family: monospace; font-weight: 600; margin-top: 6px; }
+
+/* Charts row */
+.charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.charts-row.single { grid-template-columns: 1fr; }
+
+/* Top keys table */
+.top-rank { font-weight: 700; color: var(--accent); }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 9000;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 10px; padding: 12px 20px;
+  font-size: 13px; color: var(--text);
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  transform: translateY(80px); opacity: 0;
+  transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+
+/* Empty state */
+.empty-state { padding: 60px 20px; text-align: center; }
+.empty-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
+.empty-title { font-size: 15px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+.empty-sub { font-size: 13px; color: var(--text3); }
+
+/* Loading */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--surface3) 50%, var(--surface2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite; border-radius: 4px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Masked key */
+.key-mono { font-family: 'Courier New', monospace; font-size: 12px; color: var(--text2); letter-spacing: 0.5px; }
+
+/* Settings section */
+.settings-card { max-width: 600px; }
+.settings-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 0; border-bottom: 1px solid var(--border);
+}
+.settings-item:last-child { border-bottom: none; }
+.settings-label { font-size: 14px; font-weight: 500; }
+.settings-desc { font-size: 12px; color: var(--text2); margin-top: 3px; }
+.toggle {
+  width: 44px; height: 24px;
+  background: var(--surface3); border: 1px solid var(--border2);
+  border-radius: 12px; cursor: pointer; position: relative; transition: all 0.2s ease;
+}
+.toggle.on { background: var(--accent); border-color: var(--accent); }
+.toggle::after {
+  content: ''; position: absolute;
+  width: 18px; height: 18px; background: white; border-radius: 50%;
+  top: 2px; left: 2px; transition: transform 0.2s ease;
+}
+.toggle.on::after { transform: translateX(20px); }
+
+/* Spinner */
+.spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
+
+/* Date input */
+input[type="date"] { color-scheme: dark; }
+
+/* Hotmail Inbox Styles */
+.inbox-msg-item {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+.inbox-msg-item:hover {
+  background: var(--surface3);
+  border-color: var(--accent);
+}
+.inbox-msg-item.active {
+  background: rgba(37, 99, 235, 0.15);
+  border-color: var(--accent);
+}
+.inbox-msg-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inbox-msg-meta {
+  font-size: 11px;
+  color: var(--text2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.inbox-msg-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  padding: 16px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+</style>
+</head>
+<body>
+
+<!-- AUTH OVERLAY -->
+<div class="auth-overlay" id="authOverlay">
+  <div class="auth-overlay-bg"></div>
+  <div class="auth-overlay-glow"></div>
+  <div class="auth-card" style="position:relative;z-index:1;">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">🛡️</div>
+      <div>
+        <div style="font-size:18px;font-weight:700;letter-spacing:-0.3px;">Admin Panel</div>
+        <div style="font-size:12px;color:var(--text2);">Restricted access</div>
+      </div>
+    </div>
+    <div class="auth-title">Administrator Login</div>
+    <p class="auth-sub">Enter your admin key to access the control panel</p>
+    <div class="form-group">
+      <label class="form-label" for="adminKeyInput">Admin Key</label>
+      <input type="password" id="adminKeyInput" class="form-input" placeholder="Enter admin key…" onkeydown="if(event.key==='Enter')doAdminAuth()">
+    </div>
+    <button class="btn-auth" id="authBtn" onclick="doAdminAuth()">🔐 Authenticate</button>
+    <div class="auth-error" id="authError">Invalid admin key. Access denied.</div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast">✅ <span id="toastMsg">Done!</span></div>
+
+<!-- CREATE KEY MODAL -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">✨ Create New API Key</div>
+      <button class="modal-close" onclick="closeModal('createModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input type="text" class="form-input" id="newKeyName" placeholder="e.g. Production App">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Token Quota</label>
+        <div class="quota-grid" id="quotaGrid">
+          <div class="quota-opt" onclick="selectQuota(this, 10000000)">10M</div>
+          <div class="quota-opt selected" onclick="selectQuota(this, 50000000)">50M</div>
+          <div class="quota-opt" onclick="selectQuota(this, 100000000)">100M</div>
+          <div class="quota-opt" onclick="selectQuota(this, 500000000)">500M</div>
+          <div class="quota-opt" onclick="selectQuota(this, 1000000000)">1B</div>
+          <div class="quota-opt" onclick="selectQuota(this, -1)">∞ Unlimited</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Expiry Date (optional)</label>
+        <input type="date" class="form-input" id="newKeyExpiry">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Note (optional)</label>
+        <input type="text" class="form-input" id="newKeyNote" placeholder="Internal note…">
+      </div>
+
+      <div class="key-result" id="keyResult">
+        <div class="key-result-label">✅ Key Created Successfully!</div>
+        <div class="key-result-val" id="newKeyVal">—</div>
+        <button class="btn-copy-key" onclick="copyNewKey()">📋 Copy Key</button>
+        <div style="font-size:12px;color:var(--text3);margin-top:8px;">⚠ Save this key now — it won't be shown again.</div>
+      </div>
+    </div>
+    <div class="modal-footer" id="createFooter">
+      <button class="btn-cancel" onclick="closeModal('createModal')">Cancel</button>
+      <button class="btn-create" id="createBtn" onclick="createKey()">Create Key</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM MODAL -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal confirm-modal">
+    <div class="modal-header">
+      <div class="modal-title" id="confirmTitle">Confirm Action</div>
+      <button class="modal-close" onclick="closeModal('confirmModal')">✕</button>
+    </div>
+    <div class="confirm-body">
+      <div class="confirm-icon" id="confirmIcon">⚠️</div>
+      <div class="confirm-title" id="confirmHeading">Are you sure?</div>
+      <div class="confirm-msg" id="confirmText">This action cannot be undone.</div>
+    </div>
+    <div class="confirm-footer">
+      <button class="btn-cancel" onclick="closeModal('confirmModal')">Cancel</button>
+      <button class="btn-danger" id="confirmOkBtn" onclick="">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT ACCOUNT MODAL -->
+<div class="modal-overlay" id="editAccountModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">✏️ Sửa Tài Khoản Upstream</div>
+      <button class="modal-close" onclick="closeModal('editAccountModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editAccOldToken">
+      <div class="form-group" style="margin-bottom:16px;">
+        <label class="form-label" style="font-size:11px;">Tên tài khoản</label>
+        <input type="text" class="form-input" id="editAccName" placeholder="e.g. Account Name">
+      </div>
+      <div class="form-group" style="margin-bottom:20px;">
+        <label class="form-label" style="font-size:11px;">Session Token</label>
+        <input type="text" class="form-input" id="editAccToken" placeholder="ey...">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal('editAccountModal')">Hủy</button>
+      <button class="btn-create" onclick="saveAccountEdit()">Lưu Thay Đổi</button>
+    </div>
+  </div>
+</div>
+
+<!-- HOTMAIL INBOX MODAL -->
+<div class="modal-overlay" id="hotmailInboxModal" style="display:none; align-items: stretch; justify-content: flex-end;">
+  <div class="modal" style="width: 90%; max-width: 960px; height: 100%; border-radius: 20px 0 0 20px; display: flex; flex-direction: column; margin: 0; max-height: 100vh;">
+    <div class="modal-header" style="border-bottom: 1px solid var(--border); padding: 16px 20px;">
+      <div>
+        <div class="modal-title" style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size: 20px;">📧</span> 
+          <span id="inboxModalEmail">Loading...</span>
+        </div>
+        <div id="inboxModalSubtitle" style="font-size:12px; color:var(--text2); margin-top:4px;">Loading messages...</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('hotmailInboxModal')">✕</button>
+    </div>
+    
+    <div class="modal-body" style="flex:1; display:flex; padding:0; overflow:hidden; min-height: 0;">
+      <!-- Sidebar for email list -->
+      <div id="inboxSidebar" style="width:300px; border-right:1px solid var(--border); overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; background:var(--surface2);">
+        <!-- Email list items will go here -->
+      </div>
+      
+      <!-- Content Pane -->
+      <div id="inboxContent" style="flex:1; display:flex; flex-direction:column; overflow:hidden; background:var(--surface); padding:16px;">
+        <!-- Selected email details will go here -->
+        <div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:14px;">
+          Chọn một email ở bên trái để xem nội dung
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app">
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">🛡️</div>
+      <div class="logo-name">Admin<span>Panel</span></div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-label">Main</div>
+      <div class="nav-item" onclick="showSection('dashboard')">
+        <span class="nav-icon">📊</span> Dashboard
+      </div>
+      <div class="nav-item active" onclick="showSection('keys')">
+        <span class="nav-icon">🔑</span> API Keys
+        <span class="nav-badge" id="keysCountBadge">—</span>
+      </div>
+      <div class="nav-item" onclick="showSection('upstream')">
+        <span class="nav-icon">🌐</span> Upstream
+        <span class="nav-badge" id="upstreamBadge">—</span>
+      </div>
+      <div class="nav-item" onclick="showSection('hotmail')">
+        <span class="nav-icon">📧</span> Hotmail
+        <span class="nav-badge" id="hotmailBadge">—</span>
+      </div>
+      <div class="nav-item" onclick="showSection('settings')">
+        <span class="nav-icon">⚙️</span> Settings
+      </div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div class="admin-info">
+        <div class="admin-avatar">A</div>
+        <div>
+          <div class="admin-name">admin@system</div>
+          <div class="admin-role">Super Admin</div>
+        </div>
+      </div>
+      <button class="btn-logout" onclick="adminLogout()">🚪 Sign Out</button>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <main class="main">
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <div>
+        <div class="page-title" id="topbarTitle">API Keys</div>
+        <div class="page-sub" id="topbarSub">Manage and monitor all API keys</div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn-secondary" id="refreshBtn" onclick="refreshCurrent()">
+          <span>🔄</span> <span>Refresh</span>
+        </button>
+        <button class="btn-primary" id="topCreateBtn" onclick="openModal('createModal')">
+          ✨ New Key
+        </button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ===== DASHBOARD SECTION ===== -->
+      <div class="section" id="section-dashboard">
+        <div class="stats-grid" id="dashStats">
+          <div class="stat-card c1"><div class="stat-icon-abs">🔑</div><div class="stat-lbl">Total Keys</div><div class="stat-val c1" id="ds-total">—</div><div class="stat-foot">All time</div></div>
+          <div class="stat-card c2"><div class="stat-icon-abs">✅</div><div class="stat-lbl">Active Keys</div><div class="stat-val c2" id="ds-active">—</div><div class="stat-foot">Currently active</div></div>
+          <div class="stat-card c3"><div class="stat-icon-abs">📈</div><div class="stat-lbl">Today Requests</div><div class="stat-val c3" id="ds-req">—</div><div class="stat-foot">Since midnight</div></div>
+          <div class="stat-card c4"><div class="stat-icon-abs">🪙</div><div class="stat-lbl">Today Tokens</div><div class="stat-val c4" id="ds-tok">—</div><div class="stat-foot">Since midnight</div></div>
+          <div class="stat-card c5"><div class="stat-icon-abs">🌍</div><div class="stat-lbl">Total Tokens</div><div class="stat-val c5" id="ds-total-tok">—</div><div class="stat-foot">All time</div></div>
+        </div>
+
+        <div style="margin-bottom:24px;">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-head-title">14-Day Activity</div>
+                <div class="card-head-sub">Daily requests & tokens trend</div>
+              </div>
+            </div>
+            <div class="card-body" style="padding-top:10px;">
+              <canvas id="adminLineChart" height="120"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-head-title">Top 5 Keys by Usage</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th><th>Name</th><th>Key</th><th>Tokens Used</th><th>Requests</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="topKeysBody">
+                <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Loading…</div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== KEYS SECTION ===== -->
+      <div class="section active" id="section-keys">
+        <div class="toolbar">
+          <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input class="search-input" id="searchInput" type="text" placeholder="Search keys by name or key prefix…" oninput="filterKeys()">
+          </div>
+          <select class="filter-select" id="filterStatus" onchange="filterKeys()">
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="expired">Expired</option>
+            <option value="disabled">Disabled</option>
+          </select>
+        </div>
+
+        <div class="card" style="margin-bottom:24px;">
+          <div class="card-head">
+            <div>
+              <div class="card-head-title">API Keys</div>
+              <div class="card-head-sub" id="keysSubtitle">Loading…</div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="keysTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Name</th>
+                  <th>Key</th>
+                  <th>Quota</th>
+                  <th>Usage</th>
+                  <th>Expires</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="keysBody">
+                <tr><td colspan="8"><div class="empty-state"><div class="skeleton" style="height:14px;width:200px;margin:0 auto 8px;"></div><div class="skeleton" style="height:10px;width:140px;margin:0 auto;"></div></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <div class="page-info" id="pageInfo">Loading…</div>
+            <div class="page-btns" id="pageBtns"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== UPSTREAM SECTION ===== -->
+      <div class="section" id="section-upstream">
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; align-items: start;">
+          <!-- Left Col: Upstream Accounts List -->
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+              <div>
+                <div style="font-size:16px;font-weight:700;letter-spacing:-0.3px;">Upstream Accounts</div>
+                <div style="font-size:13px;color:var(--text2);margin-top:3px;">ChatGPT account pool status</div>
+              </div>
+              <button class="btn-secondary" onclick="loadUpstream()">🔄 Reload</button>
+            </div>
+            <div class="upstream-grid" id="upstreamGrid" style="grid-template-columns: 1fr; gap: 12px;">
+              <div class="upstream-card"><div class="skeleton" style="height:14px;width:60%;margin-bottom:10px;"></div><div class="skeleton" style="height:10px;width:40%;"></div></div>
+            </div>
+          </div>
+
+          <!-- Right Col: Import Accounts Card -->
+          <div class="card">
+            <div class="card-head" style="border-bottom: 1px solid var(--border);">
+              <div>
+                <div class="card-head-title">Add Upstream Accounts</div>
+                <div class="card-head-sub">Import accounts or configure AutoRegUnified</div>
+              </div>
+            </div>
+            <div style="display:flex; border-bottom: 1px solid var(--border); background: var(--surface2);">
+              <button id="tab-btn-manual" class="import-tab-btn active" onclick="switchImportTab('manual')" style="flex:1; padding:12px; background:none; border:none; color:var(--text); font-weight:600; cursor:pointer; border-bottom: 2px solid var(--accent); transition: all 0.2s; outline:none; font-family:inherit; font-size:13px;">Nhập Tay</button>
+              <button id="tab-btn-bulk" class="import-tab-btn" onclick="switchImportTab('bulk')" style="flex:1; padding:12px; background:none; border:none; color:var(--text2); font-weight:600; cursor:pointer; border-bottom: 2px solid transparent; transition: all 0.2s; outline:none; font-family:inherit; font-size:13px;">Nhập Nhanh</button>
+              <button id="tab-btn-extension" class="import-tab-btn" onclick="switchImportTab('extension')" style="flex:1; padding:12px; background:none; border:none; color:var(--text2); font-weight:600; cursor:pointer; border-bottom: 2px solid transparent; transition: all 0.2s; outline:none; font-family:inherit; font-size:13px;">AutoRegUnified</button>
+            </div>
+            <div class="card-body">
+              <!-- Manual Import Tab -->
+              <div id="import-tab-manual" class="import-tab-content">
+                <div class="form-group" style="margin-bottom:16px;">
+                  <label class="form-label" style="font-size:11px;">Tên tài khoản (Gợi nhớ)</label>
+                  <input type="text" class="form-input" id="importManualName" placeholder="e.g. ChatGPT-Free-1">
+                </div>
+                <div class="form-group" style="margin-bottom:20px;">
+                  <label class="form-label" style="font-size:11px;">Session Token (__Secure-next-auth.session-token)</label>
+                  <input type="text" class="form-input" id="importManualToken" placeholder="Paste session token here (ey...)">
+                </div>
+                <button class="btn-primary" onclick="importManual()" style="width:100%; justify-content:center;">➕ Thêm Tài Khoản</button>
+              </div>
+
+              <!-- Bulk Import Tab -->
+              <div id="import-tab-bulk" class="import-tab-content" style="display:none;">
+                <div class="form-group" style="margin-bottom:20px;">
+                  <label class="form-label" style="font-size:11px;">Danh sách Token (Mỗi dòng một token, hoặc Name|Token)</label>
+                  <textarea class="form-input" id="importBulkText" rows="6" placeholder="ey...&#10;Account-2|ey...&#10;ey..." style="font-family:monospace; font-size:12px; resize:vertical; height: 140px;"></textarea>
+                </div>
+                <button class="btn-primary" onclick="importBulk()" style="width:100%; justify-content:center;">⚡ Nhập Nhanh</button>
+              </div>
+
+              <!-- Extension Info Tab -->
+              <div id="import-tab-extension" class="import-tab-content" style="display:none;">
+                <div style="font-size:12px; color:var(--text2); line-height:1.6; margin-bottom:16px;">
+                  Hệ thống được tích hợp sẵn với công cụ đăng ký ChatGPT tự động <strong>AutoRegUnified</strong>. Hãy cấu hình các thông số sau trong phần Cài đặt/Push của tool:
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
+                  <label class="form-label" style="font-size:10px;">Push API URL</label>
+                  <div style="display:flex; gap:8px;">
+                    <input type="text" class="form-input" id="extPushUrl" readonly style="font-family:monospace; font-size:11px; background:var(--surface2); flex:1;">
+                    <button class="btn-secondary" onclick="copyPushUrl()" style="padding:0 12px; font-size:12px;">📋</button>
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom:16px;">
+                  <label class="form-label" style="font-size:10px;">Push Token (X-Extension-Push-Token)</label>
+                  <div style="display:flex; gap:8px;">
+                    <input type="text" class="form-input" value="b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b" readonly style="font-family:monospace; font-size:11px; background:var(--surface2); flex:1;">
+                    <button class="btn-secondary" onclick="copyText('b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b')" style="padding:0 12px; font-size:12px;">📋</button>
+                  </div>
+                </div>
+                <div style="background:rgba(37,99,235,0.08); border:1px solid rgba(37,99,235,0.2); border-radius:8px; padding:12px; font-size:11px; color:var(--text2); line-height:1.5;">
+                  ℹ️ Tool đăng ký sẽ tự động đẩy session token ChatGPT Free mới đăng ký về đây. Hệ thống sẽ ngay lập tức xoay vòng tài khoản mới mà không cần khởi động lại.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== SETTINGS SECTION ===== -->
+      <div class="section" id="section-settings">
+        <div class="card settings-card">
+          <div class="card-head"><div class="card-head-title">System Settings</div></div>
+          <div class="card-body">
+            <div class="settings-item">
+              <div>
+                <div class="settings-label">Auto-refresh Dashboard</div>
+                <div class="settings-desc">Refresh stats every 30 seconds automatically</div>
+              </div>
+              <div class="toggle on" id="toggle-refresh" onclick="toggleSetting(this)"></div>
+            </div>
+            <div class="settings-item">
+              <div>
+                <div class="settings-label">Show Token Details</div>
+                <div class="settings-desc">Display input/output token breakdown</div>
+              </div>
+              <div class="toggle on" id="toggle-tokens" onclick="toggleSetting(this)"></div>
+            </div>
+            <div class="settings-item">
+              <div>
+                <div class="settings-label">Compact Table View</div>
+                <div class="settings-desc">Reduce row spacing in tables</div>
+              </div>
+              <div class="toggle" id="toggle-compact" onclick="toggleSetting(this)"></div>
+            </div>
+            <div class="settings-item">
+              <div>
+                <div class="settings-label">Email Alerts</div>
+                <div class="settings-desc">Get notified when keys are near quota</div>
+              </div>
+              <div class="toggle" id="toggle-alerts" onclick="toggleSetting(this)"></div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:16px;" class="card settings-card">
+          <div class="card-head"><div class="card-head-title">Admin Key</div></div>
+          <div class="card-body">
+            <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Stored in localStorage. Clear to force re-authentication.</div>
+            <button class="btn-danger" onclick="adminLogout()">🗑 Clear Stored Key & Logout</button>
+        </div>
+      </div>
+
+      <!-- ===== HOTMAIL SECTION ===== -->
+      <div class="section" id="section-hotmail">
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; align-items: start;">
+          <!-- Left Col: Hotmail Accounts List -->
+          <div style="grid-column: span 2;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <input class="search-input" id="hotmailSearch" type="text" placeholder="Tìm kiếm Hotmail email..." oninput="loadHotmail({page:1})" style="width:240px; margin-bottom:0;">
+                <select class="filter-select" id="hotmailFilterState" onchange="loadHotmail({page:1})" style="width:160px; margin-bottom:0;">
+                  <option value="all">Trạng thái: Tất cả</option>
+                  <option value="available">Available (Sẵn sàng)</option>
+                  <option value="reserved">Reserved (Đang giữ)</option>
+                  <option value="used">Used (Đã dùng)</option>
+                </select>
+              </div>
+              <button class="btn-secondary" onclick="loadHotmail()">🔄 Reload</button>
+            </div>
+            
+            <div class="card" style="overflow:visible;">
+              <div class="table-wrap">
+                <table id="hotmailTable">
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th>Mật khẩu / OTP</th>
+                      <th>Trạng thái</th>
+                      <th>Lịch sử dùng</th>
+                      <th>Lần đọc cuối</th>
+                      <th style="text-align:right;">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody id="hotmailBody">
+                    <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Đang tải danh sách...</div></div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              
+              <div class="pagination" id="hotmailPagination" style="padding:16px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border);">
+                <!-- Pagination elements will go here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Col: Add/Save & Bulk Import Card -->
+          <div class="card">
+            <div class="card-head" style="border-bottom: 1px solid var(--border);">
+              <div>
+                <div class="card-head-title">Nhập Tài Khoản Hotmail</div>
+                <div class="card-head-sub">Nhập lẻ hoặc nhập hàng loạt có live-check</div>
+              </div>
+            </div>
+            <div style="display:flex; border-bottom: 1px solid var(--border); background: var(--surface2);">
+              <button id="hm-tab-btn-manual" class="import-tab-btn active" onclick="switchHotmailTab('manual')" style="flex:1; padding:12px; background:none; border:none; color:var(--text); font-weight:600; cursor:pointer; border-bottom: 2px solid var(--accent); transition: all 0.2s; outline:none; font-family:inherit; font-size:13px;">Nhập Lẻ</button>
+              <button id="hm-tab-btn-bulk" class="import-tab-btn" onclick="switchHotmailTab('bulk')" style="flex:1; padding:12px; background:none; border:none; color:var(--text2); font-weight:600; cursor:pointer; border-bottom: 2px solid transparent; transition: all 0.2s; outline:none; font-family:inherit; font-size:13px;">Nhập Nhanh</button>
+            </div>
+            <div class="card-body">
+              <!-- Manual Tab -->
+              <div id="hm-import-tab-manual" class="import-tab-content">
+                <div class="form-group" style="margin-bottom:16px;">
+                  <label class="form-label" style="font-size:11px;">Tài khoản định dạng email|pass|refresh_token|client_id|secret2fa</label>
+                  <input type="text" class="form-input" id="hotmailManualLine" placeholder="email|pass|refresh_token|client_id|secret2fa (hoặc thiếu 2fa)">
+                </div>
+                <button class="btn-primary" onclick="saveHotmailManual()" style="width:100%; justify-content:center;">➕ Lưu & Live-Check</button>
+              </div>
+              
+              <!-- Bulk Tab -->
+              <div id="hm-import-tab-bulk" class="import-tab-content" style="display:none;">
+                <div class="form-group" style="margin-bottom:16px;">
+                  <label class="form-label" style="font-size:11px;">Danh sách tài khoản (Mỗi dòng 1 account)</label>
+                  <textarea class="form-input" id="hotmailBulkLines" rows="8" placeholder="email1|pass1|refresh_token1|client_id1|secret2fa1&#10;email2|pass2|refresh_token2|client_id2|secret2fa2" style="font-family:monospace; font-size:11px; resize:vertical;"></textarea>
+                </div>
+                <button class="btn-primary" onclick="importHotmailBulk()" style="width:100%; justify-content:center;">🚀 Bulk Import</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+const ADMIN = '/admin-api';
+let adminKey = localStorage.getItem('adminKey') || '';
+let allKeys = [];
+let filteredKeys = [];
+let currentPage = 1;
+const PER_PAGE = 10;
+let selectedQuota = 50000000;
+let expandedKeyId = null;
+let lineChart = null;
+let miniCharts = {};
+let confirmCallback = null;
+let refreshTimer = null;
+
+// ===== UTILS =====
+function fmt(n) {
+  if (n === null || n === undefined || n === -1) return '∞';
+  if (n >= 1e9) return (n/1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return n?.toLocaleString() || '0';
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function maskKey(k) {
+  if (!k) return '—';
+  return k.slice(0,5) + '•'.repeat(Math.min(8, k.length-9)) + k.slice(-4);
+}
+
+function statusBadge(key) {
+  if (key.enabled === false || key.disabled) return '<span class="badge badge-disabled">⏸ Disabled</span>';
+  if (key.expires && new Date(key.expires) < new Date()) return '<span class="badge badge-expired">✕ Expired</span>';
+  return '<span class="badge badge-active">● Active</span>';
+}
+
+function statusText(key) {
+  if (key.enabled === false || key.disabled) return 'disabled';
+  if (key.expires && new Date(key.expires) < new Date()) return 'expired';
+  return 'active';
+}
+
+function showToast(msg, type='') {
+  const t = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => t.className = 'toast', 2500);
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => showToast('Copied!', 'success'));
+}
+
+// ===== AUTH =====
+async function doAdminAuth() {
+  const key = document.getElementById('adminKeyInput').value.trim();
+  if (!key) return;
+
+  const btn = document.getElementById('authBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="display:inline-block;margin:0 auto;"></div>';
+
+  try {
+    const res = await fetch(ADMIN + '/stats', {
+      method: 'POST',
+      headers: { 'x-admin-key': key, 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+
+    if (res.ok || res.status === 200) {
+      adminKey = key;
+      localStorage.setItem('adminKey', key);
+      document.getElementById('authOverlay').classList.add('hide');
+      setTimeout(() => { document.getElementById('authOverlay').style.display = 'none'; }, 400);
+      initApp();
+    } else {
+      document.getElementById('authError').classList.add('show');
+      btn.disabled = false;
+      btn.textContent = '🔐 Authenticate';
+    }
+  } catch {
+    // Even if fetch fails, try with the key anyway (may be server-side issue)
+    document.getElementById('authError').textContent = 'Cannot connect to server.';
+    document.getElementById('authError').classList.add('show');
+    btn.disabled = false;
+    btn.textContent = '🔐 Authenticate';
+  }
+}
+
+function adminLogout() {
+  localStorage.removeItem('adminKey');
+  adminKey = '';
+  location.reload();
+}
+
+// ===== INIT =====
+async function checkAuth() {
+  if (!adminKey) return false;
+  try {
+    const res = await fetch(ADMIN + '/stats', {
+      method: 'POST',
+      headers: { 'x-admin-key': adminKey, 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    return res.ok || res.status === 200;
+  } catch { return false; }
+}
+
+async function initApp() {
+  loadDashboardStats();
+  loadKeys();
+  loadUpstream();
+  if (document.getElementById('toggle-refresh').classList.contains('on')) {
+    refreshTimer = setInterval(() => {
+      if (document.getElementById('section-dashboard').classList.contains('active')) loadDashboardStats();
+      if (document.getElementById('section-keys').classList.contains('active')) loadKeys();
+    }, 30000);
+  }
+}
+
+window.addEventListener('load', async () => {
+  if (adminKey) {
+    const valid = await checkAuth();
+    if (valid) {
+      document.getElementById('authOverlay').style.display = 'none';
+      initApp();
+      return;
+    }
+  }
+  // Show auth overlay
+  document.getElementById('authOverlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('adminKeyInput').focus(), 300);
+});
+
+// ===== NAVIGATION =====
+const sectionMeta = {
+  dashboard: { title: 'Dashboard', sub: 'Platform overview and analytics', showCreate: false },
+  keys: { title: 'API Keys', sub: 'Manage and monitor all API keys', showCreate: true },
+  upstream: { title: 'Upstream Accounts', sub: 'ChatGPT account pool status', showCreate: false },
+  hotmail: { title: 'Hotmail Inbox', sub: 'Manage Outlook/Hotmail accounts & read inbox', showCreate: false },
+  settings: { title: 'Settings', sub: 'System configuration', showCreate: false }
+};
+
+function showSection(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('section-' + name).classList.add('active');
+  
+  // Handle case where event is undefined (e.g. initial load)
+  if (window.event && window.event.currentTarget) {
+    window.event.currentTarget.classList.add('active');
+  } else {
+    // find nav item by click handler
+    document.querySelectorAll('.nav-item').forEach(n => {
+      if (n.getAttribute('onclick') === `showSection('${name}')`) {
+        n.classList.add('active');
+      }
+    });
+  }
+
+  const meta = sectionMeta[name];
+  document.getElementById('topbarTitle').textContent = meta.title;
+  document.getElementById('topbarSub').textContent = meta.sub;
+  document.getElementById('topCreateBtn').style.display = meta.showCreate ? '' : 'none';
+
+  if (name === 'dashboard') loadDashboardStats();
+  if (name === 'upstream') loadUpstream();
+  if (name === 'hotmail') loadHotmail();
+}
+
+// ===== DASHBOARD =====
+async function loadDashboardStats() {
+  try {
+    const res = await fetch(ADMIN + '/stats', {
+      method: 'POST',
+      headers: { 'x-admin-key': adminKey, 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+
+    document.getElementById('ds-total').textContent = fmt(data.total_keys || data.totalKeys || 0);
+    document.getElementById('ds-active').textContent = fmt(data.active_keys || data.activeKeys || 0);
+    document.getElementById('ds-req').textContent = fmt(data.today_requests || data.todayRequests || 0);
+    document.getElementById('ds-tok').textContent = fmt(data.today_tokens || data.todayTokens || 0);
+    document.getElementById('ds-total-tok').textContent = fmt(data.total_tokens || data.totalTokens || 0);
+
+    // Daily chart
+    const daily = data.daily || data.dailyStats || [];
+    if (daily.length) renderLineChart(daily);
+
+    // Top keys
+    const top = data.top_keys || data.topKeys || [];
+    renderTopKeys(top);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function renderLineChart(daily) {
+  const labels = daily.slice(-14).map(d => {
+    const dt = new Date(d.date || d.day);
+    return dt.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+  });
+  const reqs = daily.slice(-14).map(d => d.requests || d.request_count || 0);
+  const toks = daily.slice(-14).map(d => d.tokens || d.token_count || 0);
+
+  const ctx = document.getElementById('adminLineChart').getContext('2d');
+  if (lineChart) lineChart.destroy();
+
+  const gradReq = ctx.createLinearGradient(0, 0, 0, 200);
+  gradReq.addColorStop(0, 'rgba(37,99,235,0.3)');
+  gradReq.addColorStop(1, 'rgba(37,99,235,0)');
+
+  const gradTok = ctx.createLinearGradient(0, 0, 0, 200);
+  gradTok.addColorStop(0, 'rgba(124,58,237,0.3)');
+  gradTok.addColorStop(1, 'rgba(124,58,237,0)');
+
+  lineChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Requests',
+          data: reqs,
+          borderColor: '#3b82f6',
+          backgroundColor: gradReq,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Tokens',
+          data: toks,
+          borderColor: '#a78bfa',
+          backgroundColor: gradTok,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: '#8b949e', font: { size: 12, family: 'Inter' }, boxWidth: 12, padding: 16 }
+        },
+        tooltip: {
+          backgroundColor: '#161b22', borderColor: '#21262d', borderWidth: 1,
+          titleColor: '#f0f6fc', bodyColor: '#8b949e',
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)}` }
+        }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(33,38,45,0.5)' }, ticks: { color: '#484f58', font: { size: 11 } } },
+        y: {
+          position: 'left',
+          grid: { color: 'rgba(33,38,45,0.5)' },
+          ticks: { color: '#484f58', font: { size: 11 }, callback: v => fmt(v) }
+        },
+        y1: {
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: { color: '#484f58', font: { size: 11 }, callback: v => fmt(v) }
+        }
+      },
+      animation: { duration: 600, easing: 'easeOutQuart' }
+    }
+  });
+}
+
+function renderTopKeys(keys) {
+  const body = document.getElementById('topKeysBody');
+  if (!keys.length) {
+    body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No data yet</div></div></td></tr>';
+    return;
+  }
+  body.innerHTML = keys.slice(0,5).map((k,i) => `
+    <tr>
+      <td><span class="top-rank">${i+1}</span></td>
+      <td style="font-weight:600;color:var(--text);">${escHtml(k.name || 'Unnamed')}</td>
+      <td><span class="key-mono">${maskKey(k.key)}</span></td>
+      <td style="color:#c4b5fd;">${fmt(k.used || k.tokens || 0)}</td>
+      <td style="color:#60a5fa;">${fmt(k.requests || k.request_count || 0)}</td>
+      <td>${statusBadge(k)}</td>
+    </tr>
+  `).join('');
+}
+
+// ===== KEYS =====
+async function loadKeys() {
+  try {
+    const res = await fetch(ADMIN + '/keys', {
+      headers: { 'x-admin-key': adminKey }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    allKeys = Array.isArray(data) ? data : (data.keys || data.data || []);
+    document.getElementById('keysCountBadge').textContent = allKeys.length;
+    filterKeys();
+  } catch (e) {
+    console.error(e);
+    document.getElementById('keysBody').innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">❌</div><div class="empty-title">Failed to load keys</div></div></td></tr>';
+  }
+}
+
+function filterKeys() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const status = document.getElementById('filterStatus').value;
+  filteredKeys = allKeys.filter(k => {
+    const matchQ = !q || (k.name||'').toLowerCase().includes(q) || (k.key||'').toLowerCase().includes(q);
+    const matchS = !status || statusText(k) === status;
+    return matchQ && matchS;
+  });
+  currentPage = 1;
+  renderKeys();
+}
+
+function renderKeys() {
+  const total = filteredKeys.length;
+  const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const start = (currentPage-1) * PER_PAGE;
+  const slice = filteredKeys.slice(start, start + PER_PAGE);
+
+  document.getElementById('keysSubtitle').textContent = `${total} key${total!==1?'s':''} found`;
+  document.getElementById('pageInfo').textContent = `Showing ${start+1}–${Math.min(start+PER_PAGE, total)} of ${total}`;
+
+  const body = document.getElementById('keysBody');
+
+  if (!slice.length) {
+    body.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🔑</div><div class="empty-title">No keys found</div><div class="empty-sub">Try adjusting your search or filters</div></div></td></tr>';
+    renderPagination(0, 1);
+    return;
+  }
+
+  body.innerHTML = slice.map((k, idx) => {
+    const quota = k.quota === -1 ? null : (k.quota || 0);
+    const used = k.used || k.tokens_used || 0;
+    const pct = quota ? Math.min(100, Math.round(used/quota*100)) : 0;
+    const barColor = pct > 85 ? '#da3633' : pct > 60 ? '#d29922' : '#2563eb';
+    const rowNum = start + idx + 1;
+    const expires = k.expires ? new Date(k.expires).toLocaleDateString() : 'Never';
+
+    return `
+      <tr class="clickable" onclick="toggleExpand(this, '${escHtml(k.id || k._id || '')}', ${start+idx})">
+        <td style="color:var(--text3);font-size:12px;">${rowNum}</td>
+        <td style="font-weight:600;color:var(--text);">${escHtml(k.name || 'Unnamed')}</td>
+        <td><span class="key-mono">${maskKey(k.key)}</span></td>
+        <td>${quota === null ? '<span style="color:#c4b5fd;">∞ Unlimited</span>' : fmt(quota)}</td>
+        <td>
+          <div class="usage-bar-wrap">
+            <div class="usage-bar-bg">
+              <div class="usage-bar-fill" style="width:${pct}%;background:${barColor};"></div>
+            </div>
+            <span class="usage-bar-pct">${quota===null?'—':pct+'%'}</span>
+          </div>
+        </td>
+        <td style="color:${k.expires && new Date(k.expires)<new Date() ? 'var(--error)' : 'var(--text2)'};">${expires}</td>
+        <td>${statusBadge(k)}</td>
+        <td onclick="event.stopPropagation()">
+          <div class="actions">
+            <button class="action-btn primary" onclick="copyText('${escHtml(k.key||'')}')">📋</button>
+            <button class="action-btn" onclick="confirmResetUsage('${escHtml(k.id||k._id||'')}')">♻</button>
+            <button class="action-btn" onclick="confirmToggle('${escHtml(k.id||k._id||'')}', ${!k.disabled && k.enabled!==false})">${(k.disabled||k.enabled===false)?'▶':'⏸'}</button>
+            <button class="action-btn danger" onclick="confirmDelete('${escHtml(k.id||k._id||'')}')">🗑</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  renderPagination(total, pages);
+}
+
+function renderPagination(total, pages) {
+  const btns = document.getElementById('pageBtns');
+  btns.innerHTML = '';
+
+  const prev = document.createElement('button');
+  prev.className = 'page-btn';
+  prev.textContent = '‹';
+  prev.disabled = currentPage <= 1;
+  prev.onclick = () => { currentPage--; renderKeys(); };
+  btns.appendChild(prev);
+
+  const maxBtns = 5;
+  let start = Math.max(1, currentPage - 2);
+  let end = Math.min(pages, start + maxBtns - 1);
+  if (end - start < maxBtns - 1) start = Math.max(1, end - maxBtns + 1);
+
+  for (let i = start; i <= end; i++) {
+    const b = document.createElement('button');
+    b.className = 'page-btn' + (i === currentPage ? ' active' : '');
+    b.textContent = i;
+    const pg = i;
+    b.onclick = () => { currentPage = pg; renderKeys(); };
+    btns.appendChild(b);
+  }
+
+  const next = document.createElement('button');
+  next.className = 'page-btn';
+  next.textContent = '›';
+  next.disabled = currentPage >= pages;
+  next.onclick = () => { currentPage++; renderKeys(); };
+  btns.appendChild(next);
+}
+
+// ===== EXPAND ROW =====
+function toggleExpand(row, id, idx) {
+  // Remove existing expanded rows
+  document.querySelectorAll('.expanded-row').forEach(r => r.remove());
+
+  if (expandedKeyId === id) {
+    expandedKeyId = null;
+    return;
+  }
+  expandedKeyId = id;
+
+  const key = filteredKeys[idx];
+  if (!key) return;
+
+  const expRow = document.createElement('tr');
+  expRow.className = 'expanded-row';
+  expRow.innerHTML = `
+    <td colspan="8">
+      <div class="expanded-content">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;">
+          <div>
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">Full Key</div>
+            <div style="font-family:monospace;font-size:12px;color:var(--text2);word-break:break-all;">${escHtml(key.key||'—')}</div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">Created</div>
+            <div style="font-size:13px;">${key.created_at ? new Date(key.created_at).toLocaleString() : '—'}</div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">Note</div>
+            <div style="font-size:13px;color:var(--text2);">${escHtml(key.note||'No note')}</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px;">Usage over last 7 days</div>
+        <canvas id="mini-chart-${id}" height="80" class="expanded-chart"></canvas>
+      </div>
+    </td>`;
+
+  row.after(expRow);
+
+  // Mini chart
+  setTimeout(() => {
+    const daily = key.daily || [];
+    const labels = Array.from({length:7}, (_,i) => {
+      const d = new Date(); d.setDate(d.getDate()-6+i);
+      return d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    });
+    const data = labels.map((_, i) => {
+      const d = new Date(); d.setDate(d.getDate()-6+i);
+      const k2 = d.toISOString().split('T')[0];
+      const e = daily.find(x => x.date===k2);
+      return e ? (e.tokens||0) : 0;
+    });
+
+    const ctx = document.getElementById(`mini-chart-${id}`)?.getContext('2d');
+    if (!ctx) return;
+
+    const g = ctx.createLinearGradient(0, 0, 0, 80);
+    g.addColorStop(0, 'rgba(124,58,237,0.5)');
+    g.addColorStop(1, 'rgba(124,58,237,0)');
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{ data, borderColor: '#a78bfa', backgroundColor: g, fill: true, tension: 0.4, borderWidth: 1.5, pointRadius: 2 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${fmt(c.raw)} tokens` } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: '#484f58', font: { size: 10 } } },
+          y: { grid: { color: 'rgba(33,38,45,0.4)' }, ticks: { color: '#484f58', font: { size: 10 }, callback: v => fmt(v) }, beginAtZero: true }
+        },
+        animation: { duration: 400 }
+      }
+    });
+  }, 50);
+}
+
+// ===== ACTIONS =====
+function confirmResetUsage(id) {
+  showConfirm('Reset Usage', '⚠️', 'Reset token usage?', 'This will reset used token count to 0 for this key. This cannot be undone.', async () => {
+    await fetch(`${ADMIN}/keys/${id}/reset`, { method: 'POST', headers: { 'x-admin-key': adminKey } });
+    showToast('Usage reset!');
+    loadKeys();
+    closeModal('confirmModal');
+  });
+}
+
+function confirmToggle(id, currentlyEnabled) {
+  const action = currentlyEnabled ? 'disable' : 'enable';
+  showConfirm(`${currentlyEnabled?'Disable':'Enable'} Key`, currentlyEnabled?'⏸':'▶', `${currentlyEnabled?'Disable':'Enable'} this key?`,
+    `This will ${action} API access for this key.`, async () => {
+    await fetch(`${ADMIN}/keys/${id}/${action}`, { method: 'POST', headers: { 'x-admin-key': adminKey } });
+    showToast(`Key ${action}d!`);
+    loadKeys();
+    closeModal('confirmModal');
+  });
+}
+
+function confirmDelete(id) {
+  showConfirm('Delete Key', '🗑', 'Delete this API key?', 'This action cannot be undone. All usage data for this key will be permanently deleted.', async () => {
+    await fetch(`${ADMIN}/keys/${id}`, { method: 'DELETE', headers: { 'x-admin-key': adminKey } });
+    showToast('Key deleted!');
+    loadKeys();
+    closeModal('confirmModal');
+  });
+}
+
+function showConfirm(title, icon, heading, msg, cb) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmIcon').textContent = icon;
+  document.getElementById('confirmHeading').textContent = heading;
+  document.getElementById('confirmText').textContent = msg;
+  confirmCallback = cb;
+  document.getElementById('confirmOkBtn').onclick = () => confirmCallback && confirmCallback();
+  openModal('confirmModal');
+}
+
+// ===== CREATE KEY =====
+function selectQuota(el, val) {
+  document.querySelectorAll('.quota-opt').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedQuota = val;
+}
+
+async function createKey() {
+  const name = document.getElementById('newKeyName').value.trim();
+  if (!name) { showToast('Name is required', 'error'); return; }
+
+  const btn = document.getElementById('createBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner" style="display:inline-block;margin:0 auto;"></div> Creating…';
+
+  const expiry = document.getElementById('newKeyExpiry').value;
+  const note = document.getElementById('newKeyNote').value.trim();
+
+  const body = {
+    name,
+    quota: selectedQuota,
+    note: note || undefined
+  };
+  if (expiry) body.expires = expiry;
+
+  try {
+    const res = await fetch(ADMIN + '/keys', {
+      method: 'POST',
+      headers: { 'x-admin-key': adminKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    const data = await res.json();
+    const newKey = data.key || data.api_key || data.apiKey || data.token || '(see server response)';
+
+    document.getElementById('newKeyVal').textContent = newKey;
+    document.getElementById('keyResult').classList.add('show');
+    document.getElementById('createFooter').innerHTML = '<button class="btn-cancel" onclick="closeModal(\'createModal\');loadKeys();">Close</button>';
+
+    loadKeys();
+  } catch {
+    showToast('Failed to create key', 'error');
+    btn.disabled = false;
+    btn.textContent = 'Create Key';
+  }
+}
+
+function copyNewKey() {
+  const k = document.getElementById('newKeyVal').textContent;
+  copyText(k);
+}
+
+// ===== UPSTREAM =====
+async function loadUpstream() {
+  const grid = document.getElementById('upstreamGrid');
+  try {
+    const res = await fetch(ADMIN + '/upstream', { headers: { 'x-admin-key': adminKey } });
+    if (!res.ok) { renderUpstreamMock(); return; }
+    const data = await res.json();
+    const accounts = Array.isArray(data) ? data : (data.accounts || []);
+    document.getElementById('upstreamBadge').textContent = accounts.length;
+    if (!accounts.length) { renderUpstreamMock(); return; }
+    renderUpstream(accounts);
+  } catch {
+    renderUpstreamMock();
+  }
+}
+
+function renderUpstreamMock() {
+  document.getElementById('upstreamBadge').textContent = '—';
+  document.getElementById('upstreamGrid').innerHTML = `
+    <div class="upstream-card" style="grid-column:1/-1;">
+      <div class="empty-state">
+        <div class="empty-icon">🌐</div>
+        <div class="empty-title">No upstream data</div>
+        <div class="empty-sub">Upstream API endpoint not available or no accounts configured</div>
+      </div>
+    </div>`;
+}
+
+function renderUpstream(accounts) {
+  document.getElementById('upstreamBadge').textContent = accounts.length;
+  const grid = document.getElementById('upstreamGrid');
+  grid.innerHTML = accounts.map(acc => {
+    const status = (acc.status || 'unknown').toLowerCase();
+    const isReady = status === 'ready' || status === 'active' || status === 'ok';
+    const isCool = status === 'cooldown' || status === 'ratelimit';
+    const cls = isReady ? 'ready' : isCool ? 'cooldown' : 'invalid';
+    const badge = isReady ? 'badge-ready' : isCool ? 'badge-cooldown' : 'badge-invalid';
+    const label = isReady ? 'Ready' : isCool ? 'Cooldown' : 'Invalid';
+    const emoji = isReady ? '●' : isCool ? '⏱' : '✕';
+
+    const tokenEscaped = acc.sessionToken ? escHtml(acc.sessionToken) : '';
+    const nameEscaped = acc.name ? escHtml(acc.name) : '';
+
+    return `
+      <div class="upstream-card ${cls}">
+        <div class="upstream-header">
+          <div class="upstream-name">${escHtml(acc.name || acc.email || 'Account')}</div>
+          <span class="badge ${badge}">${emoji} ${label}</span>
+        </div>
+        ${acc.email && acc.name ? `<div class="upstream-meta">📧 ${escHtml(acc.email)}</div>` : ''}
+        ${isCool && acc.cooldown_until ? `<div class="upstream-timer">⏱ Cooldown until: ${new Date(acc.cooldown_until).toLocaleTimeString()}</div>` : ''}
+        ${acc.model ? `<div class="upstream-meta">🤖 ${escHtml(acc.model)}</div>` : ''}
+        ${acc.requests_today !== undefined ? `<div class="upstream-meta">📊 ${fmt(acc.requests_today)} requests today</div>` : ''}
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px; border-top:1px solid var(--border); padding-top:10px;">
+          <button class="action-btn primary" onclick="openEditAccountModal('${nameEscaped}', '${tokenEscaped}')" style="padding: 4px 8px; font-size:11px;">✏️ Sửa</button>
+          <button class="action-btn danger" onclick="confirmDeleteAccount('${tokenEscaped}')" style="padding: 4px 8px; font-size:11px;">🗑️ Xóa</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ===== MODALS =====
+function openModal(id) {
+  document.getElementById(id).classList.add('show');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('show');
+  if (id === 'createModal') {
+    document.getElementById('newKeyName').value = '';
+    document.getElementById('newKeyExpiry').value = '';
+    document.getElementById('newKeyNote').value = '';
+    document.getElementById('keyResult').classList.remove('show');
+    document.getElementById('createFooter').innerHTML = '<button class="btn-cancel" onclick="closeModal(\'createModal\')">Cancel</button><button class="btn-create" id="createBtn" onclick="createKey()">Create Key</button>';
+    document.querySelectorAll('.quota-opt').forEach((o,i) => { o.classList.toggle('selected', i===1); });
+    selectedQuota = 50000000;
+  }
+}
+
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => {
+    if (e.target === o) closeModal(o.id);
+  });
+});
+
+// Close on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.show').forEach(o => closeModal(o.id));
+});
+
+// ===== REFRESH =====
+function refreshCurrent() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spin');
+  const active = document.querySelector('.section.active');
+  if (active?.id === 'section-dashboard') loadDashboardStats();
+  else if (active?.id === 'section-keys') loadKeys();
+  else if (active?.id === 'section-upstream') loadUpstream();
+  else if (active?.id === 'section-hotmail') loadHotmail();
+  setTimeout(() => btn.classList.remove('spin'), 1000);
+}
+
+// ===== SETTINGS =====
+function toggleSetting(el) {
+  el.classList.toggle('on');
+}
+
+// ===== ACCOUNT IMPORT & EXTENSION =====
+function switchImportTab(tab) {
+  document.querySelectorAll('.import-tab-btn').forEach(btn => {
+    btn.classList.remove('active');
+    btn.style.borderBottomColor = 'transparent';
+    btn.style.color = 'var(--text2)';
+  });
+  document.querySelectorAll('.import-tab-content').forEach(c => c.style.display = 'none');
+  
+  const activeBtn = document.getElementById('tab-btn-' + tab);
+  activeBtn.classList.add('active');
+  activeBtn.style.borderBottomColor = 'var(--accent)';
+  activeBtn.style.color = 'var(--text)';
+  
+  document.getElementById('import-tab-' + tab).style.display = 'block';
+  
+  if (tab === 'extension') {
+    document.getElementById('extPushUrl').value = window.location.origin + '/api/chatgpt-extension-push';
+  }
+}
+
+function copyPushUrl() {
+  const url = document.getElementById('extPushUrl').value;
+  copyText(url);
+}
+
+async function importManual() {
+  const name = document.getElementById('importManualName').value.trim();
+  const sessionToken = document.getElementById('importManualToken').value.trim();
+  
+  if (!sessionToken) {
+    showToast('Vui lòng nhập Session Token!', 'error');
+    return;
+  }
+  
+  try {
+    const res = await fetch(ADMIN + '/accounts/import-manual', {
+      method: 'POST',
+      headers: {
+        'x-admin-key': adminKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ name: name || undefined, sessionToken })
+    });
+    
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Đã nhập tài khoản thành công!', 'success');
+      document.getElementById('importManualName').value = '';
+      document.getElementById('importManualToken').value = '';
+      loadUpstream();
+    } else {
+      showToast(data.error || 'Lỗi nhập tài khoản', 'error');
+    }
+  } catch (e) {
+    console.error(e);
+    showToast('Lỗi mạng khi nhập tài khoản', 'error');
+  }
+}
+
+async function importBulk() {
+  const rawText = document.getElementById('importBulkText').value.trim();
+  if (!rawText) {
+    showToast('Vui lòng nhập danh sách Token!', 'error');
+    return;
+  }
+  
+  try {
+    const res = await fetch(ADMIN + '/accounts/import-bulk', {
+      method: 'POST',
+      headers: {
+        'x-admin-key': adminKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ rawText })
+    });
+    
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast(`Đã nhập thành công ${data.imported} tài khoản!`, 'success');
+      document.getElementById('importBulkText').value = '';
+      loadUpstream();
+    } else {
+      showToast(data.error || 'Lỗi nhập nhanh', 'error');
+    }
+  } catch (e) {
+    console.error(e);
+    showToast('Lỗi mạng khi nhập nhanh', 'error');
+  }
+}
+
+// ===== ACCOUNT EDIT / DELETE =====
+function openEditAccountModal(name, token) {
+  document.getElementById('editAccOldToken').value = token;
+  document.getElementById('editAccName').value = name;
+  document.getElementById('editAccToken').value = token;
+  openModal('editAccountModal');
+}
+
+async function saveAccountEdit() {
+  const oldSessionToken = document.getElementById('editAccOldToken').value;
+  const name = document.getElementById('editAccName').value.trim();
+  const newSessionToken = document.getElementById('editAccToken').value.trim();
+  
+  if (!newSessionToken) {
+    showToast('Vui lòng nhập Session Token!', 'error');
+    return;
+  }
+  
+  try {
+    const res = await fetch(ADMIN + '/accounts', {
+      method: 'PATCH',
+      headers: {
+        'x-admin-key': adminKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ oldSessionToken, name, newSessionToken })
+    });
+    
+    const data = await res.json();
+    if (res.ok && data.success) {
+      showToast('Cập nhật tài khoản thành công!', 'success');
+      closeModal('editAccountModal');
+      loadUpstream();
+    } else {
+      showToast(data.error || 'Lỗi cập nhật tài khoản', 'error');
+    }
+  } catch (e) {
+    console.error(e);
+    showToast('Lỗi mạng khi cập nhật tài khoản', 'error');
+  }
+}
+
+function confirmDeleteAccount(token) {
+  showConfirm('Xóa Tài Khoản', '🗑️', 'Xóa tài khoản này?', 'Tài khoản này sẽ bị xóa vĩnh viễn khỏi pool xoay vòng.', async () => {
+    try {
+      const res = await fetch(ADMIN + '/accounts', {
+        method: 'DELETE',
+        headers: {
+          'x-admin-key': adminKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ sessionToken: token })
+      });
+      
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('Đã xóa tài khoản thành công!', 'success');
+        loadUpstream();
+        closeModal('confirmModal');
+      } else {
+        showToast(data.error || 'Lỗi xóa tài khoản', 'error');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Lỗi mạng khi xóa tài khoản', 'error');
+    }
+  });
+}
+
+// ===== HOTMAIL MANAGEMENT =====
+let hotmailPage = 1;
+let hotmailTotalPages = 1;
+let currentInboxMessages = [];
+
+function switchHotmailTab(tab) {
+  document.querySelectorAll('#hm-import-tab-manual, #hm-import-tab-bulk').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('#hm-tab-btn-manual, #hm-tab-btn-bulk').forEach(el => {
+    el.classList.remove('active');
+    el.style.borderBottom = '2px solid transparent';
+    el.style.color = 'var(--text2)';
+  });
+  
+  document.getElementById(`hm-import-tab-${tab}`).style.display = 'block';
+  const activeBtn = document.getElementById(`hm-tab-btn-${tab}`);
+  activeBtn.classList.add('active');
+  activeBtn.style.borderBottom = '2px solid var(--accent)';
+  activeBtn.style.color = 'var(--text)';
+}
+
+async function loadHotmail({ page = hotmailPage } = {}) {
+  const search = document.getElementById('hotmailSearch').value.trim();
+  const state = document.getElementById('hotmailFilterState').value;
+  const tbody = document.getElementById('hotmailBody');
+  
+  try {
+    const url = `/admin-api/hotmail/accounts?limit=10&page=${page}&state=${state}&search=${encodeURIComponent(search)}`;
+    const res = await fetch(url, {
+      headers: { 'x-admin-key': adminKey }
+    });
+    
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">❌</div><div class="empty-title">${data.error || 'Lỗi tải dữ liệu'}</div></div></td></tr>`;
+      return;
+    }
+    
+    const data = await res.json();
+    hotmailPage = data.page;
+    hotmailTotalPages = data.totalPages;
+    
+    // Update badge with total
+    document.getElementById('hotmailBadge').textContent = data.filteredTotal;
+    
+    if (!data.accounts || !data.accounts.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📂</div><div class="empty-title">Không tìm thấy tài khoản Hotmail nào</div></div></td></tr>`;
+      document.getElementById('hotmailPagination').innerHTML = '';
+      return;
+    }
+    
+    renderHotmailList(data.accounts);
+    renderHotmailPagination(data);
+  } catch (e) {
+    console.error(e);
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">❌</div><div class="empty-title">Lỗi mạng khi tải dữ liệu</div></div></td></tr>`;
+  }
+}
+
+function renderHotmailList(accounts) {
+  const tbody = document.getElementById('hotmailBody');
+  
+  tbody.innerHTML = accounts.map(acc => {
+    const state = (acc.state || 'available').toLowerCase();
+    const isAvailable = state === 'available';
+    const isReserved = state === 'reserved';
+    const stateBadge = isAvailable 
+      ? '<span class="badge badge-ready">Available</span>' 
+      : isReserved 
+        ? '<span class="badge badge-cooldown">Reserved</span>' 
+        : '<span class="badge badge-invalid">Used</span>';
+        
+    const usedCountText = `${acc.usedCount || 0} lần`;
+    const lastRead = acc.lastReadAt ? formatTime(acc.lastReadAt) : 'Chưa đọc';
+    const otpButton = acc.secret2fa 
+      ? `<button class="btn-secondary" onclick="getHotmailOtp('${escHtml(acc.secret2fa)}', this)" style="padding:4px 8px; font-size:11px; margin-top:4px;">🔑 Gen OTP</button>`
+      : '<span style="font-size:11px; color:var(--text3);">Không có 2FA</span>';
+      
+    const emailEscaped = escHtml(acc.email);
+    
+    // Taken info if reserved or used
+    let takenInfo = '';
+    if (acc.takenNote || acc.takenByIp) {
+      takenInfo = `<div style="font-size:10px; color:var(--text3); margin-top:2px;">
+        Note: ${escHtml(acc.takenNote || 'None')} (${escHtml(acc.takenByIp || 'No IP')})
+      </div>`;
+    }
+
+    return `
+      <tr>
+        <td>
+          <div style="font-weight:600; color:var(--text); font-family:monospace;">${emailEscaped}</div>
+          <button class="btn-secondary" onclick="navigator.clipboard.writeText('${emailEscaped}').then(()=>showToast('Copied email!'))" style="padding:2px 6px; font-size:10px; margin-top:4px; height:auto;">📋 Copy</button>
+        </td>
+        <td>
+          <div style="font-size:12px; font-family:monospace; color:var(--text2);">${escHtml(acc.password)}</div>
+          ${otpButton}
+        </td>
+        <td>${stateBadge}</td>
+        <td>
+          <div>${usedCountText}</div>
+          ${takenInfo}
+        </td>
+        <td style="font-size:12px; color:var(--text2);">${lastRead}</td>
+        <td style="text-align:right;">
+          <div style="display:flex; justify-content:flex-end; gap:6px;">
+            <button class="btn-primary" onclick="openHotmailInbox('${emailEscaped}')" style="padding:6px 12px; font-size:12px;">📥 Read</button>
+            ${!isAvailable ? `<button class="btn-secondary" onclick="releaseHotmail('${emailEscaped}')" style="padding:6px 12px; font-size:12px;">🔄 Release</button>` : ''}
+            <button class="btn-danger" onclick="deleteHotmail('${emailEscaped}')" style="padding:6px 12px; font-size:12px;">🗑️ Delete</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderHotmailPagination(data) {
+  const container = document.getElementById('hotmailPagination');
+  const start = (data.page - 1) * data.limit + 1;
+  const end = Math.min(start + data.accounts.length - 1, data.filteredTotal);
+  
+  container.innerHTML = `
+    <div style="font-size:13px; color:var(--text2);">
+      Hiển thị <strong>${start}-${end}</strong> trong số <strong>${data.filteredTotal}</strong> tài khoản
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn-secondary" onclick="loadHotmail({page:${data.page - 1}})" ${data.page <= 1 ? 'disabled' : ''}>◀ Trước</button>
+      <div style="display:flex; align-items:center; padding:0 8px; font-size:13px; font-weight:600;">
+        Trang ${data.page}/${data.totalPages}
+      </div>
+      <button class="btn-secondary" onclick="loadHotmail({page:${data.page + 1}})" ${data.page >= data.totalPages ? 'disabled' : ''}>Sau ▶</button>
+    </div>
+  `;
+}
+
+async function saveHotmailManual() {
+  const line = document.getElementById('hotmailManualLine').value.trim();
+  if (!line) {
+    showToast('Vui lòng nhập dòng thông tin tài khoản!', 'error');
+    return;
+  }
+  
+  showToast('Đang live-check và lưu tài khoản...', 'info');
+  try {
+    const res = await fetch('/admin-api/hotmail/save', {
+      method: 'POST',
+      headers: {
+        'x-admin-key': adminKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ line })
+    });
+    
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast('Đã lưu Hotmail live thành công!', 'success');
+      document.getElementById('hotmailManualLine').value = '';
+      loadHotmail();
+    } else {
+      showToast(data.error || 'Check live thất bại', 'error');
+    }
+  } catch (e) {
+    console.error(e);
+    showToast('Lỗi mạng khi lưu tài khoản', 'error');
+  }
+}
+
+async function importHotmailBulk() {
+  const lines = document.getElementById('hotmailBulkLines').value.trim();
+  if (!lines) {
+    showToast('Vui lòng nhập danh sách tài khoản!', 'error');
+    return;
+  }
+  
+  try {
+    const res = await fetch('/admin-api/hotmail/bulk-import', {
+      method: 'POST',
+      headers: {
+        'x-admin-key': adminKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ lines })
+    });
+    
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast(`Đã import thành công ${data.total} tài khoản!`, 'success');
+      document.getElementById('hotmailBulkLines').value = '';
+      loadHotmail();
+    } else {
+      showToast(data.error || 'Lỗi bulk import', 'error');
+    }
+  } catch (e) {
+    console.error(e);
+    showToast('Lỗi mạng khi bulk import', 'error');
+  }
+}
+
+async function getHotmailOtp(secret, btn) {
+  const originalText = btn.textContent;
+  btn.textContent = 'Generating...';
+  btn.disabled = true;
+  
+  try {
+    const res = await fetch('/api/hotmail/2fa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret })
+    });
+    
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      btn.textContent = `🔑 ${data.code}`;
+      showToast(`Mã OTP: ${data.code}`, 'success');
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }, 5000);
+    } else {
+      showToast(data.error || 'Lỗi sinh OTP', 'error');
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }
+  } catch (e) {
+    console.error(e);
+    showToast('Lỗi kết nối sinh OTP', 'error');
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+async function releaseHotmail(email) {
+  try {
+    const res = await fetch('/api/hotmail/release', {
+      method: 'POST',
+      headers: {
+        'x-admin-key': adminKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email })
+    });
+    
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast('Đã giải phóng tài khoản!', 'success');
+      loadHotmail();
+    } else {
+      showToast(data.error || 'Lỗi giải phóng tài khoản', 'error');
+    }
+  } catch (e) {
+    console.error(e);
+    showToast('Lỗi mạng khi giải phóng', 'error');
+  }
+}
+
+function deleteHotmail(email) {
+  showConfirm('Xóa Hotmail', '🗑️', `Xóa tài khoản ${email}?`, 'Hành động này sẽ xóa vĩnh viễn tài khoản khỏi hệ thống.', async () => {
+    try {
+      const res = await fetch(`/admin-api/hotmail/delete/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-key': adminKey }
+      });
+      
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        showToast('Đã xóa tài khoản Hotmail!', 'success');
+        loadHotmail();
+        closeModal('confirmModal');
+      } else {
+        showToast(data.error || 'Lỗi xóa tài khoản', 'error');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('Lỗi mạng khi xóa tài khoản', 'error');
+    }
+  });
+}
+
+// ===== INBOX MODAL READER LOGIC =====
+
+const decodeHtmlEntities = (value = "") =>
+  String(value || "")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n) || 0))
+    .replace(/&#x([\da-f]+);/gi, (_, h) => String.fromCharCode(Number.parseInt(h, 16) || 0))
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&#39;/g, "'");
+
+const getVisibleText = (value = "") =>
+  decodeHtmlEntities(
+    String(value || "")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/(\d)[\s\-.](?=\d)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const extractContextCode = (text = "") => {
+  const patterns = [
+    /(?:temporary\s+verification\s+code|verification\s+code\s+to\s+continue|temporary\s+chatgpt\s+(?:login\s+)?code|login\s+code|one[-\s]?time\s+(?:code|password)|security\s+code|authentication\s+code|verification\s+code|otp)[^\d]{0,140}(?:\b|)((?:\d[\s\-.]*){6})/i,
+    /((?:\d[\s\-.]*){6})[^\w]{0,100}(?:is\s+your|your)\s+(?:temporary\s+)?(?:verification|security|login|one[-\s]?time|otp)\s+code/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const digits = String(match[1] || "").replace(/\D/g, "");
+      if (digits.length === 6) return digits;
+    }
+  }
+  return "";
+};
+
+const extractCodeFromMsg = (text = "") => {
+  const visibleText = getVisibleText(text);
+  if (!visibleText) return null;
+  const contextCode = extractContextCode(visibleText);
+  if (contextCode) return contextCode;
+  const sixDigits = visibleText.match(/\b(\d{6})\b/);
+  if (sixDigits) return sixDigits[1];
+  const fourDigits = visibleText.match(/\b(\d{4})\b/);
+  return fourDigits ? fourDigits[1] : null;
+};
+
+async function openHotmailInbox(email) {
+  activeHotmailEmail = email;
+  document.getElementById('inboxModalEmail').textContent = email;
+  document.getElementById('inboxModalSubtitle').textContent = 'Đang kết nối Microsoft và đọc tin nhắn...';
+  
+  const sidebar = document.getElementById('inboxSidebar');
+  sidebar.innerHTML = '<div style="text-align:center; color:var(--text3); padding:20px; font-size:12px;">⏳ Đang tải inbox...</div>';
+  document.getElementById('inboxContent').innerHTML = '<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:14px;">Đang tải nội dung...</div>';
+  
+  openModal('hotmailInboxModal');
+  
+  try {
+    const res = await fetch('/admin-api/hotmail/read', {
+      method: 'POST',
+      headers: {
+        'x-admin-key': adminKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email, top: 10 })
+    });
+    
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      sidebar.innerHTML = `<div style="color:var(--error); font-size:12px; padding:10px; text-align:center;">Lỗi: ${data.error || 'Không thể đọc inbox'}</div>`;
+      document.getElementById('inboxContent').innerHTML = `<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--error); font-size:14px;">Tải tin nhắn thất bại.</div>`;
+      document.getElementById('inboxModalSubtitle').textContent = 'Lỗi tải inbox';
+      return;
+    }
+    
+    const data = await res.json();
+    currentInboxMessages = data.messages || [];
+    document.getElementById('inboxModalSubtitle').textContent = `${currentInboxMessages.length} tin nhắn • Scope: ${data.scope ? 'IMAP Live' : 'None'}`;
+    
+    if (!currentInboxMessages.length) {
+      sidebar.innerHTML = '<div style="text-align:center; color:var(--text3); padding:20px; font-size:12px;">Inbox trống</div>';
+      document.getElementById('inboxContent').innerHTML = '<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:14px;">Không có thư nào</div>';
+      return;
+    }
+    
+    renderInboxMessagesList(currentInboxMessages);
+    // Auto-select first message
+    selectInboxMessage(0);
+  } catch (e) {
+    console.error(e);
+    sidebar.innerHTML = '<div style="color:var(--error); font-size:12px; padding:10px; text-align:center;">Lỗi mạng</div>';
+    document.getElementById('inboxContent').innerHTML = '<div style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--error); font-size:14px;">Mất kết nối server.</div>';
+  }
+}
+
+function renderInboxMessagesList(messages) {
+  const sidebar = document.getElementById('inboxSidebar');
+  sidebar.innerHTML = messages.map((m, idx) => {
+    const time = formatTime(m.receivedDateTime || m.date);
+    const code = extractCodeFromMsg((m.html_body || m.body || '') + ' ' + (m.subject || ''));
+    const otpBadge = code ? `<span style="background:rgba(46,160,67,0.2); color:#4ade80; border:1px solid rgba(46,160,67,0.3); padding:2px 6px; border-radius:4px; font-weight:700; font-family:monospace; font-size:10px;">OTP: ${code}</span>` : '';
+    
+    return `
+      <div class="inbox-msg-item" id="inbox-msg-${idx}" onclick="selectInboxMessage(${idx})">
+        <div class="inbox-msg-title">${escHtml(m.subject || '(No Subject)')}</div>
+        <div style="font-size:11px; color:var(--text3); margin-bottom:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">From: ${escHtml(m.from || 'Unknown')}</div>
+        <div class="inbox-msg-meta">
+          <span>${time}</span>
+          ${otpBadge}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectInboxMessage(idx) {
+  // Highlight active
+  document.querySelectorAll('.inbox-msg-item').forEach(el => el.classList.remove('active'));
+  const activeEl = document.getElementById(`inbox-msg-${idx}`);
+  if (activeEl) activeEl.classList.add('active');
+  
+  const m = currentInboxMessages[idx];
+  if (!m) return;
+  
+  const contentPane = document.getElementById('inboxContent');
+  const code = extractCodeFromMsg((m.html_body || m.body || '') + ' ' + (m.subject || ''));
+  
+  let otpBlock = '';
+  if (code) {
+    otpBlock = `
+      <div style="background:rgba(46,160,67,0.1); border:1px solid rgba(46,160,67,0.25); border-radius:12px; padding:16px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:#4ade80; letter-spacing:0.5px;">Phát Hiện Mã OTP / Code</div>
+          <div style="font-size:24px; font-weight:800; font-family:monospace; color:white; letter-spacing:4px; margin-top:4px;">${code}</div>
+        </div>
+        <button class="btn-primary" onclick="navigator.clipboard.writeText('${code}').then(()=>showToast('Copied OTP!'))" style="background:#2ea043; border-color:#2ea043;">📋 Copy Code</button>
+      </div>
+    `;
+  }
+  
+  const time = formatTime(m.receivedDateTime || m.date);
+  const isHtml = m.html_body && m.html_body.includes('<');
+  
+  let bodyHtml = '';
+  if (isHtml) {
+    // Generate iframe with srcdoc safely
+    const docHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>body{font-family:sans-serif;font-size:14px;color:#333;line-height:1.6;}a{color:#0066cc;}</style></head><body>${m.html_body}</body></html>`;
+    bodyHtml = `<iframe title="email-body" srcdoc="${escHtml(docHtml)}" style="width:100%; flex:1; border:1px solid var(--border); border-radius:8px; background:white; min-height: 350px;"></iframe>`;
+  } else {
+    bodyHtml = `<pre style="font-family:inherit; white-space:pre-wrap; font-size:13px; line-height:1.6; color:var(--text2); background:var(--surface2); padding:16px; border:1px solid var(--border); border-radius:8px; flex:1; overflow-y:auto;">${escHtml(m.body || m.bodyPreview || 'No content')}</pre>`;
+  }
+  
+  contentPane.innerHTML = `
+    <div style="margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border);">
+      <h3 style="font-size:16px; font-weight:700; color:var(--text); margin-bottom:6px;">${escHtml(m.subject || '(No Subject)')}</h3>
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text2);">
+        <div>From: <strong>${escHtml(m.from)}</strong></div>
+        <div>${time}</div>
+      </div>
+    </div>
+    ${otpBlock}
+    ${bodyHtml}
+  `;
+}
+
+// Helpers
+function formatTime(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return isoStr;
+  return d.toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit'
+  });
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return str.toString()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Initial load check
+if (adminKey) {
+  // Try to load initial totals if admin is logged in
+  setTimeout(() => {
+    loadHotmail();
+  }, 1000);
+}
+</script>
+</body>
+</html>
