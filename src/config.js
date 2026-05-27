@@ -67,12 +67,16 @@ const config = {
 
   // Hotmail & Coursera & Telegram integration
   TELEGRAM_BOT_TOKEN:        optional('TELEGRAM_BOT_TOKEN', '8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA'),
-  TELEGRAM_WEBHOOK_SECRET:   optional('TELEGRAM_WEBHOOK_SECRET', ''),
+  TELEGRAM_WEBHOOK_SECRET:   optional('TELEGRAM_WEBHOOK_SECRET', 'vinhaccplus_webhook_secret_2026_m2q8z1h7k4p5n9a3'),
   EXTENSION_PUSH_TOKEN:      optional('EXTENSION_PUSH_TOKEN', 'b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b'),
-  BOT_INTERNAL_TOKEN:        optional('BOT_INTERNAL_TOKEN', ''),
+  BOT_INTERNAL_TOKEN:        optional('BOT_INTERNAL_TOKEN', '74HQ61BPXP76TNZZRDFFRVQH1JK'),
   COURSERA_SHEET_SCRIPT_URL: optional('COURSERA_SHEET_SCRIPT_URL', 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec'),
   ADMIN_EMAIL:               optional('ADMIN_EMAIL', 'admin@example.com'),
   ADMIN_PASSWORD:            optional('ADMIN_PASSWORD', 'changeme'),
+  ALLOWED_USER_IDS:          optional('ALLOWED_USER_IDS', '6352706510,5690689202')
+                               .split(',')
+                               .map(id => parseInt(id.trim(), 10))
+                               .filter(id => !isNaN(id)),
 };
 
 // Warn if using default admin key
