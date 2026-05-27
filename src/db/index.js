@@ -141,9 +141,10 @@ async function initDB() {
     const { Pool } = require('pg');
     _pgPool = new Pool({
       connectionString: dbUrl,
-      ssl: {
-        rejectUnauthorized: false
-      }
+      ssl: { rejectUnauthorized: false },
+      max: 5,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
     });
     _isPostgres = true;
 
@@ -151,29 +152,41 @@ async function initDB() {
     const pgSchema = sqliteToPostgres(SCHEMA);
     await _pgPool.query(pgSchema);
     console.log('✅ [Database] PostgreSQL connected and schema initialized.');
+  } else if (process.env.VERCEL || process.env.NOW_REGION) {
+    // On Vercel serverless, SQLite file system is read-only — require Postgres
+    throw new Error(
+      '❌ DATABASE_URL is not set! Set it in Vercel Dashboard → Settings → Environment Variables.\n' +
+      'Value: postgresql://postgres:PASSWORD@db.eslfxpccttexenmsybbq.supabase.co:5432/postgres'
+    );
   } else {
+    // Local dev fallback: SQLite
     console.log('💾 [Database] DATABASE_URL not set. Falling back to local SQLite...');
-    const initSqlJs = require('sql.js');
-    const SQL = await initSqlJs();
+    try {
+      const initSqlJs = require('sql.js');
+      const SQL = await initSqlJs();
 
-    if (fs.existsSync(LOCAL_DB_FILE)) {
-      const buf = fs.readFileSync(LOCAL_DB_FILE);
-      _sqliteDb = new SQL.Database(buf);
-    } else {
-      _sqliteDb = new SQL.Database();
+      if (fs.existsSync(LOCAL_DB_FILE)) {
+        const buf = fs.readFileSync(LOCAL_DB_FILE);
+        _sqliteDb = new SQL.Database(buf);
+      } else {
+        _sqliteDb = new SQL.Database();
+      }
+
+      let sqliteSchema = SCHEMA
+        .replace(/SERIAL PRIMARY KEY/gi, 'INTEGER PRIMARY KEY AUTOINCREMENT')
+        .replace(/BIGINT/gi, 'INTEGER')
+        .replace(/CURRENT_TIMESTAMP/gi, "datetime('now', 'localtime')");
+
+      _sqliteDb.run(sqliteSchema);
+      _saveSqlite();
+      console.log(`✅ [Database] SQLite initialized at: ${LOCAL_DB_FILE}`);
+    } catch (sqliteErr) {
+      console.error('⚠️  SQLite fallback failed:', sqliteErr.message);
+      throw new Error('No database available. Set DATABASE_URL environment variable.');
     }
-
-    // Convert PG schema syntax if any back to SQLite compatible
-    let sqliteSchema = SCHEMA
-      .replace(/SERIAL PRIMARY KEY/gi, 'INTEGER PRIMARY KEY AUTOINCREMENT')
-      .replace(/BIGINT/gi, 'INTEGER')
-      .replace(/CURRENT_TIMESTAMP/gi, "datetime('now', 'localtime')");
-
-    _sqliteDb.run(sqliteSchema);
-    _saveSqlite();
-    console.log(`✅ [Database] SQLite initialized at: ${LOCAL_DB_FILE}`);
   }
 }
+
 
 function _saveSqlite() {
   if (!_sqliteDb) return;
