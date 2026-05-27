@@ -8,6 +8,7 @@ const isVercel = !!process.env.VERCEL;
 const ROOT_DIR = path.join(__dirname, '..');
 const DATA_DIR = isVercel ? '/tmp' : path.join(ROOT_DIR, 'data');
 const ACCOUNTS_FILE = isVercel ? '/tmp/accounts.json' : path.join(ROOT_DIR, 'accounts.json');
+const SETTINGS_FILE = isVercel ? '/tmp/settings.json' : path.join(DATA_DIR, 'settings.json');
 
 if (isVercel) {
   try {
@@ -20,6 +21,16 @@ if (isVercel) {
   }
 }
 
+// Load dynamic settings
+let dynamicSettings = {};
+try {
+  if (fs.existsSync(SETTINGS_FILE)) {
+    dynamicSettings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
+  }
+} catch (e) {
+  console.error('Failed to load dynamic settings:', e.message);
+}
+
 function required(key) {
   const val = process.env[key];
   if (!val) throw new Error(`Missing required env variable: ${key}`);
@@ -27,6 +38,9 @@ function required(key) {
 }
 
 function optional(key, defaultVal) {
+  if (dynamicSettings[key] !== undefined && dynamicSettings[key] !== '') {
+    return dynamicSettings[key];
+  }
   return process.env[key] || defaultVal;
 }
 
@@ -49,6 +63,7 @@ const config = {
   ROOT_DIR,
   DATA_DIR,
   ACCOUNTS_FILE,
+  SETTINGS_FILE,
 
   // Hotmail & Coursera & Telegram integration
   TELEGRAM_BOT_TOKEN:        optional('TELEGRAM_BOT_TOKEN', '8101230396:AAHlHj8HWI2bKpD2dWa60BUw_wbvvqs8DaA'),

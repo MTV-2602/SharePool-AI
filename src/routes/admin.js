@@ -325,4 +325,61 @@ router.patch('/accounts', asyncHandler(async (req, res) => {
   res.json({ success: true });
 }));
 
+// GET /admin-api/settings — Retrieve current configuration settings
+router.get('/settings', asyncHandler(async (req, res) => {
+  res.json({
+    ok: true,
+    settings: {
+      ADMIN_KEY: config.ADMIN_KEY,
+      TELEGRAM_BOT_TOKEN: config.TELEGRAM_BOT_TOKEN,
+      COURSERA_SHEET_SCRIPT_URL: config.COURSERA_SHEET_SCRIPT_URL,
+      SITE_NAME: config.SITE_NAME
+    }
+  });
+}));
+
+// POST /admin-api/settings — Save and hot-reload config settings
+router.post('/settings', asyncHandler(async (req, res) => {
+  const { ADMIN_KEY, TELEGRAM_BOT_TOKEN, COURSERA_SHEET_SCRIPT_URL, SITE_NAME } = req.body;
+
+  let current = {};
+  if (fs.existsSync(config.SETTINGS_FILE)) {
+    try {
+      current = JSON.parse(fs.readFileSync(config.SETTINGS_FILE, 'utf-8'));
+    } catch (_) {}
+  }
+
+  // Update fields
+  if (ADMIN_KEY !== undefined) current.ADMIN_KEY = ADMIN_KEY.trim();
+  if (TELEGRAM_BOT_TOKEN !== undefined) current.TELEGRAM_BOT_TOKEN = TELEGRAM_BOT_TOKEN.trim();
+  if (COURSERA_SHEET_SCRIPT_URL !== undefined) current.COURSERA_SHEET_SCRIPT_URL = COURSERA_SHEET_SCRIPT_URL.trim();
+  if (SITE_NAME !== undefined) current.SITE_NAME = SITE_NAME.trim();
+
+  // Save changes
+  fs.writeFileSync(config.SETTINGS_FILE, JSON.stringify(current, null, 2), 'utf-8');
+
+  // Apply to config directly in-memory
+  if (current.ADMIN_KEY) config.ADMIN_KEY = current.ADMIN_KEY;
+  if (current.TELEGRAM_BOT_TOKEN) config.TELEGRAM_BOT_TOKEN = current.TELEGRAM_BOT_TOKEN;
+  if (current.COURSERA_SHEET_SCRIPT_URL) config.COURSERA_SHEET_SCRIPT_URL = current.COURSERA_SHEET_SCRIPT_URL;
+  if (current.SITE_NAME) config.SITE_NAME = current.SITE_NAME;
+
+  // Auto-register Vercel Webhook if token changes
+  if (TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_TOKEN.trim() !== '') {
+    const isVercel = !!process.env.VERCEL;
+    if (isVercel) {
+      try {
+        const fetch = require('node-fetch');
+        const token = TELEGRAM_BOT_TOKEN.trim();
+        const webhookUrl = `https://api.telegram.org/bot${token}/setWebhook?url=https://vinhcousera.vercel.app/api/telegram-webhook`;
+        await fetch(webhookUrl);
+      } catch (err) {
+        console.error('Webhook auto-registration failed inside settings post:', err.message);
+      }
+    }
+  }
+
+  res.json({ ok: true, message: 'Settings saved and applied successfully.' });
+}));
+
 module.exports = router;

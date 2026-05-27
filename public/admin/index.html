@@ -1088,12 +1088,31 @@ input[type="date"] { color-scheme: dark; }
           </div>
         </div>
         <div style="margin-top:16px;" class="card settings-card">
+          <div class="card-head"><div class="card-head-title">Cấu hình Bot Telegram & Google Sheets</div></div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label" style="font-size:11px;">Telegram Bot Token</label>
+              <input type="text" class="form-input" id="cfgBotToken" placeholder="8101230396:AAHlHj8..." style="font-family:monospace; font-size:13px;">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size:11px;">Google Sheets AppScript URL (Coursera)</label>
+              <input type="text" class="form-input" id="cfgSheetsUrl" placeholder="https://script.google.com/macros/s/..." style="font-family:monospace; font-size:13px;">
+            </div>
+            <div class="form-group" style="margin-bottom:20px;">
+              <label class="form-label" style="font-size:11px;">Admin Key mới (Để trống nếu không đổi)</label>
+              <input type="password" class="form-input" id="cfgAdminKey" placeholder="Nhập key mới để thay đổi mật khẩu admin">
+            </div>
+            <button class="btn-primary" onclick="saveSystemSettings()" style="width:100%; justify-content:center; margin-bottom:12px;">💾 Lưu Cấu Hình</button>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;" class="card settings-card">
           <div class="card-head"><div class="card-head-title">Admin Key</div></div>
           <div class="card-body">
             <div style="font-size:13px;color:var(--text2);margin-bottom:12px;">Stored in localStorage. Clear to force re-authentication.</div>
             <button class="btn-danger" onclick="adminLogout()">🗑 Clear Stored Key & Logout</button>
+          </div>
         </div>
-      </div>
 
       <!-- ===== HOTMAIL SECTION ===== -->
       <div class="section" id="section-hotmail">
@@ -1347,6 +1366,7 @@ function showSection(name) {
   if (name === 'dashboard') loadDashboardStats();
   if (name === 'upstream') loadUpstream();
   if (name === 'hotmail') loadHotmail();
+  if (name === 'settings') loadSystemSettings();
 }
 
 // ===== DASHBOARD =====
@@ -2506,6 +2526,67 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// ===== SYSTEM SETTINGS (TELEGRAM & SHEETS) =====
+async function loadSystemSettings() {
+  try {
+    const res = await fetch(ADMIN + '/settings', {
+      headers: { 'x-admin-key': adminKey }
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.ok && data.settings) {
+      document.getElementById('cfgBotToken').value = data.settings.TELEGRAM_BOT_TOKEN || '';
+      document.getElementById('cfgSheetsUrl').value = data.settings.COURSERA_SHEET_SCRIPT_URL || '';
+      document.getElementById('cfgAdminKey').value = '';
+    }
+  } catch (e) {
+    console.error('Failed to load settings:', e);
+    showToast('Lỗi tải cấu hình hệ thống', 'error');
+  }
+}
+
+async function saveSystemSettings() {
+  const token = document.getElementById('cfgBotToken').value.trim();
+  const sheetsUrl = document.getElementById('cfgSheetsUrl').value.trim();
+  const newAdminKey = document.getElementById('cfgAdminKey').value.trim();
+
+  const body = {
+    TELEGRAM_BOT_TOKEN: token,
+    COURSERA_SHEET_SCRIPT_URL: sheetsUrl
+  };
+  if (newAdminKey) {
+    body.ADMIN_KEY = newAdminKey;
+  }
+
+  try {
+    const res = await fetch(ADMIN + '/settings', {
+      method: 'POST',
+      headers: {
+        'x-admin-key': adminKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast('Đã lưu cấu hình thành công!', 'success');
+      if (newAdminKey) {
+        localStorage.setItem('adminKey', newAdminKey);
+        adminKey = newAdminKey;
+        showToast('Admin key đã thay đổi, đang reload...', 'success');
+        setTimeout(() => window.location.reload(), 1200);
+      } else {
+        loadSystemSettings();
+      }
+    } else {
+      showToast(data.message || 'Lỗi khi lưu cấu hình', 'error');
+    }
+  } catch (e) {
+    console.error('Failed to save settings:', e);
+    showToast('Lỗi mạng khi lưu cấu hình', 'error');
+  }
 }
 
 // Initial load check
