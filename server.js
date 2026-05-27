@@ -19,28 +19,18 @@ const logger     = require('./src/utils/logger').create('Server');
 // ─── Express App & Database Setup ───────────────────────────────
 const app = express();
 
-logger.info('Initializing database...');
-const dbInitPromise = initDB()
+logger.info('Initializing database connection...');
+initDB()
   .then(() => {
-    logger.info('Database ready');
+    logger.info('Database connection verified.');
   })
   .catch((err) => {
     logger.error('Database connection failed:', err.message);
     if (!process.env.VERCEL) {
       process.exit(1);
     }
-    throw err;
   });
 
-// Database initialization middleware
-app.use(async (req, res, next) => {
-  try {
-    await dbInitPromise;
-    next();
-  } catch (err) {
-    next(new Error(`Database is not ready: ${err.message}`));
-  }
-});
 
 // ─── Security middleware ─────────────────────────────────────────
 app.use(helmet({
