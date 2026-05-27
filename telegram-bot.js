@@ -31,18 +31,16 @@ console.log('✅ Telegram Bot is running and polling for updates.');
 bot.onText(/\/start|\/help/, async (msg) => {
   const chatId = msg.chat.id;
   const welcome = [
-    '*COURSERA SHEET BOT (POLLING MODE)*',
+    '*COURSERA & HOTMAIL BOT*',
     '',
-    'Bot dùng để nhập nhanh tài khoản Coursera vào Google Sheet.',
+    'Bot dùng để nhập nhanh tài khoản Coursera hoặc Hotmail.',
     '',
-    '*Định dạng tin nhắn:*',
+    '*1. Nhập Coursera vào Google Sheet (Dùng dấu phẩy):*',
     '`email,password,courseCode`',
     '',
-    '*Nhập hàng loạt (mỗi dòng một tài khoản):*',
-    '`email1,password1,courseCode1`',
-    '`email2,password2,courseCode2`',
-    '',
-    'courseCode có thể để trống nếu không cần thiết.'
+    '*2. Nhập Hotmail vào Database (Dùng dấu gạch dọc):*',
+    '`email|password|clientId|refreshToken|secret2fa`',
+    'hoặc đơn giản: `email|password`'
   ].join('\n');
 
   try {
@@ -62,55 +60,25 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // Parse Coursera accounts
-  const accounts = parseCourseraSheetAccounts(text);
-  if (accounts.length > 0) {
-    try {
-      await bot.sendMessage(chatId, `⏳ Đang gửi ${accounts.length} tài khoản Coursera tới backend server...`);
-
-      // Prepare request data
-      const sheetData = accounts.map(a => [a.email, a.password, a.courseCode]);
-
-      // Call local backend endpoint
-      const response = await fetch(`${localBaseUrl}/api/proxy-sheet`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-bot-internal-token': botInternalToken
-        },
-        body: JSON.stringify({
-          scriptUrl: config.COURSERA_SHEET_SCRIPT_URL,
-          sheetName: '',
-          data: sheetData
-        })
-      });
-
-      const resData = await response.json();
-
-      if (!response.ok) {
-        throw new Error(resData.error || `Server responded with ${response.status}`);
-      }
-
-      const successLines = [
-        `<b>✅ ĐÃ THÊM THÀNH CÔNG ${accounts.length} TÀI KHOẢN VÀO SHEET</b>`,
-        '',
-        ...accounts.map((a, i) => `${i + 1}. <code>${a.email}</code> | <code>${a.password}</code>${a.courseCode ? ` | Course: <code>${a.courseCode}</code>` : ''}`),
-        '',
-        '👉 Gửi tiếp theo định dạng <code>email,password,courseCode</code> để thêm tiếp.'
-      ];
-
-      await bot.sendMessage(chatId, successLines.join('\n'), { parse_mode: 'HTML' });
-    } catch (err) {
-      console.error('❌ Failed to push Coursera accounts via backend:', err.message);
-      await bot.sendMessage(chatId, `❌ Lỗi khi thêm Coursera: ${err.message}`);
+  try {
+    // Delegate the message payload to local server webhook route
+    const headers = { 'Content-Type': 'application/json' };
+    if (config.TELEGRAM_WEBHOOK_SECRET) {
+      headers['x-telegram-bot-api-secret-token'] = config.TELEGRAM_WEBHOOK_SECRET;
     }
-  } else {
-    // Send help message if format is unrecognized
-    const helpMsg = [
-      '*⚠️ Định dạng không đúng*',
-      'Vui lòng gửi danh sách tài khoản theo định dạng chính xác:',
-      '`email,password,courseCode`'
-    ].join('\n');
-    await bot.sendMessage(chatId, helpMsg, { parse_mode: 'Markdown' });
+
+    const response = await fetch(`${localBaseUrl}/api/telegram-webhook`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message: msg })
+    });
+
+    if (!response.ok) {
+      const resData = await response.json().catch(() => ({}));
+      throw new Error(resData.error || `Server error: ${response.status}`);
+    }
+  } catch (err) {
+    console.error('❌ Failed to forward message to webhook route:', err.message);
+    await bot.sendMessage(chatId, `❌ Lỗi đồng bộ hệ thống: ${err.message}`);
   }
 });

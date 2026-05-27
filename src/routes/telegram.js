@@ -9,6 +9,8 @@ const config = require('../config');
 const { parseCourseraSheetAccounts, pushToGoogleSheet } = require('../services/coursera');
 const { verifyTelegramWebhookSecret, verifyAdminOrBotInternalToken } = require('../middleware/authHelpers');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
+const HotmailAccount = require('../models/HotmailAccount');
+const hotmailService = require('../services/hotmail');
 
 /**
  * Sends a message to a Telegram chat
@@ -52,50 +54,85 @@ router.post('/telegram-webhook', verifyTelegramWebhookSecret, asyncHandler(async
       if (isAuthorized) {
         if (text === '/start' || text === '/help' || text.startsWith('/')) {
           const welcome = [
-            '*COURSERA SHEET BOT*',
+            '*COURSERA & HOTMAIL BOT*',
             '',
-            'Bot hiện dùng để nhập nhanh tài khoản Coursera vào Google Sheet.',
+            'Bot dùng để nhập nhanh tài khoản Coursera hoặc Hotmail.',
             '',
-            '*Format:*',
+            '*1. Nhập Coursera vào Google Sheet (Dùng dấu phẩy):*',
             '`email,password,courseCode`',
             '',
-            '*Nhập hàng loạt:*',
-            '`email1,password1,courseCode1`',
-            '`email2,password2,courseCode2`',
-            '',
-            'courseCode có thể để trống nếu không cần.'
+            '*2. Nhập Hotmail vào Database (Dùng dấu gạch dọc):*',
+            '`email|password|clientId|refreshToken|secret2fa`',
+            'hoặc đơn giản: `email|password`'
           ].join('\n');
 
           await sendTelegramMessage(chatId, welcome, { parse_mode: 'Markdown' });
         } else {
-          const accounts = parseCourseraSheetAccounts(text);
-          if (accounts.length > 0) {
-            try {
-              await sendTelegramMessage(chatId, `Đang thêm ${accounts.length} tài khoản Coursera vào Sheet...`);
-              
-              const sheetData = accounts.map(a => [a.email, a.password, a.courseCode]);
-              await pushToGoogleSheet(config.COURSERA_SHEET_SCRIPT_URL, '', sheetData);
+          const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+          const hasPipe = lines.some(l => l.includes('|'));
 
-              const successLines = [
-                `<b>ĐÃ THÊM ${accounts.length} TÀI KHOẢN COURSERA VÀO SHEET</b>`,
-                '',
-                ...accounts.map((a, i) => `${i + 1}. <code>${a.email}</code> | <code>${a.password}</code>${a.courseCode ? ` | Course: <code>${a.courseCode}</code>` : ''}`),
-                '',
-                'Paste tiếp format email,password,courseCode để nhập nhanh.'
-              ];
-              await sendTelegramMessage(chatId, successLines.join('\n'), { parse_mode: 'HTML' });
+          if (hasPipe) {
+            try {
+              await sendTelegramMessage(chatId, `⏳ Đang nhập ${lines.length} tài khoản Hotmail vào cơ sở dữ liệu...`);
+              let successCount = 0;
+              let errorCount = 0;
+
+              for (const line of lines) {
+                const cred = hotmailService.parseStrictHotmailSaveLine(line) || hotmailService.parseHotmailLine(line);
+                if (!cred || !cred.email) {
+                  errorCount++;
+                  continue;
+                }
+                const existing = HotmailAccount.findOne({ email: cred.email });
+                if (existing) {
+                  HotmailAccount.updateOne({ email: cred.email }, cred);
+                } else {
+                  HotmailAccount.create({ ...cred, state: 'available', usedCount: 0 });
+                }
+                successCount++;
+              }
+
+              const resMsg = [
+                `<b>✅ KẾT QUẢ NHẬP HOTMAIL</b>`,
+                `• Thành công: <code>${successCount}</code>`,
+                `• Lỗi/Sai format: <code>${errorCount}</code>`
+              ].join('\n');
+              await sendTelegramMessage(chatId, resMsg, { parse_mode: 'HTML' });
             } catch (err) {
-              console.error('Coursera webhook push failed:', err.message);
-              await sendTelegramMessage(chatId, `Lỗi khi thêm Coursera: ${err.message}`);
+              console.error('Failed to import Hotmail from bot:', err.message);
+              await sendTelegramMessage(chatId, `❌ Lỗi hệ thống: ${err.message}`);
             }
           } else {
-            // Not a valid Coursera list, send help message
-            const welcome = [
-              '*Format không đúng*',
-              'Vui lòng nhập danh sách tài khoản theo định dạng:',
-              '`email,password,courseCode`'
-            ].join('\n');
-            await sendTelegramMessage(chatId, welcome, { parse_mode: 'Markdown' });
+            const accounts = parseCourseraSheetAccounts(text);
+            if (accounts.length > 0) {
+              try {
+                await sendTelegramMessage(chatId, `Đang thêm ${accounts.length} tài khoản Coursera vào Sheet...`);
+                
+                const sheetData = accounts.map(a => [a.email, a.password, a.courseCode]);
+                await pushToGoogleSheet(config.COURSERA_SHEET_SCRIPT_URL, '', sheetData);
+
+                const successLines = [
+                  `<b>ĐÃ THÊM ${accounts.length} TÀI KHOẢN COURSERA VÀO SHEET</b>`,
+                  '',
+                  ...accounts.map((a, i) => `${i + 1}. <code>${a.email}</code> | <code>${a.password}</code>${a.courseCode ? ` | Course: <code>${a.courseCode}</code>` : ''}`),
+                  '',
+                  'Paste tiếp format email,password,courseCode để nhập nhanh.'
+                ];
+                await sendTelegramMessage(chatId, successLines.join('\n'), { parse_mode: 'HTML' });
+              } catch (err) {
+                console.error('Coursera webhook push failed:', err.message);
+                await sendTelegramMessage(chatId, `Lỗi khi thêm Coursera: ${err.message}`);
+              }
+            } else {
+              // Not a valid Coursera or Hotmail list, send help message
+              const welcome = [
+                '*Format không đúng*',
+                'Vui lòng nhập danh sách tài khoản theo định dạng:',
+                '• Coursera: `email,password,courseCode`',
+                '• Hotmail: `email|password`'
+              ].join('\n');
+              await sendTelegramMessage(chatId, welcome, { parse_mode: 'Markdown' });
+            }
           }
         }
       }
