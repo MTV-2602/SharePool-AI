@@ -1,11 +1,13 @@
 # Dependencies
 node_modules/
+client/node_modules/
 
 # Database
 data/
 
 # Environment
 .env
+.env.local
 
 # Logs
 *.log
@@ -23,3 +25,5 @@ Thumbs.db
 # Agent internal files
 .antigravity/
 
+# Vercel
+.vercel/
