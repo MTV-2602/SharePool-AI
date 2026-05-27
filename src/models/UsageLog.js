@@ -78,20 +78,37 @@ async function findByKey(key, { limit = 50, offset = 0 } = {}) {
  * @returns {Promise<Array<{ date: string, requests: number, tokens_in: number, tokens_out: number, tokens_total: number }>>}
  */
 async function getDailyStats(key) {
-  return await db.query(
-    `SELECT
-       date(created_at)       AS date,
-       COUNT(*)               AS requests,
-       SUM(tokens_in)         AS tokens_in,
-       SUM(tokens_out)        AS tokens_out,
-       SUM(tokens_total)      AS tokens_total
-     FROM usage_logs
-     WHERE api_key = ?
-       AND created_at >= date('now', '-30 days', 'localtime')
-     GROUP BY date(created_at)
-     ORDER BY date ASC`,
-    [key]
-  );
+  if (db.isPostgres()) {
+    return await db.query(
+      `SELECT
+         CAST(created_at AS DATE) AS date,
+         COUNT(*)               AS requests,
+         SUM(tokens_in)         AS tokens_in,
+         SUM(tokens_out)        AS tokens_out,
+         SUM(tokens_total)      AS tokens_total
+       FROM usage_logs
+       WHERE api_key = ?
+         AND CAST(created_at AS TIMESTAMP) >= (CURRENT_DATE - INTERVAL '30 days')
+       GROUP BY CAST(created_at AS DATE)
+       ORDER BY date ASC`,
+      [key]
+    );
+  } else {
+    return await db.query(
+      `SELECT
+         date(created_at)       AS date,
+         COUNT(*)               AS requests,
+         SUM(tokens_in)         AS tokens_in,
+         SUM(tokens_out)        AS tokens_out,
+         SUM(tokens_total)      AS tokens_total
+       FROM usage_logs
+       WHERE api_key = ?
+         AND created_at >= date('now', '-30 days', 'localtime')
+       GROUP BY date(created_at)
+       ORDER BY date ASC`,
+      [key]
+    );
+  }
 }
 
 /**
@@ -100,18 +117,33 @@ async function getDailyStats(key) {
  * @returns {Promise<Array<{ date, requests, tokens_in, tokens_out, tokens_total }>>}
  */
 async function getGlobalDailyStats() {
-  return await db.query(
-    `SELECT
-       date(created_at)       AS date,
-       COUNT(*)               AS requests,
-       SUM(tokens_in)         AS tokens_in,
-       SUM(tokens_out)        AS tokens_out,
-       SUM(tokens_total)      AS tokens_total
-     FROM usage_logs
-     WHERE created_at >= date('now', '-30 days', 'localtime')
-     GROUP BY date(created_at)
-     ORDER BY date ASC`
-  );
+  if (db.isPostgres()) {
+    return await db.query(
+      `SELECT
+         CAST(created_at AS DATE) AS date,
+         COUNT(*)               AS requests,
+         SUM(tokens_in)         AS tokens_in,
+         SUM(tokens_out)        AS tokens_out,
+         SUM(tokens_total)      AS tokens_total
+       FROM usage_logs
+       WHERE CAST(created_at AS TIMESTAMP) >= (CURRENT_DATE - INTERVAL '30 days')
+       GROUP BY CAST(created_at AS DATE)
+       ORDER BY date ASC`
+    );
+  } else {
+    return await db.query(
+      `SELECT
+         date(created_at)       AS date,
+         COUNT(*)               AS requests,
+         SUM(tokens_in)         AS tokens_in,
+         SUM(tokens_out)        AS tokens_out,
+         SUM(tokens_total)      AS tokens_total
+       FROM usage_logs
+       WHERE created_at >= date('now', '-30 days', 'localtime')
+       GROUP BY date(created_at)
+       ORDER BY date ASC`
+    );
+  }
 }
 
 /**
@@ -141,12 +173,16 @@ async function getAdminStats() {
      FROM usage_logs`
   );
 
+  const todayCondition = db.isPostgres()
+    ? `CAST(created_at AS DATE) = CURRENT_DATE`
+    : `date(created_at) = date('now', 'localtime')`;
+
   const todayStats = await db.get(
     `SELECT
        COUNT(*)          AS today_requests,
        SUM(tokens_total) AS today_tokens
      FROM usage_logs
-     WHERE date(created_at) = date('now', 'localtime')`
+     WHERE ${todayCondition}`
   );
 
   return {
