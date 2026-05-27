@@ -23,7 +23,8 @@ export default function LoginPage() {
       navigate('/dashboard');
     } catch (err) {
       localStorage.removeItem('adminKey');
-      setError('Admin key không đúng. Vui lòng thử lại.');
+      const msg = err.response?.data?.error?.message || err.message || 'Lỗi kết nối server';
+      setError(`Đăng nhập thất bại: ${msg}`);
     } finally {
       setLoading(false);
     }
