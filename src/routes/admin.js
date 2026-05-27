@@ -16,9 +16,9 @@ router.use(adminGuard);
 
 // GET & POST /admin-api/stats — Admin dashboard stats (supports verification)
 const statsHandler = asyncHandler(async (req, res) => {
-  const stats = UsageLog.getAdminStats();
-  const daily = UsageLog.getGlobalDailyStats();
-  const topKeys = UsageLog.getTopKeys(5);
+  const stats = await UsageLog.getAdminStats();
+  const daily = await UsageLog.getGlobalDailyStats();
+  const topKeys = await UsageLog.getTopKeys(5);
   const accounts = AccountPool.getStatus();
   res.json({
     ...stats,
@@ -34,7 +34,7 @@ router.route('/stats')
 
 // GET /admin-api/keys — List all API keys
 router.get('/keys', asyncHandler(async (req, res) => {
-  const keys = ApiKey.findAll();
+  const keys = await ApiKey.findAll();
   res.json(keys);
 }));
 
@@ -48,7 +48,7 @@ router.post('/keys', asyncHandler(async (req, res) => {
   const quotaInput = req.body.quota !== undefined ? req.body.quota : req.body.quotaTotal;
   const expiresInput = req.body.expires !== undefined ? req.body.expires : req.body.expiresAt;
 
-  const key = ApiKey.create({
+  const key = await ApiKey.create({
     name,
     quotaTotal: quotaInput !== undefined ? parseInt(quotaInput, 10) : 100000000,
     expiresAt: expiresInput || null,
@@ -61,7 +61,7 @@ router.post('/keys', asyncHandler(async (req, res) => {
 // GET /admin-api/keys/:id — Get a single key
 router.get('/keys/:id', asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const key = ApiKey.findById(id);
+  const key = await ApiKey.findById(id);
   if (!key) {
     throw new AppError('API key not found', 404, 'NOT_FOUND');
   }
@@ -71,7 +71,7 @@ router.get('/keys/:id', asyncHandler(async (req, res) => {
 // PATCH /admin-api/keys/:id — Update a key
 router.patch('/keys/:id', asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const key = ApiKey.findById(id);
+  const key = await ApiKey.findById(id);
   if (!key) {
     throw new AppError('API key not found', 404, 'NOT_FOUND');
   }
@@ -86,56 +86,56 @@ router.patch('/keys/:id', asyncHandler(async (req, res) => {
   if (req.body.is_active !== undefined) fields.is_active = req.body.is_active ? 1 : 0;
   if (req.body.note !== undefined) fields.note = req.body.note;
 
-  ApiKey.update(id, fields);
-  res.json({ success: true, key: ApiKey.findById(id) });
+  await ApiKey.update(id, fields);
+  res.json({ success: true, key: await ApiKey.findById(id) });
 }));
 
 // POST /admin-api/keys/:id/enable — Enable a key
 router.post('/keys/:id/enable', asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const key = ApiKey.findById(id);
+  const key = await ApiKey.findById(id);
   if (!key) {
     throw new AppError('API key not found', 404, 'NOT_FOUND');
   }
-  ApiKey.update(id, { is_active: 1 });
+  await ApiKey.update(id, { is_active: 1 });
   res.json({ success: true });
 }));
 
 // POST /admin-api/keys/:id/disable — Disable a key
 router.post('/keys/:id/disable', asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const key = ApiKey.findById(id);
+  const key = await ApiKey.findById(id);
   if (!key) {
     throw new AppError('API key not found', 404, 'NOT_FOUND');
   }
-  ApiKey.update(id, { is_active: 0 });
+  await ApiKey.update(id, { is_active: 0 });
   res.json({ success: true });
 }));
 
 // DELETE /admin-api/keys/:id — Delete a key
 router.delete('/keys/:id', asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  ApiKey.delete(id);
+  await ApiKey.delete(id);
   res.json({ success: true });
 }));
 
 // POST /admin-api/keys/:id/reset — Reset usage to 0
 router.post('/keys/:id/reset', asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  ApiKey.resetUsage(id);
+  await ApiKey.resetUsage(id);
   res.json({ success: true });
 }));
 
 // GET /admin-api/usage — Global daily stats (last 30 days)
 router.get('/usage', asyncHandler(async (req, res) => {
-  const usage = UsageLog.getGlobalDailyStats();
+  const usage = await UsageLog.getGlobalDailyStats();
   res.json(usage);
 }));
 
 // GET /admin-api/top-keys — Top keys by usage
 router.get('/top-keys', asyncHandler(async (req, res) => {
   const limit = req.query.limit ? parseInt(req.query.limit, 10) : 10;
-  const topKeys = UsageLog.getTopKeys(limit);
+  const topKeys = await UsageLog.getTopKeys(limit);
   res.json(topKeys);
 }));
 
@@ -220,7 +220,6 @@ router.post('/accounts/import-bulk', asyncHandler(async (req, res) => {
 
     if (clean.includes('|')) {
       const parts = clean.split('|').map(p => p.trim());
-      // Try to find the sessionToken: it is the longest part or starts with 'ey'
       const foundToken = parts.find(p => p.startsWith('ey') || p.length > 80);
       if (foundToken) {
         token = foundToken;
@@ -311,7 +310,6 @@ router.patch('/accounts', asyncHandler(async (req, res) => {
 
   if (newSessionToken !== undefined && newSessionToken.trim()) {
     const newTokenClean = newSessionToken.trim();
-    // Check if new token already exists on another account to avoid duplicates
     const duplicateIdx = accounts.findIndex((a, i) => i !== idx && a.sessionToken === newTokenClean);
     if (duplicateIdx >= 0) {
       throw new AppError('New session token is already in use by another account', 400, 'DUPLICATE_ENTRY');

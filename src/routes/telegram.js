@@ -83,11 +83,11 @@ router.post('/telegram-webhook', verifyTelegramWebhookSecret, asyncHandler(async
                   errorCount++;
                   continue;
                 }
-                const existing = HotmailAccount.findOne({ email: cred.email });
+                const existing = await HotmailAccount.findOne({ email: cred.email });
                 if (existing) {
-                  HotmailAccount.updateOne({ email: cred.email }, cred);
+                  await HotmailAccount.updateOne({ email: cred.email }, cred);
                 } else {
-                  HotmailAccount.create({ ...cred, state: 'available', usedCount: 0 });
+                  await HotmailAccount.create({ ...cred, state: 'available', usedCount: 0 });
                 }
                 successCount++;
               }

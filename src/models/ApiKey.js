@@ -10,24 +10,24 @@ function generateKey() {
 
 const ApiKey = {
   /** Create a new API key */
-  create({ name, quotaTotal = 100_000_000, expiresAt = null, note = '' }) {
+  async create({ name, quotaTotal = 100_000_000, expiresAt = null, note = '' }) {
     const key = generateKey();
-    const { lastInsertRowid } = db.run(
+    const { lastInsertRowid } = await db.run(
       `INSERT INTO api_keys (key, name, quota_total, expires_at, note)
        VALUES (?, ?, ?, ?, ?)`,
       [key, name, quotaTotal, expiresAt || null, note]
     );
-    return ApiKey.findById(lastInsertRowid);
+    return await ApiKey.findById(lastInsertRowid);
   },
 
   /** Find by API key string */
-  findByKey(key) {
-    return db.get('SELECT * FROM api_keys WHERE key = ?', [key]);
+  async findByKey(key) {
+    return await db.get('SELECT * FROM api_keys WHERE key = ?', [key]);
   },
 
   /** Find by row ID */
-  findById(id) {
-    return db.get(
+  async findById(id) {
+    return await db.get(
       `SELECT *, ROUND(CAST(quota_used AS REAL) * 100.0 / quota_total, 1) as usage_pct
        FROM api_keys WHERE id = ?`,
       [id]
@@ -35,15 +35,15 @@ const ApiKey = {
   },
 
   /** List all keys, newest first */
-  findAll() {
-    return db.query(
+  async findAll() {
+    return await db.query(
       `SELECT *, ROUND(CAST(quota_used AS REAL) * 100.0 / quota_total, 1) as usage_pct
        FROM api_keys ORDER BY id DESC`
     );
   },
 
   /** Partial update — only update provided fields */
-  update(id, fields) {
+  async update(id, fields) {
     const allowed = ['name', 'quota_total', 'quota_used', 'expires_at', 'is_active', 'note'];
     const pairs   = [];
     const vals    = [];
@@ -58,19 +58,19 @@ const ApiKey = {
     pairs.push(`updated_at = datetime('now', 'localtime')`);
     vals.push(id);
 
-    db.run(`UPDATE api_keys SET ${pairs.join(', ')} WHERE id = ?`, vals);
+    await db.run(`UPDATE api_keys SET ${pairs.join(', ')} WHERE id = ?`, vals);
     return true;
   },
 
   /** Soft delete (hard delete in this impl) */
-  delete(id) {
-    db.run('DELETE FROM api_keys WHERE id = ?', [id]);
+  async delete(id) {
+    await db.run('DELETE FROM api_keys WHERE id = ?', [id]);
   },
 
   /** Atomically add usage tokens */
-  addUsage(key, tokensIn, tokensOut) {
+  async addUsage(key, tokensIn, tokensOut) {
     const total = (tokensIn || 0) + (tokensOut || 0);
-    db.run(
+    await db.run(
       `UPDATE api_keys SET quota_used = quota_used + ?, updated_at = datetime('now', 'localtime')
        WHERE key = ?`,
       [total, key]
@@ -79,8 +79,8 @@ const ApiKey = {
   },
 
   /** Reset quota_used to 0 */
-  resetUsage(id) {
-    db.run(
+  async resetUsage(id) {
+    await db.run(
       `UPDATE api_keys SET quota_used = 0, updated_at = datetime('now', 'localtime')
        WHERE id = ?`,
       [id]
@@ -91,14 +91,14 @@ const ApiKey = {
    * Validate a key — returns { ok: true, record } or { ok: false, reason }
    * Reasons: invalid_key | key_disabled | key_expired | quota_exceeded
    */
-  validate(key) {
+  async validate(key) {
     if (!key) return { ok: false, reason: 'invalid_key' };
-    const rec = ApiKey.findByKey(key);
+    const rec = await ApiKey.findByKey(key);
     if (!rec)          return { ok: false, reason: 'invalid_key' };
-    if (!rec.is_active)return { ok: false, reason: 'key_disabled' };
-    if (rec.expires_at && new Date(rec.expires_at) < new Date())
+    if (!rec.isActive) return { ok: false, reason: 'key_disabled' }; // Use camelCase isActive mapped key
+    if (rec.expiresAt && new Date(rec.expiresAt) < new Date())
                        return { ok: false, reason: 'key_expired' };
-    if (rec.quota_used >= rec.quota_total)
+    if (rec.quotaUsed >= rec.quotaTotal)
                        return { ok: false, reason: 'quota_exceeded' };
     return { ok: true, record: rec };
   },

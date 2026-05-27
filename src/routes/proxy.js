@@ -137,10 +137,10 @@ router.post('/v1/chat/completions', asyncHandler(async (req, res) => {
     tokensOut = Math.ceil(outputBuffer.length / 16);
 
     // Record usage asynchronously (non-blocking)
-    setImmediate(() => {
+    setImmediate(async () => {
       try {
-        ApiKey.addUsage(req.apiKey, tokensIn, tokensOut);
-        UsageLog.create({
+        await ApiKey.addUsage(req.apiKey, tokensIn, tokensOut);
+        await UsageLog.create({
           apiKey:   req.apiKey,
           model:    mappedModel,
           tokensIn,
@@ -177,10 +177,10 @@ router.post('/v1/chat/completions', asyncHandler(async (req, res) => {
   completion.id          = 'chatcmpl-' + req_id;
 
   // Record usage
-  setImmediate(() => {
+  setImmediate(async () => {
     try {
-      ApiKey.addUsage(req.apiKey, tokensIn, tokensOut);
-      UsageLog.create({
+      await ApiKey.addUsage(req.apiKey, tokensIn, tokensOut);
+      await UsageLog.create({
         apiKey:   req.apiKey,
         model:    mappedModel,
         tokensIn,

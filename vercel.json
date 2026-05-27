@@ -6,17 +6,17 @@
       "use": "@vercel/node",
       "config": {
         "includeFiles": [
-          "node_modules/sql.js/dist/sql-wasm.wasm",
-          "accounts.json",
-          "public/**/*"
+          "client/dist/**",
+          "accounts.json"
         ]
       }
     }
   ],
   "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "server.js"
-    }
+    { "src": "/admin-api/(.*)", "dest": "server.js" },
+    { "src": "/api/(.*)", "dest": "server.js" },
+    { "src": "/assets/(.*)", "dest": "client/dist/assets/$1" },
+    { "src": "/(.*\\.(js|css|png|jpg|svg|ico|woff|woff2|ttf|json))", "dest": "client/dist/$1" },
+    { "src": "/(.*)", "dest": "client/dist/index.html" }
   ]
 }

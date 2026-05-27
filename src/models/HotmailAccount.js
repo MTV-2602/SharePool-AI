@@ -7,7 +7,7 @@ const HotmailAccount = {
   /**
    * Count accounts matching query criteria
    */
-  count(queryObj = {}) {
+  async count(queryObj = {}) {
     let sql = 'SELECT COUNT(*) as count FROM hotmail_accounts';
     const params = [];
     const wheres = [];
@@ -25,14 +25,14 @@ const HotmailAccount = {
       sql += ' WHERE ' + wheres.join(' AND ');
     }
 
-    const row = db.get(sql, params);
-    return row ? row.count : 0;
+    const row = await db.get(sql, params);
+    return row ? parseInt(row.count || 0, 10) : 0;
   },
 
   /**
    * Find accounts matching query criteria (paginated & sorted)
    */
-  find(queryObj = {}, { sort = { state: 1, updatedAt: -1 }, skip = 0, limit = 50 } = {}) {
+  async find(queryObj = {}, { sort = { state: 1, updatedAt: -1 }, skip = 0, limit = 50 } = {}) {
     let sql = 'SELECT * FROM hotmail_accounts';
     const params = [];
     const wheres = [];
@@ -55,21 +55,21 @@ const HotmailAccount = {
     sql += ' LIMIT ? OFFSET ?';
     params.push(limit, skip);
 
-    return db.query(sql, params);
+    return await db.query(sql, params);
   },
 
   /**
    * Find a single account by email
    */
-  findOne({ email }) {
+  async findOne({ email }) {
     if (!email) return null;
-    return db.get('SELECT * FROM hotmail_accounts WHERE email = ?', [email.toLowerCase().trim()]);
+    return await db.get('SELECT * FROM hotmail_accounts WHERE email = ?', [email.toLowerCase().trim()]);
   },
 
   /**
    * Create a new Hotmail account record
    */
-  create(fields) {
+  async create(fields) {
     const cols = [];
     const placeholders = [];
     const vals = [];
@@ -97,19 +97,19 @@ const HotmailAccount = {
     }
 
     cols.push('created_at');
-    placeholders.push("datetime('now', 'localtime')");
+    placeholders.push('CURRENT_TIMESTAMP');
     cols.push('updated_at');
-    placeholders.push("datetime('now', 'localtime')");
+    placeholders.push('CURRENT_TIMESTAMP');
 
     const sql = `INSERT INTO hotmail_accounts (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`;
-    db.run(sql, vals);
-    return this.findOne({ email: cleanFields.email });
+    await db.run(sql, vals);
+    return await this.findOne({ email: cleanFields.email });
   },
 
   /**
    * Update fields for a given email
    */
-  updateOne({ email }, fields) {
+  async updateOne({ email }, fields) {
     const pairs = [];
     const vals = [];
     const allowed = [
@@ -126,37 +126,37 @@ const HotmailAccount = {
 
     if (!pairs.length) return false;
 
-    pairs.push("updated_at = datetime('now', 'localtime')");
+    pairs.push('updated_at = CURRENT_TIMESTAMP');
     vals.push(email.toLowerCase().trim());
 
-    db.run(`UPDATE hotmail_accounts SET ${pairs.join(', ')} WHERE email = ?`, vals);
+    await db.run(`UPDATE hotmail_accounts SET ${pairs.join(', ')} WHERE email = ?`, vals);
     return true;
   },
 
   /**
    * Find and update matching record (mimics Mongoose query interface)
    */
-  findOneAndUpdate(queryObj, updateFields, options = {}) {
+  async findOneAndUpdate(queryObj, updateFields, options = {}) {
     // If querying next available
     if (queryObj.state === 'available') {
-      const availableAcc = db.get("SELECT * FROM hotmail_accounts WHERE state = 'available' ORDER BY usedCount ASC LIMIT 1");
+      const availableAcc = await db.get("SELECT * FROM hotmail_accounts WHERE state = 'available' ORDER BY usedCount ASC LIMIT 1");
       if (!availableAcc) return null;
 
       const email = availableAcc.email;
       const fields = updateFields.$set || updateFields;
-      this.updateOne({ email }, fields);
-      return this.findOne({ email });
+      await this.updateOne({ email }, fields);
+      return await this.findOne({ email });
     }
 
     // If querying by email
     if (queryObj.email) {
       const email = queryObj.email;
       const fields = updateFields.$set || updateFields;
-      const exists = this.findOne({ email });
+      const exists = await this.findOne({ email });
 
       if (!exists) {
         if (options.upsert) {
-          return this.create({ email, ...fields });
+          return await this.create({ email, ...fields });
         }
         return null;
       }
@@ -167,11 +167,11 @@ const HotmailAccount = {
       }
 
       if (incUsedCount > 0) {
-        db.run('UPDATE hotmail_accounts SET usedCount = usedCount + ? WHERE email = ?', [incUsedCount, email.toLowerCase().trim()]);
+        await db.run('UPDATE hotmail_accounts SET usedCount = usedCount + ? WHERE email = ?', [incUsedCount, email.toLowerCase().trim()]);
       }
 
-      this.updateOne({ email }, fields);
-      return this.findOne({ email });
+      await this.updateOne({ email }, fields);
+      return await this.findOne({ email });
     }
 
     return null;
@@ -180,11 +180,11 @@ const HotmailAccount = {
   /**
    * Find and delete a record by email
    */
-  findOneAndDelete({ email }) {
+  async findOneAndDelete({ email }) {
     if (!email) return null;
-    const acc = this.findOne({ email });
+    const acc = await this.findOne({ email });
     if (acc) {
-      db.run('DELETE FROM hotmail_accounts WHERE email = ?', [email.toLowerCase().trim()]);
+      await db.run('DELETE FROM hotmail_accounts WHERE email = ?', [email.toLowerCase().trim()]);
     }
     return acc;
   }

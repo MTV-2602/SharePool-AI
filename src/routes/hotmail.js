@@ -32,10 +32,10 @@ adminRouter.get('/accounts', asyncHandler(async (req, res) => {
     query.email = search;
   }
 
-  const total = HotmailAccount.count({});
-  const filteredTotal = HotmailAccount.count(query);
+  const total = await HotmailAccount.count({});
+  const filteredTotal = await HotmailAccount.count(query);
   const totalPages = Math.max(1, Math.ceil(filteredTotal / limit));
-  const accounts = HotmailAccount.find(query, { skip, limit });
+  const accounts = await HotmailAccount.find(query, { skip, limit });
 
   res.json({
     ok: true,
@@ -51,7 +51,7 @@ adminRouter.get('/accounts', asyncHandler(async (req, res) => {
 // GET /admin-api/hotmail/account/:email — Get single account details
 adminRouter.get('/account/:email', asyncHandler(async (req, res) => {
   const email = String(req.params.email || '').trim().toLowerCase();
-  const account = HotmailAccount.findOne({ email });
+  const account = await HotmailAccount.findOne({ email });
   if (!account) {
     throw new AppError('Hotmail account not found.', 404, 'NOT_FOUND');
   }
@@ -70,11 +70,11 @@ adminRouter.post('/save', asyncHandler(async (req, res) => {
   const validation = await hotmailService.validateHotmailCredentialLive(cred, { top: 1 });
   const validatedCred = validation.credential || cred;
 
-  const existing = HotmailAccount.findOne({ email: validatedCred.email });
+  const existing = await HotmailAccount.findOne({ email: validatedCred.email });
   if (existing) {
-    HotmailAccount.updateOne({ email: validatedCred.email }, validatedCred);
+    await HotmailAccount.updateOne({ email: validatedCred.email }, validatedCred);
   } else {
-    HotmailAccount.create({ ...validatedCred, state: 'available', usedCount: 0 });
+    await HotmailAccount.create({ ...validatedCred, state: 'available', usedCount: 0 });
   }
 
   res.json({
@@ -105,12 +105,12 @@ adminRouter.post('/bulk-import', asyncHandler(async (req, res) => {
       continue;
     }
     try {
-      const existing = HotmailAccount.findOne({ email: cred.email });
+      const existing = await HotmailAccount.findOne({ email: cred.email });
       if (existing) {
-        HotmailAccount.updateOne({ email: cred.email }, cred);
+        await HotmailAccount.updateOne({ email: cred.email }, cred);
         results.push({ email: cred.email, ok: true, action: 'updated' });
       } else {
-        HotmailAccount.create({ ...cred, state: 'available', usedCount: 0 });
+        await HotmailAccount.create({ ...cred, state: 'available', usedCount: 0 });
         results.push({ email: cred.email, ok: true, action: 'created' });
       }
     } catch (e) {
@@ -128,7 +128,7 @@ adminRouter.post('/read', asyncHandler(async (req, res) => {
   if (line) {
     cred = hotmailService.parseHotmailLine(line);
   } else if (email) {
-    cred = HotmailAccount.findOne({ email });
+    cred = await HotmailAccount.findOne({ email });
   }
 
   if (!cred) {
@@ -137,11 +137,11 @@ adminRouter.post('/read', asyncHandler(async (req, res) => {
 
   // Save/Update if line is provided and doesn't exist
   if (line && cred.email) {
-    const existing = HotmailAccount.findOne({ email: cred.email });
+    const existing = await HotmailAccount.findOne({ email: cred.email });
     if (!existing) {
-      HotmailAccount.create({ ...cred, state: 'available', usedCount: 0 });
+      await HotmailAccount.create({ ...cred, state: 'available', usedCount: 0 });
     } else {
-      HotmailAccount.updateOne({ email: cred.email }, cred);
+      await HotmailAccount.updateOne({ email: cred.email }, cred);
     }
   }
 
@@ -159,7 +159,7 @@ adminRouter.post('/read', asyncHandler(async (req, res) => {
 // DELETE /admin-api/hotmail/delete/:email — Delete hotmail account
 adminRouter.delete('/delete/:email', asyncHandler(async (req, res) => {
   const email = String(req.params.email || '').trim().toLowerCase();
-  const deleted = HotmailAccount.findOneAndDelete({ email });
+  const deleted = await HotmailAccount.findOneAndDelete({ email });
   if (!deleted) {
     throw new AppError('Hotmail account not found.', 404, 'NOT_FOUND');
   }
@@ -175,7 +175,7 @@ apiRouter.get('/new', verifyExtensionPushToken, asyncHandler(async (req, res) =>
   const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim().slice(0, 80);
   const now = new Date().toISOString();
 
-  const account = HotmailAccount.findOneAndUpdate(
+  const account = await HotmailAccount.findOneAndUpdate(
     { state: 'available' },
     {
       state: 'reserved',
@@ -205,7 +205,7 @@ apiRouter.post('/release', verifyExtensionPushToken, asyncHandler(async (req, re
     throw new AppError('Thiếu email Hotmail.', 400, 'INVALID_REQUEST');
   }
 
-  const result = HotmailAccount.findOneAndUpdate(
+  const result = await HotmailAccount.findOneAndUpdate(
     { email },
     {
       state: 'available',
@@ -235,7 +235,7 @@ apiRouter.post('/mark-used', verifyExtensionPushToken, asyncHandler(async (req, 
   const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim().slice(0, 80);
   const now = new Date().toISOString();
 
-  const result = HotmailAccount.findOneAndUpdate(
+  const result = await HotmailAccount.findOneAndUpdate(
     { email },
     {
       state: 'used',
@@ -274,7 +274,7 @@ apiRouter.post('/public-read', asyncHandler(async (req, res) => {
     throw new AppError('Thiếu email Hotmail.', 400, 'INVALID_REQUEST');
   }
 
-  const cred = HotmailAccount.findOne({ email });
+  const cred = await HotmailAccount.findOne({ email });
   if (!cred) {
     throw new AppError('Tài khoản Hotmail không tồn tại trong kho.', 404, 'NOT_FOUND');
   }

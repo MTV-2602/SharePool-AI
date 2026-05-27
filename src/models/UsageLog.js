@@ -10,13 +10,13 @@ function mapRow(row) {
   if (!row) return null;
   return {
     id:          row.id,
-    apiKey:      row.api_key,
+    apiKey:      row.apiKey || row.api_key,
     model:       row.model,
-    tokensIn:    row.tokens_in,
-    tokensOut:   row.tokens_out,
-    tokensTotal: row.tokens_total,
-    reqId:       row.req_id,
-    createdAt:   row.created_at,
+    tokensIn:    row.tokensIn || row.tokens_in,
+    tokensOut:   row.tokensOut || row.tokens_out,
+    tokensTotal: row.tokensTotal || row.tokens_total,
+    reqId:       row.reqId || row.req_id,
+    createdAt:   row.createdAt || row.created_at,
   };
 }
 
@@ -26,19 +26,20 @@ function mapRow(row) {
  * Insert a new usage log entry.
  *
  * @param {{ apiKey: string, model?: string, tokensIn?: number, tokensOut?: number, reqId?: string }} opts
- * @returns {Object} The created record.
+ * @returns {Promise<Object>} The created record.
  */
-function create({ apiKey, model = 'gpt-4o', tokensIn = 0, tokensOut = 0, reqId = null } = {}) {
+async function create({ apiKey, model = 'gpt-4o', tokensIn = 0, tokensOut = 0, reqId = null } = {}) {
   const tokensTotal = tokensIn + tokensOut;
   const id          = reqId || uuidv4();
 
-  const result = db.run(
+  const result = await db.run(
     `INSERT INTO usage_logs (api_key, model, tokens_in, tokens_out, tokens_total, req_id)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [apiKey, model, tokensIn, tokensOut, tokensTotal, id]
   );
 
-  return mapRow(db.get('SELECT * FROM usage_logs WHERE id = ?', [result.lastInsertRowid]));
+  const row = await db.get('SELECT * FROM usage_logs WHERE id = ?', [result.lastInsertRowid]);
+  return mapRow(row);
 }
 
 /**
@@ -46,25 +47,25 @@ function create({ apiKey, model = 'gpt-4o', tokensIn = 0, tokensOut = 0, reqId =
  *
  * @param {string} key
  * @param {{ limit?: number, offset?: number }} opts
- * @returns {{ rows: Array, total: number, limit: number, offset: number }}
+ * @returns {Promise<{ rows: Array, total: number, limit: number, offset: number }>}
  */
-function findByKey(key, { limit = 50, offset = 0 } = {}) {
+async function findByKey(key, { limit = 50, offset = 0 } = {}) {
   const safeLimit  = Math.min(Math.max(1, parseInt(limit, 10) || 50), 500);
   const safeOffset = Math.max(0, parseInt(offset, 10) || 0);
 
-  const rows = db.query(
+  const rows = await db.query(
     `SELECT * FROM usage_logs WHERE api_key = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
     [key, safeLimit, safeOffset]
   );
 
-  const countRow = db.get(
+  const countRow = await db.get(
     `SELECT COUNT(*) AS cnt FROM usage_logs WHERE api_key = ?`,
     [key]
   );
 
   return {
     rows:   rows.map(mapRow),
-    total:  countRow?.cnt ?? 0,
+    total:  parseInt(countRow?.cnt ?? 0, 10),
     limit:  safeLimit,
     offset: safeOffset,
   };
@@ -74,10 +75,10 @@ function findByKey(key, { limit = 50, offset = 0 } = {}) {
  * Return daily usage stats for a single API key over the last 30 days.
  *
  * @param {string} key
- * @returns {Array<{ date: string, requests: number, tokens_in: number, tokens_out: number, tokens_total: number }>}
+ * @returns {Promise<Array<{ date: string, requests: number, tokens_in: number, tokens_out: number, tokens_total: number }>>}
  */
-function getDailyStats(key) {
-  return db.query(
+async function getDailyStats(key) {
+  return await db.query(
     `SELECT
        date(created_at)       AS date,
        COUNT(*)               AS requests,
@@ -96,10 +97,10 @@ function getDailyStats(key) {
 /**
  * Return daily usage stats across ALL keys for the last 30 days.
  *
- * @returns {Array<{ date, requests, tokens_in, tokens_out, tokens_total }>}
+ * @returns {Promise<Array<{ date, requests, tokens_in, tokens_out, tokens_total }>>}
  */
-function getGlobalDailyStats() {
-  return db.query(
+async function getGlobalDailyStats() {
+  return await db.query(
     `SELECT
        date(created_at)       AS date,
        COUNT(*)               AS requests,
@@ -116,31 +117,31 @@ function getGlobalDailyStats() {
 /**
  * Aggregate stats for the admin dashboard.
  *
- * @returns {{
+ * @returns {Promise<{
  *   totalKeys: number,
  *   activeKeys: number,
  *   totalRequests: number,
  *   totalTokens: number,
  *   todayRequests: number,
  *   todayTokens: number
- * }}
+ * }>}
  */
-function getAdminStats() {
-  const keyStats = db.get(
+async function getAdminStats() {
+  const keyStats = await db.get(
     `SELECT
        COUNT(*)                       AS total_keys,
        SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_keys
      FROM api_keys`
   );
 
-  const globalStats = db.get(
+  const globalStats = await db.get(
     `SELECT
        COUNT(*)          AS total_requests,
        SUM(tokens_total) AS total_tokens
      FROM usage_logs`
   );
 
-  const todayStats = db.get(
+  const todayStats = await db.get(
     `SELECT
        COUNT(*)          AS today_requests,
        SUM(tokens_total) AS today_tokens
@@ -149,12 +150,12 @@ function getAdminStats() {
   );
 
   return {
-    totalKeys:     keyStats?.total_keys    ?? 0,
-    activeKeys:    keyStats?.active_keys   ?? 0,
-    totalRequests: globalStats?.total_requests ?? 0,
-    totalTokens:   globalStats?.total_tokens   ?? 0,
-    todayRequests: todayStats?.today_requests  ?? 0,
-    todayTokens:   todayStats?.today_tokens    ?? 0,
+    totalKeys:     parseInt(keyStats?.total_keys || 0, 10),
+    activeKeys:    parseInt(keyStats?.active_keys || 0, 10),
+    totalRequests: parseInt(globalStats?.total_requests || 0, 10),
+    totalTokens:   parseInt(globalStats?.total_tokens || 0, 10),
+    todayRequests: parseInt(todayStats?.today_requests || 0, 10),
+    todayTokens:   parseInt(todayStats?.today_tokens || 0, 10),
   };
 }
 
@@ -162,12 +163,12 @@ function getAdminStats() {
  * Return the top N API keys by total token usage.
  *
  * @param {number} limit
- * @returns {Array<{ api_key, total_requests, total_tokens, name }>}
+ * @returns {Promise<Array<{ api_key, total_requests, total_tokens, name }>>}
  */
-function getTopKeys(limit = 10) {
+async function getTopKeys(limit = 10) {
   const safeLimit = Math.min(Math.max(1, parseInt(limit, 10) || 10), 100);
 
-  return db.query(
+  return await db.query(
     `SELECT
        ul.api_key,
        ak.name,
