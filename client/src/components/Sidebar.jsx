@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, Key, Mail, BookOpen,
+  LayoutDashboard, Key, Mail, Bot,
   Settings, LogOut, Zap, ChevronRight,
   Send, Activity
 } from 'lucide-react';
@@ -9,7 +9,7 @@ import './Sidebar.css';
 const NAV = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/hotmail', icon: Mail, label: 'Hotmail' },
-  { to: '/coursera', icon: BookOpen, label: 'Coursera' },
+  { to: '/chatgpt', icon: Bot, label: 'ChatGPT Pool' },
   { to: '/telegram', icon: Send, label: 'Telegram' },
   { to: '/api-keys', icon: Key, label: 'API Keys' },
   { to: '/usage', icon: Activity, label: 'Usage' },

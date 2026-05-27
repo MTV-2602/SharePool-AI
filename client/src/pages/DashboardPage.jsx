@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  BarChart3, Key, Mail, BookOpen, Users,
+  BarChart3, Key, Mail, Bot, Users,
   TrendingUp, Activity, RefreshCw, Zap
 } from 'lucide-react';
 import api from '../lib/api';
@@ -90,8 +90,8 @@ export default function DashboardPage() {
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-header">
                 <span className="card-title">
-                  <BookOpen size={16} style={{ color: 'var(--accent)' }} />
-                  Coursera Account Pool
+                  <Bot size={16} style={{ color: 'var(--accent)' }} />
+                  ChatGPT Account Pool
                 </span>
               </div>
               <div className="stat-grid" style={{ marginBottom: 0 }}>

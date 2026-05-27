@@ -75,17 +75,27 @@ function globalErrorHandler(err, req, res, next) {
     });
   }
 
-  // Unexpected / programming errors — temporarily leak details to debug
-  const isDev = true; // process.env.NODE_ENV !== 'production';
+  // Unexpected / programming errors
+  const isDev = process.env.NODE_ENV !== 'production';
 
   console.error('[ERROR] [globalErrorHandler] Unhandled error:', err);
 
+  if (isDev) {
+    return res.status(500).json({
+      error: {
+        message:    err.message,
+        code:       'INTERNAL_ERROR',
+        statusCode: 500,
+        stack:      err.stack,
+      },
+    });
+  }
+
   return res.status(500).json({
     error: {
-      message:    err.message,
+      message:    'Internal server error',
       code:       'INTERNAL_ERROR',
       statusCode: 500,
-      stack:      err.stack,
     },
   });
 }

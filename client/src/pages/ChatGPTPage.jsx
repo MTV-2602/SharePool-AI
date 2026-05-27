@@ -1,36 +1,36 @@
 import { useState, useEffect, useCallback } from 'react';
-import { BookOpen, Upload, Plus, Trash2, RefreshCw, Edit2, Check, X } from 'lucide-react';
+import { Bot, Upload, Plus, Trash2, RefreshCw, Edit2, Check, X } from 'lucide-react';
 import api from '../lib/api';
 
-const TABS = ['Pool Coursera', 'Nhập nhanh Coursera'];
+const TABS = ['Pool ChatGPT', 'Nhập nhanh ChatGPT'];
 
-export default function CourseraPage() {
+export default function ChatGPTPage() {
   const [tab, setTab] = useState(0);
   return (
     <div>
       <div className="page-header">
         <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <BookOpen size={22} style={{ color: '#10b981' }} />
-          Coursera Accounts
+          <Bot size={22} style={{ color: '#10b981' }} />
+          ChatGPT Accounts
         </h1>
-        <p>Quản lý pool tài khoản Coursera upstream</p>
+        <p>Quản lý pool tài khoản ChatGPT upstream (Xoay key)</p>
       </div>
       <div className="tab-nav">
         {TABS.map((t, i) => (
           <button key={t} className={`tab-btn ${tab === i ? 'active' : ''}`} onClick={() => setTab(i)}>
-            {i === 0 ? <BookOpen size={14} /> : <Upload size={14} />}
+            {i === 0 ? <Bot size={14} /> : <Upload size={14} />}
             {t}
           </button>
         ))}
       </div>
-      {tab === 0 && <CourseraPool />}
-      {tab === 1 && <CourseraBulkImport />}
+      {tab === 0 && <ChatGPTPool />}
+      {tab === 1 && <ChatGPTBulkImport />}
     </div>
   );
 }
 
 // ─── POOL STATUS ──────────────────────────────────────────────────────────────
-function CourseraPool() {
+function ChatGPTPool() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState(null);
@@ -126,7 +126,7 @@ function CourseraPool() {
               </div>
             ))}
           </div>
-          <button id="coursera-reload-btn" className="btn btn-ghost btn-sm" onClick={handleReload}>
+          <button id="chatgpt-reload-btn" className="btn btn-ghost btn-sm" onClick={handleReload}>
             <RefreshCw size={14} /> Reload Pool
           </button>
         </div>
@@ -213,7 +213,7 @@ function CourseraPool() {
 }
 
 // ─── BULK IMPORT ──────────────────────────────────────────────────────────────
-function CourseraBulkImport() {
+function ChatGPTBulkImport() {
   const [rawText, setRawText] = useState('');
   const [singleName, setSingleName] = useState('');
   const [singleToken, setSingleToken] = useState('');
@@ -257,14 +257,14 @@ function CourseraBulkImport() {
         <div className="grid-2" style={{ marginBottom: 12 }}>
           <div className="form-group">
             <label>Tên tài khoản</label>
-            <input id="coursera-single-name" placeholder="VD: Acc-Coursera-01" value={singleName} onChange={e => setSingleName(e.target.value)} />
+            <input id="chatgpt-single-name" placeholder="VD: Acc-ChatGPT-01" value={singleName} onChange={e => setSingleName(e.target.value)} />
           </div>
           <div className="form-group">
-            <label>Session Token (CAUTH)</label>
-            <input id="coursera-single-token" placeholder="eyJ... hoặc CAUTH=..." value={singleToken} onChange={e => setSingleToken(e.target.value)} className="font-mono" style={{ fontSize: '0.82rem' }} />
+            <label>Session Token</label>
+            <input id="chatgpt-single-token" placeholder="eyJhbGciOi..." value={singleToken} onChange={e => setSingleToken(e.target.value)} className="font-mono" style={{ fontSize: '0.82rem' }} />
           </div>
         </div>
-        <button id="coursera-single-save-btn" className="btn btn-primary" onClick={handleSingle} disabled={singleLoading || !singleToken.trim()}>
+        <button id="chatgpt-single-save-btn" className="btn btn-primary" onClick={handleSingle} disabled={singleLoading || !singleToken.trim()}>
           {singleLoading ? <><span className="spinner" /> Đang lưu...</> : <><Check size={14} /> Lưu</>}
         </button>
         {singleResult && (
@@ -283,7 +283,7 @@ function CourseraBulkImport() {
         <div className="form-group" style={{ marginBottom: 12 }}>
           <label>Dán danh sách vào đây</label>
           <textarea
-            id="coursera-bulk-textarea"
+            id="chatgpt-bulk-textarea"
             rows={8}
             placeholder={"Acc-01|eyJhbGci...\nAcc-02|eyJhbGci...\n\nHoặc chỉ token:\neyJhbGciOiJ...\neyJhbGciOiJ..."}
             value={rawText}
@@ -295,7 +295,7 @@ function CourseraBulkImport() {
             {rawText.split('\n').filter(l => l.trim()).length} dòng
           </div>
         </div>
-        <button id="coursera-bulk-import-btn" className="btn btn-success" onClick={handleBulk} disabled={loading || !rawText.trim()}>
+        <button id="chatgpt-bulk-import-btn" className="btn btn-success" onClick={handleBulk} disabled={loading || !rawText.trim()}>
           {loading ? <><span className="spinner" /> Đang import...</> : <><Upload size={14} /> Import</>}
         </button>
         {result && (

@@ -3,7 +3,7 @@ import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import HotmailPage from './pages/HotmailPage';
-import CourseraPage from './pages/CourseraPage';
+import ChatGPTPage from './pages/ChatGPTPage';
 import ApiKeysPage from './pages/ApiKeysPage';
 import SettingsPage from './pages/SettingsPage';
 import TelegramPage from './pages/TelegramPage';
@@ -31,7 +31,7 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="hotmail" element={<HotmailPage />} />
-          <Route path="coursera" element={<CourseraPage />} />
+          <Route path="chatgpt" element={<ChatGPTPage />} />
           <Route path="telegram" element={<TelegramPage />} />
           <Route path="api-keys" element={<ApiKeysPage />} />
           <Route path="usage" element={<UsagePage />} />
