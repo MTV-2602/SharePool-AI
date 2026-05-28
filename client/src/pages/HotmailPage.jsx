@@ -365,10 +365,13 @@ function HotmailReader() {
   const [mode, setMode] = useState('email'); // 'email' | 'line'
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [expandedIdx, setExpandedIdx] = useState(null);
+  const [viewMode, setViewMode] = useState({}); // {idx: 'html'|'text'}
 
   const handleRead = async () => {
     setLoading(true);
     setResult(null);
+    setExpandedIdx(null);
     try {
       const payload = mode === 'email'
         ? { email: email.trim(), top: parseInt(top) }
@@ -381,6 +384,12 @@ function HotmailReader() {
       setLoading(false);
     }
   };
+
+  const isHtml = (body) => body && /<[a-z][\s\S]*>/i.test(body);
+
+  const toggleExpand = (i) => setExpandedIdx(prev => prev === i ? null : i);
+  const getViewMode = (i, body) => viewMode[i] || (isHtml(body) ? 'html' : 'text');
+  const setModeFor = (i, m) => setViewMode(prev => ({ ...prev, [i]: m }));
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -456,45 +465,121 @@ function HotmailReader() {
                 </span>
                 <span className="badge badge-blue">{result.data.scope || 'IMAP'}</span>
               </div>
+
               {result.data.messages?.length === 0 ? (
                 <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 24 }}>Hộp thư trống</p>
               ) : (
-                <div style={{ display: 'grid', gap: 10 }}>
-                  {result.data.messages.map((m, i) => (
-                    <div key={i} style={{
-                      background: 'var(--bg-elevated)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '12px 14px'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                          {m.subject || '(Không có tiêu đề)'}
-                        </span>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                          {m.date ? new Date(m.date).toLocaleString('vi-VN') : ''}
-                        </span>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {result.data.messages.map((m, i) => {
+                    const expanded = expandedIdx === i;
+                    const bodyIsHtml = isHtml(m.body);
+                    const curView = getViewMode(i, m.body);
+
+                    return (
+                      <div key={i} style={{
+                        background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)',
+                        overflow: 'hidden'
+                      }}>
+                        {/* Header hàng - click để mở rộng */}
+                        <div
+                          onClick={() => toggleExpand(i)}
+                          style={{
+                            display: 'flex', alignItems: 'center',
+                            gap: 10, padding: '10px 14px',
+                            cursor: 'pointer',
+                            userSelect: 'none',
+                            background: expanded ? 'rgba(59,130,246,0.06)' : 'transparent',
+                            transition: 'background 0.2s'
+                          }}
+                        >
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', minWidth: 20 }}>
+                            {expanded ? '▼' : '▶'}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {m.subject || '(Không có tiêu đề)'}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                              From: <strong>{m.from}</strong>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            {bodyIsHtml && (
+                              <span className="badge badge-blue" style={{ fontSize: '0.68rem' }}>HTML</span>
+                            )}
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              {m.date ? new Date(m.date).toLocaleString('vi-VN') : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Nội dung email - chỉ hiện khi expand */}
+                        {expanded && m.body && (
+                          <div style={{ borderTop: '1px solid var(--border)' }}>
+                            {/* Toggle HTML/Text nếu là HTML email */}
+                            {bodyIsHtml && (
+                              <div style={{ display: 'flex', gap: 6, padding: '8px 14px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
+                                <button
+                                  className={`btn btn-sm ${curView === 'html' ? 'btn-primary' : 'btn-ghost'}`}
+                                  style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                  onClick={() => setModeFor(i, 'html')}
+                                >
+                                  Xem HTML
+                                </button>
+                                <button
+                                  className={`btn btn-sm ${curView === 'text' ? 'btn-primary' : 'btn-ghost'}`}
+                                  style={{ padding: '2px 10px', fontSize: '0.75rem' }}
+                                  onClick={() => setModeFor(i, 'text')}
+                                >
+                                  Xem Raw
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Nội dung render */}
+                            {bodyIsHtml && curView === 'html' ? (
+                              /* Render HTML email trong iframe sandbox */
+                              <iframe
+                                srcDoc={`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;padding:12px;font-family:Arial,sans-serif;background:#fff;color:#222;font-size:14px;line-height:1.5}img{max-width:100%}a{color:#2563eb}</style></head><body>${m.body}</body></html>`}
+                                style={{
+                                  width: '100%',
+                                  minHeight: 300,
+                                  maxHeight: 600,
+                                  border: 'none',
+                                  display: 'block',
+                                  background: '#fff'
+                                }}
+                                sandbox="allow-same-origin"
+                                title={`email-${i}`}
+                                onLoad={e => {
+                                  try {
+                                    const h = e.target.contentDocument?.body?.scrollHeight;
+                                    if (h) e.target.style.height = Math.min(h + 24, 600) + 'px';
+                                  } catch {}
+                                }}
+                              />
+                            ) : (
+                              /* Hiện text thuần / raw */
+                              <pre style={{
+                                margin: 0,
+                                padding: '12px 14px',
+                                fontSize: '0.8rem',
+                                color: 'var(--text-secondary)',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                fontFamily: 'monospace',
+                                maxHeight: 400,
+                                overflow: 'auto',
+                                background: 'var(--bg-surface)'
+                              }}>{m.body}</pre>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 6 }}>
-                        From: <strong>{m.from}</strong>
-                      </div>
-                      {m.body && (
-                        <div style={{
-                          fontSize: '0.82rem',
-                          color: 'var(--text-secondary)',
-                          background: 'var(--bg-surface)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 6,
-                          padding: '8px 10px',
-                          maxHeight: 120,
-                          overflow: 'auto',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word',
-                          fontFamily: 'monospace'
-                        }}>{m.body}</div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -506,3 +591,4 @@ function HotmailReader() {
     </div>
   );
 }
+
