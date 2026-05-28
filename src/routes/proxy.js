@@ -302,10 +302,32 @@ router.post('/responses', asyncHandler(async (req, res) => {
     } catch (err) {
       if (!res.headersSent) {
         const status = err.statusCode || 502;
-        const errPayload = {
-          error: { message: err.message, code: err.code || 'UPSTREAM_ERROR', statusCode: status }
+        const errMsg = `⚠️ Lỗi Upstream (Status ${status}): ${err.message}`;
+        
+        // 1. Send response.created event
+        const responseId = 'resp-' + req_id;
+        const createdEvt = {
+          type:   'response.created',
+          response: { id: responseId, object: 'response', status: 'in_progress', model: mappedModel, output: [] },
         };
-        res.write(`event: error\ndata: ${JSON.stringify(errPayload)}\n\n`);
+        res.write(`event: response.created\ndata: ${JSON.stringify(createdEvt)}\n\n`);
+        
+        // 2. Send delta event with the error text
+        const deltaEvt = {
+          type:           'response.output_item.delta',
+          item_id:        'msg-' + req_id,
+          output_index:   0,
+          content_index:  0,
+          delta:          { type: 'text', text: errMsg },
+        };
+        res.write(`event: response.output_item.delta\ndata: ${JSON.stringify(deltaEvt)}\n\n`);
+        
+        // 3. Send response.completed event
+        const completedEvt = {
+          type: 'response.completed',
+          response: buildResponsesObject(errMsg, tokensIn, Math.ceil(errMsg.length / 4)),
+        };
+        res.write(`event: response.completed\ndata: ${JSON.stringify(completedEvt)}\n\n`);
         res.end();
         return;
       }
