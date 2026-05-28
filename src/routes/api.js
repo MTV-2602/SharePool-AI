@@ -93,4 +93,47 @@ router.post('/hotmail/mark-used', extensionAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+router.get('/diagnose-token', asyncHandler(async (req, res) => {
+  const db = require('../db');
+  const rows = await db.query('SELECT name, session_token FROM upstream_accounts WHERE is_active = 1 LIMIT 1');
+  if (rows.length === 0) {
+    return res.json({ ok: false, message: 'No active accounts in DB' });
+  }
+  const { name, session_token } = rows[0];
+  
+  const fetch = require('node-fetch');
+  let fetchRes;
+  let fetchErr = null;
+  try {
+    fetchRes = await fetch('https://chatgpt.com/api/auth/session', {
+      method:  'GET',
+      headers: {
+        'Cookie':     `__Secure-next-auth.session-token=${session_token}`,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept':     'application/json',
+        'Referer':    'https://chatgpt.com/',
+      },
+    });
+  } catch (err) {
+    fetchErr = err.message;
+  }
+  
+  if (fetchErr) {
+    return res.json({ ok: false, error: fetchErr });
+  }
+  
+  const status = fetchRes.status;
+  const contentType = fetchRes.headers.get('content-type');
+  const bodyText = await fetchRes.text();
+  
+  return res.json({
+    ok: status === 200,
+    name,
+    status,
+    contentType,
+    bodySnippet: bodyText.substring(0, 1000),
+    isCloudflare: bodyText.includes('cf-challenge') || bodyText.includes('cloudflare') || bodyText.includes('Turnstile') || bodyText.includes('cf-cookie-error')
+  });
+}));
+
 module.exports = router;
