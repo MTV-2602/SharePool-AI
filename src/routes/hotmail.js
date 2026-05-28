@@ -267,6 +267,44 @@ apiRouter.post('/2fa', asyncHandler(async (req, res) => {
   res.json({ ok: true, code });
 }));
 
+// POST /api/hotmail/read — Read inbox by email or raw line (used by AutoRegUnified extension to get OTP)
+// Accepts: { email, top } OR { line, top }
+// Protected by extensionPushToken OR works with email lookup from DB
+apiRouter.post('/read', asyncHandler(async (req, res) => {
+  const { email, line, top } = req.body;
+  let cred = null;
+
+  if (line && line.trim()) {
+    cred = hotmailService.parseHotmailLine(line.trim());
+  } else if (email && email.trim()) {
+    cred = await HotmailAccount.findOne({ email: email.trim().toLowerCase() });
+  }
+
+  if (!cred) {
+    throw new AppError('Không tìm thấy tài khoản Hotmail.', 404, 'NOT_FOUND');
+  }
+
+  // Auto-save if provided via raw line and not in DB yet
+  if (line && cred.email) {
+    const existing = await HotmailAccount.findOne({ email: cred.email });
+    if (!existing) {
+      await HotmailAccount.create({ ...cred, state: 'available', usedCount: 0 });
+    } else {
+      await HotmailAccount.updateOne({ email: cred.email }, cred);
+    }
+  }
+
+  const topCount = Math.min(50, Math.max(1, parseInt(top || '10', 10)));
+  const result = await hotmailService.readStoredHotmailInbox(cred, topCount);
+  res.json({
+    ok: true,
+    email: result.email,
+    count: result.messages.length,
+    scope: result.scope,
+    messages: result.messages
+  });
+}));
+
 // POST /api/hotmail/public-read — Read inbox by email (no password needed, useful for verification)
 apiRouter.post('/public-read', asyncHandler(async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
