@@ -31,6 +31,14 @@ function backendUrl(base, path) {
   return `${normalizeBackendBase(base)}${path}`;
 }
 
+function getErrorMessage(error, fallback) {
+  if (!error) return fallback;
+  if (typeof error === 'object') {
+    return error.message || error.error || JSON.stringify(error);
+  }
+  return String(error);
+}
+
 function getUnifiedConfig() {
   return new Promise(resolve => {
     chrome.storage.local.get([
@@ -777,7 +785,7 @@ async function postHotmailState(job, path, body = {}) {
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok || data.ok === false) {
-    throw new Error(data.error || `Hotmail HTTP ${resp.status}`);
+    throw new Error(getErrorMessage(data.error, `Hotmail HTTP ${resp.status}`));
   }
   return data;
 }
@@ -821,7 +829,7 @@ async function reserveBackendHotmail(jobId) {
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok || !data.ok) {
-    throw new Error(data.error || `Hotmail backend HTTP ${resp.status}`);
+    throw new Error(getErrorMessage(data.error, `Hotmail backend HTTP ${resp.status}`));
   }
   const parsed = parseHotmailLine(data.formatted, data.account?.email || data.email || "");
   if (!parsed.email) {
@@ -1672,7 +1680,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         });
         const data = await resp.json().catch(() => ({}));
         if (!resp.ok || !data.ok || !data.url) {
-          throw new Error(data.error || `Checkout HTTP ${resp.status}`);
+          throw new Error(getErrorMessage(data.error, `Checkout HTTP ${resp.status}`));
         }
 
         const checkoutCreateProps = { url: data.url };
@@ -1751,10 +1759,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         });
         const data = await resp.json().catch(() => ({}));
         if (resp.status === 409 || data.duplicate) {
-          throw new Error(data.error || "Acc da co trong he thong.");
+          throw new Error(getErrorMessage(data.error, "Acc da co trong he thong."));
         }
         if (!resp.ok || !data.ok) {
-          throw new Error(data.error || `Push HTTP ${resp.status}`);
+          throw new Error(getErrorMessage(data.error, `Push HTTP ${resp.status}`));
         }
 
         await markBackendHotmailUsed(job, "Push thành công từ AutoRegUnified.");
@@ -1769,8 +1777,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const releaseResult = await finishPushedJobAfterLogout(targetTabId, job, data);
         sendResponse(releaseResult);
       } catch (err) {
-        addLog(targetTabId, `Push loi: ${err.message || err}`);
-        sendResponse({ success: false, error: err.message || String(err) });
+        const errMsg = err.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+        addLog(targetTabId, `Push loi: ${errMsg}`);
+        sendResponse({ success: false, error: errMsg });
       }
     })();
     return true;
