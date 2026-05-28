@@ -9,6 +9,7 @@ const ApiKey = require('../models/ApiKey');
 const UsageLog = require('../models/UsageLog');
 const AccountPool = require('../upstream/AccountPool');
 const UpstreamAccount = require('../models/UpstreamAccount');
+const ChatGPTCredential = require('../models/ChatGPTCredential');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 
 // Protect all admin routes with adminGuard
@@ -338,6 +339,22 @@ router.post('/settings', asyncHandler(async (req, res) => {
   }
 
   res.json({ ok: true, message: 'Settings saved and applied successfully.' });
+}));
+
+// ─── ChatGPT Credentials (AutoRegUnified push) ───────────────────────────────
+
+// GET /admin-api/chatgpt-credentials — Danh sách credentials đã đăng ký
+router.get('/chatgpt-credentials', asyncHandler(async (req, res) => {
+  const creds = await ChatGPTCredential.findAll({ limit: 500 });
+  const count = await ChatGPTCredential.count();
+  res.json({ ok: true, count, credentials: creds });
+}));
+
+// DELETE /admin-api/chatgpt-credentials/:id — Xóa 1 credential
+router.delete('/chatgpt-credentials/:id', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  await ChatGPTCredential.delete(id);
+  res.json({ success: true });
 }));
 
 module.exports = router;

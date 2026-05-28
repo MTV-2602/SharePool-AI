@@ -5,6 +5,7 @@ const router = express.Router();
 const config = require('../config');
 const AccountPool = require('../upstream/AccountPool');
 const UpstreamAccount = require('../models/UpstreamAccount');
+const ChatGPTCredential = require('../models/ChatGPTCredential');
 const { asyncHandler } = require('../middleware/errorHandler');
 
 // Retrieve push token from env (default fallback to the one in the extension)
@@ -20,28 +21,54 @@ function extensionAuth(req, res, next) {
 }
 
 // POST /api/chatgpt-extension-push
+// Nhận từ AutoRegUnified: { username (email), password, otpSecret, workerId, source }
+// Nhận từ Session Pusher extension: { username, sessionToken }
 router.post('/chatgpt-extension-push', extensionAuth, asyncHandler(async (req, res) => {
-  const { username, sessionToken } = req.body;
+  const { username, password, otpSecret, sessionToken, workerId, source } = req.body;
 
   if (!username) {
     return res.status(400).json({ ok: false, error: 'username is required' });
   }
 
-  if (!sessionToken || !sessionToken.trim()) {
-    // If no sessionToken, just acknowledge (credentials only, no session)
-    return res.json({ ok: true, message: 'Credentials received (no session token)' });
+  // CASE 1: Có sessionToken → lưu vào pool (từ Session Pusher extension)
+  if (sessionToken && sessionToken.trim()) {
+    const tokenClean = sessionToken.trim();
+    const nameClean  = username.trim() || `Ext-${Date.now()}`;
+
+    await UpstreamAccount.upsertByToken(nameClean, tokenClean);
+    await AccountPool.reload();
+
+    return res.json({ ok: true, message: `Account '${nameClean}' added to session pool` });
   }
 
-  const tokenClean = sessionToken.trim();
-  const nameClean  = username.trim() || `Ext-${Date.now()}`;
+  // CASE 2: Có email+password (từ AutoRegUnified sau khi tự đăng ký)
+  if (password && password.trim()) {
+    const email = username.trim();
 
-  // Save/update in database
-  await UpstreamAccount.upsertByToken(nameClean, tokenClean);
+    // Lưu credentials vào DB
+    await ChatGPTCredential.upsert({
+      email,
+      password: password.trim(),
+      otpSecret: otpSecret || '',
+      workerId: workerId || '',
+      source: source || 'AutoRegUnified'
+    });
 
-  // Reload the in-memory pool
-  await AccountPool.reload();
+    return res.json({
+      ok: true,
+      message: `Credentials for '${email}' saved to database`,
+      email
+    });
+  }
 
-  res.json({ ok: true, message: `Account '${nameClean}' added to pool` });
+  // Không có gì hữu ích
+  return res.status(400).json({ ok: false, error: 'sessionToken or password is required' });
+}));
+
+// GET /api/credentials — Xem danh sách credentials đã đăng ký (admin only via token)
+router.get('/credentials', extensionAuth, asyncHandler(async (req, res) => {
+  const creds = await ChatGPTCredential.findAll({ limit: 200 });
+  res.json({ ok: true, count: creds.length, credentials: creds });
 }));
 
 // Stubs for Hotmail endpoints so the extension doesn't fail

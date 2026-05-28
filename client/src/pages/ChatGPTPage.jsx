@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Bot, Upload, Plus, Trash2, RefreshCw, Edit2, Check, X } from 'lucide-react';
+import { Bot, Upload, Plus, Trash2, RefreshCw, Edit2, Check, X, KeyRound, Copy, Download } from 'lucide-react';
 import api from '../lib/api';
 
-const TABS = ['Pool ChatGPT', 'Nhập nhanh ChatGPT'];
+const TABS = ['Pool Session Token', 'Nhập thủ công', 'Acc AutoReg (Email/Pass)'];
 
 export default function ChatGPTPage() {
   const [tab, setTab] = useState(0);
@@ -18,30 +18,30 @@ export default function ChatGPTPage() {
       <div className="tab-nav">
         {TABS.map((t, i) => (
           <button key={t} className={`tab-btn ${tab === i ? 'active' : ''}`} onClick={() => setTab(i)}>
-            {i === 0 ? <Bot size={14} /> : <Upload size={14} />}
+            {i === 0 ? <Bot size={14} /> : i === 1 ? <Upload size={14} /> : <KeyRound size={14} />}
             {t}
           </button>
         ))}
       </div>
       {tab === 0 && <ChatGPTPool />}
       {tab === 1 && <ChatGPTBulkImport />}
+      {tab === 2 && <AutoRegCredentials />}
     </div>
   );
 }
 
-// ─── POOL STATUS ──────────────────────────────────────────────────────────────
+// ─── POOL STATUS (Session Tokens) ─────────────────────────────────────────────
 function ChatGPTPool() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState(null);
-  const [editRow, setEditRow] = useState(null); // {name, sessionToken}
+  const [editRow, setEditRow] = useState(null);
   const [editValues, setEditValues] = useState({});
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get('/admin-api/accounts');
-      // accounts is array
       const list = Array.isArray(res.data) ? res.data : (res.data.accounts || []);
       setAccounts(list);
     } catch (e) {
@@ -95,9 +95,9 @@ function ChatGPTPool() {
     }
   };
 
-  const stateBadge = (s) => {
-    if (!s || s === 'ok' || s === 'available') return <span className="badge badge-green">Available</span>;
-    if (s === 'exhausted') return <span className="badge badge-yellow">Exhausted</span>;
+  const statusBadge = (s) => {
+    if (!s || s === 'active') return <span className="badge badge-green">Active</span>;
+    if (s === 'cooldown') return <span className="badge badge-yellow">Cooldown</span>;
     if (s === 'failed' || s === 'error') return <span className="badge badge-red">Failed</span>;
     return <span className="badge badge-gray">{s}</span>;
   };
@@ -116,9 +116,8 @@ function ChatGPTPool() {
           <div style={{ display: 'flex', gap: 16 }}>
             {[
               { label: 'Tổng', value: accounts.length, color: 'var(--text-primary)' },
-              { label: 'Available', value: accounts.filter(a => !a.state || a.state === 'ok' || a.state === 'available').length, color: 'var(--green)' },
-              { label: 'Exhausted', value: accounts.filter(a => a.state === 'exhausted').length, color: 'var(--yellow)' },
-              { label: 'Failed', value: accounts.filter(a => a.state === 'failed' || a.state === 'error').length, color: 'var(--red)' },
+              { label: 'Active', value: accounts.filter(a => !a.status || a.status === 'active').length, color: 'var(--green)' },
+              { label: 'Cooldown', value: accounts.filter(a => a.status === 'cooldown').length, color: 'var(--yellow)' },
             ].map(s => (
               <div key={s.label}>
                 <div style={{ fontSize: '1.3rem', fontWeight: 800, color: s.color }}>{s.value}</div>
@@ -152,7 +151,7 @@ function ChatGPTPool() {
                 {accounts.length === 0 ? (
                   <tr>
                     <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
-                      Chưa có tài khoản nào. Nhập nhanh ở tab bên cạnh.
+                      Chưa có tài khoản session nào. Dùng extension AutoRegUnified để tự đăng ký, hoặc nhập thủ công.
                     </td>
                   </tr>
                 ) : accounts.map((acc, i) => (
@@ -184,7 +183,7 @@ function ChatGPTPool() {
                         </code>
                       )}
                     </td>
-                    <td>{stateBadge(acc.state)}</td>
+                    <td>{statusBadge(acc.status)}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>{acc.totalRequests ?? 0}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -212,7 +211,7 @@ function ChatGPTPool() {
   );
 }
 
-// ─── BULK IMPORT ──────────────────────────────────────────────────────────────
+// ─── BULK IMPORT (Session Token) ──────────────────────────────────────────────
 function ChatGPTBulkImport() {
   const [rawText, setRawText] = useState('');
   const [singleName, setSingleName] = useState('');
@@ -252,7 +251,7 @@ function ChatGPTBulkImport() {
       {/* Single */}
       <div className="card">
         <div className="card-header">
-          <span className="card-title"><Plus size={15} /> Thêm 1 tài khoản</span>
+          <span className="card-title"><Plus size={15} /> Thêm 1 tài khoản Session Token</span>
         </div>
         <div className="grid-2" style={{ marginBottom: 12 }}>
           <div className="form-group">
@@ -303,6 +302,151 @@ function ChatGPTBulkImport() {
             {result.ok
               ? `✅ Đã import ${result.data.imported} tài khoản. Tổng pool: ${result.data.total}`
               : `❌ ${result.error}`}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── AUTO REG CREDENTIALS (email+password từ AutoRegUnified) ─────────────────
+function AutoRegCredentials() {
+  const [creds, setCreds] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState(null);
+  const [copied, setCopied] = useState(null);
+
+  const fetchCreds = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/admin-api/chatgpt-credentials');
+      setCreds(res.data.credentials || []);
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Lỗi tải credentials.' });
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchCreds(); }, [fetchCreds]);
+
+  const copyText = (text, id) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopied(id);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Xóa credential này?')) return;
+    try {
+      await api.delete(`/admin-api/chatgpt-credentials/${id}`);
+      setMsg({ type: 'success', text: 'Đã xóa.' });
+      fetchCreds();
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Xóa thất bại.' });
+    }
+  };
+
+  const downloadAll = () => {
+    if (!creds.length) return;
+    const lines = creds.map(c => `${c.email}|${c.password}|${c.otp_secret || ''}`);
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'chatgpt_credentials.txt'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--accent)' }}>{creds.length}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tổng acc đã đăng ký</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost btn-sm" onClick={fetchCreds}><RefreshCw size={14} /> Làm mới</button>
+            <button className="btn btn-success btn-sm" onClick={downloadAll} disabled={!creds.length}><Download size={14} /> Tải về TXT</button>
+          </div>
+        </div>
+      </div>
+
+      {msg && (
+        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: 14 }}>
+          {msg.text}
+          <button style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }} onClick={() => setMsg(null)}>×</button>
+        </div>
+      )}
+
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="card-header" style={{ borderBottom: '1px solid var(--border)' }}>
+          <span className="card-title"><KeyRound size={14} /> Tài khoản ChatGPT do AutoRegUnified đăng ký tự động</span>
+        </div>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
+        ) : (
+          <div className="table-container" style={{ borderRadius: 0, border: 'none' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Email</th>
+                  <th>Password</th>
+                  <th>2FA Secret</th>
+                  <th>Worker</th>
+                  <th>Ngày tạo</th>
+                  <th style={{ textAlign: 'right' }}>Xóa</th>
+                </tr>
+              </thead>
+              <tbody>
+                {creds.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                      Chưa có tài khoản nào. Extension AutoRegUnified sẽ tự động đẩy lên sau khi đăng ký.
+                    </td>
+                  </tr>
+                ) : creds.map((c, i) => (
+                  <tr key={c.id}>
+                    <td style={{ color: 'var(--text-muted)', width: 40 }}>{i + 1}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{c.email}</span>
+                        <button className="btn btn-ghost btn-sm btn-icon" style={{ padding: 2 }}
+                          onClick={() => copyText(c.email, `email-${c.id}`)} title="Copy">
+                          {copied === `email-${c.id}` ? <Check size={11} style={{ color: 'var(--green)' }} /> : <Copy size={11} />}
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <code style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{c.password}</code>
+                        <button className="btn btn-ghost btn-sm btn-icon" style={{ padding: 2 }}
+                          onClick={() => copyText(c.password, `pass-${c.id}`)} title="Copy">
+                          {copied === `pass-${c.id}` ? <Check size={11} style={{ color: 'var(--green)' }} /> : <Copy size={11} />}
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <code style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {c.otp_secret ? c.otp_secret.slice(0, 16) + '...' : '—'}
+                      </code>
+                    </td>
+                    <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{c.worker_id || '—'}</td>
+                    <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      {c.created_at ? new Date(c.created_at).toLocaleDateString('vi-VN') : '—'}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => handleDelete(c.id)} title="Xóa">
+                          <Trash2 size={13} style={{ color: 'var(--red)' }} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

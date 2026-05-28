@@ -41,6 +41,18 @@ CREATE TABLE IF NOT EXISTS upstream_accounts (
   updated_at     TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ChatGPT Credentials (pushed by AutoRegUnified extension after auto-registration)
+CREATE TABLE IF NOT EXISTS chatgpt_credentials (
+  id           SERIAL PRIMARY KEY,
+  email        TEXT UNIQUE NOT NULL,
+  password     TEXT DEFAULT '',
+  otp_secret   TEXT DEFAULT '',
+  worker_id    TEXT DEFAULT '',
+  source       TEXT DEFAULT 'AutoReg',
+  status       TEXT DEFAULT 'active',
+  created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Hotmail Accounts
 CREATE TABLE IF NOT EXISTS hotmail_accounts (
   id           SERIAL PRIMARY KEY,
