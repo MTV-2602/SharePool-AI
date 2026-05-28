@@ -187,6 +187,14 @@ const HotmailAccount = {
       await db.run('DELETE FROM hotmail_accounts WHERE email = ?', [email.toLowerCase().trim()]);
     }
     return acc;
+  },
+
+  /**
+   * Reset all accounts' state to available
+   */
+  async resetAll() {
+    await db.run("UPDATE hotmail_accounts SET state = 'available', reservedAt = '', usedAt = '', takenAt = '', takenNote = ''");
+    return true;
   }
 };
 

@@ -166,6 +166,40 @@ adminRouter.delete('/delete/:email', asyncHandler(async (req, res) => {
   res.json({ ok: true, email, message: 'Deleted' });
 }));
 
+// POST /admin-api/hotmail/reset-all — Reset all hotmail accounts to available
+adminRouter.post('/reset-all', asyncHandler(async (req, res) => {
+  await HotmailAccount.resetAll();
+  res.json({ ok: true, message: 'All Hotmail accounts reset to Available successfully.' });
+}));
+
+// POST /admin-api/hotmail/update-state — Update state of a hotmail account
+adminRouter.post('/update-state', asyncHandler(async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const state = String(req.body.state || '').trim().toLowerCase();
+
+  if (!['available', 'reserved', 'used'].includes(state)) {
+    throw new AppError('Trạng thái không hợp lệ. Chỉ chấp nhận available, reserved, used.', 400, 'INVALID_STATE');
+  }
+
+  const account = await HotmailAccount.findOne({ email });
+  if (!account) {
+    throw new AppError('Không tìm thấy tài khoản Hotmail.', 404, 'NOT_FOUND');
+  }
+
+  const updateFields = { state };
+  if (state === 'available') {
+    updateFields.reservedAt = '';
+    updateFields.usedAt = '';
+    updateFields.takenAt = '';
+    updateFields.takenNote = '';
+  } else if (state === 'used') {
+    updateFields.usedAt = new Date().toISOString();
+  }
+
+  await HotmailAccount.updateOne({ email }, updateFields);
+  res.json({ ok: true, email, state });
+}));
+
 
 // ─── API ROUTES (Extension or Public facing endpoints) ────────────────────────
 

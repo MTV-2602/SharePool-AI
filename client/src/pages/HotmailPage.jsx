@@ -80,6 +80,27 @@ function HotmailList() {
     setDeleteTarget(null);
   };
 
+  const handleResetAll = async () => {
+    if (!window.confirm("Bạn có chắc chắn muốn Reset TOÀN BỘ tài khoản về trạng thái Available?")) return;
+    try {
+      await api.post('/admin-api/hotmail/reset-all');
+      setMsg({ type: 'success', text: 'Đã reset toàn bộ tài khoản Hotmail về Available.' });
+      fetchAccounts();
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.error || 'Reset thất bại.' });
+    }
+  };
+
+  const handleUpdateState = async (email, state) => {
+    try {
+      await api.post('/admin-api/hotmail/update-state', { email, state });
+      setMsg({ type: 'success', text: `Đã cập nhật trạng thái ${email} thành ${state}` });
+      fetchAccounts();
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.error || 'Cập nhật thất bại.' });
+    }
+  };
+
   const stateBadge = (s) => {
     if (s === 'available') return <span className="badge badge-green">Available</span>;
     if (s === 'reserved') return <span className="badge badge-yellow">Reserved</span>;
@@ -117,6 +138,14 @@ function HotmailList() {
           <button id="hotmail-refresh-btn" className="btn btn-ghost btn-sm" onClick={fetchAccounts}>
             <RefreshCw size={14} />
             Làm mới
+          </button>
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={handleResetAll}
+            style={{ marginLeft: 'auto', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', cursor: 'pointer' }}
+          >
+            <RefreshCw size={14} />
+            Reset toàn bộ Available
           </button>
         </div>
         <div style={{ marginTop: 10, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -163,6 +192,24 @@ function HotmailList() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        {acc.state !== 'available' && (
+                          <button
+                            className="btn btn-ghost btn-sm btn-icon"
+                            title="Reset về Available"
+                            onClick={() => handleUpdateState(acc.email, 'available')}
+                          >
+                            <RefreshCw size={13} style={{ color: 'var(--cyan)' }} />
+                          </button>
+                        )}
+                        {acc.state !== 'used' && (
+                          <button
+                            className="btn btn-ghost btn-sm btn-icon"
+                            title="Đánh dấu đã dùng (Used)"
+                            onClick={() => handleUpdateState(acc.email, 'used')}
+                          >
+                            <CheckCircle size={13} style={{ color: 'var(--green)' }} />
+                          </button>
+                        )}
                         <button
                           className="btn btn-ghost btn-sm btn-icon"
                           title="Xóa"
