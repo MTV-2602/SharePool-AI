@@ -23,7 +23,7 @@ router.use(authenticate);
 
 // ─── GET /v1/models ──────────────────────────────────────────────────────────
 
-router.get('/v1/models', asyncHandler(async (req, res) => {
+router.get('/models', asyncHandler(async (req, res) => {
   const models = [
     'gpt-4o',
     'gpt-4o-mini',
@@ -49,7 +49,7 @@ router.get('/v1/models', asyncHandler(async (req, res) => {
 
 // ─── POST /v1/chat/completions ────────────────────────────────────────────────
 
-router.post('/v1/chat/completions', asyncHandler(async (req, res) => {
+router.post('/chat/completions', asyncHandler(async (req, res) => {
   const { messages, model = 'gpt-4o', stream = false, ...rest } = req.body || {};
 
   // Validate messages
@@ -199,7 +199,7 @@ router.post('/v1/chat/completions', asyncHandler(async (req, res) => {
 // Codex Desktop App uses wire_api = "responses" which sends requests here.
 // We translate the Responses API format → messages array → ChatGPT pool.
 
-router.post('/v1/responses', asyncHandler(async (req, res) => {
+router.post('/responses', asyncHandler(async (req, res) => {
   const {
     model = 'gpt-4o',
     input,
@@ -396,7 +396,7 @@ router.post('/v1/responses', asyncHandler(async (req, res) => {
 
 // ─── Catch-all for unsupported /v1/* endpoints ────────────────────────────────
 
-router.all('/v1/*', (req, res) => {
+router.all('/*', (req, res) => {
   res.status(404).json({
     error: {
       message:    `The endpoint ${req.method} ${req.path} is not supported by this proxy.`,
