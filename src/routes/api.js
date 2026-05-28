@@ -34,8 +34,25 @@ router.post('/chatgpt-extension-push', extensionAuth, asyncHandler(async (req, r
   if (sessionToken && sessionToken.trim()) {
     const tokenClean = sessionToken.trim();
     const nameClean  = username.trim() || `Ext-${Date.now()}`;
+    const deviceId   = req.body.deviceId ? req.body.deviceId.trim() : '';
 
-    await UpstreamAccount.upsertByToken(nameClean, tokenClean);
+    let tokenToSave = tokenClean;
+    if (deviceId) {
+      try {
+        if (tokenClean.startsWith('{')) {
+          const obj = JSON.parse(tokenClean);
+          obj.deviceId = deviceId;
+          tokenToSave = JSON.stringify(obj);
+        } else {
+          tokenToSave = JSON.stringify({
+            accessToken: tokenClean,
+            deviceId: deviceId
+          });
+        }
+      } catch (_) {}
+    }
+
+    await UpstreamAccount.upsertByToken(nameClean, tokenToSave);
     await AccountPool.reload();
     savedToken = true;
   }

@@ -102,16 +102,18 @@ router.post('/chat/completions', asyncHandler(async (req, res) => {
     try {
       upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel);
     } catch (err) {
-      // Headers not sent yet at this point — we can still send JSON error
       if (!res.headersSent) {
         const status = err.statusCode || 502;
-        res.status(status).json({
+        const errPayload = {
           error: {
             message:    err.message,
             code:       err.code || 'UPSTREAM_ERROR',
             statusCode: status,
           },
-        });
+        };
+        res.write(`data: ${JSON.stringify(errPayload)}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
         return;
       }
       return;
@@ -300,9 +302,11 @@ router.post('/responses', asyncHandler(async (req, res) => {
     } catch (err) {
       if (!res.headersSent) {
         const status = err.statusCode || 502;
-        res.status(status).json({
-          error: { message: err.message, code: err.code || 'UPSTREAM_ERROR', statusCode: status },
-        });
+        const errPayload = {
+          error: { message: err.message, code: err.code || 'UPSTREAM_ERROR', statusCode: status }
+        };
+        res.write(`event: error\ndata: ${JSON.stringify(errPayload)}\n\n`);
+        res.end();
         return;
       }
       return;

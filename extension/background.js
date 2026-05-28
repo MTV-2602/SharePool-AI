@@ -21,25 +21,29 @@ chrome.cookies.onChanged.addListener(async (changeInfo) => {
       
       const username = `${namePrefix}-${Date.now().toString().slice(-6)}`;
       
-      try {
-        console.log(`Auto pushing account to ${portalUrl}...`);
-        const resp = await fetch(`${portalUrl}/api/chatgpt-extension-push`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-extension-push-token": pushToken
-          },
-          body: JSON.stringify({
-            username,
-            sessionToken: cookie.value
-          })
-        });
-        
-        const resData = await resp.json();
-        console.log("Auto push response:", resData);
-      } catch (err) {
-        console.error("Auto push failed:", err);
-      }
+      chrome.cookies.get({ url: "https://chatgpt.com", name: "oai-did" }, async (oaiDidCookie) => {
+        const deviceId = (oaiDidCookie && oaiDidCookie.value) ? oaiDidCookie.value : "";
+        try {
+          console.log(`Auto pushing account to ${portalUrl}...`);
+          const resp = await fetch(`${portalUrl}/api/chatgpt-extension-push`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-extension-push-token": pushToken
+            },
+            body: JSON.stringify({
+              username,
+              sessionToken: cookie.value,
+              deviceId
+            })
+          });
+          
+          const resData = await resp.json();
+          console.log("Auto push response:", resData);
+        } catch (err) {
+          console.error("Auto push failed:", err);
+        }
+      });
     }
   }
 });

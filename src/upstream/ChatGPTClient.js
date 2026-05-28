@@ -1,7 +1,7 @@
 'use strict';
 
-const fetch  = require('node-fetch');
 const logger = require('../utils/logger').create('ChatGPTClient');
+const pow    = require('./pow');
 
 // ─── Model Mapping ────────────────────────────────────────────────────────────
 
@@ -137,6 +137,24 @@ class ChatGPTClient {
     this._tokenExpiry  = 0; // Unix ms timestamp
   }
 
+  /**
+   * Return device ID if stored in the session token JSON, or generate a deterministic one based on token hash.
+   */
+  getDeviceId() {
+    const clean = (this.sessionToken || '').trim();
+    if (clean.startsWith('{')) {
+      try {
+        const obj = JSON.parse(clean);
+        if (obj.deviceId && typeof obj.deviceId === 'string') {
+          return obj.deviceId.trim();
+        }
+      } catch (_) {}
+    }
+    const crypto = require('crypto');
+    const hash = crypto.createHash('md5').update(this.sessionToken).digest('hex');
+    return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20)}`;
+  }
+
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   /**
@@ -176,39 +194,34 @@ class ChatGPTClient {
 
     logger.debug('Fetching new access token from ChatGPT session endpoint');
 
+    const { gotScraping } = await import('got-scraping');
     let res;
     try {
-      res = await fetch('https://chatgpt.com/api/auth/session', {
-        method:  'GET',
+      res = await gotScraping.get('https://chatgpt.com/api/auth/session', {
         headers: {
           'Cookie':     `__Secure-next-auth.session-token=${sessionTokenVal}`,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           'Accept':     'application/json',
           'Referer':    'https://chatgpt.com/',
         },
+        useHeaderGenerator: false
       });
     } catch (networkErr) {
       logger.error('Network error fetching session', networkErr);
+      const status = networkErr.response ? networkErr.response.statusCode : 500;
+      if (status === 401 || status === 403) {
+        const invalid = new Error('Session token is invalid or expired');
+        invalid.code  = 'INVALID_SESSION';
+        throw invalid;
+      }
       const err = new Error('Network error reaching ChatGPT auth endpoint');
       err.code  = 'NETWORK_ERROR';
       throw err;
     }
 
-    if (res.status === 401 || res.status === 403) {
-      const invalid = new Error('Session token is invalid or expired');
-      invalid.code  = 'INVALID_SESSION';
-      throw invalid;
-    }
-
-    if (!res.ok) {
-      const invalid = new Error(`Unexpected auth response: ${res.status}`);
-      invalid.code  = 'INVALID_SESSION';
-      throw invalid;
-    }
-
     let json;
     try {
-      json = await res.json();
+      json = JSON.parse(res.body);
     } catch {
       const invalid = new Error('Could not parse session response as JSON');
       invalid.code  = 'INVALID_SESSION';
@@ -271,7 +284,7 @@ class ChatGPTClient {
    *
    * @param {Array<{ role: string, content: string }>} messages
    * @param {string} [model='gpt-4o']
-   * @returns {Promise<import('node-fetch').Response>} Raw streaming Response
+   * @returns {Promise<Object>} Raw streaming Response wrapper
    * @throws {{ code: 'RATE_LIMITED' | 'INVALID_SESSION' | 'NETWORK_ERROR' }}
    */
   async chat(messages, model = 'gpt-4o') {
@@ -279,6 +292,101 @@ class ChatGPTClient {
     const mappedModel  = mapModel(model);
     const turns        = this._convertMessages(messages);
 
+    const { gotScraping } = await import('got-scraping');
+
+    // Deterministic device ID based on token hash to build reputation
+    const deviceId = this.getDeviceId();
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+    const baseHeaders = {
+      'accept': '*/*',
+      'accept-language': 'en-US,en;q=0.9',
+      'authorization': `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+      'oai-device-id': deviceId,
+      'oai-language': 'en-US',
+      'origin': 'https://chatgpt.com',
+      'referer': 'https://chatgpt.com/',
+      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-origin',
+      'user-agent': userAgent,
+    };
+
+    // Add cookies if JWE session token is used
+    const parsed = parseTokenInput(this.sessionToken);
+    if (parsed.type === 'sessionToken') {
+      baseHeaders['Cookie'] = `__Secure-next-auth.session-token=${parsed.sessionToken}; oai-did=${deviceId}`;
+    } else {
+      baseHeaders['Cookie'] = `oai-did=${deviceId}`;
+    }
+
+    // 1. Fetch requirements
+    logger.debug(`[${deviceId}] Fetching sentinel chat-requirements`);
+    let reqRes;
+    try {
+      reqRes = await gotScraping.post('https://chatgpt.com/backend-api/sentinel/chat-requirements', {
+        headers: baseHeaders,
+        useHeaderGenerator: false,
+        json: {}
+      });
+    } catch (reqErr) {
+      logger.error('Failed to fetch chat-requirements', reqErr);
+      const status = reqErr.response ? reqErr.response.statusCode : 502;
+      const err = new Error(`Failed to fetch chat-requirements: ${reqErr.message}`);
+      err.code = 'UPSTREAM_ERROR';
+      err.statusCode = status;
+      throw err;
+    }
+
+    if (reqRes.statusCode !== 200) {
+      const err = new Error(`Chat requirements returned status ${reqRes.statusCode}`);
+      err.code = 'UPSTREAM_ERROR';
+      err.statusCode = reqRes.statusCode;
+      throw err;
+    }
+
+    let reqData;
+    try {
+      reqData = JSON.parse(reqRes.body);
+    } catch (_) {
+      const err = new Error('Failed to parse chat-requirements response');
+      err.code = 'UPSTREAM_ERROR';
+      err.statusCode = 502;
+      throw err;
+    }
+
+    // 2. Solve Proof of Work
+    let proofToken = null;
+    if (reqData.proofofwork && reqData.proofofwork.required) {
+      logger.debug(`Solving PoW challenge... seed=${reqData.proofofwork.seed}, diff=${reqData.proofofwork.difficulty}`);
+      try {
+        proofToken = pow.solve(reqData.proofofwork.seed, reqData.proofofwork.difficulty, userAgent);
+        logger.debug('PoW challenge solved successfully');
+      } catch (powErr) {
+        logger.error('Failed to solve Proof of Work', powErr);
+        const err = new Error('Failed to solve Proof of Work challenge');
+        err.code = 'UPSTREAM_ERROR';
+        err.statusCode = 500;
+        throw err;
+      }
+    }
+
+    // 3. Construct final headers
+    const finalHeaders = {
+      ...baseHeaders,
+      'accept': 'text/event-stream',
+      'openai-sentinel-chat-requirements-token': reqData.token,
+    };
+
+    if (proofToken) {
+      finalHeaders['openai-sentinel-proof-token'] = proofToken;
+    }
+
+    // 4. Send chat request to conversation API
     const body = {
       action:     'next',
       messages:   turns,
@@ -292,55 +400,57 @@ class ChatGPTClient {
       force_rate_limit:     false,
     };
 
-    logger.debug(`Sending chat to ChatGPT (model=${mappedModel}, turns=${turns.length})`);
+    logger.debug(`Sending chat stream to ChatGPT (model=${mappedModel})`);
 
-    let res;
-    try {
-      res = await fetch('https://chatgpt.com/backend-api/conversation', {
-        method:  'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type':  'application/json',
-          'Accept':        'text/event-stream',
-          'User-Agent':    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Referer':       'https://chatgpt.com/',
-          'Origin':        'https://chatgpt.com',
-        },
-        body: JSON.stringify(body),
+    return new Promise((resolve, reject) => {
+      const stream = gotScraping.stream('https://chatgpt.com/backend-api/conversation', {
+        method: 'POST',
+        headers: finalHeaders,
+        json: body,
+        useHeaderGenerator: false
       });
-    } catch (networkErr) {
-      logger.error('Network error during chat request', networkErr);
-      const err = new Error('Network error reaching ChatGPT API');
-      err.code  = 'NETWORK_ERROR';
-      throw err;
-    }
 
-    if (res.status === 429) {
-      logger.warn('ChatGPT rate limited (429)');
-      const err = new Error('ChatGPT rate limit hit');
-      err.code  = 'RATE_LIMITED';
-      throw err;
-    }
+      stream.on('response', (response) => {
+        if (response.statusCode >= 400) {
+          let errorBody = '';
+          stream.on('data', chunk => {
+            errorBody += chunk.toString('utf-8');
+          });
+          stream.on('end', () => {
+            let message = 'Upstream error';
+            try {
+              const parsed = JSON.parse(errorBody);
+              message = parsed.detail || parsed.message || errorBody;
+            } catch (_) {
+              message = errorBody || `HTTP ${response.statusCode}`;
+            }
+            logger.error(`Upstream error response (${response.statusCode}): ${message}`);
+            const err = new Error(message);
+            err.statusCode = response.statusCode;
+            if (response.statusCode === 429) err.code = 'RATE_LIMITED';
+            else if (response.statusCode === 401 || response.statusCode === 403) err.code = 'INVALID_SESSION';
+            else err.code = 'UPSTREAM_ERROR';
+            reject(err);
+          });
+        } else {
+          logger.info('Conversation stream connection established successfully');
+          resolve({
+            ok: true,
+            status: response.statusCode,
+            headers: response.headers,
+            body: stream
+          });
+        }
+      });
 
-    if (res.status === 401 || res.status === 403) {
-      logger.warn(`ChatGPT auth error (${res.status}) — invalidating token cache`);
-      // Invalidate cached token so next attempt re-fetches
-      this._accessToken = null;
-      this._tokenExpiry = 0;
-      const err = new Error('ChatGPT session rejected request');
-      err.code  = 'INVALID_SESSION';
-      throw err;
-    }
-
-    if (!res.ok) {
-      logger.error(`ChatGPT unexpected error status: ${res.status}`);
-      const err = new Error(`ChatGPT returned unexpected status ${res.status}`);
-      err.code  = 'UPSTREAM_ERROR';
-      throw err;
-    }
-
-    return res;
+      stream.on('error', (err) => {
+        if (err.name === 'HTTPError') return;
+        logger.error('Stream network error', err);
+        reject(err);
+      });
+    });
   }
 }
 
 module.exports = { ChatGPTClient, mapModel };
+

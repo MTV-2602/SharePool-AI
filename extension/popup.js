@@ -87,35 +87,39 @@ document.addEventListener("DOMContentLoaded", async () => {
     
     const username = `${namePrefix}-${Date.now().toString().slice(-6)}`;
     
-    try {
-      const resp = await fetch(`${portalUrl}/api/chatgpt-extension-push`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-extension-push-token": pushToken
-        },
-        body: JSON.stringify({
-          username,
-          sessionToken
-        })
-      });
-      
-      const resData = await resp.json();
-      if (resp.ok && resData.ok) {
-        statusBox.className = "status-box success";
-        statusBox.textContent = `Success! Account '${username}' pushed successfully to pool.`;
-      } else {
+    chrome.cookies.get({ url: "https://chatgpt.com", name: "oai-did" }, async (oaiDidCookie) => {
+      const deviceId = (oaiDidCookie && oaiDidCookie.value) ? oaiDidCookie.value : "";
+      try {
+        const resp = await fetch(`${portalUrl}/api/chatgpt-extension-push`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-extension-push-token": pushToken
+          },
+          body: JSON.stringify({
+            username,
+            sessionToken,
+            deviceId
+          })
+        });
+        
+        const resData = await resp.json();
+        if (resp.ok && resData.ok) {
+          statusBox.className = "status-box success";
+          statusBox.textContent = `Success! Account '${username}' pushed successfully to pool.`;
+        } else {
+          statusBox.className = "status-box error";
+          statusBox.textContent = `Error: ${resData.error || "Failed to push session token."}`;
+        }
+      } catch (err) {
+        console.error(err);
         statusBox.className = "status-box error";
-        statusBox.textContent = `Error: ${resData.error || "Failed to push session token."}`;
+        statusBox.textContent = "Network error: Make sure portal server is running and accessible.";
+      } finally {
+        statusBox.style.display = "block";
+        pushBtn.disabled = false;
+        pushBtn.textContent = "🚀 Push to Codex Pool";
       }
-    } catch (err) {
-      console.error(err);
-      statusBox.className = "status-box error";
-      statusBox.textContent = "Network error: Make sure portal server is running and accessible.";
-    } finally {
-      statusBox.style.display = "block";
-      pushBtn.disabled = false;
-      pushBtn.textContent = "🚀 Push to Codex Pool";
-    }
+    });
   });
 });

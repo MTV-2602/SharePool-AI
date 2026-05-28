@@ -15,6 +15,7 @@
     "eventsource-parser": "^1.1.2",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
+    "got-scraping": "^4.2.1",
     "helmet": "^7.1.0",
     "node-fetch": "^2.7.0",
     "node-telegram-bot-api": "^0.66.0",
