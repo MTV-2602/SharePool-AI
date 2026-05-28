@@ -16,12 +16,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On 401, redirect to login
+// On 401 or 403, redirect to login unless we are already logging in
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 || err.response?.status === 403) {
+    const isLoginPath = window.location.pathname === '/login';
+    const isAuthRequest = err.config?.url?.includes('/user-api/login') || err.config?.url?.includes('/admin-api/stats');
+
+    if ((err.response?.status === 401 || err.response?.status === 403) && !isLoginPath && !isAuthRequest) {
       localStorage.removeItem('adminKey');
+      localStorage.removeItem('role');
       window.location.href = '/login';
     }
     return Promise.reject(err);
