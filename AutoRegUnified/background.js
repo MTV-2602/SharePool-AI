@@ -1724,7 +1724,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         const cfg = await getUnifiedConfig();
         const workerId = String(msg.workerId || cfg.extensionWorkerId || "").trim();
-        if (!workerId) throw new Error("Chua cau hinh workerId de Push.");
         if (!job.email || !job.password || !job.secret) {
           throw new Error("Thieu email/password/2FA secret de Push.");
         }
