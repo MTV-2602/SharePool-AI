@@ -254,7 +254,8 @@ class AccountPool {
   // ── Hot-Reload ───────────────────────────────────────────────────────────
 
   async reload() {
-    logger.info('Reloading accounts from database…');
+    logger.info('Reloading accounts from database and resetting cooldowns…');
+    this._cooldowns.clear();
     await this._loadAsync();
     return { count: this._accounts.length };
   }
