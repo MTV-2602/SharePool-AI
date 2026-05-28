@@ -5,6 +5,7 @@
       "src": "server.js",
       "use": "@vercel/node",
       "config": {
+        "maxDuration": 60,
         "includeFiles": [
           "client/dist/**",
           "accounts.json"
@@ -17,10 +18,5 @@
       "src": "/(.*)",
       "dest": "server.js"
     }
-  ],
-  "functions": {
-    "server.js": {
-      "maxDuration": 60
-    }
-  }
+  ]
 }

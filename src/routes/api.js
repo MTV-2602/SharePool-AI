@@ -99,41 +99,41 @@ router.get('/diagnose-token', asyncHandler(async (req, res) => {
   if (rows.length === 0) {
     return res.json({ ok: false, message: 'No active accounts in DB' });
   }
-  const { name, session_token } = rows[0];
+  const name = rows[0].name;
+  const sessionToken = rows[0].sessionToken || rows[0].session_token;
   
-  const fetch = require('node-fetch');
-  let fetchRes;
-  let fetchErr = null;
+  const { ChatGPTClient } = require('../upstream/ChatGPTClient');
+  const client = new ChatGPTClient(sessionToken);
+  
   try {
-    fetchRes = await fetch('https://chatgpt.com/api/auth/session', {
-      method:  'GET',
-      headers: {
-        'Cookie':     `__Secure-next-auth.session-token=${session_token}`,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept':     'application/json',
-        'Referer':    'https://chatgpt.com/',
-      },
+    const accessToken = await client.getAccessToken();
+    let decoded = {};
+    try {
+      const parts = accessToken.split('.');
+      if (parts.length >= 2) {
+        let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        while (base64.length % 4) base64 += '=';
+        decoded = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+      }
+    } catch (_) {}
+
+    return res.json({
+      ok: true,
+      name,
+      message: 'Token parsed and validated successfully.',
+      hasAccessToken: !!accessToken,
+      expiry: decoded.exp ? new Date(decoded.exp * 1000).toISOString() : 'unknown',
+      email: decoded['https://api.openai.com/profile']?.email || 'unknown',
+      plan: decoded['https://api.openai.com/auth']?.chatgpt_plan_type || 'unknown'
     });
   } catch (err) {
-    fetchErr = err.message;
+    return res.json({
+      ok: false,
+      name,
+      error: err.message,
+      code: err.code || 'VALIDATION_FAILED'
+    });
   }
-  
-  if (fetchErr) {
-    return res.json({ ok: false, error: fetchErr });
-  }
-  
-  const status = fetchRes.status;
-  const contentType = fetchRes.headers.get('content-type');
-  const bodyText = await fetchRes.text();
-  
-  return res.json({
-    ok: status === 200,
-    name,
-    status,
-    contentType,
-    bodySnippet: bodyText.substring(0, 1000),
-    isCloudflare: bodyText.includes('cf-challenge') || bodyText.includes('cloudflare') || bodyText.includes('Turnstile') || bodyText.includes('cf-cookie-error')
-  });
 }));
 
 module.exports = router;
