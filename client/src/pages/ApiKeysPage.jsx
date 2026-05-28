@@ -255,7 +255,7 @@ function CreateKeyModal({ onClose, onCreated }) {
       setResult({ ok: true, key: res.data });
       onCreated();
     } catch (e) {
-      setResult({ ok: false, error: e.response?.data?.error || 'Tạo thất bại.' });
+      setResult({ ok: false, error: e.response?.data?.error?.message || e.message || 'Tạo thất bại.' });
     } finally { setLoading(false); }
   };
 

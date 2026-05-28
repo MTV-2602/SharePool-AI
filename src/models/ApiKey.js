@@ -28,7 +28,7 @@ const ApiKey = {
   /** Find by row ID */
   async findById(id) {
     return await db.get(
-      `SELECT *, ROUND(CAST(quota_used AS REAL) * 100.0 / quota_total, 1) as usage_pct
+      `SELECT *, ROUND(CAST(quota_used AS NUMERIC) * 100.0 / quota_total, 1) as usage_pct
        FROM api_keys WHERE id = ?`,
       [id]
     );
@@ -37,7 +37,7 @@ const ApiKey = {
   /** List all keys, newest first */
   async findAll() {
     return await db.query(
-      `SELECT *, ROUND(CAST(quota_used AS REAL) * 100.0 / quota_total, 1) as usage_pct
+      `SELECT *, ROUND(CAST(quota_used AS NUMERIC) * 100.0 / quota_total, 1) as usage_pct
        FROM api_keys ORDER BY id DESC`
     );
   },

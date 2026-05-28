@@ -71,7 +71,7 @@ function ChatGPTPool() {
       setMsg({ type: 'success', text: 'Đã xóa tài khoản.' });
       fetchAccounts();
     } catch (e) {
-      setMsg({ type: 'error', text: e.response?.data?.error || 'Xóa thất bại.' });
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Xóa thất bại.' });
     }
   };
 
@@ -91,7 +91,7 @@ function ChatGPTPool() {
       setEditRow(null);
       fetchAccounts();
     } catch (e) {
-      setMsg({ type: 'error', text: e.response?.data?.error || 'Lỗi cập nhật.' });
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Lỗi cập nhật.' });
     }
   };
 
@@ -227,7 +227,7 @@ function ChatGPTBulkImport() {
       const res = await api.post('/admin-api/accounts/import-bulk', { rawText });
       setResult({ ok: true, data: res.data });
     } catch (e) {
-      setResult({ ok: false, error: e.response?.data?.error || 'Lỗi import.' });
+      setResult({ ok: false, error: e.response?.data?.error?.message || e.message || 'Lỗi import.' });
     } finally { setLoading(false); }
   };
 
@@ -242,7 +242,7 @@ function ChatGPTBulkImport() {
       setSingleResult({ ok: true, data: res.data });
       setSingleName(''); setSingleToken('');
     } catch (e) {
-      setSingleResult({ ok: false, error: e.response?.data?.error || 'Lỗi lưu.' });
+      setSingleResult({ ok: false, error: e.response?.data?.error?.message || e.message || 'Lỗi lưu.' });
     } finally { setSingleLoading(false); }
   };
 

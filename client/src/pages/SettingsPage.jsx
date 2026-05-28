@@ -36,7 +36,7 @@ export default function SettingsPage() {
       await api.post('/admin-api/settings', form);
       setMsg({ type: 'success', text: '✅ Đã lưu settings thành công!' });
     } catch (e) {
-      setMsg({ type: 'error', text: e.response?.data?.error || 'Lỗi lưu settings.' });
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Lỗi lưu settings.' });
     } finally { setSaving(false); }
   };
 

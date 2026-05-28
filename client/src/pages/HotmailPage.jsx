@@ -75,7 +75,7 @@ function HotmailList() {
       setMsg({ type: 'success', text: `Đã xóa ${email}` });
       fetchAccounts();
     } catch (e) {
-      setMsg({ type: 'error', text: e.response?.data?.error || 'Xóa thất bại.' });
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Xóa thất bại.' });
     }
     setDeleteTarget(null);
   };
@@ -87,7 +87,7 @@ function HotmailList() {
       setMsg({ type: 'success', text: 'Đã reset toàn bộ tài khoản Hotmail về Available.' });
       fetchAccounts();
     } catch (e) {
-      setMsg({ type: 'error', text: e.response?.data?.error || 'Reset thất bại.' });
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Reset thất bại.' });
     }
   };
 
@@ -97,7 +97,7 @@ function HotmailList() {
       setMsg({ type: 'success', text: `Đã cập nhật trạng thái ${email} thành ${state}` });
       fetchAccounts();
     } catch (e) {
-      setMsg({ type: 'error', text: e.response?.data?.error || 'Cập nhật thất bại.' });
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Cập nhật thất bại.' });
     }
   };
 
@@ -288,7 +288,7 @@ function HotmailBulkImport() {
       const res = await api.post('/admin-api/hotmail/bulk-import', { lines });
       setResult({ ok: true, data: res.data });
     } catch (e) {
-      setResult({ ok: false, error: e.response?.data?.error || 'Lỗi import.' });
+      setResult({ ok: false, error: e.response?.data?.error?.message || e.message || 'Lỗi import.' });
     } finally {
       setLoading(false);
     }
@@ -302,7 +302,7 @@ function HotmailBulkImport() {
       const res = await api.post('/admin-api/hotmail/save', { line: singleLine.trim() });
       setSingleResult({ ok: true, data: res.data });
     } catch (e) {
-      setSingleResult({ ok: false, error: e.response?.data?.error || 'Lỗi lưu.' });
+      setSingleResult({ ok: false, error: e.response?.data?.error?.message || e.message || 'Lỗi lưu.' });
     } finally {
       setSingleLoading(false);
     }
@@ -426,7 +426,7 @@ function HotmailReader() {
       const res = await api.post('/admin-api/hotmail/read', payload);
       setResult({ ok: true, data: res.data });
     } catch (e) {
-      setResult({ ok: false, error: e.response?.data?.error || 'Lỗi đọc mail.' });
+      setResult({ ok: false, error: e.response?.data?.error?.message || e.message || 'Lỗi đọc mail.' });
     } finally {
       setLoading(false);
     }
