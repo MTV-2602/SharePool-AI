@@ -1,7 +1,6 @@
 const DEFAULT_BACKEND = "https://vinhaccplus.vercel.app";
 const DEFAULT_EXTENSION_TOKEN =
   "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
-const DEFAULT_WORKER_ID = "worker_1777295244746_t7kpyw";
 const DEFAULT_ACCOUNT_MODE = "gpt_free";
 const DEFAULT_FREE_BATCH_TARGET = 3;
 
@@ -359,7 +358,7 @@ function getSettingsPayload(options = {}) {
     gmail_script_url: $("gmail_script_url").value,
     backendBaseUrl: $("backendBaseUrl").value.trim() || DEFAULT_BACKEND,
     extensionPushToken: $("extensionPushToken").value.trim() || DEFAULT_EXTENSION_TOKEN,
-    extensionWorkerId: $("extensionWorkerId").value.trim() || DEFAULT_WORKER_ID,
+    extensionWorkerId: "",
     trialCountry: $("trialCountry").value,
     trialProxyMode: $("trialProxyMode").value,
     addressMode: normalizeAddressMode(refs.addrMode?.value),
@@ -509,8 +508,7 @@ refs.pushBtn.addEventListener("click", async () => {
   refs.pushBtn.innerText = "Đang Push...";
   const res = await sendMessage({
     type: "PUSH_ACCOUNT",
-    tabId: currentJob.tabId,
-    workerId: $("extensionWorkerId").value.trim() || DEFAULT_WORKER_ID
+    tabId: currentJob.tabId
   });
   refs.pushBtn.innerText = "Push";
   if (res?.success) {
@@ -607,7 +605,6 @@ refs.hotmailFile.addEventListener("change", (event) => {
   "gmail_script_url",
   "backendBaseUrl",
   "extensionPushToken",
-  "extensionWorkerId",
   "trialCountry",
   "trialProxyMode",
   "addr-mode",
@@ -643,7 +640,6 @@ async function boot() {
     "gmail_script_url",
     "backendBaseUrl",
     "extensionPushToken",
-    "extensionWorkerId",
     "trialCountry",
     "trialProxyMode",
     "addresses",
@@ -665,7 +661,6 @@ async function boot() {
   $("gmail_script_url").value = data.gmail_script_url || "";
   $("backendBaseUrl").value = data.backendBaseUrl || DEFAULT_BACKEND;
   $("extensionPushToken").value = data.extensionPushToken || DEFAULT_EXTENSION_TOKEN;
-  $("extensionWorkerId").value = data.extensionWorkerId || DEFAULT_WORKER_ID;
   $("trialCountry").value = data.trialCountry || "ID";
   $("trialProxyMode").value = data.trialProxyMode || "default";
   if (refs.addrInput) refs.addrInput.value = data.addresses || "";

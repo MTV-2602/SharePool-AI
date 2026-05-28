@@ -21,7 +21,7 @@ function extensionAuth(req, res, next) {
 }
 
 router.post('/chatgpt-extension-push', extensionAuth, asyncHandler(async (req, res) => {
-  const { username, password, otpSecret, sessionToken, workerId, source } = req.body;
+  const { username, password, otpSecret, sessionToken, source } = req.body;
 
   if (!username) {
     return res.status(400).json({ ok: false, error: 'username is required' });
@@ -49,7 +49,6 @@ router.post('/chatgpt-extension-push', extensionAuth, asyncHandler(async (req, r
       email,
       password: password.trim(),
       otpSecret: otpSecret || '',
-      workerId: workerId || '',
       source: source || 'AutoRegUnified'
     });
     savedCred = true;

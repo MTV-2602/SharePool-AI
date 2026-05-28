@@ -5,22 +5,21 @@
 const db = require('../db');
 
 const ChatGPTCredential = {
-  /** Lưu hoặc cập nhật credentials theo email */
-  async upsert({ email, password, otpSecret, workerId, source }) {
+  async upsert({ email, password, otpSecret, source }) {
     const existing = await ChatGPTCredential.findByEmail(email);
     if (existing) {
       await db.run(
         `UPDATE chatgpt_credentials SET 
-          password = ?, otp_secret = ?, worker_id = ?, source = ?, status = 'active'
+          password = ?, otp_secret = ?, source = ?, status = 'active'
          WHERE email = ?`,
-        [password || '', otpSecret || '', workerId || '', source || 'AutoReg', email]
+        [password || '', otpSecret || '', source || 'AutoReg', email]
       );
       return await ChatGPTCredential.findByEmail(email);
     }
     const { lastInsertRowid } = await db.run(
-      `INSERT INTO chatgpt_credentials (email, password, otp_secret, worker_id, source)
-       VALUES (?, ?, ?, ?, ?)`,
-      [email, password || '', otpSecret || '', workerId || '', source || 'AutoReg']
+      `INSERT INTO chatgpt_credentials (email, password, otp_secret, source)
+       VALUES (?, ?, ?, ?)`,
+      [email, password || '', otpSecret || '', source || 'AutoReg']
     );
     return await ChatGPTCredential.findById(lastInsertRowid);
   },

@@ -1723,7 +1723,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
         const cfg = await getUnifiedConfig();
-        const workerId = String(msg.workerId || cfg.extensionWorkerId || "").trim();
         if (!job.email || !job.password || !job.secret) {
           throw new Error("Thieu email/password/2FA secret de Push.");
         }
@@ -1741,7 +1740,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             password: job.password,
             otpSecret: job.secret,
             sessionToken: job.sessionToken || "",
-            workerId,
             emailSource: job.mailSite,
             mailCheckProvider: job.mailSite,
             targetType: isFreePush ? "free" : "unassigned",
