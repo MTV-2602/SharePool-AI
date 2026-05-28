@@ -1,6 +1,11 @@
 // ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ HELPERS ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+function isGptFreeJob(job) {
+  const mode = String(job?.accountMode || "").trim().toLowerCase();
+  return mode === "gpt_free" || mode === "free" || mode === "chatgpt_free";
+}
+
 const BILLING_RETRY_LIMIT = 20;
 const BILLING_IFRAME_TIMEOUT_MS = 8000;
 const BILLING_RELOAD_DELAY_MS = 500;
@@ -1473,6 +1478,7 @@ async function fillCheckoutBillingDirect(data) {
 async function runLoop() {
   chrome.runtime.sendMessage({ type: "GET_JOB_DATA" }, async (job) => {
     if (!job) { setTimeout(runLoop, 2000); return; }
+    if (job.paused) { setTimeout(runLoop, 2000); return; }
     const url = window.location.href;
     const now = Date.now();
 
@@ -1480,6 +1486,36 @@ async function runLoop() {
     function updateJob(data) { return new Promise(r => chrome.runtime.sendMessage({ type: "UPDATE_JOB", data }, r)); }
     async function requestCheckoutLinkAfterMfa() {
       if (job.checkoutTabId || job.checkoutRequested || job.pushed) return true;
+      if (isGptFreeJob(job)) {
+        if (job.freeAutoPushRequested) return true;
+        log("GPT Free da bat 2FA. Dang lay session token...");
+        const session = await getSessionTokenFromBackground();
+        const accessToken = String(session?.token || "").trim();
+        if (accessToken) {
+          log("Da lay session token cho GPT Free.");
+        } else {
+          log(`Canh bao: Khong lay duoc session token cho GPT Free (${session?.error || "no token"}).`);
+        }
+        await updateJob({
+          checkoutRequested: false,
+          checkoutRequestedAt: "",
+          freeAutoPushRequested: true,
+          freeReadyToPush: true,
+          sessionToken: accessToken,
+          step: "await_push",
+          lastActionAt: Date.now()
+        });
+        log("Dang auto Push vao Free tong...");
+        chrome.runtime.sendMessage({
+          type: "PUSH_ACCOUNT",
+          tabId: job.tabId,
+          jobId: job.jobId,
+          auto: true
+        }, (result) => {
+          if (!result?.success) log(`Push GPT Free loi: ${result?.error || "unknown"}`);
+        });
+        return true;
+      }
       await updateJob({ checkoutRequested: true, step: "checkout_link", lastActionAt: Date.now() });
       log("Đang lấy accessToken tạm thời để tạo checkout link...");
       const session = await getSessionTokenFromBackground();
@@ -1937,7 +1973,7 @@ async function runLoop() {
 
         // If already enabled and we were in the middle of it, we are done
         if (isChecked && job.mfaCodeFilled) {
-          log("2FA da bat thanh cong. Dang tao checkout link...");
+          log(isGptFreeJob(job) ? "2FA da bat thanh cong. Dang auto Push GPT Free..." : "2FA da bat thanh cong. Dang tao checkout link...");
           await requestCheckoutLinkAfterMfa();
           return;
         }
@@ -1990,7 +2026,7 @@ async function runLoop() {
 
       if ((doneBtn || successToast) && job.mfaCodeFilled) {
         if (doneBtn) doneBtn.click();
-        log("2FA thanh cong. Dang tao checkout link...");
+        log(isGptFreeJob(job) ? "2FA thanh cong. Dang auto Push GPT Free..." : "2FA thanh cong. Dang tao checkout link...");
         await requestCheckoutLinkAfterMfa();
         return;
       }
@@ -2504,10 +2540,35 @@ async function runLoop() {
 
 
     // ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ 7. SUCCESS & TOKEN ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬ƒÆ’‚¢ƒ¢¢€š¬‚ƒ¢¢‚¬Å¡‚¬
-    // HƒÆ’†€™ƒ€š‚ m lƒÆ’‚¡ƒ€š‚ºƒ€š‚¥y token vƒÆ’†€™ƒ€š‚  lƒÆ’¢‚¬ ƒ€š‚°u acc (dƒÆ’†€™ƒ€š‚¹ng fetch, khƒÆ’†€™ƒ€š‚´ng navigate)
+    // Hàm lấy token và lưu acc (dùng fetch, không navigate)
     async function fetchAndSaveToken() {
-      log("Payment success detected. Auto session saving is disabled; use Push manually from the side panel.");
-      await updateJob({ step: "await_push", saved: false });
+      log("Payment success detected. Dang lay session token...");
+      const session = await getSessionTokenFromBackground();
+      const accessToken = String(session?.token || "").trim();
+      if (accessToken) {
+        log("Da lay session token cho Plus.");
+      } else {
+        log(`Canh bao: Khong lay duoc session token cho Plus (${session?.error || "no token"}).`);
+      }
+      await updateJob({
+        sessionToken: accessToken,
+        step: "await_push",
+        saved: true,
+        lastActionAt: Date.now()
+      });
+      log("Dang auto Push account Plus/Trial...");
+      chrome.runtime.sendMessage({
+        type: "PUSH_ACCOUNT",
+        tabId: job.tabId,
+        jobId: job.jobId,
+        auto: true
+      }, (result) => {
+        if (!result?.success) {
+          log(`Push Plus loi: ${result?.error || "unknown"}`);
+        } else {
+          log("Push Plus thanh cong.");
+        }
+      });
       return true;
     }
 

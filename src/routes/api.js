@@ -20,9 +20,6 @@ function extensionAuth(req, res, next) {
   next();
 }
 
-// POST /api/chatgpt-extension-push
-// Nhận từ AutoRegUnified: { username (email), password, otpSecret, workerId, source }
-// Nhận từ Session Pusher extension: { username, sessionToken }
 router.post('/chatgpt-extension-push', extensionAuth, asyncHandler(async (req, res) => {
   const { username, password, otpSecret, sessionToken, workerId, source } = req.body;
 
@@ -30,15 +27,17 @@ router.post('/chatgpt-extension-push', extensionAuth, asyncHandler(async (req, r
     return res.status(400).json({ ok: false, error: 'username is required' });
   }
 
-  // CASE 1: Có sessionToken → lưu vào pool (từ Session Pusher extension)
+  let savedToken = false;
+  let savedCred = false;
+
+  // CASE 1: Có sessionToken → lưu vào pool
   if (sessionToken && sessionToken.trim()) {
     const tokenClean = sessionToken.trim();
     const nameClean  = username.trim() || `Ext-${Date.now()}`;
 
     await UpstreamAccount.upsertByToken(nameClean, tokenClean);
     await AccountPool.reload();
-
-    return res.json({ ok: true, message: `Account '${nameClean}' added to session pool` });
+    savedToken = true;
   }
 
   // CASE 2: Có email+password (từ AutoRegUnified sau khi tự đăng ký)
@@ -53,11 +52,22 @@ router.post('/chatgpt-extension-push', extensionAuth, asyncHandler(async (req, r
       workerId: workerId || '',
       source: source || 'AutoRegUnified'
     });
+    savedCred = true;
+  }
 
+  if (savedToken || savedCred) {
+    let msg = '';
+    if (savedToken && savedCred) {
+      msg = `Credentials and session token for '${username}' saved successfully`;
+    } else if (savedToken) {
+      msg = `Account '${username}' session token added to pool`;
+    } else {
+      msg = `Credentials for '${username}' saved to database`;
+    }
     return res.json({
       ok: true,
-      message: `Credentials for '${email}' saved to database`,
-      email
+      message: msg,
+      email: username
     });
   }
 

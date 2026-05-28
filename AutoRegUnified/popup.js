@@ -1,12 +1,18 @@
-const DEFAULT_BACKEND = "https://vinhcousera.vercel.app";
+const DEFAULT_BACKEND = "https://vinhaccplus.vercel.app";
 const DEFAULT_EXTENSION_TOKEN =
   "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
+const DEFAULT_WORKER_ID = "worker_1777295244746_t7kpyw";
+const DEFAULT_ACCOUNT_MODE = "gpt_free";
+const DEFAULT_FREE_BATCH_TARGET = 3;
 
 const $ = (id) => document.getElementById(id);
 
 const refs = {
   startBtn: $("startBtn"),
   stopBtn: $("stopBtn"),
+  hardStopBtn: $("hardStopBtn"),
+  toggleAdvancedBtn: $("toggleAdvancedBtn"),
+  advancedSettings: $("advancedSettings"),
   subBtn: $("subBtn"),
   pushBtn: $("pushBtn"),
   logBox: $("logBox"),
@@ -18,6 +24,9 @@ const refs = {
   autoPassword: $("autoPassword"),
   regenPasswordBtn: $("regenPasswordBtn"),
   mailSite: $("mailSite"),
+  accountMode: $("accountMode"),
+  freeBatchBox: $("freeBatchBox"),
+  freeBatchTarget: $("freeBatchTarget"),
   hotmailGroup: $("hotmailGroup"),
   hotmailFile: $("hotmailFile"),
   hotmailCount: $("hotmailCount"),
@@ -30,6 +39,21 @@ const refs = {
 
 let isStarting = false;
 let currentJob = null;
+
+function normalizeAccountMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  return ["gpt_free", "free", "chatgpt_free"].includes(mode) ? "gpt_free" : "plus_trial";
+}
+
+function isGptFreeJob(job) {
+  return normalizeAccountMode(job?.accountMode) === "gpt_free";
+}
+
+function normalizeFreeBatchTarget(value) {
+  const number = Math.floor(Number(value));
+  if (!Number.isFinite(number) || number < 1) return 1;
+  return Math.min(number, 500);
+}
 
 const ADDRESS_MODE_DEFAULT = "random_indonesia";
 const ADDRESS_MODE_LEGACY_DEFAULT = "random_kr_indo_mix";
@@ -103,8 +127,10 @@ const STEP_MAP = {
   billing: "step-checkout",
   checkout_link: "step-checkout",
   await_payment: "step-payment",
+  paused: "step-manual",
   wait_success: "step-push",
   await_push: "step-push",
+  logout_pending: "step-push",
   pushed: "step-push",
   manual_needed: "step-manual"
 };
@@ -198,12 +224,18 @@ function statusLabel(job) {
     billing: "Đang vào thanh toán",
     checkout_link: "Đang tạo link checkout",
     await_payment: "Đã mở checkout, chờ thanh toán",
+    paused: "Đã dừng tạm, có thể tiếp tục",
     wait_success: "Đã thấy thanh toán, chờ Push",
     await_push: "Sẵn sàng Push",
     logout_pending: "Đã Push, đang chờ logout",
     pushed: "Đã Push",
     manual_needed: "Cần xử lý thủ công"
   };
+  if (isGptFreeJob(job)) {
+    if (step === "await_push") return "GPT Free dang auto Push";
+    if (step === "logout_pending") return "GPT Free da Push, dang logout";
+    if (step === "pushed") return "GPT Free da Push";
+  }
   return labels[step] || step;
 }
 
@@ -232,23 +264,44 @@ function updateJobUi(job) {
   currentJob = job || null;
   const hasJob = !!currentJob;
 
+  syncPasswordFromJob(currentJob);
+
   refs.jobInfo.style.display = hasJob ? "block" : "none";
   refs.email.innerText = currentJob?.email || "...";
   refs.statusText.innerText = hasJob ? `Trạng thái: ${statusLabel(currentJob)}` : "Sẵn sàng";
-  refs.checkoutInfo.innerText = currentJob?.checkoutTabId
-    ? `Checkout: ${currentJob.checkoutCountry || "?"}/${currentJob.checkoutCurrency || "?"} tab=${currentJob.checkoutTabId || "-"}`
-    : "";
+  const isFreeJob = isGptFreeJob(currentJob);
+  refs.checkoutInfo.innerText = isFreeJob
+    ? `GPT Free batch: ${Number(currentJob?.freeBatchDone || 0)}/${Number(currentJob?.freeBatchTarget || 1)} pushed`
+    : (currentJob?.checkoutTabId
+      ? `Checkout: ${currentJob.checkoutCountry || "?"}/${currentJob.checkoutCurrency || "?"} tab=${currentJob.checkoutTabId || "-"}`
+      : "");
 
   updateLogs(currentJob?.logs || (hasJob ? "" : "Sẵn sàng."));
   setStep(currentJob?.step || null);
 
-  refs.startBtn.innerText = hasJob || isStarting ? "Đang chạy..." : "Bắt đầu";
+  const paused = !!currentJob?.paused;
+  refs.startBtn.innerText = hasJob || isStarting ? (paused ? "Đang dừng" : "Đang chạy...") : "Bắt đầu";
   refs.startBtn.classList.toggle("running", hasJob || isStarting);
   refs.startBtn.disabled = hasJob || isStarting;
+  refs.stopBtn.innerText = paused ? "Tiếp tục" : "Dừng";
+  refs.stopBtn.disabled = !hasJob;
+  refs.hardStopBtn.disabled = !hasJob;
 
   const logoutPending = currentJob?.step === "logout_pending";
-  refs.subBtn.disabled = !currentJob?.checkoutTabId || currentJob?.pushed;
-  refs.pushBtn.disabled = !currentJob || (currentJob.pushed && !logoutPending) || !currentJob.email || !currentJob.password || !currentJob.secret;
+  refs.subBtn.disabled = paused || isFreeJob || !currentJob?.checkoutTabId || currentJob?.pushed;
+  refs.pushBtn.disabled = paused || !currentJob || (currentJob.pushed && !logoutPending) || !currentJob.email || !currentJob.password || !currentJob.secret;
+  refs.pushBtn.innerText = logoutPending
+    ? "Retry logout"
+    : (isFreeJob ? "Push Free" : "Push");
+}
+
+async function syncPasswordFromJob(job) {
+  const jobPassword = String(job?.password || "").trim();
+  if (!refs.autoPassword.checked || !jobPassword) return;
+  if (refs.password.value === jobPassword) return;
+
+  refs.password.value = jobPassword;
+  await storageSet({ password: jobPassword });
 }
 
 async function refreshData() {
@@ -269,14 +322,36 @@ function syncPasswordMode() {
   }
 }
 
+function syncAccountModeUi() {
+  const mode = normalizeAccountMode(refs.accountMode?.value);
+  if (refs.accountMode) refs.accountMode.value = mode;
+  if (refs.freeBatchBox) refs.freeBatchBox.style.display = mode === "gpt_free" ? "block" : "none";
+  if (refs.freeBatchTarget) refs.freeBatchTarget.value = normalizeFreeBatchTarget(refs.freeBatchTarget.value);
+}
+
+function syncAdvancedSettingsUi(open) {
+  const shouldOpen = !!open;
+  document.body.classList.toggle("show-advanced", shouldOpen);
+  if (refs.toggleAdvancedBtn) {
+    refs.toggleAdvancedBtn.innerText = shouldOpen ? "An cai dat nang cao" : "Cai dat nang cao";
+  }
+}
+
 function getSettingsPayload(options = {}) {
   if (refs.autoPassword.checked && (options.rotatePassword || !refs.password.value.trim())) {
     refs.password.value = generateStrongPassword();
   }
+  const accountMode = normalizeAccountMode(refs.accountMode?.value);
+  const freeBatchTarget = normalizeFreeBatchTarget(refs.freeBatchTarget?.value);
   return {
     password: refs.password.value,
     autoPassword: refs.autoPassword.checked,
     mailSite: refs.mailSite.value,
+    accountMode,
+    freeBatchTarget,
+    freeBatchDone: accountMode === "gpt_free" ? Number(options.freeBatchDone || 0) : 0,
+    freeBatchActive: accountMode === "gpt_free" && !!options.freeBatchActive,
+    freeTargetShelf: "none",
     autoRestart: $("autoRestart").checked,
     proxyString: $("proxyString").value,
     rotateUrl: $("rotateUrl").value,
@@ -284,7 +359,7 @@ function getSettingsPayload(options = {}) {
     gmail_script_url: $("gmail_script_url").value,
     backendBaseUrl: $("backendBaseUrl").value.trim() || DEFAULT_BACKEND,
     extensionPushToken: $("extensionPushToken").value.trim() || DEFAULT_EXTENSION_TOKEN,
-    extensionWorkerId: $("extensionWorkerId").value.trim(),
+    extensionWorkerId: $("extensionWorkerId").value.trim() || DEFAULT_WORKER_ID,
     trialCountry: $("trialCountry").value,
     trialProxyMode: $("trialProxyMode").value,
     addressMode: normalizeAddressMode(refs.addrMode?.value),
@@ -304,6 +379,22 @@ refs.regenPasswordBtn.addEventListener("click", async () => {
 refs.autoPassword.addEventListener("change", async () => {
   syncPasswordMode();
   await storageSet({ autoPassword: refs.autoPassword.checked, password: refs.password.value });
+});
+
+refs.toggleAdvancedBtn?.addEventListener("click", async () => {
+  const nextOpen = !document.body.classList.contains("show-advanced");
+  syncAdvancedSettingsUi(nextOpen);
+  await storageSet({ showAdvancedSettings: nextOpen });
+});
+
+refs.accountMode?.addEventListener("change", async () => {
+  syncAccountModeUi();
+  await saveSettings();
+});
+
+refs.freeBatchTarget?.addEventListener("input", async () => {
+  syncAccountModeUi();
+  await saveSettings();
 });
 
 refs.addrMode?.addEventListener("change", async () => {
@@ -338,7 +429,7 @@ refs.resetAddrBtn?.addEventListener("click", async () => {
 });
 
 refs.startBtn.addEventListener("click", async () => {
-  const settings = getSettingsPayload({ rotatePassword: true });
+  const settings = getSettingsPayload({ rotatePassword: true, freeBatchActive: true });
   await storageSet(settings);
 
   isStarting = true;
@@ -359,7 +450,12 @@ refs.startBtn.addEventListener("click", async () => {
     mailSite: settings.mailSite,
     autoRestart: settings.autoRestart,
     proxyString: settings.proxyString,
-    rotateUrl: settings.rotateUrl
+    rotateUrl: settings.rotateUrl,
+    accountMode: settings.accountMode,
+    freeBatchTarget: settings.freeBatchTarget,
+    freeBatchDone: 0,
+    freeBatchActive: settings.accountMode === "gpt_free",
+    freeTargetShelf: "none"
   });
 
   isStarting = false;
@@ -375,7 +471,16 @@ refs.startBtn.addEventListener("click", async () => {
 });
 
 refs.stopBtn.addEventListener("click", async () => {
-  await sendMessage({ type: "STOP_ALL" });
+  if (!currentJob) return;
+  const type = currentJob.paused ? "RESUME_JOB" : "PAUSE_JOB";
+  const res = await sendMessage({ type, tabId: currentJob.tabId, jobId: currentJob.jobId });
+  if (!res?.success) alert(res?.error || "Không xử lý được job.");
+  refreshData();
+});
+
+refs.hardStopBtn.addEventListener("click", async () => {
+  if (!currentJob) return;
+  await sendMessage({ type: "STOP_JOB_HARD", tabId: currentJob.tabId, jobId: currentJob.jobId, checkoutTabId: currentJob.checkoutTabId });
   currentJob = null;
   refreshData();
 });
@@ -405,7 +510,7 @@ refs.pushBtn.addEventListener("click", async () => {
   const res = await sendMessage({
     type: "PUSH_ACCOUNT",
     tabId: currentJob.tabId,
-    workerId: $("extensionWorkerId").value.trim()
+    workerId: $("extensionWorkerId").value.trim() || DEFAULT_WORKER_ID
   });
   refs.pushBtn.innerText = "Push";
   if (res?.success) {
@@ -493,6 +598,8 @@ refs.hotmailFile.addEventListener("change", (event) => {
 [
   "password",
   "mailSite",
+  "accountMode",
+  "freeBatchTarget",
   "autoRestart",
   "proxyString",
   "rotateUrl",
@@ -525,6 +632,10 @@ async function boot() {
     "password",
     "autoPassword",
     "mailSite",
+    "accountMode",
+    "freeBatchTarget",
+    "freeBatchDone",
+    "freeBatchActive",
     "autoRestart",
     "proxyString",
     "rotateUrl",
@@ -538,12 +649,15 @@ async function boot() {
     "addresses",
     "addressMode",
     ADDRESS_MODE_DEFAULT_MIGRATION_KEY,
+    "showAdvancedSettings",
     "startup_log"
   ]);
 
   refs.autoPassword.checked = data.autoPassword !== false;
   refs.password.value = data.password || generateStrongPassword();
   refs.mailSite.value = data.mailSite || "hotmail_backend";
+  if (refs.accountMode) refs.accountMode.value = normalizeAccountMode(data.accountMode || DEFAULT_ACCOUNT_MODE);
+  if (refs.freeBatchTarget) refs.freeBatchTarget.value = normalizeFreeBatchTarget(data.freeBatchTarget || DEFAULT_FREE_BATCH_TARGET);
   $("autoRestart").checked = !!data.autoRestart;
   $("proxyString").value = data.proxyString || "";
   $("rotateUrl").value = data.rotateUrl || "";
@@ -551,13 +665,15 @@ async function boot() {
   $("gmail_script_url").value = data.gmail_script_url || "";
   $("backendBaseUrl").value = data.backendBaseUrl || DEFAULT_BACKEND;
   $("extensionPushToken").value = data.extensionPushToken || DEFAULT_EXTENSION_TOKEN;
-  $("extensionWorkerId").value = data.extensionWorkerId || "";
+  $("extensionWorkerId").value = data.extensionWorkerId || DEFAULT_WORKER_ID;
   $("trialCountry").value = data.trialCountry || "ID";
   $("trialProxyMode").value = data.trialProxyMode || "default";
   if (refs.addrInput) refs.addrInput.value = data.addresses || "";
   updateAddressModeUi(resolveStoredAddressMode(data));
 
   syncPasswordMode();
+  syncAccountModeUi();
+  syncAdvancedSettingsUi(!!data.showAdvancedSettings);
   if (data.startup_log) updateLogs(data.startup_log);
   updateMailUi();
   refreshData();

@@ -8,9 +8,10 @@ const TEMPMILLOL_BASE = "https://api.tempmail.lol/v2";
 
 const REG_START_URL = "https://chatgpt.com";
 const PROMO_URL = "https://chatgpt.com/?promo_campaign=plus-1-month-free#pricing";
-const BACKEND_BASE_DEFAULT = "https://vinhcousera.vercel.app";
+const BACKEND_BASE_DEFAULT = "https://vinhaccplus.vercel.app";
 const EXTENSION_PUSH_TOKEN_DEFAULT =
   "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
+const EXTENSION_WORKER_ID_DEFAULT = "worker_1777295244746_t7kpyw";
 const HOTMAIL_READ_PATH = "/api/hotmail/read";
 const HOTMAIL_NEW_PATH = "/api/hotmail/new";
 const HOTMAIL_RELEASE_PATH = "/api/hotmail/release";
@@ -43,7 +44,7 @@ function getUnifiedConfig() {
       resolve({
         backendBaseUrl: normalizeBackendBase(data.backendBaseUrl),
         extensionPushToken: String(data.extensionPushToken || EXTENSION_PUSH_TOKEN_DEFAULT).trim(),
-        extensionWorkerId: String(data.extensionWorkerId || "").trim(),
+        extensionWorkerId: String(data.extensionWorkerId || EXTENSION_WORKER_ID_DEFAULT).trim(),
         extensionWorkerName: String(data.extensionWorkerName || "").trim(),
         trialCountry: String(data.trialCountry || "ID").trim().toUpperCase(),
         trialProxyMode: String(data.trialProxyMode || "default").trim() || "default"
@@ -206,6 +207,163 @@ function getJob(tabId) { return jobs.get(tabId); }
 function setJob(tabId, job) {
   jobs.set(tabId, stripPayLinkFromJob(job));
   saveJobs();
+}
+const ACCOUNT_MODE_PLUS_TRIAL = "plus_trial";
+const ACCOUNT_MODE_GPT_FREE = "gpt_free";
+const FREE_BATCH_MAX = 500;
+
+function normalizeAccountMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  return ["gpt_free", "free", "chatgpt_free"].includes(mode)
+    ? ACCOUNT_MODE_GPT_FREE
+    : ACCOUNT_MODE_PLUS_TRIAL;
+}
+function isGptFreeJob(job) {
+  return normalizeAccountMode(job?.accountMode) === ACCOUNT_MODE_GPT_FREE;
+}
+function normalizeFreeBatchTarget(value) {
+  const number = Math.floor(Number(value));
+  if (!Number.isFinite(number) || number < 1) return 1;
+  return Math.min(number, FREE_BATCH_MAX);
+}
+function normalizeFreeBatchDone(value) {
+  const number = Math.floor(Number(value));
+  if (!Number.isFinite(number) || number < 0) return 0;
+  return Math.min(number, FREE_BATCH_MAX);
+}
+function normalizeFreeTargetShelf(value) {
+  return String(value || "").trim().toLowerCase() === "cheap" ? "cheap" : "none";
+}
+function setFreeBatchStorage(patch) {
+  return new Promise(resolve => chrome.storage.local.set(patch, resolve));
+}
+function getFreeBatchStorage() {
+  return new Promise(resolve => {
+    chrome.storage.local.get([
+      "accountMode",
+      "freeBatchActive",
+      "freeBatchTarget",
+      "freeBatchDone",
+      "freeTargetShelf",
+      "lastPassword",
+      "lastMailSite",
+      "lastAutoPassword",
+      "proxyString",
+      "rotateUrl"
+    ], resolve);
+  });
+}
+async function clearFreeBatchRunState() {
+  await setFreeBatchStorage({
+    freeBatchActive: false,
+    freeBatchDone: 0
+  });
+}
+async function queueNextFreeBatchJob(job, done, target, logTabId = 0) {
+  try {
+    await delay(500);
+    const stored = await getFreeBatchStorage();
+    if (!stored.freeBatchActive || normalizeAccountMode(stored.accountMode) !== ACCOUNT_MODE_GPT_FREE) {
+      return { success: false, skipped: true, error: "Free batch is no longer active." };
+    }
+    if (job?.jobId && !Array.from(jobs.values()).some(activeJob => activeJob?.jobId === job.jobId)) {
+      return { success: false, skipped: true, error: "Current Free batch job was stopped." };
+    }
+    const autoPassword = !!(job?.autoPassword || stored.lastAutoPassword);
+    const restartPassword = autoPassword
+      ? generateStrongPassword()
+      : String(job?.password || stored.lastPassword || "");
+    const mailSite = job?.mailSource || job?.mailSite || stored.lastMailSite || "hotmail_backend";
+
+    const result = await doStartJob(
+      restartPassword,
+      mailSite,
+      !!job?.autoRestart,
+      job?.proxyString || stored.proxyString || "",
+      job?.rotateUrl || stored.rotateUrl || "",
+      {
+        autoPassword,
+        accountMode: ACCOUNT_MODE_GPT_FREE,
+        freeBatchTarget: target,
+        freeBatchDone: done,
+        freeBatchActive: true,
+        freeTargetShelf: job?.freeTargetShelf || stored.freeTargetShelf || "none"
+      }
+    );
+    if (!result?.success) {
+      throw new Error(result?.error || "Khong start duoc acc tiep theo.");
+    }
+    addLog(logTabId || job?.tabId, "Da start acc tiep theo.");
+    setStartupLog("Da start acc tiep theo.");
+    chrome.runtime.sendMessage({ type: "LOG_UPDATE" }).catch(() => { });
+    return result;
+  } catch (err) {
+    const errorText = err.message || String(err);
+    await setFreeBatchStorage({
+      freeBatchActive: false,
+      freeBatchDone: done
+    });
+    addLog(logTabId || job?.tabId, `GPT Free batch tam dung: khong start duoc acc tiep theo (${errorText}).`);
+    setStartupLog(`GPT Free batch tam dung: khong start duoc acc tiep theo (${errorText}).`);
+    chrome.runtime.sendMessage({ type: "LOG_UPDATE" }).catch(() => { });
+    return { success: false, error: errorText };
+  }
+}
+function clearJobTimeout(job) {
+  if (!job?.timeoutTimer) return false;
+  clearTimeout(job.timeoutTimer);
+  job.timeoutTimer = null;
+  return true;
+}
+function isPaymentWaitingJob(job) {
+  const step = String(job?.step || "");
+  return step === "await_payment" || step === "await_push" || !!job?.checkoutTabId;
+}
+function findJobTarget(tabId, msg = {}) {
+  const ids = [
+    Number(msg.tabId || 0),
+    Number(msg.checkoutTabId || 0),
+    Number(tabId || 0)
+  ].filter(id => Number.isInteger(id) && id > 0);
+  for (const id of ids) {
+    const job = getJob(id);
+    if (job) return { id, job };
+  }
+  const jobId = String(msg.jobId || "");
+  for (const [id, job] of jobs.entries()) {
+    if (
+      (jobId && job?.jobId === jobId) ||
+      ids.includes(Number(job?.tabId || 0)) ||
+      ids.includes(Number(job?.checkoutTabId || 0))
+    ) {
+      return { id: Number(id), job };
+    }
+  }
+  return { id: 0, job: null };
+}
+async function hardStopJob(targetTabId, job, reason = "Nguoi dung bam Dung han.") {
+  if (!job) return;
+  clearJobTimeout(job);
+  if (isGptFreeJob(job)) await clearFreeBatchRunState();
+  try {
+    await settleHotmailForJob(job, reason);
+  } catch (e) {
+    console.warn("[Hotmail] settle on hard stop failed:", e);
+  }
+  const idsToDelete = new Set([
+    Number(targetTabId || 0),
+    Number(job?.tabId || 0),
+    Number(job?.checkoutTabId || 0)
+  ]);
+  for (const [id, activeJob] of Array.from(jobs.entries())) {
+    if (idsToDelete.has(Number(id)) || (job?.jobId && activeJob?.jobId === job.jobId)) {
+      jobs.delete(id);
+    }
+  }
+  saveJobs();
+  for (const id of idsToDelete) {
+    if (Number.isInteger(id) && id > 0) chrome.tabs.remove(id).catch(() => { });
+  }
 }
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -381,8 +539,30 @@ async function finishPushedJobAfterLogout(targetTabId, job, data) {
       step: "pushed"
     });
     addLog(targetTabId, `Da logout ChatGPT va ket thuc job: ${job.email || ""}`.trim());
+    let freeBatch = null;
+    if (isGptFreeJob(job)) {
+      const target = normalizeFreeBatchTarget(job.freeBatchTarget);
+      const done = Math.min(normalizeFreeBatchDone(job.freeBatchDone) + 1, target);
+      const continueBatch = !!job.freeBatchActive && done < target;
+      freeBatch = { done, target, continueBatch };
+      await setFreeBatchStorage({
+        accountMode: ACCOUNT_MODE_GPT_FREE,
+        freeBatchTarget: target,
+        freeBatchDone: done,
+        freeBatchActive: continueBatch,
+        freeTargetShelf: normalizeFreeTargetShelf(job.freeTargetShelf)
+      });
+      addLog(targetTabId, continueBatch
+        ? `GPT Free batch: da push ${done}/${target}. Dang start acc tiep theo...`
+        : `GPT Free batch xong: da push ${done}/${target}.`);
+    }
+    let nextBatchStart = null;
+    if (freeBatch?.continueBatch) {
+      nextBatchStart = await queueNextFreeBatchJob(job, freeBatch.done, freeBatch.target, targetTabId);
+      freeBatch.nextStart = nextBatchStart;
+    }
     finishPushedJob(targetTabId, job);
-    return { success: true, data, released: true, email: job.email, logoutResult };
+    return { success: true, data, released: true, email: job.email, logoutResult, freeBatch };
   } catch (err) {
     const errorText = err.message || String(err);
     Object.assign(job, {
@@ -504,12 +684,32 @@ async function reportError(tabId, errorMsg) {
 
   clearSession();
   // Auto Restart on error
-  chrome.storage.local.get(["autoRestart", "lastPassword", "lastMailSite", "lastAutoPassword", "proxyString", "rotateUrl"], (d) => {
+  chrome.storage.local.get([
+    "autoRestart",
+    "lastPassword",
+    "lastMailSite",
+    "lastAutoPassword",
+    "proxyString",
+    "rotateUrl",
+    "accountMode",
+    "freeBatchActive",
+    "freeBatchTarget",
+    "freeBatchDone",
+    "freeTargetShelf"
+  ], (d) => {
     if (d.autoRestart && d.lastPassword && d.lastMailSite) {
       console.log("[BG] Error detected. Auto-restarting in 5s...");
       setTimeout(() => {
+        const accountMode = normalizeAccountMode(d.accountMode);
         const restartPassword = d.lastAutoPassword ? generateStrongPassword() : d.lastPassword;
-        doStartJob(restartPassword, d.lastMailSite, true, d.proxyString, d.rotateUrl, { autoPassword: !!d.lastAutoPassword }).then(() => {
+        doStartJob(restartPassword, d.lastMailSite, true, d.proxyString, d.rotateUrl, {
+          autoPassword: !!d.lastAutoPassword,
+          accountMode,
+          freeBatchActive: accountMode === ACCOUNT_MODE_GPT_FREE && !!d.freeBatchActive,
+          freeBatchTarget: d.freeBatchTarget,
+          freeBatchDone: d.freeBatchDone,
+          freeTargetShelf: d.freeTargetShelf
+        }).then(() => {
           chrome.runtime.sendMessage({ type: "LOG_UPDATE" });
         });
       }, 5000);
@@ -1169,6 +1369,12 @@ async function doStartJob(password, mailSiteRaw, autoRestart, proxyString, rotat
   const useHotmailTxt = requestedMailSite === "hotmail_txt";
   const mailSite = useHotmailBackend || useHotmailTxt ? "hotmail" : requestedMailSite;
   const autoPassword = !!options.autoPassword;
+  const accountMode = normalizeAccountMode(options.accountMode);
+  const isFreeMode = accountMode === ACCOUNT_MODE_GPT_FREE;
+  const freeBatchTarget = normalizeFreeBatchTarget(options.freeBatchTarget);
+  const freeBatchDone = Math.min(normalizeFreeBatchDone(options.freeBatchDone), freeBatchTarget);
+  const freeBatchActive = isFreeMode && options.freeBatchActive !== false;
+  const freeTargetShelf = normalizeFreeTargetShelf(options.freeTargetShelf);
   const providedPassword = String(password || "");
   const finalPassword = providedPassword.trim() ? providedPassword : generateStrongPassword();
   const jobId = makeJobId();
@@ -1181,12 +1387,18 @@ async function doStartJob(password, mailSiteRaw, autoRestart, proxyString, rotat
     setStartupLog(`ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚°ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬Å¡ƒ€š‚¦ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¸ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬Å¡ƒ€š‚¦ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬Å¡ƒ€š‚¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’¢‚¬Å¡ƒ€š‚¬ƒÆ’†€™ƒ¢¢€š¬‚¦ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¬ KhƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚»ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬Å¡ƒ€š‚¦ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¸i tƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚ºƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡o Job: NguƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚»ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬Å¡ƒ€š‚¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¬ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€š‚¦ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ¢¢€š¬…€œn=${mailSite}, Proxy=${shouldUseProxy ? "BƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚ºƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚­t" : "TƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚ºƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¯t"}`);
 
     chrome.storage.local.set({
+      password: finalPassword,
       lastPassword: finalPassword,
       lastMailSite: requestedMailSite || mailSite,
       lastAutoPassword: autoPassword,
       autoRestart: !!autoRestart,
       proxyString: proxyValue,
-      rotateUrl: shouldUseProxy ? rotateValue : ""
+      rotateUrl: shouldUseProxy ? rotateValue : "",
+      accountMode,
+      freeBatchTarget: isFreeMode ? freeBatchTarget : 1,
+      freeBatchDone: isFreeMode ? freeBatchDone : 0,
+      freeBatchActive,
+      freeTargetShelf: isFreeMode ? freeTargetShelf : "none"
     });
 
     await clearCookiesLikeEx3();
@@ -1273,6 +1485,17 @@ async function doStartJob(password, mailSiteRaw, autoRestart, proxyString, rotat
       windowId: null,
       email: mailbox.email,
       password: finalPassword,
+      accountMode,
+      targetType: isFreeMode ? "free" : "unassigned",
+      targetShelf: isFreeMode ? freeTargetShelf : "none",
+      freeBatchTarget,
+      freeBatchDone,
+      freeBatchActive,
+      freeTargetShelf,
+      autoRestart: !!autoRestart,
+      autoPassword,
+      proxyString: proxyValue,
+      rotateUrl: shouldUseProxy ? rotateValue : "",
       mailSite: effectiveMailSite,
       mailSource: requestedMailSite || effectiveMailSite,
       hotmailSource: mailbox.hotmailSource || (useHotmailTxt ? "txt" : ""),
@@ -1377,7 +1600,8 @@ async function doStartJob(password, mailSiteRaw, autoRestart, proxyString, rotat
       const tabId = tab.id;
       job.tabId = tabId;
       job.windowId = tab.windowId;
-      job.timeoutTimer = setTimeout(() => reportError(tabId, "HƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚ºƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¿t thƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚»ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚i gian (Timeout 15 phƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€š‚ ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’‚¢ƒ¢¢€š¬…¾ƒ€š‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚ºt)"), 900000); // 15 phƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€š‚ ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’‚¢ƒ¢¢€š¬…¾ƒ€š‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚ºt
+      job.timeoutTimer = null;
+      job.timeoutDisabled = true;
       setJob(tabId, job);
       chrome.runtime.sendMessage({ type: "LOG_UPDATE", tabId, text: job.logs });
     });
@@ -1400,7 +1624,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabId = sender.tab?.id;
 
   if (msg.type === "START_JOB") {
-    doStartJob(msg.password, msg.mailSite, msg.autoRestart, msg.proxyString, msg.rotateUrl, { autoPassword: !!msg.autoPassword }).then(sendResponse);
+    doStartJob(msg.password, msg.mailSite, msg.autoRestart, msg.proxyString, msg.rotateUrl, {
+      autoPassword: !!msg.autoPassword,
+      accountMode: msg.accountMode,
+      freeBatchTarget: msg.freeBatchTarget,
+      freeBatchDone: msg.freeBatchDone,
+      freeBatchActive: msg.freeBatchActive,
+      freeTargetShelf: msg.freeTargetShelf
+    }).then(sendResponse);
     return true;
   }
 
@@ -1447,6 +1678,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const checkoutCreateProps = { url: data.url };
         if (Number.isInteger(job.windowId)) checkoutCreateProps.windowId = job.windowId;
         chrome.tabs.create(checkoutCreateProps, (checkoutTab) => {
+          clearJobTimeout(job);
           Object.assign(job, {
             checkoutTabId: checkoutTab?.id || null,
             checkoutSessionId: data.checkoutSessionId || "",
@@ -1454,6 +1686,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             checkoutCurrency: data.currency || "",
             checkoutProxyUsed: data.proxyUsed || "",
             checkoutRequested: false,
+            paymentTimeoutDisabled: true,
             step: "await_payment"
           });
           addLog(tabId, `Da mo checkout link (${data.country || ""}/${data.currency || ""}). Cho thanh toan, sau do bam Push.`);
@@ -1495,6 +1728,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!job.email || !job.password || !job.secret) {
           throw new Error("Thieu email/password/2FA secret de Push.");
         }
+        const isFreePush = isGptFreeJob(job);
+        const targetShelf = isFreePush ? normalizeFreeTargetShelf(job.freeTargetShelf || job.targetShelf) : "none";
 
         const resp = await fetchWithTimeout(backendUrl(cfg.backendBaseUrl, EXTENSION_PUSH_PATH), {
           method: "POST",
@@ -1506,10 +1741,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             username: job.email,
             password: job.password,
             otpSecret: job.secret,
+            sessionToken: job.sessionToken || "",
             workerId,
             emailSource: job.mailSite,
             mailCheckProvider: job.mailSite,
-            source: "AutoRegUnified",
+            targetType: isFreePush ? "free" : "unassigned",
+            targetShelf,
+            source: isFreePush ? "AutoRegUnifiedFree" : "AutoRegUnified",
             originHost: "AutoRegUnified"
           }),
           timeout: 30000
@@ -1596,13 +1834,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // Reset timeout khi ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬Å¡ƒ€š‚¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’¢‚¬Å¡ƒ€š‚¬ƒÆ’†€™ƒ¢¢€š¬‚¦ƒÆ’¢‚¬Å¡ƒ€š‚¾ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬Å¡ƒ€š‚¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¬ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€š‚¹ƒÆ’†€™ƒ¢¢€š¬‚¦ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦¢‚¬Å“ang trong Midtrans retry loop
   if (msg.type === "EXTEND_TIMEOUT") {
-    const job = getJob(tabId);
-    if (job) {
-      if (job.timeoutTimer) clearTimeout(job.timeoutTimer);
-      job.timeoutTimer = setTimeout(() => reportError(tabId, "HƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚ºƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¿t thƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚»ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚i gian Midtrans (Timeout 20 phƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ¢¢€š¬‚ ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ¢¢‚¬Å¾‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€š‚ ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’‚¢ƒ¢¢€š¬…¾ƒ€š‚¢ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’¢‚¬ ƒ¢¢€š¬¢€ž¢ƒÆ’†€™ƒ€š‚¢ƒÆ’‚¢ƒ¢¢€š¬…¡ƒ€š‚¬ƒÆ’¢‚¬¦ƒ€š‚¡ƒÆ’†€™ƒ€ ¢‚¬„¢ƒÆ’‚¢ƒ¢¢‚¬Å¡‚¬ƒ€¦‚¡ƒÆ’†€™ƒ¢¢€š¬…¡ƒÆ’¢‚¬Å¡ƒ€š‚ºt)"), 1200000);
-      setJob(tabId, job);
+    const timeoutJob = getJob(tabId);
+    if (timeoutJob) {
+      clearJobTimeout(timeoutJob);
+      timeoutJob.timeoutDisabled = true;
+      saveJobs();
     }
-    sendResponse({ ok: true });
+    sendResponse({ ok: true, timeoutDisabled: true });
     return;
   }
 
@@ -1611,6 +1849,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (job) {
       Object.assign(job, msg.data);
       if (msg.log) addLog(tabId, msg.log);
+      if (isPaymentWaitingJob(job)) {
+        clearJobTimeout(job);
+        job.paymentTimeoutDisabled = true;
+      }
       saveJobs();
       const data = msg.data || {};
       const consumedSignal = data.emailFilled || data.otpFilled || data.profileFilled || data.mfaStarted || data.mfaCompleted || data.secret;
@@ -1828,15 +2070,64 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 
+  if (msg.type === "PAUSE_JOB") {
+    const target = findJobTarget(tabId, msg);
+    if (!target.job) {
+      sendResponse({ success: false, error: "No active job to pause" });
+      return;
+    }
+    clearJobTimeout(target.job);
+    if (!target.job.paused) {
+      target.job.pausedStep = target.job.step || target.job.pausedStep || "reg";
+      target.job.pausedAt = Date.now();
+    }
+    Object.assign(target.job, {
+      paused: true,
+      step: "paused",
+      timeoutDisabled: true
+    });
+    addLog(target.id, "Da dung tam thoi. Bam Tiep tuc de lam tiep nick nay.");
+    setJob(target.id, target.job);
+    sendResponse({ success: true, job: publicJob(target.id, target.job) });
+    return;
+  }
+
+  if (msg.type === "RESUME_JOB") {
+    const target = findJobTarget(tabId, msg);
+    if (!target.job) {
+      sendResponse({ success: false, error: "No active job to resume" });
+      return;
+    }
+    Object.assign(target.job, {
+      paused: false,
+      resumedAt: Date.now(),
+      lastActionAt: Date.now(),
+      step: target.job.pausedStep || "reg"
+    });
+    addLog(target.id, "Da tiep tuc job dang dung tam.");
+    setJob(target.id, target.job);
+    sendResponse({ success: true, job: publicJob(target.id, target.job) });
+    return;
+  }
+
+  if (msg.type === "STOP_JOB_HARD") {
+    (async () => {
+      const target = findJobTarget(tabId, msg);
+      if (!target.job) {
+        sendResponse({ success: false, error: "No active job to stop" });
+        return;
+      }
+      await hardStopJob(target.id, target.job, "Nguoi dung bam Dung han.");
+      sendResponse({ success: true });
+    })();
+    return true;
+  }
+
   if (msg.type === "STOP_ALL") {
     (async () => {
+      await clearFreeBatchRunState();
       for (const [id, job] of Array.from(jobs.entries())) {
-        try {
-          await settleHotmailForJob(job, "Người dùng bấm Dừng.");
-        } catch (e) {
-          console.warn("[Hotmail] settle on stop failed:", e);
-        }
-        chrome.tabs.remove(id).catch(() => { });
+        await hardStopJob(id, job, "Nguoi dung bam Dung han.");
       }
       jobs.clear();
       saveJobs();

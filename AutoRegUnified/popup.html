@@ -58,6 +58,29 @@
       border-radius: 8px;
     }
 
+    .advanced-hidden { display: none !important; }
+
+    .worker-card {
+      border: 1px solid rgba(56, 189, 248, .35);
+      border-color: rgba(56, 189, 248, .35);
+      background: rgba(56, 189, 248, .08);
+    }
+
+    .compact-toggle {
+      width: 100%;
+      margin-top: 10px;
+      background: #0f172a;
+      border-color: var(--border);
+      color: var(--muted);
+    }
+
+    body.show-advanced .advanced-hidden { display: block !important; }
+    body.show-advanced .advanced-hidden.inline { display: flex !important; }
+    body:not(.show-advanced) .field:has(#proxyString),
+    body:not(.show-advanced) .field:has(#rotateUrl) {
+      display: none !important;
+    }
+
     .grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -215,6 +238,10 @@
 
   <div class="wrap">
     <div class="card">
+      <div class="field worker-card" style="padding:10px;border-radius:8px;margin-bottom:12px;">
+        <label for="extensionWorkerId">Worker ID</label>
+        <input type="text" id="extensionWorkerId" placeholder="worker id" value="worker_1777295244746_t7kpyw" />
+      </div>
       <div class="field">
         <label for="password">Mật khẩu</label>
         <input type="text" id="password" value="" />
@@ -237,6 +264,20 @@
           <option value="tempmaillol">tempmail.lol</option>
           <option value="gmail_dot">Gmail dot trick</option>
         </select>
+      </div>
+
+      <div class="field">
+        <label for="accountMode">Mode tao acc</label>
+        <select id="accountMode">
+          <option value="plus_trial">Plus trial</option>
+          <option value="gpt_free" selected>GPT Free</option>
+        </select>
+      </div>
+
+      <div id="freeBatchBox" class="field" style="display:none;">
+        <label for="freeBatchTarget">So acc GPT Free can tao</label>
+        <input type="number" id="freeBatchTarget" min="1" max="500" value="3" />
+        <div class="hint">Sau 2FA: auto push vao Free tong, logout, roi chay acc tiep theo.</div>
       </div>
 
       <div id="gmail_dot_config" class="field" style="display:none;">
@@ -272,10 +313,19 @@
       <div class="btn-row">
         <button id="startBtn" class="primary">Bắt đầu</button>
         <button id="stopBtn" class="danger">Dừng</button>
+        <button id="hardStopBtn" class="danger">Dừng hẳn</button>
       </div>
+      <button id="toggleAdvancedBtn" class="soft compact-toggle" type="button">Cai dat nang cao</button>
     </div>
 
     <div class="card">
+      <div class="btn-row" style="margin-top:0;">
+        <button id="subBtn" class="sub" disabled>Sub</button>
+        <button id="pushBtn" class="push" disabled>Push</button>
+      </div>
+    </div>
+
+    <div class="card advanced-hidden" id="advancedSettings">
       <div class="field">
         <label for="backendBaseUrl">Backend URL</label>
         <input type="text" id="backendBaseUrl" placeholder="https://vinhaccplus.vercel.app" />
@@ -285,10 +335,6 @@
         <input type="password" id="extensionPushToken" />
       </div>
       <div class="grid">
-        <div class="field">
-          <label for="extensionWorkerId">Worker ID</label>
-          <input type="text" id="extensionWorkerId" placeholder="worker id" />
-        </div>
         <div class="field">
           <label for="trialCountry">Quốc gia</label>
           <select id="trialCountry">
@@ -341,10 +387,6 @@
       <div class="btn-row">
         <button id="btn-save-addr" class="soft">Luu dia chi</button>
         <button id="btn-reset-addr" class="soft">Reset ID</button>
-      </div>
-      <div class="btn-row">
-        <button id="subBtn" class="sub" disabled>Sub</button>
-        <button id="pushBtn" class="push" disabled>Push</button>
       </div>
     </div>
 
