@@ -33,10 +33,10 @@ const authenticate = asyncHandler(async (req, res, next) => {
     throw new AppError('API key is empty', 401, 'MISSING_AUTH');
   }
 
-  const validation = ApiKey.validate(key);
+  const validation = await ApiKey.validate(key);
 
   if (!validation.ok) {
-    const statusCode = validation.reason === 'API key not found' ? 401 : 403;
+    const statusCode = validation.reason === 'invalid_key' ? 401 : 403;
     throw new AppError(validation.reason, statusCode, 'INVALID_API_KEY');
   }
 
