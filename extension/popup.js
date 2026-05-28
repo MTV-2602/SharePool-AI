@@ -125,6 +125,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         pushBtn.disabled = false;
         pushBtn.textContent = "🚀 Push to Codex Pool";
       }
+    });
   });
   
   // ─── OAuth OpenAI Integration ──────────────────────────────────────────────
