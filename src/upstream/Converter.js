@@ -130,6 +130,31 @@ async function* streamToOpenAI(response, model, completionId) {
     while (eventQueue.length > 0) {
       const event = eventQueue.shift();
 
+      if (response.isCodex) {
+        const eventName = event.event;
+        if (eventName === 'response.output_text.delta') {
+          try {
+            const data = JSON.parse(event.data);
+            const delta = data.delta || '';
+            if (delta) {
+              yield buildChunk({ content: delta }, id, model, null);
+            }
+          } catch (_) {}
+        } else if (eventName === 'response.reasoning_summary_text.delta') {
+          try {
+            const data = JSON.parse(event.data);
+            const delta = data.delta || '';
+            if (delta) {
+              yield buildChunk({ reasoning_content: delta }, id, model, null);
+            }
+          } catch (_) {}
+        } else if (eventName === 'response.completed' || eventName === 'response.failed') {
+          finishedNaturally = true;
+          break;
+        }
+        continue;
+      }
+
       if (event.data === '[DONE]') {
         finishedNaturally = true;
         break;
@@ -179,6 +204,18 @@ async function collectFull(response, model) {
 
   const parser = createParser((event) => {
     if (event.type !== 'event') return;
+
+    if (response.isCodex) {
+      const eventName = event.event;
+      if (eventName === 'response.output_text.delta') {
+        try {
+          const data = JSON.parse(event.data);
+          fullText += data.delta || '';
+        } catch (_) {}
+      }
+      return;
+    }
+
     if (event.data === '[DONE]') return;
 
     const text = extractText(event.data);

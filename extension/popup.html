@@ -111,6 +111,28 @@
       box-shadow: 0 0 12px rgba(124, 58, 237, 0.4);
     }
     
+    .btn-oauth {
+      width: 100%;
+      background: linear-gradient(135deg, #10b981, #059669);
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      color: white;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    
+    .btn-oauth:hover {
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+    }
+    
     .status-box {
       margin-top: 12px;
       padding: 8px 12px;
@@ -196,6 +218,7 @@
   </div>
   
   <button class="btn-push" id="pushBtn">🚀 Push to Codex Pool</button>
+  <button class="btn-oauth" id="oauthBtn">🔗 Kết nối OAuth OpenAI</button>
   
   <div class="status-box" id="statusBox"></div>
   

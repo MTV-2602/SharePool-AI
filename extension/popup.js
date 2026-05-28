@@ -125,6 +125,88 @@ document.addEventListener("DOMContentLoaded", async () => {
         pushBtn.disabled = false;
         pushBtn.textContent = "🚀 Push to Codex Pool";
       }
-    });
+  });
+  
+  // ─── OAuth OpenAI Integration ──────────────────────────────────────────────
+  const oauthBtn = document.getElementById("oauthBtn");
+  
+  function generateCodeVerifier() {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+    let verifier = "";
+    for (let i = 0; i < array.length; i++) {
+      verifier += chars[array[i] % chars.length];
+    }
+    return verifier;
+  }
+  
+  async function sha256(plain) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(plain);
+    return crypto.subtle.digest("SHA-256", data);
+  }
+  
+  function base64urlencode(a) {
+    let str = "";
+    const bytes = new Uint8Array(a);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      str += String.fromCharCode(bytes[i]);
+    }
+    return btoa(str)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  }
+  
+  oauthBtn.addEventListener("click", async () => {
+    statusBox.className = "status-box";
+    statusBox.style.display = "none";
+    
+    // Save current settings first
+    saveSettings();
+    
+    oauthBtn.disabled = true;
+    oauthBtn.textContent = "Starting OAuth...";
+    
+    try {
+      const verifier = generateCodeVerifier();
+      const challenge = await sha256(verifier).then(base64urlencode);
+      const state = generateCodeVerifier().substring(0, 16);
+      
+      await chrome.storage.local.set({
+        oauth_verifier: verifier,
+        oauth_state: state
+      });
+      
+      chrome.runtime.sendMessage({
+        type: "START_OAUTH",
+        challenge: challenge,
+        state: state
+      });
+      
+      statusBox.className = "status-box success";
+      statusBox.textContent = "OAuth tab opened. Please complete login in the new tab...";
+      statusBox.style.display = "block";
+    } catch (err) {
+      console.error(err);
+      statusBox.className = "status-box error";
+      statusBox.textContent = "Failed to start OAuth: " + err.message;
+      statusBox.style.display = "block";
+      oauthBtn.disabled = false;
+      oauthBtn.textContent = "🔗 Kết nối OAuth OpenAI";
+    }
+  });
+  
+  // Listen for OAuth status updates from background script
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === "OAUTH_STATUS") {
+      statusBox.className = message.success ? "status-box success" : "status-box error";
+      statusBox.textContent = message.message;
+      statusBox.style.display = "block";
+      oauthBtn.disabled = false;
+      oauthBtn.textContent = "🔗 Kết nối OAuth OpenAI";
+    }
   });
 });

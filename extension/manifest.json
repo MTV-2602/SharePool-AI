@@ -5,7 +5,8 @@
   "description": "Automatically extracts and pushes ChatGPT session tokens to the Codex Rotation Portal.",
   "permissions": [
     "cookies",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",

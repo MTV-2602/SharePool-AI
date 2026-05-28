@@ -91,6 +91,82 @@ router.post('/chatgpt-extension-push', extensionAuth, asyncHandler(async (req, r
   return res.status(400).json({ ok: false, error: 'sessionToken or password is required' });
 }));
 
+// POST /api/chatgpt-oauth-callback — Exchange code for OAuth tokens
+router.post('/chatgpt-oauth-callback', extensionAuth, asyncHandler(async (req, res) => {
+  const { username, code, codeVerifier, redirectUri } = req.body;
+
+  if (!code || !codeVerifier) {
+    return res.status(400).json({ ok: false, error: 'code and codeVerifier are required' });
+  }
+
+  const { gotScraping } = await import('got-scraping');
+
+  let tokenRes;
+  try {
+    tokenRes = await gotScraping.post('https://auth.openai.com/oauth/token', {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+        code: code,
+        redirect_uri: redirectUri || 'http://localhost:1455/auth/callback',
+        code_verifier: codeVerifier,
+      }).toString(),
+      useHeaderGenerator: false
+    });
+  } catch (err) {
+    return res.status(502).json({ ok: false, error: 'OpenAI auth server returned error: ' + err.message });
+  }
+
+  if (tokenRes.statusCode !== 200) {
+    return res.status(tokenRes.statusCode).json({ ok: false, error: `Auth exchange failed: ${tokenRes.body}` });
+  }
+
+  let tokens;
+  try {
+    tokens = JSON.parse(tokenRes.body);
+  } catch (_) {
+    return res.status(502).json({ ok: false, error: 'Failed to parse tokens response as JSON' });
+  }
+
+  const accessToken = tokens.access_token;
+  const refreshToken = tokens.refresh_token;
+  if (!accessToken || !refreshToken) {
+    return res.status(502).json({ ok: false, error: 'Token response did not include access_token or refresh_token' });
+  }
+
+  let email = '';
+  try {
+    const parts = accessToken.split('.');
+    if (parts.length >= 2) {
+      let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (base64.length % 4) base64 += '=';
+      const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+      email = payload['https://api.openai.com/profile']?.email || payload.email || '';
+    }
+  } catch (_) {}
+
+  const accountName = username || (email ? `OAuth-${email}` : `OAuth-${Date.now()}`);
+  
+  const sessionTokenWrapper = JSON.stringify({
+    accessToken,
+    refreshToken,
+    deviceId: ''
+  });
+
+  await UpstreamAccount.upsertByToken(accountName, sessionTokenWrapper);
+  await AccountPool.reload();
+
+  return res.json({
+    ok: true,
+    message: `Tài khoản '${accountName}' đã được kết nối OAuth thành công!`,
+    email: email || accountName
+  });
+}));
+
 // GET /api/credentials — Xem danh sách credentials đã đăng ký (admin only via token)
 router.get('/credentials', extensionAuth, asyncHandler(async (req, res) => {
   const creds = await ChatGPTCredential.findAll({ limit: 200 });

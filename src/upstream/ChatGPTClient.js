@@ -163,7 +163,98 @@ class ChatGPTClient {
    * @returns {Promise<string>} Bearer access token
    * @throws {{ code: 'INVALID_SESSION' }}
    */
+  _isCodexOAuth() {
+    const clean = (this.sessionToken || '').trim();
+    if (clean.startsWith('{')) {
+      try {
+        const obj = JSON.parse(clean);
+        return !!(obj.accessToken && obj.refreshToken);
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Retrieve (or use cached) access token.
+   *
+   * @returns {Promise<string>} Bearer access token
+   * @throws {{ code: 'INVALID_SESSION' }}
+   */
   async getAccessToken() {
+    const now = Date.now();
+
+    if (this._isCodexOAuth()) {
+      const wrapper = JSON.parse(this.sessionToken);
+      
+      if (this._accessToken && now < this._tokenExpiry) {
+        return this._accessToken;
+      }
+
+      const tokenParsed = parseTokenInput(wrapper.accessToken);
+      if (tokenParsed.type === 'accessToken' && now < tokenParsed.expiry) {
+        this._accessToken = wrapper.accessToken;
+        this._tokenExpiry = tokenParsed.expiry;
+        return this._accessToken;
+      }
+
+      logger.info('Refreshing Codex OAuth access token using refresh_token...');
+      try {
+        const { gotScraping } = await import('got-scraping');
+        const response = await gotScraping.post('https://auth.openai.com/oauth/token', {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json',
+          },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+            refresh_token: wrapper.refreshToken,
+            scope: 'openid profile email offline_access',
+          }).toString(),
+          useHeaderGenerator: false
+        });
+
+        if (response.statusCode !== 200) {
+          throw new Error(`OpenAI token server returned ${response.statusCode}: ${response.body}`);
+        }
+
+        const tokens = JSON.parse(response.body);
+        const nextAccessToken = tokens.access_token;
+        const nextRefreshToken = tokens.refresh_token || wrapper.refreshToken;
+
+        if (!nextAccessToken) {
+          throw new Error('Response did not contain access_token');
+        }
+
+        const newWrapper = {
+          accessToken: nextAccessToken,
+          refreshToken: nextRefreshToken,
+          deviceId: wrapper.deviceId || ''
+        };
+
+        const db = require('../db');
+        await db.run(
+          'UPDATE upstream_accounts SET session_token = ? WHERE session_token = ?',
+          [JSON.stringify(newWrapper), this.sessionToken]
+        );
+
+        this.sessionToken = JSON.stringify(newWrapper);
+        this._accessToken = nextAccessToken;
+        const nextParsed = parseTokenInput(nextAccessToken);
+        this._tokenExpiry = nextParsed.expiry;
+
+        logger.info('Codex OAuth token refreshed and updated in database successfully.');
+        return this._accessToken;
+      } catch (err) {
+        logger.error('Failed to refresh Codex OAuth token:', err.message);
+        const error = new Error('Failed to refresh Codex OAuth token: ' + err.message);
+        error.code = 'INVALID_SESSION';
+        throw error;
+      }
+    }
+
     const parsed = parseTokenInput(this.sessionToken);
 
     if (parsed.type === 'invalid') {
@@ -171,8 +262,6 @@ class ChatGPTClient {
       err.code = 'INVALID_SESSION';
       throw err;
     }
-
-    const now = Date.now();
 
     if (parsed.type === 'accessToken') {
       // If it's a direct access token, check if it has expired
@@ -289,6 +378,9 @@ class ChatGPTClient {
    */
   async chat(messages, model = 'gpt-4o') {
     const accessToken  = await this.getAccessToken();
+    if (this._isCodexOAuth()) {
+      return this._chatCodexResponses(messages, model, accessToken);
+    }
     const mappedModel  = mapModel(model);
     const turns        = this._convertMessages(messages);
 
@@ -443,9 +535,152 @@ class ChatGPTClient {
         }
       });
 
+    });
+  }
+
+  // ── Codex Responses API Support ───────────────────────────────────────────
+
+  _extractInstructions(messages) {
+    const sys = messages.find(m => m.role === 'system');
+    return sys ? sys.content : '';
+  }
+
+  _convertToCodexInput(messages) {
+    const input = [];
+    for (const msg of messages) {
+      if (msg.role === 'system') continue;
+
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        const contentType = msg.role === 'user' ? 'input_text' : 'output_text';
+        let textContent = '';
+        if (typeof msg.content === 'string') {
+          textContent = msg.content;
+        } else if (Array.isArray(msg.content)) {
+          textContent = msg.content
+            .map(c => {
+              if (c.type === 'text') return c.text;
+              return c.text || c.content || '';
+            })
+            .filter(Boolean)
+            .join('');
+        }
+
+        if (textContent) {
+          input.push({
+            type: 'message',
+            role: msg.role,
+            content: [{ type: contentType, text: textContent }]
+          });
+        }
+      }
+
+      if (msg.role === 'assistant' && msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          input.push({
+            type: 'function_call',
+            call_id: tc.id || `call_${Date.now()}`,
+            name: tc.function?.name || '_unknown',
+            arguments: tc.function?.arguments || '{}'
+          });
+        }
+      }
+
+      if (msg.role === 'tool') {
+        const output = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        input.push({
+          type: 'function_call_output',
+          call_id: msg.tool_call_id,
+          output
+        });
+      }
+    }
+
+    if (input.length === 0) {
+      input.push({
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: '...' }]
+      });
+    }
+
+    return input;
+  }
+
+  async _chatCodexResponses(messages, model, accessToken) {
+    const mappedModel = mapModel(model);
+    const { gotScraping } = await import('got-scraping');
+    
+    const input = this._convertToCodexInput(messages);
+    const instructions = this._extractInstructions(messages);
+
+    const body = {
+      model: mappedModel,
+      input: input,
+      instructions: instructions || "You are a helpful assistant.",
+      stream: true,
+      store: false,
+      reasoning: {
+        effort: "low",
+        summary: "auto"
+      }
+    };
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+      'Authorization': `Bearer ${accessToken}`,
+      'originator': 'codex_cli_rs',
+      'User-Agent': 'codex-cli/1.0.18 (macOS; arm64)',
+      'session_id': this.getDeviceId() || 'default'
+    };
+
+    logger.debug(`Sending request to Codex Responses API (model=${mappedModel})`);
+
+    return new Promise((resolve, reject) => {
+      const stream = gotScraping.stream('https://chatgpt.com/backend-api/codex/responses', {
+        method: 'POST',
+        headers,
+        json: body,
+        useHeaderGenerator: false
+      });
+
+      stream.on('response', (response) => {
+        if (response.statusCode >= 400) {
+          let errorBody = '';
+          stream.on('data', chunk => {
+            errorBody += chunk.toString('utf-8');
+          });
+          stream.on('end', () => {
+            let message = 'Codex responses API error';
+            try {
+              const parsed = JSON.parse(errorBody);
+              message = parsed.error?.message || parsed.detail || errorBody;
+            } catch (_) {
+              message = errorBody || `HTTP ${response.statusCode}`;
+            }
+            logger.error(`Codex Responses error response (${response.statusCode}): ${message}`);
+            const err = new Error(message);
+            err.statusCode = response.statusCode;
+            if (response.statusCode === 429) err.code = 'RATE_LIMITED';
+            else if (response.statusCode === 401 || response.statusCode === 403) err.code = 'INVALID_SESSION';
+            else err.code = 'UPSTREAM_ERROR';
+            reject(err);
+          });
+        } else {
+          logger.info('Codex Responses stream connection established successfully');
+          resolve({
+            ok: true,
+            status: response.statusCode,
+            headers: response.headers,
+            body: stream,
+            isCodex: true
+          });
+        }
+      });
+
       stream.on('error', (err) => {
         if (err.name === 'HTTPError') return;
-        logger.error('Stream network error', err);
+        logger.error('Codex stream network error', err);
         reject(err);
       });
     });
