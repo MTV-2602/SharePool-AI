@@ -18,11 +18,20 @@ const NAV = [
 
 export default function Sidebar() {
   const navigate = useNavigate();
+  const role = localStorage.getItem('role') || 'admin';
 
   const handleLogout = () => {
     localStorage.removeItem('adminKey');
+    localStorage.removeItem('role');
     navigate('/login');
   };
+
+  const filteredNav = NAV.filter(item => {
+    if (role === 'user') {
+      return item.to === '/dashboard' || item.to === '/usage';
+    }
+    return true;
+  });
 
   return (
     <aside className="sidebar">
@@ -30,11 +39,11 @@ export default function Sidebar() {
         <div className="brand-icon">
           <Zap size={18} />
         </div>
-        <span className="brand-name">CodeX Admin</span>
+        <span className="brand-name">{role === 'user' ? 'CodeX Portal' : 'CodeX Admin'}</span>
       </div>
 
       <nav className="sidebar-nav">
-        {NAV.map(({ to, icon: Icon, label }) => (
+        {filteredNav.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}

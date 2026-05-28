@@ -6,11 +6,12 @@ const api = axios.create({
   timeout: 30000,
 });
 
-// Inject admin key from localStorage on every request
+// Inject admin or user key from localStorage on every request
 api.interceptors.request.use((config) => {
   const adminKey = localStorage.getItem('adminKey');
   if (adminKey) {
     config.headers['x-admin-key'] = adminKey;
+    config.headers['x-api-key'] = adminKey;
   }
   return config;
 });

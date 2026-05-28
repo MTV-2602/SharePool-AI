@@ -18,12 +18,25 @@ export default function LoginPage() {
     setError('');
     try {
       localStorage.setItem('adminKey', key.trim());
-      // Verify key by hitting stats
-      await api.get('/admin-api/stats');
-      navigate('/dashboard');
+      // Try admin verify first
+      try {
+        await api.get('/admin-api/stats');
+        localStorage.setItem('role', 'admin');
+        navigate('/dashboard');
+      } catch (errAdmin) {
+        // If admin check fails, try user verify
+        try {
+          await api.post('/user-api/login', { key: key.trim() });
+          localStorage.setItem('role', 'user');
+          navigate('/dashboard');
+        } catch (errUser) {
+          throw errUser; // Bubble up to main catch
+        }
+      }
     } catch (err) {
       localStorage.removeItem('adminKey');
-      const msg = err.response?.data?.error?.message || err.message || 'Lỗi kết nối server';
+      localStorage.removeItem('role');
+      const msg = err.response?.data?.error?.message || err.response?.data?.error || err.message || 'Lỗi kết nối server';
       setError(`Đăng nhập thất bại: ${msg}`);
     } finally {
       setLoading(false);
@@ -37,18 +50,18 @@ export default function LoginPage() {
         <div className="login-logo">
           <Zap size={28} />
         </div>
-        <h1 className="login-title">CodeX Admin</h1>
-        <p className="login-sub">Nhập Admin Key để tiếp tục</p>
+        <h1 className="login-title">CodeX Portal</h1>
+        <p className="login-sub">Nhập Admin Key hoặc API Key để tiếp tục</p>
 
         <form onSubmit={handleLogin} className="login-form">
           <div className="form-group">
-            <label htmlFor="admin-key-input">Admin Key</label>
+            <label htmlFor="admin-key-input">Admin Key / API Key</label>
             <div className="input-wrapper">
               <Lock size={15} className="input-icon" />
               <input
                 id="admin-key-input"
                 type={show ? 'text' : 'password'}
-                placeholder="sk-admin-..."
+                placeholder="sk-..."
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
                 autoFocus

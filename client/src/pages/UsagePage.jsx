@@ -7,11 +7,18 @@ export default function UsagePage() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState(null);
 
+  const role = localStorage.getItem('role') || 'admin';
+
   const fetch = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/admin-api/usage');
-      setData(Array.isArray(res.data) ? res.data : []);
+      if (role === 'user') {
+        const res = await api.get('/user-api/daily');
+        setData(Array.isArray(res.data) ? res.data : []);
+      } else {
+        const res = await api.get('/admin-api/usage');
+        setData(Array.isArray(res.data) ? res.data : []);
+      }
     } catch (e) {
       setMsg({ type: 'error', text: 'Lỗi tải usage.' });
     } finally { setLoading(false); }

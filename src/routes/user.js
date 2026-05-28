@@ -87,11 +87,15 @@ router.get('/me', userAuth, asyncHandler(async (req, res) => {
 // GET /user-api/daily
 router.get('/daily', userAuth, asyncHandler(async (req, res) => {
   const stats = await UsageLog.getDailyStats(req.apiKey);
-  // Map tokens_total to tokens for frontend chart compatibility
+  // Map fields for frontend usage compatibility (both chart and table)
   const mapped = stats.map(d => ({
     date: d.date,
-    requests: d.requests,
-    tokens: d.tokens_total
+    requests: parseInt(d.requests || 0, 10),
+    total: parseInt(d.requests || 0, 10), // chart compatibility
+    tokens_in: parseInt(d.tokensIn || d.tokens_in || 0, 10),
+    tokens_out: parseInt(d.tokensOut || d.tokens_out || 0, 10),
+    tokens_total: parseInt(d.tokensTotal || d.tokens_total || 0, 10),
+    tokens: parseInt(d.tokensTotal || d.tokens_total || 0, 10), // chart compatibility
   }));
   res.json(mapped);
 }));
