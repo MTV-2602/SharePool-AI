@@ -30,14 +30,15 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   created_at   TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
--- Upstream Coursera Accounts
+-- Upstream ChatGPT Accounts (session token pool)
 CREATE TABLE IF NOT EXISTS upstream_accounts (
   id             SERIAL PRIMARY KEY,
   name           TEXT NOT NULL,
-  session_token  TEXT NOT NULL,
+  session_token  TEXT NOT NULL UNIQUE,
   is_active      INTEGER DEFAULT 1,
   total_requests INTEGER DEFAULT 0,
-  created_at     TEXT DEFAULT CURRENT_TIMESTAMP
+  created_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Hotmail Accounts

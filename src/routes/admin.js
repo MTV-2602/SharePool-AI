@@ -2,13 +2,13 @@
 
 const express = require('express');
 const router = express.Router();
-const fs = require('fs');
-const path = require('path');
 const config = require('../config');
+const fs = require('fs');
 const adminGuard = require('../middleware/adminGuard');
 const ApiKey = require('../models/ApiKey');
 const UsageLog = require('../models/UsageLog');
 const AccountPool = require('../upstream/AccountPool');
+const UpstreamAccount = require('../models/UpstreamAccount');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 
 // Protect all admin routes with adminGuard
@@ -141,7 +141,7 @@ router.get('/top-keys', asyncHandler(async (req, res) => {
 
 // GET & POST /admin-api/upstream — Upstream accounts status & reload
 const upstreamHandler = asyncHandler(async (req, res) => {
-  AccountPool.reload();
+  await AccountPool.reload();
   const accounts = AccountPool.getStatus();
   res.json(accounts);
 });
@@ -150,62 +150,51 @@ router.route('/upstream')
   .get(upstreamHandler)
   .post(upstreamHandler);
 
-// GET /admin-api/accounts — Upstream accounts status
+// GET /admin-api/accounts — Upstream accounts status (from DB)
 router.get('/accounts', asyncHandler(async (req, res) => {
-  const accounts = AccountPool.getStatus();
-  res.json(accounts);
+  // Return merged view: DB records with cooldown status from in-memory pool
+  const dbAccounts = await UpstreamAccount.findAll();
+  const poolStatus = AccountPool.getStatus();
+  const statusMap = new Map(poolStatus.map(a => [a.sessionToken, a]));
+
+  const result = dbAccounts.map(acc => {
+    const token = acc.sessionToken || acc.session_token;
+    const poolAcc = statusMap.get(token);
+    return {
+      name: acc.name,
+      sessionToken: token,
+      status: poolAcc ? poolAcc.status : 'loaded',
+      cooldownRemaining: poolAcc ? poolAcc.cooldownRemaining : 0,
+      hasToken: !!token,
+      totalRequests: acc.totalRequests || acc.total_requests || 0,
+      createdAt: acc.createdAt || acc.created_at,
+    };
+  });
+  res.json(result);
 }));
 
-// POST /admin-api/accounts/import-manual — Nhập tay tài khoản
+// POST /admin-api/accounts/import-manual — Nhập tay tài khoản (lưu vào DB)
 router.post('/accounts/import-manual', asyncHandler(async (req, res) => {
   const { name, sessionToken } = req.body;
   if (!sessionToken || !sessionToken.trim()) {
     throw new AppError('sessionToken is required', 400, 'INVALID_REQUEST');
   }
 
-  const file = config.ACCOUNTS_FILE;
-  let accounts = [];
-  if (fs.existsSync(file)) {
-    try {
-      accounts = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    } catch (err) {
-      accounts = [];
-    }
-  }
-
   const tokenClean = sessionToken.trim();
-  const existingIdx = accounts.findIndex(a => a.sessionToken === tokenClean);
-
   const accName = (name && name.trim()) || `Acc-${Date.now()}`;
-  const newAcc = { name: accName, sessionToken: tokenClean };
 
-  if (existingIdx >= 0) {
-    accounts[existingIdx] = newAcc;
-  } else {
-    accounts.push(newAcc);
-  }
+  await UpstreamAccount.upsertByToken(accName, tokenClean);
+  await AccountPool.reload();
 
-  fs.writeFileSync(file, JSON.stringify(accounts, null, 2), 'utf-8');
-  AccountPool.reload();
-
-  res.json({ success: true, count: accounts.length });
+  const all = await UpstreamAccount.findAll();
+  res.json({ success: true, count: all.length });
 }));
 
-// POST /admin-api/accounts/import-bulk — Nhập nhanh / Bulk import
+// POST /admin-api/accounts/import-bulk — Nhập nhanh / Bulk import (lưu vào DB)
 router.post('/accounts/import-bulk', asyncHandler(async (req, res) => {
   const { rawText } = req.body;
   if (!rawText || !rawText.trim()) {
     throw new AppError('rawText is required', 400, 'INVALID_REQUEST');
-  }
-
-  const file = config.ACCOUNTS_FILE;
-  let accounts = [];
-  if (fs.existsSync(file)) {
-    try {
-      accounts = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    } catch (err) {
-      accounts = [];
-    }
   }
 
   const lines = rawText.split(/\r?\n/);
@@ -231,94 +220,65 @@ router.post('/accounts/import-bulk', asyncHandler(async (req, res) => {
     }
 
     if (token) {
-      const existingIdx = accounts.findIndex(a => a.sessionToken === token);
-      const newAcc = { name, sessionToken: token };
-
-      if (existingIdx >= 0) {
-        accounts[existingIdx] = newAcc;
-      } else {
-        accounts.push(newAcc);
-      }
+      await UpstreamAccount.upsertByToken(name || `Imported-${Date.now()}`, token);
       importedCount++;
     }
   }
 
   if (importedCount > 0) {
-    fs.writeFileSync(file, JSON.stringify(accounts, null, 2), 'utf-8');
-    AccountPool.reload();
+    await AccountPool.reload();
   }
 
-  res.json({ success: true, imported: importedCount, total: accounts.length });
+  const all = await UpstreamAccount.findAll();
+  res.json({ success: true, imported: importedCount, total: all.length });
 }));
 
-// DELETE /admin-api/accounts — Delete an account by sessionToken
+// DELETE /admin-api/accounts — Delete an account by sessionToken (từ DB)
 router.delete('/accounts', asyncHandler(async (req, res) => {
   const { sessionToken } = req.body;
   if (!sessionToken || !sessionToken.trim()) {
     throw new AppError('sessionToken is required', 400, 'INVALID_REQUEST');
   }
 
-  const file = config.ACCOUNTS_FILE;
-  let accounts = [];
-  if (fs.existsSync(file)) {
-    try {
-      accounts = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    } catch (err) {
-      accounts = [];
-    }
-  }
-
   const tokenClean = sessionToken.trim();
-  const idx = accounts.findIndex(a => a.sessionToken === tokenClean);
-  if (idx === -1) {
+  const existing = await UpstreamAccount.findByToken(tokenClean);
+  if (!existing) {
     throw new AppError('Account not found', 404, 'NOT_FOUND');
   }
 
-  accounts.splice(idx, 1);
-  fs.writeFileSync(file, JSON.stringify(accounts, null, 2), 'utf-8');
-  AccountPool.reload();
+  await UpstreamAccount.deleteByToken(tokenClean);
+  await AccountPool.reload();
 
-  res.json({ success: true, total: accounts.length });
+  const all = await UpstreamAccount.findAll();
+  res.json({ success: true, total: all.length });
 }));
 
-// PATCH /admin-api/accounts — Edit name or sessionToken of an account
+// PATCH /admin-api/accounts — Edit name or sessionToken of an account (trong DB)
 router.patch('/accounts', asyncHandler(async (req, res) => {
   const { oldSessionToken, name, newSessionToken } = req.body;
   if (!oldSessionToken || !oldSessionToken.trim()) {
     throw new AppError('oldSessionToken is required', 400, 'INVALID_REQUEST');
   }
 
-  const file = config.ACCOUNTS_FILE;
-  let accounts = [];
-  if (fs.existsSync(file)) {
-    try {
-      accounts = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    } catch (err) {
-      accounts = [];
-    }
-  }
-
   const oldTokenClean = oldSessionToken.trim();
-  const idx = accounts.findIndex(a => a.sessionToken === oldTokenClean);
-  if (idx === -1) {
+  const existing = await UpstreamAccount.findByToken(oldTokenClean);
+  if (!existing) {
     throw new AppError('Account not found', 404, 'NOT_FOUND');
   }
 
-  if (name !== undefined) {
-    accounts[idx].name = name.trim() || `Acc-${Date.now()}`;
-  }
-
+  const updates = {};
+  if (name !== undefined) updates.name = name.trim() || `Acc-${Date.now()}`;
   if (newSessionToken !== undefined && newSessionToken.trim()) {
     const newTokenClean = newSessionToken.trim();
-    const duplicateIdx = accounts.findIndex((a, i) => i !== idx && a.sessionToken === newTokenClean);
-    if (duplicateIdx >= 0) {
+    const dup = await UpstreamAccount.findByToken(newTokenClean);
+    if (dup && dup.id !== existing.id) {
       throw new AppError('New session token is already in use by another account', 400, 'DUPLICATE_ENTRY');
     }
-    accounts[idx].sessionToken = newTokenClean;
+    updates.newSessionToken = newTokenClean;
   }
 
-  fs.writeFileSync(file, JSON.stringify(accounts, null, 2), 'utf-8');
-  AccountPool.reload();
+  await UpstreamAccount.update(oldTokenClean, updates);
+  await AccountPool.reload();
 
   res.json({ success: true });
 }));
