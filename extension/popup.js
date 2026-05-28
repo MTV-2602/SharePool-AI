@@ -40,9 +40,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Check ChatGPT session cookie status
   let sessionToken = "";
   try {
-    const cookie = await new Promise(resolve => {
-      chrome.cookies.get({ url: "https://chatgpt.com", name: "__Secure-next-auth.session-token" }, resolve);
+    const cookies = await new Promise(resolve => {
+      chrome.cookies.getAll({ domain: "chatgpt.com" }, resolve);
     });
+    
+    // Find next-auth session token cookie
+    const cookie = cookies && cookies.find(c => c.name.includes("session-token"));
     
     if (cookie && cookie.value) {
       sessionToken = cookie.value;
@@ -62,6 +65,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           <span class="badge badge-none">Not Found</span>
         </div>
         <div style="font-size:11px; color:var(--text2); margin-top:6px;">Please log in to chatgpt.com first.</div>
+        <div style="font-size:10px; color:#ff9800; margin-top:6px; line-height: 1.4;">⚠️ Nếu đã đăng nhập mà vẫn báo "Not Found": Click chuột phải vào icon Extension -> Chọn "Có thể đọc và thay đổi dữ liệu trang web" -> Chọn "Trên tất cả các trang web" (hoặc "Trên chatgpt.com"), sau đó bấm mở lại Extension.</div>
       `;
       pushBtn.disabled = true;
     }
@@ -87,7 +91,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     
     const username = `${namePrefix}-${Date.now().toString().slice(-6)}`;
     
-    chrome.cookies.get({ url: "https://chatgpt.com", name: "oai-did" }, async (oaiDidCookie) => {
+    chrome.cookies.getAll({ domain: "chatgpt.com" }, async (cookies) => {
+      const oaiDidCookie = cookies && cookies.find(c => c.name === "oai-did");
       const deviceId = (oaiDidCookie && oaiDidCookie.value) ? oaiDidCookie.value : "";
       try {
         const resp = await fetch(`${portalUrl}/api/chatgpt-extension-push`, {
