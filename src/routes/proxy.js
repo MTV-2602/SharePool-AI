@@ -337,54 +337,35 @@ router.post('/responses', asyncHandler(async (req, res) => {
       return;
     }
 
-    // Send response.created event
-    const responseId = 'resp-' + req_id;
-    const createdEvt = {
-      type:   'response.created',
-      response: { id: responseId, object: 'response', status: 'in_progress', model: mappedModel, output: [] },
-    };
-    res.write(`event: response.created\ndata: ${JSON.stringify(createdEvt)}\n\n`);
+
 
     let accumulatedText = '';
     let tokensOut       = 0;
 
+    const { createParser } = require('eventsource-parser');
+    const parser = createParser((event) => {
+      if (event.type === 'event' && event.event === 'response.output_text.delta') {
+        try {
+          const data = JSON.parse(event.data);
+          accumulatedText += data.delta || '';
+        } catch (_) {}
+      }
+    });
+
     try {
-      // Re-use the existing Converter to get clean delta text chunks from ChatGPT SSE
-      const completionId = 'chatcmpl-' + req_id;
-      for await (const chunk of Converter.streamToOpenAI(upstreamResponse, mappedModel, completionId)) {
-        // Parse OpenAI SSE chunks back to extract text deltas
-        if (chunk.startsWith('data: ') && chunk !== 'data: [DONE]\n\n') {
-          try {
-            const parsed = JSON.parse(chunk.slice(6));
-            const delta  = parsed?.choices?.[0]?.delta?.content;
-            if (delta) {
-              accumulatedText += delta;
-              // Emit Responses API text delta event
-              const deltaEvt = {
-                type:           'response.output_item.delta',
-                item_id:        'msg-' + req_id,
-                output_index:   0,
-                content_index:  0,
-                delta:          { type: 'text', text: delta },
-              };
-              res.write(`event: response.output_item.delta\ndata: ${JSON.stringify(deltaEvt)}\n\n`);
-            }
-          } catch { /* skip unparseable chunks */ }
-        }
+      const textDecoder = new TextDecoder();
+      for await (const chunk of upstreamResponse.body) {
+        res.write(chunk);
+        const text = textDecoder.decode(chunk, { stream: true });
+        parser.feed(text);
       }
     } catch (streamErr) {
       logger.error('Error during responses stream', streamErr);
+    } finally {
+      res.end();
     }
 
     tokensOut = Math.ceil(accumulatedText.length / 4);
-
-    // Send response.completed event
-    const completedEvt = {
-      type: 'response.completed',
-      response: buildResponsesObject(accumulatedText, tokensIn, tokensOut),
-    };
-    res.write(`event: response.completed\ndata: ${JSON.stringify(completedEvt)}\n\n`);
-    res.end();
 
     setImmediate(async () => {
       try {
