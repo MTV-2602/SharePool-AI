@@ -18,6 +18,7 @@ const logger     = require('./src/utils/logger').create('Server');
 
 // ─── Express App & Database Setup ───────────────────────────────
 const app = express();
+app.set('trust proxy', 1); // Trust Vercel's proxy headers for rate limiting
 
 logger.info('Initializing database connection...');
 initDB()
