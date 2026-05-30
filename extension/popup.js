@@ -132,7 +132,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const oauthBtn = document.getElementById("oauthBtn");
   
   function generateCodeVerifier() {
-    const array = new Uint8Array(32);
+    const array = new Uint8Array(64);
     crypto.getRandomValues(array);
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
     let verifier = "";
