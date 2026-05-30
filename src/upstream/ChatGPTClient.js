@@ -200,8 +200,8 @@ class ChatGPTClient {
 
       logger.info('Refreshing Codex OAuth access token using refresh_token...');
       try {
-        const { gotScraping } = await import('got-scraping');
-        const response = await gotScraping.post('https://auth.openai.com/oauth/token', {
+        const response = await fetch('https://auth.openai.com/oauth/token', {
+          method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Accept': 'application/json',
@@ -212,14 +212,14 @@ class ChatGPTClient {
             refresh_token: wrapper.refreshToken,
             scope: 'openid profile email offline_access',
           }).toString(),
-          useHeaderGenerator: false
         });
 
-        if (response.statusCode !== 200) {
-          throw new Error(`OpenAI token server returned ${response.statusCode}: ${response.body}`);
+        if (!response.ok) {
+          const errBody = await response.text();
+          throw new Error(`OpenAI token server returned ${response.status}: ${errBody}`);
         }
 
-        const tokens = JSON.parse(response.body);
+        const tokens = await response.json();
         const nextAccessToken = tokens.access_token;
         const nextRefreshToken = tokens.refresh_token || wrapper.refreshToken;
 
@@ -282,29 +282,28 @@ class ChatGPTClient {
 
     logger.debug('Fetching new access token from ChatGPT session endpoint');
 
-    const { gotScraping } = await import('got-scraping');
     let res;
     try {
-      res = await gotScraping.get('https://chatgpt.com/api/auth/session', {
+      const fetchRes = await fetch('https://chatgpt.com/api/auth/session', {
         headers: {
           'Cookie':     `__Secure-next-auth.session-token=${sessionTokenVal}`,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           'Accept':     'application/json',
           'Referer':    'https://chatgpt.com/',
         },
-        useHeaderGenerator: false
       });
+      res = { statusCode: fetchRes.status, body: await fetchRes.text() };
     } catch (networkErr) {
       logger.error('Network error fetching session', networkErr);
-      const status = networkErr.response ? networkErr.response.statusCode : 500;
-      if (status === 401 || status === 403) {
-        const invalid = new Error('Session token is invalid or expired');
-        invalid.code  = 'INVALID_SESSION';
-        throw invalid;
-      }
       const err = new Error('Network error reaching ChatGPT auth endpoint');
       err.code  = 'NETWORK_ERROR';
       throw err;
+    }
+
+    if (res.statusCode === 401 || res.statusCode === 403) {
+      const invalid = new Error('Session token is invalid or expired');
+      invalid.code  = 'INVALID_SESSION';
+      throw invalid;
     }
 
     let json;
@@ -450,7 +449,6 @@ class ChatGPTClient {
 
   async _chatCodexResponses(messages, model, accessToken) {
     const mappedModel = mapModel(model);
-    const { gotScraping } = await import('got-scraping');
     
     const input = this._convertToCodexInput(messages);
     const instructions = this._extractInstructions(messages);
@@ -478,54 +476,44 @@ class ChatGPTClient {
 
     logger.debug(`Sending request to Codex Responses API (model=${mappedModel})`);
 
-    return new Promise((resolve, reject) => {
-      const stream = gotScraping.stream('https://chatgpt.com/backend-api/codex/responses', {
+    try {
+      const fetchRes = await fetch('https://chatgpt.com/backend-api/codex/responses', {
         method: 'POST',
         headers,
-        json: body,
-        useHeaderGenerator: false
+        body: JSON.stringify(body),
       });
 
-      stream.on('response', (response) => {
-        if (response.statusCode >= 400) {
-          let errorBody = '';
-          stream.on('data', chunk => {
-            errorBody += chunk.toString('utf-8');
-          });
-          stream.on('end', () => {
-            let message = 'Codex responses API error';
-            try {
-              const parsed = JSON.parse(errorBody);
-              message = parsed.error?.message || parsed.detail || errorBody;
-            } catch (_) {
-              message = errorBody || `HTTP ${response.statusCode}`;
-            }
-            logger.error(`Codex Responses error response (${response.statusCode}): ${message}`);
-            const err = new Error(message);
-            err.statusCode = response.statusCode;
-            if (response.statusCode === 429) err.code = 'RATE_LIMITED';
-            else if (response.statusCode === 401 || response.statusCode === 403) err.code = 'INVALID_SESSION';
-            else err.code = 'UPSTREAM_ERROR';
-            reject(err);
-          });
-        } else {
-          logger.info('Codex Responses stream connection established successfully');
-          resolve({
-            ok: true,
-            status: response.statusCode,
-            headers: response.headers,
-            body: stream,
-            isCodex: true
-          });
+      if (fetchRes.status >= 400) {
+        const errorBody = await fetchRes.text();
+        let message = 'Codex responses API error';
+        try {
+          const parsed = JSON.parse(errorBody);
+          message = parsed.error?.message || parsed.detail || errorBody;
+        } catch (_) {
+          message = errorBody || `HTTP ${fetchRes.status}`;
         }
-      });
+        logger.error(`Codex Responses error response (${fetchRes.status}): ${message}`);
+        const err = new Error(message);
+        err.statusCode = fetchRes.status;
+        if (fetchRes.status === 429) err.code = 'RATE_LIMITED';
+        else if (fetchRes.status === 401 || fetchRes.status === 403) err.code = 'INVALID_SESSION';
+        else err.code = 'UPSTREAM_ERROR';
+        throw err;
+      }
 
-      stream.on('error', (err) => {
-        if (err.name === 'HTTPError') return;
-        logger.error('Codex stream network error', err);
-        reject(err);
-      });
-    });
+      logger.info('Codex Responses stream connection established successfully');
+      return {
+        ok: true,
+        status: fetchRes.status,
+        headers: Object.fromEntries(fetchRes.headers.entries()),
+        body: fetchRes.body,
+        isCodex: true
+      };
+    } catch (err) {
+      if (err.code) throw err; // Re-throw already-classified errors
+      logger.error('Codex stream network error', err);
+      throw err;
+    }
   }
 }
 

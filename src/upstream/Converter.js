@@ -96,21 +96,37 @@ async function* streamToOpenAI(response, model, completionId) {
     }
   });
 
-  // Async iterator over the node-fetch body
-  const bodyIterator = response.body[Symbol.asyncIterator]
-    ? response.body[Symbol.asyncIterator]()
-    : (async function* () {
-        for await (const chunk of response.body) {
-          yield chunk;
-        }
-      })();
+  // Async iterator over the response body (supports both Node.js streams and Web ReadableStreams)
+  const bodyStream = response.body;
+  const bodyIterator = bodyStream[Symbol.asyncIterator]
+    ? bodyStream[Symbol.asyncIterator]()
+    : bodyStream.getReader
+      ? (async function* () {
+          const reader = bodyStream.getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              yield value;
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        })()
+      : (async function* () {
+          for await (const chunk of bodyStream) {
+            yield chunk;
+          }
+        })();
 
   let bodyDone = false;
 
   (async () => {
     try {
       for await (const chunk of bodyIterator) {
-        const text = Buffer.isBuffer(chunk) ? chunk.toString('utf-8') : String(chunk);
+        const text = Buffer.isBuffer(chunk) ? chunk.toString('utf-8')
+          : (chunk instanceof Uint8Array) ? new TextDecoder().decode(chunk)
+          : String(chunk);
         parser.feed(text);
       }
     } catch (err) {
@@ -224,8 +240,28 @@ async function collectFull(response, model) {
     }
   });
 
-  for await (const chunk of response.body) {
-    const text = Buffer.isBuffer(chunk) ? chunk.toString('utf-8') : String(chunk);
+  for await (const chunk of (function() {
+    const s = response.body;
+    if (s[Symbol.asyncIterator]) return s;
+    if (s.getReader) {
+      return (async function* () {
+        const reader = s.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            yield value;
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      })();
+    }
+    return s;
+  })()) {
+    const text = Buffer.isBuffer(chunk) ? chunk.toString('utf-8')
+      : (chunk instanceof Uint8Array) ? new TextDecoder().decode(chunk)
+      : String(chunk);
     parser.feed(text);
   }
 

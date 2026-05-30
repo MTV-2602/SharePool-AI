@@ -99,11 +99,10 @@ router.post('/chatgpt-oauth-callback', extensionAuth, asyncHandler(async (req, r
     return res.status(400).json({ ok: false, error: 'code and codeVerifier are required' });
   }
 
-  const { gotScraping } = await import('got-scraping');
-
   let tokenRes;
   try {
-    tokenRes = await gotScraping.post('https://auth.openai.com/oauth/token', {
+    const fetchResponse = await fetch('https://auth.openai.com/oauth/token', {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
@@ -115,8 +114,11 @@ router.post('/chatgpt-oauth-callback', extensionAuth, asyncHandler(async (req, r
         redirect_uri: redirectUri || 'http://localhost:1455/auth/callback',
         code_verifier: codeVerifier,
       }).toString(),
-      useHeaderGenerator: false
     });
+    tokenRes = {
+      statusCode: fetchResponse.status,
+      body: await fetchResponse.text(),
+    };
   } catch (err) {
     return res.status(502).json({ ok: false, error: 'OpenAI auth server returned error: ' + err.message });
   }
