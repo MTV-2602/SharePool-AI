@@ -449,6 +449,7 @@ class ChatGPTClient {
       instructions: instructions || "You are a helpful assistant.",
       stream: true,
       store: false,
+      prompt_cache_key: this.getDeviceId() || 'default',
       reasoning: {
         effort: "low",
         summary: "auto"
