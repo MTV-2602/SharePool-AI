@@ -1,7 +1,8 @@
-// src/db/index.js — PostgreSQL Database Client
-'use strict';
+const pg = require('pg');
+// Parse PostgreSQL BIGINT (int8) columns as JavaScript Numbers
+pg.types.setTypeParser(pg.types.builtins.INT8, (value) => parseInt(value, 10));
 
-const { Pool } = require('pg');
+const { Pool } = pg;
 const config = require('../config');
 
 let _pgPool = null;

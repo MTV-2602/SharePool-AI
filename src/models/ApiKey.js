@@ -98,7 +98,7 @@ const ApiKey = {
     if (!rec.isActive) return { ok: false, reason: 'key_disabled' }; // Use camelCase isActive mapped key
     if (rec.expiresAt && new Date(rec.expiresAt) < new Date())
                        return { ok: false, reason: 'key_expired' };
-    if (rec.quotaUsed >= rec.quotaTotal)
+    if (Number(rec.quotaUsed) >= Number(rec.quotaTotal))
                        return { ok: false, reason: 'quota_exceeded' };
     return { ok: true, record: rec };
   },
