@@ -15,19 +15,9 @@ const logger = require('../utils/logger').create('ChatGPTClient');
  * @returns {'gpt-4o' | 'gpt-4o-mini'}
  */
 function mapModel(model) {
-  const m = (model || '').toLowerCase();
-
-  const miniPatterns = [
-    'mini', 'small', 'nano', 'flash',
-    'gpt-4o-mini', 'gpt-3.5', 'gpt-35',
-  ];
-
-  for (const pat of miniPatterns) {
-    if (m.includes(pat)) return 'gpt-4o-mini';
-  }
-
-  // gpt-4, gpt-4o, o1, o3, gpt-4.1, codex, gpt-4-turbo, etc.
-  return 'gpt-4o';
+  // OpenAI Codex Responses API only supports specific models like gpt-5.5 for ChatGPT accounts.
+  // We map all models (gpt-4o, gpt-4o-mini, gpt-5.3-codex, etc.) to gpt-5.5.
+  return 'gpt-5.5';
 }
 
 // ─── ChatGPTClient ────────────────────────────────────────────────────────────
@@ -448,23 +438,7 @@ class ChatGPTClient {
   }
 
   async _chatCodexResponses(messages, model, accessToken) {
-    let mappedModel = mapModel(model);
-    
-    try {
-      const parts = accessToken.split('.');
-      if (parts.length >= 2) {
-        let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-        while (base64.length % 4) base64 += '=';
-        const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
-        const plan = payload['https://api.openai.com/auth']?.chatgpt_plan_type || payload.plan || 'free';
-        if (plan === 'free' && mappedModel === 'gpt-4o') {
-          logger.info('Free account detected, mapping model from gpt-4o to gpt-4o-mini for Codex Responses API compatibility');
-          mappedModel = 'gpt-4o-mini';
-        }
-      }
-    } catch (err) {
-      logger.error('Failed to parse plan from accessToken', err);
-    }
+    const mappedModel = mapModel(model);
     
     const input = this._convertToCodexInput(messages);
     const instructions = this._extractInstructions(messages);

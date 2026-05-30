@@ -25,6 +25,9 @@ router.use(authenticate);
 
 router.get('/models', asyncHandler(async (req, res) => {
   const models = [
+    'gpt-5.5',
+    'gpt-5.4',
+    'gpt-5.3-codex',
     'gpt-4o',
     'gpt-4o-mini',
     'gpt-4',
