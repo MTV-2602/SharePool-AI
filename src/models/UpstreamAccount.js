@@ -27,19 +27,31 @@ const UpstreamAccount = {
     );
   },
 
-  /** Insert or update by session token */
+  /** Insert or update by session token or name */
   async upsertByToken(name, sessionToken) {
-    const existing = await UpstreamAccount.findByToken(sessionToken);
-    if (existing) {
-      // Update name if different
-      if (existing.name !== name) {
+    // 1. Try to find by name first to prevent duplicate accounts for the same email/username
+    const existingByName = await UpstreamAccount.findByName(name);
+    if (existingByName) {
+      await db.run(
+        `UPDATE upstream_accounts SET session_token = ?, is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [sessionToken, existingByName.id]
+      );
+      return await UpstreamAccount.findById(existingByName.id);
+    }
+
+    // 2. Try to find by token (fallback)
+    const existingByToken = await UpstreamAccount.findByToken(sessionToken);
+    if (existingByToken) {
+      if (existingByToken.name !== name) {
         await db.run(
-          `UPDATE upstream_accounts SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE session_token = ?`,
-          [name, sessionToken]
+          `UPDATE upstream_accounts SET name = ?, is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          [name, existingByToken.id]
         );
       }
-      return await UpstreamAccount.findByToken(sessionToken);
+      return await UpstreamAccount.findById(existingByToken.id);
     }
+
+    // 3. Otherwise, insert new row
     const { lastInsertRowid } = await db.run(
       `INSERT INTO upstream_accounts (name, session_token, is_active, total_requests) VALUES (?, ?, 1, 0)`,
       [name, sessionToken]

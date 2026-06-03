@@ -185,7 +185,16 @@ router.get('/accounts/expired', extensionAuth, asyncHandler(async (req, res) => 
   const expired = [];
 
   for (const cred of allCredentials) {
-    const upstream = dbAccounts.find(a => a.name.trim().toLowerCase() === cred.email.trim().toLowerCase());
+    const upstream = dbAccounts.find(a => {
+      const nameClean = (a.name || '').trim().toLowerCase();
+      const emailClean = (cred.email || '').trim().toLowerCase();
+      if (nameClean === emailClean) return true;
+      if (nameClean.includes(emailClean)) return true;
+      
+      const token = a.sessionToken || a.session_token || '';
+      if (token && token.toLowerCase().includes(emailClean)) return true;
+      return false;
+    });
     
     let needsLogin = false;
     let reason = '';

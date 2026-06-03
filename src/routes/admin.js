@@ -305,6 +305,10 @@ const quotaRouteHandler = asyncHandler(async (req, res) => {
       limits
     });
   } catch (err) {
+    if (err.code === 'INVALID_SESSION' || err.message?.includes('session is invalid') || err.message?.includes('expired')) {
+      const AccountPool = require('../upstream/AccountPool');
+      AccountPool.markInvalid(tokenClean);
+    }
     res.status(500).json({ ok: false, error: err.message });
   }
 });

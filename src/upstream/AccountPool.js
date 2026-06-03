@@ -17,6 +17,9 @@ class AccountPool {
     /** @type {Map<string, number>} token → cooldown_until (ms timestamp) */
     this._cooldowns = new Map();
 
+    /** @type {Set<string>} set of invalid/expired session tokens */
+    this._invalidTokens = new Set();
+
     /** Round-robin index */
     this._index = 0;
 
@@ -145,6 +148,7 @@ class AccountPool {
   markInvalid(token) {
     const until = Date.now() + COOLDOWN_INVALID;
     this._cooldowns.set(token, until);
+    this._invalidTokens.add(token);
     const account = this._accounts.find(a => a.sessionToken === token);
     logger.warn(`[${account?.name ?? 'unknown'}] Invalid session — cooling down for 30min`);
   }
@@ -238,12 +242,20 @@ class AccountPool {
 
   getStatus() {
     return this._accounts.map(account => {
+      const isInvalid  = this._invalidTokens.has(account.sessionToken);
       const onCooldown = this._isOnCooldown(account.sessionToken);
       const remaining  = this._cooldownRemaining(account.sessionToken);
 
+      let status = 'active';
+      if (isInvalid) {
+        status = 'failed';
+      } else if (onCooldown) {
+        status = 'cooldown';
+      }
+
       return {
         name:              account.name,
-        status:            onCooldown ? 'cooldown' : 'active',
+        status,
         cooldownRemaining: remaining,
         hasToken:          Boolean(account.sessionToken),
         sessionToken:      account.sessionToken,
@@ -256,6 +268,7 @@ class AccountPool {
   async reload() {
     logger.info('Reloading accounts from database and resetting cooldowns…');
     this._cooldowns.clear();
+    this._invalidTokens.clear();
     await this._loadAsync();
     return { count: this._accounts.length };
   }
