@@ -278,4 +278,49 @@ router.get('/diagnose-token', asyncHandler(async (req, res) => {
   }
 }));
 
+router.get('/test-quota-route', asyncHandler(async (req, res) => {
+  const db = require('../db');
+  const rows = await db.query('SELECT name, session_token FROM upstream_accounts WHERE is_active = 1 LIMIT 1');
+  if (rows.length === 0) {
+    return res.json({ ok: false, message: 'No active accounts in DB' });
+  }
+  const name = rows[0].name;
+  const sessionToken = rows[0].sessionToken || rows[0].session_token;
+  
+  const { ChatGPTClient } = require('../upstream/ChatGPTClient');
+  const client = new ChatGPTClient(sessionToken);
+  
+  try {
+    const accessToken = await client.getAccessToken();
+    const fetch = require('node-fetch');
+    
+    const usageResponse = await fetch('https://chatgpt.com/backend-api/wham/usage', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      }
+    });
+
+    if (!usageResponse.ok) {
+      throw new Error(`OpenAI Wham API returned ${usageResponse.status} ${usageResponse.statusText}`);
+    }
+
+    const data = await usageResponse.json();
+    return res.json({
+      ok: true,
+      name,
+      data
+    });
+  } catch (err) {
+    return res.json({
+      ok: false,
+      name,
+      error: err.message,
+      stack: err.stack
+    });
+  }
+}));
+
 module.exports = router;
