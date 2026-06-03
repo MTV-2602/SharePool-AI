@@ -4,6 +4,124 @@ import api from '../lib/api';
 
 const TABS = ['Pool Session Token', 'Nhập thủ công', 'Acc AutoReg (Email/Pass)'];
 
+// ─── TOTP Helper Functions for 2FA ───────────────────────────────────────────
+function base32tohex(base32) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "", hex = "";
+  for (let i = 0; i < base32.length; i++) {
+    const v = chars.indexOf(base32.charAt(i).toUpperCase());
+    if (v !== -1) bits += v.toString(2).padStart(5, "0");
+  }
+  for (let i = 0; i + 4 <= bits.length; i += 4) hex += parseInt(bits.substr(i, 4), 2).toString(16);
+  return hex;
+}
+
+async function getTOTP(secret) {
+  try {
+    const hex = base32tohex(secret.replace(/\s/g, ''));
+    const time = Math.floor(Math.floor(Date.now() / 1000) / 30).toString(16).padStart(16, "0");
+    const timeBuffer = new Uint8Array(8);
+    for (let i = 0; i < 8; i++) timeBuffer[i] = parseInt(time.substr(i * 2, 2), 16);
+    const keyBuffer = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length / 2; i++) keyBuffer[i] = parseInt(hex.substr(i * 2, 2), 16);
+    const key = await window.crypto.subtle.importKey("raw", keyBuffer, { name: "HMAC", hash: { name: "SHA-1" } }, false, ["sign"]);
+    const hmac = new Uint8Array(await window.crypto.subtle.sign("HMAC", key, timeBuffer));
+    const offset = hmac[hmac.length - 1] & 0x0f;
+    const code = ((hmac[offset] & 0x7f) << 24) | ((hmac[offset + 1] & 0xff) << 16) | ((hmac[offset + 2] & 0xff) << 8) | (hmac[offset + 3] & 0xff);
+    return (code % 1000000).toString().padStart(6, "0");
+  } catch (e) { console.error("TOTP error", e); return null; }
+}
+
+function TwoFactorCell({ secret }) {
+  const [otp, setOtp] = useState('');
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const generateOtp = async () => {
+    if (!secret) return;
+    setLoading(true);
+    try {
+      const code = await getTOTP(secret);
+      if (code) {
+        setOtp(code);
+        navigator.clipboard.writeText(code).catch(() => {});
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        const remaining = 30 - (Math.floor(Date.now() / 1000) % 30);
+        setTimeLeft(remaining);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!otp) return;
+    const interval = setInterval(() => {
+      const rem = 30 - (Math.floor(Date.now() / 1000) % 30);
+      if (rem <= 0 || rem > 30) {
+        generateOtp();
+      } else {
+        setTimeLeft(rem);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [otp, secret]);
+
+  if (!secret) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <code style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }} title={secret}>
+        {secret.slice(0, 12)}...
+      </code>
+      {otp ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            style={{
+              background: 'var(--green)',
+              color: '#000',
+              fontWeight: 700,
+              padding: '2px 6px',
+              borderRadius: 4,
+              fontFamily: 'monospace',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              display: 'inline-block'
+            }}
+            onClick={generateOtp}
+            title="Bấm để copy lại mã OTP mới"
+          >
+            {otp}
+          </span>
+          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+            ({timeLeft}s)
+          </span>
+          {copied && <span style={{ fontSize: '0.65rem', color: 'var(--green)' }}>Đã copy</span>}
+        </div>
+      ) : (
+        <button
+          className="btn btn-ghost btn-xs"
+          onClick={generateOtp}
+          disabled={loading}
+          style={{
+            padding: '2px 6px',
+            fontSize: '0.68rem',
+            border: '1px solid var(--border)',
+            background: 'var(--surface-2)',
+            color: 'var(--text-secondary)'
+          }}
+        >
+          {loading ? 'Đang lấy...' : '🔑 Lấy mã OTP'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function ChatGPTPage() {
   const [tab, setTab] = useState(0);
   return (
@@ -570,9 +688,7 @@ function AutoRegCredentials() {
                       </div>
                     </td>
                     <td>
-                      <code style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        {c.otp_secret ? c.otp_secret.slice(0, 16) + '...' : '—'}
-                      </code>
+                      <TwoFactorCell secret={c.otp_secret} />
                     </td>
                     <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{c.worker_id || '—'}</td>
                     <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
