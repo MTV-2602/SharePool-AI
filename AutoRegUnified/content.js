@@ -1353,6 +1353,35 @@ function findChatGptLogoutConfirmButton(clickedButton) {
   return null;
 }
 
+function findAvatarButton() {
+  const testidBtn = document.querySelector('[data-testid="profile-button"], [data-testid="user-menu-button"]');
+  if (testidBtn && isVisible(testidBtn)) return testidBtn;
+
+  const buttons = Array.from(document.querySelectorAll('button, [role="button"], div[class*="avatar"], div[class*="profile"]')).filter(isVisible);
+  for (const btn of buttons) {
+    const rect = btn.getBoundingClientRect();
+    if (rect.left < 300 && rect.bottom > window.innerHeight - 200) {
+      return btn;
+    }
+  }
+
+  for (const btn of buttons) {
+    const rect = btn.getBoundingClientRect();
+    if (rect.left < 260 && rect.bottom > window.innerHeight - 150) {
+      return btn;
+    }
+  }
+  return null;
+}
+
+function findLogoutMenuItem() {
+  const elements = Array.from(document.querySelectorAll('[role="menuitem"], button, div, span, a')).filter(isVisible);
+  return elements.find(el => {
+    const text = (el.textContent || "").trim().toLowerCase();
+    return text === "log out" || text === "logout" || text.includes("log out") || text.includes("logout");
+  });
+}
+
 async function runChatGptLogoutAfterPush() {
   if (!location.hostname.includes("chatgpt.com")) {
     throw new Error("Tab hien tai khong phai ChatGPT.");
@@ -1362,50 +1391,116 @@ async function runChatGptLogoutAfterPush() {
     return { success: true, alreadyLoggedOut: true, href: location.href };
   }
 
-  const targetUrl = "https://chatgpt.com/#settings/Security";
-  if (location.href !== targetUrl) {
-    location.href = targetUrl;
-    await sleep(2500);
+  // Method 1: Security settings log out of this device
+  try {
+    sendPanelLog("Đang thử đăng xuất bằng cài đặt bảo mật (Security settings)...");
+    const targetUrl = "https://chatgpt.com/#settings/Security";
+    if (location.href !== targetUrl) {
+      location.href = targetUrl;
+      await sleep(2500);
+    }
+
+    await waitForCondition(() => {
+      const bodyText = document.body?.innerText || "";
+      return location.hash.toLowerCase().includes("settings/security") &&
+        (/security|multi-factor authentication|authenticator app|log out of this device/i.test(bodyText));
+    }, 10000, 300);
+
+    await sleep(1200);
+
+    const logoutBtn = await waitForStableElement(() => findChatGptDeviceLogoutButton(), 15000, 1600, 300);
+    if (!logoutBtn) {
+      throw new Error("Không tìm thấy nút Log out of this device.");
+    }
+
+    logoutBtn.scrollIntoView({ block: "center", inline: "center" });
+    await sleep(1200);
+    clickLikeUser(logoutBtn);
+    await sleep(1800);
+
+    const confirmBtn = await waitForStableElement(() => findChatGptLogoutConfirmButton(logoutBtn), 8000, 900, 250);
+    if (confirmBtn) {
+      confirmBtn.scrollIntoView({ block: "center", inline: "center" });
+      await sleep(1000);
+      clickLikeUser(confirmBtn);
+    }
+
+    const loggedOutDetected = await waitForCondition(() => isLikelyLoggedOutFromChatGpt(), 15000, 600);
+    if (loggedOutDetected) {
+      await sleep(CHATGPT_LOGOUT_POST_LOAD_SETTLE_MS);
+      return {
+        success: true,
+        method: "security_settings",
+        clicked: true,
+        confirmed: !!confirmBtn,
+        loggedOutDetected: true,
+        href: location.href
+      };
+    }
+  } catch (err) {
+    sendPanelLog(`Cài đặt bảo mật lỗi: ${err.message || String(err)}. Chuyển sang cơ chế click Avatar...`);
   }
 
-  await waitForCondition(() => {
-    const bodyText = document.body?.innerText || "";
-    return location.hash.toLowerCase().includes("settings/security") &&
-      (/security|multi-factor authentication|authenticator app|log out of this device/i.test(bodyText));
-  }, 12000, 300);
+  // Method 2: Fallback (Click Avatar at bottom left, then click Log out, then click confirmation Log out button)
+  try {
+    sendPanelLog("Đang thử đăng xuất bằng cách click Avatar góc dưới bên trái...");
 
-  await sleep(1200);
+    if (location.hash) {
+      location.href = "https://chatgpt.com/";
+      await sleep(2500);
+    }
 
-  const logoutBtn = await waitForStableElement(() => findChatGptDeviceLogoutButton(), 22000, 1600, 300);
-  if (!logoutBtn) {
-    throw new Error("Khong tim thay nut Log out of this device.");
-  }
+    const avatarBtn = findAvatarButton();
+    if (!avatarBtn) {
+      throw new Error("Không tìm thấy nút Avatar của người dùng ở sidebar.");
+    }
 
-  logoutBtn.scrollIntoView({ block: "center", inline: "center" });
-  await sleep(1200);
-  clickLikeUser(logoutBtn);
-  await sleep(1800);
-
-  const confirmBtn = await waitForStableElement(() => findChatGptLogoutConfirmButton(logoutBtn), 9000, 900, 250);
-  if (confirmBtn) {
-    confirmBtn.scrollIntoView({ block: "center", inline: "center" });
+    avatarBtn.scrollIntoView({ block: "center", inline: "center" });
     await sleep(1000);
-    clickLikeUser(confirmBtn);
-  }
+    clickLikeUser(avatarBtn);
+    await sleep(1500);
 
-  const loggedOutDetected = await waitForCondition(() => isLikelyLoggedOutFromChatGpt(), 22000, 600);
-  if (!loggedOutDetected) {
-    await sleep(2500);
-  } else {
-    await sleep(CHATGPT_LOGOUT_POST_LOAD_SETTLE_MS);
+    let logoutItem = findLogoutMenuItem();
+    if (!logoutItem) {
+      clickLikeUser(avatarBtn);
+      await sleep(1500);
+      logoutItem = findLogoutMenuItem();
+      if (!logoutItem) {
+        throw new Error("Không tìm thấy dòng chữ 'Log out' trong menu.");
+      }
+    }
+
+    logoutItem.scrollIntoView({ block: "center", inline: "center" });
+    await sleep(1000);
+    clickLikeUser(logoutItem);
+    await sleep(1800);
+
+    const confirmBtn = await waitForStableElement(() => findChatGptLogoutConfirmButton(logoutItem), 8000, 900, 250);
+    if (confirmBtn) {
+      confirmBtn.scrollIntoView({ block: "center", inline: "center" });
+      await sleep(1000);
+      clickLikeUser(confirmBtn);
+    }
+
+    const loggedOutDetected = await waitForCondition(() => isLikelyLoggedOutFromChatGpt(), 20000, 600);
+    if (!loggedOutDetected) {
+      await sleep(2500);
+    } else {
+      await sleep(CHATGPT_LOGOUT_POST_LOAD_SETTLE_MS);
+    }
+
+    return {
+      success: true,
+      method: "avatar_click",
+      clicked: true,
+      confirmed: !!confirmBtn,
+      loggedOutDetected: !!loggedOutDetected,
+      href: location.href
+    };
+  } catch (err) {
+    sendPanelLog(`Cơ chế đăng xuất phụ bằng Avatar cũng lỗi: ${err.message || String(err)}`);
+    throw err;
   }
-  return {
-    success: true,
-    clicked: true,
-    confirmed: !!confirmBtn,
-    loggedOutDetected: !!loggedOutDetected,
-    href: location.href
-  };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
