@@ -461,8 +461,10 @@ class ChatGPTClient {
   async _chatCodexResponses(messages, model, accessToken, options = {}) {
     const mappedModel = mapModel(model);
     
-    const input = this._convertToCodexInput(messages);
-    const instructions = this._extractInstructions(messages);
+    const input = options.isResponsesApi ? messages : this._convertToCodexInput(messages);
+    const instructions = options.isResponsesApi
+      ? (options.instructions || "You are a helpful assistant.")
+      : (this._extractInstructions(messages) || "You are a helpful assistant.");
 
     let reasoning = { effort: "low", summary: "auto" };
     if (options.reasoning) {
@@ -478,7 +480,7 @@ class ChatGPTClient {
     const body = {
       model: mappedModel,
       input: input,
-      instructions: instructions || "You are a helpful assistant.",
+      instructions: instructions,
       stream: true,
       store: false,
       prompt_cache_key: this.getDeviceId() || 'default',

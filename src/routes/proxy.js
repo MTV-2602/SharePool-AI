@@ -255,7 +255,12 @@ router.post('/responses', asyncHandler(async (req, res) => {
     }
   }
 
-  if (messages.length === 0 || !messages.some(m => m.role === 'user' || m.role === 'assistant')) {
+  let rawInput = input;
+  if (typeof input === 'string') {
+    rawInput = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: input }] }];
+  }
+
+  if (!rawInput || (Array.isArray(rawInput) && rawInput.length === 0)) {
     throw new AppError(
       'Request body must include a non-empty "input" field',
       400,
@@ -265,7 +270,7 @@ router.post('/responses', asyncHandler(async (req, res) => {
 
   const req_id      = uuidv4().replace(/-/g, '').slice(0, 16);
   const mappedModel = mapModel(model);
-  const tokensIn    = estimateMessages(messages);
+  const tokensIn    = estimateMessages(messages.length > 0 ? messages : [{ role: 'user', content: '...' }]);
 
   logger.info(
     `[${req.apiKeyRecord?.name}] /v1/responses req_id=${req_id} model=${mappedModel} stream=${stream} est_in=${tokensIn}`
@@ -309,7 +314,9 @@ router.post('/responses', asyncHandler(async (req, res) => {
 
     let upstreamResponse;
     try {
-      upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel, {
+      upstreamResponse = await AccountPool.chatWithRotation(rawInput, mappedModel, {
+        isResponsesApi: true,
+        instructions: req.body.instructions || instructions,
         tools: req.body.tools,
         tool_choice: req.body.tool_choice,
         reasoning: req.body.reasoning,
@@ -394,7 +401,9 @@ router.post('/responses', asyncHandler(async (req, res) => {
 
   let upstreamResponse;
   try {
-    upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel, {
+    upstreamResponse = await AccountPool.chatWithRotation(rawInput, mappedModel, {
+      isResponsesApi: true,
+      instructions: req.body.instructions || instructions,
       tools: req.body.tools,
       tool_choice: req.body.tool_choice,
       reasoning: req.body.reasoning,
