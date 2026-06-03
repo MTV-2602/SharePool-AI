@@ -174,6 +174,22 @@ router.get('/accounts', asyncHandler(async (req, res) => {
   res.json(result);
 }));
 
+// POST /admin-api/accounts/mark-failed — Mark a session token as failed to test auto-login/re-login from extension
+router.post('/accounts/mark-failed', asyncHandler(async (req, res) => {
+  const { sessionToken } = req.body;
+  if (!sessionToken) {
+    throw new AppError('sessionToken is required', 400, 'INVALID_REQUEST');
+  }
+
+  // Mark token as invalid in the in-memory pool
+  AccountPool.markInvalid(sessionToken);
+
+  res.json({
+    ok: true,
+    message: 'Đã đánh dấu tài khoản lỗi để kích hoạt re-login test'
+  });
+}));
+
 // GET & POST /admin-api/accounts/quota — Get wham usage/quota for a specific account
 const quotaRouteHandler = asyncHandler(async (req, res) => {
   const name = (req.query.name || req.body.name || '').trim();

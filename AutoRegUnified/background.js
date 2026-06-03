@@ -2068,6 +2068,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({
           success: res.ok && !!data.accessToken,
           token: data.accessToken || "",
+          user: data.user || null,
           status: res.status
         });
       })

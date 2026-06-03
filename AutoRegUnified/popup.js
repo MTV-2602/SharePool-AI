@@ -726,7 +726,7 @@ async function boot() {
     const oldText = pushBtn.innerText;
     pushBtn.innerText = "Đang đẩy...";
 
-    const username = `${namePrefix}-${Date.now().toString().slice(-6)}`;
+    const username = namePrefix.includes("@") ? namePrefix : `${namePrefix}-${Date.now().toString().slice(-6)}`;
 
     try {
       const resp = await fetch(`${portalUrl}/api/chatgpt-extension-push`, {
@@ -842,9 +842,32 @@ async function updateCookieStatusUi() {
           <span>ChatGPT Session:</span>
           <span class="badge badge-ok">Active</span>
         </div>
+        <div id="manualCookieEmail" style="font-size:11px; color:#38bdf8; margin-bottom:4px; font-weight:bold;">Đang lấy email...</div>
         <div style="font-family:monospace; font-size:10px; color:#94a3b8; word-break:break-all;">${masked}</div>
       `;
       pushBtn.disabled = false;
+
+      // Fetch user profile (email) from ChatGPT session API asynchronously
+      sendMessage({ type: "GET_SESSION_TOKEN" }).then(res => {
+        const emailDiv = $("manualCookieEmail");
+        if (res && res.success && res.user && res.user.email) {
+          const email = res.user.email;
+          if (emailDiv) {
+            emailDiv.textContent = `Email: ${email}`;
+          }
+          const prefixInput = $("manualNamePrefix");
+          if (prefixInput && prefixInput.value === "CodexAcc") {
+            prefixInput.value = email;
+          }
+        } else {
+          if (emailDiv) {
+            emailDiv.textContent = "Chưa đăng nhập ChatGPT";
+          }
+        }
+      }).catch(() => {
+        const emailDiv = $("manualCookieEmail");
+        if (emailDiv) emailDiv.textContent = "Chưa đăng nhập ChatGPT";
+      });
     } else {
       activeSessionToken = "";
       cookieStatusDiv.innerHTML = `

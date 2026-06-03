@@ -177,6 +177,19 @@ function ChatGPTPool() {
     }
   };
 
+  const handleMarkFailed = async (sessionToken) => {
+    try {
+      await api.post('/admin-api/accounts/mark-failed', { sessionToken });
+      setMsg({
+        type: 'success',
+        text: 'Đã đánh dấu tài khoản lỗi. Tiện ích (Extension) sẽ quét thấy và tự động đăng nhập lại ChatGPT để làm mới session.'
+      });
+      fetchAccounts();
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Thao tác thất bại.' });
+    }
+  };
+
   const startEdit = (acc) => {
     setEditRow(acc.sessionToken);
     setEditValues({ name: acc.name, newSessionToken: '' });
@@ -286,7 +299,21 @@ function ChatGPTPool() {
                         </code>
                       )}
                     </td>
-                    <td>{statusBadge(acc.status)}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {statusBadge(acc.status)}
+                        {acc.status !== 'failed' && acc.status !== 'error' && (
+                          <button
+                            className="btn btn-ghost btn-xs text-xs"
+                            onClick={() => handleMarkFailed(acc.sessionToken)}
+                            title="Đánh dấu tài khoản lỗi để test re-login tự động từ Extension"
+                            style={{ padding: '2px 4px', fontSize: '0.68rem', color: 'var(--text-muted)', border: '1px dashed var(--border)' }}
+                          >
+                            Mô phỏng lỗi (Test Re-login)
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td>
                       <AccountQuotaCell accountName={acc.name} sessionToken={acc.sessionToken} />
                     </td>
