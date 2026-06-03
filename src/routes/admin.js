@@ -174,15 +174,28 @@ router.get('/accounts', asyncHandler(async (req, res) => {
   res.json(result);
 }));
 
-// GET /admin-api/accounts/quota — Get wham usage/quota for a specific account
-router.get('/accounts/quota', asyncHandler(async (req, res) => {
-  const { sessionToken } = req.query;
-  if (!sessionToken || !sessionToken.trim()) {
-    throw new AppError('sessionToken is required', 400, 'INVALID_REQUEST');
+// GET & POST /admin-api/accounts/quota — Get wham usage/quota for a specific account
+const quotaRouteHandler = asyncHandler(async (req, res) => {
+  const name = (req.query.name || req.body.name || '').trim();
+  const sessionToken = (req.query.sessionToken || req.body.sessionToken || '').trim();
+
+  let tokenClean = '';
+  if (name) {
+    const acc = await UpstreamAccount.findByName(name);
+    if (acc) {
+      tokenClean = (acc.sessionToken || acc.session_token || '').trim();
+    }
   }
 
-  const tokenClean = sessionToken.trim();
-  const ChatGPTClient = require('../upstream/ChatGPTClient');
+  if (!tokenClean && sessionToken) {
+    tokenClean = sessionToken;
+  }
+
+  if (!tokenClean) {
+    throw new AppError('sessionToken or name is required', 400, 'INVALID_REQUEST');
+  }
+
+  const { ChatGPTClient } = require('../upstream/ChatGPTClient');
   const client = new ChatGPTClient(tokenClean);
 
   try {
@@ -294,7 +307,11 @@ router.get('/accounts/quota', asyncHandler(async (req, res) => {
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
-}));
+});
+
+router.route('/accounts/quota')
+  .get(quotaRouteHandler)
+  .post(quotaRouteHandler);
 
 router.post('/accounts/import-manual', asyncHandler(async (req, res) => {
   const { name, sessionToken } = req.body;

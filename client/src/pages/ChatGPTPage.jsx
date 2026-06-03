@@ -31,7 +31,7 @@ export default function ChatGPTPage() {
 }
 
 // ─── Account Quota Cell ────────────────────────────────────────────────────────
-function AccountQuotaCell({ sessionToken }) {
+function AccountQuotaCell({ accountName, sessionToken }) {
   const [quota, setQuota] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -40,8 +40,10 @@ function AccountQuotaCell({ sessionToken }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get('/admin-api/accounts/quota', {
-        params: { sessionToken }
+      // Use POST with a request body to completely avoid URL length and character restrictions
+      const res = await api.post('/admin-api/accounts/quota', {
+        name: accountName,
+        sessionToken
       });
       if (res.data.ok) {
         setQuota(res.data);
@@ -49,7 +51,9 @@ function AccountQuotaCell({ sessionToken }) {
         setError('Lỗi tải');
       }
     } catch (e) {
-      setError(e.response?.data?.error || 'Lỗi kết nối');
+      const errData = e.response?.data?.error;
+      const errMsg = typeof errData === 'object' ? errData.message : errData;
+      setError(errMsg || e.message || 'Lỗi kết nối');
     } finally {
       setLoading(false);
     }
@@ -57,7 +61,7 @@ function AccountQuotaCell({ sessionToken }) {
 
   useEffect(() => {
     fetchQuota();
-  }, [sessionToken]);
+  }, [accountName, sessionToken]);
 
   if (loading) return <span className="text-xs text-muted" style={{ fontSize: '0.72rem' }}>Đang tải...</span>;
   if (error) {
@@ -284,7 +288,7 @@ function ChatGPTPool() {
                     </td>
                     <td>{statusBadge(acc.status)}</td>
                     <td>
-                      <AccountQuotaCell sessionToken={acc.sessionToken} />
+                      <AccountQuotaCell accountName={acc.name} sessionToken={acc.sessionToken} />
                     </td>
                     <td style={{ color: 'var(--text-secondary)' }}>{acc.totalRequests ?? 0}</td>
                     <td>
