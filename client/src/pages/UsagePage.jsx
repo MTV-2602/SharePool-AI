@@ -26,7 +26,7 @@ export default function UsagePage() {
 
   useEffect(() => { fetch(); }, []);
 
-  const maxVal = Math.max(1, ...data.map(d => d.total || 0));
+  const maxVal = Math.max(1, ...data.map(d => d.requests || d.total || 0));
 
   return (
     <div>
@@ -56,16 +56,16 @@ export default function UsagePage() {
         <div className="card">
           <div className="card-header">
             <span className="card-title"><BarChart3 size={15} /> Biểu đồ requests theo ngày</span>
-            <span className="text-xs text-muted">Tổng: {data.reduce((s, d) => s + (d.total || 0), 0).toLocaleString()} requests</span>
+            <span className="text-xs text-muted">Tổng: {data.reduce((s, d) => s + (d.requests || d.total || 0), 0).toLocaleString()} requests</span>
           </div>
 
           {/* Bar chart */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 160, marginBottom: 8, padding: '0 4px', overflowX: 'auto' }}>
             {data.slice(-30).map((d, i) => {
-              const pct = (d.total || 0) / maxVal;
+              const pct = (d.requests || d.total || 0) / maxVal;
               return (
                 <div key={d.date || i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1, minWidth: 20 }}>
-                  <div title={`${d.date}: ${d.total?.toLocaleString()}`} style={{
+                  <div title={`${d.date}: ${(d.requests || d.total || 0).toLocaleString()}`} style={{
                     width: '100%', height: Math.max(2, pct * 130),
                     background: `linear-gradient(to top, var(--accent), var(--accent-light))`,
                     borderRadius: '3px 3px 0 0',
@@ -104,7 +104,7 @@ export default function UsagePage() {
                   <tr key={d.date || i}>
                     <td style={{ fontWeight: 500 }}>{d.date || '—'}</td>
                     <td style={{ textAlign: 'right', color: 'var(--accent-light)', fontWeight: 600 }}>
-                      {(d.total || 0).toLocaleString()}
+                      {(d.requests || d.total || 0).toLocaleString()}
                     </td>
                     <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
                       {(d.tokens_in || 0).toLocaleString()}

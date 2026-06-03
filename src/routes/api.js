@@ -175,6 +175,53 @@ router.get('/credentials', extensionAuth, asyncHandler(async (req, res) => {
   res.json({ ok: true, count: creds.length, credentials: creds });
 }));
 
+// GET /api/accounts/expired — Danh sách tài khoản hết hạn hoặc cần re-login
+router.get('/accounts/expired', extensionAuth, asyncHandler(async (req, res) => {
+  const dbAccounts = await UpstreamAccount.findAll();
+  const poolStatus = AccountPool.getStatus();
+  const statusMap = new Map(poolStatus.map(a => [a.sessionToken, a]));
+
+  const allCredentials = await ChatGPTCredential.findAll({ limit: 500 });
+  const expired = [];
+
+  for (const cred of allCredentials) {
+    const upstream = dbAccounts.find(a => a.name.trim().toLowerCase() === cred.email.trim().toLowerCase());
+    
+    let needsLogin = false;
+    let reason = '';
+
+    if (!upstream) {
+      needsLogin = true;
+      reason = 'Chua co trong pool upstream';
+    } else {
+      const token = upstream.sessionToken || upstream.session_token;
+      const poolAcc = statusMap.get(token);
+      const isPoolFailed = poolAcc && (poolAcc.status === 'failed' || poolAcc.status === 'error');
+      const isDbInactive = upstream.isActive === 0 || upstream.is_active === 0;
+
+      if (isDbInactive || isPoolFailed) {
+        needsLogin = true;
+        reason = isDbInactive ? 'Bi vo hieu hoa' : 'Loi phien lam viec (pool)';
+      }
+    }
+
+    if (needsLogin) {
+      expired.push({
+        email: cred.email,
+        password: cred.password,
+        otpSecret: cred.otp_secret,
+        reason
+      });
+    }
+  }
+
+  res.json({
+    ok: true,
+    count: expired.length,
+    accounts: expired
+  });
+}));
+
 // Stubs for Hotmail endpoints so the extension doesn't fail
 router.get('/hotmail/new', extensionAuth, (req, res) => {
   res.status(503).json({ ok: false, error: 'Hotmail backend not configured' });

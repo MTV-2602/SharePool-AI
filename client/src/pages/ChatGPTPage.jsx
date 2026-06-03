@@ -30,6 +30,104 @@ export default function ChatGPTPage() {
   );
 }
 
+// ─── Account Quota Cell ────────────────────────────────────────────────────────
+function AccountQuotaCell({ sessionToken }) {
+  const [quota, setQuota] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchQuota = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get('/admin-api/accounts/quota', {
+        params: { sessionToken }
+      });
+      if (res.data.ok) {
+        setQuota(res.data);
+      } else {
+        setError('Lỗi tải');
+      }
+    } catch (e) {
+      setError(e.response?.data?.error || 'Lỗi kết nối');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchQuota();
+  }, [sessionToken]);
+
+  if (loading) return <span className="text-xs text-muted" style={{ fontSize: '0.72rem' }}>Đang tải...</span>;
+  if (error) {
+    return (
+      <span
+        className="text-xs"
+        style={{ color: 'var(--red)', fontSize: '0.72rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 2 }}
+        title={error}
+        onClick={fetchQuota}
+      >
+        Lỗi 🔄
+      </span>
+    );
+  }
+  if (!quota) {
+    return (
+      <button className="btn btn-ghost btn-xs" onClick={fetchQuota} style={{ padding: '2px 6px', fontSize: '0.7rem' }}>
+        Xem Quota
+      </button>
+    );
+  }
+
+  const { plan, limits = [] } = quota;
+
+  const renderLimitItem = (lim) => {
+    const remaining = lim.remaining;
+    const progressColor = remaining > 70 ? '#10b981' : remaining > 30 ? '#f59e0b' : '#ef4444';
+
+    let resetText = '';
+    if (lim.resetAt) {
+      const resetDate = new Date(lim.resetAt);
+      const diffMs = resetDate.getTime() - Date.now();
+      if (diffMs > 0) {
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const diffHrs = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        if (diffDays > 0) {
+          resetText = `Reset in ${diffDays}d ${diffHrs}h`;
+        } else {
+          resetText = `Reset in ${diffHrs}h ${diffMins}m`;
+        }
+      }
+    }
+
+    return (
+      <div key={lim.id} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', fontWeight: 600 }}>
+          <span style={{ color: 'var(--text-secondary)' }}>{lim.name || 'Quota'}</span>
+          <span style={{ color: remaining > 30 ? 'var(--text-primary)' : progressColor }}>{remaining}% left</span>
+        </div>
+        <div style={{ width: '100%', height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ width: `${remaining}%`, height: '100%', background: progressColor, borderRadius: 2, transition: 'width 0.3s' }} />
+        </div>
+        {resetText && <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>{resetText}</span>}
+      </div>
+    );
+  };
+
+  const activeLimits = limits.length > 0 ? limits : [ { id: 'default', name: 'Quota', remaining: quota.quota?.remaining ?? 100, resetAt: quota.quota?.resetAt } ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 130 }}>
+      <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--accent)' }}>
+        {plan}
+      </div>
+      {activeLimits.map(renderLimitItem)}
+    </div>
+  );
+}
+
 // ─── POOL STATUS (Session Tokens) ─────────────────────────────────────────────
 function ChatGPTPool() {
   const [accounts, setAccounts] = useState([]);
@@ -143,6 +241,7 @@ function ChatGPTPool() {
                   <th>Tên</th>
                   <th>Session Token</th>
                   <th>Trạng thái</th>
+                  <th>Quotas</th>
                   <th>Requests</th>
                   <th style={{ textAlign: 'right' }}>Hành động</th>
                 </tr>
@@ -150,7 +249,7 @@ function ChatGPTPool() {
               <tbody>
                 {accounts.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
                       Chưa có tài khoản session nào. Dùng extension AutoRegUnified để tự đăng ký, hoặc nhập thủ công.
                     </td>
                   </tr>
@@ -184,6 +283,9 @@ function ChatGPTPool() {
                       )}
                     </td>
                     <td>{statusBadge(acc.status)}</td>
+                    <td>
+                      <AccountQuotaCell sessionToken={acc.sessionToken} />
+                    </td>
                     <td style={{ color: 'var(--text-secondary)' }}>{acc.totalRequests ?? 0}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>

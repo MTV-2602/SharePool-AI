@@ -33,7 +33,8 @@ const refs = {
   addrMode: $("addr-mode"),
   addrInput: $("addr-input"),
   saveAddrBtn: $("btn-save-addr"),
-  resetAddrBtn: $("btn-reset-addr")
+  resetAddrBtn: $("btn-reset-addr"),
+  reLoginExpiredBtn: $("reLoginExpiredBtn")
 };
 
 let isStarting = false;
@@ -352,6 +353,7 @@ function getSettingsPayload(options = {}) {
     freeBatchActive: accountMode === "gpt_free" && !!options.freeBatchActive,
     freeTargetShelf: "none",
     autoRestart: $("autoRestart").checked,
+    autoReLogin: $("autoReLogin").checked,
     proxyString: $("proxyString").value,
     rotateUrl: $("rotateUrl").value,
     gmail_root: $("gmail_root").value,
@@ -599,6 +601,7 @@ refs.hotmailFile.addEventListener("change", (event) => {
   "accountMode",
   "freeBatchTarget",
   "autoRestart",
+  "autoReLogin",
   "proxyString",
   "rotateUrl",
   "gmail_root",
@@ -634,6 +637,7 @@ async function boot() {
     "freeBatchDone",
     "freeBatchActive",
     "autoRestart",
+    "autoReLogin",
     "proxyString",
     "rotateUrl",
     "gmail_root",
@@ -655,6 +659,7 @@ async function boot() {
   if (refs.accountMode) refs.accountMode.value = normalizeAccountMode(data.accountMode || DEFAULT_ACCOUNT_MODE);
   if (refs.freeBatchTarget) refs.freeBatchTarget.value = normalizeFreeBatchTarget(data.freeBatchTarget || DEFAULT_FREE_BATCH_TARGET);
   $("autoRestart").checked = !!data.autoRestart;
+  $("autoReLogin").checked = !!data.autoReLogin;
   $("proxyString").value = data.proxyString || "";
   $("rotateUrl").value = data.rotateUrl || "";
   $("gmail_root").value = data.gmail_root || "";
@@ -673,6 +678,25 @@ async function boot() {
   updateMailUi();
   refreshData();
   setInterval(refreshData, 2000);
+
+  refs.reLoginExpiredBtn?.addEventListener("click", async () => {
+    refs.reLoginExpiredBtn.disabled = true;
+    const oldText = refs.reLoginExpiredBtn.innerText;
+    refs.reLoginExpiredBtn.innerText = "Đang đồng bộ...";
+    try {
+      const res = await sendMessage({ type: "TRIGGER_AUTO_RELOGIN_NOW" });
+      if (res && res.success) {
+        alert("Đã kích hoạt re-login thành công: " + (res.message || ""));
+      } else {
+        alert("Lỗi re-login: " + (res?.error || "Không rõ nguyên nhân"));
+      }
+    } catch (err) {
+      alert("Lỗi kết nối: " + err.message);
+    } finally {
+      refs.reLoginExpiredBtn.disabled = false;
+      refs.reLoginExpiredBtn.innerText = oldText;
+    }
+  });
 }
 
 boot();

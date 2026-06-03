@@ -1484,6 +1484,35 @@ async function runLoop() {
 
     function log(text) { chrome.runtime.sendMessage({ type: "ADD_LOG", text: cleanPanelText(text) }); }
     function updateJob(data) { return new Promise(r => chrome.runtime.sendMessage({ type: "UPDATE_JOB", data }, r)); }
+    if (job.isLogin && !job.saved) {
+      if (url.includes("chatgpt.com") && !url.includes("/auth/") && !url.includes("auth.openai.com")) {
+        const session = await getSessionTokenFromBackground();
+        if (session && session.success && session.token) {
+          log("Re-login thành công! Đang lấy session token...");
+          await updateJob({
+            sessionToken: session.token,
+            step: "await_push",
+            saved: true,
+            lastActionAt: Date.now()
+          });
+          log("Đang tự động push token cập nhật...");
+          chrome.runtime.sendMessage({
+            type: "PUSH_ACCOUNT",
+            tabId: job.tabId,
+            jobId: job.jobId,
+            auto: true
+          }, (result) => {
+            if (!result?.success) {
+              log(`Re-login push lỗi: ${result?.error || "không rõ"}`);
+            } else {
+              log("Re-login push thành công!");
+            }
+          });
+          return;
+        }
+      }
+    }
+
     async function requestCheckoutLinkAfterMfa() {
       if (job.checkoutTabId || job.checkoutRequested || job.pushed) return true;
       if (isGptFreeJob(job)) {
@@ -1708,7 +1737,7 @@ async function runLoop() {
     }
 
     // Email Page
-    const emailInp = document.querySelector("input#email, input[name='email']");
+    const emailInp = document.querySelector("input#email, input[name='email'], input#username, input[name='username'], input[type='email']");
     if (emailInp && emailInp.offsetParent !== null && (!job.emailFilled || emailInp.value === "")) {
       const emailStart = job.emailStartedAt || 0;
       if (emailStart === 0) {
@@ -1875,7 +1904,8 @@ async function runLoop() {
         const signupBtn = document.querySelector('[data-testid="signup-button"]');
         const loginBtn = document.querySelector('[data-testid="login-button"]');
         if ((signupBtn || loginBtn) && !emailInp && !passInp) {
-          safeClick(signupBtn || loginBtn);
+          const btnToClick = (job.isLogin && loginBtn) ? loginBtn : (signupBtn || loginBtn);
+          safeClick(btnToClick);
           log(`ƒÆ’‚°ƒ€¦‚¸ƒ¢¢€š¬¢‚¬Å“ƒ€š‚±ƒÆ’‚¯ƒ€š‚¸ƒ€š‚ BƒÆ’‚¡ƒ€š‚ºƒ€š‚¥m nƒÆ’†€™ƒ€š‚ºt Sign up/Log in.`);
           setTimeout(runLoop, 800);
           return;

@@ -174,7 +174,90 @@ router.get('/accounts', asyncHandler(async (req, res) => {
   res.json(result);
 }));
 
-// POST /admin-api/accounts/import-manual — Nhập tay tài khoản (lưu vào DB)
+// GET /admin-api/accounts/quota — Get wham usage/quota for a specific account
+router.get('/accounts/quota', asyncHandler(async (req, res) => {
+  const { sessionToken } = req.query;
+  if (!sessionToken || !sessionToken.trim()) {
+    throw new AppError('sessionToken is required', 400, 'INVALID_REQUEST');
+  }
+
+  const tokenClean = sessionToken.trim();
+  const ChatGPTClient = require('../upstream/ChatGPTClient');
+  const client = new ChatGPTClient(tokenClean);
+
+  try {
+    const accessToken = await client.getAccessToken();
+    const fetch = require('node-fetch');
+    
+    const usageResponse = await fetch('https://chatgpt.com/backend-api/wham/usage', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      }
+    });
+
+    if (!usageResponse.ok) {
+      throw new Error(`OpenAI Wham API returned ${usageResponse.status}`);
+    }
+
+    const data = await usageResponse.json();
+    const limits = [];
+    const limitMap = data.rate_limits_by_limit_id || data.rate_limits || {};
+    
+    for (const [key, limitObj] of Object.entries(limitMap)) {
+      if (limitObj && typeof limitObj === 'object') {
+        const primary = limitObj.primary_window || limitObj.primary || {};
+        const usedPercent = Math.max(0, Math.min(100, Math.ceil(primary.used_percent ?? primary.percent_used ?? 0)));
+        const remainingPercent = Math.max(0, 100 - usedPercent);
+        const resetAt = primary.reset_at || primary.resets_at || null;
+        
+        let friendlyName = key;
+        if (key.includes('weekly')) friendlyName = 'Weekly Quota';
+        else if (key.includes('short_term') || key.includes('short-term') || key.includes('hourly')) friendlyName = '5h Quota';
+        else if (key === 'codex') friendlyName = 'Codex Quota';
+
+        limits.push({
+          id: key,
+          name: friendlyName,
+          used: usedPercent,
+          total: 100,
+          remaining: remainingPercent,
+          resetAt
+        });
+      }
+    }
+
+    if (limits.length === 0) {
+      const normalRateLimit = data.rate_limit || data.rate_limits || data.rate_limits_by_limit_id?.codex || {};
+      const primary = normalRateLimit.primary_window || normalRateLimit.primary || {};
+      const used = Math.max(0, Math.min(100, Math.ceil(primary.used_percent ?? primary.percent_used ?? 0)));
+      const remaining = Math.max(0, 100 - used);
+      limits.push({
+        id: 'codex',
+        name: 'Codex Quota',
+        used,
+        total: 100,
+        remaining,
+        resetAt: primary.reset_at || primary.resets_at || null
+      });
+    }
+
+    const primaryQuota = limits[0];
+
+    res.json({
+      ok: true,
+      plan: data.plan_type || data.summary?.plan || 'unknown',
+      limitReached: limits.some(l => l.remaining === 0),
+      quota: primaryQuota,
+      limits
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+}));
+
 router.post('/accounts/import-manual', asyncHandler(async (req, res) => {
   const { name, sessionToken } = req.body;
   if (!sessionToken || !sessionToken.trim()) {

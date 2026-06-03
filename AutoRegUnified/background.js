@@ -1737,6 +1737,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const isFreePush = isGptFreeJob(job);
         const targetShelf = isFreePush ? normalizeFreeTargetShelf(job.freeTargetShelf || job.targetShelf) : "none";
 
+        // Query JWE session cookie and device ID from browser cookies
+        const sessionTokenCookie = await new Promise(r => {
+          chrome.cookies.get({ url: "https://chatgpt.com", name: "__Secure-next-auth.session-token" }, r);
+        });
+        const sessionTokenVal = sessionTokenCookie ? sessionTokenCookie.value : "";
+
+        const oaiDidCookie = await new Promise(r => {
+          chrome.cookies.get({ url: "https://chatgpt.com", name: "oai-did" }, r);
+        });
+        const deviceIdVal = oaiDidCookie ? oaiDidCookie.value : "";
+
+        const finalSessionToken = sessionTokenVal || job.sessionToken || "";
+
+        if (finalSessionToken) {
+          addLog(targetTabId, `Da lay JWE session token tu cookie. Chieu dai: ${finalSessionToken.length}`);
+        } else {
+          addLog(targetTabId, "Canh bao: Khong lay duoc session token tu cookie hoac job.");
+        }
+
         const resp = await fetchWithTimeout(backendUrl(cfg.backendBaseUrl, EXTENSION_PUSH_PATH), {
           method: "POST",
           headers: {
@@ -1747,7 +1766,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             username: job.email,
             password: job.password,
             otpSecret: job.secret,
-            sessionToken: job.sessionToken || "",
+            sessionToken: finalSessionToken,
+            deviceId: deviceIdVal,
             emailSource: job.mailSite,
             mailCheckProvider: job.mailSite,
             targetType: isFreePush ? "free" : "unassigned",
@@ -2140,5 +2160,102 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ success: true });
     })();
     return true;
+  }
+
+  if (msg.type === "TRIGGER_AUTO_RELOGIN_NOW") {
+    triggerAutoReLoginCheck(true)
+      .then(() => sendResponse({ success: true, message: "Đã kích hoạt re-login kiểm tra." }))
+      .catch(err => sendResponse({ success: false, error: err.message || String(err) }));
+    return true;
+  }
+});
+
+async function triggerAutoReLoginCheck(force = false) {
+  const cfg = await getUnifiedConfig();
+  const storageData = await new Promise(r => chrome.storage.local.get(["autoReLogin"], r));
+  const autoReLoginEnabled = !!storageData.autoReLogin;
+
+  if (!autoReLoginEnabled && !force) {
+    return;
+  }
+
+  if (jobs.size > 0) {
+    console.log("[AutoReLogin] Job đang chạy, bỏ qua check.");
+    return;
+  }
+
+  try {
+    const expiredRes = await fetchWithTimeout(backendUrl(cfg.backendBaseUrl, "/api/accounts/expired"), {
+      headers: {
+        "x-extension-push-token": cfg.extensionPushToken
+      },
+      timeout: 10000
+    });
+    
+    if (!expiredRes.ok) {
+      console.warn("[AutoReLogin] Lỗi fetch expired accounts:", expiredRes.status);
+      return;
+    }
+    
+    const data = await expiredRes.json().catch(() => ({}));
+    if (data && data.ok && Array.isArray(data.accounts) && data.accounts.length > 0) {
+      const targetAcc = data.accounts[0];
+      console.log(`[AutoReLogin] Account cần re-login: ${targetAcc.email}`);
+      await startReLoginJob(targetAcc, cfg);
+    }
+  } catch (err) {
+    console.error("[AutoReLogin] Lỗi check expired:", err);
+  }
+}
+
+async function startReLoginJob(account, cfg) {
+  const jobId = makeJobId();
+  const job = {
+    jobId,
+    email: account.email,
+    password: account.password,
+    secret: account.otpSecret,
+    isLogin: true,
+    step: "reg",
+    logs: `[${new Date().toLocaleTimeString()}] Bắt đầu re-login tự động cho: ${account.email}\n`,
+    mailSite: "none",
+    pushed: false,
+    saved: false,
+    startTime: Date.now()
+  };
+
+  await clearCookiesLikeEx3();
+  
+  if (cfg.trialProxyMode !== "direct") {
+    const storageData = await new Promise(r => chrome.storage.local.get(["proxyString", "rotateUrl"], r));
+    const proxyValue = (storageData.proxyString || "").trim();
+    if (proxyValue) {
+      const rotateValue = (storageData.rotateUrl || "").trim();
+      if (rotateValue) {
+        try {
+          await fetchWithTimeout(rotateValue, { timeout: 8000 }).catch(() => {});
+          await delay(2000);
+        } catch (_) {}
+      }
+      await applyProxy(proxyValue);
+    }
+  }
+
+  chrome.tabs.create({ url: REG_START_URL }, (tab) => {
+    const tabId = tab.id;
+    job.tabId = tabId;
+    job.windowId = tab.windowId;
+    job.timeoutTimer = null;
+    job.timeoutDisabled = true;
+    setJob(tabId, job);
+    chrome.runtime.sendMessage({ type: "LOG_UPDATE", tabId, text: job.logs });
+  });
+}
+
+// Set up Alarm periodic check
+chrome.alarms.create("autoReLoginAlarm", { periodInMinutes: 5 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "autoReLoginAlarm") {
+    triggerAutoReLoginCheck();
   }
 });
