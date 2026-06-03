@@ -8,7 +8,7 @@ const TEMPMILLOL_BASE = "https://api.tempmail.lol/v2";
 
 const REG_START_URL = "https://chatgpt.com";
 const PROMO_URL = "https://chatgpt.com/?promo_campaign=plus-1-month-free#pricing";
-const BACKEND_BASE_DEFAULT = "https://vinhaccplus.vercel.app";
+const BACKEND_BASE_DEFAULT = "https://vinhcousera.vercel.app";
 const EXTENSION_PUSH_TOKEN_DEFAULT =
   "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
 const EXTENSION_WORKER_ID_DEFAULT = "worker_1777295244746_t7kpyw";
@@ -2310,7 +2310,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       return;
     }
     
-    const portalUrl = (data.backendBaseUrl || "https://vinhaccplus.vercel.app").replace(/\/$/, "");
+    const portalUrl = (data.backendBaseUrl || "https://vinhcousera.vercel.app").replace(/\/$/, "");
     const pushToken = data.extensionPushToken || "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
     const namePrefix = data.manualNamePrefix || "CodexOAuth";
     const username = `${namePrefix}-${Date.now().toString().slice(-6)}`;
@@ -2364,7 +2364,7 @@ chrome.cookies.onChanged.addListener(async (changeInfo) => {
     // Check if auto-push is enabled
     const data = await new Promise(r => chrome.storage.local.get(["manualAutoPush", "backendBaseUrl", "extensionPushToken", "manualNamePrefix"], r));
     if (data.manualAutoPush) {
-      const portalUrl = (data.backendBaseUrl || "https://vinhaccplus.vercel.app").replace(/\/$/, "");
+      const portalUrl = (data.backendBaseUrl || "https://vinhcousera.vercel.app").replace(/\/$/, "");
       const pushToken = data.extensionPushToken || "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
       const namePrefix = data.manualNamePrefix || "CodexAcc";
       

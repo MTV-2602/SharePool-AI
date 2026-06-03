@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND = "https://vinhaccplus.vercel.app";
+const DEFAULT_BACKEND = "https://vinhcousera.vercel.app";
 const DEFAULT_EXTENSION_TOKEN =
   "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
 const DEFAULT_ACCOUNT_MODE = "gpt_free";
