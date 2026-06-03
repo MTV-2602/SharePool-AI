@@ -204,47 +204,85 @@ router.get('/accounts/quota', asyncHandler(async (req, res) => {
 
     const data = await usageResponse.json();
     const limits = [];
-    const limitMap = data.rate_limits_by_limit_id || data.rate_limits || {};
-    
-    for (const [key, limitObj] of Object.entries(limitMap)) {
-      if (limitObj && typeof limitObj === 'object') {
-        const primary = limitObj.primary_window || limitObj.primary || {};
-        const usedPercent = Math.max(0, Math.min(100, Math.ceil(primary.used_percent ?? primary.percent_used ?? 0)));
-        const remainingPercent = Math.max(0, 100 - usedPercent);
-        const resetAt = primary.reset_at || primary.resets_at || null;
-        
-        let friendlyName = key;
-        if (key.includes('weekly')) friendlyName = 'Weekly Quota';
-        else if (key.includes('short_term') || key.includes('short-term') || key.includes('hourly')) friendlyName = '5h Quota';
-        else if (key === 'codex') friendlyName = 'Codex Quota';
 
-        limits.push({
-          id: key,
-          name: friendlyName,
-          used: usedPercent,
-          total: 100,
-          remaining: remainingPercent,
-          resetAt
-        });
+    // Helper to normalize unix timestamps (seconds vs milliseconds) to ISO format
+    function parseResetTime(resetValue) {
+      if (!resetValue) return null;
+      try {
+        if (typeof resetValue === 'number') {
+          return new Date(resetValue < 1e12 ? resetValue * 1000 : resetValue).toISOString();
+        }
+        if (typeof resetValue === 'string') {
+          if (/^\d+$/.test(resetValue)) {
+            const timestamp = Number(resetValue);
+            return new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp).toISOString();
+          }
+          return new Date(resetValue).toISOString();
+        }
+        return null;
+      } catch (error) {
+        return null;
       }
     }
 
-    if (limits.length === 0) {
-      const normalRateLimit = data.rate_limit || data.rate_limits || data.rate_limits_by_limit_id?.codex || {};
-      const primary = normalRateLimit.primary_window || normalRateLimit.primary || {};
-      const used = Math.max(0, Math.min(100, Math.ceil(primary.used_percent ?? primary.percent_used ?? 0)));
-      const remaining = Math.max(0, 100 - used);
+    // Helper to suffix quota names depending on the window length
+    function getWindowName(baseName, limitWindowSeconds) {
+      if (!limitWindowSeconds) return baseName;
+      const secs = Number(limitWindowSeconds);
+      if (secs <= 18000) return `${baseName} (5h)`;
+      if (secs <= 604800) return `${baseName} (Weekly)`;
+      if (secs <= 2592000) return `${baseName} (Monthly)`;
+      return `${baseName}`;
+    }
+
+    function addWindow(id, baseName, window) {
+      if (!window || typeof window !== 'object') return;
+      const usedPercent = Math.max(0, Math.min(100, Math.ceil(window.used_percent ?? window.percent_used ?? 0)));
+      const remainingPercent = Math.max(0, 100 - usedPercent);
+      const resetAt = parseResetTime(window.reset_at || window.resets_at || null);
+      const name = getWindowName(baseName, window.limit_window_seconds || window.window_seconds);
+      
       limits.push({
-        id: 'codex',
-        name: 'Codex Quota',
-        used,
+        id,
+        name,
+        used: usedPercent,
         total: 100,
-        remaining,
-        resetAt: primary.reset_at || primary.resets_at || null
+        remaining: remainingPercent,
+        resetAt
       });
     }
 
-    const primaryQuota = limits[0];
+    // 1. Parse limit id mapping (Plus/Codex/Pro specific)
+    const byLimitId = data.rate_limits_by_limit_id || data.rate_limits || {};
+    for (const [key, limitObj] of Object.entries(byLimitId)) {
+      if (limitObj && typeof limitObj === 'object') {
+        const primary = limitObj.primary_window || limitObj.primary;
+        const secondary = limitObj.secondary_window || limitObj.secondary;
+        
+        let friendlyName = key === 'codex' ? 'Codex Quota' : key === 'code_review' || key === 'review' ? 'Review Quota' : `${key} Quota`;
+        
+        if (primary) {
+          addWindow(`${key}_session`, friendlyName, primary);
+        }
+        if (secondary) {
+          addWindow(`${key}_weekly`, friendlyName, secondary);
+        }
+      }
+    }
+
+    // 2. Fallback to general rate_limit (Free / other accounts)
+    if (limits.length === 0 && data.rate_limit) {
+      const primary = data.rate_limit.primary_window || data.rate_limit.primary;
+      const secondary = data.rate_limit.secondary_window || data.rate_limit.secondary;
+      if (primary) {
+        addWindow('session', 'Codex Quota', primary);
+      }
+      if (secondary) {
+        addWindow('weekly', 'Codex Quota', secondary);
+      }
+    }
+
+    const primaryQuota = limits[0] || null;
 
     res.json({
       ok: true,
