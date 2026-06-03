@@ -1818,21 +1818,52 @@ async function runLoop() {
       return;
     }
 
-    // OTP Page
-    const otpInput = document.querySelector("input[name='code'], input#code, input[autocomplete='one-time-code']");
+    // OAuth Authorization Page
+    if (url.includes("auth.openai.com/authorize") || url.includes("auth0.com/authorize")) {
+      const authBtn = Array.from(document.querySelectorAll("button")).find(b => 
+        /authorize|allow|continue|đồng ý|cho phép|chấp nhận/i.test(b.textContent.trim().toLowerCase()) && 
+        isVisible(b) && !b.disabled
+      );
+      if (authBtn) {
+        log("Phát hiện trang OAuth, đang tự động bấm Authorize...");
+        clickLikeUser(authBtn);
+        setTimeout(runLoop, 2000);
+        return;
+      }
+    }
+
+    // OTP Page (Email verification or 2FA)
+    const otpInput = document.querySelector("input[name='code'], input#code, input[autocomplete='one-time-code'], input[name='totp_otp']");
     if (otpInput && otpInput.offsetParent !== null && (!job.otpFilled || otpInput.value === "")) {
-      log("ƒÆ’‚°ƒ€¦‚¸ƒ¢¢€š¬…€œƒ€š‚¬ ƒÆ’¢‚¬Å¾ƒ€š‚ang lƒÆ’‚¡ƒ€š‚ºƒ€š‚¥y mƒÆ’†€™ƒ€š‚£ OTP...");
-      chrome.runtime.sendMessage({ type: "FETCH_OTP", email: job.email, mailSite: job.mailSite }, async (res) => {
-        if (res && res.code) {
-          await reactFill(otpInput, res.code);
-          log(`ƒÆ’‚°ƒ€¦‚¸ƒ¢¢€š¬‚ƒ€š‚¢ ƒÆ’¢‚¬Å¾ƒ€š‚iƒÆ’‚¡ƒ€š‚»ƒ€š‚n OTP: ${res.code}`);
-          await updateJob({ otpFilled: true, lastOtpCode: res.code, lastActionAt: Date.now() });
+      const pageText = document.body.innerText.toLowerCase();
+      const isMfa = pageText.includes("authenticator") || pageText.includes("auth app") || pageText.includes("ứng dụng xác thực") || otpInput.name === "totp_otp" || pageText.includes("2fa");
+
+      if (isMfa && job.secret) {
+        log("Phát hiện trang 2FA, đang tự động sinh mã xác thực từ Secret...");
+        const code = await getTOTP(job.secret);
+        if (code) {
+          await reactFill(otpInput, code);
+          log(`Điền 2FA OTP: ${code}`);
+          await updateJob({ otpFilled: true, lastOtpCode: code, lastActionAt: Date.now() });
           setTimeout(() => {
-            const btn = (document.querySelector("button[type='submit']") || Array.from(document.querySelectorAll("button")).find(b => /continue|next/i.test(b.textContent)));
+            const btn = (document.querySelector("button[type='submit']") || Array.from(document.querySelectorAll("button")).find(b => /continue|next|verify|xác minh/i.test(b.textContent.trim().toLowerCase())));
             if (btn) btn.click();
           }, 1000);
         }
-      });
+      } else {
+        log("Đang lấy mã OTP từ Email...");
+        chrome.runtime.sendMessage({ type: "FETCH_OTP", email: job.email, mailSite: job.mailSite }, async (res) => {
+          if (res && res.code) {
+            await reactFill(otpInput, res.code);
+            log(`Điền OTP: ${res.code}`);
+            await updateJob({ otpFilled: true, lastOtpCode: res.code, lastActionAt: Date.now() });
+            setTimeout(() => {
+              const btn = (document.querySelector("button[type='submit']") || Array.from(document.querySelectorAll("button")).find(b => /continue|next/i.test(b.textContent)));
+              if (btn) btn.click();
+            }, 1000);
+          }
+        });
+      }
       setTimeout(runLoop, 3000);
       return;
     }
