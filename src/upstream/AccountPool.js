@@ -191,7 +191,7 @@ class AccountPool {
 
   // ── High-Level Chat ───────────────────────────────────────────────────────
 
-  async chatWithRotation(messages, model, maxAttempts = 0) {
+  async chatWithRotation(messages, model, options = {}, maxAttempts = 0) {
     const limit   = maxAttempts > 0 ? maxAttempts : Math.max(this._accounts.length, 1);
     let   attempts = 0;
     const tried   = new Set();
@@ -208,7 +208,7 @@ class AccountPool {
 
       try {
         logger.debug(`[${name}] Attempting chat (attempt ${attempts}/${limit})`);
-        const response = await client.chat(messages, model);
+        const response = await client.chat(messages, model, options);
         logger.info(`[${name}] Chat request succeeded`);
         return response;
       } catch (err) {

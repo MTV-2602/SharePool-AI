@@ -110,6 +110,27 @@ function parseTokenInput(input) {
   return { type: 'invalid' };
 }
 
+function normalizeCodexTools(body) {
+  if (!Array.isArray(body.tools)) return;
+  body.tools = body.tools.map((tool) => {
+    if (!tool || typeof tool !== 'object') return null;
+    const type = tool.type;
+    if (type === 'function') {
+      const fn = tool.function;
+      if (fn && typeof fn === 'object') {
+        // Flatten nested function tool format to flat Responses format
+        return {
+          type: 'function',
+          name: fn.name,
+          description: fn.description,
+          parameters: fn.parameters,
+        };
+      }
+    }
+    return tool;
+  }).filter(Boolean);
+}
+
 // ─── ChatGPTClient ────────────────────────────────────────────────────────────
 
 /**
@@ -364,9 +385,9 @@ class ChatGPTClient {
    * @returns {Promise<Object>} Raw streaming Response wrapper
    * @throws {{ code: 'RATE_LIMITED' | 'INVALID_SESSION' | 'NETWORK_ERROR' }}
    */
-  async chat(messages, model = 'gpt-4o') {
+  async chat(messages, model = 'gpt-4o', options = {}) {
     const accessToken = await this.getAccessToken();
-    return this._chatCodexResponses(messages, model, accessToken);
+    return this._chatCodexResponses(messages, model, accessToken, options);
   }
 
   // ── Codex Responses API Support ───────────────────────────────────────────
@@ -437,11 +458,22 @@ class ChatGPTClient {
     return input;
   }
 
-  async _chatCodexResponses(messages, model, accessToken) {
+  async _chatCodexResponses(messages, model, accessToken, options = {}) {
     const mappedModel = mapModel(model);
     
     const input = this._convertToCodexInput(messages);
     const instructions = this._extractInstructions(messages);
+
+    let reasoning = { effort: "low", summary: "auto" };
+    if (options.reasoning) {
+      if (typeof options.reasoning === 'string') {
+        reasoning.effort = options.reasoning;
+      } else if (typeof options.reasoning === 'object') {
+        reasoning = { ...reasoning, ...options.reasoning };
+      }
+    } else if (options.reasoning_effort) {
+      reasoning.effort = options.reasoning_effort;
+    }
 
     const body = {
       model: mappedModel,
@@ -450,11 +482,16 @@ class ChatGPTClient {
       stream: true,
       store: false,
       prompt_cache_key: this.getDeviceId() || 'default',
-      reasoning: {
-        effort: "low",
-        summary: "auto"
-      }
+      reasoning
     };
+
+    if (options.tools) {
+      body.tools = options.tools;
+      normalizeCodexTools(body);
+    }
+    if (options.tool_choice) {
+      body.tool_choice = options.tool_choice;
+    }
 
     const headers = {
       'Content-Type': 'application/json',

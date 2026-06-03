@@ -103,7 +103,11 @@ router.post('/chat/completions', asyncHandler(async (req, res) => {
 
     let upstreamResponse;
     try {
-      upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel);
+      upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel, {
+        tools: req.body.tools,
+        tool_choice: req.body.tool_choice,
+        reasoning: req.body.reasoning_effort || req.body.reasoning,
+      });
     } catch (err) {
       if (!res.headersSent) {
         const status = err.statusCode || 502;
@@ -164,7 +168,11 @@ router.post('/chat/completions', asyncHandler(async (req, res) => {
 
   let upstreamResponse;
   try {
-    upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel);
+    upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel, {
+      tools: req.body.tools,
+      tool_choice: req.body.tool_choice,
+      reasoning: req.body.reasoning_effort || req.body.reasoning,
+    });
   } catch (err) {
     const status = err.statusCode || 502;
     throw new AppError(err.message, status, err.code || 'UPSTREAM_ERROR');
@@ -301,7 +309,11 @@ router.post('/responses', asyncHandler(async (req, res) => {
 
     let upstreamResponse;
     try {
-      upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel);
+      upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel, {
+        tools: req.body.tools,
+        tool_choice: req.body.tool_choice,
+        reasoning: req.body.reasoning,
+      });
     } catch (err) {
       if (!res.headersSent) {
         const status = err.statusCode || 502;
@@ -382,7 +394,11 @@ router.post('/responses', asyncHandler(async (req, res) => {
 
   let upstreamResponse;
   try {
-    upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel);
+    upstreamResponse = await AccountPool.chatWithRotation(messages, mappedModel, {
+      tools: req.body.tools,
+      tool_choice: req.body.tool_choice,
+      reasoning: req.body.reasoning,
+    });
   } catch (err) {
     const status = err.statusCode || 502;
     throw new AppError(err.message, status, err.code || 'UPSTREAM_ERROR');
