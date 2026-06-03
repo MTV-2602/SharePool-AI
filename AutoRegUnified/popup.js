@@ -309,10 +309,11 @@ async function refreshData() {
   const response = await sendMessage({ type: "GET_ACTIVE_JOBS" });
   if (response?.success) {
     updateJobUi(pickJob(response.jobs, tabId, windowId));
-    return;
+  } else {
+    const job = await sendMessage({ type: "GET_JOB_DATA", tabId });
+    updateJobUi(job && !job.error ? job : null);
   }
-  const job = await sendMessage({ type: "GET_JOB_DATA", tabId });
-  updateJobUi(job && !job.error ? job : null);
+  updateCookieStatusUi();
 }
 
 function syncPasswordMode() {
@@ -364,7 +365,9 @@ function getSettingsPayload(options = {}) {
     trialCountry: $("trialCountry").value,
     trialProxyMode: $("trialProxyMode").value,
     addressMode: normalizeAddressMode(refs.addrMode?.value),
-    addresses: refs.addrInput?.value || ""
+    addresses: refs.addrInput?.value || "",
+    manualNamePrefix: $("manualNamePrefix").value.trim() || "CodexAcc",
+    manualAutoPush: $("manualAutoPush").checked
   };
 }
 
@@ -611,7 +614,9 @@ refs.hotmailFile.addEventListener("change", (event) => {
   "trialCountry",
   "trialProxyMode",
   "addr-mode",
-  "addr-input"
+  "addr-input",
+  "manualNamePrefix",
+  "manualAutoPush"
 ].forEach((id) => {
   const el = $(id);
   if (!el) return;
@@ -650,7 +655,9 @@ async function boot() {
     "addressMode",
     ADDRESS_MODE_DEFAULT_MIGRATION_KEY,
     "showAdvancedSettings",
-    "startup_log"
+    "startup_log",
+    "manualNamePrefix",
+    "manualAutoPush"
   ]);
 
   refs.autoPassword.checked = data.autoPassword !== false;
@@ -670,6 +677,9 @@ async function boot() {
   $("trialProxyMode").value = data.trialProxyMode || "default";
   if (refs.addrInput) refs.addrInput.value = data.addresses || "";
   updateAddressModeUi(resolveStoredAddressMode(data));
+
+  $("manualNamePrefix").value = data.manualNamePrefix || "CodexAcc";
+  $("manualAutoPush").checked = !!data.manualAutoPush;
 
   syncPasswordMode();
   syncAccountModeUi();
@@ -697,6 +707,203 @@ async function boot() {
       refs.reLoginExpiredBtn.innerText = oldText;
     }
   });
+
+  // Manual Push handler
+  $("manualPushBtn")?.addEventListener("click", async () => {
+    if (!activeSessionToken) return;
+    const statusBox = $("manualStatusBox");
+    if (statusBox) {
+      statusBox.className = "status-box";
+      statusBox.style.display = "none";
+    }
+
+    const portalUrl = $("backendBaseUrl").value.trim().replace(/\/$/, "");
+    const pushToken = $("extensionPushToken").value.trim();
+    const namePrefix = $("manualNamePrefix").value.trim() || "CodexAcc";
+
+    const pushBtn = $("manualPushBtn");
+    pushBtn.disabled = true;
+    const oldText = pushBtn.innerText;
+    pushBtn.innerText = "Đang đẩy...";
+
+    const username = `${namePrefix}-${Date.now().toString().slice(-6)}`;
+
+    try {
+      const resp = await fetch(`${portalUrl}/api/chatgpt-extension-push`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-extension-push-token": pushToken
+        },
+        body: JSON.stringify({
+          username,
+          sessionToken: activeSessionToken,
+          deviceId: activeDeviceId
+        })
+      });
+
+      const resData = await resp.json();
+      if (resp.ok && resData.ok) {
+        if (statusBox) {
+          statusBox.className = "status-box success";
+          statusBox.textContent = `Thành công! Đã đẩy '${username}' lên pool.`;
+        }
+      } else {
+        if (statusBox) {
+          statusBox.className = "status-box error";
+          statusBox.textContent = `Lỗi: ${resData.error || "Không đẩy được session token."}`;
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      if (statusBox) {
+        statusBox.className = "status-box error";
+        statusBox.textContent = "Lỗi kết nối tới Portal backend.";
+      }
+    } finally {
+      if (statusBox) statusBox.style.display = "block";
+      pushBtn.disabled = false;
+      pushBtn.innerText = oldText;
+    }
+  });
+
+  // Manual OAuth handler
+  $("manualOauthBtn")?.addEventListener("click", async () => {
+    const statusBox = $("manualStatusBox");
+    if (statusBox) {
+      statusBox.className = "status-box";
+      statusBox.style.display = "none";
+    }
+
+    await saveSettings();
+    const oauthBtn = $("manualOauthBtn");
+    oauthBtn.disabled = true;
+    const oldText = oauthBtn.innerText;
+    oauthBtn.innerText = "Đang kết nối...";
+
+    try {
+      const verifier = generateCodeVerifier();
+      const challenge = await sha256(verifier).then(base64urlencode);
+      const state = generateCodeVerifier().substring(0, 16);
+
+      await storageSet({
+        oauth_verifier: verifier,
+        oauth_state: state
+      });
+
+      await sendMessage({
+        type: "START_OAUTH",
+        challenge: challenge,
+        state: state
+      });
+
+      if (statusBox) {
+        statusBox.className = "status-box success";
+        statusBox.textContent = "Đã mở tab OAuth. Vui lòng đăng nhập ở tab mới...";
+        statusBox.style.display = "block";
+      }
+    } catch (err) {
+      console.error(err);
+      if (statusBox) {
+        statusBox.className = "status-box error";
+        statusBox.textContent = "Lỗi OAuth: " + err.message;
+        statusBox.style.display = "block";
+      }
+    } finally {
+      oauthBtn.disabled = false;
+      oauthBtn.innerText = oldText;
+    }
+  });
 }
+
+// Global active token/device variables for manual push
+let activeSessionToken = "";
+let activeDeviceId = "";
+
+async function updateCookieStatusUi() {
+  const cookieStatusDiv = $("manualCookieStatus");
+  const pushBtn = $("manualPushBtn");
+  if (!cookieStatusDiv || !pushBtn) return;
+
+  try {
+    const cookies = await new Promise(resolve => {
+      chrome.cookies.getAll({ domain: "chatgpt.com" }, resolve);
+    });
+
+    const cookie = cookies && cookies.find(c => c.name.includes("session-token"));
+    const oaiDidCookie = cookies && cookies.find(c => c.name === "oai-did");
+    activeDeviceId = (oaiDidCookie && oaiDidCookie.value) ? oaiDidCookie.value : "";
+
+    if (cookie && cookie.value) {
+      activeSessionToken = cookie.value;
+      const masked = activeSessionToken.substring(0, 10) + "..." + activeSessionToken.slice(-6);
+      cookieStatusDiv.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+          <span>ChatGPT Session:</span>
+          <span class="badge badge-ok">Active</span>
+        </div>
+        <div style="font-family:monospace; font-size:10px; color:#94a3b8; word-break:break-all;">${masked}</div>
+      `;
+      pushBtn.disabled = false;
+    } else {
+      activeSessionToken = "";
+      cookieStatusDiv.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span>ChatGPT Session:</span>
+          <span class="badge badge-none">Not Found</span>
+        </div>
+        <div style="font-size:11px; color:#94a3b8; margin-top:6px;">Hãy đăng nhập vào chatgpt.com trước.</div>
+      `;
+      pushBtn.disabled = true;
+    }
+  } catch (err) {
+    console.error(err);
+    cookieStatusDiv.textContent = "Lỗi đọc cookie.";
+    pushBtn.disabled = true;
+  }
+}
+
+// Helper methods for generating OAuth verifiers / challenge codes
+function generateCodeVerifier() {
+  const array = new Uint8Array(64);
+  crypto.getRandomValues(array);
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+  let verifier = "";
+  for (let i = 0; i < array.length; i++) {
+    verifier += chars[array[i] % chars.length];
+  }
+  return verifier;
+}
+
+async function sha256(plain) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(plain);
+  return crypto.subtle.digest("SHA-256", data);
+}
+
+function base64urlencode(a) {
+  let str = "";
+  const bytes = new Uint8Array(a);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    str += String.fromCharCode(bytes[i]);
+  }
+  return btoa(str)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+// Listen for OAUTH_STATUS updates from background script
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === "OAUTH_STATUS") {
+    const statusBox = $("manualStatusBox");
+    if (statusBox) {
+      statusBox.className = message.success ? "status-box success" : "status-box error";
+      statusBox.textContent = message.message;
+      statusBox.style.display = "block";
+    }
+  }
+});
 
 boot();

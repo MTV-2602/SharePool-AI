@@ -1631,6 +1631,24 @@ async function doStartJob(password, mailSiteRaw, autoRestart, proxyString, rotat
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabId = sender.tab?.id;
 
+  if (msg.type === "START_OAUTH") {
+    const authUrl = `https://auth.openai.com/oauth/authorize?` + new URLSearchParams({
+      response_type: 'code',
+      client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+      redirect_uri: 'http://localhost:1455/auth/callback',
+      scope: 'openid profile email offline_access',
+      code_challenge: msg.challenge,
+      code_challenge_method: 'S256',
+      id_token_add_organizations: 'true',
+      codex_cli_simplified_flow: 'true',
+      originator: 'codex_cli_rs',
+      state: msg.state
+    }).toString();
+    chrome.tabs.create({ url: authUrl });
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (msg.type === "START_JOB") {
     doStartJob(msg.password, msg.mailSite, msg.autoRestart, msg.proxyString, msg.rotateUrl, {
       autoPassword: !!msg.autoPassword,
@@ -2257,5 +2275,124 @@ chrome.alarms.create("autoReLoginAlarm", { periodInMinutes: 5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "autoReLoginAlarm") {
     triggerAutoReLoginCheck();
+  }
+});
+
+// Watch tab updates to intercept redirect callback for Codex OAuth
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.url && changeInfo.url.startsWith('http://localhost:1455/auth/callback')) {
+    const url = new URL(changeInfo.url);
+    const code = url.searchParams.get('code');
+    const returnedState = url.searchParams.get('state');
+    
+    // Close the tab immediately
+    try {
+      chrome.tabs.remove(tabId);
+    } catch (e) {
+      console.error(e);
+    }
+
+    const data = await new Promise(r => chrome.storage.local.get([
+      'oauth_verifier', 
+      'oauth_state', 
+      'backendBaseUrl', 
+      'extensionPushToken', 
+      'manualNamePrefix'
+    ], r));
+    
+    if (!returnedState || returnedState !== data.oauth_state) {
+      console.error('OAuth state mismatch or missing');
+      chrome.runtime.sendMessage({
+        type: 'OAUTH_STATUS',
+        success: false,
+        message: 'Lỗi: State mismatch (Yêu cầu OAuth bị giả mạo hoặc hết hạn).'
+      });
+      return;
+    }
+    
+    const portalUrl = (data.backendBaseUrl || "https://vinhaccplus.vercel.app").replace(/\/$/, "");
+    const pushToken = data.extensionPushToken || "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
+    const namePrefix = data.manualNamePrefix || "CodexOAuth";
+    const username = `${namePrefix}-${Date.now().toString().slice(-6)}`;
+
+    try {
+      console.log('Sending authorization code to backend for exchange...');
+      const resp = await fetch(`${portalUrl}/api/chatgpt-oauth-callback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-extension-push-token": pushToken
+        },
+        body: JSON.stringify({
+          username,
+          code,
+          codeVerifier: data.oauth_verifier,
+          redirectUri: 'http://localhost:1455/auth/callback'
+        })
+      });
+      
+      const resData = await resp.json();
+      console.log("OAuth push response:", resData);
+      
+      chrome.runtime.sendMessage({
+        type: 'OAUTH_STATUS',
+        success: resp.ok && resData.ok,
+        message: resData.message || resData.error || 'Đăng nhập OAuth thành công và lưu vào pool!'
+      });
+    } catch (err) {
+      console.error("OAuth exchange failed:", err);
+      chrome.runtime.sendMessage({
+        type: 'OAUTH_STATUS',
+        success: false,
+        message: 'Lỗi kết nối tới Portal: ' + err.message
+      });
+    }
+  }
+});
+
+// Monitor cookie changes on chatgpt.com for auto-pushing manual sessions
+chrome.cookies.onChanged.addListener(async (changeInfo) => {
+  const { cookie, removed } = changeInfo;
+  
+  if (
+    cookie.name === "__Secure-next-auth.session-token" && 
+    cookie.domain.includes("chatgpt.com") && 
+    !removed
+  ) {
+    console.log("Detected session token change:", cookie.value.substring(0, 10) + "...");
+    
+    // Check if auto-push is enabled
+    const data = await new Promise(r => chrome.storage.local.get(["manualAutoPush", "backendBaseUrl", "extensionPushToken", "manualNamePrefix"], r));
+    if (data.manualAutoPush) {
+      const portalUrl = (data.backendBaseUrl || "https://vinhaccplus.vercel.app").replace(/\/$/, "");
+      const pushToken = data.extensionPushToken || "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
+      const namePrefix = data.manualNamePrefix || "CodexAcc";
+      
+      const username = `${namePrefix}-${Date.now().toString().slice(-6)}`;
+      
+      chrome.cookies.get({ url: "https://chatgpt.com", name: "oai-did" }, async (oaiDidCookie) => {
+        const deviceId = (oaiDidCookie && oaiDidCookie.value) ? oaiDidCookie.value : "";
+        try {
+          console.log(`Auto pushing account session to ${portalUrl}...`);
+          const resp = await fetch(`${portalUrl}/api/chatgpt-extension-push`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-extension-push-token": pushToken
+            },
+            body: JSON.stringify({
+              username,
+              sessionToken: cookie.value,
+              deviceId
+            })
+          });
+          
+          const resData = await resp.json();
+          console.log("Auto push manual session response:", resData);
+        } catch (err) {
+          console.error("Auto push manual session failed:", err);
+        }
+      });
+    }
   }
 });
