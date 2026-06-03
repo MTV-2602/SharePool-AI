@@ -78,6 +78,17 @@
       "js": ["totp.js", "content.js"],
       "run_at": "document_end",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "http://127.0.0.1:5000/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*",
+        "https://vinhcousera.vercel.app/*",
+        "https://*.vercel.app/*"
+      ],
+      "js": ["content_portal.js"],
+      "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
