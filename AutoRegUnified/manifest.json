@@ -59,7 +59,8 @@
     "default_path": "popup.html"
   },
   "action": {
-    "default_title": "Open AutoReg Unified"
+    "default_title": "Open AutoReg Unified",
+    "default_popup": "popup.html"
   },
   "background": {
     "service_worker": "background.js"
