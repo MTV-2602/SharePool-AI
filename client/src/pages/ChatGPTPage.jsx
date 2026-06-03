@@ -302,7 +302,7 @@ function ChatGPTPool() {
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {statusBadge(acc.status)}
-                        {acc.status !== 'failed' && acc.status !== 'error' && (
+                        {acc.status !== 'failed' && acc.status !== 'error' ? (
                           <button
                             className="btn btn-ghost btn-xs text-xs"
                             onClick={() => handleMarkFailed(acc.sessionToken)}
@@ -310,6 +310,15 @@ function ChatGPTPool() {
                             style={{ padding: '2px 4px', fontSize: '0.68rem', color: 'var(--text-muted)', border: '1px dashed var(--border)' }}
                           >
                             Mô phỏng lỗi (Test Re-login)
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn-warning btn-xs text-xs"
+                            onClick={() => handleMarkFailed(acc.sessionToken)}
+                            title="Yêu cầu Extension tự động đăng nhập lại ChatGPT để lấy session mới"
+                            style={{ padding: '2px 6px', fontSize: '0.68rem', display: 'inline-flex', alignItems: 'center', gap: 2 }}
+                          >
+                            🔄 Re-login qua Extension
                           </button>
                         )}
                       </div>

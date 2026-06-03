@@ -1354,6 +1354,9 @@ function findChatGptLogoutConfirmButton(clickedButton) {
 }
 
 function findAvatarButton() {
+  const accountProfileBtn = document.querySelector('[data-testid="accounts-profile-button"]');
+  if (accountProfileBtn && isVisible(accountProfileBtn)) return accountProfileBtn;
+
   const testidBtn = document.querySelector('[data-testid="profile-button"], [data-testid="user-menu-button"]');
   if (testidBtn && isVisible(testidBtn)) return testidBtn;
 
@@ -1375,6 +1378,9 @@ function findAvatarButton() {
 }
 
 function findLogoutMenuItem() {
+  const testidLogout = document.querySelector('[data-testid="log-out-menu-item"]');
+  if (testidLogout && isVisible(testidLogout)) return testidLogout;
+
   const elements = Array.from(document.querySelectorAll('[role="menuitem"], button, div, span, a')).filter(isVisible);
   return elements.find(el => {
     const text = (el.textContent || "").trim().toLowerCase();
