@@ -638,13 +638,66 @@ function AutoRegCredentials() {
     URL.revokeObjectURL(url);
   };
 
+  // Helper to parse line with multiple delimiters and validate email
+  const parseLine = (line) => {
+    const clean = line.trim();
+    if (!clean) return null;
+
+    // Detect separator: |, \t, ;, ---, :
+    const separators = ['|', '\t', ';', '---', ':'];
+    let sep = null;
+    for (const s of separators) {
+      if (clean.includes(s)) {
+        sep = s;
+        break;
+      }
+    }
+
+    let email = '';
+    let password = '';
+    let otpSecret = '';
+
+    if (!sep) {
+      email = clean;
+    } else {
+      const idx = clean.indexOf(sep);
+      email = clean.slice(0, idx).trim();
+      const rest = clean.slice(idx + sep.length).trim();
+      
+      if (rest.includes(sep)) {
+        const idx2 = rest.indexOf(sep);
+        password = rest.slice(0, idx2).trim();
+        otpSecret = rest.slice(idx2 + sep.length).trim();
+      } else {
+        password = rest;
+      }
+    }
+
+    // Basic email validation regex to ensure a valid email format is entered
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+    if (!emailRegex.test(email)) {
+      return null;
+    }
+
+    return { email, password, otpSecret };
+  };
+
   // Handle manual single add
   const handleAddSingle = async () => {
-    if (!addEmail.trim()) return;
+    const trimmedEmail = addEmail.trim();
+    if (!trimmedEmail) return;
+    
+    // Validate email format
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setMsg({ type: 'error', text: 'Lỗi: Định dạng email không hợp lệ.' });
+      return;
+    }
+
     setAddLoading(true);
     try {
       const res = await api.post('/admin-api/chatgpt-credentials', {
-        email: addEmail.trim(),
+        email: trimmedEmail,
         password: addPassword.trim(),
         otpSecret: addOtp.trim(),
         triggerReLogin: addReLogin
@@ -664,17 +717,24 @@ function AutoRegCredentials() {
 
   // Handle bulk import
   const handleBulkImport = async () => {
-    const lines = bulkText.split('\n').map(l => l.trim()).filter(l => l && l.includes('|'));
-    if (!lines.length) { setMsg({ type: 'error', text: 'Không tìm thấy dòng hợp lệ. Format: email|password|otp_secret' }); return; }
+    const parsedLines = bulkText
+      .split('\n')
+      .map(l => parseLine(l))
+      .filter(Boolean);
+
+    if (!parsedLines.length) { 
+      setMsg({ type: 'error', text: 'Không tìm thấy dòng hợp lệ. Định dạng hỗ trợ: email|password|otp_secret hoặc email:password' }); 
+      return; 
+    }
+
     setBulkLoading(true);
     let success = 0, fail = 0;
-    for (const line of lines) {
-      const parts = line.split('|').map(s => s.trim());
-      const [email, password, otpSecret] = parts;
-      if (!email) { fail++; continue; }
+    for (const item of parsedLines) {
       try {
         await api.post('/admin-api/chatgpt-credentials', {
-          email, password: password || '', otpSecret: otpSecret || '',
+          email: item.email, 
+          password: item.password, 
+          otpSecret: item.otpSecret,
           triggerReLogin: addReLogin
         });
         success++;
@@ -763,7 +823,7 @@ function AutoRegCredentials() {
                 style={{ fontSize: '0.8rem', minHeight: 120 }}
               />
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                {bulkText.split('\n').filter(l => l.trim() && l.includes('|')).length} dòng hợp lệ
+                {bulkText.split('\n').map(l => parseLine(l)).filter(Boolean).length} dòng hợp lệ
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
