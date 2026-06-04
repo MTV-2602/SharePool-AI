@@ -16,6 +16,12 @@ const { AppError } = require('./errorHandler');
  *   - The header value does not match ADMIN_KEY from config
  */
 function adminGuard(req, res, next) {
+  // Bỏ qua kiểm tra admin key đối với callback OAuth vì trình duyệt chuyển hướng trực tiếp (GET)
+  // và xác thực được bảo mật qua đối chiếu state ngẫu nhiên trong bộ nhớ đệm
+  if (req.path === '/oauth/codex/callback' || (req.originalUrl && req.originalUrl.includes('/oauth/codex/callback'))) {
+    return next();
+  }
+
   const provided = req.headers['x-admin-key'] || '';
 
   if (!provided) {
