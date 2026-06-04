@@ -34,14 +34,21 @@ const SCHEMA = `
   );
 
   CREATE TABLE IF NOT EXISTS upstream_accounts (
-    id             SERIAL PRIMARY KEY,
-    name           TEXT NOT NULL,
-    session_token  TEXT NOT NULL,
-    is_active      INTEGER DEFAULT 1,
-    total_requests INTEGER DEFAULT 0,
-    created_at     TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at     TEXT DEFAULT CURRENT_TIMESTAMP
+    id               SERIAL PRIMARY KEY,
+    name             TEXT NOT NULL,
+    session_token    TEXT NOT NULL,
+    is_active        INTEGER DEFAULT 1,
+    total_requests   INTEGER DEFAULT 0,
+    last_error       TEXT,
+    quota_resets_at  TIMESTAMP,
+    last_used_at     TIMESTAMP,
+    created_at       TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TEXT DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE INDEX IF NOT EXISTS idx_upstream_rotation
+    ON upstream_accounts (is_active, last_used_at)
+    WHERE is_active = 1;
 
   CREATE TABLE IF NOT EXISTS chatgpt_credentials (
     id           SERIAL PRIMARY KEY,
@@ -99,7 +106,9 @@ const KEY_MAPS = {
   tokens_out: 'tokensOut',
   tokens_total: 'tokensTotal',
   req_id: 'reqId',
-  last_error: 'lastError'
+  last_error: 'lastError',
+  quota_resets_at: 'quotaResetsAt',
+  last_used_at: 'lastUsedAt'
 };
 
 function mapRowKeys(row) {
@@ -156,6 +165,15 @@ async function initDB() {
   await _pgPool.query('SELECT 1');
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS last_error TEXT');
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT CURRENT_TIMESTAMP');
+  // Giai đoạn 1: thêm cột quản lý quota cho scale
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS quota_resets_at TIMESTAMP');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP');
+  // Index để getNext() query nhanh trên 50k acc
+  await _pgPool.query(`
+    CREATE INDEX IF NOT EXISTS idx_upstream_rotation
+    ON upstream_accounts (is_active, last_used_at)
+    WHERE is_active = 1
+  `);
   console.log('✅ [Database] PostgreSQL connected successfully.');
 }
 

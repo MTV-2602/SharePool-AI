@@ -523,22 +523,56 @@ class ChatGPTClient {
       });
 
       if (fetchRes.status >= 400) {
-        const errorBody = await fetchRes.text();
+        const retryAfterHeader = parseInt(fetchRes.headers.get('retry-after') || fetchRes.headers.get('x-ratelimit-reset-requests') || '0', 10);
+        const errorText = await fetchRes.text();
         let message = 'Codex responses API error';
+        let parsedError = null;
         try {
-          const parsed = JSON.parse(errorBody);
-          message = parsed.error?.message || parsed.detail || errorBody;
+          parsedError = JSON.parse(errorText);
+          message = parsedError.error?.message || parsedError.detail || errorText;
         } catch (_) {
-          message = errorBody || `HTTP ${fetchRes.status}`;
+          message = errorText || `HTTP ${fetchRes.status}`;
         }
         logger.error(`Codex Responses error response (${fetchRes.status}): ${message}`);
+
         const err = new Error(message);
         err.statusCode = fetchRes.status;
-        if (fetchRes.status === 429) err.code = 'RATE_LIMITED';
-        else if (fetchRes.status === 401 || fetchRes.status === 403) err.code = 'INVALID_SESSION';
-        else err.code = 'UPSTREAM_ERROR';
+
+        if (fetchRes.status === 429) {
+          // Phân biệt quota hết hẳn (5h) vs rate limit tạm thời (60s)
+          const errCode  = parsedError?.error?.code  || '';
+          const errType  = parsedError?.error?.type  || '';
+          const isQuota  =
+            errCode === 'insufficient_quota'     ||
+            errCode === 'quota_exceeded'         ||
+            errType === 'insufficient_quota'     ||
+            errType === 'rate_limit_exceeded'    ||   // OpenAI dùng type này cho quota
+            message.toLowerCase().includes('quota') ||
+            message.toLowerCase().includes('limit reached') ||
+            retryAfterHeader > 300;                   // Retry-After > 5 phút → chắc là quota
+
+          if (isQuota) {
+            // Hết quota window (5h) — cooldown bằng thời gian OpenAI báo hoặc mặc định 5h
+            err.code       = 'QUOTA_EXHAUSTED';
+            err.retryAfter = retryAfterHeader > 0
+              ? retryAfterHeader * 1000
+              : 5 * 60 * 60 * 1000; // 5 giờ default
+            logger.warn(`Quota exhausted — cooldown ${Math.ceil(err.retryAfter / 60000)} phút`);
+          } else {
+            // Rate limit tạm thời — thường do gọi quá nhanh trong 1 phút
+            err.code       = 'RATE_LIMITED';
+            err.retryAfter = retryAfterHeader > 0
+              ? Math.min(retryAfterHeader * 1000, 120_000)
+              : 60_000; // 60s default, max 2 phút
+          }
+        } else if (fetchRes.status === 401 || fetchRes.status === 403) {
+          err.code = 'INVALID_SESSION';
+        } else {
+          err.code = 'UPSTREAM_ERROR';
+        }
         throw err;
       }
+
 
       logger.info('Codex Responses stream connection established successfully');
       return {

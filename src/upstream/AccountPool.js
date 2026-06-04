@@ -4,8 +4,9 @@ const config = require('../config');
 const { ChatGPTClient } = require('./ChatGPTClient');
 const logger            = require('../utils/logger').create('AccountPool');
 
-const COOLDOWN_RATE_LIMIT = 60 * 1000;        // 60 seconds
-const COOLDOWN_INVALID    = 30 * 60 * 1000;   // 30 minutes
+const COOLDOWN_RATE_LIMIT  = 60 * 1000;         // 60 giây — rate limit tạm thời
+const COOLDOWN_QUOTA_DEFAULT = 5 * 60 * 60 * 1000; // 5 tiếng default — hết quota window
+const COOLDOWN_INVALID     = 30 * 60 * 1000;    // 30 phút — token hết hạn/sai
 
 // ─── AccountPool ──────────────────────────────────────────────────────────────
 
@@ -26,6 +27,9 @@ class AccountPool {
     /** Round-robin index */
     this._index = 0;
 
+    /** @type {Map<string, number>} token → quota_resets_at (ms timestamp) - hết quota */
+    this._quotaExhausted = new Map();
+
     // Load from DB async (non-blocking at startup; reload() can be awaited later)
     this._loadAsync();
   }
@@ -40,7 +44,11 @@ class AccountPool {
     try {
       const db = require('../db');
       const rows = await db.query(
-        `SELECT id, name, session_token FROM upstream_accounts WHERE is_active = 1 ORDER BY id ASC`
+        // Load last_used_at và quota_resets_at để restore state sau restart
+        `SELECT id, name, session_token, quota_resets_at, last_used_at
+         FROM upstream_accounts
+         WHERE is_active = 1
+         ORDER BY last_used_at ASC NULLS FIRST` // tiếp tục round-robin từ nơi đã dừng
       );
 
       // Build a lookup of existing clients keyed by their current sessionToken
@@ -48,10 +56,13 @@ class AccountPool {
         this._accounts.map(a => [a.client.sessionToken, a.client])
       );
 
+      const now = Date.now();
+
       this._accounts = rows.map((row, i) => {
-        const sessionToken = row.sessionToken || row.session_token;
-        const name         = row.name || `Account-${i + 1}`;
-        const id           = row.id;
+        const sessionToken  = row.sessionToken || row.session_token;
+        const name          = row.name || `Account-${i + 1}`;
+        const id            = row.id;
+        const quotaResetsAt = row.quotaResetsAt || row.quota_resets_at;
 
         if (!sessionToken) return null;
         let client = existingClients.get(sessionToken);
@@ -60,6 +71,18 @@ class AccountPool {
         }
         client.id = id;
         client.name = name;
+
+        // Restore quota cooldown từ DB sau khi restart
+        if (quotaResetsAt) {
+          const resetTs = new Date(quotaResetsAt).getTime();
+          if (resetTs > now) {
+            this._cooldowns.set(sessionToken, resetTs);
+            this._quotaExhausted.set(sessionToken, resetTs);
+            const minsLeft = Math.ceil((resetTs - now) / 60000);
+            logger.debug(`[${name}] Quota cooldown restored — hồi sau ${minsLeft} phút`);
+          }
+        }
+
         return { id, name, client };
       }).filter(Boolean);
 
@@ -67,7 +90,8 @@ class AccountPool {
         this._index = 0;
       }
 
-      logger.info(`Loaded ${this._accounts.length} account(s) from database`);
+      const available = this._accounts.filter(a => !this._isOnCooldown(a.client.sessionToken)).length;
+      logger.info(`Loaded ${this._accounts.length} account(s) from database (${available} sẵn sàng, ${this._accounts.length - available} đang cooldown)`);
     } catch (err) {
       logger.error('Failed to load from DB, falling back to file:', err.message);
       this._loadFromFile();
@@ -221,11 +245,42 @@ class AccountPool {
     return quota.plan;
   }
 
-  markRateLimited(token) {
-    const until = Date.now() + COOLDOWN_RATE_LIMIT;
+  markRateLimited(token, retryAfterMs = COOLDOWN_RATE_LIMIT) {
+    const until = Date.now() + Math.min(retryAfterMs, 120_000); // tối đa 2 phút
     this._cooldowns.set(token, until);
     const account = this._accounts.find(a => a.client.sessionToken === token);
-    logger.warn(`[${account?.name ?? 'unknown'}] Rate limited — cooling down for 60s`);
+    logger.warn(`[${account?.name ?? 'unknown'}] Rate limited — cooldown ${Math.ceil((until - Date.now()) / 1000)}s`);
+  }
+
+  /**
+   * Đánh dấu acc đã hết quota window (5 tiếng hoặc theo Retry-After).
+   * Acc này sẽ bị bỏ qua cho đến khi quota_resets_at qua đi.
+   */
+  markQuotaExhausted(token, retryAfterMs = COOLDOWN_QUOTA_DEFAULT) {
+    const until = Date.now() + retryAfterMs;
+    // Lưu vào in-memory map để getNext() skip nhanh
+    this._quotaExhausted.set(token, until);
+    // Cũng đặt cooldown thông thường để _isOnCooldown() bắt được
+    this._cooldowns.set(token, until);
+
+    const account = this._accounts.find(a => a.client.sessionToken === token);
+    const hours   = Math.ceil(retryAfterMs / 3600000);
+    logger.warn(`[${account?.name ?? 'unknown'}] Quota exhausted — cooldown ${hours}h (hồi lúc ${new Date(until).toLocaleTimeString('vi-VN')})`);
+
+    // Persist vào DB để survive restart
+    const db = require('../db');
+    const resetIso = new Date(until).toISOString();
+    if (account?.id) {
+      db.run(
+        `UPDATE upstream_accounts SET quota_resets_at = ?, last_error = 'quota_exhausted', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [resetIso, account.id]
+      ).catch(err => logger.error('Failed to persist quota_resets_at: ' + err.message));
+    } else {
+      db.run(
+        `UPDATE upstream_accounts SET quota_resets_at = ?, last_error = 'quota_exhausted', updated_at = CURRENT_TIMESTAMP WHERE session_token = ?`,
+        [resetIso, token]
+      ).catch(err => logger.error('Failed to persist quota_resets_at: ' + err.message));
+    }
   }
 
   markInvalid(token, reason = 'Session token is invalid or expired') {
@@ -266,28 +321,52 @@ class AccountPool {
     for (let i = 0; i < total; i++) {
       const idx     = (this._index + i) % total;
       const account = this._accounts[idx];
+      const token   = account.client.sessionToken;
 
-      if (!this._isOnCooldown(account.client.sessionToken)) {
+      if (!this._isOnCooldown(token)) {
         this._index = (idx + 1) % total;
+
+        // Cập nhật last_used_at để round-robin persist qua restart (fire-and-forget)
+        if (account.id) {
+          const db = require('../db');
+          db.run(
+            `UPDATE upstream_accounts SET last_used_at = CURRENT_TIMESTAMP, total_requests = total_requests + 1 WHERE id = ?`,
+            [account.id]
+          ).catch(() => {}); // không chặn response
+        }
+
         return {
           client: account.client,
-          token:  account.client.sessionToken,
+          token,
           name:   account.name,
         };
       }
+
+      // Log tóm tắt acc đang bị skip do quota/cooldown
+      const quotaUntil = this._quotaExhausted.get(token);
+      if (quotaUntil) {
+        const minsLeft = Math.ceil((quotaUntil - Date.now()) / 60000);
+        logger.debug(`[${account.name}] Skipped — quota hồi sau ${minsLeft} phút`);
+      }
     }
 
+    // Tất cả acc đang cooldown — tìm acc hồi sớm nhất
     let soonest = Infinity;
+    let soonestName = '';
     for (const account of this._accounts) {
       const rem = this._cooldownRemaining(account.client.sessionToken);
-      if (rem < soonest) soonest = rem;
+      if (rem < soonest) {
+        soonest = rem;
+        soonestName = account.name;
+      }
     }
 
-    logger.warn(`All accounts on cooldown. Waiting ${Math.ceil(soonest / 1000)}s…`);
+    logger.warn(`Tất cả acc đang cooldown. Acc sớm nhất: [${soonestName}] — đợi ${Math.ceil(soonest / 1000)}s…`);
     await new Promise(resolve => setTimeout(resolve, soonest + 100));
 
     return this.getNext();
   }
+
 
   // ── High-Level Chat ───────────────────────────────────────────────────────
 
@@ -312,8 +391,15 @@ class AccountPool {
         logger.info(`[${name}] Chat request succeeded`);
         return response;
       } catch (err) {
+        if (err.code === 'QUOTA_EXHAUSTED') {
+          // Hết quota 5h — skip acc này, dùng retryAfter từ OpenAI nếu có
+          this.markQuotaExhausted(token, err.retryAfter || COOLDOWN_QUOTA_DEFAULT);
+          logger.warn(`[${name}] Quota exhausted — trying next account`);
+          continue;
+        }
+
         if (err.code === 'RATE_LIMITED') {
-          this.markRateLimited(token);
+          this.markRateLimited(token, err.retryAfter || COOLDOWN_RATE_LIMIT);
           logger.warn(`[${name}] Rate limited — trying next account`);
           continue;
         }
@@ -367,6 +453,7 @@ class AccountPool {
   async reload() {
     logger.info('Reloading accounts from database and resetting cooldowns…');
     this._cooldowns.clear();
+    this._quotaExhausted.clear();
     this._invalidTokens.clear();
     this._errors.clear();
     if (this._plans) this._plans.clear();
