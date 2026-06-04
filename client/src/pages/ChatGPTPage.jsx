@@ -250,6 +250,40 @@ function AccountQuotaCell({ accountName, sessionToken }) {
   );
 }
 
+// ─── Cooldown Timer Component ─────────────────────────────────────────────────
+function CooldownTimer({ initialMs }) {
+  const [remaining, setRemaining] = useState(initialMs);
+
+  useEffect(() => {
+    setRemaining(initialMs);
+  }, [initialMs]);
+
+  useEffect(() => {
+    if (remaining <= 0) return;
+    const t = setInterval(() => {
+      setRemaining(r => {
+        const next = r - 1000;
+        if (next <= 0) {
+          clearInterval(t);
+          return 0;
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [remaining]);
+
+  if (remaining <= 0) return null;
+
+  const s = Math.floor(remaining / 1000);
+  let text = "";
+  if (s < 60) text = `${s}s`;
+  else if (s < 3600) text = `${Math.floor(s / 60)}m ${s % 60}s`;
+  else text = `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+
+  return <span style={{ fontSize: '0.72rem', color: 'var(--yellow)', fontFamily: 'monospace', fontWeight: 600 }}>⏱ {text}</span>;
+}
+
 // ─── POOL STATUS (Session Tokens) ─────────────────────────────────────────────
 function ChatGPTPool() {
   const [accounts, setAccounts] = useState([]);
@@ -419,26 +453,36 @@ function ChatGPTPool() {
                       )}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {statusBadge(acc.status)}
-                        {acc.status !== 'failed' && acc.status !== 'error' ? (
-                          <button
-                            className="btn btn-ghost btn-xs text-xs"
-                            onClick={() => handleMarkFailed(acc.sessionToken)}
-                            title="Đánh dấu tài khoản lỗi để test re-login tự động từ Extension"
-                            style={{ padding: '2px 4px', fontSize: '0.68rem', color: 'var(--text-muted)', border: '1px dashed var(--border)' }}
-                          >
-                            Mô phỏng lỗi (Test Re-login)
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn-warning btn-xs text-xs"
-                            onClick={() => handleMarkFailed(acc.sessionToken)}
-                            title="Yêu cầu Extension tự động đăng nhập lại ChatGPT để lấy session mới"
-                            style={{ padding: '2px 6px', fontSize: '0.68rem', display: 'inline-flex', alignItems: 'center', gap: 2 }}
-                          >
-                            🔄 Re-login qua Extension
-                          </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {statusBadge(acc.status)}
+                          {acc.status === 'cooldown' && acc.cooldownRemaining > 0 && (
+                            <CooldownTimer initialMs={acc.cooldownRemaining} />
+                          )}
+                          {acc.status !== 'failed' && acc.status !== 'error' ? (
+                            <button
+                              className="btn btn-ghost btn-xs text-xs"
+                              onClick={() => handleMarkFailed(acc.sessionToken)}
+                              title="Đánh dấu tài khoản lỗi để test re-login tự động từ Extension"
+                              style={{ padding: '2px 4px', fontSize: '0.68rem', color: 'var(--text-muted)', border: '1px dashed var(--border)' }}
+                            >
+                              Mô phỏng lỗi (Test Re-login)
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-warning btn-xs text-xs"
+                              onClick={() => handleMarkFailed(acc.sessionToken)}
+                              title="Yêu cầu Extension tự động đăng nhập lại ChatGPT để lấy session mới"
+                              style={{ padding: '2px 6px', fontSize: '0.68rem', display: 'inline-flex', alignItems: 'center', gap: 2 }}
+                            >
+                              🔄 Re-login qua Extension
+                            </button>
+                          )}
+                        </div>
+                        {acc.lastError && (acc.status === 'failed' || acc.status === 'error') && (
+                          <span style={{ fontSize: '0.72rem', color: 'var(--red)', wordBreak: 'break-all', maxWidth: '300px' }} title={acc.lastError}>
+                            Lỗi: {acc.lastError}
+                          </span>
                         )}
                       </div>
                     </td>

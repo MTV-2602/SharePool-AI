@@ -33,7 +33,7 @@ const UpstreamAccount = {
     const existingByName = await UpstreamAccount.findByName(name);
     if (existingByName) {
       await db.run(
-        `UPDATE upstream_accounts SET session_token = ?, is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        `UPDATE upstream_accounts SET session_token = ?, is_active = 1, last_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [sessionToken, existingByName.id]
       );
       return await UpstreamAccount.findById(existingByName.id);
@@ -44,7 +44,7 @@ const UpstreamAccount = {
     if (existingByToken) {
       if (existingByToken.name !== name) {
         await db.run(
-          `UPDATE upstream_accounts SET name = ?, is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          `UPDATE upstream_accounts SET name = ?, is_active = 1, last_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
           [name, existingByToken.id]
         );
       }
@@ -53,7 +53,7 @@ const UpstreamAccount = {
 
     // 3. Otherwise, insert new row
     const { lastInsertRowid } = await db.run(
-      `INSERT INTO upstream_accounts (name, session_token, is_active, total_requests) VALUES (?, ?, 1, 0)`,
+      `INSERT INTO upstream_accounts (name, session_token, is_active, last_error, total_requests) VALUES (?, ?, 1, NULL, 0)`,
       [name, sessionToken]
     );
     return await UpstreamAccount.findById(lastInsertRowid);
@@ -80,7 +80,11 @@ const UpstreamAccount = {
     const pairs = [];
     const vals = [];
     if (name !== undefined) { pairs.push('name = ?'); vals.push(name); }
-    if (newSessionToken !== undefined) { pairs.push('session_token = ?'); vals.push(newSessionToken); }
+    if (newSessionToken !== undefined) { 
+      pairs.push('session_token = ?'); vals.push(newSessionToken); 
+      pairs.push('is_active = 1');
+      pairs.push('last_error = NULL');
+    }
     if (!pairs.length) return false;
     vals.push(oldToken);
     await db.run(

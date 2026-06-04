@@ -97,7 +97,8 @@ const KEY_MAPS = {
   tokens_in: 'tokensIn',
   tokens_out: 'tokensOut',
   tokens_total: 'tokensTotal',
-  req_id: 'reqId'
+  req_id: 'reqId',
+  last_error: 'lastError'
 };
 
 function mapRowKeys(row) {
@@ -152,6 +153,7 @@ async function initDB() {
 
   // Run lightweight connectivity check instead of heavy DDL schema setup
   await _pgPool.query('SELECT 1');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS last_error TEXT');
   console.log('✅ [Database] PostgreSQL connected successfully.');
 }
 

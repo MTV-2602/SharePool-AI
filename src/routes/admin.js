@@ -257,6 +257,7 @@ router.get('/accounts', asyncHandler(async (req, res) => {
       sessionToken: token,
       status: (acc.is_active === 0 || acc.isActive === 0) ? 'failed' : (poolAcc ? poolAcc.status : 'loaded'),
       cooldownRemaining: poolAcc ? poolAcc.cooldownRemaining : 0,
+      lastError: acc.lastError || acc.last_error || (poolAcc ? poolAcc.lastError : ''),
       hasToken: !!token,
       totalRequests: acc.totalRequests || acc.total_requests || 0,
       createdAt: acc.createdAt || acc.created_at,

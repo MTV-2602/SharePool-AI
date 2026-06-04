@@ -20,6 +20,9 @@ class AccountPool {
     /** @type {Set<string>} set of invalid/expired session tokens */
     this._invalidTokens = new Set();
 
+    /** @type {Map<string, string>} token → last error message */
+    this._errors = new Map();
+
     /** Round-robin index */
     this._index = 0;
 
@@ -213,17 +216,18 @@ class AccountPool {
     logger.warn(`[${account?.name ?? 'unknown'}] Rate limited — cooling down for 60s`);
   }
 
-  markInvalid(token) {
+  markInvalid(token, reason = 'Session token is invalid or expired') {
     const until = Date.now() + COOLDOWN_INVALID;
     this._cooldowns.set(token, until);
     this._invalidTokens.add(token);
+    this._errors.set(token, reason);
     const account = this._accounts.find(a => a.sessionToken === token);
-    logger.warn(`[${account?.name ?? 'unknown'}] Invalid session — cooling down for 30min`);
+    logger.warn(`[${account?.name ?? 'unknown'}] Invalid session (${reason}) — cooling down for 30min`);
 
     // Set is_active = 0 in database so it is persistent and triggers re-login
     const db = require('../db');
-    db.run('UPDATE upstream_accounts SET is_active = 0 WHERE session_token = ?', [token]).catch(err => {
-      logger.error('Failed to set is_active = 0 in database for invalid token: ' + err.message);
+    db.run('UPDATE upstream_accounts SET is_active = 0, last_error = ? WHERE session_token = ?', [reason, token]).catch(err => {
+      logger.error('Failed to set is_active = 0 and last_error in database for invalid token: ' + err.message);
     });
   }
 
@@ -297,7 +301,7 @@ class AccountPool {
         }
 
         if (err.code === 'INVALID_SESSION') {
-          this.markInvalid(token);
+          this.markInvalid(token, err.message);
           logger.warn(`[${name}] Invalid session — trying next account`);
           continue;
         }
@@ -319,6 +323,7 @@ class AccountPool {
       const isInvalid  = this._invalidTokens.has(account.sessionToken);
       const onCooldown = this._isOnCooldown(account.sessionToken);
       const remaining  = this._cooldownRemaining(account.sessionToken);
+      const lastError  = this._errors.get(account.sessionToken) || '';
 
       let status = 'active';
       if (isInvalid) {
@@ -333,6 +338,7 @@ class AccountPool {
         cooldownRemaining: remaining,
         hasToken:          Boolean(account.sessionToken),
         sessionToken:      account.sessionToken,
+        lastError,
       };
     });
   }
@@ -343,6 +349,7 @@ class AccountPool {
     logger.info('Reloading accounts from database and resetting cooldowns…');
     this._cooldowns.clear();
     this._invalidTokens.clear();
+    this._errors.clear();
     if (this._plans) this._plans.clear();
     await this._loadAsync();
     return { count: this._accounts.length };
