@@ -39,7 +39,8 @@ const SCHEMA = `
     session_token  TEXT NOT NULL,
     is_active      INTEGER DEFAULT 1,
     total_requests INTEGER DEFAULT 0,
-    created_at     TEXT DEFAULT CURRENT_TIMESTAMP
+    created_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TEXT DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS chatgpt_credentials (
@@ -154,6 +155,7 @@ async function initDB() {
   // Run lightweight connectivity check instead of heavy DDL schema setup
   await _pgPool.query('SELECT 1');
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS last_error TEXT');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT CURRENT_TIMESTAMP');
   console.log('✅ [Database] PostgreSQL connected successfully.');
 }
 

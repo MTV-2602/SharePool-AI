@@ -40,21 +40,27 @@ class AccountPool {
     try {
       const db = require('../db');
       const rows = await db.query(
-        `SELECT name, session_token FROM upstream_accounts WHERE is_active = 1 ORDER BY id ASC`
+        `SELECT id, name, session_token FROM upstream_accounts WHERE is_active = 1 ORDER BY id ASC`
       );
 
-      // Build a lookup of existing clients keyed by sessionToken
+      // Build a lookup of existing clients keyed by their current sessionToken
       const existingClients = new Map(
-        this._accounts.map(a => [a.sessionToken, a.client])
+        this._accounts.map(a => [a.client.sessionToken, a.client])
       );
 
       this._accounts = rows.map((row, i) => {
         const sessionToken = row.sessionToken || row.session_token;
         const name         = row.name || `Account-${i + 1}`;
+        const id           = row.id;
 
         if (!sessionToken) return null;
-        const client = existingClients.get(sessionToken) || new ChatGPTClient(sessionToken);
-        return { name, sessionToken, client };
+        let client = existingClients.get(sessionToken);
+        if (!client) {
+          client = new ChatGPTClient(sessionToken);
+        }
+        client.id = id;
+        client.name = name;
+        return { id, name, client };
       }).filter(Boolean);
 
       if (this._index >= this._accounts.length) {
@@ -95,7 +101,7 @@ class AccountPool {
     }
 
     const existingClients = new Map(
-      this._accounts.map(a => [a.sessionToken, a.client])
+      this._accounts.map(a => [a.client.sessionToken, a.client])
     );
 
     this._accounts = raw
@@ -110,8 +116,13 @@ class AccountPool {
           return null;
         }
 
-        const client = existingClients.get(sessionToken) || new ChatGPTClient(sessionToken);
-        return { name, sessionToken, client };
+        let client = existingClients.get(sessionToken);
+        if (!client) {
+          client = new ChatGPTClient(sessionToken);
+        }
+        client.id = null;
+        client.name = name;
+        return { id: null, name, client };
       })
       .filter(Boolean);
 
@@ -212,7 +223,7 @@ class AccountPool {
   markRateLimited(token) {
     const until = Date.now() + COOLDOWN_RATE_LIMIT;
     this._cooldowns.set(token, until);
-    const account = this._accounts.find(a => a.sessionToken === token);
+    const account = this._accounts.find(a => a.client.sessionToken === token);
     logger.warn(`[${account?.name ?? 'unknown'}] Rate limited — cooling down for 60s`);
   }
 
@@ -221,14 +232,20 @@ class AccountPool {
     this._cooldowns.set(token, until);
     this._invalidTokens.add(token);
     this._errors.set(token, reason);
-    const account = this._accounts.find(a => a.sessionToken === token);
+    const account = this._accounts.find(a => a.client.sessionToken === token);
     logger.warn(`[${account?.name ?? 'unknown'}] Invalid session (${reason}) — cooling down for 30min`);
 
     // Set is_active = 0 in database so it is persistent and triggers re-login
     const db = require('../db');
-    db.run('UPDATE upstream_accounts SET is_active = 0, last_error = ? WHERE session_token = ?', [reason, token]).catch(err => {
-      logger.error('Failed to set is_active = 0 and last_error in database for invalid token: ' + err.message);
-    });
+    if (account && account.id) {
+      db.run('UPDATE upstream_accounts SET is_active = 0, last_error = ? WHERE id = ?', [reason, account.id]).catch(err => {
+        logger.error('Failed to set is_active = 0 and last_error in database for invalid token ID: ' + err.message);
+      });
+    } else {
+      db.run('UPDATE upstream_accounts SET is_active = 0, last_error = ? WHERE session_token = ?', [reason, token]).catch(err => {
+        logger.error('Failed to set is_active = 0 and last_error in database for invalid token: ' + err.message);
+      });
+    }
   }
 
   // ── Rotation ─────────────────────────────────────────────────────────────
@@ -249,11 +266,11 @@ class AccountPool {
       const idx     = (this._index + i) % total;
       const account = this._accounts[idx];
 
-      if (!this._isOnCooldown(account.sessionToken)) {
+      if (!this._isOnCooldown(account.client.sessionToken)) {
         this._index = (idx + 1) % total;
         return {
           client: account.client,
-          token:  account.sessionToken,
+          token:  account.client.sessionToken,
           name:   account.name,
         };
       }
@@ -261,7 +278,7 @@ class AccountPool {
 
     let soonest = Infinity;
     for (const account of this._accounts) {
-      const rem = this._cooldownRemaining(account.sessionToken);
+      const rem = this._cooldownRemaining(account.client.sessionToken);
       if (rem < soonest) soonest = rem;
     }
 
@@ -320,10 +337,10 @@ class AccountPool {
 
   getStatus() {
     return this._accounts.map(account => {
-      const isInvalid  = this._invalidTokens.has(account.sessionToken);
-      const onCooldown = this._isOnCooldown(account.sessionToken);
-      const remaining  = this._cooldownRemaining(account.sessionToken);
-      const lastError  = this._errors.get(account.sessionToken) || '';
+      const isInvalid  = this._invalidTokens.has(account.client.sessionToken);
+      const onCooldown = this._isOnCooldown(account.client.sessionToken);
+      const remaining  = this._cooldownRemaining(account.client.sessionToken);
+      const lastError  = this._errors.get(account.client.sessionToken) || '';
 
       let status = 'active';
       if (isInvalid) {
@@ -333,11 +350,12 @@ class AccountPool {
       }
 
       return {
+        id:                account.id,
         name:              account.name,
         status,
         cooldownRemaining: remaining,
-        hasToken:          Boolean(account.sessionToken),
-        sessionToken:      account.sessionToken,
+        hasToken:          Boolean(account.client.sessionToken),
+        sessionToken:      account.client.sessionToken,
         lastError,
       };
     });

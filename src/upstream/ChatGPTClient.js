@@ -145,6 +145,8 @@ class ChatGPTClient {
     this.sessionToken = sessionToken;
     this._accessToken  = null;
     this._tokenExpiry  = 0; // Unix ms timestamp
+    this.id            = null; // database record ID, populated by AccountPool
+    this.name          = null; // name, populated by AccountPool
   }
 
   /**
@@ -245,10 +247,17 @@ class ChatGPTClient {
         };
 
         const db = require('../db');
-        await db.run(
-          'UPDATE upstream_accounts SET session_token = ? WHERE session_token = ?',
-          [JSON.stringify(newWrapper), this.sessionToken]
-        );
+        if (this.id) {
+          await db.run(
+            'UPDATE upstream_accounts SET session_token = ? WHERE id = ?',
+            [JSON.stringify(newWrapper), this.id]
+          );
+        } else {
+          await db.run(
+            'UPDATE upstream_accounts SET session_token = ? WHERE session_token = ?',
+            [JSON.stringify(newWrapper), this.sessionToken]
+          );
+        }
 
         this.sessionToken = JSON.stringify(newWrapper);
         this._accessToken = nextAccessToken;

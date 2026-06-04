@@ -32,6 +32,33 @@ const UpstreamAccount = {
     // 1. Try to find by name first to prevent duplicate accounts for the same email/username
     const existingByName = await UpstreamAccount.findByName(name);
     if (existingByName) {
+      // Check if existing token is a Codex OAuth token (has refreshToken)
+      let existingIsOAuth = false;
+      try {
+        const parsed = JSON.parse(existingByName.session_token);
+        if (parsed.accessToken && parsed.refreshToken) {
+          existingIsOAuth = true;
+        }
+      } catch (_) {}
+
+      // Check if new token is Codex OAuth (has refreshToken)
+      let newIsOAuth = false;
+      try {
+        const parsed = JSON.parse(sessionToken);
+        if (parsed.accessToken && parsed.refreshToken) {
+          newIsOAuth = true;
+        }
+      } catch (_) {}
+
+      // If existing is OAuth but new is just a session cookie, do NOT overwrite the OAuth tokens
+      if (existingIsOAuth && !newIsOAuth) {
+        await db.run(
+          `UPDATE upstream_accounts SET is_active = 1, last_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          [existingByName.id]
+        );
+        return await UpstreamAccount.findById(existingByName.id);
+      }
+
       await db.run(
         `UPDATE upstream_accounts SET session_token = ?, is_active = 1, last_error = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [sessionToken, existingByName.id]

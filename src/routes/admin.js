@@ -247,11 +247,11 @@ router.get('/accounts', asyncHandler(async (req, res) => {
   // Return merged view: DB records with cooldown status from in-memory pool
   const dbAccounts = await UpstreamAccount.findAll();
   const poolStatus = AccountPool.getStatus();
-  const statusMap = new Map(poolStatus.map(a => [a.sessionToken, a]));
+  const statusMap = new Map(poolStatus.map(a => [a.id || a.sessionToken, a]));
 
   const result = dbAccounts.map(acc => {
     const token = acc.sessionToken || acc.session_token;
-    const poolAcc = statusMap.get(token);
+    const poolAcc = statusMap.get(acc.id || token);
     return {
       name: acc.name,
       sessionToken: token,
