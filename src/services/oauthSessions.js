@@ -31,12 +31,12 @@ const pendingOAuthSessions = {
     try {
       const existing = await this.get(state);
       if (existing) {
-        await db.run(
+        await db.query(
           'UPDATE pending_oauth_sessions SET code_verifier = ?, redirect_uri = ?, status = ?, email = ?, error = ?, created_at = ? WHERE state = ?',
           [session.codeVerifier, session.redirectUri, session.status, session.email || '', session.error || '', session.createdAt || Date.now(), state]
         );
       } else {
-        await db.run(
+        await db.query(
           'INSERT INTO pending_oauth_sessions (state, code_verifier, redirect_uri, status, email, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
           [state, session.codeVerifier, session.redirectUri, session.status, session.email || '', session.error || '', session.createdAt || Date.now()]
         );
@@ -49,7 +49,7 @@ const pendingOAuthSessions = {
   async delete(state) {
     if (!state) return;
     try {
-      await db.run('DELETE FROM pending_oauth_sessions WHERE state = ?', [state]);
+      await db.query('DELETE FROM pending_oauth_sessions WHERE state = ?', [state]);
     } catch (err) {
       console.error('Failed to delete pending OAuth session from DB:', err.message);
     }
@@ -59,7 +59,7 @@ const pendingOAuthSessions = {
 async function cleanupOldSessions() {
   const fifteenMinsAgo = Date.now() - 15 * 60 * 1000;
   try {
-    await db.run('DELETE FROM pending_oauth_sessions WHERE created_at < ?', [fifteenMinsAgo]);
+    await db.query('DELETE FROM pending_oauth_sessions WHERE created_at < ?', [fifteenMinsAgo]);
   } catch (err) {
     console.error('Failed to clean up old OAuth sessions in DB:', err.message);
   }
