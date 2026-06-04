@@ -21,7 +21,7 @@ const app = express();
 app.set('trust proxy', 1); // Trust Vercel's proxy headers for rate limiting
 
 logger.info('Initializing database connection...');
-initDB()
+const dbPromise = initDB()
   .then(() => {
     logger.info('Database connection verified.');
   })
@@ -31,6 +31,16 @@ initDB()
       process.exit(1);
     }
   });
+
+// Block requests until DB initialization is completed (extremely important for Vercel cold starts)
+app.use(async (req, res, next) => {
+  try {
+    await dbPromise;
+    next();
+  } catch (err) {
+    res.status(500).json({ error: 'Database initialization failed: ' + err.message });
+  }
+});
 
 
 // ─── Security middleware ─────────────────────────────────────────

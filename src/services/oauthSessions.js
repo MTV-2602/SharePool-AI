@@ -13,12 +13,12 @@ const pendingOAuthSessions = {
       const row = await db.get('SELECT * FROM pending_oauth_sessions WHERE state = ?', [state]);
       if (!row) return null;
       return {
-        codeVerifier: row.codeVerifier,
-        redirectUri: row.redirectUri,
+        codeVerifier: row.codeVerifier || row.code_verifier,
+        redirectUri: row.redirectUri || row.redirect_uri,
         status: row.status,
         email: row.email,
         error: row.error,
-        createdAt: Number(row.createdAt || 0)
+        createdAt: Number(row.createdAt || row.created_at || 0)
       };
     } catch (err) {
       console.error('Failed to get pending OAuth session from DB:', err.message);

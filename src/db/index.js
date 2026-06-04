@@ -108,7 +108,9 @@ const KEY_MAPS = {
   req_id: 'reqId',
   last_error: 'lastError',
   quota_resets_at: 'quotaResetsAt',
-  last_used_at: 'lastUsedAt'
+  last_used_at: 'lastUsedAt',
+  code_verifier: 'codeVerifier',
+  redirect_uri: 'redirectUri'
 };
 
 function mapRowKeys(row) {
