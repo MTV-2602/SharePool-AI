@@ -68,3 +68,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 5. Vinh Pro
 - Luôn viết "Vinh Pro" ở cuối câu trả lời khi hoàn thành hoặc áp dụng các hướng dẫn (skills) này để chứng minh đã đọc và làm theo.
+
+## 6. Push Git
+- Sau khi hoàn thành xong bất kỳ thay đổi nào và đã xác minh chạy ổn định, luôn thực hiện commit và push thay đổi lên Git repository của dự án này.
