@@ -738,7 +738,7 @@ router.delete('/chatgpt-credentials/:id', asyncHandler(async (req, res) => {
 // ─── Codex OAuth Flow (Server-side callback) ─────────────────────────────────
 
 const crypto = require('crypto');
-const pendingOAuthSessions = new Map();
+const { pendingOAuthSessions, cleanupOldSessions } = require('../services/oauthSessions');
 
 // Helper to get the server's public base URL from the request
 function getServerBaseUrl(req) {
@@ -773,10 +773,7 @@ router.get('/oauth/codex/authorize', asyncHandler(async (req, res) => {
   });
 
   // Tự động dọn dẹp các phiên cũ hơn 15 phút
-  const fifteenMinsAgo = Date.now() - 900000;
-  for (const [key, val] of pendingOAuthSessions.entries()) {
-    if (val.createdAt < fifteenMinsAgo) pendingOAuthSessions.delete(key);
-  }
+  cleanupOldSessions();
 
   const authUrl = `https://auth.openai.com/oauth/authorize?` + new URLSearchParams({
     response_type: 'code',

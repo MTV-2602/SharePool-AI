@@ -7,6 +7,7 @@ const AccountPool = require('../upstream/AccountPool');
 const UpstreamAccount = require('../models/UpstreamAccount');
 const ChatGPTCredential = require('../models/ChatGPTCredential');
 const { asyncHandler } = require('../middleware/errorHandler');
+const { pendingOAuthSessions, cleanupOldSessions } = require('../services/oauthSessions');
 
 // Retrieve push token from env (default fallback to the one in the extension)
 const PUSH_TOKEN = process.env.EXTENSION_PUSH_TOKEN || config.EXTENSION_PUSH_TOKEN || 'b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b';
@@ -19,6 +20,54 @@ function extensionAuth(req, res, next) {
   }
   next();
 }
+
+// POST /api/oauth/codex/init — Extension gửi PKCE session lên server để lấy authUrl
+// Extension tự generate codeVerifier/codeChallenge/state, gửi lên đây để server lưu,
+// rồi mở authUrl trong tab đã đăng nhập ChatGPT → OpenAI tự redirect về server callback.
+router.post('/oauth/codex/init', extensionAuth, asyncHandler(async (req, res) => {
+  const { state, codeVerifier, redirectUri } = req.body;
+
+  if (!state || !codeVerifier || !redirectUri) {
+    return res.status(400).json({ ok: false, error: 'state, codeVerifier, and redirectUri are required' });
+  }
+
+  // Clean up old sessions
+  cleanupOldSessions();
+
+  // Store the session so the callback route can find it
+  pendingOAuthSessions.set(state, {
+    codeVerifier,
+    redirectUri,
+    status: 'pending',
+    createdAt: Date.now(),
+    source: 'extension' // mark as extension-initiated
+  });
+
+  // Build the OpenAI auth URL
+  // codeChallenge is derived from codeVerifier by the extension and sent as query param
+  const { codeChallenge } = req.body;
+
+  if (!codeChallenge) {
+    return res.status(400).json({ ok: false, error: 'codeChallenge is required' });
+  }
+
+  const authUrl = `https://auth.openai.com/oauth/authorize?` + new URLSearchParams({
+    response_type: 'code',
+    client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+    redirect_uri: redirectUri,
+    scope: 'openid profile email offline_access',
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+    id_token_add_organizations: 'true',
+    codex_cli_simplified_flow: 'true',
+    originator: 'codex_cli_rs',
+    state: state
+  }).toString();
+
+  res.json({ ok: true, authUrl, state });
+}));
+
+
 
 router.post('/chatgpt-extension-push', extensionAuth, asyncHandler(async (req, res) => {
   const { username, password, otpSecret, sessionToken, source } = req.body;

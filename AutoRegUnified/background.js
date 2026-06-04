@@ -1872,8 +1872,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         });
         addLog(targetTabId, `Da Push thanh cong: ${job.email}. Dang logout ChatGPT truoc khi ket thuc job.`);
         setJob(targetTabId, job);
+
+        // Auto-trigger OAuth flow giống bấm "Kết nối Codex (OAuth)" trên web
+        // Tab đang đăng nhập → OpenAI sẽ redirect thẳng về server callback
+        const oauthTriggered = await triggerOAuthForJob(targetTabId, job, cfg);
+        if (oauthTriggered) {
+          // OAuth đang chạy — tab sẽ tự navigate về server callback
+          // Server sẽ tự lưu tokens, không cần logout thủ công
+          sendResponse({ success: true, email: job.email, oauthPending: true, message: "Push OK + OAuth tu dong dang xu ly" });
+          return;
+        }
+
+        // Fallback: OAuth thất bại → logout bình thường
         const releaseResult = await finishPushedJobAfterLogout(targetTabId, job, data);
         sendResponse(releaseResult);
+
       } catch (err) {
         const errMsg = err.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
         addLog(targetTabId, `Push loi: ${errMsg}`);
@@ -2652,7 +2665,7 @@ async function performAutomatedOAuthExchange(code, returnedState, tabId, job) {
         username,
         code,
         codeVerifier: verifier,
-        redirectUri: 'http://localhost:1455/auth/callback'
+        redirectUri: `${portalUrl}/admin-api/oauth/codex/callback`
       }),
       timeout: 20000
     });
@@ -2676,3 +2689,73 @@ async function performAutomatedOAuthExchange(code, returnedState, tabId, job) {
     console.error(e);
   }
 }
+
+/**
+ * triggerOAuthForJob — Sau khi AutoReg push thành công, tự động chạy luồng OAuth
+ * giống hệt bấm "Kết nối Codex (OAuth)" trên web.
+ * 
+ * Flow:
+ *  1. Generate PKCE (codeVerifier, codeChallenge, state)
+ *  2. Gửi lên server /api/oauth/codex/init để server lưu session
+ *  3. Server trả về authUrl
+ *  4. Navigate tab hiện tại (đang login ChatGPT) tới authUrl
+ *  5. OpenAI thấy đã login → tự redirect về server callback
+ *  6. Server callback tự exchange code lấy tokens, lưu DB
+ *  7. Không cần làm gì thêm!
+ */
+async function triggerOAuthForJob(tabId, job, cfg) {
+  try {
+    const portalUrl = normalizeBackendBase(cfg.backendBaseUrl);
+    const pushToken = cfg.extensionPushToken;
+    const redirectUri = `${portalUrl}/admin-api/oauth/codex/callback`;
+
+    addLog(tabId, `[OAuth-Auto] Bat dau OAuth tu dong cho ${job.email}...`);
+
+    // 1. Generate PKCE
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = base64urlencode(await sha256(codeVerifier));
+
+    // Generate random state (32 bytes base64url)
+    const stateArray = new Uint8Array(32);
+    crypto.getRandomValues(stateArray);
+    const state = base64urlencode(stateArray.buffer);
+
+    // 2. Register session trên server
+    const initResp = await fetchWithTimeout(`${portalUrl}/api/oauth/codex/init`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-extension-push-token": pushToken
+      },
+      body: JSON.stringify({
+        state,
+        codeVerifier,
+        codeChallenge,
+        redirectUri
+      }),
+      timeout: 15000
+    });
+
+    const initData = await initResp.json().catch(() => ({}));
+
+    if (!initResp.ok || !initData.ok || !initData.authUrl) {
+      addLog(tabId, `[OAuth-Auto] Server tu choi init OAuth: ${initData.error || initResp.status}`);
+      return false;
+    }
+
+    addLog(tabId, `[OAuth-Auto] Da dang ky session OAuth. Chuyen tab den trang xac thuc...`);
+
+    // 3. Navigate tab tới authUrl
+    // Tab đang đăng nhập ChatGPT → OpenAI sẽ auto redirect về server callback
+    chrome.tabs.update(tabId, { url: initData.authUrl });
+
+    addLog(tabId, `[OAuth-Auto] Tab da chuyen den trang OpenAI xac thuc. Server se tu xu ly callback.`);
+    addLog(tabId, `[OAuth-Auto] Tai khoan ${job.email} se tu dong them vao pool sau vai giay.`);
+
+    return true;
+  } catch (err) {
+    addLog(tabId, `[OAuth-Auto] Loi trigger OAuth: ${err.message}`);
+    return false;
+  }
+}
+
