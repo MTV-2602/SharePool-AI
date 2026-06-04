@@ -2485,7 +2485,21 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       if (!returnedState || returnedState !== data.oauth_state) {
         if (returnedState) {
           console.log('[OAuth] Portal-initiated flow detected. Redirecting to server callback...');
-          const portalUrl = (data.backendBaseUrl || "https://vinhcousera.vercel.app").replace(/\/$/, "");
+          let portalUrl = "";
+          if (tab.openerTabId) {
+            try {
+              const openerTab = await chrome.tabs.get(tab.openerTabId);
+              if (openerTab && openerTab.url) {
+                const openerUrl = new URL(openerTab.url);
+                portalUrl = openerUrl.origin;
+              }
+            } catch (e) {
+              console.log('[OAuth] Failed to get opener tab URL:', e);
+            }
+          }
+          if (!portalUrl) {
+            portalUrl = (data.backendBaseUrl || "https://vinhcousera.vercel.app").replace(/\/$/, "");
+          }
           const urlObj = new URL(urlStr);
           const callbackUrl = `${portalUrl}/admin-api/oauth/codex/callback${urlObj.search}`;
           try {
