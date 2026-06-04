@@ -94,7 +94,7 @@ const statsHandler = asyncHandler(async (req, res) => {
   const multStats = await db.get(multQuery);
   const totalQuota = Number(multStats?.total_quota || 0);
   const totalRaw = Number(multStats?.total_raw || 0);
-  const averageMultiplier = totalRaw > 0 ? (totalQuota / totalRaw) : 1.5;
+  const averageMultiplier = totalRaw > 0 ? (totalQuota / totalRaw) : 1.2;
 
   const allocatedQuota = stats.sumQuotaTotal || 0;
   const allocatedQuotaRaw = Math.ceil(allocatedQuota / averageMultiplier);
