@@ -2322,8 +2322,6 @@ async function startReLoginJob(account, cfg) {
     startTime: Date.now()
   };
 
-  await clearCookiesLikeEx3();
-  
   if (cfg.trialProxyMode !== "direct") {
     const storageData = await new Promise(r => chrome.storage.local.get(["proxyString", "rotateUrl"], r));
     const proxyValue = (storageData.proxyString || "").trim();
@@ -2339,15 +2337,73 @@ async function startReLoginJob(account, cfg) {
     }
   }
 
-  chrome.tabs.create({ url: REG_START_URL }, (tab) => {
-    const tabId = tab.id;
-    job.tabId = tabId;
-    job.windowId = tab.windowId;
-    job.timeoutTimer = null;
-    job.timeoutDisabled = true;
-    setJob(tabId, job);
-    chrome.runtime.sendMessage({ type: "LOG_UPDATE", tabId, text: job.logs });
-  });
+  // Khởi tạo luồng OAuth trực tiếp không cần xóa cookies để tận dụng phiên ChatGPT hiện có (nếu có)
+  try {
+    const portalUrl = normalizeBackendBase(cfg.backendBaseUrl);
+    const pushToken = cfg.extensionPushToken;
+
+    // 1. Tạo PKCE
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = base64urlencode(await sha256(codeVerifier));
+    const stateArray = new Uint8Array(32);
+    crypto.getRandomValues(stateArray);
+    const state = base64urlencode(stateArray.buffer);
+
+    job.oauth_verifier = codeVerifier;
+    job.oauth_state = state;
+
+    job.logs += `[${new Date().toLocaleTimeString()}] Đang kết nối server để chuẩn bị link OAuth...\n`;
+
+    // 2. Register session OAuth trên server
+    const initResp = await fetchWithTimeout(`${portalUrl}/api/oauth/codex/init`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-extension-push-token": pushToken
+      },
+      body: JSON.stringify({
+        state,
+        codeVerifier,
+        codeChallenge,
+        redirectUri: 'http://localhost:1455/auth/callback'
+      }),
+      timeout: 15000
+    });
+
+    const initData = await initResp.json().catch(() => ({}));
+    if (!initResp.ok || !initData.ok || !initData.authUrl) {
+      throw new Error(initData.error || `HTTP ${initResp.status}`);
+    }
+
+    job.logs += `[${new Date().toLocaleTimeString()}] Khởi tạo OAuth thành công. Đang mở trang xác thực...\n`;
+
+    // 3. Mở tab OAuth
+    chrome.tabs.create({ url: initData.authUrl }, (tab) => {
+      const tabId = tab.id;
+      job.tabId = tabId;
+      job.windowId = tab.windowId;
+      job.timeoutTimer = null;
+      job.timeoutDisabled = true;
+      setJob(tabId, job);
+      chrome.runtime.sendMessage({ type: "LOG_UPDATE", tabId, text: job.logs });
+    });
+
+  } catch (err) {
+    job.logs += `[${new Date().toLocaleTimeString()}] Lỗi khởi tạo OAuth trực tiếp: ${err.message}. Chuyển sang re-login truyền thống...\n`;
+    console.warn("[AutoReLogin] OAuth init failed, falling back to traditional flow:", err);
+
+    // Fallback: Xóa cookies và đăng nhập lại từ đầu qua chatgpt.com
+    await clearCookiesLikeEx3();
+    chrome.tabs.create({ url: REG_START_URL }, (tab) => {
+      const tabId = tab.id;
+      job.tabId = tabId;
+      job.windowId = tab.windowId;
+      job.timeoutTimer = null;
+      job.timeoutDisabled = true;
+      setJob(tabId, job);
+      chrome.runtime.sendMessage({ type: "LOG_UPDATE", tabId, text: job.logs });
+    });
+  }
 }
 
 // Set up Alarm periodic check
@@ -2696,6 +2752,14 @@ async function performAutomatedOAuthExchange(code, returnedState, tabId, job) {
       setJob(tabId, job);
     } else {
       addLog(tabId, `Loi exchange OAuth: ${resData.error || "Server error"}`);
+      if (resData.error && resData.error.includes("không khớp")) {
+        addLog(tabId, "Phat hien phien dang nhap sai tai khoan. Tien hanh clear cookies va dang nhap lai tu dau...");
+        await clearCookiesLikeEx3();
+        try {
+          chrome.tabs.update(tabId, { url: "https://chatgpt.com" });
+        } catch (e) {}
+        return;
+      }
     }
   } catch (err) {
     addLog(tabId, `Loi exchange OAuth: ${err.message}`);

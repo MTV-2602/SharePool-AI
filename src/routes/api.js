@@ -202,6 +202,13 @@ router.post('/chatgpt-oauth-callback', extensionAuth, asyncHandler(async (req, r
     }
   } catch (_) {}
 
+  if (email && username && email.toLowerCase() !== username.toLowerCase()) {
+    return res.status(400).json({
+      ok: false,
+      error: `Email không khớp! Token thuộc về '${email}' nhưng bạn đang re-login cho '${username}'.`
+    });
+  }
+
   const accountName = username || (email ? `OAuth-${email}` : `OAuth-${Date.now()}`);
   
   const sessionTokenWrapper = JSON.stringify({
