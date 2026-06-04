@@ -1,7 +1,0 @@
-{
-  "adminKey": "CHANGE_THIS_ADMIN_KEY",
-  "port": 3040,
-  "proxySecret": null,
-  "siteName": "My Codex Hub",
-  "siteDescription": "Private AI API Portal"
-}
