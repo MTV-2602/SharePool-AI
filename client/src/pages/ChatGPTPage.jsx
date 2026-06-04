@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Bot, Upload, Plus, Trash2, RefreshCw, Edit2, Check, X, KeyRound, Copy, Download } from 'lucide-react';
 import api from '../lib/api';
 
@@ -257,6 +257,7 @@ function ChatGPTPool() {
   const [msg, setMsg] = useState(null);
   const [editRow, setEditRow] = useState(null);
   const [editValues, setEditValues] = useState({});
+  const [showOAuthModal, setShowOAuthModal] = useState(false);
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
@@ -358,9 +359,14 @@ function ChatGPTPool() {
               </div>
             ))}
           </div>
-          <button id="chatgpt-reload-btn" className="btn btn-ghost btn-sm" onClick={handleReload}>
-            <RefreshCw size={14} /> Reload Pool
-          </button>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowOAuthModal(true)}>
+              <Bot size={14} /> Kết nối Codex (OAuth)
+            </button>
+            <button id="chatgpt-reload-btn" className="btn btn-ghost btn-sm" onClick={handleReload}>
+              <RefreshCw size={14} /> Reload Pool
+            </button>
+          </div>
         </div>
       </div>
 
@@ -467,6 +473,11 @@ function ChatGPTPool() {
           </div>
         )}
       </div>
+      <CodexOAuthModal
+        isOpen={showOAuthModal}
+        onClose={() => setShowOAuthModal(false)}
+        onSuccess={fetchAccounts}
+      />
     </div>
   );
 }
@@ -576,6 +587,18 @@ function AutoRegCredentials() {
   const [msg, setMsg] = useState(null);
   const [copied, setCopied] = useState(null);
 
+  // Manual add form
+  const [addEmail, setAddEmail] = useState('');
+  const [addPassword, setAddPassword] = useState('');
+  const [addOtp, setAddOtp] = useState('');
+  const [addReLogin, setAddReLogin] = useState(true);
+  const [addLoading, setAddLoading] = useState(false);
+
+  // Bulk import
+  const [bulkText, setBulkText] = useState('');
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
+
   const fetchCreds = useCallback(async () => {
     setLoading(true);
     try {
@@ -615,8 +638,152 @@ function AutoRegCredentials() {
     URL.revokeObjectURL(url);
   };
 
+  // Handle manual single add
+  const handleAddSingle = async () => {
+    if (!addEmail.trim()) return;
+    setAddLoading(true);
+    try {
+      const res = await api.post('/admin-api/chatgpt-credentials', {
+        email: addEmail.trim(),
+        password: addPassword.trim(),
+        otpSecret: addOtp.trim(),
+        triggerReLogin: addReLogin
+      });
+      const poolMsg = res.data.poolStatus === 'marked_failed'
+        ? ' → Đã đánh dấu lỗi trong pool, Extension sẽ tự re-login.'
+        : res.data.poolStatus === 'not_in_pool'
+          ? ' (Chưa có trong pool, Extension sẽ thêm khi re-login).'
+          : '';
+      setMsg({ type: 'success', text: `✅ ${res.data.message}${poolMsg}` });
+      setAddEmail(''); setAddPassword(''); setAddOtp('');
+      fetchCreds();
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Lỗi thêm credential.' });
+    } finally { setAddLoading(false); }
+  };
+
+  // Handle bulk import
+  const handleBulkImport = async () => {
+    const lines = bulkText.split('\n').map(l => l.trim()).filter(l => l && l.includes('|'));
+    if (!lines.length) { setMsg({ type: 'error', text: 'Không tìm thấy dòng hợp lệ. Format: email|password|otp_secret' }); return; }
+    setBulkLoading(true);
+    let success = 0, fail = 0;
+    for (const line of lines) {
+      const parts = line.split('|').map(s => s.trim());
+      const [email, password, otpSecret] = parts;
+      if (!email) { fail++; continue; }
+      try {
+        await api.post('/admin-api/chatgpt-credentials', {
+          email, password: password || '', otpSecret: otpSecret || '',
+          triggerReLogin: addReLogin
+        });
+        success++;
+      } catch { fail++; }
+    }
+    setMsg({ type: 'success', text: `✅ Import xong: ${success} thành công, ${fail} thất bại.` });
+    setBulkText('');
+    fetchCreds();
+    setBulkLoading(false);
+  };
+
   return (
     <div>
+      {/* Manual Add Form */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="card-header">
+          <span className="card-title"><Plus size={15} /> Thêm credential thủ công</span>
+          <button
+            className={`btn btn-ghost btn-sm`}
+            onClick={() => setShowBulk(!showBulk)}
+            style={{ fontSize: '0.75rem' }}
+          >
+            {showBulk ? '📝 Nhập từng dòng' : '📋 Nhập nhanh nhiều dòng'}
+          </button>
+        </div>
+
+        {!showBulk ? (
+          /* Single add form */
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div className="form-group">
+                <label>Email <span style={{ color: 'var(--red)' }}>*</span></label>
+                <input
+                  placeholder="user@outlook.com"
+                  value={addEmail}
+                  onChange={e => setAddEmail(e.target.value)}
+                  style={{ fontSize: '0.85rem' }}
+                />
+              </div>
+              <div className="form-group">
+                <label>Password</label>
+                <input
+                  placeholder="mật khẩu ChatGPT"
+                  value={addPassword}
+                  onChange={e => setAddPassword(e.target.value)}
+                  type="password"
+                  style={{ fontSize: '0.85rem' }}
+                />
+              </div>
+              <div className="form-group">
+                <label>2FA Secret (OTP)</label>
+                <input
+                  placeholder="ABCDEF... (base32)"
+                  value={addOtp}
+                  onChange={e => setAddOtp(e.target.value)}
+                  className="font-mono"
+                  style={{ fontSize: '0.82rem' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <button
+                className="btn btn-primary"
+                onClick={handleAddSingle}
+                disabled={addLoading || !addEmail.trim()}
+              >
+                {addLoading ? <><span className="spinner" /> Đang lưu...</> : <><Plus size={14} /> Thêm credential</>}
+              </button>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={addReLogin} onChange={e => setAddReLogin(e.target.checked)} />
+                Tự đánh dấu lỗi để Extension re-login
+              </label>
+            </div>
+          </>
+        ) : (
+          /* Bulk import form */
+          <>
+            <div className="form-group" style={{ marginBottom: 12 }}>
+              <label>Dán nhiều dòng: <code style={{ fontSize: '0.72rem', color: 'var(--accent)' }}>email|password|otp_secret</code></label>
+              <textarea
+                rows={6}
+                placeholder={"user1@outlook.com|myPass123|ABCDE...\nuser2@outlook.com|pass456|FGHIJ...\nuser3@outlook.com|pass789"}
+                value={bulkText}
+                onChange={e => setBulkText(e.target.value)}
+                className="font-mono"
+                style={{ fontSize: '0.8rem', minHeight: 120 }}
+              />
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                {bulkText.split('\n').filter(l => l.trim() && l.includes('|')).length} dòng hợp lệ
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <button
+                className="btn btn-success"
+                onClick={handleBulkImport}
+                disabled={bulkLoading || !bulkText.trim()}
+              >
+                {bulkLoading ? <><span className="spinner" /> Đang import...</> : <><Upload size={14} /> Import tất cả</>}
+              </button>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={addReLogin} onChange={e => setAddReLogin(e.target.checked)} />
+                Tự đánh dấu lỗi để Extension re-login
+              </label>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Stats + actions bar */}
       <div className="card" style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
           <div style={{ display: 'flex', gap: 16 }}>
@@ -639,9 +806,10 @@ function AutoRegCredentials() {
         </div>
       )}
 
+      {/* Table */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div className="card-header" style={{ borderBottom: '1px solid var(--border)' }}>
-          <span className="card-title"><KeyRound size={14} /> Tài khoản ChatGPT do AutoRegUnified đăng ký tự động</span>
+          <span className="card-title"><KeyRound size={14} /> Tài khoản ChatGPT (AutoReg + Nhập tay)</span>
         </div>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
@@ -654,7 +822,7 @@ function AutoRegCredentials() {
                   <th>Email</th>
                   <th>Password</th>
                   <th>2FA Secret</th>
-                  <th>Worker</th>
+                  <th>Nguồn</th>
                   <th>Ngày tạo</th>
                   <th style={{ textAlign: 'right' }}>Xóa</th>
                 </tr>
@@ -663,7 +831,7 @@ function AutoRegCredentials() {
                 {creds.length === 0 ? (
                   <tr>
                     <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
-                      Chưa có tài khoản nào. Extension AutoRegUnified sẽ tự động đẩy lên sau khi đăng ký.
+                      Chưa có tài khoản nào. Dùng form phía trên để nhập thủ công hoặc Extension AutoRegUnified sẽ tự động đẩy lên.
                     </td>
                   </tr>
                 ) : creds.map((c, i) => (
@@ -690,7 +858,18 @@ function AutoRegCredentials() {
                     <td>
                       <TwoFactorCell secret={c.otp_secret} />
                     </td>
-                    <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{c.worker_id || '—'}</td>
+                    <td>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        background: c.source === 'ManualInput' ? 'rgba(99,102,241,0.15)' : 'rgba(16,185,129,0.12)',
+                        color: c.source === 'ManualInput' ? '#818cf8' : '#10b981',
+                        fontWeight: 600
+                      }}>
+                        {c.source === 'ManualInput' ? '✍️ Thủ công' : '🤖 AutoReg'}
+                      </span>
+                    </td>
                     <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                       {c.created_at ? new Date(c.created_at).toLocaleDateString('vi-VN') : '—'}
                     </td>
@@ -711,3 +890,194 @@ function AutoRegCredentials() {
     </div>
   );
 }
+
+// ─── CODEX OAUTH MODAL (9Router-style) ─────────────────────────────────────────
+function CodexOAuthModal({ isOpen, onClose, onSuccess }) {
+  const [step, setStep] = useState('loading'); // loading | input | success | error
+  const [authData, setAuthData] = useState(null);
+  const [callbackUrl, setCallbackUrl] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const startOAuth = useCallback(async () => {
+    setStep('loading');
+    setErrorMsg('');
+    try {
+      // 1. Get authorize URL & state from backend
+      const authRes = await api.get('/admin-api/oauth/codex/authorize');
+      setAuthData(authRes.data);
+      setStep('input');
+    } catch (err) {
+      setErrorMsg(err.response?.data?.error?.message || err.message || 'Lỗi khởi tạo luồng OAuth');
+      setStep('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      startOAuth();
+    }
+  }, [isOpen, startOAuth]);
+
+  const handleManualSubmit = async (e) => {
+    e.preventDefault();
+    if (!callbackUrl.trim()) return;
+    setStep('loading');
+    setErrorMsg('');
+
+    try {
+      let code = callbackUrl.trim();
+      let state = authData?.state || '';
+
+      // Parse code and state from URL if it looks like a URL
+      if (code.includes('?')) {
+        try {
+          const urlParams = new URLSearchParams(code.split('?')[1]);
+          const urlCode = urlParams.get('code');
+          const urlState = urlParams.get('state');
+          if (urlCode) code = urlCode;
+          if (urlState) state = urlState;
+        } catch (_) {}
+      }
+
+      const res = await api.post('/admin-api/oauth/codex/exchange', { code, state });
+      if (res.data.success) {
+        setStep('success');
+        onSuccess?.();
+      } else {
+        throw new Error('Đổi mã xác thực thất bại');
+      }
+    } catch (err) {
+      setErrorMsg(err.response?.data?.error?.message || err.message || 'Lỗi đổi mã xác thực');
+      setStep('error');
+    }
+  };
+
+  const handleCopyLink = () => {
+    if (!authData?.authUrl) return;
+    navigator.clipboard.writeText(authData.authUrl).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500 }}>
+        <div className="modal-header">
+          <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Bot size={18} style={{ color: 'var(--accent-light)' }} />
+            Kết nối Codex (OAuth)
+          </span>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={onClose} style={{ border: 'none', background: 'none' }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {step === 'loading' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '24px 0' }}>
+              <span className="spinner" />
+              <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Đang xử lý...</span>
+            </div>
+          )}
+
+          {step === 'input' && (
+            <>
+              <div className="alert alert-info" style={{ margin: 0, fontSize: '0.82rem' }}>
+                <span>Bấm nút phía dưới để mở trang đăng nhập OpenAI và bắt đầu ủy quyền tài khoản Codex.</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <a
+                  href={authData?.authUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-primary"
+                  style={{ display: 'flex', justifyContent: 'center', textDecoration: 'none' }}
+                >
+                  Mở trang đăng nhập OpenAI
+                </a>
+
+                <button className="btn btn-ghost" onClick={handleCopyLink} disabled={!authData?.authUrl}>
+                  {copied ? 'Đã copy liên kết' : 'Copy liên kết ủy quyền'}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Dán link callback thu được</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              </div>
+
+              <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="form-group">
+                  <label style={{ fontSize: '0.75rem' }}>Dán URL callback hoặc mã Code</label>
+                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0 0 8px 0' }}>
+                    Trình duyệt sẽ chuyển hướng về link lỗi <code>http://localhost:1455/auth/callback?code=...</code>. Hãy copy toàn bộ link đó và dán vào đây:
+                  </p>
+                  <textarea
+                    placeholder="http://localhost:1455/auth/callback?code=xxx&state=yyy"
+                    value={callbackUrl}
+                    onChange={(e) => setCallbackUrl(e.target.value)}
+                    style={{ fontSize: '0.8rem', fontFamily: 'monospace', minHeight: 80, width: '100%' }}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={!callbackUrl.trim()}>
+                    Xác nhận kết nối
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
+
+          {step === 'success' && (
+            <div style={{ textAlign: 'center', padding: '16px 0' }}>
+              <div style={{
+                width: 60, height: 60, borderRadius: '50%', background: 'rgba(16,185,129,0.1)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: 'var(--green)'
+              }}>
+                <Check size={36} />
+              </div>
+              <h3 style={{ fontSize: '1.2rem', marginBottom: 8 }}>Liên kết thành công!</h3>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: '0 0 20px 0' }}>
+                Tài khoản Codex đã được thêm vào pool và sẵn sàng sử dụng.
+              </p>
+              <button className="btn btn-primary w-full" onClick={onClose}>
+                Hoàn tất
+              </button>
+            </div>
+          )}
+
+          {step === 'error' && (
+            <div style={{ textAlign: 'center', padding: '16px 0' }}>
+              <div style={{
+                width: 60, height: 60, borderRadius: '50%', background: 'rgba(239,68,68,0.1)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: 'var(--red)'
+              }}>
+                <X size={36} />
+              </div>
+              <h3 style={{ fontSize: '1.2rem', marginBottom: 8 }}>Liên kết thất bại</h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--red)', margin: '0 0 20px 0', wordBreak: 'break-all' }}>
+                {errorMsg}
+              </p>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="btn btn-primary" onClick={startOAuth} style={{ flex: 1 }}>
+                  Thử lại
+                </button>
+                <button className="btn btn-ghost" onClick={onClose} style={{ flex: 1 }}>
+                  Hủy
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+

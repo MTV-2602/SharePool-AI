@@ -164,7 +164,7 @@ router.get('/accounts', asyncHandler(async (req, res) => {
     return {
       name: acc.name,
       sessionToken: token,
-      status: poolAcc ? poolAcc.status : 'loaded',
+      status: (acc.is_active === 0 || acc.isActive === 0) ? 'failed' : (poolAcc ? poolAcc.status : 'loaded'),
       cooldownRemaining: poolAcc ? poolAcc.cooldownRemaining : 0,
       hasToken: !!token,
       totalRequests: acc.totalRequests || acc.total_requests || 0,
@@ -228,7 +228,11 @@ const quotaRouteHandler = asyncHandler(async (req, res) => {
     });
 
     if (!usageResponse.ok) {
-      throw new Error(`OpenAI Wham API returned ${usageResponse.status}`);
+      const err = new Error(`OpenAI Wham API returned ${usageResponse.status}`);
+      if (usageResponse.status === 401 || usageResponse.status === 403) {
+        err.code = 'INVALID_SESSION';
+      }
+      throw err;
     }
 
     const data = await usageResponse.json();
@@ -321,7 +325,7 @@ const quotaRouteHandler = asyncHandler(async (req, res) => {
       limits
     });
   } catch (err) {
-    if (err.code === 'INVALID_SESSION' || err.message?.includes('session is invalid') || err.message?.includes('expired')) {
+    if (err.code === 'INVALID_SESSION' || err.message?.includes('session is invalid') || err.message?.includes('expired') || err.message?.includes('401') || err.message?.includes('403')) {
       const AccountPool = require('../upstream/AccountPool');
       AccountPool.markInvalid(tokenClean);
     }
@@ -508,6 +512,50 @@ router.get('/chatgpt-credentials', asyncHandler(async (req, res) => {
   res.json({ ok: true, count, credentials: creds });
 }));
 
+// POST /admin-api/chatgpt-credentials — Thêm/cập nhật credential thủ công
+router.post('/chatgpt-credentials', asyncHandler(async (req, res) => {
+  const { email, password, otpSecret, triggerReLogin } = req.body;
+  if (!email || !email.trim()) {
+    throw new AppError('email is required', 400, 'INVALID_REQUEST');
+  }
+
+  const cred = await ChatGPTCredential.upsert({
+    email: email.trim(),
+    password: (password || '').trim(),
+    otpSecret: (otpSecret || '').trim(),
+    source: 'ManualInput'
+  });
+
+  // Check if account exists in pool and optionally trigger re-login
+  let poolStatus = null;
+  if (triggerReLogin) {
+    // Find the upstream account by email name match
+    const dbAccounts = await UpstreamAccount.findAll();
+    const emailClean = email.trim().toLowerCase();
+    const upstream = dbAccounts.find(a => {
+      const name = (a.name || '').trim().toLowerCase();
+      return name === emailClean || name.includes(emailClean);
+    });
+
+    if (upstream) {
+      const token = upstream.sessionToken || upstream.session_token;
+      AccountPool.markInvalid(token);
+      poolStatus = 'marked_failed';
+    } else {
+      poolStatus = 'not_in_pool';
+    }
+  }
+
+  const count = await ChatGPTCredential.count();
+  res.json({
+    ok: true,
+    message: `Credential cho '${email.trim()}' đã được lưu.`,
+    count,
+    credential: cred,
+    poolStatus
+  });
+}));
+
 // DELETE /admin-api/chatgpt-credentials/:id — Xóa 1 credential
 router.delete('/chatgpt-credentials/:id', asyncHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -515,4 +563,158 @@ router.delete('/chatgpt-credentials/:id', asyncHandler(async (req, res) => {
   res.json({ success: true });
 }));
 
+// ─── Codex OAuth Flow (9Router-style) ──────────────────────────────────────────
+
+const crypto = require('crypto');
+const pendingOAuthSessions = new Map();
+
+// Helper to generate PKCE pair
+function generatePKCE() {
+  const codeVerifier = crypto.randomBytes(32).toString('base64url');
+  const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+  const state = crypto.randomBytes(32).toString('base64url');
+  return { codeVerifier, codeChallenge, state };
+}
+
+// GET /admin-api/oauth/codex/authorize — Tạo link ủy quyền PKCE
+router.get('/oauth/codex/authorize', asyncHandler(async (req, res) => {
+  const { codeVerifier, codeChallenge, state } = generatePKCE();
+  const redirectUri = 'http://localhost:1455/auth/callback';
+  
+  // Lưu state và codeVerifier vào Map bộ nhớ đệm
+  pendingOAuthSessions.set(state, {
+    codeVerifier,
+    redirectUri,
+    createdAt: Date.now()
+  });
+
+  // Tự động dọn dẹp các phiên cũ hơn 10 phút
+  const tenMinsAgo = Date.now() - 600000;
+  for (const [key, val] of pendingOAuthSessions.entries()) {
+    if (val.createdAt < tenMinsAgo) pendingOAuthSessions.delete(key);
+  }
+
+  const authUrl = `https://auth.openai.com/oauth/authorize?` + new URLSearchParams({
+    response_type: 'code',
+    client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+    redirect_uri: redirectUri,
+    scope: 'openid profile email offline_access',
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+    id_token_add_organizations: 'true',
+    codex_cli_simplified_flow: 'true',
+    originator: 'codex_cli_rs',
+    state: state
+  }).toString();
+
+  res.json({
+    authUrl,
+    state,
+    codeVerifier,
+    redirectUri
+  });
+}));
+
+// POST /admin-api/oauth/codex/exchange — Trao đổi code lấy access_token/refresh_token và lưu vào pool
+router.post('/oauth/codex/exchange', asyncHandler(async (req, res) => {
+  const { code, state } = req.body;
+  if (!code) {
+    throw new AppError('Missing authorization code', 400, 'INVALID_REQUEST');
+  }
+
+  // 1. Kiểm tra nếu code thực chất là một Access Token trực tiếp (bắt đầu bằng eyJ)
+  if (code.startsWith('eyJ') && code.includes('.')) {
+    let email = '';
+    try {
+      const parts = code.split('.');
+      if (parts.length >= 2) {
+        let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        while (base64.length % 4) base64 += '=';
+        const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+        email = payload['https://api.openai.com/profile']?.email || payload.email || '';
+      }
+    } catch (_) {}
+
+    const accountName = email ? `Token-${email}` : `Token-${Date.now()}`;
+    const tokenWrapper = JSON.stringify({
+      accessToken: code,
+      deviceId: ''
+    });
+
+    await UpstreamAccount.upsertByToken(accountName, tokenWrapper);
+    await AccountPool.reload();
+
+    return res.json({ success: true, email });
+  }
+
+  // 2. Trao đổi mã auth code dùng PKCE verifier
+  let codeVerifier = '';
+  let redirectUri = 'http://localhost:1455/auth/callback';
+
+  if (state) {
+    const session = pendingOAuthSessions.get(state);
+    if (session) {
+      codeVerifier = session.codeVerifier;
+      redirectUri = session.redirectUri;
+      pendingOAuthSessions.delete(state);
+    }
+  }
+
+  const fetch = global.fetch || require('node-fetch');
+  const tokenResponse = await fetch('https://auth.openai.com/oauth/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+      code: code,
+      redirect_uri: redirectUri,
+      code_verifier: codeVerifier,
+    }).toString(),
+  });
+
+  if (!tokenResponse.ok) {
+    const errText = await tokenResponse.text();
+    throw new AppError(`OpenAI auth exchange failed: ${errText}`, 400, 'AUTH_ERROR');
+  }
+
+  const tokens = await tokenResponse.json();
+  const accessToken = tokens.access_token;
+  const refreshToken = tokens.refresh_token;
+
+  if (!accessToken || !refreshToken) {
+    throw new AppError('OpenAI response missing token fields', 400, 'AUTH_ERROR');
+  }
+
+  let email = '';
+  try {
+    const parts = accessToken.split('.');
+    if (parts.length >= 2) {
+      let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (base64.length % 4) base64 += '=';
+      const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+      email = payload['https://api.openai.com/profile']?.email || payload.email || '';
+    }
+  } catch (_) {}
+
+  const accountName = email ? `OAuth-${email}` : `OAuth-${Date.now()}`;
+  const sessionTokenWrapper = JSON.stringify({
+    accessToken,
+    refreshToken,
+    deviceId: ''
+  });
+
+  await UpstreamAccount.upsertByToken(accountName, sessionTokenWrapper);
+  await AccountPool.reload();
+
+  res.json({
+    success: true,
+    email
+  });
+}));
+
 module.exports = router;
+

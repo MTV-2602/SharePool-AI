@@ -151,6 +151,12 @@ class AccountPool {
     this._invalidTokens.add(token);
     const account = this._accounts.find(a => a.sessionToken === token);
     logger.warn(`[${account?.name ?? 'unknown'}] Invalid session — cooling down for 30min`);
+
+    // Set is_active = 0 in database so it is persistent and triggers re-login
+    const db = require('../db');
+    db.run('UPDATE upstream_accounts SET is_active = 0 WHERE session_token = ?', [token]).catch(err => {
+      logger.error('Failed to set is_active = 0 in database for invalid token: ' + err.message);
+    });
   }
 
   // ── Rotation ─────────────────────────────────────────────────────────────

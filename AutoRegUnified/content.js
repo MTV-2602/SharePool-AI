@@ -1324,11 +1324,11 @@ async function waitForStableElement(getter, ms = 10000, stableMs = 1200, interva
 
 function findChatGptDeviceLogoutButton() {
   const rowCandidates = Array.from(document.querySelectorAll("section, div, li, [role='group'], [role='row']"))
-    .filter(el => isVisible(el) && /log out of this device/i.test(normalizeText(el)))
+    .filter(el => isVisible(el) && /(log\s*out\s*of\s*this\s*device|đăng\s*xuất\s*khỏi\s*thiết\s*bị\s*này|đăng\s*xuất)/i.test(normalizeText(el)))
     .sort((a, b) => normalizeText(a).length - normalizeText(b).length);
   for (const row of rowCandidates) {
     const btn = Array.from(row.querySelectorAll("button, [role='button']"))
-      .find(el => isVisible(el) && /^(log\s*out|logout)$/i.test(normalizeText(el)));
+      .find(el => isVisible(el) && /^(log\s*out|logout|đăng\s*xuất)$/i.test(normalizeText(el)));
     if (btn) return btn;
   }
 
@@ -1336,9 +1336,9 @@ function findChatGptDeviceLogoutButton() {
     .find(el => {
       if (!isVisible(el)) return false;
       const text = normalizeText(el);
-      if (!/^(log\s*out|logout)$/i.test(text)) return false;
+      if (!/^(log\s*out|logout|đăng\s*xuất)$/i.test(text)) return false;
       const nearText = normalizeText(el.closest?.("section, div, li, [role='group'], [role='row']") || el);
-      return !/all devices/i.test(nearText);
+      return !/all devices|tất cả thiết bị/i.test(nearText);
     });
 }
 
@@ -1347,7 +1347,7 @@ function findChatGptLogoutConfirmButton(clickedButton) {
     .filter(isVisible);
   for (const scope of scopes) {
     const btn = Array.from(scope.querySelectorAll("button, [role='button']"))
-      .find(el => el !== clickedButton && isVisible(el) && /^(log\s*out|logout)$/i.test(normalizeText(el)));
+      .find(el => el !== clickedButton && isVisible(el) && /^(log\s*out|logout|đăng\s*xuất)$/i.test(normalizeText(el)));
     if (btn) return btn;
   }
   return null;
@@ -1384,7 +1384,7 @@ function findLogoutMenuItem() {
   const elements = Array.from(document.querySelectorAll('[role="menuitem"], button, div, span, a')).filter(isVisible);
   return elements.find(el => {
     const text = (el.textContent || "").trim().toLowerCase();
-    return text === "log out" || text === "logout" || text.includes("log out") || text.includes("logout");
+    return text === "log out" || text === "logout" || text.includes("log out") || text.includes("logout") || text === "đăng xuất" || text.includes("đăng xuất");
   });
 }
 
@@ -1702,11 +1702,11 @@ async function runLoop() {
       return;
     }
 
-    const otpInputNow = document.querySelector("input[name='code'], input#code, input[autocomplete='one-time-code']");
-    if (otpInputNow && /incorrect code|invalid code|wrong code/i.test(txt)) {
+    const otpInputNow = document.querySelector("input[name='code'], input#code, input[autocomplete='one-time-code'], input[name='totp_otp']");
+    if (otpInputNow && /incorrect code|invalid code|wrong code|mã không chính xác|mã không hợp lệ/i.test(txt)) {
       const badCode = (job.lastOtpCode || otpInputNow.value || "").trim();
       const badOtpCodes = Array.from(new Set([...(job.badOtpCodes || []), badCode].filter(Boolean)));
-      log(`ƒÆ’‚¢ƒ€š‚ƒ€¦¢‚¬„¢ OTP sai${badCode ? `: ${badCode}` : ""}. BƒÆ’‚¡ƒ€š‚»ƒ€š‚ mƒÆ’†€™ƒ€š‚£ nƒÆ’†€™ƒ€š‚ y vƒÆ’†€™ƒ€š‚  lƒÆ’‚¡ƒ€š‚ºƒ€š‚¥y thƒÆ’¢‚¬ ƒ€š‚° mƒÆ’‚¡ƒ€š‚»ƒ¢¢€š¬‚ºi hƒÆ’¢‚¬ ƒ€š‚¡n...`);
+      log(`[Xác thực] OTP sai${badCode ? `: ${badCode}` : ""}. Bỏ mã này và lấy mã mới...`);
       await reactFill(otpInputNow, "");
       await updateJob({
         otpFilled: false,
@@ -1818,6 +1818,27 @@ async function runLoop() {
       return;
     }
 
+    // Codex OAuth Consent Page (auto-click "Tiep tuc" / "Continue")
+    if (url.includes("codex/consent") || url.includes("sign%20in%20with%20chatgpt") || url.includes("sign in with chatgpt")) {
+      if (!job.codexConsentDone) {
+        const consentBtns = Array.from(document.querySelectorAll("button"));
+        const consentBtn = consentBtns.find(b => {
+          const txt = (b.textContent || b.innerText || "").trim().toLowerCase();
+          return (txt.includes("continue") || txt.includes("ti\u1ebfp t\u1ee5c") || txt.includes("tiep tuc") || txt === "ti\u1ebfp t\u1ee5c") && isVisible(b) && !b.disabled;
+        });
+        if (consentBtn) {
+          log("Phat hien trang Codex Consent, dang tu dong bam Tiep tuc...");
+          clickLikeUser(consentBtn);
+          await updateJob({ codexConsentDone: true, lastActionAt: Date.now() });
+          log("Da bam Codex Consent. Dang doi redirect ve chatgpt.com...");
+        } else {
+          log("Dang o trang Codex Consent, cho nut Tiep tuc xuat hien...");
+        }
+      }
+      setTimeout(runLoop, 2000);
+      return;
+    }
+
     // OAuth Authorization Page
     if (url.includes("auth.openai.com/authorize") || url.includes("auth0.com/authorize")) {
       const authBtn = Array.from(document.querySelectorAll("button")).find(b => 
@@ -1836,7 +1857,10 @@ async function runLoop() {
     const otpInput = document.querySelector("input[name='code'], input#code, input[autocomplete='one-time-code'], input[name='totp_otp']");
     if (otpInput && otpInput.offsetParent !== null && (!job.otpFilled || otpInput.value === "")) {
       const pageText = document.body.innerText.toLowerCase();
-      const isMfa = pageText.includes("authenticator") || pageText.includes("auth app") || pageText.includes("ứng dụng xác thực") || otpInput.name === "totp_otp" || pageText.includes("2fa");
+      const hasEmailText = pageText.includes("gửi đến") || pageText.includes("sent to") || pageText.includes("we sent a code") || pageText.includes("vừa gửi") || pageText.includes("check your email") || pageText.includes("check your inbox");
+      const hasEmailAddress = job.email && pageText.includes(job.email.toLowerCase()) && (pageText.includes("mã") || pageText.includes("code") || pageText.includes("gửi") || pageText.includes("sent") || pageText.includes("xác minh"));
+      const isEmailOtp = hasEmailText || hasEmailAddress;
+      const isMfa = !isEmailOtp && (pageText.includes("authenticator") || pageText.includes("auth app") || pageText.includes("ứng dụng xác thực") || pageText.includes("hai yếu tố") || pageText.includes("mật khẩu một lần") || pageText.includes("mã dùng một lần") || pageText.includes("one-time password") || pageText.includes("one-time code") || pageText.includes("mfa") || otpInput.name === "totp_otp" || pageText.includes("2fa"));
 
       if (isMfa && job.secret) {
         log("Phát hiện trang 2FA, đang tự động sinh mã xác thực từ Secret...");
