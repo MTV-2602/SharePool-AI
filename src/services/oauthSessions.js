@@ -38,7 +38,7 @@ const pendingOAuthSessions = {
       } else {
         await db.run(
           'INSERT INTO pending_oauth_sessions (state, code_verifier, redirect_uri, status, email, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [state, session.codeVerifier, session.redirectUri, session.status, session.email || '', session.error || '', session.createdAt || Date.now(), state]
+          [state, session.codeVerifier, session.redirectUri, session.status, session.email || '', session.error || '', session.createdAt || Date.now()]
         );
       }
     } catch (err) {
