@@ -2879,6 +2879,11 @@ async function triggerOAuthForJob(tabId, job, cfg) {
 
     addLog(tabId, `[OAuth-Auto] Da dang ky session OAuth. Chuyen tab den trang xac thuc...`);
 
+    // Save PKCE verifier and state on the job object so they can be matched during tab callback update
+    job.oauth_state = state;
+    job.oauth_verifier = codeVerifier;
+    setJob(tabId, job);
+
     // 3. Navigate tab tới authUrl
     // Tab đang đăng nhập ChatGPT → OpenAI sẽ auto redirect về server callback
     chrome.tabs.update(tabId, { url: initData.authUrl });
