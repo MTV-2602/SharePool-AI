@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Bot, Upload, Plus, Trash2, RefreshCw, Edit2, Check, X, KeyRound, Copy, Download } from 'lucide-react';
+import { Bot, Upload, Plus, Trash2, RefreshCw, Edit2, Check, X, KeyRound, Copy, Download, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../lib/api';
 
 const TABS = ['Pool Tài khoản', 'Nhập thủ công', 'Acc AutoReg (Email/Pass)'];
@@ -293,20 +293,39 @@ function ChatGPTPool() {
   const [editValues, setEditValues] = useState({});
   const [showOAuthModal, setShowOAuthModal] = useState(false);
 
+  // Pagination states
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [stats, setStats] = useState({ total: 0, active: 0, cooldown: 0, failed: 0 });
+  const [jumpPage, setJumpPage] = useState('');
+
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/admin-api/accounts');
-      const list = Array.isArray(res.data) ? res.data : (res.data.accounts || []);
-      setAccounts(list);
+      const res = await api.get('/admin-api/accounts', {
+        params: { page, limit, search, status: statusFilter }
+      });
+      setAccounts(res.data.accounts || []);
+      setTotalPages(res.data.totalPages || 1);
+      setStats(res.data.stats || { total: 0, active: 0, cooldown: 0, failed: 0 });
     } catch (e) {
       setMsg({ type: 'error', text: 'Lỗi tải accounts.' });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, limit, search, statusFilter]);
 
-  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+  useEffect(() => {
+    fetchAccounts();
+  }, [fetchAccounts]);
+
+  // Reset page when filter or search changes
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, limit]);
 
   const handleReload = async () => {
     setLoading(true);
@@ -383,10 +402,10 @@ function ChatGPTPool() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
           <div style={{ display: 'flex', gap: 16 }}>
             {[
-              { label: 'Tổng', value: accounts.length, color: 'var(--text-primary)' },
-              { label: 'Active', value: accounts.filter(a => !a.status || a.status === 'active').length, color: 'var(--green)' },
-              { label: 'Cooldown', value: accounts.filter(a => a.status === 'cooldown').length, color: 'var(--yellow)' },
-              { label: 'Failed', value: accounts.filter(a => a.status === 'failed' || a.status === 'error').length, color: 'var(--red)' },
+              { label: 'Tổng', value: stats.total, color: 'var(--text-primary)' },
+              { label: 'Active', value: stats.active, color: 'var(--green)' },
+              { label: 'Cooldown', value: stats.cooldown, color: 'var(--yellow)' },
+              { label: 'Failed', value: stats.failed, color: 'var(--red)' },
             ].map(s => (
               <div key={s.label}>
                 <div style={{ fontSize: '1.3rem', fontWeight: 800, color: s.color }}>{s.value}</div>
@@ -402,6 +421,35 @@ function ChatGPTPool() {
               <RefreshCw size={14} /> Reload Pool
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              placeholder="Tìm theo tên hoặc token..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              style={{ paddingLeft: 32 }}
+            />
+          </div>
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} style={{ width: 'auto' }}>
+            <option value="all">Tất cả trạng thái</option>
+            <option value="active">Active</option>
+            <option value="cooldown">Cooldown</option>
+            <option value="failed">Failed</option>
+          </select>
+          <select value={limit} onChange={e => { setLimit(parseInt(e.target.value, 10)); setPage(1); }} style={{ width: 'auto' }}>
+            <option value="10">10 acc / trang</option>
+            <option value="20">20 acc / trang</option>
+            <option value="30">30 acc / trang</option>
+            <option value="40">40 acc / trang</option>
+            <option value="50">50 acc / trang</option>
+            <option value="100">100 acc / trang</option>
+          </select>
         </div>
       </div>
 
@@ -425,12 +473,12 @@ function ChatGPTPool() {
                 {accounts.length === 0 ? (
                   <tr>
                     <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
-                      Chưa có tài khoản nào. Dùng extension AutoRegUnified để tự đăng ký, hoặc kết nối qua Codex.
+                      Không tìm thấy tài khoản nào
                     </td>
                   </tr>
                 ) : accounts.map((acc, i) => (
                   <tr key={acc.sessionToken || i}>
-                    <td style={{ color: 'var(--text-muted)', width: 40 }}>{i + 1}</td>
+                    <td style={{ color: 'var(--text-muted)', width: 40 }}>{(page - 1) * limit + i + 1}</td>
                     <td>
                       {editRow === acc.sessionToken ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -512,6 +560,69 @@ function ChatGPTPool() {
           </div>
         )}
       </div>
+
+      {/* Pagination & Quick Jump */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, flexWrap: 'wrap', gap: 10 }}>
+          <div className="pagination" style={{ margin: 0 }}>
+            <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+              <ChevronLeft size={14} />
+            </button>
+            {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+              let p = i + 1;
+              if (totalPages > 7) {
+                if (page <= 4) p = i + 1;
+                else if (page >= totalPages - 3) p = totalPages - 6 + i;
+                else p = page - 3 + i;
+              }
+              return (
+                <button
+                  key={p}
+                  className={`page-btn ${page === p ? 'active' : ''}`}
+                  onClick={() => setPage(p)}
+                >
+                  {p}
+                </button>
+              );
+            })}
+            <button className="page-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              const p = parseInt(jumpPage, 10);
+              if (p >= 1 && p <= totalPages) {
+                setPage(p);
+                setJumpPage('');
+              } else {
+                alert(`Vui lòng nhập trang từ 1 đến ${totalPages}`);
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+              Trang {page} / {totalPages}
+            </span>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>| Đi đến trang:</span>
+            <input
+              type="number"
+              min="1"
+              max={totalPages}
+              value={jumpPage}
+              onChange={e => setJumpPage(e.target.value)}
+              placeholder="Nhập số..."
+              style={{ width: 80, padding: '4px 8px', fontSize: '0.82rem', textAlign: 'center' }}
+            />
+            <button type="submit" className="btn btn-ghost btn-sm" style={{ padding: '4px 10px', height: 'auto' }}>
+              Đi
+            </button>
+          </form>
+        </div>
+      )}
+
       <CodexOAuthModal
         isOpen={showOAuthModal}
         onClose={() => setShowOAuthModal(false)}

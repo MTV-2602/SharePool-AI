@@ -261,20 +261,36 @@ router.route('/upstream')
   .get(upstreamHandler)
   .post(upstreamHandler);
 
-// GET /admin-api/accounts — Upstream accounts status (from DB)
+// GET /admin-api/accounts — Upstream accounts status (from DB with in-memory status merge & pagination)
 router.get('/accounts', asyncHandler(async (req, res) => {
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '50', 10)));
+  const page = Math.max(1, parseInt(req.query.page || '1', 10));
+  const skip = (page - 1) * limit;
+
+  const search = String(req.query.search || '').trim().toLowerCase();
+  const filterStatus = String(req.query.status || 'all').trim().toLowerCase();
+
   // Return merged view: DB records with cooldown status from in-memory pool
   const dbAccounts = await UpstreamAccount.findAll();
   const poolStatus = AccountPool.getStatus();
   const statusMap = new Map(poolStatus.map(a => [a.id || a.sessionToken, a]));
 
-  const result = dbAccounts.map(acc => {
+  const stats = { total: dbAccounts.length, active: 0, cooldown: 0, failed: 0 };
+
+  const merged = dbAccounts.map(acc => {
     const token = acc.sessionToken || acc.session_token;
     const poolAcc = statusMap.get(acc.id || token);
+    const status = (acc.is_active === 0 || acc.isActive === 0) ? 'failed' : (poolAcc ? poolAcc.status : 'loaded');
+    
+    if (status === 'failed') stats.failed++;
+    else if (status === 'cooldown') stats.cooldown++;
+    else stats.active++; // loaded/active
+
     return {
-      name: acc.name,
-      sessionToken: token,
-      status: (acc.is_active === 0 || acc.isActive === 0) ? 'failed' : (poolAcc ? poolAcc.status : 'loaded'),
+      id: acc.id,
+      name: acc.name || '',
+      sessionToken: token || '',
+      status,
       cooldownRemaining: poolAcc ? poolAcc.cooldownRemaining : 0,
       lastError: acc.lastError || acc.last_error || (poolAcc ? poolAcc.lastError : ''),
       hasToken: !!token,
@@ -282,7 +298,37 @@ router.get('/accounts', asyncHandler(async (req, res) => {
       createdAt: acc.createdAt || acc.created_at,
     };
   });
-  res.json(result);
+
+  // Filter
+  let filtered = merged;
+  if (search) {
+    filtered = filtered.filter(a => 
+      a.name.toLowerCase().includes(search) || 
+      a.sessionToken.toLowerCase().includes(search)
+    );
+  }
+
+  if (filterStatus !== 'all') {
+    filtered = filtered.filter(a => {
+      if (filterStatus === 'active') return a.status === 'loaded' || a.status === 'active';
+      return a.status === filterStatus;
+    });
+  }
+
+  const filteredTotal = filtered.length;
+  const totalPages = Math.ceil(filteredTotal / limit);
+  const pageSlice = filtered.slice(skip, skip + limit);
+
+  res.json({
+    ok: true,
+    total: dbAccounts.length,
+    filteredTotal,
+    page,
+    limit,
+    totalPages,
+    stats,
+    accounts: pageSlice
+  });
 }));
 
 // POST /admin-api/accounts/mark-failed — Mark a session token as failed to test auto-login/re-login from extension
@@ -760,9 +806,8 @@ function generatePKCE() {
 router.get('/oauth/codex/authorize', asyncHandler(async (req, res) => {
   const { codeVerifier, codeChallenge, state } = generatePKCE();
 
-  // Redirect URI points to THIS server — OpenAI will call back here automatically
-  const baseUrl = getServerBaseUrl(req);
-  const redirectUri = `${baseUrl}/admin-api/oauth/codex/callback`;
+  // We MUST use the registered OpenAI redirect URI so it's whitelisted
+  const redirectUri = 'http://localhost:1455/auth/callback';
 
   // Lưu state và codeVerifier vào Map bộ nhớ đệm
   pendingOAuthSessions.set(state, {

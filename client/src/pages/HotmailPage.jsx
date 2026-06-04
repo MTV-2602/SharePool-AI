@@ -46,16 +46,18 @@ function HotmailList() {
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState('all');
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50); // Default limit 50
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [msg, setMsg] = useState(null);
+  const [jumpPage, setJumpPage] = useState('');
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get('/admin-api/hotmail/accounts', {
-        params: { page, limit: 20, state: stateFilter, search }
+        params: { page, limit, state: stateFilter, search }
       });
       setAccounts(res.data.accounts || []);
       setTotalPages(res.data.totalPages || 1);
@@ -65,9 +67,14 @@ function HotmailList() {
     } finally {
       setLoading(false);
     }
-  }, [page, stateFilter, search]);
+  }, [page, limit, stateFilter, search]);
 
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
+  // Reset page when search, status, or limit changes
+  useEffect(() => {
+    setPage(1);
+  }, [search, stateFilter, limit]);
 
   const handleDelete = async (email) => {
     try {
@@ -134,6 +141,14 @@ function HotmailList() {
             <option value="available">Available</option>
             <option value="reserved">Reserved</option>
             <option value="used">Used</option>
+          </select>
+          <select value={limit} onChange={e => { setLimit(parseInt(e.target.value, 10)); setPage(1); }} style={{ width: 'auto' }}>
+            <option value="10">10 acc / trang</option>
+            <option value="20">20 acc / trang</option>
+            <option value="30">30 acc / trang</option>
+            <option value="40">40 acc / trang</option>
+            <option value="50">50 acc / trang</option>
+            <option value="100">100 acc / trang</option>
           </select>
           <button id="hotmail-refresh-btn" className="btn btn-ghost btn-sm" onClick={fetchAccounts}>
             <RefreshCw size={14} />
@@ -240,26 +255,59 @@ function HotmailList() {
         )}
       </div>
 
-      {/* Pagination */}
+      {/* Pagination & Quick Jump */}
       {totalPages > 1 && (
-        <div className="pagination">
-          <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-            <ChevronLeft size={14} />
-          </button>
-          {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
-            let p = i + 1;
-            if (totalPages > 7) {
-              if (page <= 4) p = i + 1;
-              else if (page >= totalPages - 3) p = totalPages - 6 + i;
-              else p = page - 3 + i;
-            }
-            return (
-              <button key={p} className={`page-btn ${page === p ? 'active' : ''}`} onClick={() => setPage(p)}>{p}</button>
-            );
-          })}
-          <button className="page-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-            <ChevronRight size={14} />
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, flexWrap: 'wrap', gap: 10 }}>
+          <div className="pagination" style={{ margin: 0 }}>
+            <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+              <ChevronLeft size={14} />
+            </button>
+            {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+              let p = i + 1;
+              if (totalPages > 7) {
+                if (page <= 4) p = i + 1;
+                else if (page >= totalPages - 3) p = totalPages - 6 + i;
+                else p = page - 3 + i;
+              }
+              return (
+                <button key={p} className={`page-btn ${page === p ? 'active' : ''}`} onClick={() => setPage(p)}>{p}</button>
+              );
+            })}
+            <button className="page-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              const p = parseInt(jumpPage, 10);
+              if (p >= 1 && p <= totalPages) {
+                setPage(p);
+                setJumpPage('');
+              } else {
+                alert(`Vui lòng nhập trang từ 1 đến ${totalPages}`);
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+              Trang {page} / {totalPages}
+            </span>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>| Đi đến trang:</span>
+            <input
+              type="number"
+              min="1"
+              max={totalPages}
+              value={jumpPage}
+              onChange={e => setJumpPage(e.target.value)}
+              placeholder="Nhập số..."
+              style={{ width: 80, padding: '4px 8px', fontSize: '0.82rem', textAlign: 'center' }}
+            />
+            <button type="submit" className="btn btn-ghost btn-sm" style={{ padding: '4px 10px', height: 'auto' }}>
+              Đi
+            </button>
+          </form>
         </div>
       )}
 

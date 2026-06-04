@@ -2404,6 +2404,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       ], r));
 
       if (!returnedState || returnedState !== data.oauth_state) {
+        if (returnedState) {
+          console.log('[OAuth] Portal-initiated flow detected. Redirecting to server callback...');
+          const portalUrl = (data.backendBaseUrl || "https://vinhcousera.vercel.app").replace(/\/$/, "");
+          const urlObj = new URL(changeInfo.url);
+          const callbackUrl = `${portalUrl}/admin-api/oauth/codex/callback${urlObj.search}`;
+          try {
+            await chrome.tabs.update(tabId, { url: callbackUrl });
+          } catch (e) {
+            console.error('Failed to redirect tab:', e);
+          }
+          return;
+        }
+
         console.error('OAuth state mismatch or missing');
         chrome.runtime.sendMessage({
           type: 'OAUTH_STATUS',
