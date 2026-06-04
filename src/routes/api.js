@@ -33,10 +33,10 @@ router.post('/oauth/codex/init', extensionAuth, asyncHandler(async (req, res) =>
   }
 
   // Clean up old sessions
-  cleanupOldSessions();
+  await cleanupOldSessions();
 
   // Store the session so the callback route can find it
-  pendingOAuthSessions.set(state, {
+  await pendingOAuthSessions.set(state, {
     codeVerifier,
     redirectUri,
     status: 'pending',

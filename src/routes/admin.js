@@ -809,8 +809,8 @@ router.get('/oauth/codex/authorize', asyncHandler(async (req, res) => {
   // We MUST use the registered OpenAI redirect URI so it's whitelisted
   const redirectUri = 'http://localhost:1455/auth/callback';
 
-  // Lưu state và codeVerifier vào Map bộ nhớ đệm
-  pendingOAuthSessions.set(state, {
+  // Lưu state và codeVerifier vào DB
+  await pendingOAuthSessions.set(state, {
     codeVerifier,
     redirectUri,
     status: 'pending',
@@ -818,7 +818,7 @@ router.get('/oauth/codex/authorize', asyncHandler(async (req, res) => {
   });
 
   // Tự động dọn dẹp các phiên cũ hơn 15 phút
-  cleanupOldSessions();
+  await cleanupOldSessions();
 
   const authUrl = `https://auth.openai.com/oauth/authorize?` + new URLSearchParams({
     response_type: 'code',
@@ -845,7 +845,7 @@ router.get('/oauth/codex/authorize', asyncHandler(async (req, res) => {
 router.get('/oauth/codex/callback', asyncHandler(async (req, res) => {
   const { code, state, error, error_description } = req.query;
 
-  const session = state ? pendingOAuthSessions.get(state) : null;
+  const session = state ? await pendingOAuthSessions.get(state) : null;
 
   const successHtml = (email) => `<!DOCTYPE html>
 <html>
@@ -905,6 +905,7 @@ router.get('/oauth/codex/callback', asyncHandler(async (req, res) => {
   if (error) {
     session.status = 'error';
     session.error = error_description || error;
+    await pendingOAuthSessions.set(state, session);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.status(400).send(errorHtml(session.error));
   }
@@ -912,6 +913,7 @@ router.get('/oauth/codex/callback', asyncHandler(async (req, res) => {
   if (!code) {
     session.status = 'error';
     session.error = 'Không nhận được authorization code từ OpenAI.';
+    await pendingOAuthSessions.set(state, session);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.status(400).send(errorHtml(session.error));
   }
@@ -965,12 +967,14 @@ router.get('/oauth/codex/callback', asyncHandler(async (req, res) => {
 
     session.status = 'done';
     session.email = email;
+    await pendingOAuthSessions.set(state, session);
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(successHtml(email));
   } catch (err) {
     session.status = 'error';
     session.error = err.message;
+    await pendingOAuthSessions.set(state, session);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.status(500).send(errorHtml(err.message));
   }
@@ -993,7 +997,7 @@ router.get('/oauth/codex/poll-status', asyncHandler(async (req, res) => {
     throw new AppError('State is required', 400, 'INVALID_REQUEST');
   }
 
-  const session = pendingOAuthSessions.get(state);
+  const session = await pendingOAuthSessions.get(state);
   if (!session) {
     return res.json({ status: 'unknown' });
   }
@@ -1039,11 +1043,11 @@ router.post('/oauth/codex/exchange', asyncHandler(async (req, res) => {
   let redirectUri = `${req.protocol}://${req.headers.host}/admin-api/oauth/codex/callback`;
 
   if (state) {
-    const session = pendingOAuthSessions.get(state);
+    const session = await pendingOAuthSessions.get(state);
     if (session) {
       codeVerifier = session.codeVerifier;
       redirectUri = session.redirectUri;
-      pendingOAuthSessions.delete(state);
+      await pendingOAuthSessions.delete(state);
     }
   }
 

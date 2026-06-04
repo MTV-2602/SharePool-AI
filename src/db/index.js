@@ -163,6 +163,17 @@ async function initDB() {
 
   // Run lightweight connectivity check instead of heavy DDL schema setup
   await _pgPool.query('SELECT 1');
+  await _pgPool.query(`
+    CREATE TABLE IF NOT EXISTS pending_oauth_sessions (
+      state         TEXT PRIMARY KEY,
+      code_verifier TEXT NOT NULL,
+      redirect_uri  TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      email         TEXT DEFAULT '',
+      error         TEXT DEFAULT '',
+      created_at    BIGINT NOT NULL
+    )
+  `);
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS last_error TEXT');
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT CURRENT_TIMESTAMP');
   // Giai đoạn 1: thêm cột quản lý quota cho scale
