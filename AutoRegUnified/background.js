@@ -2262,7 +2262,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "TRIGGER_AUTO_RELOGIN_NOW") {
     triggerAutoReLoginCheck(true)
-      .then(() => sendResponse({ success: true, message: "Đã kích hoạt re-login kiểm tra." }))
+      .then((result) => {
+        if (result && result.started) {
+          sendResponse({ success: true, message: `Kích hoạt re-login thành công cho '${result.email}'. Còn lại ${result.count - 1} tài khoản lỗi.` });
+        } else if (result && result.ok) {
+          sendResponse({ success: true, message: "Không có tài khoản nào bị lỗi cần re-login!" });
+        } else {
+          sendResponse({ success: false, error: result?.error || "Lỗi không xác định khi kiểm tra." });
+        }
+      })
       .catch(err => sendResponse({ success: false, error: err.message || String(err) }));
     return true;
   }
@@ -2274,12 +2282,12 @@ async function triggerAutoReLoginCheck(force = false) {
   const autoReLoginEnabled = !!storageData.autoReLogin;
 
   if (!autoReLoginEnabled && !force) {
-    return;
+    return { ok: false, error: "Tự động re-login chưa được bật" };
   }
 
   if (jobs.size > 0) {
     console.log("[AutoReLogin] Job đang chạy, bỏ qua check.");
-    return;
+    return { ok: false, error: "Có tiến trình re-login đang chạy." };
   }
 
   try {
@@ -2292,7 +2300,7 @@ async function triggerAutoReLoginCheck(force = false) {
     
     if (!expiredRes.ok) {
       console.warn("[AutoReLogin] Lỗi fetch expired accounts:", expiredRes.status);
-      return;
+      return { ok: false, error: `Lỗi kết nối server: HTTP ${expiredRes.status}` };
     }
     
     const data = await expiredRes.json().catch(() => ({}));
@@ -2300,9 +2308,12 @@ async function triggerAutoReLoginCheck(force = false) {
       const targetAcc = data.accounts[0];
       console.log(`[AutoReLogin] Account cần re-login: ${targetAcc.email}`);
       await startReLoginJob(targetAcc, cfg);
+      return { ok: true, started: true, email: targetAcc.email, count: data.accounts.length };
     }
+    return { ok: true, started: false, count: 0 };
   } catch (err) {
     console.error("[AutoReLogin] Lỗi check expired:", err);
+    return { ok: false, error: err.message };
   }
 }
 
@@ -2750,6 +2761,26 @@ async function performAutomatedOAuthExchange(code, returnedState, tabId, job) {
       addLog(tabId, `OAuth OpenAI (Codex) thanh cong cho ${username}!`);
       job.codexConsentDone = true;
       setJob(tabId, job);
+
+      addLog(tabId, `Hoan thanh re-login cho ${username}. Chuan bi acc tiep theo (neu co)...`);
+      
+      // Clear cookies and session storage
+      await clearCookiesLikeEx3().catch(() => {});
+      if (chrome.browsingData) {
+        await new Promise((resolve) => {
+          chrome.browsingData.remove({
+            origins: ["https://chatgpt.com", "https://auth.openai.com", "https://openai.com"]
+          }, { "localStorage": true, "indexedDB": true, "cache": true }, resolve);
+        }).catch(() => {});
+      }
+
+      finishPushedJob(tabId, job);
+
+      // Trigger re-login for the next failed account
+      setTimeout(() => {
+        triggerAutoReLoginCheck(true).catch(() => {});
+      }, 3000);
+      return;
     } else {
       addLog(tabId, `Loi exchange OAuth: ${resData.error || "Server error"}`);
       if (resData.error && resData.error.includes("không khớp")) {
@@ -2765,7 +2796,7 @@ async function performAutomatedOAuthExchange(code, returnedState, tabId, job) {
     addLog(tabId, `Loi exchange OAuth: ${err.message}`);
   }
 
-  // Redirect back to chatgpt.com so content.js can run the next step
+  // Redirect back to chatgpt.com so content.js can run the next step (fallback to traditional flow)
   try {
     chrome.tabs.update(tabId, { url: "https://chatgpt.com/" });
   } catch (e) {

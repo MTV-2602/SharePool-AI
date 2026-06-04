@@ -5,13 +5,17 @@ Tài liệu này hướng dẫn chi tiết cách cấu hình một máy tính b�
 ---
 
 ## 🛠️ Bước 1: Cài đặt ứng dụng Codex
+
 Người dùng máy khách cần cài đặt một trong hai hình thức sau (hoặc cả hai):
 
 ### Cách 1: Sử dụng Codex Desktop App (Khuyên dùng)
+
 Tải và cài đặt ứng dụng **Codex Desktop** chính thức do OpenAI phát hành trên máy tính.
 
 ### Cách 2: Sử dụng Codex CLI (Nếu dùng giao diện dòng lệnh)
+
 Mở Terminal/PowerShell và cài đặt Codex CLI toàn cục qua npm:
+
 ```bash
 npm install -g @openai/codex
 ```
@@ -19,14 +23,16 @@ npm install -g @openai/codex
 ---
 
 ## ⚙️ Bước 2: Thiết lập file cấu hình `config.toml`
+
 Trên máy khách, cần tạo hoặc chỉnh sửa tệp cấu hình của Codex để chuyển tiếp cuộc gọi qua Server của bạn:
 
 1. Tìm tệp cấu hình **`config.toml`** theo đường dẫn hệ điều hành:
    - **Windows**: `C:\Users\<Tên_Tài_Khoản_Máy_Tính>\.codex\config.toml`
    - **Mac / Linux**: `~/.codex/config.toml`
-   *(Nếu chưa có thư mục `.codex` hoặc file `config.toml`, hãy tự tạo thư mục và file văn bản mới với tên tương ứng).*
+     _(Nếu chưa có thư mục `.codex` hoặc file `config.toml`, hãy tự tạo thư mục và file văn bản mới với tên tương ứng)._
 
 2. Mở file `config.toml` bằng Notepad hoặc Text Editor và điền cấu hình sau:
+
    ```toml
    model_reasoning_effort = "low"
    model_provider = "openai-custom"
@@ -34,7 +40,7 @@ Trên máy khách, cần tạo hoặc chỉnh sửa tệp cấu hình của Code
 
    [model_providers.openai-custom]
    experimental_bearer_token = "KHOA_API_KEY_CUA_MAY_KHACH"
-   name = "OpenAI Custom"
+   name = "VinAi"
    base_url = "https://vinhcousera.vercel.app/v1"
    wire_api = "responses"
    requires_openai_auth = false
@@ -48,6 +54,7 @@ Trên máy khách, cần tạo hoặc chỉnh sửa tệp cấu hình của Code
 ---
 
 ## 🧪 Bước 3: Khởi động lại và Kiểm thử
+
 1. Hãy **tắt hoàn toàn** ứng dụng Codex Desktop (hoặc đóng các cửa sổ Terminal đang mở) và khởi động lại để Codex nạp cấu hình mới.
 2. Thử nghiệm gọi lệnh cơ bản qua CLI để kiểm tra kết nối:
    ```bash
@@ -57,4 +64,5 @@ Trên máy khách, cần tạo hoặc chỉnh sửa tệp cấu hình của Code
    ```bash
    codex "tạo cho tôi 1 file test_connection.txt trong thư mục hiện tại"
    ```
+
    - **Kết quả đúng**: Codex tự động gọi công cụ tạo file cục bộ và báo thành công mà không trả ra văn bản JSON thô. Lịch sử sử dụng sẽ hiển thị trên Dashboard Admin Portal của bạn.
