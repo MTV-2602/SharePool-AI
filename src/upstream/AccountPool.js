@@ -162,6 +162,8 @@ class AccountPool {
 
     let plan = 'free';
     let remainingPercent = 100;
+    let primaryRemaining = 100;
+    let secondaryRemaining = 100;
 
     try {
       const { ChatGPTClient } = require('./ChatGPTClient');
@@ -182,23 +184,22 @@ class AccountPool {
         const data = await res.json();
         plan = data.plan_type || data.summary?.plan || 'free';
         
-        let usedPercent = 0;
         const byLimitId = data.rate_limits_by_limit_id || data.rate_limits || {};
-        const codexLimit = byLimitId.codex || byLimitId.code_review || Object.values(byLimitId)[0];
+        const codexLimit = byLimitId.codex || byLimitId.code_review || Object.values(byLimitId)[0] || {};
         
-        if (codexLimit && typeof codexLimit === 'object') {
-          const primary = codexLimit.primary_window || codexLimit.primary;
-          if (primary) {
-            usedPercent = primary.used_percent ?? primary.percent_used ?? 0;
-          }
-        } else if (data.rate_limit) {
-          const primary = data.rate_limit.primary_window || data.rate_limit.primary;
-          if (primary) {
-            usedPercent = primary.used_percent ?? primary.percent_used ?? 0;
-          }
+        const primary = codexLimit.primary_window || codexLimit.primary || data.rate_limit?.primary_window || data.rate_limit?.primary;
+        const secondary = codexLimit.secondary_window || codexLimit.secondary || data.rate_limit?.secondary_window || data.rate_limit?.secondary;
+        
+        if (primary) {
+          const used = primary.used_percent ?? primary.percent_used ?? 0;
+          primaryRemaining = Math.max(0, 100 - Math.ceil(used));
+        }
+        if (secondary) {
+          const used = secondary.used_percent ?? secondary.percent_used ?? 0;
+          secondaryRemaining = Math.max(0, 100 - Math.ceil(used));
         }
         
-        remainingPercent = Math.max(0, 100 - Math.ceil(usedPercent));
+        remainingPercent = primaryRemaining;
       } else if (cached) {
         return cached;
       }
@@ -207,7 +208,7 @@ class AccountPool {
       if (cached) return cached;
     }
 
-    const quotaInfo = { plan, remainingPercent, updatedAt: now };
+    const quotaInfo = { plan, remainingPercent, primaryRemaining, secondaryRemaining, updatedAt: now };
     this._quotaCache.set(sessionToken, quotaInfo);
     if (!this._plans) this._plans = new Map();
     this._plans.set(sessionToken, plan);

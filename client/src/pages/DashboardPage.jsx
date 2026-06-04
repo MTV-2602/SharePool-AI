@@ -99,12 +99,19 @@ export default function DashboardPage() {
 
       {/* Quota & Token Capacity Analysis */}
       {stats && stats.totalCapacity !== undefined && (() => {
-        const totalCapacity = stats.totalCapacity || 0;
+        const totalCapacitySession = stats.totalCapacitySession || 0;
+        const totalCapacityWeekly = stats.totalCapacityWeekly || 0;
         const allocatedQuotaRaw = stats.allocatedQuotaRaw || 0;
         const remainingToSellQuota = stats.remainingToSell || 0;
         const averageMultiplier = stats.averageMultiplier || 1.5;
 
         const isSafe = remainingToSellQuota >= 0;
+
+        const formatTokens = (val) => {
+          return val >= 1_000_000 
+            ? `${(val / 1_000_000).toFixed(1)}M` 
+            : `${(val / 1_000).toFixed(0)}K`;
+        };
 
         return (
           <div className="card" style={{ marginBottom: 16, marginTop: 16 }}>
@@ -120,9 +127,15 @@ export default function DashboardPage() {
             <div className="stat-grid" style={{ marginBottom: 14 }}>
               <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid var(--accent)' }}>
                 <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
-                  {(totalCapacity / 1_000_000).toFixed(1)}M
+                  {formatTokens(totalCapacitySession)}
                 </div>
-                <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Tổng công suất pool còn lại (Raw Token)</div>
+                <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Hạn mức 5H thực tế (Raw Session)</div>
+              </div>
+              <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid #a855f7' }}>
+                <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
+                  {formatTokens(totalCapacityWeekly)}
+                </div>
+                <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Hạn mức Tuần thực tế (Raw Weekly)</div>
               </div>
               <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid #3b82f6' }}>
                 <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
