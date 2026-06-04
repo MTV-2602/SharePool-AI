@@ -321,22 +321,41 @@ class AccountPool {
 
     const total = this._accounts.length;
 
-    // Bước 1: Chức đặc các acc đang sẵn sàng (không cooldown)
+    // Bước 1: Tìm tất cả acc không bị cooldown
     const available = [];
     for (let i = 0; i < total; i++) {
       const idx     = (this._index + i) % total;
       const account = this._accounts[idx];
       const token   = account.client.sessionToken;
 
-      if (!this._isOnCooldown(token)) {
-        available.push({ account, idx, token });
-      } else {
+      if (this._isOnCooldown(token)) {
+        // Đang cooldown — log nếu là quota exhausted
         const quotaUntil = this._quotaExhausted.get(token);
         if (quotaUntil) {
           const minsLeft = Math.ceil((quotaUntil - Date.now()) / 60000);
           logger.debug(`[${account.name}] Skipped — quota hồi sau ${minsLeft} phút`);
         }
+        continue;
       }
+
+      // ── PROACTIVE QUOTA CHECK ───────────────────────────────────────────────
+      // Hệ thống đã biết quota từ _quotaCache (dashboard gọi getAccountQuota).
+      // Nếu cache còn mới (<30 phút) và remainingPercent = 0 → skip ngay, KHÔNG thử request.
+      const cachedQuota = this._quotaCache?.get(token);
+      if (cachedQuota) {
+        const cacheAge = Date.now() - cachedQuota.updatedAt;
+        if (cacheAge < 30 * 60 * 1000 && cachedQuota.remainingPercent <= 0) {
+          // Pre-mark quota exhausted dựa trên reset window (default 5h nếu không biết)
+          if (!this._quotaExhausted.has(token)) {
+            logger.info(`[${account.name}] Pre-skip: cache quota = 0% — đánh dấu exhausted proactively`);
+            this.markQuotaExhausted(token, COOLDOWN_QUOTA_DEFAULT);
+          }
+          continue; // bỏ qua, KHÔNG thêm vào available
+        }
+      }
+      // ── END PROACTIVE CHECK ─────────────────────────────────────────────────
+
+      available.push({ account, idx, token });
     }
 
     if (available.length > 0) {
@@ -501,9 +520,72 @@ class AccountPool {
     await this._loadAsync();
     return { count: this._accounts.length };
   }
+
+  // ── Background Quota Refresh ──────────────────────────────────────────────
+
+  /**
+   * Chạy ngầm mỗi 10 phút — refresh quota cache cho tất cả acc đang active.
+   * Nhờ đó proactive pre-skip trong getNext() luôn có data mới,
+   * không cần đợi request fail mới biết acc nào đã hết quota.
+   */
+  async _backgroundRefreshQuotas() {
+    const BATCH = 5; // max 5 concurrent requests cùng lúc (tránh spam OpenAI)
+    const STALE_THRESHOLD = 8 * 60 * 1000; // chỉ refresh acc chưa check trong 8 phút
+
+    const now = Date.now();
+    const toRefresh = this._accounts.filter(acc => {
+      const token = acc.client.sessionToken;
+      // Bỏ qua acc đang hết quota (không cần check lại cho đến khi hồi)
+      if (this._quotaExhausted.has(token)) return false;
+      // Bỏ qua acc hỏng
+      if (this._invalidTokens.has(token)) return false;
+      // Chỉ refresh nếu cache cũ hơn STALE_THRESHOLD
+      const cached = this._quotaCache?.get(token);
+      if (cached && (now - cached.updatedAt) < STALE_THRESHOLD) return false;
+      return true;
+    });
+
+    if (toRefresh.length === 0) return;
+
+    logger.debug(`[QuotaRefresh] Refreshing quota cho ${toRefresh.length} acc...`);
+
+    // Xử lý theo batch
+    for (let i = 0; i < toRefresh.length; i += BATCH) {
+      const batch = toRefresh.slice(i, i + BATCH);
+      await Promise.allSettled(batch.map(async (acc) => {
+        try {
+          const quota = await this.getAccountQuota(acc.client.sessionToken);
+          // Nếu 0% → pre-mark ngay, không đợi request fail
+          if (quota.remainingPercent <= 0 && !this._quotaExhausted.has(acc.client.sessionToken)) {
+            logger.info(`[${acc.name}] QuotaRefresh: 0% remaining → pre-marking exhausted`);
+            this.markQuotaExhausted(acc.client.sessionToken, COOLDOWN_QUOTA_DEFAULT);
+          }
+        } catch (_) {
+          // Lỗi khi check quota → bỏ qua, thử lần sau
+        }
+      }));
+      // Nhỏ delay giữa các batch
+      if (i + BATCH < toRefresh.length) {
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+
+    logger.debug(`[QuotaRefresh] Done. ${this._quotaExhausted.size} acc đang exhausted.`);
+  }
 }
 
 // Singleton
 const pool = new AccountPool();
 
+// Chạy background quota refresh mỗi 10 phút sau khi accounts đã load
+setTimeout(() => {
+  // Lần đầu sau 60s (chờ server khởi động xong)
+  pool._backgroundRefreshQuotas().catch(() => {});
+  // Sau đó mỗi 10 phút
+  setInterval(() => {
+    pool._backgroundRefreshQuotas().catch(() => {});
+  }, 10 * 60 * 1000);
+}, 60 * 1000);
+
 module.exports = pool;
+
