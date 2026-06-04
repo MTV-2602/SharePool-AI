@@ -261,7 +261,7 @@ router.route('/upstream')
   .get(upstreamHandler)
   .post(upstreamHandler);
 
-// GET /admin-api/accounts — Upstream accounts status (from DB with in-memory status merge & pagination)
+// GET /admin-api/accounts — Trả về danh sách tài khoản ChatGPT đã được gộp trạng thái cooldown từ bộ nhớ (in-memory) và phân trang
 router.get('/accounts', asyncHandler(async (req, res) => {
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '50', 10)));
   const page = Math.max(1, parseInt(req.query.page || '1', 10));
