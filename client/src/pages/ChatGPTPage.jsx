@@ -1023,7 +1023,6 @@ function AutoRegCredentials() {
 function CodexOAuthModal({ isOpen, onClose, onSuccess }) {
   const [step, setStep] = useState('loading'); // loading | input | success | error
   const [authData, setAuthData] = useState(null);
-  const [callbackUrl, setCallbackUrl] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [copied, setCopied] = useState(false);
 
@@ -1100,40 +1099,6 @@ function CodexOAuthModal({ isOpen, onClose, onSuccess }) {
     onClose();
   };
 
-  const handleManualSubmit = async (e) => {
-    e.preventDefault();
-    if (!callbackUrl.trim()) return;
-    setStep('loading');
-    setErrorMsg('');
-
-    try {
-      let code = callbackUrl.trim();
-      let state = authData?.state || '';
-
-      // Parse code and state from URL if it looks like a URL
-      if (code.includes('?')) {
-        try {
-          const urlParams = new URLSearchParams(code.split('?')[1]);
-          const urlCode = urlParams.get('code');
-          const urlState = urlParams.get('state');
-          if (urlCode) code = urlCode;
-          if (urlState) state = urlState;
-        } catch (_) {}
-      }
-
-      const res = await api.post('/admin-api/oauth/codex/exchange', { code, state });
-      if (res.data.success) {
-        setStep('success');
-        onSuccess?.();
-      } else {
-        throw new Error('Đổi mã xác thực thất bại');
-      }
-    } catch (err) {
-      setErrorMsg(err.response?.data?.error?.message || err.message || 'Lỗi đổi mã xác thực');
-      setStep('error');
-    }
-  };
-
   const handleCopyLink = () => {
     if (!authData?.authUrl) return;
     navigator.clipboard.writeText(authData.authUrl).catch(() => {});
@@ -1166,53 +1131,41 @@ function CodexOAuthModal({ isOpen, onClose, onSuccess }) {
 
           {step === 'input' && (
             <>
-              <div className="alert alert-info" style={{ margin: 0, fontSize: '0.82rem' }}>
-                <span>Bấm nút phía dưới để mở trang đăng nhập OpenAI và bắt đầu ủy quyền tài khoản Codex.</span>
+              {/* Info banner */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 16px', background: 'rgba(99,102,241,0.08)', borderRadius: 10, border: '1px solid rgba(99,102,241,0.2)' }}>
+                <span style={{ fontSize: '1.5rem', lineHeight: 1 }}>🔐</span>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)', marginBottom: 3 }}>Đăng nhập 1 lần — tự động vĩnh viễn</div>
+                  <div style={{ fontSize: '0.77rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    Bấm nút bên dưới → đăng nhập ChatGPT → cửa sổ tự đóng → hệ thống tự kết nối. <strong>Không cần copy paste gì cả!</strong>
+                  </div>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Main CTA */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <a
                   href={authData?.authUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn btn-primary"
-                  style={{ display: 'flex', justifyContent: 'center', textDecoration: 'none' }}
+                  style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, textDecoration: 'none', padding: '12px 20px', fontSize: '0.95rem' }}
                 >
-                  Mở trang đăng nhập OpenAI
+                  🚀 Mở trang đăng nhập OpenAI
                 </a>
-
-                <button className="btn btn-ghost" onClick={handleCopyLink} disabled={!authData?.authUrl}>
-                  {copied ? 'Đã copy liên kết' : 'Copy liên kết ủy quyền'}
+                <button className="btn btn-ghost" onClick={handleCopyLink} disabled={!authData?.authUrl}
+                  style={{ fontSize: '0.82rem' }}>
+                  {copied ? '✅ Đã copy' : '📋 Copy liên kết (mở thủ công)'}
                 </button>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Dán link callback thu được</span>
-                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              {/* Auto-detect status */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(16,185,129,0.07)', borderRadius: 8, border: '1px solid rgba(16,185,129,0.15)' }}>
+                <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2, flexShrink: 0 }} />
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                  <strong style={{ color: 'var(--green)' }}>Đang tự động phát hiện...</strong> Hệ thống sẽ tự kết nối ngay sau khi bạn đăng nhập thành công.
+                </div>
               </div>
-
-              <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div className="form-group">
-                  <label style={{ fontSize: '0.75rem' }}>Dán URL callback hoặc mã Code</label>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', margin: '0 0 8px 0' }}>
-                    Trình duyệt sẽ chuyển hướng về link lỗi <code>http://localhost:1455/auth/callback?code=...</code>. Hãy copy toàn bộ link đó và dán vào đây:
-                  </p>
-                  <textarea
-                    placeholder="http://localhost:1455/auth/callback?code=xxx&state=yyy"
-                    value={callbackUrl}
-                    onChange={(e) => setCallbackUrl(e.target.value)}
-                    style={{ fontSize: '0.8rem', fontFamily: 'monospace', minHeight: 80, width: '100%' }}
-                    required
-                  />
-                </div>
-
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={!callbackUrl.trim()}>
-                    Xác nhận kết nối
-                  </button>
-                </div>
-              </form>
             </>
           )}
 

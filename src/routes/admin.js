@@ -735,26 +735,17 @@ router.delete('/chatgpt-credentials/:id', asyncHandler(async (req, res) => {
   res.json({ success: true });
 }));
 
-// ─── Codex OAuth Flow (9Router-style) ──────────────────────────────────────────
+// ─── Codex OAuth Flow (Server-side callback) ─────────────────────────────────
 
 const crypto = require('crypto');
 const pendingOAuthSessions = new Map();
 
-// Singleton variables for local proxy server on port 1455
-let codexProxyServer = null;
-let codexProxyTimeout = null;
-
-function stopCodexProxy() {
-  if (codexProxyTimeout) {
-    clearTimeout(codexProxyTimeout);
-    codexProxyTimeout = null;
-  }
-  if (codexProxyServer) {
-    try {
-      codexProxyServer.close();
-    } catch (_) {}
-    codexProxyServer = null;
-  }
+// Helper to get the server's public base URL from the request
+function getServerBaseUrl(req) {
+  // Support X-Forwarded-Proto for Vercel/Cloudflare proxies
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers['host'] || 'localhost:3040';
+  return `${proto}://${host}`;
 }
 
 // Helper to generate PKCE pair
@@ -765,11 +756,14 @@ function generatePKCE() {
   return { codeVerifier, codeChallenge, state };
 }
 
-// GET /admin-api/oauth/codex/authorize — Tạo link ủy quyền PKCE
+// GET /admin-api/oauth/codex/authorize — Tạo link ủy quyền PKCE (server-side redirect)
 router.get('/oauth/codex/authorize', asyncHandler(async (req, res) => {
   const { codeVerifier, codeChallenge, state } = generatePKCE();
-  const redirectUri = 'http://localhost:1455/auth/callback';
-  
+
+  // Redirect URI points to THIS server — OpenAI will call back here automatically
+  const baseUrl = getServerBaseUrl(req);
+  const redirectUri = `${baseUrl}/admin-api/oauth/codex/callback`;
+
   // Lưu state và codeVerifier vào Map bộ nhớ đệm
   pendingOAuthSessions.set(state, {
     codeVerifier,
@@ -778,10 +772,10 @@ router.get('/oauth/codex/authorize', asyncHandler(async (req, res) => {
     createdAt: Date.now()
   });
 
-  // Tự động dọn dẹp các phiên cũ hơn 10 phút
-  const tenMinsAgo = Date.now() - 600000;
+  // Tự động dọn dẹp các phiên cũ hơn 15 phút
+  const fifteenMinsAgo = Date.now() - 900000;
   for (const [key, val] of pendingOAuthSessions.entries()) {
-    if (val.createdAt < tenMinsAgo) pendingOAuthSessions.delete(key);
+    if (val.createdAt < fifteenMinsAgo) pendingOAuthSessions.delete(key);
   }
 
   const authUrl = `https://auth.openai.com/oauth/authorize?` + new URLSearchParams({
@@ -800,174 +794,153 @@ router.get('/oauth/codex/authorize', asyncHandler(async (req, res) => {
   res.json({
     authUrl,
     state,
-    codeVerifier,
     redirectUri
+    // codeVerifier NOT sent to client (kept secret on server)
   });
 }));
 
-// GET /admin-api/oauth/codex/start-proxy — Khởi chạy local proxy trên port 1455
-router.get('/oauth/codex/start-proxy', asyncHandler(async (req, res) => {
-  if (codexProxyServer) {
-    return res.json({ success: true, serverSide: true });
-  }
+// GET /admin-api/oauth/codex/callback — OpenAI redirects here automatically after login
+router.get('/oauth/codex/callback', asyncHandler(async (req, res) => {
+  const { code, state, error, error_description } = req.query;
 
-  const http = require('http');
-  const server = http.createServer(async (proxyReq, proxyRes) => {
-    const url = new URL(proxyReq.url, 'http://localhost');
-    if (url.pathname !== '/callback' && url.pathname !== '/auth/callback') {
-      proxyRes.writeHead(404);
-      proxyRes.end('Not found');
-      return;
-    }
+  const session = state ? pendingOAuthSessions.get(state) : null;
 
-    const code = url.searchParams.get('code');
-    const state = url.searchParams.get('state');
-    const errorParam = url.searchParams.get('error');
-
-    const session = state ? pendingOAuthSessions.get(state) : null;
-    if (!session) {
-      proxyRes.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-      proxyRes.end('<h1>Lỗi: Phiên đăng nhập không hợp lệ hoặc đã hết hạn</h1>');
-      stopCodexProxy();
-      return;
-    }
-
-    try {
-      if (errorParam) {
-        throw new Error(url.searchParams.get('error_description') || errorParam);
-      }
-      if (!code) throw new Error('Không nhận được authorization code');
-
-      // Exchange code for tokens
-      const fetch = global.fetch || require('node-fetch');
-      const tokenResponse = await fetch('https://auth.openai.com/oauth/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-        },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
-          code: code,
-          redirect_uri: session.redirectUri,
-          code_verifier: session.codeVerifier,
-        }).toString(),
-      });
-
-      if (!tokenResponse.ok) {
-        const errText = await tokenResponse.text();
-        throw new Error(`OpenAI token server returned ${tokenResponse.status}: ${errText}`);
-      }
-
-      const tokens = await tokenResponse.json();
-      const accessToken = tokens.access_token;
-      const refreshToken = tokens.refresh_token;
-
-      if (!accessToken || !refreshToken) {
-        throw new Error('OpenAI response missing token fields');
-      }
-
-      let email = '';
-      try {
-        const parts = accessToken.split('.');
-        if (parts.length >= 2) {
-          let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-          while (base64.length % 4) base64 += '=';
-          const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
-          email = payload['https://api.openai.com/profile']?.email || payload.email || '';
-        }
-      } catch (_) {}
-
-      const accountName = email ? `OAuth-${email}` : `OAuth-${Date.now()}`;
-      const sessionTokenWrapper = JSON.stringify({
-        accessToken,
-        refreshToken,
-        deviceId: ''
-      });
-
-      await UpstreamAccount.upsertByToken(accountName, sessionTokenWrapper);
-      await AccountPool.reload();
-
-      session.status = 'done';
-      session.email = email;
-
-      proxyRes.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      proxyRes.end(`<!DOCTYPE html>
+  const successHtml = (email) => `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <title>Kết nối thành công</title>
   <style>
-    body { font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
-    .container { text-align: center; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    .success { color: #22c55e; font-size: 3rem; }
-    h1 { margin: 1rem 0; font-size: 1.5rem; color: #1e293b; }
-    p { color: #64748b; font-size: 0.9rem; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #0f172a; color: #f1f5f9; }
+    .card { text-align: center; padding: 2.5rem 3rem; background: #1e293b; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); border: 1px solid #334155; max-width: 420px; width: 90%; }
+    .icon { font-size: 4rem; margin-bottom: 1rem; }
+    h1 { font-size: 1.4rem; color: #22c55e; margin-bottom: 0.5rem; }
+    p { color: #94a3b8; font-size: 0.9rem; margin-top: 0.5rem; }
+    strong { color: #e2e8f0; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="success">✓</div>
-    <h1>Kết nối Codex OAuth thành công!</h1>
-    <p>Tài khoản: <strong>${email}</strong></p>
-    <p>Cửa sổ này sẽ tự động đóng trong giây lát...</p>
+  <div class="card">
+    <div class="icon">✅</div>
+    <h1>Kết nối thành công!</h1>
+    <p>Tài khoản: <strong>${email || 'Unknown'}</strong></p>
+    <p>Cửa sổ này sẽ tự đóng sau 3 giây...</p>
   </div>
-  <script>
-    setTimeout(() => { window.close(); }, 2500);
-  </script>
+  <script>setTimeout(() => { try { window.close(); } catch(_) {} }, 3000);</script>
 </body>
-</html>`);
-    } catch (err) {
-      session.status = 'error';
-      session.error = err.message;
+</html>`;
 
-      proxyRes.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      proxyRes.end(`<!DOCTYPE html>
+  const errorHtml = (msg) => `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <title>Kết nối thất bại</title>
   <style>
-    body { font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
-    .container { text-align: center; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    .error { color: #ef4444; font-size: 3rem; }
-    h1 { margin: 1rem 0; font-size: 1.5rem; color: #1e293b; }
-    p { color: #64748b; font-size: 0.9rem; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #0f172a; color: #f1f5f9; }
+    .card { text-align: center; padding: 2.5rem 3rem; background: #1e293b; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); border: 1px solid #334155; max-width: 420px; width: 90%; }
+    .icon { font-size: 4rem; margin-bottom: 1rem; }
+    h1 { font-size: 1.4rem; color: #ef4444; margin-bottom: 0.5rem; }
+    p { color: #94a3b8; font-size: 0.85rem; margin-top: 0.5rem; word-break: break-all; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="error">✗</div>
-    <h1>Kết nối Codex OAuth thất bại</h1>
-    <p style="color: #ef4444;">${err.message}</p>
-    <p>Vui lòng thử lại hoặc dán URL thủ công.</p>
+  <div class="card">
+    <div class="icon">❌</div>
+    <h1>Kết nối thất bại</h1>
+    <p>${msg}</p>
+    <p style="margin-top:1rem">Vui lòng đóng cửa sổ này và thử lại.</p>
   </div>
 </body>
-</html>`);
-    } finally {
-      stopCodexProxy();
-    }
-  });
+</html>`;
 
-  server.listen(1455, '127.0.0.1', () => {
-    codexProxyServer = server;
-    codexProxyTimeout = setTimeout(() => stopCodexProxy(), 300000); // 5 mins timeout
-    res.json({ success: true, serverSide: true });
-  });
+  if (!session) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(400).send(errorHtml('Phiên đăng nhập không hợp lệ hoặc đã hết hạn.'));
+  }
 
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      res.json({ success: false, reason: 'port_busy', message: 'Cổng 1455 đã được sử dụng bởi ứng dụng khác.' });
-    } else {
-      res.json({ success: false, reason: err.message });
+  if (error) {
+    session.status = 'error';
+    session.error = error_description || error;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(400).send(errorHtml(session.error));
+  }
+
+  if (!code) {
+    session.status = 'error';
+    session.error = 'Không nhận được authorization code từ OpenAI.';
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(400).send(errorHtml(session.error));
+  }
+
+  try {
+    const fetch = global.fetch || require('node-fetch');
+    const tokenResponse = await fetch('https://auth.openai.com/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+        code: code,
+        redirect_uri: session.redirectUri,
+        code_verifier: session.codeVerifier,
+      }).toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      const errText = await tokenResponse.text();
+      throw new Error(`OpenAI token server returned ${tokenResponse.status}: ${errText}`);
     }
-  });
+
+    const tokens = await tokenResponse.json();
+    const accessToken = tokens.access_token;
+    const refreshToken = tokens.refresh_token;
+
+    if (!accessToken || !refreshToken) {
+      throw new Error('OpenAI response missing access_token or refresh_token fields');
+    }
+
+    let email = '';
+    try {
+      const parts = accessToken.split('.');
+      if (parts.length >= 2) {
+        let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        while (base64.length % 4) base64 += '=';
+        const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+        email = payload['https://api.openai.com/profile']?.email || payload.email || '';
+      }
+    } catch (_) {}
+
+    const accountName = email ? `OAuth-${email}` : `OAuth-${Date.now()}`;
+    const sessionTokenWrapper = JSON.stringify({ accessToken, refreshToken, deviceId: '' });
+
+    await UpstreamAccount.upsertByToken(accountName, sessionTokenWrapper);
+    await AccountPool.reload();
+
+    session.status = 'done';
+    session.email = email;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(successHtml(email));
+  } catch (err) {
+    session.status = 'error';
+    session.error = err.message;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(500).send(errorHtml(err.message));
+  }
 }));
 
-// GET /admin-api/oauth/codex/stop-proxy — Ngắt chạy local proxy
+// GET /admin-api/oauth/codex/start-proxy — Legacy stub (no longer needed)
+router.get('/oauth/codex/start-proxy', asyncHandler(async (req, res) => {
+  res.json({ success: true, serverSide: true });
+}));
+
+// GET /admin-api/oauth/codex/stop-proxy — Legacy stub
 router.get('/oauth/codex/stop-proxy', asyncHandler(async (req, res) => {
-  stopCodexProxy();
   res.json({ success: true });
 }));
 
@@ -990,7 +963,7 @@ router.get('/oauth/codex/poll-status', asyncHandler(async (req, res) => {
   });
 }));
 
-// POST /admin-api/oauth/codex/exchange — Trao đổi code lấy access_token/refresh_token và lưu vào pool
+// POST /admin-api/oauth/codex/exchange — Trao đổi code thủ công (fallback / paste URL)
 router.post('/oauth/codex/exchange', asyncHandler(async (req, res) => {
   const { code, state } = req.body;
   if (!code) {
@@ -1011,10 +984,7 @@ router.post('/oauth/codex/exchange', asyncHandler(async (req, res) => {
     } catch (_) {}
 
     const accountName = email ? `Token-${email}` : `Token-${Date.now()}`;
-    const tokenWrapper = JSON.stringify({
-      accessToken: code,
-      deviceId: ''
-    });
+    const tokenWrapper = JSON.stringify({ accessToken: code, deviceId: '' });
 
     await UpstreamAccount.upsertByToken(accountName, tokenWrapper);
     await AccountPool.reload();
@@ -1022,9 +992,9 @@ router.post('/oauth/codex/exchange', asyncHandler(async (req, res) => {
     return res.json({ success: true, email });
   }
 
-  // 2. Trao đổi mã auth code dùng PKCE verifier
+  // 2. Trao đổi mã auth code dùng PKCE verifier từ session
   let codeVerifier = '';
-  let redirectUri = 'http://localhost:1455/auth/callback';
+  let redirectUri = `${req.protocol}://${req.headers.host}/admin-api/oauth/codex/callback`;
 
   if (state) {
     const session = pendingOAuthSessions.get(state);
@@ -1076,19 +1046,12 @@ router.post('/oauth/codex/exchange', asyncHandler(async (req, res) => {
   } catch (_) {}
 
   const accountName = email ? `OAuth-${email}` : `OAuth-${Date.now()}`;
-  const sessionTokenWrapper = JSON.stringify({
-    accessToken,
-    refreshToken,
-    deviceId: ''
-  });
+  const sessionTokenWrapper = JSON.stringify({ accessToken, refreshToken, deviceId: '' });
 
   await UpstreamAccount.upsertByToken(accountName, sessionTokenWrapper);
   await AccountPool.reload();
 
-  res.json({
-    success: true,
-    email
-  });
+  res.json({ success: true, email });
 }));
 
 module.exports = router;
