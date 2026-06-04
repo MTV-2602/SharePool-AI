@@ -1,111 +1,60 @@
-# 🔄 OpenAI Codex Proxy & API Key Management Portal
+# 💻 Hướng Dẫn Cấu Hình Máy Khách Sử Dụng Codex API Portal
 
-Hệ thống quản lý API Key, xoay vòng tài khoản ChatGPT (OAuth PKCE / Cookie JWE) và cấu hình chuyển tiếp **Codex Responses API** hỗ trợ đầy đủ Tool-calling ( MCP, chạy lệnh Terminal, đọc/ghi tập tin).
-
----
-
-## 🛠️ Yêu cầu chuẩn bị (Prerequisites)
-Trước khi bắt đầu cài đặt trên máy mới, hãy chắc chắn máy của bạn đã cài đặt các công cụ sau:
-1. **Node.js** (Phiên bản `>= 18.0.0`)
-2. **Git** (Để quản lý mã nguồn)
-3. **Google Chrome** (Để chạy Extension lấy Session/OAuth Token)
-4. **Cơ sở dữ liệu PostgreSQL** (Khuyên dùng **Supabase** để tạo nhanh database miễn phí trực tuyến)
-5. **Codex Desktop App / Codex CLI** (Ứng dụng khách của OpenAI)
+Tài liệu này hướng dẫn chi tiết cách cấu hình một máy tính bất kỳ (máy khách) để kết nối và sử dụng Codex qua hệ thống API Portal của bạn đã được triển khai (ví dụ: `https://vinhcousera.vercel.app`).
 
 ---
 
-## 📂 Hướng dẫn cài đặt từng bước (Step-by-Step Setup)
+## 🛠️ Bước 1: Cài đặt ứng dụng Codex
+Người dùng máy khách cần cài đặt một trong hai hình thức sau (hoặc cả hai):
 
-### 1️⃣ Bước 1: Thiết lập Cơ sở dữ liệu (Database Setup)
-1. Truy cập [Supabase](https://supabase.com) và tạo một Project mới.
-2. Vào phần **SQL Editor** trong bảng điều khiển Supabase.
-3. Mở và copy nội dung tệp [supabase_migration_v2.sql](file:///d:/codex%20xoay/supabase_migration_v2.sql) trong thư mục dự án này, dán vào SQL Editor của Supabase và nhấn **Run** để khởi tạo các bảng dữ liệu (`api_keys`, `upstream_accounts`, `usage_logs`).
-4. Truy cập **Project Settings** → **Database** → Sao chép chuỗi kết nối **URI** (ConnectionString) của bạn. Nó sẽ có định dạng:
-   `postgresql://postgres.[username]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres`
+### Cách 1: Sử dụng Codex Desktop App (Khuyên dùng)
+Tải và cài đặt ứng dụng **Codex Desktop** chính thức do OpenAI phát hành trên máy tính.
 
----
-
-### 2️⃣ Bước 2: Cài đặt và Khởi động Backend Portal
-1. Giải nén hoặc di chuyển mã nguồn dự án vào thư mục làm việc của bạn (Ví dụ: `D:\codex-xoay`).
-2. Mở Terminal tại thư mục dự án và chạy lệnh cài đặt thư viện:
-   ```bash
-   npm install
-   ```
-3. Tạo tệp cấu hình môi trường `.env` bằng cách sao chép tệp mẫu:
-   ```bash
-   copy .env.example .env
-   ```
-4. Mở tệp `.env` vừa tạo và điền các thông số thích hợp:
-   ```env
-   PORT=3040
-   DATABASE_URL= chuỗi_kết_nối_postgresql_supabase_đã_lấy_ở_bước_1
-   ADMIN_KEY=khoá_admin_tuỳ_chọn_để_quản_lý_portal (Ví dụ: admin123)
-   ```
-5. **Khởi động server cục bộ**:
-   - **Bằng File BAT**: Nhấp đúp vào [start.bat](file:///d:/codex%20xoay/start.bat).
-   - **Bằng Terminal**:
-     ```bash
-     npm run dev
-     ```
-   - Server sẽ chạy tại địa chỉ: `http://localhost:3040`.
-6. *(Tùy chọn)* **Deploy lên Vercel**:
-   - Nếu muốn chạy proxy trực tuyến 24/7 không cần treo máy, bạn chỉ cần liên kết Repository GitHub này với Vercel. Vercel sẽ tự động deploy mỗi khi bạn push code mới lên nhánh `main`. Hãy cấu hình các biến môi trường tương tự tệp `.env` trên Vercel.
+### Cách 2: Sử dụng Codex CLI (Nếu dùng giao diện dòng lệnh)
+Mở Terminal/PowerShell và cài đặt Codex CLI toàn cục qua npm:
+```bash
+npm install -g @openai/codex
+```
 
 ---
 
-### 3️⃣ Bước 3: Cài đặt Extension & Liên kết tài khoản ChatGPT
-Mục đích là sử dụng Extension để thực hiện luồng đăng nhập OAuth an toàn của OpenAI nhằm lấy Access Token và Refresh Token cho hệ thống Portal xoay vòng tài khoản.
+## ⚙️ Bước 2: Thiết lập file cấu hình `config.toml`
+Trên máy khách, cần tạo hoặc chỉnh sửa tệp cấu hình của Codex để chuyển tiếp cuộc gọi qua Server của bạn:
 
-1. Mở **Google Chrome** và truy cập vào đường dẫn: `chrome://extensions/`.
-2. Bật chế độ nhà phát triển **Developer mode** ở góc trên cùng bên phải.
-3. Chọn **Load unpacked** (Tải tiện ích đã giải nén) và trỏ tới thư mục [extension/](file:///d:/codex%20xoay/extension) trong mã nguồn dự án.
-4. Nhấp vào biểu tượng Extension vừa cài đặt trên thanh công cụ:
-   - Nhập URL Server của bạn: `http://localhost:3040` (hoặc link Vercel của bạn như `https://vinhcousera.vercel.app`).
-   - Nhấp nút **🔗 Kết nối OAuth OpenAI**.
-5. Một tab mới sẽ mở ra trang đăng nhập chính thức của OpenAI. Đăng nhập bằng tài khoản ChatGPT Free của bạn. Sau khi đăng nhập thành công, tab sẽ tự động đóng và tài khoản mới sẽ tự động được đồng bộ vào database portal.
+1. Tìm tệp cấu hình **`config.toml`** theo đường dẫn hệ điều hành:
+   - **Windows**: `C:\Users\<Tên_Tài_Khoản_Máy_Tính>\.codex\config.toml`
+   - **Mac / Linux**: `~/.codex/config.toml`
+   *(Nếu chưa có thư mục `.codex` hoặc file `config.toml`, hãy tự tạo thư mục và file văn bản mới với tên tương ứng).*
 
----
-
-### 4️⃣ Bước 4: Tạo API Key sử dụng trên Portal Dashboard
-1. Truy cập giao diện quản trị Portal tại địa chỉ: `http://localhost:3040/admin` (hoặc link Vercel `/admin`).
-2. Điền mã **Admin Key** bạn đã cấu hình trong tệp `.env` để đăng nhập.
-3. Tại tab **API Keys**, nhấn **Create Key** để tạo một API key sử dụng cho ứng dụng Codex (ví dụ: `sk-d0203e7fc89...`). Sao chép Key này.
-
----
-
-### 5️⃣ Bước 5: Cấu hình ứng dụng Codex trên máy khách
-Để phần mềm Codex của OpenAI trỏ cuộc gọi qua Proxy Portal của bạn thay vì máy chủ mặc định của OpenAI:
-
-1. Trên máy tính mới, tìm file cấu hình của Codex. Thông thường nó nằm tại:
-   - **Windows**: `C:\Users\<Tên_User>\.codex\config.toml`
-   - **Mac/Linux**: `~/.codex/config.toml`
-   *(Nếu chưa có thư mục `.codex` hoặc file `config.toml`, hãy tự tạo mới)*.
-2. Mở file `config.toml` bằng Text Editor và ghi đè/thêm cấu hình sau:
+2. Mở file `config.toml` bằng Notepad hoặc Text Editor và điền cấu hình sau:
    ```toml
    model_reasoning_effort = "low"
    model_provider = "openai-custom"
    model = "gpt-5.5"
 
    [model_providers.openai-custom]
-   experimental_bearer_token = "sk-d0203e7fc89aef13980a4a27f4a5e6b5bf1feb59a03f1efd" # Điền API Key của bạn lấy từ Bước 4
+   experimental_bearer_token = "KHOA_API_KEY_CUA_MAY_KHACH"
    name = "OpenAI Custom"
-   base_url = "https://vinhcousera.vercel.app/v1" # Điền link Vercel của bạn hoặc http://localhost:3040/v1
+   base_url = "https://vinhcousera.vercel.app/v1"
    wire_api = "responses"
    requires_openai_auth = false
    supports_websockets = false
    ```
-3. Khởi động lại ứng dụng **Codex Desktop** hoặc tắt/mở lại Terminal chạy **Codex CLI** để áp dụng cấu hình mới.
+
+3. **Thay đổi các giá trị cấu hình phù hợp**:
+   - Thay thế `"KHOA_API_KEY_CUA_MAY_KHACH"` bằng mã API Key bạn tạo riêng cho máy khách đó từ trang Admin Portal của bạn (có dạng `sk-d0203e7fc89...`).
+   - Thay thế `"https://vinhcousera.vercel.app/v1"` nếu máy chủ Portal của bạn được triển khai ở địa chỉ khác.
 
 ---
 
-## 🧪 Cách kiểm tra hệ thống hoạt động (Verification)
-1. Mở Terminal mới và chạy thử lệnh gọi Codex CLI:
+## 🧪 Bước 3: Khởi động lại và Kiểm thử
+1. Hãy **tắt hoàn toàn** ứng dụng Codex Desktop (hoặc đóng các cửa sổ Terminal đang mở) và khởi động lại để Codex nạp cấu hình mới.
+2. Thử nghiệm gọi lệnh cơ bản qua CLI để kiểm tra kết nối:
    ```bash
-   codex "say hello world"
+   codex "say hello"
    ```
-2. Hãy thử yêu cầu Codex thực hiện các tác vụ đòi hỏi công cụ cục bộ, ví dụ:
+3. Thử nghiệm tính năng chạy công cụ hệ thống (Tool-calling) của Codex trên máy khách:
    ```bash
-   codex "quét thư mục hiện tại và tạo cho tôi 1 file test.txt"
+   codex "tạo cho tôi 1 file test_connection.txt trong thư mục hiện tại"
    ```
-   - **Kết quả đúng**: Codex sẽ tự động thực thi các công cụ chạy lệnh terminal và tạo tệp ngay trên máy của bạn thay vì trả ra các đoạn mã JSON dạng text thô.
-3. Bạn có thể kiểm tra trạng thái và lịch sử cuộc gọi bằng cách truy cập trang dashboard: `http://localhost:3040/status` hoặc `http://localhost:3040/dashboard`.
+   - **Kết quả đúng**: Codex tự động gọi công cụ tạo file cục bộ và báo thành công mà không trả ra văn bản JSON thô. Lịch sử sử dụng sẽ hiển thị trên Dashboard Admin Portal của bạn.
