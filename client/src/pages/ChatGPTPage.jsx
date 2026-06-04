@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Bot, Upload, Plus, Trash2, RefreshCw, Edit2, Check, X, KeyRound, Copy, Download } from 'lucide-react';
 import api from '../lib/api';
 
-const TABS = ['Pool Session Token', 'Nhập thủ công', 'Acc AutoReg (Email/Pass)'];
+const TABS = ['Pool Tài khoản', 'Nhập thủ công', 'Acc AutoReg (Email/Pass)'];
 
 // ─── TOTP Helper Functions for 2FA ───────────────────────────────────────────
 function base32tohex(base32) {
@@ -352,6 +352,7 @@ function ChatGPTPool() {
               { label: 'Tổng', value: accounts.length, color: 'var(--text-primary)' },
               { label: 'Active', value: accounts.filter(a => !a.status || a.status === 'active').length, color: 'var(--green)' },
               { label: 'Cooldown', value: accounts.filter(a => a.status === 'cooldown').length, color: 'var(--yellow)' },
+              { label: 'Failed', value: accounts.filter(a => a.status === 'failed' || a.status === 'error').length, color: 'var(--red)' },
             ].map(s => (
               <div key={s.label}>
                 <div style={{ fontSize: '1.3rem', fontWeight: 800, color: s.color }}>{s.value}</div>
@@ -380,7 +381,6 @@ function ChatGPTPool() {
                 <tr>
                   <th>#</th>
                   <th>Tên</th>
-                  <th>Session Token</th>
                   <th>Trạng thái</th>
                   <th>Quotas</th>
                   <th>Requests</th>
@@ -390,8 +390,8 @@ function ChatGPTPool() {
               <tbody>
                 {accounts.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
-                      Chưa có tài khoản session nào. Dùng extension AutoRegUnified để tự đăng ký, hoặc nhập thủ công.
+                    <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                      Chưa có tài khoản nào. Dùng extension AutoRegUnified để tự đăng ký, hoặc kết nối qua Codex.
                     </td>
                   </tr>
                 ) : accounts.map((acc, i) => (
@@ -399,28 +399,23 @@ function ChatGPTPool() {
                     <td style={{ color: 'var(--text-muted)', width: 40 }}>{i + 1}</td>
                     <td>
                       {editRow === acc.sessionToken ? (
-                        <input
-                          value={editValues.name}
-                          onChange={e => setEditValues(v => ({ ...v, name: e.target.value }))}
-                          style={{ width: 140, padding: '4px 8px', fontSize: '0.85rem' }}
-                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <input
+                            value={editValues.name}
+                            onChange={e => setEditValues(v => ({ ...v, name: e.target.value }))}
+                            style={{ width: '100%', padding: '4px 8px', fontSize: '0.85rem' }}
+                            placeholder="Tên tài khoản"
+                          />
+                          <input
+                            placeholder="Token mới (để trống nếu không đổi)"
+                            value={editValues.newSessionToken}
+                            onChange={e => setEditValues(v => ({ ...v, newSessionToken: e.target.value }))}
+                            className="font-mono"
+                            style={{ width: '100%', padding: '4px 8px', fontSize: '0.75rem' }}
+                          />
+                        </div>
                       ) : (
                         <span style={{ fontWeight: 600 }}>{acc.name}</span>
-                      )}
-                    </td>
-                    <td>
-                      {editRow === acc.sessionToken ? (
-                        <input
-                          placeholder="Token mới (để trống nếu không đổi)"
-                          value={editValues.newSessionToken}
-                          onChange={e => setEditValues(v => ({ ...v, newSessionToken: e.target.value }))}
-                          className="font-mono"
-                          style={{ width: 200, padding: '4px 8px', fontSize: '0.78rem' }}
-                        />
-                      ) : (
-                        <code style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                          {acc.sessionToken?.slice(0, 24)}...
-                        </code>
                       )}
                     </td>
                     <td>
@@ -523,7 +518,7 @@ function ChatGPTBulkImport() {
       {/* Single */}
       <div className="card">
         <div className="card-header">
-          <span className="card-title"><Plus size={15} /> Thêm 1 tài khoản Session Token</span>
+          <span className="card-title"><Plus size={15} /> Thêm 1 tài khoản (Token / OAuth JSON)</span>
         </div>
         <div className="grid-2" style={{ marginBottom: 12 }}>
           <div className="form-group">
@@ -531,8 +526,8 @@ function ChatGPTBulkImport() {
             <input id="chatgpt-single-name" placeholder="VD: user@hotmail.com" value={singleName} onChange={e => setSingleName(e.target.value)} />
           </div>
           <div className="form-group">
-            <label>Session Token</label>
-            <input id="chatgpt-single-token" placeholder="eyJhbGciOi..." value={singleToken} onChange={e => setSingleToken(e.target.value)} className="font-mono" style={{ fontSize: '0.82rem' }} />
+            <label>Token hoặc OAuth JSON</label>
+            <input id="chatgpt-single-token" placeholder="eyJhbGciOi... hoặc JSON" value={singleToken} onChange={e => setSingleToken(e.target.value)} className="font-mono" style={{ fontSize: '0.82rem' }} />
           </div>
         </div>
         <button id="chatgpt-single-save-btn" className="btn btn-primary" onClick={handleSingle} disabled={singleLoading || !singleToken.trim() || !singleName.trim()}>
@@ -549,7 +544,7 @@ function ChatGPTBulkImport() {
       <div className="card">
         <div className="card-header">
           <span className="card-title"><Upload size={15} /> Nhập nhanh nhiều tài khoản</span>
-          <span className="text-xs text-muted">Format: email|sessionToken (Email phải có trong kho Hotmail)</span>
+          <span className="text-xs text-muted">Format: email|token (Email phải có trong kho Hotmail)</span>
         </div>
         <div className="form-group" style={{ marginBottom: 12 }}>
           <label>Dán danh sách vào đây</label>
