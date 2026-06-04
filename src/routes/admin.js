@@ -10,6 +10,7 @@ const UsageLog = require('../models/UsageLog');
 const AccountPool = require('../upstream/AccountPool');
 const UpstreamAccount = require('../models/UpstreamAccount');
 const ChatGPTCredential = require('../models/ChatGPTCredential');
+const HotmailAccount = require('../models/HotmailAccount');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 
 // Protect all admin routes with adminGuard
@@ -20,6 +21,7 @@ const statsHandler = asyncHandler(async (req, res) => {
   const stats = await UsageLog.getAdminStats();
   const daily = await UsageLog.getGlobalDailyStats();
   const topKeys = await UsageLog.getTopKeys(5);
+  const hotmailTotal = await HotmailAccount.count({});
   
   const accountsStatus = AccountPool.getStatus();
   const accounts = [];
@@ -48,6 +50,7 @@ const statsHandler = asyncHandler(async (req, res) => {
 
   res.json({
     ...stats,
+    hotmailTotal,
     daily,
     topKeys,
     accounts,

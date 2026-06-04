@@ -192,7 +192,7 @@ async function getAdminStats() {
     activeKeys:    parseInt(keyStats?.active_keys || 0, 10),
     sumQuotaTotal: Number(keyStats?.sum_quota_total || 0),
     sumQuotaUsed:  Number(keyStats?.sum_quota_used || 0),
-    totalRequests: parseInt(globalStats?.total_requests || 0, 10),
+    totalRequests: parseInt(globalStats?.totalRequests || globalStats?.total_requests || 0, 10),
     totalTokens:   parseInt(globalStats?.total_tokens || 0, 10),
     todayRequests: parseInt(todayStats?.today_requests || 0, 10),
     todayTokens:   parseInt(todayStats?.today_tokens || 0, 10),

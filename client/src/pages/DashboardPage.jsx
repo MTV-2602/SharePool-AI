@@ -10,6 +10,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedModel, setSelectedModel] = useState('gpt-4o');
   const role = localStorage.getItem('role') || 'admin';
 
   const fetchStats = async () => {
@@ -97,50 +98,87 @@ export default function DashboardPage() {
       </div>
 
       {/* Quota & Token Capacity Analysis */}
-      {stats && stats.totalCapacity !== undefined && (
-        <div className="card" style={{ marginBottom: 16, marginTop: 16 }}>
-          <div className="card-header">
-            <span className="card-title">
-              <TrendingUp size={16} style={{ color: 'var(--accent)' }} />
-              Cân Đối Quota & Dự Báo Kinh Doanh (Tokens/Tháng)
-            </span>
-          </div>
-          <div className="stat-grid" style={{ marginBottom: 14 }}>
-            <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid var(--accent)' }}>
-              <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
-                {stats.totalCapacity ? (stats.totalCapacity / 1_000_000).toFixed(1) + 'M' : '0M'}
-              </div>
-              <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Tổng công suất pool thực tế (GPT-4o)</div>
-            </div>
-            <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid #3b82f6' }}>
-              <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
-                {stats.allocatedQuota ? (stats.allocatedQuota / 1_000_000).toFixed(1) + 'M' : '0M'}
-              </div>
-              <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Dung lượng Quota đã tạo (đã bán)</div>
-            </div>
-            <div className="stat-card" style={{ padding: 14, borderLeft: `4px solid ${stats.remainingToSell >= 0 ? 'var(--green)' : 'var(--red)'}` }}>
-              <div className="stat-card-value" style={{ fontSize: '1.3rem', color: stats.remainingToSell >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                {stats.remainingToSell ? (stats.remainingToSell / 1_000_000).toFixed(1) + 'M' : '0M'}
-              </div>
-              <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>
-                {stats.remainingToSell >= 0 ? 'Dung lượng còn lại có thể bán thêm' : 'Dung lượng bán vượt mức (Over-sell)'}
-              </div>
-            </div>
-          </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-elevated)', padding: 12, borderRadius: 8 }}>
-            <strong>💡 Gợi ý cho Admin:</strong>
-            {stats.remainingToSell >= 0 ? (
-              <span style={{ marginLeft: 6 }}>
-                Hệ thống hoạt động an toàn. Bạn có thể tạo thêm API Key mới với hạn mức tối đa khoảng <strong>{(stats.remainingToSell / 1_000_000).toFixed(1)}M tokens</strong>.
+      {stats && stats.totalCapacity !== undefined && (() => {
+        const MODEL_FORECAST_MULTIPLIERS = {
+          'gpt-4o': { name: 'GPT-4o / GPT-4', mult: 1.0 },
+          'gpt-5.5': { name: 'GPT-5.5 Standard', mult: 1.2 },
+          'gpt-5.3-high': { name: 'GPT-5.5 High (3.2x)', mult: 3.2 },
+          'gpt-5.3-xhigh': { name: 'GPT-5.5 High Extra (4.0x)', mult: 4.0 },
+        };
+
+        const selectedConfig = MODEL_FORECAST_MULTIPLIERS[selectedModel] || { name: 'GPT-4o / GPT-4', mult: 1.0 };
+        const currentMultiplier = selectedConfig.mult;
+        const forecastCapacity = stats.totalCapacity / currentMultiplier;
+        const allocatedQuota = stats.allocatedQuota || 0;
+        const remainingToSell = forecastCapacity - allocatedQuota;
+
+        return (
+          <div className="card" style={{ marginBottom: 16, marginTop: 16 }}>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <TrendingUp size={16} style={{ color: 'var(--accent)' }} />
+                Cân Đối Quota & Dự Báo Kinh Doanh (Tokens/Tháng)
               </span>
-            ) : (
-              <span style={{ marginLeft: 6 }}>
-                ⚠️ Cảnh báo: Đã bán vượt hạn mức <strong>{Math.abs(stats.remainingToSell / 1_000_000).toFixed(1)}M tokens</strong>. Để tránh lỗi Rate Limit khi khách dùng dồn dập, hãy thêm khoảng <strong>{Math.ceil(Math.abs(stats.remainingToSell) / 9600000)} tài khoản Free</strong> hoặc nâng cấp lên <strong>Plus</strong>.
-              </span>
-            )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Model dự báo:</span>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  style={{
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.78rem',
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="gpt-4o">GPT-4o / GPT-4 (1.0x)</option>
+                  <option value="gpt-5.5">GPT-5.5 Standard (1.2x)</option>
+                  <option value="gpt-5.3-high">GPT-5.5 High (3.2x)</option>
+                  <option value="gpt-5.3-xhigh">GPT-5.5 High Extra (4.0x)</option>
+                </select>
+              </div>
+            </div>
+            <div className="stat-grid" style={{ marginBottom: 14 }}>
+              <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid var(--accent)' }}>
+                <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
+                  {forecastCapacity ? (forecastCapacity / 1_000_000).toFixed(1) + 'M' : '0M'}
+                </div>
+                <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Tổng công suất pool thực tế ({selectedConfig.name})</div>
+              </div>
+              <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid #3b82f6' }}>
+                <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
+                  {allocatedQuota ? (allocatedQuota / 1_000_000).toFixed(1) + 'M' : '0M'}
+                </div>
+                <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Dung lượng Quota đã tạo (đã bán)</div>
+              </div>
+              <div className="stat-card" style={{ padding: 14, borderLeft: `4px solid ${remainingToSell >= 0 ? 'var(--green)' : 'var(--red)'}` }}>
+                <div className="stat-card-value" style={{ fontSize: '1.3rem', color: remainingToSell >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                  {remainingToSell ? (remainingToSell / 1_000_000).toFixed(1) + 'M' : '0M'}
+                </div>
+                <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>
+                  {remainingToSell >= 0 ? 'Dung lượng còn lại có thể bán thêm' : 'Dung lượng bán vượt mức (Over-sell)'}
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-elevated)', padding: 12, borderRadius: 8 }}>
+              <strong>💡 Gợi ý cho Admin:</strong>
+              {remainingToSell >= 0 ? (
+                <span style={{ marginLeft: 6 }}>
+                  Hệ thống hoạt động an toàn. Bạn có thể tạo thêm API Key mới với hạn mức tối đa khoảng <strong>{(remainingToSell / 1_000_000).toFixed(1)}M tokens</strong> (dựa theo tỉ giá model {selectedConfig.name}).
+                </span>
+              ) : (
+                <span style={{ marginLeft: 6 }}>
+                  ⚠️ Cảnh báo: Đã bán vượt hạn mức <strong>{Math.abs(remainingToSell / 1_000_000).toFixed(1)}M tokens</strong> (tương ứng tỉ giá {selectedConfig.name}). Để tránh lỗi Rate Limit khi khách dùng dồn dập, hãy thêm khoảng <strong>{Math.ceil(Math.abs(remainingToSell) / (9600000 / currentMultiplier))} tài khoản Free</strong> hoặc nâng cấp lên <strong>Plus</strong>.
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Accounts pool */}
       {stats?.accounts && (

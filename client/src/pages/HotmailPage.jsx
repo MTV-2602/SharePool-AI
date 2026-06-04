@@ -181,6 +181,19 @@ function HotmailList() {
                   <tr key={acc.email}>
                     <td>
                       <span className="font-mono" style={{ color: 'var(--cyan)' }}>{acc.email}</span>
+                      <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {acc.hasChatGPT ? (
+                          <span style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(16,185,129,0.15)', color: '#10b981', borderRadius: 4, border: '1px solid rgba(16,185,129,0.2)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} />
+                            Đã có ChatGPT
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', borderRadius: 4, border: '1px solid rgba(239,68,68,0.15)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#ef4444' }} />
+                            Chưa tạo ChatGPT
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td>{stateBadge(acc.state)}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>{acc.usedCount ?? 0}x</td>

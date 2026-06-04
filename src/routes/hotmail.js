@@ -6,6 +6,7 @@ const adminRouter = express.Router();
 const apiRouter = express.Router();
 
 const HotmailAccount = require('../models/HotmailAccount');
+const db = require('../db');
 const hotmailService = require('../services/hotmail');
 const totpService = require('../services/totp');
 const { verifyExtensionPushToken } = require('../middleware/authHelpers');
@@ -36,6 +37,19 @@ adminRouter.get('/accounts', asyncHandler(async (req, res) => {
   const filteredTotal = await HotmailAccount.count(query);
   const totalPages = Math.max(1, Math.ceil(filteredTotal / limit));
   const accounts = await HotmailAccount.find(query, { skip, limit });
+
+  if (accounts.length > 0) {
+    const emails = accounts.map(a => a.email.toLowerCase().trim());
+    const placeholders = emails.map(() => '?').join(', ');
+    const chatgptCreds = await db.query(
+      `SELECT email FROM chatgpt_credentials WHERE email IN (${placeholders})`,
+      emails
+    );
+    const existingEmails = new Set(chatgptCreds.map(c => c.email.toLowerCase().trim()));
+    accounts.forEach(acc => {
+      acc.hasChatGPT = existingEmails.has(acc.email.toLowerCase().trim());
+    });
+  }
 
   res.json({
     ok: true,

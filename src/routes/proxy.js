@@ -17,6 +17,41 @@ const logger   = require('../utils/logger').create('ProxyRoute');
 
 const router = Router();
 
+function getModelMultiplier(modelName) {
+  if (!modelName) return 1.0;
+  const name = modelName.toLowerCase();
+  
+  if (name.includes('xhigh') || name.includes('extra')) {
+    return 4.0;
+  }
+  if (name.includes('high')) {
+    return 3.2;
+  }
+  if (name.includes('max')) {
+    return 3.2;
+  }
+  if (name.includes('low')) {
+    return 1.6;
+  }
+  if (name.includes('mini')) {
+    if (name.includes('gpt-4o') || name.includes('gpt-4')) {
+      return 0.06;
+    }
+    return 0.6;
+  }
+  if (name.includes('spark')) {
+    return 1.2;
+  }
+  if (name.includes('gpt-5')) {
+    return 1.2;
+  }
+  if (name.includes('gpt-3.5')) {
+    return 0.15;
+  }
+  
+  return 1.0;
+}
+
 // ─── All proxy routes require authentication ──────────────────────────────────
 
 router.use(authenticate);
@@ -83,13 +118,15 @@ router.post('/chat/completions', asyncHandler(async (req, res) => {
 
   const req_id     = uuidv4().replace(/-/g, '').slice(0, 16);
   const mappedModel = mapModel(model);
+  const multiplier = getModelMultiplier(model);
 
   // Estimate input tokens for quota tracking
-  const tokensIn = estimateMessages(messages);
+  const rawTokensIn = estimateMessages(messages);
+  const tokensIn = Math.ceil(rawTokensIn * multiplier);
 
   logger.info(
-    `[${req.apiKeyRecord?.name}] req_id=${req_id} model=${mappedModel} ` +
-    `stream=${stream} est_in=${tokensIn}`
+    `[${req.apiKeyRecord?.name}] req_id=${req_id} model=${model} (mapped to ${mappedModel}) ` +
+    `stream=${stream} est_in=${tokensIn} (multiplier=${multiplier}x)`
   );
 
   // ── Streaming response ─────────────────────────────────────────────────
@@ -143,7 +180,8 @@ router.post('/chat/completions', asyncHandler(async (req, res) => {
     }
 
     // Rough output token estimate from raw SSE output length
-    tokensOut = Math.ceil(outputBuffer.length / 16);
+    const rawTokensOut = Math.ceil(outputBuffer.length / 16);
+    tokensOut = Math.ceil(rawTokensOut * multiplier);
 
     // Record usage asynchronously (non-blocking)
     setImmediate(async () => {
@@ -151,7 +189,7 @@ router.post('/chat/completions', asyncHandler(async (req, res) => {
         await ApiKey.addUsage(req.apiKey, tokensIn, tokensOut);
         await UsageLog.create({
           apiKey:   req.apiKey,
-          model:    mappedModel,
+          model:    model,
           tokensIn,
           tokensOut,
           reqId:    req_id,
@@ -181,13 +219,15 @@ router.post('/chat/completions', asyncHandler(async (req, res) => {
   const completion = await Converter.collectFull(upstreamResponse, mappedModel);
 
   // Fill in realistic usage stats
-  const tokensOut        = completion.usage?.completion_tokens ?? 0;
+  const rawTokensOut     = completion.usage?.completion_tokens ?? 0;
+  const tokensOut        = Math.ceil(rawTokensOut * multiplier);
   completion.usage       = {
     prompt_tokens:     tokensIn,
     completion_tokens: tokensOut,
     total_tokens:      tokensIn + tokensOut,
   };
   completion.id          = 'chatcmpl-' + req_id;
+  completion.model       = model; // Return original model
 
   // Record usage
   setImmediate(async () => {
@@ -195,7 +235,7 @@ router.post('/chat/completions', asyncHandler(async (req, res) => {
       await ApiKey.addUsage(req.apiKey, tokensIn, tokensOut);
       await UsageLog.create({
         apiKey:   req.apiKey,
-        model:    mappedModel,
+        model:    model,
         tokensIn,
         tokensOut,
         reqId:    req_id,
@@ -270,10 +310,12 @@ router.post('/responses', asyncHandler(async (req, res) => {
 
   const req_id      = uuidv4().replace(/-/g, '').slice(0, 16);
   const mappedModel = mapModel(model);
-  const tokensIn    = estimateMessages(messages.length > 0 ? messages : [{ role: 'user', content: '...' }]);
+  const multiplier = getModelMultiplier(model);
+  const rawTokensIn = estimateMessages(messages.length > 0 ? messages : [{ role: 'user', content: '...' }]);
+  const tokensIn    = Math.ceil(rawTokensIn * multiplier);
 
   logger.info(
-    `[${req.apiKeyRecord?.name}] /v1/responses req_id=${req_id} model=${mappedModel} stream=${stream} est_in=${tokensIn}`
+    `[${req.apiKeyRecord?.name}] /v1/responses req_id=${req_id} model=${model} (mapped to ${mappedModel}) stream=${stream} est_in=${tokensIn} (multiplier=${multiplier}x)`
   );
 
   // ── Helper: format output in Responses API shape ──────────────────────────
@@ -283,7 +325,7 @@ router.post('/responses', asyncHandler(async (req, res) => {
       id:      'resp-' + req_id,
       object:  'response',
       created: Math.floor(Date.now() / 1000),
-      model:   mappedModel,
+      model:   model, // Return original model name to user!
       output:  [
         {
           type:    'message',
@@ -330,7 +372,7 @@ router.post('/responses', asyncHandler(async (req, res) => {
         const responseId = 'resp-' + req_id;
         const createdEvt = {
           type:   'response.created',
-          response: { id: responseId, object: 'response', status: 'in_progress', model: mappedModel, output: [] },
+          response: { id: responseId, object: 'response', status: 'in_progress', model: model, output: [] },
         };
         res.write(`event: response.created\ndata: ${JSON.stringify(createdEvt)}\n\n`);
         
@@ -347,7 +389,7 @@ router.post('/responses', asyncHandler(async (req, res) => {
         // 3. Send response.completed event
         const completedEvt = {
           type: 'response.completed',
-          response: buildResponsesObject(errMsg, tokensIn, Math.ceil(errMsg.length / 4)),
+          response: buildResponsesObject(errMsg, tokensIn, Math.ceil(Math.ceil(errMsg.length / 4) * multiplier)),
         };
         res.write(`event: response.completed\ndata: ${JSON.stringify(completedEvt)}\n\n`);
         res.end();
@@ -355,8 +397,6 @@ router.post('/responses', asyncHandler(async (req, res) => {
       }
       return;
     }
-
-
 
     let accumulatedText = '';
     let tokensOut       = 0;
@@ -384,12 +424,13 @@ router.post('/responses', asyncHandler(async (req, res) => {
       res.end();
     }
 
-    tokensOut = Math.ceil(accumulatedText.length / 4);
+    const rawTokensOut = Math.ceil(accumulatedText.length / 4);
+    tokensOut = Math.ceil(rawTokensOut * multiplier);
 
     setImmediate(async () => {
       try {
         await ApiKey.addUsage(req.apiKey, tokensIn, tokensOut);
-        await UsageLog.create({ apiKey: req.apiKey, model: mappedModel, tokensIn, tokensOut, reqId: req_id });
+        await UsageLog.create({ apiKey: req.apiKey, model: model, tokensIn, tokensOut, reqId: req_id });
       } catch (logErr) {
         logger.error('Failed to record usage (responses stream)', logErr);
       }
@@ -415,12 +456,13 @@ router.post('/responses', asyncHandler(async (req, res) => {
 
   const completion = await Converter.collectFull(upstreamResponse, mappedModel);
   const outputText = completion?.choices?.[0]?.message?.content ?? '';
-  const tokensOut  = Math.ceil(outputText.length / 4);
+  const rawTokensOut = Math.ceil(outputText.length / 4);
+  const tokensOut = Math.ceil(rawTokensOut * multiplier);
 
   setImmediate(async () => {
     try {
       await ApiKey.addUsage(req.apiKey, tokensIn, tokensOut);
-      await UsageLog.create({ apiKey: req.apiKey, model: mappedModel, tokensIn, tokensOut, reqId: req_id });
+      await UsageLog.create({ apiKey: req.apiKey, model: model, tokensIn, tokensOut, reqId: req_id });
     } catch (logErr) {
       logger.error('Failed to record usage (responses)', logErr);
     }
