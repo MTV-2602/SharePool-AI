@@ -125,12 +125,21 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="stat-grid" style={{ marginBottom: 14 }}>
-              <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid var(--accent)' }}>
-                <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
-                  {formatTokens(totalCapacitySession)}
+              {totalCapacitySession > 0 ? (
+                <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid var(--accent)' }}>
+                  <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
+                    {formatTokens(totalCapacitySession)}
+                  </div>
+                  <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Hạn mức 5H thực tế (Raw Session)</div>
                 </div>
-                <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Hạn mức 5H thực tế (Raw Session)</div>
-              </div>
+              ) : (
+                <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid var(--accent)', opacity: 0.75 }}>
+                  <div className="stat-card-value" style={{ fontSize: '1.3rem', color: 'var(--text-muted)' }}>
+                    Không áp dụng
+                  </div>
+                  <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Hạn mức 5H thực tế (Tài khoản Free)</div>
+                </div>
+              )}
               <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid #a855f7' }}>
                 <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
                   {formatTokens(totalCapacityMonthly)}

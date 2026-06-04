@@ -226,7 +226,7 @@ class AccountPool {
           secondaryRemaining = Math.max(0, 100 - Math.ceil(used));
         }
         
-        remainingPercent = primaryRemaining;
+        remainingPercent = Math.min(primaryRemaining, secondaryRemaining);
       } else if (cached) {
         return cached;
       }

@@ -49,13 +49,15 @@ const statsHandler = asyncHandler(async (req, res) => {
     const isPlus = plan.toLowerCase().includes('plus') || plan.toLowerCase().includes('pro') || plan.toLowerCase().includes('premium');
     
     // Limits based on OpenAI's actual parameters:
-    // Free: Session (5h) = 10 requests * 8,192 tokens = 80K. Monthly (30d) = 200 requests * 8,192 tokens = 1.6M. (1 reset per month)
+    // Free: Session (5h) = 0 (no session limit). Monthly (30d) = 200 requests * 8,192 tokens = 1.6M. (1 reset per month)
     // Plus: Session (5h) = 80 requests * 8,192 tokens = 640K. Monthly (30d) = 1600 requests * 8,192 tokens * 4 weeks = 51.2M. (weekly resets)
-    const capacitySessionBase = isPlus ? 640000 : 80000;
+    const capacitySessionBase = isPlus ? 640000 : 0;
     const capacityMonthlyBase = isPlus ? 51200000 : 1600000;
 
     const remainingCapacitySession = Math.ceil(capacitySessionBase * (primaryRemaining / 100));
-    const remainingCapacityMonthly = Math.ceil(capacityMonthlyBase * (secondaryRemaining / 100));
+    const remainingCapacityMonthly = isPlus
+      ? Math.ceil(capacityMonthlyBase * (secondaryRemaining / 100))
+      : Math.ceil(capacityMonthlyBase * (primaryRemaining / 100));
 
     if (acc.status === 'failed') {
       failed++;
