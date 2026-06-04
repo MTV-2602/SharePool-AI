@@ -27,7 +27,7 @@ const statsHandler = asyncHandler(async (req, res) => {
   const accountsDetails = [];
   
   let totalCapacitySession = 0;
-  let totalCapacityWeekly = 0;
+  let totalCapacityMonthly = 0;
   let available = 0;
   let exhausted = 0;
   let failed = 0;
@@ -49,13 +49,13 @@ const statsHandler = asyncHandler(async (req, res) => {
     const isPlus = plan.toLowerCase().includes('plus') || plan.toLowerCase().includes('pro') || plan.toLowerCase().includes('premium');
     
     // Limits based on OpenAI's actual parameters:
-    // Free: Session (5h) = 10 requests * 8,192 tokens = 80K. Weekly (7d) = 200 requests * 8,192 tokens = 1.6M.
-    // Plus: Session (5h) = 80 requests * 8,192 tokens = 640K. Weekly (7d) = 1600 requests * 8,192 tokens = 12.8M.
+    // Free: Session (5h) = 10 requests * 8,192 tokens = 80K. Monthly (30d) = 200 requests * 8,192 tokens = 1.6M. (1 reset per month)
+    // Plus: Session (5h) = 80 requests * 8,192 tokens = 640K. Monthly (30d) = 1600 requests * 8,192 tokens * 4 weeks = 51.2M. (weekly resets)
     const capacitySessionBase = isPlus ? 640000 : 80000;
-    const capacityWeeklyBase = isPlus ? 12800000 : 1600000;
+    const capacityMonthlyBase = isPlus ? 51200000 : 1600000;
 
     const remainingCapacitySession = Math.ceil(capacitySessionBase * (primaryRemaining / 100));
-    const remainingCapacityWeekly = Math.ceil(capacityWeeklyBase * (secondaryRemaining / 100));
+    const remainingCapacityMonthly = Math.ceil(capacityMonthlyBase * (secondaryRemaining / 100));
 
     if (acc.status === 'failed') {
       failed++;
@@ -67,7 +67,7 @@ const statsHandler = asyncHandler(async (req, res) => {
 
     if (acc.status !== 'failed') {
       totalCapacitySession += remainingCapacitySession;
-      totalCapacityWeekly += remainingCapacityWeekly;
+      totalCapacityMonthly += remainingCapacityMonthly;
     }
 
     accountsDetails.push({
@@ -77,7 +77,7 @@ const statsHandler = asyncHandler(async (req, res) => {
       primaryRemaining,
       secondaryRemaining,
       remainingCapacitySession,
-      remainingCapacityWeekly
+      remainingCapacityMonthly
     });
   });
 
@@ -112,10 +112,10 @@ const statsHandler = asyncHandler(async (req, res) => {
   const totalRaw = Number(multStats?.total_raw || 0);
   const averageMultiplier = totalRaw > 0 ? (totalQuota / totalRaw) : 1.2;
 
-  const totalCapacity = totalCapacityWeekly; // Default raw pool tokens (using weekly capacity as business base)
+  const totalCapacity = totalCapacityMonthly; // Default raw pool tokens (using monthly capacity as business base)
   const allocatedQuota = stats.sumQuotaTotal || 0;
   const allocatedQuotaRaw = Math.ceil(allocatedQuota / averageMultiplier);
-  const remainingToSellRaw = totalCapacityWeekly - allocatedQuotaRaw;
+  const remainingToSellRaw = totalCapacityMonthly - allocatedQuotaRaw;
   const remainingToSellQuota = Math.ceil(remainingToSellRaw * averageMultiplier);
 
   res.json({
@@ -132,7 +132,7 @@ const statsHandler = asyncHandler(async (req, res) => {
     },
     totalCapacity,
     totalCapacitySession,
-    totalCapacityWeekly,
+    totalCapacityMonthly,
     allocatedQuotaRaw,
     remainingToSell: remainingToSellQuota,
     averageMultiplier

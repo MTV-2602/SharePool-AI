@@ -100,7 +100,7 @@ export default function DashboardPage() {
       {/* Quota & Token Capacity Analysis */}
       {stats && stats.totalCapacity !== undefined && (() => {
         const totalCapacitySession = stats.totalCapacitySession || 0;
-        const totalCapacityWeekly = stats.totalCapacityWeekly || 0;
+        const totalCapacityMonthly = stats.totalCapacityMonthly || 0;
         const allocatedQuotaRaw = stats.allocatedQuotaRaw || 0;
         const remainingToSellQuota = stats.remainingToSell || 0;
         const averageMultiplier = stats.averageMultiplier || 1.5;
@@ -133,9 +133,9 @@ export default function DashboardPage() {
               </div>
               <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid #a855f7' }}>
                 <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
-                  {formatTokens(totalCapacityWeekly)}
+                  {formatTokens(totalCapacityMonthly)}
                 </div>
-                <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Hạn mức Tuần thực tế (Raw Weekly)</div>
+                <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Hạn mức Tháng thực tế (Raw Monthly)</div>
               </div>
               <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid #3b82f6' }}>
                 <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
@@ -209,7 +209,7 @@ export default function DashboardPage() {
                   <th>#</th>
                   <th>Tên</th>
                   <th>Key</th>
-                  <th style={{ textAlign: 'right' }}>Requests</th>
+                  <th style={{ textAlign: 'right' }}>Tokens</th>
                 </tr>
               </thead>
               <tbody>

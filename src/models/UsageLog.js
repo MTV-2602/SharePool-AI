@@ -210,14 +210,15 @@ async function getTopKeys(limit = 10) {
 
   return await db.query(
     `SELECT
-       ul.api_key,
+       ul.api_key        AS key_value,
        ak.name,
        COUNT(ul.id)      AS total_requests,
-       SUM(ul.tokens_total) AS total_tokens
+       SUM(ul.tokens_total) AS total_tokens,
+       SUM(ul.tokens_total) AS total
      FROM usage_logs ul
      LEFT JOIN api_keys ak ON ak.key = ul.api_key
      GROUP BY ul.api_key, ak.name
-     ORDER BY total_tokens DESC
+     ORDER BY total DESC
      LIMIT ?`,
     [safeLimit]
   );
