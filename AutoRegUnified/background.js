@@ -1709,6 +1709,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "OPEN_OAUTH_TAB") {
+    chrome.tabs.create({ url: msg.url });
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (msg.type === "START_JOB") {
     doStartJob(msg.password, msg.mailSite, msg.autoRestart, msg.proxyString, msg.rotateUrl, {
       autoPassword: !!msg.autoPassword,
