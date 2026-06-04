@@ -1853,6 +1853,46 @@ async function runLoop() {
       }
     }
 
+    // Account Chooser Page ("Chào mừng trở lại" / "Welcome back" screen)
+    if (url.includes("auth.openai.com") && (txt.includes("Chào mừng trở lại") || txt.includes("Welcome back") || txt.includes("Chọn một tài khoản") || txt.includes("Choose an account"))) {
+      // Find listed account cards or text containing emails
+      const listedAccounts = Array.from(document.querySelectorAll("p, span, div, button")).filter(el => {
+        const t = (el.textContent || el.innerText || "").trim().toLowerCase();
+        return t.includes("@") && t.includes(".");
+      });
+
+      let matchedAccountEl = null;
+      for (const el of listedAccounts) {
+        const text = (el.textContent || el.innerText || "").trim().toLowerCase();
+        if (job.email && text.includes(job.email.toLowerCase())) {
+          matchedAccountEl = el;
+          break;
+        }
+      }
+
+      if (matchedAccountEl) {
+        log(`Phát hiện tài khoản khớp '${job.email}' trong danh sách. Đang click để đăng nhập...`);
+        // Find closest clickable button/div card for the account
+        const clickable = matchedAccountEl.closest("button, [role='button'], a") || matchedAccountEl;
+        clickLikeUser(clickable);
+        setTimeout(runLoop, 2000);
+        return;
+      } else {
+        // Find "Đăng nhập vào tài khoản khác" / "Log in to another account" / "Log in to a different account"
+        const otherAccBtn = Array.from(document.querySelectorAll("button, a, div[role='button']")).find(b => {
+          const text = (b.textContent || b.innerText || "").trim().toLowerCase();
+          return text.includes("tài khoản khác") || text.includes("different account") || text.includes("another account") || text.includes("đăng nhập vào") || text.includes("log in to");
+        });
+
+        if (otherAccBtn) {
+          log("Phát hiện tài khoản khác trong danh sách (không trùng khớp). Đang click 'Đăng nhập vào tài khoản khác'...");
+          clickLikeUser(otherAccBtn);
+          setTimeout(runLoop, 2000);
+          return;
+        }
+      }
+    }
+
     // OTP Page (Email verification or 2FA)
     const otpInput = document.querySelector("input[name='code'], input#code, input[autocomplete='one-time-code'], input[name='totp_otp']");
     if (otpInput && otpInput.offsetParent !== null && (!job.otpFilled || otpInput.value === "")) {
