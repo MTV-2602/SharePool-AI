@@ -30,6 +30,9 @@ class AccountPool {
     /** @type {Map<string, number>} token → quota_resets_at (ms timestamp) - hết quota */
     this._quotaExhausted = new Map();
 
+    /** @type {Map<string, number>} token → số request đang xử lý (in-flight) */
+    this._inFlight = new Map();
+
     // Load from DB async (non-blocking at startup; reload() can be awaited later)
     this._loadAsync();
   }
@@ -318,52 +321,76 @@ class AccountPool {
 
     const total = this._accounts.length;
 
+    // Bước 1: Chức đặc các acc đang sẵn sàng (không cooldown)
+    const available = [];
     for (let i = 0; i < total; i++) {
       const idx     = (this._index + i) % total;
       const account = this._accounts[idx];
       const token   = account.client.sessionToken;
 
       if (!this._isOnCooldown(token)) {
-        this._index = (idx + 1) % total;
-
-        // Cập nhật last_used_at để round-robin persist qua restart (fire-and-forget)
-        if (account.id) {
-          const db = require('../db');
-          db.run(
-            `UPDATE upstream_accounts SET last_used_at = CURRENT_TIMESTAMP, total_requests = total_requests + 1 WHERE id = ?`,
-            [account.id]
-          ).catch(() => {}); // không chặn response
+        available.push({ account, idx, token });
+      } else {
+        const quotaUntil = this._quotaExhausted.get(token);
+        if (quotaUntil) {
+          const minsLeft = Math.ceil((quotaUntil - Date.now()) / 60000);
+          logger.debug(`[${account.name}] Skipped — quota hồi sau ${minsLeft} phút`);
         }
-
-        return {
-          client: account.client,
-          token,
-          name:   account.name,
-        };
-      }
-
-      // Log tóm tắt acc đang bị skip do quota/cooldown
-      const quotaUntil = this._quotaExhausted.get(token);
-      if (quotaUntil) {
-        const minsLeft = Math.ceil((quotaUntil - Date.now()) / 60000);
-        logger.debug(`[${account.name}] Skipped — quota hồi sau ${minsLeft} phút`);
       }
     }
 
-    // Tất cả acc đang cooldown — tìm acc hồi sớm nhất
+    if (available.length > 0) {
+      // Bước 2: Ưu tiên acc đang rảnh nhất (in-flight thấp nhất) → phân phối đều khi nhiều user
+      available.sort((a, b) => {
+        const fa = this._inFlight.get(a.token) || 0;
+        const fb = this._inFlight.get(b.token) || 0;
+        return fa - fb;
+      });
+
+      const { account, idx, token } = available[0];
+      this._index = (idx + 1) % total;
+
+      // Cập nhật last_used_at (fire-and-forget)
+      if (account.id) {
+        const db = require('../db');
+        db.run(
+          `UPDATE upstream_accounts SET last_used_at = CURRENT_TIMESTAMP, total_requests = total_requests + 1 WHERE id = ?`,
+          [account.id]
+        ).catch(() => {});
+      }
+
+      return { client: account.client, token, name: account.name };
+    }
+
+    // Bước 3: Không có acc nào sẵn sàng — tìm acc hồi sớm nhất
     let soonest = Infinity;
     let soonestName = '';
+    let soonestIsQuota = false;
     for (const account of this._accounts) {
       const rem = this._cooldownRemaining(account.client.sessionToken);
       if (rem < soonest) {
         soonest = rem;
         soonestName = account.name;
+        soonestIsQuota = this._quotaExhausted.has(account.client.sessionToken);
       }
     }
 
-    logger.warn(`Tất cả acc đang cooldown. Acc sớm nhất: [${soonestName}] — đợi ${Math.ceil(soonest / 1000)}s…`);
-    await new Promise(resolve => setTimeout(resolve, soonest + 100));
+    // Nếu tất cả đang hết quota (>10 giây) → trả 503 ngay, không đợi hàng giờ
+    if (soonest > 10_000) {
+      const waitMins = Math.ceil(soonest / 60000);
+      logger.warn(`Tất cả ${total} acc hết quota. Acc sớm nhất [${soonestName}] hồi sau ${waitMins} phút. Trả 503.`);
+      const err = new Error(
+        `Tất cả ${total} tài khoản đang cooldown. Thử lại sau ${waitMins} phút.`
+      );
+      err.code       = 'ALL_ACCOUNTS_FAILED';
+      err.statusCode = 503;
+      err.retryAfter = Math.ceil(soonest / 1000);
+      throw err;
+    }
 
+    // Rate limit tạm thời (≤ 10s) → đợi ngắn rồi thử lại
+    logger.warn(`[${soonestName}] Đang rate-limited. Đợi ${Math.ceil(soonest / 1000)}s…`);
+    await new Promise(resolve => setTimeout(resolve, soonest + 100));
     return this.getNext();
   }
 
@@ -371,54 +398,67 @@ class AccountPool {
   // ── High-Level Chat ───────────────────────────────────────────────────────
 
   async chatWithRotation(messages, model, options = {}, maxAttempts = 0) {
-    const limit   = maxAttempts > 0 ? maxAttempts : Math.max(this._accounts.length, 1);
-    let   attempts = 0;
-    const tried   = new Set();
+    // maxAttempts = số acc tối đa thử (mỗi acc thử đúng 1 lần)
+    const limit = maxAttempts > 0 ? maxAttempts : Math.max(this._accounts.length, 1);
+    const tried = new Set(); // token đã thử trong request này
 
-    while (attempts < limit) {
-      const { client, token, name } = await this.getNext();
+    for (let attempt = 0; attempt < limit; attempt++) {
+      let accountInfo;
+      try {
+        accountInfo = await this.getNext();
+      } catch (err) {
+        // getNext() thả 503 khi tất cả hết quota — bắn thẳng ra ngoài
+        throw err;
+      }
 
+      const { client, token, name } = accountInfo;
+
+      // Nếu đã thử acc này trong request này rồi — vòng vòng, dừng
       if (tried.has(token)) {
-        attempts++;
-        continue;
+        break;
       }
       tried.add(token);
-      attempts++;
+
+      // Đánh dấu đang xử lý (in-flight) — getNext() sẽ ưu tiên acc khác trước
+      this._inFlight.set(token, (this._inFlight.get(token) || 0) + 1);
 
       try {
-        logger.debug(`[${name}] Attempting chat (attempt ${attempts}/${limit})`);
+        logger.debug(`[${name}] Thử gử request (attempt ${attempt + 1}/${limit}, in-flight: ${this._inFlight.get(token)})`);
         const response = await client.chat(messages, model, options);
-        logger.info(`[${name}] Chat request succeeded`);
+        logger.info(`[${name}] Request thành công`);
         return response;
       } catch (err) {
         if (err.code === 'QUOTA_EXHAUSTED') {
-          // Hết quota 5h — skip acc này, dùng retryAfter từ OpenAI nếu có
           this.markQuotaExhausted(token, err.retryAfter || COOLDOWN_QUOTA_DEFAULT);
-          logger.warn(`[${name}] Quota exhausted — trying next account`);
+          logger.warn(`[${name}] Hết quota — chuyển sang acc khác`);
           continue;
         }
-
         if (err.code === 'RATE_LIMITED') {
           this.markRateLimited(token, err.retryAfter || COOLDOWN_RATE_LIMIT);
-          logger.warn(`[${name}] Rate limited — trying next account`);
+          logger.warn(`[${name}] Rate limited — chuyển sang acc khác`);
           continue;
         }
-
         if (err.code === 'INVALID_SESSION') {
           this.markInvalid(token, err.message);
-          logger.warn(`[${name}] Invalid session — trying next account`);
+          logger.warn(`[${name}] Token không hợp lệ — chuyển sang acc khác`);
           continue;
         }
-
+        // Lỗi khác (network, etc.) — bắn ra ngoài ngay
         throw err;
+      } finally {
+        // LUÔN giảm in-flight dù thành công hay thất bại
+        const cur = this._inFlight.get(token) || 1;
+        if (cur <= 1) this._inFlight.delete(token);
+        else this._inFlight.set(token, cur - 1);
       }
     }
 
-    const err     = new Error('All upstream accounts failed or are on cooldown');
-    err.code      = 'ALL_ACCOUNTS_FAILED';
+    const err      = new Error('Tất cả tài khoản đã thử đều thất bại hoặc hết quota');
+    err.code       = 'ALL_ACCOUNTS_FAILED';
     err.statusCode = 503;
     throw err;
   }
+
 
   // ── Status ───────────────────────────────────────────────────────────────
 
@@ -454,6 +494,7 @@ class AccountPool {
     logger.info('Reloading accounts from database and resetting cooldowns…');
     this._cooldowns.clear();
     this._quotaExhausted.clear();
+    this._inFlight.clear();
     this._invalidTokens.clear();
     this._errors.clear();
     if (this._plans) this._plans.clear();
