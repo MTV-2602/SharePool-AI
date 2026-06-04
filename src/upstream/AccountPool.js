@@ -138,11 +138,17 @@ class AccountPool {
     return rem > 0 ? rem : 0;
   }
 
-  async getPlan(sessionToken) {
-    if (!this._plans) this._plans = new Map();
-    if (this._plans.has(sessionToken)) {
-      return this._plans.get(sessionToken);
+  async getAccountQuota(sessionToken) {
+    if (!this._quotaCache) this._quotaCache = new Map();
+    const cached = this._quotaCache.get(sessionToken);
+    const now = Date.now();
+    if (cached && (now - cached.updatedAt < 5 * 60 * 1000)) {
+      return cached;
     }
+
+    let plan = 'free';
+    let remainingPercent = 100;
+
     try {
       const { ChatGPTClient } = require('./ChatGPTClient');
       const client = new ChatGPTClient(sessionToken);
@@ -154,16 +160,50 @@ class AccountPool {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/json',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-        }
+        },
+        timeout: 4000
       });
+
       if (res.ok) {
         const data = await res.json();
-        const plan = data.plan_type || data.summary?.plan || 'free';
-        this._plans.set(sessionToken, plan);
-        return plan;
+        plan = data.plan_type || data.summary?.plan || 'free';
+        
+        let usedPercent = 0;
+        const byLimitId = data.rate_limits_by_limit_id || data.rate_limits || {};
+        const codexLimit = byLimitId.codex || byLimitId.code_review || Object.values(byLimitId)[0];
+        
+        if (codexLimit && typeof codexLimit === 'object') {
+          const primary = codexLimit.primary_window || codexLimit.primary;
+          if (primary) {
+            usedPercent = primary.used_percent ?? primary.percent_used ?? 0;
+          }
+        } else if (data.rate_limit) {
+          const primary = data.rate_limit.primary_window || data.rate_limit.primary;
+          if (primary) {
+            usedPercent = primary.used_percent ?? primary.percent_used ?? 0;
+          }
+        }
+        
+        remainingPercent = Math.max(0, 100 - Math.ceil(usedPercent));
+      } else if (cached) {
+        return cached;
       }
-    } catch (_) {}
-    return 'free';
+    } catch (err) {
+      logger.error('Failed to fetch account quota: ' + err.message);
+      if (cached) return cached;
+    }
+
+    const quotaInfo = { plan, remainingPercent, updatedAt: now };
+    this._quotaCache.set(sessionToken, quotaInfo);
+    if (!this._plans) this._plans = new Map();
+    this._plans.set(sessionToken, plan);
+
+    return quotaInfo;
+  }
+
+  async getPlan(sessionToken) {
+    const quota = await this.getAccountQuota(sessionToken);
+    return quota.plan;
   }
 
   markRateLimited(token) {

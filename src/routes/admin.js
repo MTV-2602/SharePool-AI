@@ -24,27 +24,49 @@ const statsHandler = asyncHandler(async (req, res) => {
   const hotmailTotal = await HotmailAccount.count({});
   
   const accountsStatus = AccountPool.getStatus();
-  const accounts = [];
-  let plusCount = 0;
-  let freeCount = 0;
+  const accountsDetails = [];
+  
+  let totalCapacity = 0;
+  let available = 0;
+  let exhausted = 0;
+  let failed = 0;
 
-  for (const acc of accountsStatus) {
+  const quotaPromises = accountsStatus.map(async (acc) => {
     let plan = 'free';
-    if (acc.hasToken && acc.status !== 'failed') {
-      plan = await AccountPool.getPlan(acc.sessionToken);
-    }
-    if (plan.toLowerCase().includes('plus') || plan.toLowerCase().includes('pro') || plan.toLowerCase().includes('premium')) {
-      plusCount++;
-    } else {
-      freeCount++;
-    }
-    accounts.push({
-      ...acc,
-      plan
-    });
-  }
+    let remainingPercent = 100;
 
-  const totalCapacity = plusCount * 76800000 + freeCount * 9600000;
+    if (acc.hasToken && acc.status !== 'failed') {
+      const quotaInfo = await AccountPool.getAccountQuota(acc.sessionToken);
+      plan = quotaInfo.plan;
+      remainingPercent = quotaInfo.remainingPercent;
+    }
+
+    const isPlus = plan.toLowerCase().includes('plus') || plan.toLowerCase().includes('pro') || plan.toLowerCase().includes('premium');
+    const baseCapacity = isPlus ? 76800000 : 9600000;
+    const remainingCapacity = Math.ceil(baseCapacity * (remainingPercent / 100));
+
+    if (acc.status === 'failed') {
+      failed++;
+    } else if (acc.status === 'cooldown' || remainingPercent === 0) {
+      exhausted++;
+    } else {
+      available++;
+    }
+
+    if (acc.status !== 'failed') {
+      totalCapacity += remainingCapacity;
+    }
+
+    accountsDetails.push({
+      ...acc,
+      plan,
+      remainingPercent,
+      remainingCapacity
+    });
+  });
+
+  await Promise.all(quotaPromises);
+
   const allocatedQuota = stats.sumQuotaTotal || 0;
   const remainingToSell = totalCapacity - allocatedQuota;
 
@@ -53,7 +75,13 @@ const statsHandler = asyncHandler(async (req, res) => {
     hotmailTotal,
     daily,
     topKeys,
-    accounts,
+    accounts: {
+      total: accountsStatus.length,
+      available,
+      exhausted,
+      failed,
+      details: accountsDetails
+    },
     totalCapacity,
     allocatedQuota,
     remainingToSell

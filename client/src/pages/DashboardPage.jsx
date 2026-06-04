@@ -299,6 +299,8 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
           { label: 'Quota đã dùng', value: used.toLocaleString(), color: 'var(--accent)' },
           { label: 'Quota còn lại', value: isInfinite ? '∞' : remaining.toLocaleString(), color: 'var(--green)' },
           { label: 'Tổng Quota', value: isInfinite ? 'Không giới hạn' : total.toLocaleString(), color: 'var(--text-primary)' },
+          { label: 'Tokens Input', value: (stats.tokensIn || 0).toLocaleString(), color: 'var(--cyan)' },
+          { label: 'Tokens Output', value: (stats.tokensOut || 0).toLocaleString(), color: 'var(--purple)' },
         ].map(s => (
           <div key={s.label} className="stat-card">
             <div className="stat-card-value" style={{ color: s.color, fontSize: '1.4rem' }}>{s.value}</div>

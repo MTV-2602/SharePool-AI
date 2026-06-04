@@ -58,6 +58,14 @@ router.post('/login', asyncHandler(async (req, res) => {
   }
 
   const rec = validation.record;
+  const db = require('../db');
+  const tokenSums = await db.get(
+    `SELECT SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out FROM usage_logs WHERE api_key = ?`,
+    [rec.key]
+  );
+  const tokensIn = parseInt(tokenSums?.tokens_in || 0, 10);
+  const tokensOut = parseInt(tokenSums?.tokens_out || 0, 10);
+
   res.json({
     ok: true,
     name: rec.name,
@@ -69,18 +77,30 @@ router.post('/login', asyncHandler(async (req, res) => {
     expiresAt: rec.expiresAt,
     createdAt: rec.createdAt,
     note: rec.note,
+    tokensIn,
+    tokensOut,
   });
 }));
 
 // GET /user-api/me
 router.get('/me', userAuth, asyncHandler(async (req, res) => {
   const rec = req.apiKeyRecord;
+  const db = require('../db');
+  const tokenSums = await db.get(
+    `SELECT SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out FROM usage_logs WHERE api_key = ?`,
+    [rec.key]
+  );
+  const tokensIn = parseInt(tokenSums?.tokens_in || 0, 10);
+  const tokensOut = parseInt(tokenSums?.tokens_out || 0, 10);
+
   res.json({
     name: rec.name,
     quota: rec.quotaTotal >= 9999999999 ? -1 : rec.quotaTotal,
     used: rec.quotaUsed,
     expires: rec.expiresAt,
-    note: rec.note
+    note: rec.note,
+    tokensIn,
+    tokensOut,
   });
 }));
 
