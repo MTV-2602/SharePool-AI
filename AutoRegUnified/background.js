@@ -2426,9 +2426,15 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // Watch tab updates to intercept redirect callback for Codex OAuth
+const processedOAuthUrls = new Set();
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.url && changeInfo.url.startsWith('http://localhost:1455/auth/callback')) {
-    const url = new URL(changeInfo.url);
+  const urlStr = changeInfo.url || tab.url;
+  if (urlStr && urlStr.startsWith('http://localhost:1455/auth/callback')) {
+    if (processedOAuthUrls.has(urlStr)) return;
+    processedOAuthUrls.add(urlStr);
+    if (processedOAuthUrls.size > 100) processedOAuthUrls.clear();
+
+    const url = new URL(urlStr);
     const code = url.searchParams.get('code');
     const returnedState = url.searchParams.get('state');
 
@@ -2480,7 +2486,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         if (returnedState) {
           console.log('[OAuth] Portal-initiated flow detected. Redirecting to server callback...');
           const portalUrl = (data.backendBaseUrl || "https://vinhcousera.vercel.app").replace(/\/$/, "");
-          const urlObj = new URL(changeInfo.url);
+          const urlObj = new URL(urlStr);
           const callbackUrl = `${portalUrl}/admin-api/oauth/codex/callback${urlObj.search}`;
           try {
             await chrome.tabs.update(tabId, { url: callbackUrl });
