@@ -906,6 +906,14 @@ function CodexOAuthModal({ isOpen, onClose, onSuccess }) {
       // 1. Get authorize URL & state from backend
       const authRes = await api.get('/admin-api/oauth/codex/authorize');
       setAuthData(authRes.data);
+      
+      // 2. Start the local proxy server (will only bind on local machine)
+      try {
+        await api.get('/admin-api/oauth/codex/start-proxy');
+      } catch (_) {
+        // Ignore, proxy will fail silently on remote VPS, user falls back to manual pasting
+      }
+      
       setStep('input');
     } catch (err) {
       setErrorMsg(err.response?.data?.error?.message || err.message || 'Lỗi khởi tạo luồng OAuth');
@@ -918,6 +926,51 @@ function CodexOAuthModal({ isOpen, onClose, onSuccess }) {
       startOAuth();
     }
   }, [isOpen, startOAuth]);
+
+  // Polling for local proxy callback
+  useEffect(() => {
+    if (step !== 'input' || !authData?.state) return;
+    
+    let cancelled = false;
+    const POLL_INTERVAL_MS = 1500;
+    const MAX_ATTEMPTS = 200; // ~5 minutes
+    let attempts = 0;
+
+    const tick = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      try {
+        const res = await api.get(`/admin-api/oauth/codex/poll-status?state=${encodeURIComponent(authData.state)}`);
+        if (cancelled) return;
+        if (res.data.status === 'done') {
+          setStep('success');
+          onSuccess?.();
+          return;
+        }
+        if (res.data.status === 'error') {
+          setErrorMsg(res.data.error || 'Xác thực thất bại');
+          setStep('error');
+          return;
+        }
+      } catch {
+        // Network error, keep polling
+      }
+      if (attempts >= MAX_ATTEMPTS) {
+        setErrorMsg('Hết thời gian chờ ủy quyền (5 phút)');
+        setStep('error');
+        return;
+      }
+      setTimeout(tick, POLL_INTERVAL_MS);
+    };
+    
+    setTimeout(tick, POLL_INTERVAL_MS);
+    return () => { cancelled = true; };
+  }, [step, authData, onSuccess]);
+
+  const handleClose = () => {
+    api.get('/admin-api/oauth/codex/stop-proxy').catch(() => {});
+    onClose();
+  };
 
   const handleManualSubmit = async (e) => {
     e.preventDefault();
@@ -963,14 +1016,14 @@ function CodexOAuthModal({ isOpen, onClose, onSuccess }) {
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 500 }}>
         <div className="modal-header">
           <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Bot size={18} style={{ color: 'var(--accent-light)' }} />
             Kết nối Codex (OAuth)
           </span>
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={onClose} style={{ border: 'none', background: 'none' }}>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={handleClose} style={{ border: 'none', background: 'none' }}>
             <X size={16} />
           </button>
         </div>
@@ -1047,7 +1100,7 @@ function CodexOAuthModal({ isOpen, onClose, onSuccess }) {
               <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: '0 0 20px 0' }}>
                 Tài khoản Codex đã được thêm vào pool và sẵn sàng sử dụng.
               </p>
-              <button className="btn btn-primary w-full" onClick={onClose}>
+              <button className="btn btn-primary w-full" onClick={handleClose}>
                 Hoàn tất
               </button>
             </div>
@@ -1069,7 +1122,7 @@ function CodexOAuthModal({ isOpen, onClose, onSuccess }) {
                 <button className="btn btn-primary" onClick={startOAuth} style={{ flex: 1 }}>
                   Thử lại
                 </button>
-                <button className="btn btn-ghost" onClick={onClose} style={{ flex: 1 }}>
+                <button className="btn btn-ghost" onClick={handleClose} style={{ flex: 1 }}>
                   Hủy
                 </button>
               </div>
