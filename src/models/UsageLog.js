@@ -162,7 +162,9 @@ async function getAdminStats() {
   const keyStats = await db.get(
     `SELECT
        COUNT(*)                       AS total_keys,
-       SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_keys
+       SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_keys,
+       SUM(CASE WHEN is_active = 1 THEN quota_total ELSE 0 END) AS sum_quota_total,
+       SUM(CASE WHEN is_active = 1 THEN quota_used ELSE 0 END) AS sum_quota_used
      FROM api_keys`
   );
 
@@ -188,6 +190,8 @@ async function getAdminStats() {
   return {
     totalKeys:     parseInt(keyStats?.total_keys || 0, 10),
     activeKeys:    parseInt(keyStats?.active_keys || 0, 10),
+    sumQuotaTotal: Number(keyStats?.sum_quota_total || 0),
+    sumQuotaUsed:  Number(keyStats?.sum_quota_used || 0),
     totalRequests: parseInt(globalStats?.total_requests || 0, 10),
     totalTokens:   parseInt(globalStats?.total_tokens || 0, 10),
     todayRequests: parseInt(todayStats?.today_requests || 0, 10),

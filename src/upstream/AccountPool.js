@@ -138,6 +138,34 @@ class AccountPool {
     return rem > 0 ? rem : 0;
   }
 
+  async getPlan(sessionToken) {
+    if (!this._plans) this._plans = new Map();
+    if (this._plans.has(sessionToken)) {
+      return this._plans.get(sessionToken);
+    }
+    try {
+      const { ChatGPTClient } = require('./ChatGPTClient');
+      const client = new ChatGPTClient(sessionToken);
+      const accessToken = await client.getAccessToken();
+      const fetch = require('node-fetch');
+      const res = await fetch('https://chatgpt.com/backend-api/wham/usage', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const plan = data.plan_type || data.summary?.plan || 'free';
+        this._plans.set(sessionToken, plan);
+        return plan;
+      }
+    } catch (_) {}
+    return 'free';
+  }
+
   markRateLimited(token) {
     const until = Date.now() + COOLDOWN_RATE_LIMIT;
     this._cooldowns.set(token, until);
@@ -275,6 +303,7 @@ class AccountPool {
     logger.info('Reloading accounts from database and resetting cooldowns…');
     this._cooldowns.clear();
     this._invalidTokens.clear();
+    if (this._plans) this._plans.clear();
     await this._loadAsync();
     return { count: this._accounts.length };
   }

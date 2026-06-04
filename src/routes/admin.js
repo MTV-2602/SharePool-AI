@@ -20,12 +20,40 @@ const statsHandler = asyncHandler(async (req, res) => {
   const stats = await UsageLog.getAdminStats();
   const daily = await UsageLog.getGlobalDailyStats();
   const topKeys = await UsageLog.getTopKeys(5);
-  const accounts = AccountPool.getStatus();
+  
+  const accountsStatus = AccountPool.getStatus();
+  const accounts = [];
+  let plusCount = 0;
+  let freeCount = 0;
+
+  for (const acc of accountsStatus) {
+    let plan = 'free';
+    if (acc.hasToken && acc.status !== 'failed') {
+      plan = await AccountPool.getPlan(acc.sessionToken);
+    }
+    if (plan.toLowerCase().includes('plus') || plan.toLowerCase().includes('pro') || plan.toLowerCase().includes('premium')) {
+      plusCount++;
+    } else {
+      freeCount++;
+    }
+    accounts.push({
+      ...acc,
+      plan
+    });
+  }
+
+  const totalCapacity = plusCount * 76800000 + freeCount * 9600000;
+  const allocatedQuota = stats.sumQuotaTotal || 0;
+  const remainingToSell = totalCapacity - allocatedQuota;
+
   res.json({
     ...stats,
     daily,
     topKeys,
-    accounts
+    accounts,
+    totalCapacity,
+    allocatedQuota,
+    remainingToSell
   });
 });
 
