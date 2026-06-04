@@ -1781,6 +1781,7 @@ async function runLoop() {
     const onOpenAiPasswordPage = url.includes("auth.openai.com/create-account/password") ||
       url.includes("auth.openai.com/login") ||
       url.includes("auth.openai.com/u/login/password") ||
+      url.includes("auth.openai.com/log-in/password") ||
       url.includes("auth.openai.com/authorize");
     const passInp = onOpenAiPasswordPage
       ? document.querySelector("input#password, input[name='password'], input[type='password']")
