@@ -67,8 +67,39 @@ const statsHandler = asyncHandler(async (req, res) => {
 
   await Promise.all(quotaPromises);
 
+  // Calculate the system average multiplier over the last 30 days
+  const db = require('../db');
+  const todayCondition = db.isPostgres()
+    ? `created_at >= CAST(CURRENT_DATE - INTERVAL '30 days' AS TEXT)`
+    : `created_at >= date('now', '-30 days', 'localtime')`;
+
+  const multQuery = `
+    SELECT 
+      SUM(tokens_total) AS total_quota,
+      SUM(CASE 
+        WHEN LOWER(model) LIKE '%xhigh%' OR LOWER(model) LIKE '%extra%' THEN tokens_total / 4.0
+        WHEN LOWER(model) LIKE '%high%' OR LOWER(model) LIKE '%max%' THEN tokens_total / 3.2
+        WHEN LOWER(model) LIKE '%low%' THEN tokens_total / 1.6
+        WHEN LOWER(model) LIKE '%mini%' AND (LOWER(model) LIKE '%gpt-4o%' OR LOWER(model) LIKE '%gpt-4%') THEN tokens_total / 0.06
+        WHEN LOWER(model) LIKE '%mini%' THEN tokens_total / 0.6
+        WHEN LOWER(model) LIKE '%spark%' THEN tokens_total / 1.2
+        WHEN LOWER(model) LIKE '%gpt-5%' THEN tokens_total / 1.2
+        WHEN LOWER(model) LIKE '%gpt-3.5%' THEN tokens_total / 0.15
+        ELSE tokens_total
+      END) AS total_raw
+    FROM usage_logs
+    WHERE ${todayCondition}
+  `;
+
+  const multStats = await db.get(multQuery);
+  const totalQuota = Number(multStats?.total_quota || 0);
+  const totalRaw = Number(multStats?.total_raw || 0);
+  const averageMultiplier = totalRaw > 0 ? (totalQuota / totalRaw) : 1.5;
+
   const allocatedQuota = stats.sumQuotaTotal || 0;
-  const remainingToSell = totalCapacity - allocatedQuota;
+  const allocatedQuotaRaw = Math.ceil(allocatedQuota / averageMultiplier);
+  const remainingToSellRaw = totalCapacity - allocatedQuotaRaw;
+  const remainingToSellQuota = Math.ceil(remainingToSellRaw * averageMultiplier);
 
   res.json({
     ...stats,
@@ -82,9 +113,10 @@ const statsHandler = asyncHandler(async (req, res) => {
       failed,
       details: accountsDetails
     },
-    totalCapacity,
-    allocatedQuota,
-    remainingToSell
+    totalCapacity,          // remaining raw pool tokens
+    allocatedQuotaRaw,      // allocated quota converted to raw tokens
+    remainingToSell: remainingToSellQuota, // remaining key quota tokens that can be sold
+    averageMultiplier
   });
 });
 
