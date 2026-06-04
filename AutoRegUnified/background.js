@@ -2684,7 +2684,7 @@ async function performAutomatedOAuthExchange(code, returnedState, tabId, job) {
         username,
         code,
         codeVerifier: verifier,
-        redirectUri: `${portalUrl}/admin-api/oauth/codex/callback`
+        redirectUri: 'http://localhost:1455/auth/callback'
       }),
       timeout: 20000
     });
@@ -2726,7 +2726,7 @@ async function triggerOAuthForJob(tabId, job, cfg) {
   try {
     const portalUrl = normalizeBackendBase(cfg.backendBaseUrl);
     const pushToken = cfg.extensionPushToken;
-    const redirectUri = `${portalUrl}/admin-api/oauth/codex/callback`;
+    const redirectUri = 'http://localhost:1455/auth/callback';
 
     addLog(tabId, `[OAuth-Auto] Bat dau OAuth tu dong cho ${job.email}...`);
 

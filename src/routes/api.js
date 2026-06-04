@@ -25,10 +25,11 @@ function extensionAuth(req, res, next) {
 // Extension tự generate codeVerifier/codeChallenge/state, gửi lên đây để server lưu,
 // rồi mở authUrl trong tab đã đăng nhập ChatGPT → OpenAI tự redirect về server callback.
 router.post('/oauth/codex/init', extensionAuth, asyncHandler(async (req, res) => {
-  const { state, codeVerifier, redirectUri } = req.body;
+  const { state, codeVerifier } = req.body;
+  const redirectUri = 'http://localhost:1455/auth/callback';
 
-  if (!state || !codeVerifier || !redirectUri) {
-    return res.status(400).json({ ok: false, error: 'state, codeVerifier, and redirectUri are required' });
+  if (!state || !codeVerifier) {
+    return res.status(400).json({ ok: false, error: 'state and codeVerifier are required' });
   }
 
   // Clean up old sessions
@@ -142,7 +143,8 @@ router.post('/chatgpt-extension-push', extensionAuth, asyncHandler(async (req, r
 
 // POST /api/chatgpt-oauth-callback — Exchange code for OAuth tokens
 router.post('/chatgpt-oauth-callback', extensionAuth, asyncHandler(async (req, res) => {
-  const { username, code, codeVerifier, redirectUri } = req.body;
+  const { username, code, codeVerifier } = req.body;
+  const redirectUri = 'http://localhost:1455/auth/callback';
 
   if (!code || !codeVerifier) {
     return res.status(400).json({ ok: false, error: 'code and codeVerifier are required' });
@@ -160,7 +162,7 @@ router.post('/chatgpt-oauth-callback', extensionAuth, asyncHandler(async (req, r
         grant_type: 'authorization_code',
         client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
         code: code,
-        redirect_uri: redirectUri || 'http://localhost:1455/auth/callback',
+        redirect_uri: redirectUri,
         code_verifier: codeVerifier,
       }).toString(),
     });
