@@ -21,9 +21,11 @@ const UpstreamAccount = {
 
   /** Find by name */
   async findByName(name) {
+    if (!name) return null;
+    const cleanName = name.replace(/^OAuth-/i, '');
     return await db.get(
-      `SELECT * FROM upstream_accounts WHERE name = ?`,
-      [name]
+      `SELECT * FROM upstream_accounts WHERE name = ? OR name = ? OR name = ?`,
+      [name, cleanName, `OAuth-${cleanName}`]
     );
   },
 

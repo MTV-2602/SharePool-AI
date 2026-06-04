@@ -482,10 +482,8 @@ const quotaRouteHandler = asyncHandler(async (req, res) => {
       limits
     });
   } catch (err) {
-    if (err.code === 'INVALID_SESSION' || err.message?.includes('session is invalid') || err.message?.includes('expired') || err.message?.includes('401') || err.message?.includes('403')) {
-      const AccountPool = require('../upstream/AccountPool');
-      AccountPool.markInvalid(tokenClean);
-    }
+    // Quota check failures should not mark the account as invalid/failed, as it could be a transient network/IP block.
+    // The actual chat rotation requests will mark it invalid if they fail.
     res.status(500).json({ ok: false, error: err.message });
   }
 });
