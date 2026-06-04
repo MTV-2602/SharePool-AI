@@ -344,7 +344,23 @@ router.post('/accounts/import-manual', asyncHandler(async (req, res) => {
   }
 
   const tokenClean = sessionToken.trim();
-  const accName = (name && name.trim()) || `Acc-${Date.now()}`;
+  const accName = (name && name.trim()) || '';
+
+  if (!accName) {
+    throw new AppError('Tên tài khoản (Email) là bắt buộc.', 400, 'INVALID_REQUEST');
+  }
+
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  if (!emailRegex.test(accName)) {
+    throw new AppError('Tên tài khoản phải là một địa chỉ Email hợp lệ.', 400, 'INVALID_FORMAT');
+  }
+
+  // Verify that the email exists in the Hotmail account database first
+  const HotmailAccount = require('../models/HotmailAccount');
+  const hotmail = await HotmailAccount.findOne({ email: accName });
+  if (!hotmail) {
+    throw new AppError(`Email '${accName}' không tồn tại trong kho Hotmail. Vui lòng thêm Hotmail trước.`, 400, 'HOTMAIL_NOT_FOUND');
+  }
 
   await UpstreamAccount.upsertByToken(accName, tokenClean);
   await AccountPool.reload();
@@ -362,30 +378,63 @@ router.post('/accounts/import-bulk', asyncHandler(async (req, res) => {
 
   const lines = rawText.split(/\r?\n/);
   let importedCount = 0;
+  const errors = [];
+
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  const HotmailAccount = require('../models/HotmailAccount');
 
   for (const line of lines) {
     const clean = line.trim();
     if (!clean) continue;
 
     let token = '';
-    let name = '';
+    let emailInput = '';
 
     if (clean.includes('|')) {
       const parts = clean.split('|').map(p => p.trim());
       const foundToken = parts.find(p => p.startsWith('ey') || p.length > 80);
       if (foundToken) {
         token = foundToken;
-        name = parts[0] || `Imported-${Date.now()}`;
+        emailInput = parts.find(p => p !== foundToken) || '';
       }
     } else if (clean.startsWith('ey') || clean.length > 80) {
       token = clean;
-      name = `Imported-${clean.substring(0, 8)}`;
     }
 
-    if (token) {
-      await UpstreamAccount.upsertByToken(name || `Imported-${Date.now()}`, token);
-      importedCount++;
+    if (!token) {
+      errors.push(`Dòng "${clean}": Không tìm thấy token hợp lệ.`);
+      continue;
     }
+
+    if (!emailInput) {
+      // Decode JWT token to get email if possible
+      try {
+        const parts = token.split('.');
+        if (parts.length >= 2) {
+          let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+          while (base64.length % 4) base64 += '=';
+          const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+          emailInput = payload['https://api.openai.com/profile']?.email || payload.email || '';
+        }
+      } catch (_) {}
+    }
+
+    if (!emailInput || !emailRegex.test(emailInput)) {
+      errors.push(`Dòng "${clean}": Thiếu email hoặc định dạng email không hợp lệ.`);
+      continue;
+    }
+
+    const emailClean = emailInput.toLowerCase().trim();
+
+    // Check in Hotmail accounts
+    const hotmail = await HotmailAccount.findOne({ email: emailClean });
+    if (!hotmail) {
+      errors.push(`Dòng "${clean}": Email '${emailClean}' không tồn tại trong kho Hotmail.`);
+      continue;
+    }
+
+    await UpstreamAccount.upsertByToken(emailClean, token);
+    importedCount++;
   }
 
   if (importedCount > 0) {
@@ -393,7 +442,7 @@ router.post('/accounts/import-bulk', asyncHandler(async (req, res) => {
   }
 
   const all = await UpstreamAccount.findAll();
-  res.json({ success: true, imported: importedCount, total: all.length });
+  res.json({ success: true, imported: importedCount, total: all.length, errors });
 }));
 
 // DELETE /admin-api/accounts — Delete an account by sessionToken (từ DB)
@@ -517,6 +566,18 @@ router.post('/chatgpt-credentials', asyncHandler(async (req, res) => {
   const { email, password, otpSecret, triggerReLogin } = req.body;
   if (!email || !email.trim()) {
     throw new AppError('email is required', 400, 'INVALID_REQUEST');
+  }
+
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  if (!emailRegex.test(email.trim())) {
+    throw new AppError('Định dạng email không hợp lệ.', 400, 'INVALID_FORMAT');
+  }
+
+  // Verify that the email exists in the Hotmail account database first
+  const HotmailAccount = require('../models/HotmailAccount');
+  const hotmail = await HotmailAccount.findOne({ email: email.trim() });
+  if (!hotmail) {
+    throw new AppError(`Email '${email.trim()}' không tồn tại trong kho Hotmail. Vui lòng thêm Hotmail trước.`, 400, 'HOTMAIL_NOT_FOUND');
   }
 
   const cred = await ChatGPTCredential.upsert({

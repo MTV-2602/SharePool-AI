@@ -497,6 +497,7 @@ function ChatGPTBulkImport() {
     try {
       const res = await api.post('/admin-api/accounts/import-bulk', { rawText });
       setResult({ ok: true, data: res.data });
+      setRawText('');
     } catch (e) {
       setResult({ ok: false, error: e.response?.data?.error?.message || e.message || 'Lỗi import.' });
     } finally { setLoading(false); }
@@ -507,7 +508,7 @@ function ChatGPTBulkImport() {
     setSingleLoading(true); setSingleResult(null);
     try {
       const res = await api.post('/admin-api/accounts/import-manual', {
-        name: singleName.trim() || `Acc-${Date.now()}`,
+        name: singleName.trim(),
         sessionToken: singleToken.trim()
       });
       setSingleResult({ ok: true, data: res.data });
@@ -526,15 +527,15 @@ function ChatGPTBulkImport() {
         </div>
         <div className="grid-2" style={{ marginBottom: 12 }}>
           <div className="form-group">
-            <label>Tên tài khoản</label>
-            <input id="chatgpt-single-name" placeholder="VD: Acc-ChatGPT-01" value={singleName} onChange={e => setSingleName(e.target.value)} />
+            <label>Tên tài khoản (Email - Phải có trong kho Hotmail)</label>
+            <input id="chatgpt-single-name" placeholder="VD: user@hotmail.com" value={singleName} onChange={e => setSingleName(e.target.value)} />
           </div>
           <div className="form-group">
             <label>Session Token</label>
             <input id="chatgpt-single-token" placeholder="eyJhbGciOi..." value={singleToken} onChange={e => setSingleToken(e.target.value)} className="font-mono" style={{ fontSize: '0.82rem' }} />
           </div>
         </div>
-        <button id="chatgpt-single-save-btn" className="btn btn-primary" onClick={handleSingle} disabled={singleLoading || !singleToken.trim()}>
+        <button id="chatgpt-single-save-btn" className="btn btn-primary" onClick={handleSingle} disabled={singleLoading || !singleToken.trim() || !singleName.trim()}>
           {singleLoading ? <><span className="spinner" /> Đang lưu...</> : <><Check size={14} /> Lưu</>}
         </button>
         {singleResult && (
@@ -548,14 +549,14 @@ function ChatGPTBulkImport() {
       <div className="card">
         <div className="card-header">
           <span className="card-title"><Upload size={15} /> Nhập nhanh nhiều tài khoản</span>
-          <span className="text-xs text-muted">Format: name|sessionToken (mỗi dòng)</span>
+          <span className="text-xs text-muted">Format: email|sessionToken (Email phải có trong kho Hotmail)</span>
         </div>
         <div className="form-group" style={{ marginBottom: 12 }}>
           <label>Dán danh sách vào đây</label>
           <textarea
             id="chatgpt-bulk-textarea"
             rows={8}
-            placeholder={"Acc-01|eyJhbGci...\nAcc-02|eyJhbGci...\n\nHoặc chỉ token:\neyJhbGciOiJ...\neyJhbGciOiJ..."}
+            placeholder={"user1@outlook.com|eyJhbGci...\nuser2@hotmail.com|eyJhbGci...\n\nHoặc chỉ token (hệ thống sẽ tự giải mã email từ token):\neyJhbGciOiJ...\neyJhbGciOiJ..."}
             value={rawText}
             onChange={e => setRawText(e.target.value)}
             className="font-mono"
@@ -569,10 +570,24 @@ function ChatGPTBulkImport() {
           {loading ? <><span className="spinner" /> Đang import...</> : <><Upload size={14} /> Import</>}
         </button>
         {result && (
-          <div className={`alert alert-${result.ok ? 'success' : 'error'}`} style={{ marginTop: 12 }}>
-            {result.ok
-              ? `✅ Đã import ${result.data.imported} tài khoản. Tổng pool: ${result.data.total}`
-              : `❌ ${result.error}`}
+          <div className={`alert alert-${result.ok ? 'success' : 'error'}`} style={{ marginTop: 12, flexDirection: 'column', alignItems: 'flex-start' }}>
+            {result.ok ? (
+              <>
+                <div>✅ Đã import {result.data.imported} tài khoản. Tổng pool: {result.data.total}</div>
+                {result.data.errors && result.data.errors.length > 0 && (
+                  <div style={{ marginTop: 8, fontSize: '0.8rem', width: '100%', borderTop: '1px solid rgba(16, 185, 129, 0.2)', paddingTop: 8 }}>
+                    <div style={{ fontWeight: 600, color: 'var(--yellow)', marginBottom: 4 }}>⚠️ Các dòng bị bỏ qua ({result.data.errors.length}):</div>
+                    <ul style={{ paddingLeft: 16, margin: 0, color: 'var(--text-secondary)', maxHeight: 150, overflowY: 'auto' }}>
+                      {result.data.errors.map((err, i) => (
+                        <li key={i} style={{ marginBottom: 2 }}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div>❌ {result.error}</div>
+            )}
           </div>
         )}
       </div>
@@ -729,6 +744,7 @@ function AutoRegCredentials() {
 
     setBulkLoading(true);
     let success = 0, fail = 0;
+    const failedEmails = [];
     for (const item of parsedLines) {
       try {
         await api.post('/admin-api/chatgpt-credentials', {
@@ -738,10 +754,23 @@ function AutoRegCredentials() {
           triggerReLogin: addReLogin
         });
         success++;
-      } catch { fail++; }
+      } catch (e) { 
+        fail++; 
+        const errText = e.response?.data?.error?.message || e.message || 'Lỗi không xác định';
+        failedEmails.push(`${item.email} (${errText})`);
+      }
     }
-    setMsg({ type: 'success', text: `✅ Import xong: ${success} thành công, ${fail} thất bại.` });
-    setBulkText('');
+    
+    if (fail > 0) {
+      setMsg({ 
+        type: 'error', 
+        text: `⚠️ Import hoàn tất: ${success} thành công, ${fail} thất bại.\nCác tài khoản lỗi:\n${failedEmails.join('\n')}` 
+      });
+    } else {
+      setMsg({ type: 'success', text: `✅ Import thành công tất cả ${success} tài khoản.` });
+      setBulkText('');
+    }
+    
     fetchCreds();
     setBulkLoading(false);
   };
