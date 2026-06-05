@@ -289,63 +289,82 @@ router.get('/oauth/google/callback', asyncHandler(async (req, res) => {
     session.email = email;
 
     // 3. Load Code Assist Config (fetch project ID and default tier)
+    // This step is OPTIONAL — if the API is not enabled on the account's project,
+    // we still save the account and it will work once the API is enabled.
     const metadata = { ideType: 9, platform: 5, pluginType: 2 };
-    const loadRes = await fetch('https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'google-api-nodejs-client/9.15.1',
-        'X-Goog-Api-Client': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
-        'Client-Metadata': JSON.stringify(metadata)
-      },
-      body: JSON.stringify({ metadata })
-    });
-
-    if (!loadRes.ok) {
-      const errText = await loadRes.text();
-      throw new Error(`Google Cloud Code loadCodeAssist failed: ${errText}`);
-    }
-
-    const loadData = await loadRes.json();
-    let projectId = loadData.cloudaicompanionProject;
-    if (typeof projectId === 'object' && projectId !== null && projectId.id) {
-      projectId = projectId.id;
-    }
-
+    let projectId = null;
     let tierId = 'legacy-tier';
-    if (Array.isArray(loadData.allowedTiers)) {
-      for (const tier of loadData.allowedTiers) {
-        if (tier.isDefault && tier.id) {
-          tierId = tier.id.trim();
-          break;
+    let loadCodeAssistWarning = '';
+
+    try {
+      const loadRes = await fetch('https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'google-api-nodejs-client/9.15.1',
+          'X-Goog-Api-Client': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
+          'Client-Metadata': JSON.stringify(metadata)
+        },
+        body: JSON.stringify({ metadata })
+      });
+
+      if (loadRes.ok) {
+        const loadData = await loadRes.json();
+        projectId = loadData.cloudaicompanionProject;
+        if (typeof projectId === 'object' && projectId !== null && projectId.id) {
+          projectId = projectId.id;
         }
+
+        if (Array.isArray(loadData.allowedTiers)) {
+          for (const tier of loadData.allowedTiers) {
+            if (tier.isDefault && tier.id) {
+              tierId = tier.id.trim();
+              break;
+            }
+          }
+        }
+      } else {
+        const errText = await loadRes.text();
+        logger.warn(`loadCodeAssist failed for ${email} (non-fatal): ${errText}`);
+        loadCodeAssistWarning = 'Cloud Code API chưa được bật trên project. Tài khoản vẫn được lưu và sẽ hoạt động sau khi bật API.';
+      }
+    } catch (loadErr) {
+      logger.warn(`loadCodeAssist error for ${email} (non-fatal): ${loadErr.message}`);
+      loadCodeAssistWarning = 'Không thể kết nối Cloud Code API. Tài khoản vẫn được lưu.';
+    }
+
+    // Use a default project ID if loadCodeAssist didn't return one
+    if (!projectId) {
+      projectId = `pending-${email.split('@')[0]}`;
+      logger.info(`Using placeholder projectId for ${email}: ${projectId}`);
+    }
+
+    // 4. Onboard user (optional, skip if loadCodeAssist failed)
+    if (!loadCodeAssistWarning) {
+      try {
+        const onboardRes = await fetch('https://cloudcode-pa.googleapis.com/v1internal:onboardUser', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'google-api-nodejs-client/9.15.1',
+            'X-Goog-Api-Client': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
+            'Client-Metadata': JSON.stringify(metadata)
+          },
+          body: JSON.stringify({ tierId, metadata })
+        });
+
+        if (!onboardRes.ok) {
+          const errText = await onboardRes.text();
+          logger.warn(`onboardUser failed for ${email} (non-fatal): ${errText}`);
+        }
+      } catch (onboardErr) {
+        logger.warn(`onboardUser error for ${email} (non-fatal): ${onboardErr.message}`);
       }
     }
 
-    if (!projectId) {
-      throw new Error('No Google Cloud Project found with Gemini Code Assist enabled.');
-    }
-
-    // 4. Onboard user
-    const onboardRes = await fetch('https://cloudcode-pa.googleapis.com/v1internal:onboardUser', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'google-api-nodejs-client/9.15.1',
-        'X-Goog-Api-Client': 'google-cloud-sdk vscode_cloudshelleditor/0.1',
-        'Client-Metadata': JSON.stringify(metadata)
-      },
-      body: JSON.stringify({ tierId, metadata })
-    });
-
-    if (!onboardRes.ok) {
-      const errText = await onboardRes.text();
-      throw new Error(`Google Cloud Code onboardUser failed: ${errText}`);
-    }
-
-    // Onboard user is typically fast, so we write to DB
+    // Always save to DB — account can still be used when API is enabled later
     await AntigravityAccount.upsert({
       email,
       name,
@@ -360,6 +379,10 @@ router.get('/oauth/google/callback', asyncHandler(async (req, res) => {
     session.status = 'completed';
     await antigravityOauthSessions.set(state, session);
 
+    const warningHtml = loadCodeAssistWarning
+      ? `<p style="color: #f59e0b; margin-top: 16px; padding: 12px; background: rgba(245,158,11,0.1); border-radius: 6px; border: 1px solid rgba(245,158,11,0.3);">⚠️ ${loadCodeAssistWarning}</p>`
+      : '';
+
     return res.send(`
       <html>
         <head>
@@ -367,14 +390,15 @@ router.get('/oauth/google/callback', asyncHandler(async (req, res) => {
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; padding: 50px; background-color: #0d1117; color: #c9d1d9; }
             h1 { color: #58a6ff; }
-            .card { background-color: #161b22; padding: 30px; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+            .card { background-color: #161b22; padding: 30px; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.5); max-width: 500px; }
           </style>
         </head>
         <body>
           <div class="card">
-            <h1>Liên kết thành công!</h1>
+            <h1>✅ Liên kết thành công!</h1>
             <p>Tài khoản <strong>${email}</strong> đã được thêm thành công vào hệ thống xoay vòng Antigravity.</p>
             <p>Dự án liên kết: <strong>${projectId}</strong></p>
+            ${warningHtml}
             <p style="color: #8b949e; margin-top: 20px;">Bạn có thể đóng cửa sổ này ngay bây giờ.</p>
           </div>
           <script>
