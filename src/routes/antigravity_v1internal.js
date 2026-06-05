@@ -44,10 +44,11 @@ async function authenticate(req, res, next) {
   }
 }
 
-router.use(authenticate);
+// NOTE: Do NOT use router.use(authenticate) here — this router is mounted at '/'
+// and would block ALL requests (health, login, static files, etc.)
 
 // We use path check since Express treats ':' as parameter prefix
-router.post(/^\/v1internal:(streamGenerateContent|generateContent)$/, async (req, res, next) => {
+router.post(/^\/v1internal:(streamGenerateContent|generateContent)$/, authenticate, async (req, res, next) => {
   const path = req.path; // e.g. "/v1internal:streamGenerateContent"
   const isStream = path.includes('streamGenerateContent');
   const action = isStream ? 'streamGenerateContent?alt=sse' : 'generateContent';
@@ -168,7 +169,7 @@ router.post(/^\/v1internal:(streamGenerateContent|generateContent)$/, async (req
   }
 });
 
-router.post(/^\/v1internal:(loadCodeAssist|onboardUser)$/, async (req, res, next) => {
+router.post(/^\/v1internal:(loadCodeAssist|onboardUser)$/, authenticate, async (req, res, next) => {
   const path = req.path;
   const action = path.includes('loadCodeAssist') ? 'loadCodeAssist' : 'onboardUser';
 
