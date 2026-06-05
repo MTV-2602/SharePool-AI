@@ -26,7 +26,7 @@ export default function UsagePage() {
 
   useEffect(() => { fetch(); }, []);
 
-  const maxVal = Math.max(1, ...data.map(d => d.requests || d.total || 0));
+  const maxVal = Math.max(1, ...data.map(d => (d.tokens_total || d.tokensTotal || ((d.tokens_in || d.tokensIn || 0) + (d.tokens_out || d.tokensOut || 0))) || 0));
 
   return (
     <div>
@@ -36,7 +36,7 @@ export default function UsagePage() {
             <Activity size={22} style={{ color: 'var(--green)' }} />
             Usage Analytics
           </h1>
-          <p>Thống kê request theo ngày (30 ngày gần nhất)</p>
+          <p>Thống kê lượng Token tiêu thụ theo ngày (30 ngày gần nhất)</p>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={fetch} disabled={loading}>
           <RefreshCw size={14} /> Làm mới
@@ -54,25 +54,70 @@ export default function UsagePage() {
         </div>
       ) : (
         <div className="card">
-          <div className="card-header">
-            <span className="card-title"><BarChart3 size={15} /> Biểu đồ requests theo ngày</span>
-            <span className="text-xs text-muted">Tổng: {data.reduce((s, d) => s + (d.requests || d.total || 0), 0).toLocaleString()} requests</span>
+          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <span className="card-title"><BarChart3 size={15} /> Biểu đồ Tokens theo ngày</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ width: 10, height: 10, background: 'var(--accent)', borderRadius: 2 }} />
+                <span className="text-muted">Tokens In: {data.reduce((s, d) => s + (d.tokens_in || d.tokensIn || 0), 0).toLocaleString()}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ width: 10, height: 10, background: 'var(--green)', borderRadius: 2 }} />
+                <span className="text-muted">Tokens Out: {data.reduce((s, d) => s + (d.tokens_out || d.tokensOut || 0), 0).toLocaleString()}</span>
+              </div>
+              <span className="text-xs text-muted" style={{ marginLeft: 8, borderLeft: '1px solid var(--border)', paddingLeft: 12 }}>
+                Tổng: {data.reduce((s, d) => s + (d.tokens_total || d.tokensTotal || ((d.tokens_in || d.tokensIn || 0) + (d.tokens_out || d.tokensOut || 0)) || 0), 0).toLocaleString()} tokens
+              </span>
+            </div>
           </div>
 
           {/* Bar chart */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 160, marginBottom: 8, padding: '0 4px', overflowX: 'auto' }}>
             {data.slice(-30).map((d, i) => {
-              const pct = (d.requests || d.total || 0) / maxVal;
+              const tIn = d.tokens_in || d.tokensIn || 0;
+              const tOut = d.tokens_out || d.tokensOut || 0;
+              const tTotal = d.tokens_total || d.tokensTotal || (tIn + tOut);
+              const pctIn = tIn / maxVal;
+              const pctOut = tOut / maxVal;
+              const heightIn = Math.max(tIn > 0 ? 3 : 0, pctIn * 130);
+              const heightOut = Math.max(tOut > 0 ? 3 : 0, pctOut * 130);
+
               return (
                 <div key={d.date || i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1, minWidth: 20 }}>
-                  <div title={`${d.date}: ${(d.requests || d.total || 0).toLocaleString()}`} style={{
-                    width: '100%', height: Math.max(2, pct * 130),
-                    background: `linear-gradient(to top, var(--accent), var(--accent-light))`,
-                    borderRadius: '3px 3px 0 0',
-                    transition: 'height 0.3s ease',
-                    cursor: 'default',
-                    opacity: 0.85
-                  }} />
+                  <div 
+                    title={`${d.date}\nTokens In: ${tIn.toLocaleString()}\nTokens Out: ${tOut.toLocaleString()}\nTổng: ${tTotal.toLocaleString()}`}
+                    style={{
+                      width: '100%',
+                      height: 130,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'flex-end',
+                      cursor: 'default',
+                    }}
+                  >
+                    {/* Tokens Out (Top Part) */}
+                    {tOut > 0 && (
+                      <div style={{
+                        width: '100%',
+                        height: heightOut,
+                        background: 'linear-gradient(to top, var(--green), #34d399)',
+                        borderRadius: tIn > 0 ? '3px 3px 0 0' : '3px',
+                        transition: 'height 0.3s ease',
+                        opacity: 0.9,
+                      }} />
+                    )}
+                    {/* Tokens In (Bottom Part) */}
+                    {tIn > 0 && (
+                      <div style={{
+                        width: '100%',
+                        height: heightIn,
+                        background: 'linear-gradient(to top, var(--accent), var(--accent-light))',
+                        borderRadius: tOut > 0 ? '0' : '3px 3px 0 0',
+                        transition: 'height 0.3s ease',
+                        opacity: 0.85,
+                      }} />
+                    )}
+                  </div>
                 </div>
               );
             })}

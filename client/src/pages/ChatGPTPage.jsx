@@ -465,7 +465,7 @@ function ChatGPTPool() {
                   <th>Tên</th>
                   <th>Trạng thái</th>
                   <th>Quotas</th>
-                  <th>Requests</th>
+                  <th>Hoạt động cuối</th>
                   <th style={{ textAlign: 'right' }}>Hành động</th>
                 </tr>
               </thead>
@@ -537,7 +537,9 @@ function ChatGPTPool() {
                     <td>
                       <AccountQuotaCell accountName={acc.name} sessionToken={acc.sessionToken} />
                     </td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{acc.totalRequests ?? 0}</td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                      {acc.lastUsedAt ? new Date(acc.lastUsedAt).toLocaleString('vi-VN') : 'Chưa sử dụng'}
+                    </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         {editRow === acc.sessionToken ? (

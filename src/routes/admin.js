@@ -298,6 +298,7 @@ router.get('/accounts', asyncHandler(async (req, res) => {
       hasToken: !!token,
       totalRequests: acc.totalRequests || acc.total_requests || 0,
       createdAt: acc.createdAt || acc.created_at,
+      lastUsedAt: acc.lastUsedAt || acc.last_used_at,
     };
   });
 
