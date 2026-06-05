@@ -1,0 +1,315 @@
+import { useState, useEffect, useCallback } from 'react';
+import { Key, Plus, Trash2, RefreshCw, Power, RotateCcw, Edit2, Check, X, Copy } from 'lucide-react';
+import api from '../lib/api';
+
+export default function AntigravityApiKeysPage() {
+  const [keys, setKeys] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [editRow, setEditRow] = useState(null);
+  const [editVals, setEditVals] = useState({});
+  const [copied, setCopied] = useState(null);
+
+  const fetchKeys = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/antigravity-admin-api/keys');
+      setKeys(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Lỗi tải API keys.' });
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchKeys(); }, [fetchKeys]);
+
+  const toast = (text, type = 'success') => {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 3000);
+  };
+
+  const copyKey = (keyVal) => {
+    navigator.clipboard.writeText(keyVal).catch(() => {});
+    setCopied(keyVal);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Bạn có muốn xóa API key này?')) return;
+    try {
+      await api.delete(`/antigravity-admin-api/keys/${id}`);
+      toast('Đã xóa API key.');
+      fetchKeys();
+    } catch (e) {
+      toast('Xóa thất bại.', 'error');
+    }
+  };
+
+  const handleToggle = async (id, currentState) => {
+    try {
+      const endpoint = currentState 
+        ? `/antigravity-admin-api/keys/${id}/disable` 
+        : `/antigravity-admin-api/keys/${id}/enable`;
+      await api.post(endpoint);
+      fetchKeys();
+    } catch (e) {
+      toast('Lỗi cập nhật trạng thái.', 'error');
+    }
+  };
+
+  const handleReset = async (id) => {
+    if (!window.confirm('Reset usage (quota_used) về 0?')) return;
+    try {
+      await api.post(`/antigravity-admin-api/keys/${id}/reset`);
+      toast('Đã reset usage.');
+      fetchKeys();
+    } catch (e) {
+      toast('Reset thất bại.', 'error');
+    }
+  };
+
+  const startEdit = (k) => {
+    setEditRow(k.id);
+    setEditVals({ name: k.name, quotaTotal: k.quotaTotal || k.quota_total, note: k.note || '' });
+  };
+
+  const saveEdit = async (id) => {
+    try {
+      await api.patch(`/antigravity-admin-api/keys/${id}`, editVals);
+      toast('Đã cập nhật.');
+      setEditRow(null);
+      fetchKeys();
+    } catch (e) {
+      toast('Lỗi cập nhật.', 'error');
+    }
+  };
+
+  const usagePct = (k) => {
+    const used = k.quotaUsed || k.quota_used || 0;
+    const total = k.quotaTotal || k.quota_total || 1;
+    return Math.min(100, Math.round((used / total) * 100));
+  };
+
+  return (
+    <div>
+      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Key size={22} style={{ color: '#e0a82e' }} />
+            AntiGravity API Keys
+          </h1>
+          <p>Quản lý các phím khách hàng cấp quyền gọi Gemini Code Assist</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost btn-sm" onClick={fetchKeys} disabled={loading}>
+            <RefreshCw size={14} className={loading ? 'spin-anim' : ''} /> Làm mới
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)} style={{ backgroundColor: '#e0a82e', borderColor: '#e0a82e' }}>
+            <Plus size={14} /> Tạo Key mới
+          </button>
+        </div>
+      </div>
+
+      {msg && (
+        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: 14 }}>
+          {msg.text}
+          <button style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }} onClick={() => setMsg(null)}>×</button>
+        </div>
+      )}
+
+      {/* Stats summary */}
+      <div className="stat-grid" style={{ marginBottom: 16 }}>
+        {[
+          { label: 'Tổng keys', value: keys.length },
+          { label: 'Đang hoạt động', value: keys.filter(k => k.isActive || k.is_active).length, color: 'var(--green)' },
+          { label: 'Tổng tokens tiêu thụ', value: keys.reduce((s, k) => s + Number(k.quotaUsed || k.quota_used || 0), 0).toLocaleString(), color: '#e0a82e' },
+        ].map(s => (
+          <div key={s.label} className="stat-card">
+            <div className="stat-card-value" style={{ color: s.color || 'var(--text-primary)', fontSize: '1.4rem' }}>{s.value}</div>
+            <div className="stat-card-label">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
+        ) : (
+          <div className="table-container" style={{ borderRadius: 0, border: 'none' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Tên</th>
+                  <th>Key</th>
+                  <th>Trạng thái</th>
+                  <th>Tokens đã dùng / Tổng quota</th>
+                  <th>Ngày tạo</th>
+                  <th style={{ textAlign: 'right' }}>Hành động</th>
+                </tr>
+              </thead>
+              <tbody>
+                {keys.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                      Chưa có API key nào.
+                    </td>
+                  </tr>
+                ) : keys.map(k => {
+                  const isActive = k.isActive || k.is_active;
+                  const pct = usagePct(k);
+                  const used = k.quotaUsed || k.quota_used || 0;
+                  const total = k.quotaTotal || k.quota_total || 0;
+                  return (
+                    <tr key={k.id} style={{ opacity: isActive ? 1 : 0.5 }}>
+                      <td>
+                        {editRow === k.id ? (
+                          <input value={editVals.name} onChange={e => setEditVals(v => ({ ...v, name: e.target.value }))}
+                            style={{ width: 130, padding: '4px 8px', fontSize: '0.85rem' }} />
+                        ) : (
+                          <span style={{ fontWeight: 600 }}>{k.name}</span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <code style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            {k.key?.slice(0, 20)}...
+                          </code>
+                          <button
+                            className="btn btn-ghost btn-sm btn-icon"
+                            title={copied === k.key ? 'Đã copy!' : 'Copy'}
+                            onClick={() => copyKey(k.key)}
+                            style={{ padding: '3px' }}
+                          >
+                            {copied === k.key
+                              ? <Check size={12} style={{ color: 'var(--green)' }} />
+                              : <Copy size={12} />}
+                          </button>
+                        </div>
+                      </td>
+                      <td>
+                        {isActive
+                          ? <span className="badge badge-green">Active</span>
+                          : <span className="badge badge-gray">Disabled</span>}
+                      </td>
+                      <td style={{ minWidth: 160 }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                          {used.toLocaleString()} / {total >= 9999999999 ? '∞' : total.toLocaleString()}
+                        </div>
+                        <div style={{ height: 4, background: 'var(--bg-elevated)', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{
+                            height: '100%', width: `${pct}%`,
+                            background: pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--yellow)' : '#e0a82e',
+                            borderRadius: 2, transition: 'width 0.3s ease'
+                          }} />
+                        </div>
+                      </td>
+                      <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        {k.createdAt || k.created_at ? new Date(k.createdAt || k.created_at).toLocaleDateString('vi-VN') : '—'}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
+                          {editRow === k.id ? (
+                            <>
+                              <button className="btn btn-success btn-sm btn-icon" onClick={() => saveEdit(k.id)}><Check size={13} /></button>
+                              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditRow(null)}><X size={13} /></button>
+                            </>
+                          ) : (
+                            <>
+                              <button className="btn btn-ghost btn-sm btn-icon" title="Sửa" onClick={() => startEdit(k)}><Edit2 size={13} /></button>
+                              <button className="btn btn-ghost btn-sm btn-icon" title={isActive ? 'Tắt' : 'Bật'} onClick={() => handleToggle(k.id, isActive)}>
+                                <Power size={13} style={{ color: isActive ? 'var(--green)' : 'var(--text-muted)' }} />
+                              </button>
+                              <button className="btn btn-ghost btn-sm btn-icon" title="Reset quota" onClick={() => handleReset(k.id)}><RotateCcw size={13} /></button>
+                              <button className="btn btn-ghost btn-sm btn-icon" title="Xóa" onClick={() => handleDelete(k.id)}><Trash2 size={13} style={{ color: 'var(--red)' }} /></button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Create Modal */}
+      {showCreate && <CreateKeyModal onClose={() => setShowCreate(false)} onCreated={() => { fetchKeys(); toast('Tạo key thành công!'); }} />}
+    </div>
+  );
+}
+
+function CreateKeyModal({ onClose, onCreated }) {
+  const [form, setForm] = useState({ name: '', quotaTotal: '', note: '' });
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleCreate = async () => {
+    if (!form.name.trim()) return;
+    setLoading(true);
+    try {
+      const res = await api.post('/antigravity-admin-api/keys', {
+        name: form.name.trim(),
+        quotaTotal: form.quotaTotal ? parseInt(form.quotaTotal) : undefined,
+        note: form.note.trim()
+      });
+      setResult({ ok: true, key: res.data });
+      onCreated();
+    } catch (e) {
+      setResult({ ok: false, error: e.response?.data?.error?.message || e.message || 'Tạo thất bại.' });
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title"><Key size={16} /> Tạo API Key mới</span>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={onClose}><X size={15} /></button>
+        </div>
+        <div style={{ display: 'grid', gap: 14 }}>
+          <div className="form-group">
+            <label>Tên *</label>
+            <input placeholder="VD: Client Cursor 1" value={form.name} onChange={e => setForm(v => ({ ...v, name: e.target.value }))} autoFocus />
+          </div>
+          <div className="form-group">
+            <label>Quota tối đa (tokens - để trống = không giới hạn)</label>
+            <input type="number" placeholder="VD: 100000000" value={form.quotaTotal} onChange={e => setForm(v => ({ ...v, quotaTotal: e.target.value }))} />
+          </div>
+          <div className="form-group">
+            <label>Ghi chú</label>
+            <input placeholder="Mô tả..." value={form.note} onChange={e => setForm(v => ({ ...v, note: e.target.value }))} />
+          </div>
+        </div>
+
+        {result && (
+          <div style={{ margin: '14px 0' }}>
+            {result.ok ? (
+              <div className="alert alert-success">
+                <div>✅ Tạo thành công!</div>
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ marginBottom: 4, display: 'block' }}>API Key của bạn (copy và lưu lại):</label>
+                  <code style={{ display: 'block', wordBreak: 'break-all', fontSize: '0.8rem', padding: 8, background: 'var(--bg-elevated)', borderRadius: 6 }}>
+                    {result.key.key}
+                  </code>
+                </div>
+              </div>
+            ) : (
+              <div className="alert alert-error">❌ {result.error}</div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button className="btn btn-ghost" onClick={onClose}>{result?.ok ? 'Đóng' : 'Hủy'}</button>
+          {!result?.ok && (
+            <button className="btn btn-primary" onClick={handleCreate} style={{ backgroundColor: '#e0a82e', borderColor: '#e0a82e' }} disabled={loading || !form.name.trim()}>
+              {loading ? <><span className="spinner" /> Đang tạo...</> : <><Key size={14} /> Tạo Key</>}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

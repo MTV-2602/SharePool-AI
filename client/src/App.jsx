@@ -9,9 +9,19 @@ import SettingsPage from './pages/SettingsPage';
 import TelegramPage from './pages/TelegramPage';
 import UsagePage from './pages/UsagePage';
 
+// Antigravity Pages
+import AntigravityLoginPage from './pages/AntigravityLoginPage';
+import AntigravityDashboardPage from './pages/AntigravityDashboardPage';
+import AntigravityAccountsPage from './pages/AntigravityAccountsPage';
+import AntigravityApiKeysPage from './pages/AntigravityApiKeysPage';
+import AntigravityUsagePage from './pages/AntigravityUsagePage';
+
 function RequireAuth({ children }) {
   const key = localStorage.getItem('adminKey');
-  if (!key) return <Navigate to="/login" replace />;
+  if (!key) {
+    const isAntigravity = window.location.pathname.startsWith('/antigravity');
+    return <Navigate to={isAntigravity ? "/antigravity/login" : "/login"} replace />;
+  }
   return children;
 }
 
@@ -19,6 +29,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* CodeX Portal Routes */}
         <Route path="/login" element={<LoginPage />} />
         <Route
           path="/"
@@ -37,6 +48,24 @@ export default function App() {
           <Route path="usage" element={<UsagePage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
+
+        {/* AntiGravity Portal Routes */}
+        <Route path="/antigravity/login" element={<AntigravityLoginPage />} />
+        <Route
+          path="/antigravity"
+          element={
+            <RequireAuth>
+              <Layout />
+            </RequireAuth>
+          }
+        >
+          <Route index element={<Navigate to="/antigravity/dashboard" replace />} />
+          <Route path="dashboard" element={<AntigravityDashboardPage />} />
+          <Route path="accounts" element={<AntigravityAccountsPage />} />
+          <Route path="api-keys" element={<AntigravityApiKeysPage />} />
+          <Route path="usage" element={<AntigravityUsagePage />} />
+        </Route>
+
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

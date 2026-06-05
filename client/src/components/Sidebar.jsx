@@ -1,12 +1,12 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Key, Mail, Bot,
   Settings, LogOut, Zap, ChevronRight,
-  Send, Activity
+  Send, Activity, ArrowLeftRight
 } from 'lucide-react';
 import './Sidebar.css';
 
-const NAV = [
+const NAV_CODEX = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/hotmail', icon: Mail, label: 'Hotmail' },
   { to: '/chatgpt', icon: Bot, label: 'ChatGPT Pool' },
@@ -16,30 +16,57 @@ const NAV = [
   { to: '/settings', icon: Settings, label: 'Cài đặt' },
 ];
 
+const NAV_ANTIGRAVITY = [
+  { to: '/antigravity/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/antigravity/accounts', icon: Bot, label: 'Google Pool' },
+  { to: '/antigravity/api-keys', icon: Key, label: 'API Keys' },
+  { to: '/antigravity/usage', icon: Activity, label: 'Usage' },
+];
+
 export default function Sidebar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const role = localStorage.getItem('role') || 'admin';
+  const isAntigravity = location.pathname.startsWith('/antigravity');
 
   const handleLogout = () => {
     localStorage.removeItem('adminKey');
     localStorage.removeItem('role');
-    navigate('/login');
+    if (isAntigravity) {
+      navigate('/antigravity/login');
+    } else {
+      navigate('/login');
+    }
   };
 
-  const filteredNav = NAV.filter(item => {
+  const currentNav = isAntigravity ? NAV_ANTIGRAVITY : NAV_CODEX;
+
+  const filteredNav = currentNav.filter(item => {
     if (role === 'user') {
-      return item.to === '/dashboard' || item.to === '/usage';
+      return item.to.endsWith('dashboard') || item.to.endsWith('usage');
     }
     return true;
   });
 
+  const handleTogglePortal = () => {
+    if (isAntigravity) {
+      navigate('/dashboard');
+    } else {
+      navigate('/antigravity/dashboard');
+    }
+  };
+
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="brand-icon">
+        <div className="brand-icon" style={{ backgroundColor: isAntigravity ? '#e0a82e' : undefined }}>
           <Zap size={18} />
         </div>
-        <span className="brand-name">{role === 'user' ? 'CodeX Portal' : 'CodeX Admin'}</span>
+        <span className="brand-name">
+          {isAntigravity 
+            ? (role === 'user' ? 'AntiGravity Portal' : 'AntiGravity Admin')
+            : (role === 'user' ? 'CodeX Portal' : 'CodeX Admin')}
+        </span>
       </div>
 
       <nav className="sidebar-nav">
@@ -56,10 +83,18 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <button className="sidebar-logout" onClick={handleLogout}>
-        <LogOut size={16} />
-        <span>Đăng xuất</span>
-      </button>
+      <div className="sidebar-footer">
+        {role === 'admin' && (
+          <button className="sidebar-toggle-portal" onClick={handleTogglePortal} style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '10px', padding: '10px 12px', border: 'none', background: 'transparent', color: '#8b949e', fontSize: '13px', cursor: 'pointer', borderRadius: '6px', marginBottom: '8px', textAlign: 'left' }}>
+            <ArrowLeftRight size={15} />
+            <span>{isAntigravity ? 'Chuyển sang CodeX' : 'Chuyển sang AntiGravity'}</span>
+          </button>
+        )}
+        <button className="sidebar-logout" onClick={handleLogout}>
+          <LogOut size={16} />
+          <span>Đăng xuất</span>
+        </button>
+      </div>
     </aside>
   );
 }

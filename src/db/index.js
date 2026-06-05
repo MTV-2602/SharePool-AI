@@ -110,7 +110,10 @@ const KEY_MAPS = {
   quota_resets_at: 'quotaResetsAt',
   last_used_at: 'lastUsedAt',
   code_verifier: 'codeVerifier',
-  redirect_uri: 'redirectUri'
+  redirect_uri: 'redirectUri',
+  access_token: 'accessToken',
+  refresh_token: 'refreshToken',
+  project_id: 'projectId'
 };
 
 function mapRowKeys(row) {
@@ -176,6 +179,65 @@ async function initDB() {
       created_at    BIGINT NOT NULL
     )
   `);
+
+  // Antigravity tables
+  await _pgPool.query(`
+    CREATE TABLE IF NOT EXISTS antigravity_accounts (
+      id               SERIAL PRIMARY KEY,
+      name             TEXT NOT NULL,
+      email            TEXT UNIQUE,
+      access_token     TEXT NOT NULL,
+      refresh_token    TEXT,
+      project_id       TEXT,
+      is_active        INTEGER DEFAULT 1,
+      last_error       TEXT,
+      quota_resets_at  TIMESTAMP,
+      last_used_at     TIMESTAMP,
+      created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await _pgPool.query(`
+    CREATE TABLE IF NOT EXISTS antigravity_api_keys (
+      id          SERIAL PRIMARY KEY,
+      key         TEXT UNIQUE NOT NULL,
+      name        TEXT NOT NULL DEFAULT 'Unnamed',
+      quota_total BIGINT NOT NULL DEFAULT 100000000,
+      quota_used  BIGINT NOT NULL DEFAULT 0,
+      expires_at  TEXT,
+      is_active   INTEGER DEFAULT 1,
+      note        TEXT DEFAULT '',
+      created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await _pgPool.query(`
+    CREATE TABLE IF NOT EXISTS antigravity_usage_logs (
+      id           SERIAL PRIMARY KEY,
+      api_key      TEXT NOT NULL,
+      model        TEXT DEFAULT 'gemini-2.0-flash',
+      tokens_in    INTEGER DEFAULT 0,
+      tokens_out   INTEGER DEFAULT 0,
+      tokens_total INTEGER DEFAULT 0,
+      req_id       TEXT,
+      created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await _pgPool.query(`
+    CREATE TABLE IF NOT EXISTS antigravity_pending_oauth_sessions (
+      state         TEXT PRIMARY KEY,
+      code_verifier TEXT NOT NULL,
+      redirect_uri  TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      email         TEXT DEFAULT '',
+      error         TEXT DEFAULT '',
+      created_at    BIGINT NOT NULL
+    )
+  `);
+
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS last_error TEXT');
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT CURRENT_TIMESTAMP');
   // Giai đoạn 1: thêm cột quản lý quota cho scale

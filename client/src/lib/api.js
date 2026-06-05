@@ -20,13 +20,17 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    const isLoginPath = window.location.pathname === '/login';
-    const isAuthRequest = err.config?.url?.includes('/user-api/login') || err.config?.url?.includes('/admin-api/stats');
+    const isLoginPath = window.location.pathname === '/login' || window.location.pathname === '/antigravity/login';
+    const isAuthRequest = err.config?.url?.includes('/login') || err.config?.url?.includes('/stats');
 
     if ((err.response?.status === 401 || err.response?.status === 403) && !isLoginPath && !isAuthRequest) {
       localStorage.removeItem('adminKey');
       localStorage.removeItem('role');
-      window.location.href = '/login';
+      if (window.location.pathname.startsWith('/antigravity')) {
+        window.location.href = '/antigravity/login';
+      } else {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(err);
   }

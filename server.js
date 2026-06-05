@@ -93,7 +93,10 @@ const clientDist = path.join(__dirname, 'client', 'dist');
 app.use(express.static(clientDist));
 
 // ── API routes ────────────────────────────────────────────────
+app.use('/v1/antigravity',    require('./src/routes/antigravity_proxy'));
 app.use('/v1',        require('./src/routes/proxy'));
+app.use('/antigravity-admin-api', require('./src/routes/antigravity_admin'));
+app.use('/antigravity-user-api',  require('./src/routes/antigravity_user'));
 app.use('/admin-api/hotmail', require('./src/routes/hotmail').adminRouter);
 app.use('/admin-api', require('./src/routes/admin'));
 app.use('/user-api',  require('./src/routes/user'));
@@ -111,7 +114,7 @@ app.get('/health', (_, res) => res.json({
 
 // ── SPA fallback — serve React index.html for all non-API routes ──
 app.use((req, res, next) => {
-  const isApi = /^\/(admin-api|user-api|api|v1|health)($|\/)/.test(req.path);
+  const isApi = /^\/(admin-api|user-api|antigravity-admin-api|antigravity-user-api|api|v1|health)($|\/)/.test(req.path);
   if (isApi) return next();
   res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
 });
