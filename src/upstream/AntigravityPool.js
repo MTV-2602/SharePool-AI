@@ -310,7 +310,7 @@ class AntigravityPool {
         const deriveSessionId = (key) => {
           if (!key) return crypto.randomUUID();
           const hash = crypto.createHash("sha256").update(key).digest("hex");
-          return hash.substring(0, 32);
+          return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
         };
         envelope.request.sessionId = deriveSessionId(account.email);
       }
