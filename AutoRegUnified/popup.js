@@ -2,7 +2,7 @@ const DEFAULT_BACKEND = "https://vinhcousera.vercel.app";
 const DEFAULT_EXTENSION_TOKEN =
   "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
 const DEFAULT_ACCOUNT_MODE = "gpt_free";
-const DEFAULT_FREE_BATCH_TARGET = 3;
+const DEFAULT_FREE_BATCH_TARGET = 1;
 
 const $ = (id) => document.getElementById(id);
 
@@ -318,8 +318,14 @@ async function refreshData() {
 
 function syncPasswordMode() {
   refs.password.readOnly = refs.autoPassword.checked;
-  if (refs.autoPassword.checked && !refs.password.value.trim()) {
-    refs.password.value = generateStrongPassword();
+  if (refs.autoPassword.checked) {
+    if (!refs.password.value.trim() || refs.password.value === "helloem1@@@@@") {
+      refs.password.value = generateStrongPassword();
+    }
+  } else {
+    if (!refs.password.value.trim()) {
+      refs.password.value = "helloem1@@@@@";
+    }
   }
 }
 
@@ -660,8 +666,8 @@ async function boot() {
     "manualAutoPush"
   ]);
 
-  refs.autoPassword.checked = data.autoPassword !== false;
-  refs.password.value = data.password || generateStrongPassword();
+  refs.autoPassword.checked = data.autoPassword === true;
+  refs.password.value = data.password || "helloem1@@@@@";
   refs.mailSite.value = data.mailSite || "hotmail_backend";
   if (refs.accountMode) refs.accountMode.value = normalizeAccountMode(data.accountMode || DEFAULT_ACCOUNT_MODE);
   if (refs.freeBatchTarget) refs.freeBatchTarget.value = normalizeFreeBatchTarget(data.freeBatchTarget || DEFAULT_FREE_BATCH_TARGET);
