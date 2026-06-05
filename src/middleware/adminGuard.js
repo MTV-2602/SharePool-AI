@@ -18,7 +18,11 @@ const { AppError } = require('./errorHandler');
 function adminGuard(req, res, next) {
   // Bỏ qua kiểm tra admin key đối với callback OAuth vì trình duyệt chuyển hướng trực tiếp (GET)
   // và xác thực được bảo mật qua đối chiếu state ngẫu nhiên trong bộ nhớ đệm
-  if (req.path === '/oauth/codex/callback' || (req.originalUrl && req.originalUrl.includes('/oauth/codex/callback'))) {
+  if (
+    req.path === '/oauth/codex/callback' ||
+    req.path === '/oauth/google/callback' ||
+    (req.originalUrl && (req.originalUrl.includes('/oauth/codex/callback') || req.originalUrl.includes('/oauth/google/callback')))
+  ) {
     return next();
   }
 
