@@ -77,6 +77,10 @@ const config = {
                                .split(',')
                                .map(id => parseInt(id.trim(), 10))
                                .filter(id => !isNaN(id)),
+
+  // AntiGravity Google OAuth credentials
+  ANTIGRAVITY_CLIENT_ID:     optional('ANTIGRAVITY_CLIENT_ID', '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com'),
+  ANTIGRAVITY_CLIENT_SECRET: optional('ANTIGRAVITY_CLIENT_SECRET', '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'),
 };
 
 // Warn if using default admin key

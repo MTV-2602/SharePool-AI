@@ -7,13 +7,16 @@ export default function SettingsPage() {
     ADMIN_KEY: '',
     TELEGRAM_BOT_TOKEN: '',
     COURSERA_SHEET_SCRIPT_URL: '',
-    SITE_NAME: ''
+    SITE_NAME: '',
+    ANTIGRAVITY_CLIENT_ID: '',
+    ANTIGRAVITY_CLIENT_SECRET: ''
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const [showKey, setShowKey] = useState(false);
   const [showTg, setShowTg] = useState(false);
+  const [showAgSecret, setShowAgSecret] = useState(false);
 
   useEffect(() => {
     api.get('/admin-api/settings')
@@ -23,7 +26,9 @@ export default function SettingsPage() {
           ADMIN_KEY: s.ADMIN_KEY || '',
           TELEGRAM_BOT_TOKEN: s.TELEGRAM_BOT_TOKEN || '',
           COURSERA_SHEET_SCRIPT_URL: s.COURSERA_SHEET_SCRIPT_URL || '',
-          SITE_NAME: s.SITE_NAME || ''
+          SITE_NAME: s.SITE_NAME || '',
+          ANTIGRAVITY_CLIENT_ID: s.ANTIGRAVITY_CLIENT_ID || '',
+          ANTIGRAVITY_CLIENT_SECRET: s.ANTIGRAVITY_CLIENT_SECRET || ''
         });
       })
       .catch(() => setMsg({ type: 'error', text: 'Lỗi tải settings.' }))
@@ -151,6 +156,45 @@ export default function SettingsPage() {
               placeholder="VD: CodeX Portal"
             />
           </div>
+        </div>
+
+        {/* AntiGravity Google OAuth Settings */}
+        <div className="card" style={{ border: '1px solid rgba(224, 168, 46, 0.2)' }}>
+          <div className="card-header">
+            <span className="card-title" style={{ color: '#e0a82e' }}>🪐 AntiGravity Google OAuth (Gemini Code Assist)</span>
+          </div>
+          <div className="form-group">
+            <label>Google Client ID</label>
+            <input
+              id="settings-antigravity-client-id"
+              value={form.ANTIGRAVITY_CLIENT_ID}
+              onChange={e => set('ANTIGRAVITY_CLIENT_ID', e.target.value)}
+              placeholder="1234567890-xyz.apps.googleusercontent.com..."
+            />
+          </div>
+          <div className="form-group" style={{ marginTop: 12 }}>
+            <label>Google Client Secret</label>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input
+                id="settings-antigravity-client-secret"
+                type={showAgSecret ? 'text' : 'password'}
+                value={form.ANTIGRAVITY_CLIENT_SECRET}
+                onChange={e => set('ANTIGRAVITY_CLIENT_SECRET', e.target.value)}
+                placeholder="GOCSPX-..."
+                style={{ paddingRight: 40 }}
+              />
+              <button
+                type="button"
+                style={{ position: 'absolute', right: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                onClick={() => setShowAgSecret(!showAgSecret)}
+              >
+                {showAgSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 8, display: 'block' }}>
+            ℹ️ Cấu hình thông tin ứng dụng Google OAuth để tự động liên kết tài khoản và onboarding dự án xoay vòng phím Google Gemini.
+          </span>
         </div>
 
         <button

@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const fetch = require('node-fetch');
 const crypto = require('crypto');
+const config = require('../config');
 
 const adminGuard = require('../middleware/adminGuard');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
@@ -195,7 +196,7 @@ router.get('/oauth/google/authorize', asyncHandler(async (req, res) => {
     createdAt: Date.now()
   });
 
-  const clientId = process.env.ANTIGRAVITY_CLIENT_ID || '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
+  const clientId = config.ANTIGRAVITY_CLIENT_ID || '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
   const scopes = [
     'https://www.googleapis.com/auth/cloud-platform',
     'https://www.googleapis.com/auth/userinfo.email',
@@ -245,8 +246,8 @@ router.get('/oauth/google/callback', asyncHandler(async (req, res) => {
   await antigravityOauthSessions.set(state, session);
 
   try {
-    const clientId = process.env.ANTIGRAVITY_CLIENT_ID || '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
-    const clientSecret = process.env.ANTIGRAVITY_CLIENT_SECRET || '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';
+    const clientId = config.ANTIGRAVITY_CLIENT_ID || '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
+    const clientSecret = config.ANTIGRAVITY_CLIENT_SECRET || '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';
 
     // 1. Exchange authorization code for Google access/refresh tokens
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {

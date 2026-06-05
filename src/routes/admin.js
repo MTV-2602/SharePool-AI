@@ -661,14 +661,16 @@ router.get('/settings', asyncHandler(async (req, res) => {
       ADMIN_KEY: config.ADMIN_KEY,
       TELEGRAM_BOT_TOKEN: config.TELEGRAM_BOT_TOKEN,
       COURSERA_SHEET_SCRIPT_URL: config.COURSERA_SHEET_SCRIPT_URL,
-      SITE_NAME: config.SITE_NAME
+      SITE_NAME: config.SITE_NAME,
+      ANTIGRAVITY_CLIENT_ID: config.ANTIGRAVITY_CLIENT_ID,
+      ANTIGRAVITY_CLIENT_SECRET: config.ANTIGRAVITY_CLIENT_SECRET
     }
   });
 }));
 
 // POST /admin-api/settings — Save and hot-reload config settings
 router.post('/settings', asyncHandler(async (req, res) => {
-  const { ADMIN_KEY, TELEGRAM_BOT_TOKEN, COURSERA_SHEET_SCRIPT_URL, SITE_NAME } = req.body;
+  const { ADMIN_KEY, TELEGRAM_BOT_TOKEN, COURSERA_SHEET_SCRIPT_URL, SITE_NAME, ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET } = req.body;
 
   let current = {};
   if (fs.existsSync(config.SETTINGS_FILE)) {
@@ -682,6 +684,8 @@ router.post('/settings', asyncHandler(async (req, res) => {
   if (TELEGRAM_BOT_TOKEN !== undefined) current.TELEGRAM_BOT_TOKEN = TELEGRAM_BOT_TOKEN.trim();
   if (COURSERA_SHEET_SCRIPT_URL !== undefined) current.COURSERA_SHEET_SCRIPT_URL = COURSERA_SHEET_SCRIPT_URL.trim();
   if (SITE_NAME !== undefined) current.SITE_NAME = SITE_NAME.trim();
+  if (ANTIGRAVITY_CLIENT_ID !== undefined) current.ANTIGRAVITY_CLIENT_ID = ANTIGRAVITY_CLIENT_ID.trim();
+  if (ANTIGRAVITY_CLIENT_SECRET !== undefined) current.ANTIGRAVITY_CLIENT_SECRET = ANTIGRAVITY_CLIENT_SECRET.trim();
 
   // Save changes
   fs.writeFileSync(config.SETTINGS_FILE, JSON.stringify(current, null, 2), 'utf-8');
@@ -691,6 +695,8 @@ router.post('/settings', asyncHandler(async (req, res) => {
   if (current.TELEGRAM_BOT_TOKEN) config.TELEGRAM_BOT_TOKEN = current.TELEGRAM_BOT_TOKEN;
   if (current.COURSERA_SHEET_SCRIPT_URL) config.COURSERA_SHEET_SCRIPT_URL = current.COURSERA_SHEET_SCRIPT_URL;
   if (current.SITE_NAME) config.SITE_NAME = current.SITE_NAME;
+  if (current.ANTIGRAVITY_CLIENT_ID) config.ANTIGRAVITY_CLIENT_ID = current.ANTIGRAVITY_CLIENT_ID;
+  if (current.ANTIGRAVITY_CLIENT_SECRET) config.ANTIGRAVITY_CLIENT_SECRET = current.ANTIGRAVITY_CLIENT_SECRET;
 
   // Auto-register Vercel Webhook if token changes
   if (TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_TOKEN.trim() !== '') {
