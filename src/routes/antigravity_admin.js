@@ -188,7 +188,9 @@ router.delete('/accounts/:id', asyncHandler(async (req, res) => {
 // Google OAuth link generator for Admin Dashboard
 router.get('/oauth/google/authorize', asyncHandler(async (req, res) => {
   const state = crypto.randomBytes(32).toString('hex');
-  const redirectUri = `${req.protocol}://${req.get('host')}/antigravity-admin-api/oauth/google/callback`;
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.headers['x-forwarded-host'] || req.get('host') || 'vinhcousera.vercel.app';
+  const redirectUri = `${proto}://${host}/antigravity-admin-api/oauth/google/callback`;
   
   await antigravityOauthSessions.set(state, {
     redirectUri,
