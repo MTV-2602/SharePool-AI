@@ -281,6 +281,127 @@ class AntigravityPool {
   }
 
   /**
+   * Proxies a raw Gemini/Antigravity request (e.g. from VS Code extension) with pool rotation
+   */
+  async proxyRequestWithRotation(action, reqBody, stream, triedEmails = new Set()) {
+    let account;
+    try {
+      account = await this.getNext();
+    } catch (err) {
+      throw err;
+    }
+
+    if (triedEmails.has(account.email)) {
+      throw new Error('All available Antigravity accounts returned errors for this request');
+    }
+    triedEmails.add(account.email);
+
+    // Increment in-flight count
+    this._inFlight.set(account.email, (this._inFlight.get(account.email) || 0) + 1);
+
+    try {
+      const envelope = { ...reqBody };
+      if (envelope.project) {
+        envelope.project = account.projectId;
+      }
+      if (envelope.request) {
+        envelope.request = { ...envelope.request };
+        const crypto = require('crypto');
+        const deriveSessionId = (key) => {
+          if (!key) return crypto.randomUUID();
+          const hash = crypto.createHash("sha256").update(key).digest("hex");
+          return hash.substring(0, 32);
+        };
+        envelope.request.sessionId = deriveSessionId(account.email);
+      }
+
+      const baseUrls = [
+        'https://daily-cloudcode-pa.googleapis.com',
+        'https://cloudcode-pa.googleapis.com'
+      ];
+
+      let lastError = null;
+      let response = null;
+
+      for (const baseUrl of baseUrls) {
+        const url = `${baseUrl}/v1internal:${action}`;
+        try {
+          logger.debug(`[${account.email}] Forwarding proxy request to ${url}`);
+          response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${account.accessToken}`,
+              'User-Agent': 'antigravity/1.107.0',
+              'x-request-source': 'local',
+              'X-Machine-Session-Id': envelope.request?.sessionId || '',
+              'Accept': stream ? 'text/event-stream' : 'application/json'
+            },
+            body: JSON.stringify(envelope),
+            timeout: 60000
+          });
+
+          if (response.ok) {
+            break;
+          }
+
+          const status = response.status;
+          const bodyText = await response.text();
+          logger.warn(`[${account.email}] Proxy URL failed with status ${status}: ${bodyText}`);
+          lastError = { status, bodyText };
+        } catch (e) {
+          logger.warn(`[${account.email}] Failed connecting to ${baseUrl}: ${e.message}`);
+          lastError = e;
+        }
+      }
+
+      if (!response || !response.ok) {
+        const status = lastError?.status || 502;
+        const errText = lastError?.bodyText || lastError?.message || 'Upstream connection failed';
+
+        if (status === 401) {
+          logger.warn(`[${account.email}] Token expired (401). Retrying with token refresh.`);
+          try {
+            await this.refreshAccessToken(account);
+            this._inFlight.set(account.email, Math.max(0, (this._inFlight.get(account.email) || 1) - 1));
+            triedEmails.delete(account.email);
+            return await this.proxyRequestWithRotation(action, reqBody, stream, triedEmails);
+          } catch (refreshErr) {
+            this.markInvalid(account.email, `Token refresh failed: ${refreshErr.message}`);
+          }
+        } else if (status === 429) {
+          if (errText.includes('quota') || errText.toLowerCase().includes('exhausted') || errText.includes('limit')) {
+            this.markQuotaExhausted(account.email, COOLDOWN_QUOTA_DEFAULT);
+          } else {
+            this.markRateLimited(account.email, COOLDOWN_RATE_LIMIT);
+          }
+        } else if (status === 403 || status === 400) {
+          if (errText.toLowerCase().includes('quota') || errText.toLowerCase().includes('limit')) {
+            this.markQuotaExhausted(account.email, COOLDOWN_QUOTA_DEFAULT);
+          } else {
+            this.markInvalid(account.email, `Received ${status} error: ${errText}`);
+          }
+        } else {
+          logger.error(`[${account.email}] Server error ${status}: ${errText}`);
+        }
+
+        this._inFlight.set(account.email, Math.max(0, (this._inFlight.get(account.email) || 1) - 1));
+        return await this.proxyRequestWithRotation(action, reqBody, stream, triedEmails);
+      }
+
+      logger.info(`[${account.email}] Proxy request completed successfully`);
+      return { response, account };
+    } catch (e) {
+      logger.error(`[${account.email}] Proxy request failed: ${e.message}`);
+      throw e;
+    } finally {
+      const cur = this._inFlight.get(account.email) || 1;
+      if (cur <= 1) this._inFlight.delete(account.email);
+      else this._inFlight.set(account.email, cur - 1);
+    }
+  }
+
+  /**
    * Executes a chat generation request with pool rotation
    */
   async chatWithRotation(model, body, stream, triedEmails = new Set()) {

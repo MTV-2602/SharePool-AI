@@ -136,8 +136,10 @@ export default function AntigravityAccountsPage() {
   }, [oauthState, oauthStep, fetchAccounts]);
 
   const filtered = accounts.filter(acc => {
-    const term = search.toLowerCase();
-    const matchesSearch = acc.email.toLowerCase().includes(term) || acc.name.toLowerCase().includes(term);
+    const term = (search || '').toLowerCase();
+    const email = (acc.email || '').toLowerCase();
+    const name = (acc.name || '').toLowerCase();
+    const matchesSearch = email.includes(term) || name.includes(term);
     if (statusFilter === 'all') return matchesSearch;
     return matchesSearch && acc.status === statusFilter;
   });
