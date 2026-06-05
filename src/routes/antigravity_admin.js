@@ -416,4 +416,58 @@ router.get('/oauth/google/poll-status', asyncHandler(async (req, res) => {
   });
 }));
 
+// POST /antigravity-admin-api/accounts/import-manual — Nhập tài khoản thủ công bằng Refresh Token
+router.post('/accounts/import-manual', asyncHandler(async (req, res) => {
+  const { email, refreshToken, projectId } = req.body;
+  if (!email || !refreshToken || !projectId) {
+    throw new AppError('Email, Refresh Token, and Project ID are required', 400, 'INVALID_REQUEST');
+  }
+
+  const emailClean = email.trim().toLowerCase();
+  const tokenClean = refreshToken.trim();
+  const projClean = projectId.trim();
+
+  // Validate the refresh token by fetching an access token using the official Client ID
+  const clientId = config.ANTIGRAVITY_CLIENT_ID || '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
+  const clientSecret = config.ANTIGRAVITY_CLIENT_SECRET || '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';
+
+  try {
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: tokenClean
+      })
+    });
+
+    if (!tokenRes.ok) {
+      const errText = await tokenRes.text();
+      throw new Error(`Failed to verify refresh token: ${errText}`);
+    }
+
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+
+    // Save to DB
+    await AntigravityAccount.upsert({
+      email: emailClean,
+      name: emailClean,
+      accessToken,
+      refreshToken: tokenClean,
+      projectId: projClean
+    });
+
+    // Reload active pool accounts
+    await AntigravityPool._loadAsync();
+
+    res.json({ success: true, message: 'Tài khoản đã được thêm thủ công thành công!' });
+  } catch (err) {
+    logger.error('Failed to manually import Antigravity account:', err);
+    throw new AppError(`Xác thực thất bại: ${err.message}`, 400, 'VERIFICATION_FAILED');
+  }
+}));
+
 module.exports = router;

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Bot, Trash2, RefreshCw, Search, Plus } from 'lucide-react';
+import { Bot, Trash2, RefreshCw, Search, Plus, X } from 'lucide-react';
 import api from '../lib/api';
 
 export default function AntigravityAccountsPage() {
@@ -14,6 +14,11 @@ export default function AntigravityAccountsPage() {
   const [oauthState, setOauthState] = useState(null);
   const [oauthStep, setOauthStep] = useState(null); // 'authorizing' | 'exchanging' | 'completed' | 'failed'
   const [oauthError, setOauthError] = useState('');
+
+  // Manual Import State
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importForm, setImportForm] = useState({ email: '', refreshToken: '', projectId: '' });
+  const [importing, setImporting] = useState(false);
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
@@ -72,6 +77,30 @@ export default function AntigravityAccountsPage() {
     }
   };
 
+  const handleManualImport = async (e) => {
+    e.preventDefault();
+    if (!importForm.email.trim() || !importForm.refreshToken.trim() || !importForm.projectId.trim()) {
+      alert('Vui lòng nhập đầy đủ thông tin!');
+      return;
+    }
+    setImporting(true);
+    try {
+      await api.post('/antigravity-admin-api/accounts/import-manual', {
+        email: importForm.email.trim(),
+        refreshToken: importForm.refreshToken.trim(),
+        projectId: importForm.projectId.trim()
+      });
+      setMsg({ type: 'success', text: 'Thêm tài khoản thủ công thành công!' });
+      setShowImportModal(false);
+      setImportForm({ email: '', refreshToken: '', projectId: '' });
+      fetchAccounts();
+    } catch (err) {
+      alert(err.response?.data?.error?.message || err.message || 'Lỗi thêm tài khoản.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   // Poll for OAuth status
   useEffect(() => {
     if (!oauthState || !oauthStep || oauthStep === 'completed' || oauthStep === 'failed') return;
@@ -124,6 +153,9 @@ export default function AntigravityAccountsPage() {
           <p>Danh sách các tài khoản Google kết nối xoay vòng cho Gemini Code Assist</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowImportModal(true)} style={{ color: '#e0a82e', borderColor: '#e0a82e', border: '1px solid' }}>
+            <Plus size={14} /> Nhập thủ công
+          </button>
           <button className="btn btn-primary btn-sm" onClick={handleConnectGoogle} style={{ backgroundColor: '#e0a82e', borderColor: '#e0a82e' }}>
             <Plus size={14} /> Thêm tài khoản Google (OAuth)
           </button>
@@ -263,6 +295,62 @@ export default function AntigravityAccountsPage() {
           </table>
         </div>
       </div>
+
+      {/* Manual Import Modal */}
+      {showImportModal && (
+        <div className="modal-overlay" onClick={() => setShowImportModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ borderColor: 'rgba(224, 168, 46, 0.3)' }}>
+            <div className="modal-header">
+              <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#e0a82e' }}>
+                <Bot size={16} /> Nhập tài khoản Google thủ công
+              </span>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setShowImportModal(false)}>
+                <X size={15} />
+              </button>
+            </div>
+            <form onSubmit={handleManualImport} style={{ display: 'grid', gap: 14 }}>
+              <div className="form-group">
+                <label>Email tài khoản Google *</label>
+                <input
+                  type="email"
+                  placeholder="VD: team89a6@gmail.com"
+                  value={importForm.email}
+                  onChange={e => setImportForm(v => ({ ...v, email: e.target.value }))}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="form-group">
+                <label>OAuth Refresh Token *</label>
+                <input
+                  type="text"
+                  placeholder="Nhập refresh_token (lấy từ local 9router hoặc VS Code)..."
+                  value={importForm.refreshToken}
+                  onChange={e => setImportForm(v => ({ ...v, refreshToken: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Project ID *</label>
+                <input
+                  type="text"
+                  placeholder="VD: ninth-bonfire-447406-t7"
+                  value={importForm.projectId}
+                  onChange={e => setImportForm(v => ({ ...v, projectId: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowImportModal(false)}>Hủy</button>
+                <button type="submit" className="btn btn-primary" style={{ backgroundColor: '#e0a82e', borderColor: '#e0a82e' }} disabled={importing}>
+                  {importing ? <><span className="spinner" /> Đang thêm...</> : <><Plus size={14} /> Thêm tài khoản</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
