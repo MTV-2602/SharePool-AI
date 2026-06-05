@@ -1,6 +1,252 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Bot, Trash2, RefreshCw, Search, Plus, X } from 'lucide-react';
+import { Bot, Trash2, RefreshCw, Search, Plus, X, Edit2, Check } from 'lucide-react';
 import api from '../lib/api';
+
+// Sub-component for individual account card displaying model quotas
+function AntigravityAccountCard({ acc, onDelete, onUpdate, globalRefreshTrigger, onEditClick }) {
+  const [quotas, setQuotas] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [localRefreshTrigger, setLocalRefreshTrigger] = useState(0);
+
+  const fetchQuota = async () => {
+    // If account is not active, do not query quota to avoid unnecessary 401/403 errors
+    if (!acc.isActive) {
+      setQuotas([]);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get(`/antigravity-admin-api/accounts/${acc.id}/quota`);
+      if (res.data.ok) {
+        setQuotas(res.data.quotas || []);
+      }
+    } catch (e) {
+      const errData = e.response?.data?.error;
+      const errMsg = typeof errData === 'object' ? errData.message : errData;
+      setError(errMsg || e.message || 'Lỗi tải quota');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchQuota();
+  }, [acc.id, acc.isActive, globalRefreshTrigger, localRefreshTrigger]);
+
+  const handleToggleActive = async () => {
+    try {
+      const nextActive = !acc.isActive;
+      await api.patch(`/antigravity-admin-api/accounts/${acc.id}`, {
+        isActive: nextActive
+      });
+      onUpdate();
+    } catch (e) {
+      alert('Không thể cập nhật trạng thái hoạt động: ' + e.message);
+    }
+  };
+
+  const formatRemainingTime = (dateStr) => {
+    if (!dateStr) return '';
+    const diff = new Date(dateStr) - new Date();
+    if (diff <= 0) return '';
+    const totalMins = Math.ceil(diff / 60000);
+    if (totalMins < 60) return `${totalMins}m`;
+    const hours = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    if (hours < 24) return `${hours}h ${mins}m`;
+    const days = Math.floor(hours / 24);
+    const remainingHours = hours % 24;
+    return `${days}d ${remainingHours}h ${mins}m`;
+  };
+
+  const renderStatusBadge = () => {
+    if (!acc.isActive) return <span className="badge badge-gray" style={{ backgroundColor: '#374151', color: '#9ca3af' }}>Đã tắt</span>;
+    if (acc.status === 'failed') return <span className="badge badge-red">Lỗi</span>;
+    if (acc.status === 'cooldown') return <span className="badge badge-yellow">Cooldown</span>;
+    if (acc.status === 'active') return <span className="badge badge-green">Hoạt động</span>;
+    return <span className="badge badge-gray">Chờ</span>;
+  };
+
+  // Switch Toggle Styles
+  const switchContainerStyle = {
+    position: 'relative',
+    display: 'inline-block',
+    width: 36,
+    height: 18,
+    marginLeft: 6
+  };
+
+  const switchInputStyle = {
+    opacity: 0,
+    width: 0,
+    height: 0
+  };
+
+  const getSliderStyle = (isActive) => ({
+    position: 'absolute',
+    cursor: 'pointer',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: isActive ? '#e0a82e' : '#374151',
+    transition: '0.4s',
+    borderRadius: 20
+  });
+
+  const getSliderCircleStyle = (isActive) => ({
+    position: 'absolute',
+    content: '""',
+    height: 12,
+    width: 12,
+    left: isActive ? 21 : 3,
+    bottom: 3,
+    backgroundColor: '#fff',
+    transition: '0.4s',
+    borderRadius: '50%'
+  });
+
+  return (
+    <div className="card" style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 14,
+      border: '1px solid var(--border, #2d3748)',
+      background: 'var(--surface, #1a202c)',
+      borderRadius: '8px',
+      padding: '16px',
+      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)'
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            background: 'linear-gradient(135deg, #e0a82e 0%, #f59e0b 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#000',
+            fontWeight: 800,
+            fontSize: '1rem'
+          }}>
+            A
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', wordBreak: 'break-all' }}>{acc.email}</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              Project: <code style={{ fontFamily: 'monospace', color: '#e0a82e' }}>{acc.projectId || '—'}</code>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button className="btn btn-ghost btn-xs btn-icon" onClick={() => setLocalRefreshTrigger(t => t + 1)} title="Làm mới Quota" disabled={loading || !acc.isActive}>
+            <RefreshCw size={13} className={loading ? 'spin-anim' : ''} />
+          </button>
+          <button className="btn btn-ghost btn-xs btn-icon" onClick={() => onEditClick(acc)} title="Sửa tên / Project ID">
+            <Edit2 size={13} style={{ color: 'var(--text-muted)' }} />
+          </button>
+          <button className="btn btn-ghost btn-xs btn-icon" onClick={() => onDelete(acc.id)} title="Xóa tài khoản">
+            <Trash2 size={13} style={{ color: 'var(--red)' }} />
+          </button>
+          
+          {/* Toggle Swtich */}
+          <label style={switchContainerStyle} title={acc.isActive ? 'Gạt để tắt tài khoản' : 'Gạt để bật tài khoản'}>
+            <input 
+              type="checkbox" 
+              checked={!!acc.isActive} 
+              onChange={handleToggleActive}
+              style={switchInputStyle}
+            />
+            <span style={getSliderStyle(acc.isActive)}>
+              <span style={getSliderCircleStyle(acc.isActive)} />
+            </span>
+          </label>
+        </div>
+      </div>
+
+      {/* Quotas Progress list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: 80 }}>
+        {!acc.isActive ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 80, color: 'var(--text-muted)', fontSize: '0.8rem', fontStyle: 'italic' }}>
+            Tài khoản đã tắt. Hãy gạt switch để kích hoạt lại.
+          </div>
+        ) : loading && quotas.length === 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 80 }}>
+            <span className="spinner" style={{ borderLeftColor: '#e0a82e' }} />
+          </div>
+        ) : error ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center', height: 80, color: 'var(--red)', fontSize: '0.8rem', textAlign: 'center' }}>
+            <span style={{ wordBreak: 'break-word' }}>⚠️ {error}</span>
+            <button className="btn btn-ghost btn-xs" onClick={fetchQuota} style={{ alignSelf: 'center', border: '1px solid var(--border)' }}>Thử lại 🔄</button>
+          </div>
+        ) : quotas.length === 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 80, color: 'var(--text-muted)', fontSize: '0.8rem', fontStyle: 'italic', textAlign: 'center' }}>
+            Không lấy được quota. Đảm bảo API Cloud Code đã được bật trên project của bạn.
+          </div>
+        ) : (
+          quotas.map(quota => {
+            const pct = quota.remainingPercentage;
+            // Green if > 70%, Yellow if >= 30%, Red if < 30%
+            const progressColor = pct > 70 ? '#10b981' : pct >= 30 ? '#f59e0b' : '#ef4444';
+            const emoji = pct > 70 ? '🟢' : pct >= 30 ? '🟡' : '🔴';
+            const countdown = formatRemainingTime(quota.resetAt);
+
+            return (
+              <div key={quota.modelKey} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', fontWeight: 600 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)' }}>
+                    <span>{emoji}</span>
+                    {quota.name}
+                  </span>
+                  <span style={{ color: pct >= 30 ? 'var(--text-primary)' : progressColor }}>{pct}%</span>
+                </div>
+                
+                {/* Progress bar and values */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, height: 4, background: 'var(--border, #2d3748)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', backgroundColor: progressColor, borderRadius: 2, transition: 'width 0.3s' }} />
+                  </div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', minWidth: 50, textAlign: 'right', fontFamily: 'monospace' }}>
+                    {quota.used.toLocaleString()} / {quota.total.toLocaleString()}
+                  </span>
+                </div>
+
+                {countdown && (
+                  <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', textAlign: 'right', marginTop: 1 }}>
+                    in {countdown}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Footer Info */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        fontSize: '0.72rem',
+        color: 'var(--text-muted)',
+        borderTop: '1px solid var(--border, #2d3748)',
+        paddingTop: 10,
+        marginTop: 4
+      }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {renderStatusBadge()}
+        </span>
+        <span>
+          Dùng cuối: {acc.lastUsedAt ? new Date(acc.lastUsedAt).toLocaleString('vi-VN') : 'Chưa dùng'}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default function AntigravityAccountsPage() {
   const [accounts, setAccounts] = useState([]);
@@ -19,6 +265,11 @@ export default function AntigravityAccountsPage() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importForm, setImportForm] = useState({ email: '', refreshToken: '', projectId: '' });
   const [importing, setImporting] = useState(false);
+
+  // Edit Modal State
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({ id: '', name: '', projectId: '' });
+  const [editing, setEditing] = useState(false);
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
@@ -50,6 +301,28 @@ export default function AntigravityAccountsPage() {
       fetchAccounts();
     } catch (e) {
       setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Xóa thất bại.' });
+    }
+  };
+
+  const handleEditAccount = async (e) => {
+    e.preventDefault();
+    if (!editForm.name.trim() || !editForm.projectId.trim()) {
+      alert('Vui lòng điền đầy đủ thông tin!');
+      return;
+    }
+    setEditing(true);
+    try {
+      await api.patch(`/antigravity-admin-api/accounts/${editForm.id}`, {
+        name: editForm.name.trim(),
+        projectId: editForm.projectId.trim()
+      });
+      setMsg({ type: 'success', text: 'Cập nhật tài khoản thành công!' });
+      setShowEditModal(false);
+      fetchAccounts();
+    } catch (err) {
+      alert(err.response?.data?.error?.message || err.message || 'Lỗi cập nhật.');
+    } finally {
+      setEditing(false);
     }
   };
 
@@ -141,6 +414,8 @@ export default function AntigravityAccountsPage() {
     const name = (acc.name || '').toLowerCase();
     const matchesSearch = email.includes(term) || name.includes(term);
     if (statusFilter === 'all') return matchesSearch;
+    if (statusFilter === 'active') return matchesSearch && (acc.isActive && acc.status !== 'failed');
+    if (statusFilter === 'failed') return matchesSearch && (!acc.isActive || acc.status === 'failed');
     return matchesSearch && acc.status === statusFilter;
   });
 
@@ -207,7 +482,7 @@ export default function AntigravityAccountsPage() {
             { label: 'Tổng số', value: stats.total, color: 'var(--text-primary)' },
             { label: 'Hoạt động', value: stats.available, color: 'var(--green)' },
             { label: 'Cooldown', value: stats.cooldown, color: 'var(--yellow)' },
-            { label: 'Bị lỗi', value: stats.failed, color: 'var(--red)' }
+            { label: 'Bị lỗi / Tắt', value: stats.failed, color: 'var(--red)' }
           ].map(s => (
             <div key={s.label}>
               <div style={{ fontSize: '1.3rem', fontWeight: 800, color: s.color }}>{s.value}</div>
@@ -230,73 +505,40 @@ export default function AntigravityAccountsPage() {
           </div>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ width: 'auto' }}>
             <option value="all">Tất cả trạng thái</option>
-            <option value="active">Active / Loaded</option>
+            <option value="active">Hoạt động / Sẵn sàng</option>
             <option value="cooldown">Cooldown</option>
-            <option value="failed">Failed / Lỗi</option>
+            <option value="failed">Lỗi / Đã tắt</option>
           </select>
         </div>
       </div>
 
-      {/* Accounts List Table */}
-      <div className="card">
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Tài khoản</th>
-                <th>Project ID</th>
-                <th>Trạng thái</th>
-                <th>Lỗi cuối</th>
-                <th>Hoạt động cuối</th>
-                <th style={{ textAlign: 'right' }}>Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                    Không tìm thấy tài khoản nào.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map(acc => {
-                  const cooldownText = acc.cooldownRemaining > 0 
-                    ? ` (hồi sau ${Math.ceil(acc.cooldownRemaining / 60000)}p)`
-                    : '';
-                  return (
-                    <tr key={acc.id}>
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{acc.name}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{acc.email}</div>
-                      </td>
-                      <td>
-                        <code className="font-mono">{acc.projectId || '—'}</code>
-                      </td>
-                      <td>
-                        {acc.status === 'failed' && <span className="badge badge-red">Lỗi</span>}
-                        {acc.status === 'cooldown' && <span className="badge badge-yellow">Cooldown{cooldownText}</span>}
-                        {acc.status === 'active' && <span className="badge badge-green">Hoạt động</span>}
-                        {acc.status === 'loaded' && <span className="badge badge-gray">Chờ</span>}
-                      </td>
-                      <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={acc.lastError}>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--red)' }}>{acc.lastError || '—'}</span>
-                      </td>
-                      <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        {acc.lastUsedAt ? new Date(acc.lastUsedAt).toLocaleString('vi-VN') : 'Chưa sử dụng'}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <button className="btn btn-ghost btn-xs btn-icon text-red" onClick={() => handleDelete(acc.id)} title="Xóa tài khoản">
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+      {/* Accounts List Card Grid */}
+      {filtered.length === 0 ? (
+        <div className="card" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          Không tìm thấy tài khoản nào.
         </div>
-      </div>
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+          gap: '20px',
+          marginTop: '16px'
+        }}>
+          {filtered.map(acc => (
+            <AntigravityAccountCard 
+              key={acc.id} 
+              acc={acc} 
+              onDelete={handleDelete} 
+              onUpdate={fetchAccounts}
+              globalRefreshTrigger={loading}
+              onEditClick={(acc) => {
+                setEditForm({ id: acc.id, name: acc.name, projectId: acc.projectId });
+                setShowEditModal(true);
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Manual Import Modal */}
       {showImportModal && (
@@ -347,6 +589,52 @@ export default function AntigravityAccountsPage() {
                 <button type="button" className="btn btn-ghost" onClick={() => setShowImportModal(false)}>Hủy</button>
                 <button type="submit" className="btn btn-primary" style={{ backgroundColor: '#e0a82e', borderColor: '#e0a82e' }} disabled={importing}>
                   {importing ? <><span className="spinner" /> Đang thêm...</> : <><Plus size={14} /> Thêm tài khoản</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ borderColor: 'rgba(224, 168, 46, 0.3)' }}>
+            <div className="modal-header">
+              <span className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#e0a82e' }}>
+                <Edit2 size={16} /> Chỉnh sửa thông tin tài khoản
+              </span>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setShowEditModal(false)}>
+                <X size={15} />
+              </button>
+            </div>
+            <form onSubmit={handleEditAccount} style={{ display: 'grid', gap: 14 }}>
+              <div className="form-group">
+                <label>Tên hiển thị *</label>
+                <input
+                  type="text"
+                  placeholder="Nhập tên hiển thị..."
+                  value={editForm.name}
+                  onChange={e => setEditForm(v => ({ ...v, name: e.target.value }))}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="form-group">
+                <label>Project ID *</label>
+                <input
+                  type="text"
+                  placeholder="Nhập Project ID..."
+                  value={editForm.projectId}
+                  onChange={e => setEditForm(v => ({ ...v, projectId: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowEditModal(false)}>Hủy</button>
+                <button type="submit" className="btn btn-primary" style={{ backgroundColor: '#e0a82e', borderColor: '#e0a82e' }} disabled={editing}>
+                  {editing ? <><span className="spinner" /> Đang lưu...</> : <><Check size={14} /> Lưu thay đổi</>}
                 </button>
               </div>
             </form>

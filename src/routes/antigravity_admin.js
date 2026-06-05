@@ -54,6 +54,7 @@ router.get('/stats', asyncHandler(async (req, res) => {
       name: acc.name,
       email: acc.email,
       projectId: acc.projectId || acc.project_id,
+      isActive: acc.isActive !== undefined ? acc.isActive : acc.is_active,
       status,
       cooldownRemaining: AntigravityPool._cooldownRemaining(acc.email),
       lastError: acc.lastError || acc.last_error || '',
@@ -167,6 +168,7 @@ router.get('/accounts', asyncHandler(async (req, res) => {
       name: acc.name,
       email: acc.email,
       projectId: acc.projectId || acc.project_id,
+      isActive: acc.isActive !== undefined ? acc.isActive : acc.is_active,
       status,
       cooldownRemaining: AntigravityPool._cooldownRemaining(acc.email),
       lastError: acc.lastError || acc.last_error || '',
@@ -184,6 +186,170 @@ router.delete('/accounts/:id', asyncHandler(async (req, res) => {
   await AntigravityPool._loadAsync(); // reload pool
   res.json({ success: true });
 }));
+
+// PATCH /antigravity-admin-api/accounts/:id
+router.patch('/accounts/:id', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const account = await AntigravityAccount.findById(id);
+  if (!account) {
+    throw new AppError('Account not found', 404, 'NOT_FOUND');
+  }
+
+  const fields = {};
+  if (req.body.name !== undefined) fields.name = req.body.name;
+  if (req.body.isActive !== undefined) fields.isActive = req.body.isActive ? 1 : 0;
+  if (req.body.projectId !== undefined) fields.projectId = req.body.projectId;
+
+  await AntigravityAccount.update(id, fields);
+  await AntigravityPool._loadAsync(); // reload pool
+
+  res.json({ success: true, account: await AntigravityAccount.findById(id) });
+}));
+
+// GET /antigravity-admin-api/accounts/:id/quota
+router.get('/accounts/:id/quota', asyncHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const account = await AntigravityAccount.findById(id);
+  if (!account) {
+    throw new AppError('Account not found', 404, 'NOT_FOUND');
+  }
+
+  // Find in pool to leverage current active credentials/refreshes
+  const poolAcc = AntigravityPool._accounts.find(a => a.email === account.email);
+  const activeAcc = poolAcc || {
+    id: account.id,
+    email: account.email,
+    accessToken: account.accessToken || account.access_token,
+    refreshToken: account.refreshToken || account.refresh_token,
+    projectId: account.projectId || account.project_id,
+    updatedAt: account.updatedAt || account.updated_at
+  };
+
+  // Proactive token refresh if older than 50 minutes
+  const ageMs = Date.now() - new Date(activeAcc.updatedAt || account.updatedAt || 0).getTime();
+  if (ageMs > 50 * 60 * 1000 || !activeAcc.accessToken) {
+    try {
+      await AntigravityPool.refreshAccessToken(activeAcc);
+    } catch (refreshErr) {
+      logger.warn(`Failed to refresh token for quota query on ${activeAcc.email}: ${refreshErr.message}`);
+    }
+  }
+
+  let projectId = activeAcc.projectId;
+  if (!projectId || projectId.startsWith('pending-')) {
+    // Try to retrieve project via loadCodeAssist
+    try {
+      const metadata = { ideType: 9, platform: 5, pluginType: 2 };
+      const loadRes = await fetch('https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${activeAcc.accessToken}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'google-api-nodejs-client/9.15.1'
+        },
+        body: JSON.stringify({ metadata, mode: 1 })
+      });
+      if (loadRes.ok) {
+        const loadData = await loadRes.json();
+        let loadedProject = loadData.cloudaicompanionProject;
+        if (typeof loadedProject === 'object' && loadedProject !== null && loadedProject.id) {
+          loadedProject = loadedProject.id;
+        }
+        if (loadedProject) {
+          projectId = loadedProject;
+          activeAcc.projectId = projectId;
+          await AntigravityAccount.update(activeAcc.id, { projectId });
+        }
+      }
+    } catch (e) {
+      logger.warn(`Failed to retrieve project ID for quota check: ${e.message}`);
+    }
+  }
+
+  try {
+    const response = await fetch('https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${activeAcc.accessToken}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'antigravity/1.107.0',
+        'X-Client-Name': 'antigravity',
+        'X-Client-Version': '1.107.0',
+        'x-request-source': 'local'
+      },
+      body: JSON.stringify({
+        project: projectId
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`fetchAvailableModels status ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    const quotas = [];
+
+    const importantModels = [
+      'gemini-3-flash-agent',
+      'gemini-3.5-flash-low',
+      'gemini-pro-agent',
+      'gemini-3.1-pro-low',
+      'claude-sonnet-4-6',
+      'claude-opus-4-6-thinking',
+      'gpt-oss-120b-medium',
+      'gemini-3-flash',
+    ];
+
+    const displayNameMap = {
+      'gemini-pro-agent': 'Gemini 3.1 Pro (High)',
+      'gemini-3.1-pro-low': 'Gemini 3.1 Pro (Low)',
+      'gemini-3-flash': 'Gemini 3 Flash',
+      'gemini-3.5-flash-low': 'Gemini 3.5 Flash (Medium)',
+      'gemini-3-flash-agent': 'Gemini 3 Flash (Agent)',
+      'claude-sonnet-4-6': 'Claude Sonnet 4.6 (Thinking)',
+      'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Thinking)',
+      'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)',
+    };
+
+    if (data.models) {
+      // Sort to match display order
+      const sortedKeys = Object.keys(data.models).sort((a, b) => {
+        const idxA = importantModels.indexOf(a);
+        const idxB = importantModels.indexOf(b);
+        return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+      });
+
+      for (const modelKey of sortedKeys) {
+        const info = data.models[modelKey];
+        if (!info || !info.quotaInfo || info.isInternal || !importantModels.includes(modelKey)) {
+          continue;
+        }
+
+        const remainingFraction = info.quotaInfo.remainingFraction || 0;
+        const remainingPercentage = Math.round(remainingFraction * 100);
+        const total = 1000;
+        const remaining = Math.round(total * remainingFraction);
+        const used = total - remaining;
+
+        quotas.push({
+          modelKey,
+          name: displayNameMap[modelKey] || info.displayName || modelKey,
+          used,
+          total,
+          remainingPercentage,
+          resetAt: info.quotaInfo.resetTime || null
+        });
+      }
+    }
+
+    res.json({ ok: true, quotas });
+  } catch (err) {
+    logger.error(`Quota check failed for ${activeAcc.email}:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+}));
+
 
 // Google OAuth link generator for Admin Dashboard
 router.get('/oauth/google/authorize', asyncHandler(async (req, res) => {
