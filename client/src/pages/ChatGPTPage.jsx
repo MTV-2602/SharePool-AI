@@ -362,6 +362,19 @@ function ChatGPTPool() {
     }
   };
 
+  const handleToggleActive = async (sessionToken, currentActive) => {
+    try {
+      await api.patch('/admin-api/accounts', {
+        oldSessionToken: sessionToken,
+        isActive: !currentActive
+      });
+      setMsg({ type: 'success', text: `Đã ${!currentActive ? 'bật' : 'tắt'} tài khoản thành công.` });
+      fetchAccounts();
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Thao tác thất bại.' });
+    }
+  };
+
   const startEdit = (acc) => {
     setEditRow(acc.sessionToken);
     setEditValues({ name: acc.name, newSessionToken: '' });
@@ -386,6 +399,7 @@ function ChatGPTPool() {
     if (!s || s === 'active') return <span className="badge badge-green">Active</span>;
     if (s === 'cooldown') return <span className="badge badge-yellow">Cooldown</span>;
     if (s === 'failed' || s === 'error') return <span className="badge badge-red">Failed</span>;
+    if (s === 'disabled') return <span className="badge badge-gray" style={{ backgroundColor: '#374151', color: '#9ca3af' }}>Disabled</span>;
     return <span className="badge badge-gray">{s}</span>;
   };
 
@@ -406,6 +420,7 @@ function ChatGPTPool() {
               { label: 'Active', value: stats.active, color: 'var(--green)' },
               { label: 'Cooldown', value: stats.cooldown, color: 'var(--yellow)' },
               { label: 'Failed', value: stats.failed, color: 'var(--red)' },
+              { label: 'Disabled', value: stats.disabled || 0, color: 'var(--text-muted)' },
             ].map(s => (
               <div key={s.label}>
                 <div style={{ fontSize: '1.3rem', fontWeight: 800, color: s.color }}>{s.value}</div>
@@ -441,6 +456,7 @@ function ChatGPTPool() {
             <option value="active">Active</option>
             <option value="cooldown">Cooldown</option>
             <option value="failed">Failed</option>
+            <option value="disabled">Disabled</option>
           </select>
           <select value={limit} onChange={e => { setLimit(parseInt(e.target.value, 10)); setPage(1); }} style={{ width: 'auto' }}>
             <option value="10">10 acc / trang</option>
@@ -452,7 +468,7 @@ function ChatGPTPool() {
           </select>
         </div>
       </div>
-
+ 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
@@ -464,6 +480,7 @@ function ChatGPTPool() {
                   <th>#</th>
                   <th>Tên</th>
                   <th>Trạng thái</th>
+                  <th>Hoạt động</th>
                   <th>Quotas</th>
                   <th>Hoạt động cuối</th>
                   <th style={{ textAlign: 'right' }}>Hành động</th>
@@ -472,7 +489,7 @@ function ChatGPTPool() {
               <tbody>
                 {accounts.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
                       Không tìm thấy tài khoản nào
                     </td>
                   </tr>
@@ -507,7 +524,7 @@ function ChatGPTPool() {
                           {acc.status === 'cooldown' && acc.cooldownRemaining > 0 && (
                             <CooldownTimer initialMs={acc.cooldownRemaining} />
                           )}
-                          {acc.status !== 'failed' && acc.status !== 'error' ? (
+                          {acc.status !== 'failed' && acc.status !== 'error' && acc.status !== 'disabled' ? (
                             <button
                               className="btn btn-ghost btn-xs text-xs"
                               onClick={() => handleMarkFailed(acc.sessionToken)}
@@ -516,7 +533,7 @@ function ChatGPTPool() {
                             >
                               Mô phỏng lỗi (Test Re-login)
                             </button>
-                          ) : (
+                          ) : acc.status !== 'disabled' ? (
                             <button
                               className="btn btn-warning btn-xs text-xs"
                               onClick={() => handleMarkFailed(acc.sessionToken)}
@@ -525,13 +542,44 @@ function ChatGPTPool() {
                             >
                               🔄 Re-login qua Extension
                             </button>
-                          )}
+                          ) : null}
                         </div>
                         {acc.lastError && (acc.status === 'failed' || acc.status === 'error') && (
                           <span style={{ fontSize: '0.72rem', color: 'var(--red)', wordBreak: 'break-all', maxWidth: '300px' }} title={acc.lastError}>
                             Lỗi: {acc.lastError}
                           </span>
                         )}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <label className="switch" style={{ position: 'relative', display: 'inline-block', width: 34, height: 20 }}>
+                          <input
+                            type="checkbox"
+                            checked={acc.isActive}
+                            onChange={() => handleToggleActive(acc.sessionToken, acc.isActive)}
+                            style={{ opacity: 0, width: 0, height: 0 }}
+                          />
+                          <span className="slider" style={{
+                            position: 'absolute',
+                            cursor: 'pointer',
+                            top: 0, left: 0, right: 0, bottom: 0,
+                            backgroundColor: acc.isActive ? 'var(--green)' : '#374151',
+                            transition: '0.2s',
+                            borderRadius: 10
+                          }}>
+                            <span style={{
+                              position: 'absolute',
+                              content: '""',
+                              height: 14, width: 14,
+                              left: acc.isActive ? 17 : 3,
+                              bottom: 3,
+                              backgroundColor: '#fff',
+                              transition: '0.2s',
+                              borderRadius: '50%'
+                            }} />
+                          </span>
+                        </label>
                       </div>
                     </td>
                     <td>

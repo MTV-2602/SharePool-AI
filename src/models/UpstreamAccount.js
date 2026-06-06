@@ -104,8 +104,8 @@ const UpstreamAccount = {
     );
   },
 
-  /** Update name and/or session token */
-  async update(oldToken, { name, newSessionToken }) {
+  /** Update name, session token, and/or active state */
+  async update(oldToken, { name, newSessionToken, isActive }) {
     const pairs = [];
     const vals = [];
     if (name !== undefined) { pairs.push('name = ?'); vals.push(name); }
@@ -114,7 +114,15 @@ const UpstreamAccount = {
       pairs.push('is_active = 1');
       pairs.push('last_error = NULL');
     }
+    if (isActive !== undefined) {
+      pairs.push('is_active = ?');
+      vals.push(isActive);
+      if (isActive === 1) {
+        pairs.push('last_error = NULL');
+      }
+    }
     if (!pairs.length) return false;
+    pairs.push('updated_at = CURRENT_TIMESTAMP');
     vals.push(oldToken);
     await db.run(
       `UPDATE upstream_accounts SET ${pairs.join(', ')} WHERE session_token = ?`,

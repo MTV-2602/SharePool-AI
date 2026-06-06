@@ -277,14 +277,16 @@ router.get('/accounts', asyncHandler(async (req, res) => {
   const poolStatus = AccountPool.getStatus();
   const statusMap = new Map(poolStatus.map(a => [a.id || a.sessionToken, a]));
 
-  const stats = { total: dbAccounts.length, active: 0, cooldown: 0, failed: 0 };
+  const stats = { total: dbAccounts.length, active: 0, cooldown: 0, failed: 0, disabled: 0 };
 
   const merged = dbAccounts.map(acc => {
     const token = acc.sessionToken || acc.session_token;
     const poolAcc = statusMap.get(acc.id || token);
-    const status = (acc.is_active === 0 || acc.isActive === 0) ? 'failed' : (poolAcc ? poolAcc.status : 'loaded');
+    const isActive = !(acc.is_active === 0 || acc.isActive === 0);
+    const status = !isActive ? 'disabled' : (poolAcc ? poolAcc.status : 'loaded');
     
-    if (status === 'failed') stats.failed++;
+    if (status === 'disabled') stats.disabled++;
+    else if (status === 'failed') stats.failed++;
     else if (status === 'cooldown') stats.cooldown++;
     else stats.active++; // loaded/active
 
@@ -293,6 +295,7 @@ router.get('/accounts', asyncHandler(async (req, res) => {
       name: acc.name || '',
       sessionToken: token || '',
       status,
+      isActive,
       cooldownRemaining: poolAcc ? poolAcc.cooldownRemaining : 0,
       lastError: acc.lastError || acc.last_error || (poolAcc ? poolAcc.lastError : ''),
       hasToken: !!token,
@@ -782,9 +785,9 @@ router.delete('/accounts', asyncHandler(async (req, res) => {
   res.json({ success: true, total: all.length });
 }));
 
-// PATCH /admin-api/accounts — Edit name or sessionToken of an account (trong DB)
+// PATCH /admin-api/accounts — Edit name, sessionToken, or isActive of an account (trong DB)
 router.patch('/accounts', asyncHandler(async (req, res) => {
-  const { oldSessionToken, name, newSessionToken } = req.body;
+  const { oldSessionToken, name, newSessionToken, isActive } = req.body;
   if (!oldSessionToken || !oldSessionToken.trim()) {
     throw new AppError('oldSessionToken is required', 400, 'INVALID_REQUEST');
   }
@@ -804,6 +807,9 @@ router.patch('/accounts', asyncHandler(async (req, res) => {
       throw new AppError('New session token is already in use by another account', 400, 'DUPLICATE_ENTRY');
     }
     updates.newSessionToken = newTokenClean;
+  }
+  if (isActive !== undefined) {
+    updates.isActive = isActive ? 1 : 0;
   }
 
   await UpstreamAccount.update(oldTokenClean, updates);
