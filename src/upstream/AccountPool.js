@@ -87,8 +87,8 @@ class AccountPool {
           }
         }
 
-        // Restore trạng thái invalid từ DB sau khi restart/reload
-        if (lastError && (lastError.toLowerCase().includes('session') || lastError.toLowerCase().includes('expired') || lastError.toLowerCase().includes('invalid') || lastError.toLowerCase().includes('failed'))) {
+        // Restore trạng thái invalid từ DB sau khi restart/reload (ngoại trừ quota_exhausted)
+        if (lastError && lastError !== 'quota_exhausted') {
           this._invalidTokens.add(sessionToken);
           this._cooldowns.set(sessionToken, now + COOLDOWN_INVALID);
           this._errors.set(sessionToken, lastError);

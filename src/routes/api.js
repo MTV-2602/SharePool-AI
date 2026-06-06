@@ -238,7 +238,15 @@ router.get('/credentials', extensionAuth, asyncHandler(async (req, res) => {
 router.get('/accounts/expired', extensionAuth, asyncHandler(async (req, res) => {
   const dbAccounts = await UpstreamAccount.findAll();
   const poolStatus = AccountPool.getStatus();
-  const statusMap = new Map(poolStatus.map(a => [a.sessionToken, a]));
+  const statusMap = new Map();
+  for (const a of poolStatus) {
+    if (a.id !== undefined && a.id !== null) {
+      statusMap.set(String(a.id), a);
+    }
+    if (a.sessionToken) {
+      statusMap.set(String(a.sessionToken), a);
+    }
+  }
 
   const allCredentials = await ChatGPTCredential.findAll({ limit: 500 });
   const expired = [];
@@ -263,7 +271,7 @@ router.get('/accounts/expired', extensionAuth, asyncHandler(async (req, res) => 
       reason = 'Chua co trong pool upstream';
     } else {
       const token = upstream.sessionToken || upstream.session_token;
-      const poolAcc = statusMap.get(token);
+      const poolAcc = statusMap.get(upstream.id ? String(upstream.id) : '') || (token ? statusMap.get(String(token)) : null);
       const isPoolFailed = poolAcc && (poolAcc.status === 'failed' || poolAcc.status === 'error');
       const isDbInactive = upstream.isActive === 0 || upstream.is_active === 0;
       // Nếu tài khoản bị tắt chủ động bởi admin (isDbInactive), chúng ta không yêu cầu extension re-login

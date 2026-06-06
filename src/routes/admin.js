@@ -275,13 +275,21 @@ router.get('/accounts', asyncHandler(async (req, res) => {
   // Return merged view: DB records with cooldown status from in-memory pool
   const dbAccounts = await UpstreamAccount.findAll();
   const poolStatus = AccountPool.getStatus();
-  const statusMap = new Map(poolStatus.map(a => [a.id || a.sessionToken, a]));
+  const statusMap = new Map();
+  for (const a of poolStatus) {
+    if (a.id !== undefined && a.id !== null) {
+      statusMap.set(String(a.id), a);
+    }
+    if (a.sessionToken) {
+      statusMap.set(String(a.sessionToken), a);
+    }
+  }
 
   const stats = { total: dbAccounts.length, active: 0, cooldown: 0, failed: 0, disabled: 0 };
 
   const merged = dbAccounts.map(acc => {
     const token = acc.sessionToken || acc.session_token;
-    const poolAcc = statusMap.get(acc.id || token);
+    const poolAcc = statusMap.get(acc.id ? String(acc.id) : '') || (token ? statusMap.get(String(token)) : null);
     const isActive = !(acc.is_active === 0 || acc.isActive === 0);
     const status = !isActive ? 'disabled' : (poolAcc ? poolAcc.status : 'loaded');
     

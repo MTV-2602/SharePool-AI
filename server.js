@@ -22,8 +22,22 @@ app.set('trust proxy', 1); // Trust Vercel's proxy headers for rate limiting
 
 logger.info('Initializing database connection...');
 const dbPromise = initDB()
-  .then(() => {
+  .then(async () => {
     logger.info('Database connection verified.');
+    try {
+      const AccountPool = require('./src/upstream/AccountPool');
+      await AccountPool.reload();
+      logger.info('AccountPool initialized successfully.');
+    } catch (poolErr) {
+      logger.error('Failed to initialize AccountPool:', poolErr.message);
+    }
+    try {
+      const AntigravityPool = require('./src/upstream/AntigravityPool');
+      await AntigravityPool._loadAsync();
+      logger.info('AntigravityPool initialized successfully.');
+    } catch (poolErr) {
+      logger.error('Failed to initialize AntigravityPool:', poolErr.message);
+    }
   })
   .catch((err) => {
     logger.error('Database connection failed:', err.message);
