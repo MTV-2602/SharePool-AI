@@ -358,6 +358,64 @@ async function hardStopJob(targetTabId, job, reason = "Nguoi dung bam Dung han."
   } catch (e) {
     console.warn("[Hotmail] settle on hard stop failed:", e);
   }
+
+  const isUserCancel = reason.includes("Nguoi dung bam");
+  const chatTabId = Number(job?.tabId || targetTabId || 0);
+
+  // Nếu là lỗi tự động của hệ thống (không phải user chủ động hủy)
+  if (!isUserCancel && chatTabId) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: chatTabId },
+        func: (errReason, email) => {
+          document.title = 'Lỗi tiến trình!';
+          document.body.innerHTML = `
+            <div style="
+              min-height:100vh;display:flex;align-items:center;justify-content:center;
+              background:linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%);
+              font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#e2e8f0;
+              z-index:999999;position:fixed;inset:0;
+            ">
+              <div style="text-align:center;max-width:480px;padding:40px;background:#1e293b;border-radius:16px;border:1px solid #334155;box-shadow:0 20px 50px rgba(0,0,0,0.4);">
+                <div style="font-size:4rem;margin-bottom:16px;">❌</div>
+                <h1 style="font-size:1.6rem;font-weight:700;margin:0 0 12px;color:#ef4444;">
+                  Tiến trình tự động thất bại!
+                </h1>
+                <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:8px;padding:12px;margin-bottom:20px;text-align:left;">
+                  <div style="color:#94a3b8;font-size:0.85rem;margin-bottom:4px;">Tài khoản:</div>
+                  <div style="color:#f1f5f9;font-weight:600;font-family:monospace;word-break:break-all;margin-bottom:8px;">${email || 'Unknown'}</div>
+                  <div style="color:#94a3b8;font-size:0.85rem;margin-bottom:4px;">Lý do lỗi:</div>
+                  <div style="color:#f87171;font-size:0.9rem;line-height:1.4;">${errReason}</div>
+                </div>
+                <p style="font-size:0.95rem;color:#94a3b8;line-height:1.6;margin:0 0 16px;">
+                  Vui lòng kiểm tra lại cấu hình hoặc thử lại bằng tay.
+                </p>
+                <div id="countdown-text" style="color:#64748b;font-size:0.85rem;">Cửa sổ này sẽ tự động đóng trong <strong>10</strong> giây...</div>
+              </div>
+            </div>
+          `;
+          let seconds = 10;
+          const timer = setInterval(() => {
+            seconds--;
+            const countdownEl = document.getElementById('countdown-text');
+            if (countdownEl) {
+              const strong = countdownEl.querySelector('strong');
+              if (strong) strong.textContent = seconds;
+            }
+            if (seconds <= 0) {
+              clearInterval(timer);
+            }
+          }, 1000);
+        },
+        args: [reason, job.email]
+      });
+    } catch (e) {
+      console.error('Could not inject error page:', e);
+    }
+    // Đợi 10 giây cho người dùng xem lỗi trước khi đóng tab
+    await new Promise(r => setTimeout(r, 10000));
+  }
+
   const idsToDelete = new Set([
     Number(targetTabId || 0),
     Number(job?.tabId || 0),
