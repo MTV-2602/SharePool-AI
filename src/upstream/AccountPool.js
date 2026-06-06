@@ -236,11 +236,19 @@ class AccountPool {
         }
         
         remainingPercent = Math.min(primaryRemaining, secondaryRemaining);
-      } else if (cached) {
-        return cached;
+      } else {
+        if (res.status === 401 || res.status === 403) {
+          const err = new Error(`OpenAI Wham API returned HTTP ${res.status} (Session expired)`);
+          err.code = 'INVALID_SESSION';
+          throw err;
+        }
+        if (cached) return cached;
       }
     } catch (err) {
       logger.error('Failed to fetch account quota: ' + err.message);
+      if (err.code === 'INVALID_SESSION') {
+        this.markInvalid(sessionToken, err.message);
+      }
       if (cached) return cached;
     }
 
