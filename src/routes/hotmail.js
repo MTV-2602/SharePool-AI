@@ -110,6 +110,7 @@ adminRouter.post('/bulk-import', asyncHandler(async (req, res) => {
   }
 
   const rawLines = lines.split('\n').map(l => l.trim()).filter(Boolean);
+  const parsedCreds = [];
   const results = [];
 
   for (const line of rawLines) {
@@ -118,18 +119,81 @@ adminRouter.post('/bulk-import', asyncHandler(async (req, res) => {
       results.push({ line, ok: false, error: 'Sai format' });
       continue;
     }
-    try {
-      const existing = await HotmailAccount.findOne({ email: cred.email });
-      if (existing) {
-        await HotmailAccount.updateOne({ email: cred.email }, cred);
-        results.push({ email: cred.email, ok: true, action: 'updated' });
-      } else {
-        await HotmailAccount.create({ ...cred, state: 'available', usedCount: 0 });
-        results.push({ email: cred.email, ok: true, action: 'created' });
-      }
-    } catch (e) {
-      results.push({ email: cred.email || 'unknown', ok: false, error: e.message });
+    parsedCreds.push({ cred, line });
+  }
+
+  if (parsedCreds.length === 0) {
+    return res.json({ ok: true, total: rawLines.length, results });
+  }
+
+  const emailsToCheck = parsedCreds.map(p => p.cred.email.toLowerCase().trim());
+  
+  // Fetch existing in one query
+  const placeholders = emailsToCheck.map(() => '?').join(', ');
+  const existingRows = await db.query(
+    `SELECT email FROM hotmail_accounts WHERE email IN (${placeholders})`,
+    emailsToCheck
+  );
+  const existingEmailsSet = new Set(existingRows.map(r => r.email.toLowerCase().trim()));
+
+  const toInsert = [];
+  const toUpdate = [];
+  const processedEmails = new Set();
+
+  for (const item of parsedCreds) {
+    const emailClean = item.cred.email.toLowerCase().trim();
+    if (processedEmails.has(emailClean)) {
+      results.push({ email: item.cred.email, ok: true, action: 'skipped_duplicate' });
+      continue;
     }
+    processedEmails.add(emailClean);
+
+    const exists = existingEmailsSet.has(emailClean);
+    if (exists) {
+      toUpdate.push(item.cred);
+      results.push({ email: item.cred.email, ok: true, action: 'updated' });
+    } else {
+      toInsert.push(item.cred);
+      results.push({ email: item.cred.email, ok: true, action: 'created' });
+    }
+  }
+
+  // Execute updates in parallel
+  const updatePromises = toUpdate.map(cred => {
+    return HotmailAccount.updateOne({ email: cred.email }, cred);
+  });
+
+  // Execute inserts as a single bulk query
+  if (toInsert.length > 0) {
+    const cols = ['email', 'password', 'refreshtoken', 'clientid', 'secret2fa', 'state', 'takenbyip', 'takenat', 'takennote', 'usedcount', 'lastreadat', 'reservedat', 'usedat', 'created_at', 'updated_at'];
+    const insertValues = [];
+    const insertParams = [];
+
+    for (const cred of toInsert) {
+      insertValues.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)');
+      insertParams.push(
+        cred.email.toLowerCase().trim(),
+        cred.password || '',
+        cred.refreshToken || '',
+        cred.clientId || '',
+        cred.secret2fa || '',
+        cred.state || 'available',
+        cred.takenByIp || '',
+        cred.takenAt || '',
+        cred.takenNote || '',
+        cred.usedCount || 0,
+        cred.lastReadAt || '',
+        cred.reservedAt || '',
+        cred.usedAt || ''
+      );
+    }
+
+    const insertSql = `INSERT INTO hotmail_accounts (${cols.join(', ')}) VALUES ${insertValues.join(', ')}`;
+    updatePromises.push(db.run(insertSql, insertParams));
+  }
+
+  if (updatePromises.length > 0) {
+    await Promise.all(updatePromises);
   }
 
   res.json({ ok: true, total: rawLines.length, results });

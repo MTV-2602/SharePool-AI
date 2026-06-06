@@ -535,11 +535,12 @@ router.post('/accounts/import-bulk', asyncHandler(async (req, res) => {
   }
 
   const lines = rawText.split(/\r?\n/);
-  let importedCount = 0;
   const errors = [];
+  const parsedAccounts = [];
 
   const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
   const HotmailAccount = require('../models/HotmailAccount');
+  const db = require('../db');
 
   for (const line of lines) {
     const clean = line.trim();
@@ -582,19 +583,177 @@ router.post('/accounts/import-bulk', asyncHandler(async (req, res) => {
       continue;
     }
 
-    const emailClean = emailInput.toLowerCase().trim();
+    parsedAccounts.push({
+      email: emailInput.toLowerCase().trim(),
+      token,
+      rawLine: clean
+    });
+  }
 
-    // Check in Hotmail accounts
-    const hotmail = await HotmailAccount.findOne({ email: emailClean });
-    if (!hotmail) {
-      errors.push(`Dòng "${clean}": Email '${emailClean}' không tồn tại trong kho Hotmail.`);
+  if (parsedAccounts.length === 0) {
+    const all = await UpstreamAccount.findAll();
+    return res.json({ success: true, imported: 0, total: all.length, errors });
+  }
+
+  // Deduplicate sets to search DB efficiently
+  const emailsToCheck = [...new Set(parsedAccounts.map(a => a.email))];
+  const tokensToCheck = [...new Set(parsedAccounts.map(a => a.token))];
+
+  // Fetch valid Hotmail accounts in one query
+  const hotmailEmailsSet = new Set();
+  if (emailsToCheck.length > 0) {
+    const placeholders = emailsToCheck.map(() => '?').join(', ');
+    const hotmailRows = await db.query(
+      `SELECT email FROM hotmail_accounts WHERE email IN (${placeholders})`,
+      emailsToCheck
+    );
+    for (const r of hotmailRows) {
+      hotmailEmailsSet.add(r.email.toLowerCase().trim());
+    }
+  }
+
+  // Fetch existing upstream accounts in one query
+  let existingRows = [];
+  if (emailsToCheck.length > 0) {
+    const oauthEmails = emailsToCheck.map(e => `OAuth-${e}`);
+    const namePlaceholders = emailsToCheck.map(() => '?').join(', ');
+    const oauthPlaceholders = oauthEmails.map(() => '?').join(', ');
+    const tokenPlaceholders = tokensToCheck.map(() => '?').join(', ');
+
+    existingRows = await db.query(
+      `SELECT id, name, session_token FROM upstream_accounts 
+       WHERE name IN (${namePlaceholders}) 
+          OR name IN (${oauthPlaceholders})
+          OR session_token IN (${tokenPlaceholders})`,
+      [
+        ...emailsToCheck,
+        ...oauthEmails,
+        ...tokensToCheck
+      ]
+    );
+  }
+
+  const getExistingAccount = (name, token) => {
+    const cleanName = name.replace(/^OAuth-/i, '').toLowerCase();
+    const nameLower = name.toLowerCase();
+    const oauthNameLower = `oauth-${cleanName}`;
+
+    // 1. Find by name
+    let found = existingRows.find(r => {
+      const rNameLower = r.name.toLowerCase();
+      return rNameLower === nameLower || rNameLower === cleanName || rNameLower === oauthNameLower;
+    });
+    if (found) return { matchType: 'name', account: found };
+
+    // 2. Find by token
+    found = existingRows.find(r => r.sessionToken === token);
+    if (found) return { matchType: 'token', account: found };
+
+    return null;
+  };
+
+  const toInsert = [];
+  const toUpdate = [];
+  const processedEmails = new Set();
+  const processedTokens = new Set();
+
+  for (const item of parsedAccounts) {
+    if (!hotmailEmailsSet.has(item.email)) {
+      errors.push(`Dòng "${item.rawLine}": Email '${item.email}' không tồn tại trong kho Hotmail.`);
       continue;
     }
 
-    await UpstreamAccount.upsertByToken(emailClean, token);
-    importedCount++;
+    const name = item.email;
+    const token = item.token;
+
+    if (processedEmails.has(name) || processedTokens.has(token)) {
+      continue;
+    }
+    processedEmails.add(name);
+    processedTokens.add(token);
+
+    const match = getExistingAccount(name, token);
+
+    if (match) {
+      const existing = match.account;
+      if (match.matchType === 'name') {
+        let existingIsOAuth = false;
+        try {
+          const parsed = JSON.parse(existing.sessionToken);
+          if (parsed.accessToken && parsed.refreshToken) {
+            existingIsOAuth = true;
+          }
+        } catch (_) {}
+
+        let newIsOAuth = false;
+        try {
+          const parsed = JSON.parse(token);
+          if (parsed.accessToken && parsed.refreshToken) {
+            newIsOAuth = true;
+          }
+        } catch (_) {}
+
+        if (existingIsOAuth && !newIsOAuth) {
+          toUpdate.push({
+            id: existing.id,
+            sessionToken: existing.sessionToken,
+            name: existing.name,
+            isActive: 1,
+            lastError: null
+          });
+        } else {
+          toUpdate.push({
+            id: existing.id,
+            sessionToken: token,
+            name: existing.name,
+            isActive: 1,
+            lastError: null
+          });
+        }
+      } else {
+        toUpdate.push({
+          id: existing.id,
+          sessionToken: token,
+          name: existing.name !== name ? name : existing.name,
+          isActive: 1,
+          lastError: null
+        });
+      }
+    } else {
+      toInsert.push({
+        name,
+        sessionToken: token
+      });
+    }
   }
 
+  const updatePromises = toUpdate.map(item => {
+    return db.run(
+      `UPDATE upstream_accounts 
+       SET session_token = ?, name = ?, is_active = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
+      [item.sessionToken, item.name, item.isActive, item.lastError, item.id]
+    );
+  });
+
+  if (toInsert.length > 0) {
+    const insertValues = [];
+    const insertParams = [];
+
+    for (const item of toInsert) {
+      insertValues.push('(?, ?, 1, NULL, 0)');
+      insertParams.push(item.name, item.sessionToken);
+    }
+
+    const insertSql = `INSERT INTO upstream_accounts (name, session_token, is_active, last_error, total_requests) VALUES ${insertValues.join(', ')}`;
+    updatePromises.push(db.run(insertSql, insertParams));
+  }
+
+  if (updatePromises.length > 0) {
+    await Promise.all(updatePromises);
+  }
+
+  const importedCount = toInsert.length + toUpdate.length;
   if (importedCount > 0) {
     await AccountPool.reload();
   }

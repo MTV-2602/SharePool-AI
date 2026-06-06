@@ -460,7 +460,7 @@ router.get('/oauth/google/callback', asyncHandler(async (req, res) => {
     const metadata = { ideType: 9, platform: 5, pluginType: 2 };
     let projectId = null;
     let tierId = 'legacy-tier';
-    let loadCodeAssistWarning = '';
+    let loadCodeAssistWarning = null;
 
     try {
       const loadRes = await fetch('https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist', {
@@ -493,11 +493,31 @@ router.get('/oauth/google/callback', asyncHandler(async (req, res) => {
       } else {
         const errText = await loadRes.text();
         logger.warn(`loadCodeAssist failed for ${email} (non-fatal): ${errText}`);
-        loadCodeAssistWarning = 'Cloud Code API chưa được bật trên project. Tài khoản vẫn được lưu và sẽ hoạt động sau khi bật API.';
+        
+        let activationUrl = null;
+        try {
+          const errJson = JSON.parse(errText);
+          const msg = errJson.error?.message || '';
+          const match = msg.match(/https:\/\/console\.[^\s'"]+/);
+          if (match) {
+            // Remove trailing dot if matched by mistake
+            activationUrl = match[0].replace(/\.+$/, '');
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+
+        loadCodeAssistWarning = {
+          text: 'Cloud Code Private API chưa được bật trên project Google Cloud của tài khoản này.',
+          url: activationUrl
+        };
       }
     } catch (loadErr) {
       logger.warn(`loadCodeAssist error for ${email} (non-fatal): ${loadErr.message}`);
-      loadCodeAssistWarning = 'Không thể kết nối Cloud Code API. Tài khoản vẫn được lưu.';
+      loadCodeAssistWarning = {
+        text: 'Không thể kiểm tra trạng thái Cloud Code API. Vui lòng kiểm tra lại sau.',
+        url: null
+      };
     }
 
     // Use a default project ID if loadCodeAssist didn't return one
@@ -545,9 +565,32 @@ router.get('/oauth/google/callback', asyncHandler(async (req, res) => {
     session.status = 'completed';
     await antigravityOauthSessions.set(state, session);
 
-    const warningHtml = loadCodeAssistWarning
-      ? `<p style="color: #f59e0b; margin-top: 16px; padding: 12px; background: rgba(245,158,11,0.1); border-radius: 6px; border: 1px solid rgba(245,158,11,0.3);">⚠️ ${loadCodeAssistWarning}</p>`
-      : '';
+    let warningHtml = '';
+    if (loadCodeAssistWarning) {
+      if (loadCodeAssistWarning.url) {
+        warningHtml = `
+          <div style="margin-top: 20px; padding: 16px; background: rgba(245, 158, 11, 0.08); border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.25); text-align: left; box-sizing: border-box;">
+            <p style="color: #f59e0b; margin: 0 0 14px 0; font-weight: 500; font-size: 14px; line-height: 1.5; font-family: inherit;">
+              ⚠️ ${loadCodeAssistWarning.text}
+            </p>
+            <a href="${loadCodeAssistWarning.url}" target="_blank" style="display: inline-flex; align-items: center; justify-content: center; background-color: #f59e0b; color: #0d1117; padding: 10px 18px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; transition: background-color 0.2s; box-shadow: 0 2px 6px rgba(245, 158, 11, 0.2); font-family: inherit;">
+              👉 Bật API Ngay trên Google Cloud
+            </a>
+            <p style="color: #8b949e; margin: 12px 0 0 0; font-size: 12px; line-height: 1.4; font-family: inherit;">
+              * Sau khi nhấp và bấm "Bật/Enable" trên console của Google Cloud, tài khoản này sẽ tự động hoạt động trên hệ thống.
+            </p>
+          </div>
+        `;
+      } else {
+        warningHtml = `
+          <div style="margin-top: 20px; padding: 16px; background: rgba(245, 158, 11, 0.08); border-radius: 8px; border: 1px solid rgba(245, 158, 11, 0.25); text-align: left; box-sizing: border-box;">
+            <p style="color: #f59e0b; margin: 0; font-weight: 500; font-size: 14px; line-height: 1.5; font-family: inherit;">
+              ⚠️ ${loadCodeAssistWarning.text}
+            </p>
+          </div>
+        `;
+      }
+    }
 
     return res.send(`
       <html>
@@ -556,7 +599,7 @@ router.get('/oauth/google/callback', asyncHandler(async (req, res) => {
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; padding: 50px; background-color: #0d1117; color: #c9d1d9; }
             h1 { color: #58a6ff; }
-            .card { background-color: #161b22; padding: 30px; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.5); max-width: 500px; }
+            .card { background-color: #161b22; padding: 30px; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(0,0,0,0.5); max-width: 500px; width: 100%; box-sizing: border-box; }
           </style>
         </head>
         <body>
@@ -568,7 +611,7 @@ router.get('/oauth/google/callback', asyncHandler(async (req, res) => {
             <p style="color: #8b949e; margin-top: 20px;">Bạn có thể đóng cửa sổ này ngay bây giờ.</p>
           </div>
           <script>
-            setTimeout(() => { window.close(); }, 5000);
+            ${loadCodeAssistWarning && loadCodeAssistWarning.url ? '' : 'setTimeout(() => { window.close(); }, 5000);'}
           </script>
         </body>
       </html>
