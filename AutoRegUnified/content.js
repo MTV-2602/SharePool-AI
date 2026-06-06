@@ -2614,10 +2614,19 @@ async function runLoop() {
             return;
           }
         } else {
-          if (phoneInput.value !== "83894333032") {
-            log("ƒÆ’‚°ƒ€¦‚¸ƒ¢¢€š¬…€œƒ€š‚± ƒÆ’¢‚¬Å¾ƒ€š‚iƒÆ’‚¡ƒ€š‚»ƒ€š‚n sƒÆ’‚¡ƒ€š‚»ƒ¢¢€š¬‹Å“ ƒÆ’¢‚¬Å¾ƒ¢¢€š¬‹Å“iƒÆ’‚¡ƒ€š‚»ƒ¢¢€š¬‚¡n thoƒÆ’‚¡ƒ€š‚ºƒ€š‚¡i Indonesia: 83894333032...");
+          // Chỉ điền số mặc định nếu ô nhập số điện thoại trống
+          if (!phoneInput.value.trim()) {
+            log("Điền số điện thoại Indonesia mặc định: 83894333032...");
             phoneInput.focus();
             nativeFill(phoneInput, "83894333032");
+            await updateJob({ midtransPhoneFilledAt: Date.now() });
+            setTimeout(runLoop, 5000);
+            return;
+          }
+
+          // Nếu có số điện thoại khác (do user điền hoặc auto-fill khác), và chưa ghi nhận thời gian điền
+          if (phoneInput.value.trim() && !job.midtransPhoneFilledAt) {
+            log(`Phát hiện số điện thoại đã có: ${phoneInput.value.trim()}. Đợi 5 giây trước khi tiếp tục...`);
             await updateJob({ midtransPhoneFilledAt: Date.now() });
             setTimeout(runLoop, 5000);
             return;
