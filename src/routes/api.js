@@ -266,10 +266,10 @@ router.get('/accounts/expired', extensionAuth, asyncHandler(async (req, res) => 
       const poolAcc = statusMap.get(token);
       const isPoolFailed = poolAcc && (poolAcc.status === 'failed' || poolAcc.status === 'error');
       const isDbInactive = upstream.isActive === 0 || upstream.is_active === 0;
-
-      if (isDbInactive || isPoolFailed) {
+      // Nếu tài khoản bị tắt chủ động bởi admin (isDbInactive), chúng ta không yêu cầu extension re-login
+      if (!isDbInactive && isPoolFailed) {
         needsLogin = true;
-        reason = isDbInactive ? 'Bi vo hieu hoa' : 'Loi phien lam viec (pool)';
+        reason = 'Loi phien lam viec (pool)';
       }
     }
 
