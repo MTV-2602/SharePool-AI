@@ -1898,6 +1898,14 @@ async function runLoop() {
     const otpInput = document.querySelector("input[name='code'], input#code, input[autocomplete='one-time-code'], input[name='totp_otp']");
     if (otpInput && otpInput.offsetParent !== null && (!job.otpFilled || otpInput.value === "")) {
       const pageText = document.body.innerText.toLowerCase();
+      
+      // Kiểm tra nếu là trang xác minh số điện thoại (sms/phone) thì không tự động điền
+      const isPhoneOtp = pageText.includes("điện thoại") || pageText.includes("phone") || pageText.includes("sms") || pageText.includes("tin nhắn") || pageText.includes("văn bản");
+      if (isPhoneOtp) {
+        log("Phát hiện trang xác minh số điện thoại. Tạm dừng để người dùng tự nhập mã...");
+        setTimeout(runLoop, 3000);
+        return;
+      }
       const hasEmailText = pageText.includes("gửi đến") || pageText.includes("sent to") || pageText.includes("we sent a code") || pageText.includes("vừa gửi") || pageText.includes("check your email") || pageText.includes("check your inbox");
       const hasEmailAddress = job.email && pageText.includes(job.email.toLowerCase()) && (pageText.includes("mã") || pageText.includes("code") || pageText.includes("gửi") || pageText.includes("sent") || pageText.includes("xác minh"));
       const isEmailOtp = hasEmailText || hasEmailAddress;
