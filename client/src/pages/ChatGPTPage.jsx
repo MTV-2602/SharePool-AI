@@ -302,6 +302,9 @@ function ChatGPTPool() {
   const [stats, setStats] = useState({ total: 0, active: 0, cooldown: 0, failed: 0 });
   const [jumpPage, setJumpPage] = useState('');
 
+  // Bulk selection states
+  const [selectedTokens, setSelectedTokens] = useState([]);
+
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
     try {
@@ -311,6 +314,7 @@ function ChatGPTPool() {
       setAccounts(res.data.accounts || []);
       setTotalPages(res.data.totalPages || 1);
       setStats(res.data.stats || { total: 0, active: 0, cooldown: 0, failed: 0 });
+      setSelectedTokens([]); // Reset selection when data page changes
     } catch (e) {
       setMsg({ type: 'error', text: 'Lỗi tải accounts.' });
     } finally {
@@ -375,6 +379,69 @@ function ChatGPTPool() {
     }
   };
 
+  const handleBulkToggleActive = async (isActive) => {
+    if (selectedTokens.length === 0) return;
+    setLoading(true);
+    try {
+      await api.patch('/admin-api/accounts', {
+        sessionTokens: selectedTokens,
+        isActive
+      });
+      setMsg({
+        type: 'success',
+        text: `Đã ${isActive ? 'bật' : 'tắt'} ${selectedTokens.length} tài khoản thành công.`
+      });
+      setSelectedTokens([]);
+      await fetchAccounts();
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Thao tác thất bại.' });
+      setLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedTokens.length === 0) return;
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedTokens.length} tài khoản đã chọn không?`)) {
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.delete('/admin-api/accounts', { data: { sessionTokens: selectedTokens } });
+      setMsg({ type: 'success', text: `Đã xóa ${selectedTokens.length} tài khoản thành công.` });
+      setSelectedTokens([]);
+      await fetchAccounts();
+    } catch (e) {
+      setMsg({ type: 'error', text: e.response?.data?.error?.message || e.message || 'Xóa thất bại.' });
+      setLoading(false);
+    }
+  };
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      const tokensOnPage = accounts.map(acc => acc.sessionToken).filter(Boolean);
+      setSelectedTokens(prev => {
+        const next = [...prev];
+        tokensOnPage.forEach(token => {
+          if (!next.includes(token)) next.push(token);
+        });
+        return next;
+      });
+    } else {
+      const tokensOnPage = accounts.map(acc => acc.sessionToken).filter(Boolean);
+      setSelectedTokens(prev => prev.filter(token => !tokensOnPage.includes(token)));
+    }
+  };
+
+  const handleSelectRow = (sessionToken) => {
+    setSelectedTokens(prev => {
+      if (prev.includes(sessionToken)) {
+        return prev.filter(t => t !== sessionToken);
+      } else {
+        return [...prev, sessionToken];
+      }
+    });
+  };
+
   const startEdit = (acc) => {
     setEditRow(acc.sessionToken);
     setEditValues({ name: acc.name, newSessionToken: '' });
@@ -402,6 +469,9 @@ function ChatGPTPool() {
     if (s === 'disabled') return <span className="badge badge-gray" style={{ backgroundColor: '#374151', color: '#9ca3af' }}>Disabled</span>;
     return <span className="badge badge-gray">{s}</span>;
   };
+
+  const isAllSelected = accounts.length > 0 && accounts.every(acc => !acc.sessionToken || selectedTokens.includes(acc.sessionToken));
+  const isSomeSelected = accounts.length > 0 && accounts.some(acc => acc.sessionToken && selectedTokens.includes(acc.sessionToken)) && !isAllSelected;
 
   return (
     <div>
@@ -468,7 +538,34 @@ function ChatGPTPool() {
           </select>
         </div>
       </div>
- 
+
+      {/* Bulk Actions Bar */}
+      {selectedTokens.length > 0 && (
+        <div className="card" style={{ marginBottom: 14, backgroundColor: 'rgba(99, 102, 241, 0.08)', borderColor: 'var(--accent)', animation: 'slideUp 0.2s ease' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+                Đã chọn <strong style={{ color: 'var(--accent-light)' }}>{selectedTokens.length}</strong> tài khoản
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn btn-success btn-sm" onClick={() => handleBulkToggleActive(true)}>
+                Bật hoạt động
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => handleBulkToggleActive(false)} style={{ color: 'var(--yellow)', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+                Tắt hoạt động
+              </button>
+              <button className="btn btn-danger btn-sm" onClick={handleBulkDelete}>
+                Xóa đã chọn
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setSelectedTokens([])}>
+                Bỏ chọn
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
@@ -477,6 +574,19 @@ function ChatGPTPool() {
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: 40, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      ref={el => {
+                        if (el) {
+                          el.indeterminate = isSomeSelected;
+                        }
+                      }}
+                      onChange={handleSelectAll}
+                      style={{ cursor: 'pointer', width: 16, height: 16 }}
+                    />
+                  </th>
                   <th>#</th>
                   <th>Tên</th>
                   <th>Trạng thái</th>
@@ -489,12 +599,21 @@ function ChatGPTPool() {
               <tbody>
                 {accounts.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
                       Không tìm thấy tài khoản nào
                     </td>
                   </tr>
                 ) : accounts.map((acc, i) => (
-                  <tr key={acc.sessionToken || i}>
+                  <tr key={acc.sessionToken || i} style={selectedTokens.includes(acc.sessionToken) ? { backgroundColor: 'rgba(99, 102, 241, 0.05)' } : {}}>
+                    <td style={{ width: 40, textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTokens.includes(acc.sessionToken)}
+                        onChange={() => handleSelectRow(acc.sessionToken)}
+                        disabled={!acc.sessionToken}
+                        style={{ cursor: 'pointer', width: 16, height: 16 }}
+                      />
+                    </td>
                     <td style={{ color: 'var(--text-muted)', width: 40 }}>{(page - 1) * limit + i + 1}</td>
                     <td>
                       {editRow === acc.sessionToken ? (

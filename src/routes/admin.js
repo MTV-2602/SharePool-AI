@@ -765,11 +765,23 @@ router.post('/accounts/import-bulk', asyncHandler(async (req, res) => {
   res.json({ success: true, imported: importedCount, total: all.length, errors });
 }));
 
-// DELETE /admin-api/accounts — Delete an account by sessionToken (từ DB)
+// DELETE /admin-api/accounts — Delete an account or multiple accounts by sessionToken (từ DB)
 router.delete('/accounts', asyncHandler(async (req, res) => {
-  const { sessionToken } = req.body;
+  const { sessionToken, sessionTokens } = req.body;
+
+  if (Array.isArray(sessionTokens)) {
+    for (const token of sessionTokens) {
+      if (token) {
+        await UpstreamAccount.deleteByToken(token.trim());
+      }
+    }
+    await AccountPool.reload();
+    const all = await UpstreamAccount.findAll();
+    return res.json({ success: true, total: all.length });
+  }
+
   if (!sessionToken || !sessionToken.trim()) {
-    throw new AppError('sessionToken is required', 400, 'INVALID_REQUEST');
+    throw new AppError('sessionToken or sessionTokens is required', 400, 'INVALID_REQUEST');
   }
 
   const tokenClean = sessionToken.trim();
@@ -785,11 +797,27 @@ router.delete('/accounts', asyncHandler(async (req, res) => {
   res.json({ success: true, total: all.length });
 }));
 
-// PATCH /admin-api/accounts — Edit name, sessionToken, or isActive of an account (trong DB)
+// PATCH /admin-api/accounts — Edit name, sessionToken, or isActive of an account or multiple accounts (trong DB)
 router.patch('/accounts', asyncHandler(async (req, res) => {
-  const { oldSessionToken, name, newSessionToken, isActive } = req.body;
+  const { oldSessionToken, sessionTokens, name, newSessionToken, isActive } = req.body;
+
+  if (Array.isArray(sessionTokens)) {
+    if (isActive !== undefined) {
+      const activeVal = isActive ? 1 : 0;
+      const updatePromises = sessionTokens.map(token => {
+        if (token) {
+          return UpstreamAccount.update(token.trim(), { isActive: activeVal });
+        }
+        return Promise.resolve();
+      });
+      await Promise.all(updatePromises);
+      await AccountPool.reload();
+    }
+    return res.json({ success: true });
+  }
+
   if (!oldSessionToken || !oldSessionToken.trim()) {
-    throw new AppError('oldSessionToken is required', 400, 'INVALID_REQUEST');
+    throw new AppError('oldSessionToken or sessionTokens is required', 400, 'INVALID_REQUEST');
   }
 
   const oldTokenClean = oldSessionToken.trim();
