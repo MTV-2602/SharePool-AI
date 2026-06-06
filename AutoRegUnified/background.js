@@ -545,6 +545,59 @@ async function runChatGptLogoutAfterPush(targetTabId, job) {
 }
 async function finishPushedJobAfterLogout(targetTabId, job, data) {
   try {
+    // Tiêm giao diện thông báo thành công trực quan vào tab hiện tại trước khi đóng hoặc logout
+    const chatTabId = Number(job?.tabId || targetTabId || 0);
+    if (chatTabId) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: chatTabId },
+          func: (accountName) => {
+            document.title = 'Đăng ký thành công!';
+            document.body.innerHTML = `
+              <div style="
+                min-height:100vh;display:flex;align-items:center;justify-content:center;
+                background:linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%);
+                font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#e2e8f0;
+                z-index:999999;position:fixed;inset:0;
+              ">
+                <div style="text-align:center;max-width:480px;padding:40px;background:#1e293b;border-radius:16px;border:1px solid #334155;box-shadow:0 20px 50px rgba(0,0,0,0.4);">
+                  <div style="font-size:4rem;margin-bottom:16px;">✅</div>
+                  <h1 style="font-size:1.6rem;font-weight:700;margin:0 0 12px;color:#22c55e;">
+                    Đăng ký &amp; Lưu tài khoản thành công!
+                  </h1>
+                  <div style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:8px;padding:12px;margin-bottom:20px;text-align:left;">
+                    <div style="color:#94a3b8;font-size:0.85rem;margin-bottom:4px;">Tài khoản:</div>
+                    <div style="color:#f1f5f9;font-weight:600;font-family:monospace;word-break:break-all;">${accountName}</div>
+                  </div>
+                  <p style="font-size:0.95rem;color:#94a3b8;line-height:1.6;margin:0 0 16px;">
+                    Đã lưu thông tin tài khoản và đẩy session token lên Portal thành công.
+                  </p>
+                  <div id="countdown-text" style="color:#64748b;font-size:0.85rem;">Cửa sổ này sẽ tự động đóng trong <strong>8</strong> giây...</div>
+                </div>
+              </div>
+            `;
+            let seconds = 8;
+            const timer = setInterval(() => {
+              seconds--;
+              const countdownEl = document.getElementById('countdown-text');
+              if (countdownEl) {
+                const strong = countdownEl.querySelector('strong');
+                if (strong) strong.textContent = seconds;
+              }
+              if (seconds <= 0) {
+                clearInterval(timer);
+              }
+            }, 1000);
+          },
+          args: [job.email]
+        });
+      } catch (e) {
+        console.error('Could not inject success page:', e);
+      }
+      // Đợi 8 giây cho người dùng đọc thông báo
+      await new Promise(r => setTimeout(r, 8000));
+    }
+
     const logoutResult = await runChatGptLogoutAfterPush(targetTabId, job);
     Object.assign(job, {
       pushed: true,
@@ -2782,6 +2835,54 @@ async function performAutomatedOAuthExchange(code, returnedState, tabId, job) {
       job.codexConsentDone = true;
       setJob(tabId, job);
 
+      // Hiển thị thông báo thành công trực quan trên tab callback trước khi đóng hoặc chuyển tiếp
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          func: (accountName) => {
+            document.title = 'OAuth Codex — Thành công!';
+            document.body.innerHTML = `
+              <div style="
+                min-height:100vh;display:flex;align-items:center;justify-content:center;
+                background:linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%);
+                font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#e2e8f0;
+                z-index:999999;position:fixed;inset:0;
+              ">
+                <div style="text-align:center;max-width:480px;padding:40px;background:#1e293b;border-radius:16px;border:1px solid #334155;box-shadow:0 20px 50px rgba(0,0,0,0.4);">
+                  <div style="font-size:4rem;margin-bottom:16px;">✅</div>
+                  <h1 style="font-size:1.6rem;font-weight:700;margin:0 0 12px;color:#22c55e;">
+                    Đăng nhập &amp; Kết nối OAuth Thành công!
+                  </h1>
+                  <div style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:8px;padding:12px;margin-bottom:20px;text-align:left;">
+                    <div style="color:#94a3b8;font-size:0.85rem;margin-bottom:4px;">Tài khoản:</div>
+                    <div style="color:#f1f5f9;font-weight:600;font-family:monospace;word-break:break-all;">${accountName}</div>
+                  </div>
+                  <p style="font-size:0.95rem;color:#94a3b8;line-height:1.6;margin:0 0 16px;">
+                    Đã push token và lưu tài khoản vào Pool xoay thành công.
+                  </p>
+                  <div id="countdown-text" style="color:#64748b;font-size:0.85rem;">Cửa sổ này sẽ tự động đóng trong <strong>8</strong> giây...</div>
+                </div>
+              </div>
+            `;
+            let seconds = 8;
+            const timer = setInterval(() => {
+              seconds--;
+              const countdownEl = document.getElementById('countdown-text');
+              if (countdownEl) {
+                const strong = countdownEl.querySelector('strong');
+                if (strong) strong.textContent = seconds;
+              }
+              if (seconds <= 0) {
+                clearInterval(timer);
+              }
+            }, 1000);
+          },
+          args: [username]
+        });
+      } catch (e) {
+        console.error('Could not inject success status page:', e);
+      }
+
       addLog(tabId, `Hoan thanh re-login cho ${username}. Chuan bi acc tiep theo (neu co)...`);
       
       // Clear cookies and session storage
@@ -2794,12 +2895,12 @@ async function performAutomatedOAuthExchange(code, returnedState, tabId, job) {
         }).catch(() => {});
       }
 
-      finishPushedJob(tabId, job);
-
-      // Trigger re-login for the next failed account
+      // Đợi 8 giây cho người dùng xem thông báo rồi mới finish (xóa job và đóng tab)
       setTimeout(() => {
+        finishPushedJob(tabId, job);
+        // Trigger re-login cho account lỗi tiếp theo
         triggerAutoReLoginCheck(true).catch(() => {});
-      }, 3000);
+      }, 8000);
       return;
     } else {
       addLog(tabId, `Loi exchange OAuth: ${resData.error || "Server error"}`);
