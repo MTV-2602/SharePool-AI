@@ -47,8 +47,8 @@ class AccountPool {
     try {
       const db = require('../db');
       const rows = await db.query(
-        // Load last_used_at và quota_resets_at để restore state sau restart
-        `SELECT id, name, session_token, quota_resets_at, last_used_at
+        // Load last_used_at, quota_resets_at, last_error để restore state sau restart
+        `SELECT id, name, session_token, quota_resets_at, last_used_at, last_error
          FROM upstream_accounts
          WHERE is_active = 1
          ORDER BY last_used_at ASC NULLS FIRST` // tiếp tục round-robin từ nơi đã dừng
@@ -66,6 +66,7 @@ class AccountPool {
         const name          = row.name || `Account-${i + 1}`;
         const id            = row.id;
         const quotaResetsAt = row.quotaResetsAt || row.quota_resets_at;
+        const lastError     = row.lastError || row.last_error;
 
         if (!sessionToken) return null;
         let client = existingClients.get(sessionToken);
@@ -84,6 +85,14 @@ class AccountPool {
             const minsLeft = Math.ceil((resetTs - now) / 60000);
             logger.debug(`[${name}] Quota cooldown restored — hồi sau ${minsLeft} phút`);
           }
+        }
+
+        // Restore trạng thái invalid từ DB sau khi restart/reload
+        if (lastError && (lastError.toLowerCase().includes('session') || lastError.toLowerCase().includes('expired') || lastError.toLowerCase().includes('invalid') || lastError.toLowerCase().includes('failed'))) {
+          this._invalidTokens.add(sessionToken);
+          this._cooldowns.set(sessionToken, now + COOLDOWN_INVALID);
+          this._errors.set(sessionToken, lastError);
+          logger.debug(`[${name}] Invalid session restored from DB: ${lastError}`);
         }
 
         return { id, name, client };
@@ -294,15 +303,15 @@ class AccountPool {
     const account = this._accounts.find(a => a.client.sessionToken === token);
     logger.warn(`[${account?.name ?? 'unknown'}] Invalid session (${reason}) — cooling down for 30min`);
 
-    // Set is_active = 0 in database so it is persistent and triggers re-login
+    // Chỉ cập nhật last_error để báo lỗi, giữ nguyên is_active = 1 để Extension quét thấy và tự động re-login
     const db = require('../db');
     if (account && account.id) {
-      db.run('UPDATE upstream_accounts SET is_active = 0, last_error = ? WHERE id = ?', [reason, account.id]).catch(err => {
-        logger.error('Failed to set is_active = 0 and last_error in database for invalid token ID: ' + err.message);
+      db.run('UPDATE upstream_accounts SET last_error = ? WHERE id = ?', [reason, account.id]).catch(err => {
+        logger.error('Failed to update last_error in database for invalid token ID: ' + err.message);
       });
     } else {
-      db.run('UPDATE upstream_accounts SET is_active = 0, last_error = ? WHERE session_token = ?', [reason, token]).catch(err => {
-        logger.error('Failed to set is_active = 0 and last_error in database for invalid token: ' + err.message);
+      db.run('UPDATE upstream_accounts SET last_error = ? WHERE session_token = ?', [reason, token]).catch(err => {
+        logger.error('Failed to update last_error in database for invalid token: ' + err.message);
       });
     }
   }
