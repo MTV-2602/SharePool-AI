@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap, Lock, Eye, EyeOff } from 'lucide-react';
+import { Rocket, Lock, Eye, EyeOff } from 'lucide-react';
 import api from '../lib/api';
 import './LoginPage.css';
 
@@ -49,7 +49,7 @@ export default function LoginPage() {
       <div className="login-noise" aria-hidden="true" />
       <div className="login-card">
         <div className="login-logo">
-          <Zap size={28} />
+          <Rocket size={28} />
         </div>
         <h1 className="login-title">CodeX Portal</h1>
         <p className="login-sub">Nhập Admin Key hoặc API Key để tiếp tục</p>

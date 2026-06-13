@@ -122,7 +122,12 @@ export default function AntigravityApiKeysPage() {
         {[
           { label: 'Tổng keys', value: keys.length },
           { label: 'Đang hoạt động', value: keys.filter(k => k.isActive || k.is_active).length, color: 'var(--green)' },
-          { label: 'Tổng tokens tiêu thụ', value: keys.reduce((s, k) => s + Number(k.quotaUsed || k.quota_used || 0), 0).toLocaleString(), color: '#e0a82e' },
+          { label: 'Tổng tokens', value: keys.reduce((s, k) => s + Number(k.quotaUsed || k.quota_used || 0), 0).toLocaleString(), color: '#e0a82e' },
+          { 
+            label: 'Tổng chi phí', 
+            value: `~$${((keys.reduce((s, k) => s + Number(k.quotaUsed || k.quota_used || 0), 0) / 1000000) * 5.5).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
+            color: 'var(--red)' 
+          },
         ].map(s => (
           <div key={s.label} className="stat-card">
             <div className="stat-card-value" style={{ color: s.color || 'var(--text-primary)', fontSize: '1.4rem' }}>{s.value}</div>
@@ -143,6 +148,7 @@ export default function AntigravityApiKeysPage() {
                   <th>Key</th>
                   <th>Trạng thái</th>
                   <th>Tokens đã dùng / Tổng quota</th>
+                  <th>Chi phí (~USD)</th>
                   <th>Ngày tạo</th>
                   <th style={{ textAlign: 'right' }}>Hành động</th>
                 </tr>
@@ -150,7 +156,7 @@ export default function AntigravityApiKeysPage() {
               <tbody>
                 {keys.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
                       Chưa có API key nào.
                     </td>
                   </tr>
@@ -159,6 +165,7 @@ export default function AntigravityApiKeysPage() {
                   const pct = usagePct(k);
                   const used = k.quotaUsed || k.quota_used || 0;
                   const total = k.quotaTotal || k.quota_total || 0;
+                  const estCost = (used / 1000000) * 5.5;
                   return (
                     <tr key={k.id} style={{ opacity: isActive ? 1 : 0.5 }}>
                       <td>
@@ -202,6 +209,9 @@ export default function AntigravityApiKeysPage() {
                             borderRadius: 2, transition: 'width 0.3s ease'
                           }} />
                         </div>
+                      </td>
+                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {`~$${estCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`}
                       </td>
                       <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                         {k.createdAt || k.created_at ? new Date(k.createdAt || k.created_at).toLocaleDateString('vi-VN') : '—'}

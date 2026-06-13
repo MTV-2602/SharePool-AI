@@ -66,13 +66,13 @@ export default function UsagePage() {
                 <span className="text-muted">Tokens Out: {data.reduce((s, d) => s + (d.tokens_out || d.tokensOut || 0), 0).toLocaleString()}</span>
               </div>
               <span className="text-xs text-muted" style={{ marginLeft: 8, borderLeft: '1px solid var(--border)', paddingLeft: 12 }}>
-                Tổng: {data.reduce((s, d) => s + (d.tokens_total || d.tokensTotal || ((d.tokens_in || d.tokensIn || 0) + (d.tokens_out || d.tokensOut || 0)) || 0), 0).toLocaleString()} tokens
+                Tổng: {data.reduce((s, d) => s + (d.tokens_total || d.tokensTotal || ((d.tokens_in || d.tokensIn || 0) + (d.tokens_out || d.tokensOut || 0)) || 0), 0).toLocaleString()} tokens (~${((data.reduce((s, d) => s + (d.tokens_total || d.tokensTotal || ((d.tokens_in || d.tokensIn || 0) + (d.tokens_out || d.tokensOut || 0)) || 0), 0) / 1000000) * 5.0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD)
               </span>
             </div>
           </div>
 
           {/* Bar chart */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 160, marginBottom: 8, padding: '0 4px', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 160, marginBottom: 8, padding: '0 4px', overflowX: 'auto' }}>
             {data.slice(-30).map((d, i) => {
               const tIn = d.tokens_in || d.tokensIn || 0;
               const tOut = d.tokens_out || d.tokensOut || 0;
@@ -83,7 +83,7 @@ export default function UsagePage() {
               const heightOut = Math.max(tOut > 0 ? 3 : 0, pctOut * 130);
 
               return (
-                <div key={d.date || i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1, minWidth: 20 }}>
+                <div key={d.date || i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: '0 0 auto', width: 24 }}>
                   <div 
                     title={`${d.date}\nTokens In: ${tIn.toLocaleString()}\nTokens Out: ${tOut.toLocaleString()}\nTổng: ${tTotal.toLocaleString()}`}
                     style={{
@@ -124,9 +124,9 @@ export default function UsagePage() {
           </div>
 
           {/* X-axis labels */}
-          <div style={{ display: 'flex', gap: 4, padding: '0 4px', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', gap: 8, padding: '0 4px', overflowX: 'auto', marginBottom: 12 }}>
             {data.slice(-30).map((d, i) => (
-              <div key={i} style={{ flex: 1, minWidth: 20, textAlign: 'center', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+              <div key={i} style={{ flex: '0 0 auto', width: 24, textAlign: 'center', fontSize: '0.62rem', color: 'var(--text-muted)' }}>
                 {i % 5 === 0 ? (d.date || '').slice(5) : ''}
               </div>
             ))}
@@ -142,26 +142,36 @@ export default function UsagePage() {
                   <th style={{ textAlign: 'right' }}>Tokens In</th>
                   <th style={{ textAlign: 'right' }}>Tokens Out</th>
                   <th style={{ textAlign: 'right' }}>Tổng Tokens</th>
+                  <th style={{ textAlign: 'right' }}>Chi phí (~USD)</th>
                 </tr>
               </thead>
               <tbody>
-                {[...data].reverse().map((d, i) => (
-                  <tr key={d.date || i}>
-                    <td style={{ fontWeight: 500 }}>{d.date || '—'}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--accent-light)', fontWeight: 600 }}>
-                      {(d.requests || d.total || 0).toLocaleString()}
-                    </td>
-                    <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
-                      {(d.tokens_in || 0).toLocaleString()}
-                    </td>
-                    <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
-                      {(d.tokens_out || 0).toLocaleString()}
-                    </td>
-                    <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
-                      {(d.tokens_total || 0).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
+                {[...data].reverse().map((d, i) => {
+                  const tIn = d.tokens_in || 0;
+                  const tOut = d.tokens_out || 0;
+                  const tTotal = d.tokens_total || (tIn + tOut);
+                  const estCost = (tTotal / 1000000) * 5.0;
+                  return (
+                    <tr key={d.date || i}>
+                      <td style={{ fontWeight: 500 }}>{d.date || '—'}</td>
+                      <td style={{ textAlign: 'right', color: 'var(--accent-light)', fontWeight: 600 }}>
+                        {(d.requests || d.total || 0).toLocaleString()}
+                      </td>
+                      <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
+                        {tIn.toLocaleString()}
+                      </td>
+                      <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
+                        {tOut.toLocaleString()}
+                      </td>
+                      <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
+                        {tTotal.toLocaleString()}
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {`~$${estCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

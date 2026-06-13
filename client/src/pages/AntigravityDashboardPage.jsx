@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   BarChart3, Key, Bot,
-  TrendingUp, Activity, RefreshCw, Zap,
+  TrendingUp, Activity, RefreshCw, Rocket,
   Copy, Check, Clock
 } from 'lucide-react';
 import api from '../lib/api';
@@ -66,7 +66,7 @@ export default function AntigravityDashboardPage() {
       <div className="page-header page-header-flex">
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Zap size={22} style={{ color: '#e0a82e' }} />
+            <Rocket size={22} style={{ color: '#e0a82e' }} />
             AntiGravity Dashboard
           </h1>
           <p>Hệ thống xoay vòng phím Google Gemini Code Assist</p>
@@ -197,7 +197,7 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
       <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Zap size={22} style={{ color: '#e0a82e' }} />
+            <Rocket size={22} style={{ color: '#e0a82e' }} />
             Dashboard của bạn
           </h1>
           <p>Chào mừng, {stats.name || 'User'}! Theo dõi hạn mức sử dụng API Key AntiGravity.</p>

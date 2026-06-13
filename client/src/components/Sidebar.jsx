@@ -1,7 +1,7 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Key, Mail, Bot,
-  Settings, LogOut, Zap, ChevronRight,
+  Settings, LogOut, Rocket, ChevronRight,
   Send, Activity, ArrowLeftRight
 } from 'lucide-react';
 import './Sidebar.css';
@@ -59,8 +59,12 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="brand-icon" style={{ backgroundColor: isAntigravity ? '#e0a82e' : undefined }}>
-          <Zap size={18} />
+        <div className="brand-icon" style={{ backgroundColor: isAntigravity ? '#e0a82e' : undefined, padding: role === 'admin' ? 0 : undefined }}>
+          {role === 'admin' ? (
+            <img src="/admin.jpg" alt="Admin" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-sm)' }} />
+          ) : (
+            <Rocket size={18} />
+          )}
         </div>
         <span className="brand-name">
           {isAntigravity 

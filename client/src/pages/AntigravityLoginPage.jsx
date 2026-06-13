@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap, Lock, Eye, EyeOff } from 'lucide-react';
+import { Rocket, Lock, Eye, EyeOff } from 'lucide-react';
 import api from '../lib/api';
 import './LoginPage.css'; // Reuse login styling
 
@@ -49,7 +49,7 @@ export default function AntigravityLoginPage() {
       <div className="login-noise" aria-hidden="true" />
       <div className="login-card ag-login-card">
         <div className="login-logo ag-login-logo">
-          <Zap size={28} />
+          <Rocket size={28} />
         </div>
         <h1 className="login-title">AntiGravity Portal</h1>
         <p className="login-sub">Nhập Admin Key hoặc AntiGravity API Key để tiếp tục</p>

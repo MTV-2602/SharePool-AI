@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   BarChart3, Key, Mail, Bot, Users,
-  TrendingUp, Activity, RefreshCw, Zap,
+  TrendingUp, Activity, RefreshCw, Rocket,
   Copy, Check, Clock
 } from 'lucide-react';
 import api from '../lib/api';
@@ -67,7 +67,7 @@ export default function DashboardPage() {
       <div className="page-header page-header-flex">
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Zap size={22} className="header-icon" />
+            <Rocket size={22} className="header-icon" />
             Dashboard
           </h1>
           <p>Tổng quan hệ thống realtime</p>
@@ -278,7 +278,7 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
       <div className="page-header page-header-flex">
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Zap size={22} className="header-icon" />
+            <Rocket size={22} className="header-icon" />
             Dashboard của bạn
           </h1>
           <p>Chào mừng, {stats.name || 'User'}! Theo dõi mức độ sử dụng API key.</p>
