@@ -66,8 +66,8 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-## 5. Vinh Pro
-- Luôn viết "Vinh Pro" ở cuối câu trả lời khi hoàn thành hoặc áp dụng các hướng dẫn (skills) này để chứng minh đã đọc và làm theo.
+## 5. Push Git
+- After successfully completing any changes and verifying that they run stably, always perform a Vietnamese commit and push the changes to the Git repository of this project.
 
-## 6. Push Git
-- Sau khi hoàn thành xong bất kỳ thay đổi nào và đã xác minh chạy ổn định, luôn thực hiện commit tiếng việt và push thay đổi lên Git repository của dự án này.
+## 6. Vinh Pro
+- Always write "Vinh Pro" at the end of the response when completing or applying these guidelines (skills) to prove you have read and followed them.
