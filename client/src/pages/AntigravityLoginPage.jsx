@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Rocket, Lock, Eye, EyeOff } from 'lucide-react';
 import api from '../lib/api';
@@ -10,6 +10,15 @@ export default function AntigravityLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = 'AntiGravity Portal';
+    let faviconEl = document.querySelector('link[rel="icon"]');
+    if (faviconEl) {
+      faviconEl.setAttribute('type', 'image/svg+xml');
+      faviconEl.setAttribute('href', '/favicon.svg');
+    }
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();

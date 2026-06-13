@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Key, Mail, Bot,
@@ -56,15 +57,34 @@ export default function Sidebar() {
     }
   };
 
+  useEffect(() => {
+    // Dynamic Title based on portal and role
+    const titleText = isAntigravity 
+      ? (role === 'user' ? 'AntiGravity Portal' : 'AntiGravity Admin')
+      : (role === 'user' ? 'CodeX Portal' : 'CodeX Admin');
+    document.title = titleText;
+
+    // Dynamic Favicon based on role
+    let faviconEl = document.querySelector('link[rel="icon"]');
+    if (!faviconEl) {
+      faviconEl = document.createElement('link');
+      faviconEl.rel = 'icon';
+      document.head.appendChild(faviconEl);
+    }
+    if (role === 'admin') {
+      faviconEl.setAttribute('type', 'image/jpeg');
+      faviconEl.setAttribute('href', '/admin.jpg');
+    } else {
+      faviconEl.setAttribute('type', 'image/svg+xml');
+      faviconEl.setAttribute('href', '/favicon.svg');
+    }
+  }, [role, isAntigravity]);
+
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="brand-icon" style={{ backgroundColor: isAntigravity ? '#e0a82e' : undefined, padding: role === 'admin' ? 0 : undefined }}>
-          {role === 'admin' ? (
-            <img src="/admin.jpg" alt="Admin" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-sm)' }} />
-          ) : (
-            <Rocket size={18} />
-          )}
+        <div className="brand-icon" style={{ backgroundColor: isAntigravity ? '#e0a82e' : undefined }}>
+          <Rocket size={18} />
         </div>
         <span className="brand-name">
           {isAntigravity 
