@@ -90,15 +90,15 @@ export default function ApiKeysPage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div className="page-header page-header-flex">
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Key size={22} style={{ color: 'var(--accent)' }} />
+            <Key size={22} className="header-icon" />
             API Keys
           </h1>
           <p>Quản lý tất cả API keys và quota</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="flex gap-2">
           <button id="apikeys-refresh-btn" className="btn btn-ghost btn-sm" onClick={fetchKeys} disabled={loading}>
             <RefreshCw size={14} /> Làm mới
           </button>
@@ -109,9 +109,9 @@ export default function ApiKeysPage() {
       </div>
 
       {msg && (
-        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: 14 }}>
+        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'} mb-3`}>
           {msg.text}
-          <button style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }} onClick={() => setMsg(null)}>×</button>
+          <button className="alert-close" onClick={() => setMsg(null)}>×</button>
         </div>
       )}
 

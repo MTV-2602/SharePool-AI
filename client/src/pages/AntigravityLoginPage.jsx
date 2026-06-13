@@ -45,15 +45,16 @@ export default function AntigravityLoginPage() {
 
   return (
     <div className="login-page">
-      <div className="login-bg" style={{ background: 'radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%)' }} />
-      <div className="login-card" style={{ borderColor: 'rgba(224, 168, 46, 0.2)' }}>
-        <div className="login-logo" style={{ backgroundColor: '#e0a82e', color: '#fff' }}>
+      <div className="login-bg ag-login-bg" />
+      <div className="login-noise" aria-hidden="true" />
+      <div className="login-card ag-login-card">
+        <div className="login-logo ag-login-logo">
           <Zap size={28} />
         </div>
         <h1 className="login-title">AntiGravity Portal</h1>
         <p className="login-sub">Nhập Admin Key hoặc AntiGravity API Key để tiếp tục</p>
 
-        <form onSubmit={handleLogin} className="login-form">
+        <form onSubmit={handleLogin} className="login-form" aria-label="Form đăng nhập AntiGravity">
           <div className="form-group">
             <label htmlFor="admin-key-input">Admin Key / API Key</label>
             <div className="input-wrapper">
@@ -84,8 +85,7 @@ export default function AntigravityLoginPage() {
           <button
             id="login-submit-btn"
             type="submit"
-            className="btn btn-primary w-full"
-            style={{ backgroundColor: '#e0a82e', borderColor: '#e0a82e' }}
+            className="btn btn-primary ag-accent-bg w-full"
             disabled={loading || !key.trim()}
           >
             {loading ? <span className="spinner" /> : <Lock size={15} />}

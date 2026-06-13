@@ -127,8 +127,8 @@ export default function ChatGPTPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Bot size={22} style={{ color: '#10b981' }} />
+        <h1>
+          <Bot size={22} className="icon-green" />
           ChatGPT Accounts
         </h1>
         <p>Quản lý pool tài khoản ChatGPT upstream (Xoay key)</p>
@@ -476,13 +476,13 @@ function ChatGPTPool() {
   return (
     <div>
       {msg && (
-        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: 14 }}>
+        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'} mb-3`}>
           {msg.text}
-          <button style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }} onClick={() => setMsg(null)}>×</button>
+          <button className="alert-close" onClick={() => setMsg(null)}>×</button>
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: 14 }}>
+      <div className="card reveal" style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
           <div style={{ display: 'flex', gap: 16 }}>
             {[
@@ -510,7 +510,7 @@ function ChatGPTPool() {
       </div>
 
       {/* Filters */}
-      <div className="card" style={{ marginBottom: 14 }}>
+      <div className="card reveal" style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
@@ -671,35 +671,14 @@ function ChatGPTPool() {
                       </div>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <label className="switch" style={{ position: 'relative', display: 'inline-block', width: 34, height: 20 }}>
-                          <input
-                            type="checkbox"
-                            checked={acc.isActive}
-                            onChange={() => handleToggleActive(acc.sessionToken, acc.isActive)}
-                            style={{ opacity: 0, width: 0, height: 0 }}
-                          />
-                          <span className="slider" style={{
-                            position: 'absolute',
-                            cursor: 'pointer',
-                            top: 0, left: 0, right: 0, bottom: 0,
-                            backgroundColor: acc.isActive ? 'var(--green)' : '#374151',
-                            transition: '0.2s',
-                            borderRadius: 10
-                          }}>
-                            <span style={{
-                              position: 'absolute',
-                              content: '""',
-                              height: 14, width: 14,
-                              left: acc.isActive ? 17 : 3,
-                              bottom: 3,
-                              backgroundColor: '#fff',
-                              transition: '0.2s',
-                              borderRadius: '50%'
-                            }} />
-                          </span>
-                        </label>
-                      </div>
+                      <label className="switch-wrapper">
+                        <input
+                          type="checkbox"
+                          checked={acc.isActive}
+                          onChange={() => handleToggleActive(acc.sessionToken, acc.isActive)}
+                        />
+                        <span className="switch-slider" />
+                      </label>
                     </td>
                     <td>
                       <AccountQuotaCell accountName={acc.name} sessionToken={acc.sessionToken} />

@@ -31,7 +31,7 @@ export default function AntigravityUsagePage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div className="page-header page-header-flex">
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Activity size={22} style={{ color: '#e0a82e' }} />

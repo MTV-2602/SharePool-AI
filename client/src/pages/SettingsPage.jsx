@@ -55,38 +55,37 @@ export default function SettingsPage() {
     <div style={{ maxWidth: 640 }}>
       <div className="page-header">
         <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Settings size={22} style={{ color: 'var(--text-secondary)' }} />
+          <Settings size={22} />
           Cài đặt hệ thống
         </h1>
         <p>Cấu hình Admin Key, Telegram Bot, và các thông số khác</p>
       </div>
 
       {msg && (
-        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: 16 }}>
+        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'} mb-4`}>
           {msg.text}
         </div>
       )}
 
       <div style={{ display: 'grid', gap: 16 }}>
         {/* Admin Key */}
-        <div className="card">
+        <div className="card reveal">
           <div className="card-header">
             <span className="card-title">🔑 Admin Key</span>
           </div>
           <div className="form-group">
             <label>Admin Key (dùng để đăng nhập dashboard)</label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <div className="password-wrapper">
               <input
                 id="settings-admin-key"
                 type={showKey ? 'text' : 'password'}
                 value={form.ADMIN_KEY}
                 onChange={e => set('ADMIN_KEY', e.target.value)}
                 placeholder="Nhập admin key..."
-                style={{ paddingRight: 40 }}
               />
               <button
                 type="button"
-                style={{ position: 'absolute', right: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                className="password-toggle"
                 onClick={() => setShowKey(!showKey)}
               >
                 {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -99,24 +98,23 @@ export default function SettingsPage() {
         </div>
 
         {/* Telegram */}
-        <div className="card">
+        <div className="card reveal">
           <div className="card-header">
             <span className="card-title">📨 Telegram Bot</span>
           </div>
           <div className="form-group">
             <label>Bot Token (từ @BotFather)</label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <div className="password-wrapper">
               <input
                 id="settings-telegram-token"
                 type={showTg ? 'text' : 'password'}
                 value={form.TELEGRAM_BOT_TOKEN}
                 onChange={e => set('TELEGRAM_BOT_TOKEN', e.target.value)}
                 placeholder="1234567890:ABCdef..."
-                style={{ paddingRight: 40 }}
               />
               <button
                 type="button"
-                style={{ position: 'absolute', right: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                className="password-toggle"
                 onClick={() => setShowTg(!showTg)}
               >
                 {showTg ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -159,7 +157,7 @@ export default function SettingsPage() {
         </div>
 
         {/* AntiGravity Google OAuth Settings */}
-        <div className="card" style={{ border: '1px solid rgba(224, 168, 46, 0.2)' }}>
+        <div className="card reveal ag-accent-border">
           <div className="card-header">
             <span className="card-title" style={{ color: '#e0a82e' }}>🪐 AntiGravity Google OAuth (Gemini Code Assist)</span>
           </div>
@@ -174,18 +172,17 @@ export default function SettingsPage() {
           </div>
           <div className="form-group" style={{ marginTop: 12 }}>
             <label>Google Client Secret</label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <div className="password-wrapper">
               <input
                 id="settings-antigravity-client-secret"
                 type={showAgSecret ? 'text' : 'password'}
                 value={form.ANTIGRAVITY_CLIENT_SECRET}
                 onChange={e => set('ANTIGRAVITY_CLIENT_SECRET', e.target.value)}
                 placeholder="GOCSPX-..."
-                style={{ paddingRight: 40 }}
               />
               <button
                 type="button"
-                style={{ position: 'absolute', right: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                className="password-toggle"
                 onClick={() => setShowAgSecret(!showAgSecret)}
               >
                 {showAgSecret ? <EyeOff size={14} /> : <Eye size={14} />}

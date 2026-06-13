@@ -63,7 +63,7 @@ export default function AntigravityDashboardPage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div className="page-header page-header-flex">
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Zap size={22} style={{ color: '#e0a82e' }} />
@@ -84,7 +84,7 @@ export default function AntigravityDashboardPage() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="stat-grid">
+      <div className="stat-grid reveal">
         {statItems.map(({ icon: Icon, label, value, color, bg }) => (
           <div key={label} className="stat-card">
             <div className="stat-card-icon" style={{ background: bg }}>

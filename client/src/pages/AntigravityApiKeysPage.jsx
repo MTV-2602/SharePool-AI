@@ -92,7 +92,7 @@ export default function AntigravityApiKeysPage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div className="page-header page-header-flex">
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Key size={22} style={{ color: '#e0a82e' }} />
@@ -100,20 +100,20 @@ export default function AntigravityApiKeysPage() {
           </h1>
           <p>Quản lý các phím khách hàng cấp quyền gọi Gemini Code Assist</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="flex gap-2">
           <button className="btn btn-ghost btn-sm" onClick={fetchKeys} disabled={loading}>
             <RefreshCw size={14} className={loading ? 'spin-anim' : ''} /> Làm mới
           </button>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)} style={{ backgroundColor: '#e0a82e', borderColor: '#e0a82e' }}>
+          <button className="btn btn-primary btn-sm ag-accent-bg" onClick={() => setShowCreate(true)}>
             <Plus size={14} /> Tạo Key mới
           </button>
         </div>
       </div>
 
       {msg && (
-        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: 14 }}>
+        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'} mb-3`}>
           {msg.text}
-          <button style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }} onClick={() => setMsg(null)}>×</button>
+          <button className="alert-close" onClick={() => setMsg(null)}>×</button>
         </div>
       )}
 

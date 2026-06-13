@@ -35,22 +35,22 @@ export default function TelegramPage() {
   return (
     <div style={{ maxWidth: 680 }}>
       <div className="page-header">
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Send size={22} style={{ color: '#06b6d4' }} />
+        <h1>
+          <Send size={22} className="icon-cyan" />
           Telegram Bot
         </h1>
         <p>Cấu hình Telegram Bot để nhận thông báo và điều khiển qua chat</p>
       </div>
 
       {msg && (
-        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: 16 }}>
+        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'} mb-4`}>
           {msg.text}
         </div>
       )}
 
       <div style={{ display: 'grid', gap: 16 }}>
         {/* Status card */}
-        <div className="card">
+        <div className="card reveal">
           <div className="card-header">
             <span className="card-title"><Bot size={15} /> Trạng thái Bot</span>
             <button className="btn btn-ghost btn-sm" onClick={testBot} disabled={loading}>
@@ -63,7 +63,7 @@ export default function TelegramPage() {
         </div>
 
         {/* Webhook URL */}
-        <div className="card">
+        <div className="card reveal">
           <div className="card-header">
             <span className="card-title"><MessageSquare size={15} /> Webhook URL</span>
           </div>
@@ -86,7 +86,7 @@ export default function TelegramPage() {
         </div>
 
         {/* Guide */}
-        <div className="card">
+        <div className="card reveal">
           <div className="card-header">
             <span className="card-title">📖 Hướng dẫn cài đặt</span>
           </div>

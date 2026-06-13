@@ -30,10 +30,10 @@ export default function UsagePage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div className="page-header">
         <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Activity size={22} style={{ color: 'var(--green)' }} />
+          <h1>
+            <Activity size={22} className="icon-green" />
             Usage Analytics
           </h1>
           <p>Thống kê lượng Token tiêu thụ theo ngày (30 ngày gần nhất)</p>
@@ -53,7 +53,7 @@ export default function UsagePage() {
           <p>Chưa có dữ liệu usage nào.</p>
         </div>
       ) : (
-        <div className="card">
+        <div className="card reveal">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <span className="card-title"><BarChart3 size={15} /> Biểu đồ Tokens theo ngày</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: '0.75rem' }}>

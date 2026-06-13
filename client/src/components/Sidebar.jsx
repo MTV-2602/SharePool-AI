@@ -85,7 +85,7 @@ export default function Sidebar() {
 
       <div className="sidebar-footer">
         {role === 'admin' && (
-          <button className="sidebar-toggle-portal" onClick={handleTogglePortal} style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '10px', padding: '10px 12px', border: 'none', background: 'transparent', color: '#8b949e', fontSize: '13px', cursor: 'pointer', borderRadius: '6px', marginBottom: '8px', textAlign: 'left' }}>
+          <button className="sidebar-toggle-portal" onClick={handleTogglePortal}>
             <ArrowLeftRight size={15} />
             <span>{isAntigravity ? 'Chuyển sang CodeX' : 'Chuyển sang AntiGravity'}</span>
           </button>

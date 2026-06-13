@@ -46,6 +46,7 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-bg" />
+      <div className="login-noise" aria-hidden="true" />
       <div className="login-card">
         <div className="login-logo">
           <Zap size={28} />
@@ -53,7 +54,7 @@ export default function LoginPage() {
         <h1 className="login-title">CodeX Portal</h1>
         <p className="login-sub">Nhập Admin Key hoặc API Key để tiếp tục</p>
 
-        <form onSubmit={handleLogin} className="login-form">
+        <form onSubmit={handleLogin} className="login-form" aria-label="Form đăng nhập">
           <div className="form-group">
             <label htmlFor="admin-key-input">Admin Key / API Key</label>
             <div className="input-wrapper">

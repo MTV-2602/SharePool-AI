@@ -64,10 +64,10 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div className="page-header page-header-flex">
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Zap size={22} style={{ color: 'var(--accent)' }} />
+            <Zap size={22} className="header-icon" />
             Dashboard
           </h1>
           <p>Tổng quan hệ thống realtime</p>
@@ -85,7 +85,7 @@ export default function DashboardPage() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="stat-grid">
+      <div className="stat-grid reveal">
         {statItems.map(({ icon: Icon, label, value, color, bg }) => (
           <div key={label} className="stat-card">
             <div className="stat-card-icon" style={{ background: bg }}>
@@ -275,10 +275,10 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div className="page-header page-header-flex">
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Zap size={22} style={{ color: 'var(--accent)' }} />
+            <Zap size={22} className="header-icon" />
             Dashboard của bạn
           </h1>
           <p>Chào mừng, {stats.name || 'User'}! Theo dõi mức độ sử dụng API key.</p>

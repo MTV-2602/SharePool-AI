@@ -69,42 +69,6 @@ function AntigravityAccountCard({ acc, onDelete, onUpdate, globalRefreshTrigger,
     return <span className="badge badge-gray">Chờ</span>;
   };
 
-  // Switch Toggle Styles
-  const switchContainerStyle = {
-    position: 'relative',
-    display: 'inline-block',
-    width: 36,
-    height: 18,
-    marginLeft: 6
-  };
-
-  const switchInputStyle = {
-    opacity: 0,
-    width: 0,
-    height: 0
-  };
-
-  const getSliderStyle = (isActive) => ({
-    position: 'absolute',
-    cursor: 'pointer',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: isActive ? '#e0a82e' : '#374151',
-    transition: '0.4s',
-    borderRadius: 20
-  });
-
-  const getSliderCircleStyle = (isActive) => ({
-    position: 'absolute',
-    content: '""',
-    height: 12,
-    width: 12,
-    left: isActive ? 21 : 3,
-    bottom: 3,
-    backgroundColor: '#fff',
-    transition: '0.4s',
-    borderRadius: '50%'
-  });
-
   return (
     <div className="card" style={{
       display: 'flex',
@@ -153,17 +117,14 @@ function AntigravityAccountCard({ acc, onDelete, onUpdate, globalRefreshTrigger,
             <Trash2 size={13} style={{ color: 'var(--red)' }} />
           </button>
           
-          {/* Toggle Swtich */}
-          <label style={switchContainerStyle} title={acc.isActive ? 'Gạt để tắt tài khoản' : 'Gạt để bật tài khoản'}>
+          {/* Toggle Switch */}
+          <label className="switch-wrapper ag" title={acc.isActive ? 'Gạt để tắt tài khoản' : 'Gạt để bật tài khoản'}>
             <input 
               type="checkbox" 
               checked={!!acc.isActive} 
               onChange={handleToggleActive}
-              style={switchInputStyle}
             />
-            <span style={getSliderStyle(acc.isActive)}>
-              <span style={getSliderCircleStyle(acc.isActive)} />
-            </span>
+            <span className="switch-slider" />
           </label>
         </div>
       </div>

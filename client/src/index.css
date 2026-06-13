@@ -1,5 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=Newsreader:ital,wght@0,400;0,600;1,400;1,700&display=swap');
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   1. DESIGN TOKENS — Dark Theme (Premium, warm-tinted)
+   Áp dụng SkillUi.md Section 1: Hệ thống Biến CSS & Design Tokens
+   ═══════════════════════════════════════════════════════════════════════════ */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -7,50 +11,85 @@
 }
 
 :root {
-  --bg-base: #0a0e1a;
-  --bg-surface: #111827;
-  --bg-elevated: #1a2235;
-  --bg-card: #1e2d45;
-  --bg-hover: #243352;
+  /* --- Bảng màu chính (Dark Theme) --- */
+  --bg: #07090b;
+  --bg-alt: #101317;
+  --bg-base: #07090b;
+  --bg-surface: #0f1218;
+  --bg-elevated: #181d27;
+  --bg-card: #141923;
+  --bg-hover: #1e2535;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-strong: rgba(255, 255, 255, 0.12);
 
+  /* --- Màu chữ (warm-tinted) --- */
+  --text: #f0eae0;
+  --text-primary: #f0eae0;
+  --text-soft: #d0c8b8;
+  --text-secondary: #a8a090;
+  --text-muted: #78706a;
+  --text-dim: #58524c;
+
+  /* --- Đường viền --- */
+  --line: rgba(240, 234, 224, 0.1);
+  --border: rgba(240, 234, 224, 0.08);
+  --border-hover: rgba(240, 234, 224, 0.18);
+
+  /* --- Màu sắc Nhận diện & Điểm nhấn --- */
+  --red: #d85042;
+  --amber: #e4ad4a;
+  --teal: #43b4a5;
+  --sage: #9ab872;
+
+  /* Backward compat aliases */
   --accent: #6366f1;
   --accent-light: #818cf8;
   --accent-dark: #4f46e5;
-  --accent-glow: rgba(99,102,241,0.25);
-
+  --accent-glow: rgba(99, 102, 241, 0.2);
   --green: #10b981;
   --green-dark: #059669;
-  --green-glow: rgba(16,185,129,0.2);
-
-  --red: #ef4444;
-  --red-dark: #dc2626;
+  --green-glow: rgba(16, 185, 129, 0.15);
   --yellow: #f59e0b;
   --blue: #3b82f6;
   --cyan: #06b6d4;
   --purple: #a855f7;
 
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-dim: #475569;
+  /* --- AntiGravity Accent --- */
+  --ag-accent: #e0a82e;
+  --ag-accent-glow: rgba(224, 168, 46, 0.2);
 
-  --border: rgba(255,255,255,0.07);
-  --border-hover: rgba(255,255,255,0.15);
-
+  /* --- Border Radius --- */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 24px;
 
-  --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 20px rgba(0,0,0,0.4);
-  --shadow-lg: 0 8px 40px rgba(0,0,0,0.5);
-  --shadow-glow: 0 0 20px var(--accent-glow);
+  /* --- Shadows (deep) --- */
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.45);
+  --shadow-glow: 0 0 24px var(--accent-glow);
 
-  --transition: 0.2s ease;
-  --transition-slow: 0.35s ease;
+  /* --- Transitions --- */
+  --transition: 0.22s ease;
+  --transition-slow: 0.4s ease;
 
-  --sidebar-width: 240px;
+  /* --- Typography --- */
+  --font-label: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-serif: "Newsreader", Georgia, serif;
+
+  /* --- Layout --- */
+  --sidebar-width: 250px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2. BASE RESET & TYPOGRAPHY
+   Áp dụng SkillUi.md Section 3: Fluid Typography & CSS Reset
+   ═══════════════════════════════════════════════════════════════════════════ */
+html {
+  scroll-behavior: smooth;
+  font-size: 16px;
 }
 
 html, body, #root {
@@ -59,92 +98,110 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: var(--bg-base);
+  font-family: var(--font-label);
+  background: var(--bg);
   color: var(--text-primary);
-  line-height: 1.6;
+  line-height: 1.65;
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-
-/* Typography */
+/* Fluid Typography — SkillUi Section 3 */
 h1, h2, h3, h4, h5 {
+  font-family: var(--font-display);
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.2;
   color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
 
-a { color: var(--accent-light); text-decoration: none; }
+h1 { font-size: clamp(1.5rem, 3vw, 2rem); }
+h2 { font-size: clamp(1.2rem, 2.5vw, 1.5rem); }
+
+a { color: var(--accent-light); text-decoration: none; transition: color var(--transition); }
 a:hover { color: var(--accent); }
 
 code {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 0.85em;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.82em;
   background: var(--bg-elevated);
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 2px 7px;
+  border-radius: 5px;
   color: var(--cyan);
+  border: 1px solid var(--border);
 }
 
-/* Buttons */
+/* ═══════════════════════════════════════════════════════════════════════════
+   3. SCROLLBAR (Premium)
+   ═══════════════════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  transition: background var(--transition);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4. BUTTONS
+   ═══════════════════════════════════════════════════════════════════════════ */
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 9px 18px;
   border-radius: var(--radius-sm);
-  font-size: 0.875rem;
-  font-weight: 500;
-  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--font-label);
   cursor: pointer;
   border: 1px solid transparent;
   transition: all var(--transition);
   white-space: nowrap;
   line-height: 1.4;
+  letter-spacing: 0.01em;
 }
 
 .btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
+  transform: none !important;
 }
 
 .btn-primary {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   color: #fff;
   border-color: var(--accent-dark);
-  box-shadow: 0 2px 8px var(--accent-glow);
+  box-shadow: 0 2px 12px var(--accent-glow);
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-dark);
-  box-shadow: 0 4px 16px var(--accent-glow);
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, var(--accent-dark), #3b37c9);
+  box-shadow: 0 6px 24px var(--accent-glow);
+  transform: translateY(-2px);
 }
 
 .btn-success {
-  background: var(--green);
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
   color: #fff;
   border-color: var(--green-dark);
-  box-shadow: 0 2px 8px var(--green-glow);
+  box-shadow: 0 2px 12px var(--green-glow);
 }
 .btn-success:hover:not(:disabled) {
-  background: var(--green-dark);
-  box-shadow: 0 4px 16px var(--green-glow);
-  transform: translateY(-1px);
+  box-shadow: 0 6px 24px var(--green-glow);
+  transform: translateY(-2px);
 }
 
 .btn-danger {
-  background: var(--red);
+  background: linear-gradient(135deg, #ef4444, #dc2626);
   color: #fff;
-  border-color: var(--red-dark);
+  border-color: #dc2626;
 }
 .btn-danger:hover:not(:disabled) {
-  background: var(--red-dark);
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.25);
 }
 
 .btn-ghost {
@@ -153,14 +210,20 @@ code {
   border-color: var(--border);
 }
 .btn-ghost:hover:not(:disabled) {
-  background: var(--bg-elevated);
+  background: var(--surface);
   color: var(--text-primary);
   border-color: var(--border-hover);
+  transform: translateY(-1px);
 }
 
 .btn-sm {
-  padding: 5px 10px;
+  padding: 5px 12px;
   font-size: 0.8rem;
+}
+
+.btn-xs {
+  padding: 3px 8px;
+  font-size: 0.72rem;
 }
 
 .btn-icon {
@@ -169,7 +232,9 @@ code {
   justify-content: center;
 }
 
-/* Form inputs */
+/* ═══════════════════════════════════════════════════════════════════════════
+   5. FORM INPUTS
+   ═══════════════════════════════════════════════════════════════════════════ */
 .form-group {
   display: flex;
   flex-direction: column;
@@ -177,11 +242,12 @@ code {
 }
 
 label {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
+  font-family: var(--font-label);
 }
 
 input, select, textarea {
@@ -190,29 +256,43 @@ input, select, textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
-  font-family: inherit;
-  font-size: 0.9rem;
-  padding: 9px 12px;
-  transition: border-color var(--transition), box-shadow var(--transition);
+  font-family: var(--font-label);
+  font-size: 0.88rem;
+  padding: 10px 14px;
+  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
   outline: none;
 }
 
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
+  background: var(--bg-card);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--text-dim);
 }
 
 textarea { resize: vertical; min-height: 100px; }
-
 select option { background: var(--bg-surface); }
 
-/* Cards */
+/* ═══════════════════════════════════════════════════════════════════════════
+   6. CARDS — Glassmorphism
+   Áp dụng SkillUi.md Section 5 & 6: Glassmorphism & Card Design
+   ═══════════════════════════════════════════════════════════════════════════ */
 .card {
-  background: var(--bg-surface);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: 22px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   box-shadow: var(--shadow-sm);
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+
+.card:hover {
+  border-color: var(--border-hover);
 }
 
 .card-header {
@@ -225,6 +305,7 @@ select option { background: var(--bg-surface); }
 }
 
 .card-title {
+  font-family: var(--font-display);
   font-size: 1rem;
   font-weight: 600;
   color: var(--text-primary);
@@ -233,7 +314,9 @@ select option { background: var(--bg-surface); }
   gap: 8px;
 }
 
-/* Table */
+/* ═══════════════════════════════════════════════════════════════════════════
+   7. TABLE
+   ═══════════════════════════════════════════════════════════════════════════ */
 .table-container {
   overflow-x: auto;
   border-radius: var(--radius-md);
@@ -243,20 +326,21 @@ select option { background: var(--bg-surface); }
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: 0.86rem;
 }
 
 thead th {
   background: var(--bg-elevated);
-  padding: 10px 14px;
+  padding: 11px 14px;
   text-align: left;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 700;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  font-family: var(--font-label);
 }
 
 tbody tr {
@@ -266,50 +350,74 @@ tbody tr {
 
 tbody tr:last-child { border-bottom: none; }
 
-tbody tr:hover { background: var(--bg-elevated); }
+tbody tr:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
 
 tbody td {
-  padding: 10px 14px;
+  padding: 11px 14px;
   color: var(--text-primary);
   vertical-align: middle;
 }
 
-/* Badges */
+/* ═══════════════════════════════════════════════════════════════════════════
+   8. BADGES / PILLS
+   Áp dụng SkillUi.md Section 6: Pill Badges
+   ═══════════════════════════════════════════════════════════════════════════ */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.7rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  font-family: var(--font-label);
 }
 
-.badge-green { background: rgba(16,185,129,0.15); color: var(--green); }
-.badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
-.badge-yellow { background: rgba(245,158,11,0.15); color: var(--yellow); }
-.badge-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
-.badge-purple { background: rgba(168,85,247,0.15); color: var(--purple); }
-.badge-gray { background: rgba(100,116,139,0.15); color: var(--text-muted); }
+.badge-green  { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+.badge-red    { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+.badge-yellow { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.badge-blue   { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+.badge-purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+.badge-gray   { background: rgba(100, 116, 139, 0.12); color: var(--text-muted); }
 
-/* Alert */
+.tool-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 5px 13px;
+  font-family: var(--font-label);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   9. ALERTS
+   ═══════════════════════════════════════════════════════════════════════════ */
 .alert {
   padding: 12px 16px;
   border-radius: var(--radius-sm);
-  font-size: 0.875rem;
+  font-size: 0.86rem;
   display: flex;
   align-items: flex-start;
   gap: 10px;
   margin: 10px 0;
+  backdrop-filter: blur(4px);
 }
-.alert-success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: var(--green); }
-.alert-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--red); }
-.alert-info { background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); color: var(--accent-light); }
-.alert-warning { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: var(--yellow); }
+.alert-success { background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); color: #34d399; }
+.alert-error   { background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); color: #f87171; }
+.alert-info    { background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); color: var(--accent-light); }
+.alert-warning { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); color: #fbbf24; }
 
-/* Loading spinner */
+/* ═══════════════════════════════════════════════════════════════════════════
+   10. SPINNER
+   ═══════════════════════════════════════════════════════════════════════════ */
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner {
   width: 20px;
@@ -322,7 +430,11 @@ tbody td {
   flex-shrink: 0;
 }
 
-/* Stat cards */
+.spin-anim { animation: spin 0.8s linear infinite; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   11. STAT CARDS
+   ═══════════════════════════════════════════════════════════════════════════ */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -331,62 +443,73 @@ tbody td {
 }
 
 .stat-card {
-  background: var(--bg-surface);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 16px;
-  transition: border-color var(--transition), transform var(--transition);
+  padding: 18px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
 }
 
 .stat-card:hover {
   border-color: var(--border-hover);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   box-shadow: var(--shadow-md);
 }
 
 .stat-card-icon {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .stat-card-value {
-  font-size: 1.6rem;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
   font-weight: 800;
   color: var(--text-primary);
   line-height: 1;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
 }
 
 .stat-card-label {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   color: var(--text-muted);
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 
-/* Page layout */
+/* ═══════════════════════════════════════════════════════════════════════════
+   12. PAGE LAYOUT
+   ═══════════════════════════════════════════════════════════════════════════ */
 .page-header {
   margin-bottom: 24px;
 }
 
 .page-header h1 {
-  font-size: 1.5rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 3vw, 1.75rem);
   font-weight: 800;
   margin-bottom: 4px;
+  letter-spacing: -0.01em;
 }
 
 .page-header p {
-  font-size: 0.875rem;
+  font-size: 0.86rem;
   color: var(--text-secondary);
+  font-family: var(--font-serif);
+  font-style: italic;
 }
 
-/* Flex utilities */
+/* ═══════════════════════════════════════════════════════════════════════════
+   13. FLEX/GRID UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════ */
 .flex { display: flex; }
 .flex-1 { flex: 1; }
 .items-center { align-items: center; }
@@ -405,10 +528,12 @@ tbody td {
 .text-xs { font-size: 0.75rem; }
 .text-muted { color: var(--text-muted); }
 .text-secondary { color: var(--text-secondary); }
-.font-mono { font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 0.8rem; }
+.font-mono { font-family: 'JetBrains Mono', 'Cascadia Code', 'Courier New', monospace; font-size: 0.8rem; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
 
-/* Pagination */
+/* ═══════════════════════════════════════════════════════════════════════════
+   14. PAGINATION
+   ═══════════════════════════════════════════════════════════════════════════ */
 .pagination {
   display: flex;
   align-items: center;
@@ -419,10 +544,10 @@ tbody td {
 }
 
 .page-btn {
-  min-width: 32px;
-  height: 32px;
+  min-width: 34px;
+  height: 34px;
   padding: 0 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   color: var(--text-secondary);
@@ -432,38 +557,44 @@ tbody td {
   align-items: center;
   justify-content: center;
   transition: all var(--transition);
-  font-family: inherit;
+  font-family: var(--font-label);
+  font-weight: 500;
 }
 
 .page-btn:hover:not(:disabled) {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   border-color: var(--accent);
   color: white;
+  transform: translateY(-1px);
 }
 
 .page-btn.active {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   border-color: var(--accent);
   color: white;
+  box-shadow: 0 4px 14px var(--accent-glow);
 }
 
 .page-btn:disabled {
-  opacity: 0.35;
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
-/* Modal */
+/* ═══════════════════════════════════════════════════════════════════════════
+   15. MODAL — Glassmorphism
+   ═══════════════════════════════════════════════════════════════════════════ */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.7);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
-  animation: fadeIn 0.2s ease;
+  animation: fadeIn 0.25s ease;
 }
 
 @keyframes fadeIn {
@@ -475,17 +606,19 @@ tbody td {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  padding: 28px;
+  padding: 30px;
   width: 100%;
   max-width: 560px;
   max-height: 90vh;
   overflow-y: auto;
-  animation: slideUp 0.2s ease;
+  animation: slideUp 0.3s ease;
   box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 @keyframes slideUp {
-  from { transform: translateY(20px); opacity: 0; }
+  from { transform: translateY(24px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
 
@@ -497,11 +630,14 @@ tbody td {
 }
 
 .modal-title {
+  font-family: var(--font-display);
   font-size: 1.1rem;
   font-weight: 700;
 }
 
-/* Grid layouts */
+/* ═══════════════════════════════════════════════════════════════════════════
+   16. GRID LAYOUTS
+   ═══════════════════════════════════════════════════════════════════════════ */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
 
@@ -510,39 +646,467 @@ tbody td {
   :root { --sidebar-width: 0px; }
 }
 
-/* Tab nav */
+/* ═══════════════════════════════════════════════════════════════════════════
+   17. TAB NAV — with stagger support
+   Áp dụng SkillUi.md Section 9: Tab Switcher
+   ═══════════════════════════════════════════════════════════════════════════ */
 .tab-nav {
   display: flex;
   gap: 4px;
-  background: var(--bg-elevated);
+  background: rgba(255, 255, 255, 0.03);
   border-radius: var(--radius-md);
   padding: 4px;
   margin-bottom: 20px;
   border: 1px solid var(--border);
   overflow-x: auto;
+  backdrop-filter: blur(6px);
 }
 
 .tab-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
+  gap: 7px;
+  padding: 8px 16px;
   border-radius: var(--radius-sm);
-  font-size: 0.85rem;
-  font-weight: 500;
+  font-size: 0.84rem;
+  font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
   border: none;
   background: transparent;
-  font-family: inherit;
+  font-family: var(--font-label);
   white-space: nowrap;
   transition: all var(--transition);
 }
 
-.tab-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tab-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface);
+}
 
 .tab-btn.active {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   color: white;
-  box-shadow: 0 2px 8px var(--accent-glow);
+  box-shadow: 0 4px 14px var(--accent-glow);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   18. SCROLL REVEAL ANIMATION
+   Áp dụng SkillUi.md Section 7: Scroll Animation
+   ═══════════════════════════════════════════════════════════════════════════ */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 550ms ease, transform 550ms ease;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   19. TOGGLE SWITCH
+   ═══════════════════════════════════════════════════════════════════════════ */
+.switch-wrapper {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+
+.switch-wrapper input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #374151;
+  transition: background-color var(--transition);
+  border-radius: 20px;
+}
+
+.switch-slider::after {
+  content: "";
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #fff;
+  transition: transform var(--transition);
+  border-radius: 50%;
+}
+
+.switch-wrapper input:checked + .switch-slider {
+  background-color: var(--green);
+}
+
+.switch-wrapper input:checked + .switch-slider::after {
+  transform: translateX(16px);
+}
+
+.switch-wrapper.ag input:checked + .switch-slider {
+  background-color: var(--ag-accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   20. PROGRESS BAR
+   ═══════════════════════════════════════════════════════════════════════════ */
+.progress-track {
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  background: linear-gradient(90deg, var(--accent), var(--accent-light));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   21. NOISE & GLOW BACKGROUNDS
+   Áp dụng SkillUi.md Section 5: Background Effects
+   ═══════════════════════════════════════════════════════════════════════════ */
+.bg-noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.06;
+  background-image: radial-gradient(circle, rgba(240, 234, 224, 0.7) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(90deg, black, transparent 70%);
+  -webkit-mask-image: linear-gradient(90deg, black, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-glow-accent {
+  background:
+    radial-gradient(circle at 14% 18%, rgba(99, 102, 241, 0.12), transparent 30%),
+    radial-gradient(circle at 86% 26%, rgba(168, 85, 247, 0.08), transparent 30%);
+  pointer-events: none;
+}
+
+.bg-glow-amber {
+  background:
+    radial-gradient(circle at 14% 18%, rgba(224, 168, 46, 0.1), transparent 30%),
+    radial-gradient(circle at 86% 26%, rgba(245, 158, 11, 0.06), transparent 30%);
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-A. SEARCH / PASSWORD INPUT ICON WRAPPERS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.input-icon-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+}
+
+.input-icon-wrapper .input-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.input-icon-wrapper input {
+  padding-left: 32px;
+}
+
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-wrapper input {
+  padding-right: 40px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-B. FILTER BAR & LAYOUT HELPERS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-bar select {
+  width: auto;
+}
+
+.filter-meta {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.filter-meta strong {
+  color: var(--text-primary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-C. ALERT DISMISS BUTTON
+   ═══════════════════════════════════════════════════════════════════════════ */
+.alert-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 16px;
+  padding: 0;
+  line-height: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-D. CARD & TABLE FLUSH VARIANTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.card-flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.table-container-flush {
+  border-radius: 0;
+  border: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-E. CHATGPT STATUS MICRO-BADGES
+   ═══════════════════════════════════════════════════════════════════════════ */
+.micro-badge {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.micro-badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.micro-badge-green {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.micro-badge-green .micro-badge-dot { background: #10b981; }
+
+.micro-badge-red {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.15);
+}
+
+.micro-badge-red .micro-badge-dot { background: #ef4444; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-F. PROGRESS BAR COLOR VARIANTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.progress-bar-warn  { background: var(--yellow); }
+.progress-bar-danger { background: var(--red); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-G. PAGE HEADER FLEX VARIANT
+   ═══════════════════════════════════════════════════════════════════════════ */
+.page-header-flex {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.page-header h1 .header-icon {
+  color: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-H. MAIL READER ITEMS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.mail-item {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.mail-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+}
+
+.mail-item-header:hover,
+.mail-item-header.expanded {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.mail-item-subject {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mail-item-from {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.mail-item-body-raw {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: monospace;
+  max-height: 400px;
+  overflow: auto;
+  background: var(--bg-surface);
+}
+
+.mail-view-toggle {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-I. PAGINATION WRAPPER
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pagination-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pagination-jump {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-J. ERROR LINE ITEM
+   ═══════════════════════════════════════════════════════════════════════════ */
+.error-line {
+  font-size: 0.75rem;
+  color: var(--red);
+  background: rgba(239, 68, 68, 0.07);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22-K. MISC SPACING UTILITIES
+   ═══════════════════════════════════════════════════════════════════════════ */
+.mb-3 { margin-bottom: 12px; }
+.mb-5 { margin-bottom: 20px; }
+.mt-3 { margin-top: 12px; }
+.mt-2 { margin-top: 8px; }
+.p-10 { padding: 40px; }
+.grid { display: grid; }
+.flex-wrap { flex-wrap: wrap; }
+.ml-auto { margin-left: auto; }
+.w-auto { width: auto; }
+.align-self-start { align-self: flex-start; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   22. SIDEBAR TOGGLE PORTAL BUTTON
+   ═══════════════════════════════════════════════════════════════════════════ */
+.sidebar-toggle-portal {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-family: var(--font-label);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  text-align: left;
+  transition: all var(--transition);
+}
+
+.sidebar-toggle-portal:hover {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   23. ANTIGRAVITY ACCENT OVERRIDES
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ag-accent-border { border-color: rgba(224, 168, 46, 0.2) !important; }
+.ag-accent-text { color: var(--ag-accent) !important; }
+.ag-accent-bg { background-color: var(--ag-accent) !important; border-color: var(--ag-accent) !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   24. ACCESSIBILITY
+   Áp dụng SkillUi.md Section 10: Reduce Motion
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }

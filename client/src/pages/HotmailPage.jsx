@@ -118,17 +118,17 @@ function HotmailList() {
   return (
     <div>
       {msg && (
-        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: 14 }}>
+        <div className={`alert alert-${msg.type === 'success' ? 'success' : 'error'} mb-3`}>
           {msg.text}
-          <button style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 16 }} onClick={() => setMsg(null)}>×</button>
+          <button className="alert-close" onClick={() => setMsg(null)}>×</button>
         </div>
       )}
 
       {/* Filters */}
-      <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+      <div className="card mb-3">
+        <div className="filter-bar">
+          <div className="input-icon-wrapper">
+            <Search size={14} className="input-icon" />
             <input
               placeholder="Tìm email..."
               value={search}
