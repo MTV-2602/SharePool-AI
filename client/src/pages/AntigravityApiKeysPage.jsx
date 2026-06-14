@@ -9,6 +9,8 @@ export default function AntigravityApiKeysPage() {
   const [msg, setMsg] = useState(null);
   const [editKey, setEditKey] = useState(null);
   const [copied, setCopied] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const fetchKeys = useCallback(async () => {
     setLoading(true);
@@ -33,15 +35,21 @@ export default function AntigravityApiKeysPage() {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Bạn có muốn xóa API key này?')) return;
-    try {
-      await api.delete(`/antigravity-admin-api/keys/${id}`);
-      toast('Đã xóa API key.');
-      fetchKeys();
-    } catch (e) {
-      toast('Xóa thất bại.', 'error');
-    }
+  const handleDelete = (id) => {
+    setConfirmDialog({
+      title: 'Xác nhận xóa API Key',
+      message: 'Bạn có chắc chắn muốn xóa API Key này không? Hành động này không thể hoàn tác.',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await api.delete(`/antigravity-admin-api/keys/${id}`);
+          toast('Đã xóa API key.');
+          fetchKeys();
+        } catch (e) {
+          toast('Xóa thất bại.', 'error');
+        }
+      }
+    });
   };
 
   const handleToggle = async (id, currentState) => {
@@ -56,33 +64,49 @@ export default function AntigravityApiKeysPage() {
     }
   };
 
-  const handleReset = async (id) => {
-    if (!window.confirm('Reset usage (quota_used) về 0?')) return;
-    try {
-      await api.post(`/antigravity-admin-api/keys/${id}/reset`);
-      toast('Đã reset usage.');
-      fetchKeys();
-    } catch (e) {
-      toast('Reset thất bại.', 'error');
-    }
+  const handleReset = (id) => {
+    setConfirmDialog({
+      title: 'Xác nhận Reset Usage',
+      message: 'Bạn có chắc chắn muốn reset lượng usage (quota_used) của key này về 0 không?',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await api.post(`/antigravity-admin-api/keys/${id}/reset`);
+          toast('Đã reset usage.');
+          fetchKeys();
+        } catch (e) {
+          toast('Reset thất bại.', 'error');
+        }
+      }
+    });
   };
 
-  const handleQuickExtend = async (k, days) => {
-    try {
-      const expRaw = k.expires_at || k.expiresAt;
-      const base = expRaw ? new Date(expRaw) : new Date();
-      const start = base < new Date() ? new Date() : base;
-      let newDate = null;
-      if (days !== null) {
-        start.setDate(start.getDate() + days);
-        newDate = start.toISOString().split('T')[0];
+  const handleQuickExtend = (k, days) => {
+    const confirmMsg = days === null
+      ? `Bạn có chắc chắn muốn bỏ ngày hết hạn của key "${k.name}"?`
+      : `Bạn có chắc chắn muốn gia hạn key "${k.name}" thêm ${days} ngày?`;
+    
+    setConfirmDialog({
+      title: 'Xác nhận gia hạn API Key',
+      message: confirmMsg,
+      onConfirm: async () => {
+        try {
+          const expRaw = k.expires_at || k.expiresAt;
+          const base = expRaw ? new Date(expRaw) : new Date();
+          const start = base < new Date() ? new Date() : base;
+          let newDate = null;
+          if (days !== null) {
+            start.setDate(start.getDate() + days);
+            newDate = start.toISOString().split('T')[0];
+          }
+          await api.patch(`/antigravity-admin-api/keys/${k.id}`, { expiresAt: newDate });
+          toast(days === null ? 'Đã đặt key không hết hạn!' : `Đã gia hạn thêm ${days} ngày!`);
+          fetchKeys();
+        } catch (e) {
+          toast('Lỗi gia hạn: ' + (e.response?.data?.error?.message || e.message), 'error');
+        }
       }
-      await api.patch(`/antigravity-admin-api/keys/${k.id}`, { expiresAt: newDate });
-      toast(days === null ? 'Đã đặt key không hết hạn!' : `Đã gia hạn thêm ${days} ngày!`);
-      fetchKeys();
-    } catch (e) {
-      toast('Lỗi gia hạn: ' + (e.response?.data?.error?.message || e.message), 'error');
-    }
+    });
   };
 
 
@@ -138,34 +162,66 @@ export default function AntigravityApiKeysPage() {
         ))}
       </div>
 
+      {/* Search Bar */}
+      <div className="card" style={{ marginBottom: 16, padding: '12px 16px' }}>
+        <input
+          type="text"
+          placeholder="Tìm kiếm key theo tên, mã key hoặc ghi chú..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            fontSize: '0.88rem',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-primary)',
+            outline: 'none'
+          }}
+        />
+      </div>
+
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center' }}><span className="spinner" /></div>
-        ) : (
-          <div className="table-container" style={{ borderRadius: 0, border: 'none' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Tên</th>
-                  <th>Key</th>
-                  <th>Trạng thái</th>
-                  <th>Tokens đã dùng / Tổng quota</th>
-                  <th>Chi phí (~USD)</th>
-                  <th>Ngày tạo</th>
-                  <th style={{ textAlign: 'right' }}>Hành động</th>
-                </tr>
-              </thead>
-              <tbody>
-                {keys.length === 0 ? (
+        ) : (() => {
+          const filteredKeys = keys.filter(k => {
+            const term = searchTerm.toLowerCase();
+            const nameMatch = (k.name || '').toLowerCase().includes(term);
+            const noteMatch = (k.note || '').toLowerCase().includes(term);
+            const keyVal = k.key_value || k.key || '';
+            const keyMatch = keyVal.toLowerCase().includes(term);
+            return nameMatch || noteMatch || keyMatch;
+          });
+
+          if (filteredKeys.length === 0) {
+            return (
+              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                {searchTerm ? 'Không tìm thấy API key nào phù hợp với từ khóa.' : 'Chưa có API key nào'}
+              </div>
+            );
+          }
+
+          return (
+            <div className="table-container" style={{ borderRadius: 0, border: 'none' }}>
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
-                      Chưa có API key nào.
-                    </td>
+                    <th>Tên</th>
+                    <th>Key</th>
+                    <th>Trạng thái</th>
+                    <th>Tokens đã dùng / Tổng quota</th>
+                    <th>Chi phí (~USD)</th>
+                    <th>Ngày tạo</th>
+                    <th style={{ textAlign: 'right' }}>Hành động</th>
                   </tr>
-                ) : keys.map(k => {
-                  const isActive = k.isActive || k.is_active;
-                  const pct = usagePct(k);
-                  const used = k.quotaUsed || k.quota_used || 0;
+                </thead>
+                <tbody>
+                  {filteredKeys.map(k => {
+                    const isActive = k.isActive || k.is_active;
+                    const pct = usagePct(k);
+                    const used = k.quotaUsed || k.quota_used || 0;
                   const total = k.quotaTotal || k.quota_total || 0;
                   const estCost = (used / 1000000) * 5.5;
                   return (
@@ -247,12 +303,45 @@ export default function AntigravityApiKeysPage() {
               </tbody>
             </table>
           </div>
-        )}
+        )})()}
       </div>
 
       {/* Create Modal */}
       {showCreate && <CreateKeyModal onClose={() => setShowCreate(false)} onCreated={() => { fetchKeys(); toast('Tạo key thành công!'); }} />}
       {editKey && <EditKeyModal keyData={editKey} onClose={() => setEditKey(null)} onSaved={() => { fetchKeys(); toast('Cập nhật thành công!'); setEditKey(null); }} apiBase="/antigravity-admin-api" />}
+
+      {/* Custom Confirm Dialog */}
+      {confirmDialog && (
+        <div className="modal-overlay" onClick={() => setConfirmDialog(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <span className="modal-title" style={{ color: confirmDialog.isDanger ? 'var(--red)' : '#e0a82e' }}>
+                ⚠️ {confirmDialog.title || 'Xác nhận'}
+              </span>
+              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setConfirmDialog(null)}><X size={15} /></button>
+            </div>
+            <div style={{ padding: '8px 0', fontSize: '0.9rem', color: 'var(--text-soft)', lineHeight: 1.5 }}>
+              {confirmDialog.message}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button className="btn btn-ghost" onClick={() => setConfirmDialog(null)}>Hủy</button>
+              <button
+                className="btn btn-primary"
+                style={{
+                  backgroundColor: confirmDialog.isDanger ? 'var(--red)' : '#e0a82e',
+                  borderColor: confirmDialog.isDanger ? 'var(--red)' : '#e0a82e'
+                }}
+                onClick={() => {
+                  confirmDialog.onConfirm();
+                  setConfirmDialog(null);
+                }}
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
