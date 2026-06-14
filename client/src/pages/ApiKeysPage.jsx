@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Key, Plus, Trash2, RefreshCw, Power, RotateCcw, Edit2, Check, X, Copy } from 'lucide-react';
+import { Key, Plus, Trash2, RefreshCw, Power, RotateCcw, Edit2, Check, X, Copy, Calendar } from 'lucide-react';
 import api from '../lib/api';
 
 export default function ApiKeysPage() {
@@ -7,8 +7,7 @@ export default function ApiKeysPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [msg, setMsg] = useState(null);
-  const [editRow, setEditRow] = useState(null);
-  const [editVals, setEditVals] = useState({});
+  const [editKey, setEditKey] = useState(null);
   const [copied, setCopied] = useState(null);
 
   const fetchKeys = useCallback(async () => {
@@ -63,22 +62,6 @@ export default function ApiKeysPage() {
       fetchKeys();
     } catch (e) {
       toast('Reset thất bại.', 'error');
-    }
-  };
-
-  const startEdit = (key) => {
-    setEditRow(key.id);
-    setEditVals({ name: key.name, quotaTotal: key.quota_total ?? key.quotaTotal, note: key.note || '' });
-  };
-
-  const saveEdit = async (id) => {
-    try {
-      await api.patch(`/admin-api/keys/${id}`, editVals);
-      toast('Đã cập nhật.');
-      setEditRow(null);
-      fetchKeys();
-    } catch (e) {
-      toast('Lỗi cập nhật.', 'error');
     }
   };
 
@@ -167,12 +150,15 @@ export default function ApiKeysPage() {
                   return (
                     <tr key={k.id} style={{ opacity: isActive ? 1 : 0.5 }}>
                       <td>
-                        {editRow === k.id ? (
-                          <input value={editVals.name} onChange={e => setEditVals(v => ({ ...v, name: e.target.value }))}
-                            style={{ width: 130, padding: '4px 8px', fontSize: '0.85rem' }} />
-                        ) : (
-                          <span style={{ fontWeight: 600 }}>{k.name}</span>
-                        )}
+                        <span style={{ fontWeight: 600 }}>{k.name}</span>
+                        {(() => {
+                          const exp = k.expires_at || k.expiresAt;
+                          if (!exp) return <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>Không hết hạn</div>;
+                          const isExpired = new Date(exp) < new Date();
+                          return <div style={{ fontSize: '0.7rem', color: isExpired ? 'var(--red)' : 'var(--text-muted)', marginTop: 2 }}>
+                            Hạn: {new Date(exp).toLocaleDateString('vi-VN')}{isExpired ? ' (Hết hạn)' : ''}
+                          </div>;
+                        })()}
                       </td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -216,21 +202,12 @@ export default function ApiKeysPage() {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
-                          {editRow === k.id ? (
-                            <>
-                              <button className="btn btn-success btn-sm btn-icon" onClick={() => saveEdit(k.id)}><Check size={13} /></button>
-                              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => setEditRow(null)}><X size={13} /></button>
-                            </>
-                          ) : (
-                            <>
-                              <button className="btn btn-ghost btn-sm btn-icon" title="Sửa" onClick={() => startEdit(k)}><Edit2 size={13} /></button>
-                              <button className="btn btn-ghost btn-sm btn-icon" title={isActive ? 'Tắt' : 'Bật'} onClick={() => handleToggle(k.id, isActive)}>
-                                <Power size={13} style={{ color: isActive ? 'var(--green)' : 'var(--text-muted)' }} />
-                              </button>
-                              <button className="btn btn-ghost btn-sm btn-icon" title="Reset quota" onClick={() => handleReset(k.id)}><RotateCcw size={13} /></button>
-                              <button className="btn btn-ghost btn-sm btn-icon" title="Xóa" onClick={() => handleDelete(k.id)}><Trash2 size={13} style={{ color: 'var(--red)' }} /></button>
-                            </>
-                          )}
+                          <button className="btn btn-ghost btn-sm btn-icon" title="Sửa / Gia hạn" onClick={() => setEditKey(k)}><Edit2 size={13} /></button>
+                          <button className="btn btn-ghost btn-sm btn-icon" title={isActive ? 'Tắt' : 'Bật'} onClick={() => handleToggle(k.id, isActive)}>
+                            <Power size={13} style={{ color: isActive ? 'var(--green)' : 'var(--text-muted)' }} />
+                          </button>
+                          <button className="btn btn-ghost btn-sm btn-icon" title="Reset quota" onClick={() => handleReset(k.id)}><RotateCcw size={13} /></button>
+                          <button className="btn btn-ghost btn-sm btn-icon" title="Xóa" onClick={() => handleDelete(k.id)}><Trash2 size={13} style={{ color: 'var(--red)' }} /></button>
                         </div>
                       </td>
                     </tr>
@@ -244,6 +221,7 @@ export default function ApiKeysPage() {
 
       {/* Create Modal */}
       {showCreate && <CreateKeyModal onClose={() => setShowCreate(false)} onCreated={() => { fetchKeys(); toast('Tạo key thành công!'); }} />}
+      {editKey && <EditKeyModal keyData={editKey} onClose={() => setEditKey(null)} onSaved={() => { fetchKeys(); toast('Cập nhật thành công!'); setEditKey(null); }} apiBase="/admin-api" />}
     </div>
   );
 }
@@ -316,6 +294,134 @@ function CreateKeyModal({ onClose, onCreated }) {
               {loading ? <><span className="spinner" /> Đang tạo...</> : <><Key size={14} /> Tạo Key</>}
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditKeyModal({ keyData, onClose, onSaved, apiBase }) {
+  const [name, setName] = useState(keyData.name || '');
+  const [note, setNote] = useState(keyData.note || '');
+  const [addTokens, setAddTokens] = useState('');
+  const [directQuota, setDirectQuota] = useState('');
+  const [expiresAt, setExpiresAt] = useState(() => {
+    const exp = keyData.expires_at || keyData.expiresAt;
+    if (!exp) return '';
+    try { return new Date(exp).toISOString().split('T')[0]; } catch { return ''; }
+  });
+  const [loading, setLoading] = useState(false);
+
+  const currentQuota = keyData.quota_total ?? keyData.quotaTotal ?? 0;
+  const currentUsed = keyData.quota_used ?? keyData.quotaUsed ?? 0;
+
+  const handleAddQuick = (amount) => {
+    setAddTokens(prev => String(Number(prev || 0) + amount));
+    setDirectQuota('');
+  };
+
+  const handleExtendDays = (days) => {
+    const base = expiresAt ? new Date(expiresAt) : new Date();
+    base.setDate(base.getDate() + days);
+    setExpiresAt(base.toISOString().split('T')[0]);
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const payload = {};
+      if (name.trim() !== keyData.name) payload.name = name.trim();
+      if (note.trim() !== (keyData.note || '')) payload.note = note.trim();
+
+      if (directQuota) {
+        payload.quotaTotal = parseInt(directQuota, 10);
+      } else if (addTokens) {
+        payload.quotaTotal = currentQuota + parseInt(addTokens, 10);
+      }
+
+      const expRaw = keyData.expires_at || keyData.expiresAt || '';
+      const origDate = expRaw ? (() => { try { return new Date(expRaw).toISOString().split('T')[0]; } catch { return ''; } })() : '';
+      if (expiresAt !== origDate) {
+        payload.expiresAt = expiresAt || null;
+      }
+
+      if (Object.keys(payload).length === 0) { onClose(); return; }
+
+      await api.patch(`${apiBase}/keys/${keyData.id}`, payload);
+      onSaved();
+    } catch (e) {
+      alert('Lỗi cập nhật: ' + (e.response?.data?.error?.message || e.message));
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+        <div className="modal-header">
+          <span className="modal-title"><Edit2 size={16} /> Sửa & Gia hạn API Key</span>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={onClose}><X size={15} /></button>
+        </div>
+
+        <div style={{ display: 'grid', gap: 16 }}>
+          {/* Name & Note */}
+          <div className="form-group">
+            <label>Tên</label>
+            <input value={name} onChange={e => setName(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Ghi chú</label>
+            <input value={note} onChange={e => setNote(e.target.value)} placeholder="Mô tả..." />
+          </div>
+
+          {/* Quota / Token section */}
+          <div style={{ background: 'var(--bg-elevated)', padding: 14, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+            <label style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: 8, display: 'block' }}>🎫 Quota / Tokens</label>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: 10 }}>
+              Hiện tại: <strong style={{ color: 'var(--text-primary)' }}>{currentUsed.toLocaleString()}</strong> / <strong style={{ color: 'var(--accent-light)' }}>{currentQuota >= 1e8 ? '∞' : currentQuota.toLocaleString()}</strong>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {[1_000_000, 10_000_000, 50_000_000, 100_000_000].map(amt => (
+                <button key={amt} className="btn btn-ghost btn-sm" style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                  onClick={() => handleAddQuick(amt)}>+{(amt / 1e6)}M</button>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '0.72rem' }}>Cộng thêm tokens</label>
+                <input type="number" placeholder="VD: 5000000" value={addTokens}
+                  onChange={e => { setAddTokens(e.target.value); setDirectQuota(''); }} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '0.72rem' }}>Hoặc đặt tổng Quota trực tiếp</label>
+                <input type="number" placeholder={String(currentQuota)} value={directQuota}
+                  onChange={e => { setDirectQuota(e.target.value); setAddTokens(''); }} />
+              </div>
+            </div>
+            {addTokens && <div style={{ fontSize: '0.72rem', color: 'var(--green)', marginTop: 6 }}>→ Tổng quota mới: {(currentQuota + Number(addTokens)).toLocaleString()}</div>}
+          </div>
+
+          {/* Expiration section */}
+          <div style={{ background: 'var(--bg-elevated)', padding: 14, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+            <label style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: 8, display: 'block' }}><Calendar size={13} style={{ verticalAlign: -2 }} /> Ngày hết hạn</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {[7, 30, 90].map(d => (
+                <button key={d} className="btn btn-ghost btn-sm" style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                  onClick={() => handleExtendDays(d)}>+{d} ngày</button>
+              ))}
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                onClick={() => setExpiresAt('')}>Không hết hạn</button>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <input type="date" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button className="btn btn-ghost" onClick={onClose}>Hủy</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
+            {loading ? <><span className="spinner" /> Đang lưu...</> : <><Check size={14} /> Lưu thay đổi</>}
+          </button>
         </div>
       </div>
     </div>
