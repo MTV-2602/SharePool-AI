@@ -298,6 +298,19 @@ router.get('/accounts', asyncHandler(async (req, res) => {
     else if (status === 'cooldown') stats.cooldown++;
     else stats.active++; // loaded/active
 
+    const cachedQuota = AccountPool._quotaCache?.get(token);
+    const quota = cachedQuota ? {
+      plan: cachedQuota.plan,
+      limits: [
+        {
+          id: 'session',
+          name: cachedQuota.plan.toLowerCase().includes('plus') ? 'Codex Quota (Weekly)' : 'Codex Quota (Monthly)',
+          remaining: cachedQuota.remainingPercent,
+          resetAt: cachedQuota.resetAt ? new Date(cachedQuota.resetAt).toISOString() : null
+        }
+      ]
+    } : null;
+
     return {
       id: acc.id,
       name: acc.name || '',
@@ -310,7 +323,36 @@ router.get('/accounts', asyncHandler(async (req, res) => {
       totalRequests: acc.totalRequests || acc.total_requests || 0,
       createdAt: acc.createdAt || acc.created_at,
       lastUsedAt: acc.lastUsedAt || acc.last_used_at,
+      quota
     };
+  });
+
+  // Sắp xếp danh sách tài khoản hiển thị:
+  // 1. Tài khoản active/cooldown lên trước, failed/disabled xuống cuối
+  // 2. Tài khoản active/cooldown được xếp theo resetAt tăng dần (reset gần nhất lên đầu)
+  // 3. Fallback: sắp xếp theo tên
+  merged.sort((a, b) => {
+    const statusScore = (s) => {
+      if (s === 'disabled') return 3;
+      if (s === 'failed') return 2;
+      return 0; // active / cooldown / loaded
+    };
+    const scoreA = statusScore(a.status);
+    const scoreB = statusScore(b.status);
+    if (scoreA !== scoreB) return scoreA - scoreB;
+
+    const qA = AccountPool._quotaCache?.get(a.sessionToken);
+    const qB = AccountPool._quotaCache?.get(b.sessionToken);
+    const resetA = qA?.resetAt || null;
+    const resetB = qB?.resetAt || null;
+
+    if (resetA !== null && resetB !== null) {
+      return resetA - resetB; // Ngày reset gần nhất xếp lên trước
+    }
+    if (resetA !== null) return -1;
+    if (resetB !== null) return 1;
+
+    return String(a.name).localeCompare(String(b.name));
   });
 
   // Filter

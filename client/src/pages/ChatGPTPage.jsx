@@ -149,13 +149,15 @@ export default function ChatGPTPage() {
 }
 
 // ─── Account Quota Cell ────────────────────────────────────────────────────────
-function AccountQuotaCell({ accountName, sessionToken }) {
-  const [quota, setQuota] = useState(null);
+function AccountQuotaCell({ accountName, sessionToken, initialQuota }) {
+  const [quota, setQuota] = useState(initialQuota || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchQuota = async () => {
-    setLoading(true);
+    if (!initialQuota) {
+      setLoading(true);
+    }
     setError(null);
     try {
       // Use POST with a request body to completely avoid URL length and character restrictions
@@ -178,8 +180,11 @@ function AccountQuotaCell({ accountName, sessionToken }) {
   };
 
   useEffect(() => {
-    fetchQuota();
-  }, [accountName, sessionToken]);
+    // If initialQuota is already provided, we don't need to fetch it on mount
+    if (!initialQuota) {
+      fetchQuota();
+    }
+  }, [accountName, sessionToken, initialQuota]);
 
   if (loading) return <span className="text-xs text-muted" style={{ fontSize: '0.72rem' }}>Đang tải...</span>;
   if (error) {
@@ -681,7 +686,7 @@ function ChatGPTPool() {
                       </label>
                     </td>
                     <td>
-                      <AccountQuotaCell accountName={acc.name} sessionToken={acc.sessionToken} />
+                      <AccountQuotaCell accountName={acc.name} sessionToken={acc.sessionToken} initialQuota={acc.quota} />
                     </td>
                     <td style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
                       {acc.lastUsedAt ? new Date(acc.lastUsedAt).toLocaleString('vi-VN') : 'Chưa sử dụng'}
