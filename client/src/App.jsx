@@ -15,6 +15,7 @@ import AntigravityDashboardPage from './pages/AntigravityDashboardPage';
 import AntigravityAccountsPage from './pages/AntigravityAccountsPage';
 import AntigravityApiKeysPage from './pages/AntigravityApiKeysPage';
 import AntigravityUsagePage from './pages/AntigravityUsagePage';
+import GuidePage from './pages/GuidePage';
 
 function RequireAuth({ children }) {
   const key = localStorage.getItem('adminKey');
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="api-keys" element={<ApiKeysPage />} />
           <Route path="usage" element={<UsagePage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="guide" element={<GuidePage />} />
         </Route>
 
         {/* AntiGravity Portal Routes */}
@@ -64,6 +66,7 @@ export default function App() {
           <Route path="accounts" element={<AntigravityAccountsPage />} />
           <Route path="api-keys" element={<AntigravityApiKeysPage />} />
           <Route path="usage" element={<AntigravityUsagePage />} />
+          <Route path="guide" element={<GuidePage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

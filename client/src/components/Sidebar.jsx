@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Key, Mail, Bot,
   Settings, LogOut, Rocket, ChevronRight,
-  Send, Activity, ArrowLeftRight
+  Send, Activity, ArrowLeftRight, BookOpen
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -14,6 +14,7 @@ const NAV_CODEX = [
   { to: '/telegram', icon: Send, label: 'Telegram' },
   { to: '/api-keys', icon: Key, label: 'API Keys' },
   { to: '/usage', icon: Activity, label: 'Usage' },
+  { to: '/guide', icon: BookOpen, label: 'Hướng dẫn' },
   { to: '/settings', icon: Settings, label: 'Cài đặt' },
 ];
 
@@ -22,6 +23,7 @@ const NAV_ANTIGRAVITY = [
   { to: '/antigravity/accounts', icon: Bot, label: 'Google Pool' },
   { to: '/antigravity/api-keys', icon: Key, label: 'API Keys' },
   { to: '/antigravity/usage', icon: Activity, label: 'Usage' },
+  { to: '/antigravity/guide', icon: BookOpen, label: 'Hướng dẫn' },
 ];
 
 export default function Sidebar() {
@@ -44,7 +46,7 @@ export default function Sidebar() {
 
   const filteredNav = currentNav.filter(item => {
     if (role === 'user') {
-      return item.to.endsWith('dashboard') || item.to.endsWith('usage');
+      return item.to.endsWith('dashboard') || item.to.endsWith('usage') || item.to.endsWith('guide');
     }
     return true;
   });
