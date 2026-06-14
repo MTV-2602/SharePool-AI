@@ -499,48 +499,13 @@ supports_websockets = false`,
           )}
         </div>
 
-        {/* Back To Top Button from SkillUi.md Section 6 */}
+        {/* Back To Top — matching reference project .back-to-top class */}
         <button
+          className={`back-to-top${showBackToTop ? ' visible' : ''}`}
           onClick={scrollToTop}
           aria-label="Quay lại đầu trang"
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            zIndex: 50,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '48px',
-            height: '48px',
-            borderRadius: '50%',
-            border: '1px solid var(--border)',
-            background: 'var(--bg-elevated)',
-            backdropFilter: 'blur(8px)',
-            color: 'var(--text-primary)',
-            cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            transition: 'all 0.3s ease',
-            opacity: showBackToTop ? 1 : 0,
-            transform: showBackToTop ? 'translateY(0)' : 'translateY(16px)',
-            pointerEvents: showBackToTop ? 'auto' : 'none'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = activeTab === 'antigravity' ? 'var(--success)' : 'var(--accent)';
-            e.currentTarget.style.color = activeTab === 'antigravity' ? 'var(--success)' : 'var(--accent)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'var(--border)';
-            e.currentTarget.style.color = 'var(--text-primary)';
-          }}
         >
-          <svg
-            style={{ width: '20px', height: '20px' }}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            viewBox="0 0 24 24"
-          >
+          <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
           </svg>
         </button>

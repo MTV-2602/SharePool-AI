@@ -19,9 +19,9 @@
   left: var(--sidebar-width);
   right: 0;
   bottom: 0;
-  opacity: 0.04;
-  background-image: radial-gradient(circle, rgba(240, 234, 224, 0.6) 1px, transparent 1px);
-  background-size: 28px 28px;
+  opacity: 0.08;
+  background-image: radial-gradient(circle, rgba(240, 234, 224, 0.7) 1px, transparent 1px);
+  background-size: 22px 22px;
   pointer-events: none;
   z-index: 0;
 }
@@ -35,8 +35,8 @@
   right: 0;
   bottom: 0;
   background:
-    radial-gradient(circle at 10% 8%, rgba(99, 102, 241, 0.06), transparent 25%),
-    radial-gradient(circle at 90% 90%, rgba(168, 85, 247, 0.04), transparent 25%);
+    radial-gradient(circle at 10% 8%, rgba(99, 102, 241, 0.08), transparent 28%),
+    radial-gradient(circle at 90% 90%, rgba(168, 85, 247, 0.05), transparent 28%);
   pointer-events: none;
   z-index: 0;
 }

@@ -22,7 +22,7 @@
 .login-noise {
   position: fixed;
   inset: 0;
-  opacity: 0.08;
+  opacity: 0.14;
   background-image: radial-gradient(circle, rgba(240, 234, 224, 0.7) 1px, transparent 1px);
   background-size: 22px 22px;
   mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
