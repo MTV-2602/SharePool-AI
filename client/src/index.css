@@ -1147,6 +1147,21 @@ tbody td {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   25. SVG CHARTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+.chart-dot {
+  transition: r 120ms ease, stroke-width 120ms ease;
+  cursor: pointer;
+}
+.chart-dot:hover {
+  r: 5.5px;
+  stroke-width: 2.5px;
+}
+.chart-group:hover .chart-hover-line {
+  opacity: 0.35;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    26. ACCESSIBILITY
    Áp dụng SkillUi.md Section 10: Reduce Motion
    ═══════════════════════════════════════════════════════════════════════════ */

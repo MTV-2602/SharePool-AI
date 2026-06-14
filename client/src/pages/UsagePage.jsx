@@ -28,6 +28,28 @@ export default function UsagePage() {
 
   const maxVal = Math.max(1, ...data.map(d => (d.tokens_total || d.tokensTotal || ((d.tokens_in || d.tokensIn || 0) + (d.tokens_out || d.tokensOut || 0))) || 0));
 
+  // Compute points for SVG line chart
+  const chartData = data.slice(-30);
+  const pointsIn = [];
+  const pointsOut = [];
+  const pointsTotal = [];
+  const N = chartData.length;
+
+  chartData.forEach((d, i) => {
+    const tIn = d.tokens_in || d.tokensIn || 0;
+    const tOut = d.tokens_out || d.tokensOut || 0;
+    const tTotal = d.tokens_total || d.tokensTotal || (tIn + tOut);
+
+    const x = N > 1 ? 30 + (i / (N - 1)) * 940 : 500;
+    const yIn = 130 - (tIn / maxVal) * 110;
+    const yOut = 130 - (tOut / maxVal) * 110;
+    const yTotal = 130 - (tTotal / maxVal) * 110;
+
+    pointsIn.push({ x, y: yIn, val: tIn, date: d.date || '' });
+    pointsOut.push({ x, y: yOut, val: tOut, date: d.date || '' });
+    pointsTotal.push({ x, y: yTotal, val: tTotal, date: d.date || '' });
+  });
+
   return (
     <div>
       <div className="page-header">
@@ -55,7 +77,7 @@ export default function UsagePage() {
       ) : (
         <div className="card reveal">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <span className="card-title"><BarChart3 size={15} /> Biểu đồ Tokens theo ngày</span>
+            <span className="card-title"><BarChart3 size={15} /> Biểu đồ đường đi Tokens theo ngày</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <div style={{ width: 10, height: 10, background: 'var(--accent)', borderRadius: 2 }} />
@@ -71,65 +93,132 @@ export default function UsagePage() {
             </div>
           </div>
 
-          {/* Bar chart */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 160, marginBottom: 8, padding: '0 4px', overflowX: 'auto' }}>
-            {data.slice(-30).map((d, i) => {
-              const tIn = d.tokens_in || d.tokensIn || 0;
-              const tOut = d.tokens_out || d.tokensOut || 0;
-              const tTotal = d.tokens_total || d.tokensTotal || (tIn + tOut);
-              const pctIn = tIn / maxVal;
-              const pctOut = tOut / maxVal;
-              const heightIn = Math.max(tIn > 0 ? 3 : 0, pctIn * 130);
-              const heightOut = Math.max(tOut > 0 ? 3 : 0, pctOut * 130);
+          {/* SVG Line Chart */}
+          <div className="chart-container-wrapper" style={{ overflowX: 'auto', marginBottom: 16 }}>
+            <svg viewBox="0 0 1000 160" width="100%" height="160" style={{ minWidth: 600, display: 'block' }}>
+              <defs>
+                <linearGradient id="gradIn" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.00" />
+                </linearGradient>
+                <linearGradient id="gradOut" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--green)" stopOpacity="0.2" />
+                  <stop offset="100%" stopColor="var(--green)" stopOpacity="0.0" />
+                </linearGradient>
+              </defs>
+              
+              {/* Horizontal Grid lines */}
+              <line x1="30" y1="20" x2="970" y2="20" stroke="var(--border)" strokeDasharray="4 4" strokeWidth="0.8" />
+              <line x1="30" y1="75" x2="970" y2="75" stroke="var(--border)" strokeDasharray="4 4" strokeWidth="0.8" />
+              <line x1="30" y1="130" x2="970" y2="130" stroke="var(--border)" strokeWidth="1" />
+              
+              {/* Area under line: Tokens In */}
+              {pointsIn.length > 1 && (
+                <path
+                  d={`M ${pointsIn[0].x} 130 ${pointsIn.map(p => `L ${p.x} ${p.y}`).join(' ')} L ${pointsIn[pointsIn.length - 1].x} 130 Z`}
+                  fill="url(#gradIn)"
+                />
+              )}
+              
+              {/* Area under line: Tokens Out */}
+              {pointsOut.length > 1 && (
+                <path
+                  d={`M ${pointsOut[0].x} 130 ${pointsOut.map(p => `L ${p.x} ${p.y}`).join(' ')} L ${pointsOut[pointsOut.length - 1].x} 130 Z`}
+                  fill="url(#gradOut)"
+                />
+              )}
 
-              return (
-                <div key={d.date || i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: '0 0 auto', width: 24 }}>
-                  <div 
-                    title={`${d.date}\nTokens In: ${tIn.toLocaleString()}\nTokens Out: ${tOut.toLocaleString()}\nTổng: ${tTotal.toLocaleString()}`}
-                    style={{
-                      width: '100%',
-                      height: 130,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'flex-end',
-                      cursor: 'default',
-                    }}
-                  >
-                    {/* Tokens Out (Top Part) */}
-                    {tOut > 0 && (
-                      <div style={{
-                        width: '100%',
-                        height: heightOut,
-                        background: 'linear-gradient(to top, var(--green), #34d399)',
-                        borderRadius: tIn > 0 ? '3px 3px 0 0' : '3px',
-                        transition: 'height 0.3s ease',
-                        opacity: 0.9,
-                      }} />
-                    )}
-                    {/* Tokens In (Bottom Part) */}
-                    {tIn > 0 && (
-                      <div style={{
-                        width: '100%',
-                        height: heightIn,
-                        background: 'linear-gradient(to top, var(--accent), var(--accent-light))',
-                        borderRadius: tOut > 0 ? '0' : '3px 3px 0 0',
-                        transition: 'height 0.3s ease',
-                        opacity: 0.85,
-                      }} />
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+              {/* Line: Tokens In */}
+              {pointsIn.length > 1 && (
+                <path
+                  d={pointsIn.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
+                  fill="none"
+                  stroke="var(--accent)"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
 
-          {/* X-axis labels */}
-          <div style={{ display: 'flex', gap: 8, padding: '0 4px', overflowX: 'auto', marginBottom: 12 }}>
-            {data.slice(-30).map((d, i) => (
-              <div key={i} style={{ flex: '0 0 auto', width: 24, textAlign: 'center', fontSize: '0.62rem', color: 'var(--text-muted)' }}>
-                {i % 5 === 0 ? (d.date || '').slice(5) : ''}
-              </div>
-            ))}
+              {/* Line: Tokens Out */}
+              {pointsOut.length > 1 && (
+                <path
+                  d={pointsOut.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
+                  fill="none"
+                  stroke="var(--green)"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+
+              {/* Interactive Dots */}
+              {pointsIn.map((p, idx) => {
+                const pOut = pointsOut[idx];
+                const dateStr = (p.date || '').slice(5); // MM-DD
+                
+                return (
+                  <g key={idx} className="chart-group">
+                    {/* Hover indicator line */}
+                    <line
+                      x1={p.x}
+                      y1="20"
+                      x2={p.x}
+                      y2="130"
+                      stroke="var(--border)"
+                      strokeWidth="1.2"
+                      strokeDasharray="2 2"
+                      opacity="0"
+                      className="chart-hover-line"
+                    />
+                    
+                    {/* Dot: Tokens In */}
+                    {p.val > 0 && (
+                      <circle
+                        cx={p.x}
+                        cy={p.y}
+                        r="3.5"
+                        fill="var(--accent)"
+                        stroke="var(--bg)"
+                        strokeWidth="1.5"
+                        className="chart-dot"
+                      >
+                        <title>{`${p.date}\nTokens In: ${p.val.toLocaleString()}`}</title>
+                      </circle>
+                    )}
+
+                    {/* Dot: Tokens Out */}
+                    {pOut.val > 0 && (
+                      <circle
+                        cx={pOut.x}
+                        cy={pOut.y}
+                        r="3.5"
+                        fill="var(--green)"
+                        stroke="var(--bg)"
+                        strokeWidth="1.5"
+                        className="chart-dot"
+                      >
+                        <title>{`${pOut.date}\nTokens Out: ${pOut.val.toLocaleString()}`}</title>
+                      </circle>
+                    )}
+                    
+                    {/* X Axis Label */}
+                    {idx % 5 === 0 && (
+                      <text
+                        x={p.x}
+                        y="148"
+                        textAnchor="middle"
+                        fill="var(--text-muted)"
+                        fontSize="10"
+                        fontWeight="500"
+                      >
+                        {dateStr}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
           </div>
 
           {/* Table */}
@@ -147,9 +236,9 @@ export default function UsagePage() {
               </thead>
               <tbody>
                 {[...data].reverse().map((d, i) => {
-                  const tIn = d.tokens_in || 0;
-                  const tOut = d.tokens_out || 0;
-                  const tTotal = d.tokens_total || (tIn + tOut);
+                  const tIn = d.tokens_in || d.tokensIn || 0;
+                  const tOut = d.tokens_out || d.tokensOut || 0;
+                  const tTotal = d.tokens_total || d.tokensTotal || (tIn + tOut);
                   const estCost = (tTotal / 1000000) * 5.0;
                   return (
                     <tr key={d.date || i}>

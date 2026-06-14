@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import {
   BarChart3, Key, Bot,
   TrendingUp, Activity, RefreshCw, Rocket,
-  Copy, Check, Clock
+  Copy, Check, Clock, DollarSign
 } from 'lucide-react';
 import api from '../lib/api';
 import Tilt from '../components/Tilt';
+
 
 export default function AntigravityDashboardPage() {
   const [stats, setStats] = useState(null);
@@ -60,7 +61,12 @@ export default function AntigravityDashboardPage() {
       icon: TrendingUp, label: 'Hôm nay', value: stats.todayTokens?.toLocaleString() ?? '0',
       color: '#f59e0b', bg: 'rgba(245,158,11,0.1)'
     },
+    {
+      icon: DollarSign, label: 'Chi phí (~USD)', value: `~$${((stats.totalTokens || 0) / 1000000 * 5.5).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      color: '#10b981', bg: 'rgba(16,185,129,0.1)'
+    },
   ] : [];
+
 
   return (
     <div>
@@ -218,6 +224,7 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
           { label: 'Tổng Quota (tokens)', value: isInfinite ? 'Không giới hạn' : total.toLocaleString(), color: 'var(--text-primary)' },
           { label: 'Tokens Input', value: (stats.tokensIn || 0).toLocaleString(), color: 'var(--cyan)' },
           { label: 'Tokens Output', value: (stats.tokensOut || 0).toLocaleString(), color: 'var(--purple)' },
+          { label: 'Chi phí (~USD)', value: `~$${(used / 1000000 * 5.5).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: 'var(--green)' },
         ].map(s => (
           <Tilt key={s.label} className="stat-card">
             <div className="stat-card-value" style={{ color: s.color, fontSize: '1.4rem' }}>{s.value}</div>
@@ -225,6 +232,7 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
           </Tilt>
         ))}
       </div>
+
 
       {/* API Key info */}
       <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
