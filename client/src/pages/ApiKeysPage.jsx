@@ -297,6 +297,27 @@ function CreateKeyModal({ onClose, onCreated }) {
           </div>
           <div className="form-group">
             <label>Quota tối đa (để trống = không giới hạn)</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+              {[10, 20, 50, 100, 200].map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  style={{ fontSize: '0.72rem', padding: '3px 8px', height: 'auto', minHeight: 0 }}
+                  onClick={() => setForm(v => ({ ...v, quotaTotal: String(m * 1000000) }))}
+                >
+                  {m}M
+                </button>
+              ))}
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                style={{ fontSize: '0.72rem', padding: '3px 8px', height: 'auto', minHeight: 0 }}
+                onClick={() => setForm(v => ({ ...v, quotaTotal: '' }))}
+              >
+                Không giới hạn
+              </button>
+            </div>
             <input id="create-key-quota" type="number" placeholder="VD: 1000000" value={form.quotaTotal} onChange={e => setForm(v => ({ ...v, quotaTotal: e.target.value }))} />
           </div>
           <div className="form-group">
