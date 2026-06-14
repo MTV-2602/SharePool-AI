@@ -8,6 +8,26 @@ const COOLDOWN_RATE_LIMIT  = 60 * 1000;         // 60 giây — rate limit tạm
 const COOLDOWN_QUOTA_DEFAULT = 5 * 60 * 60 * 1000; // 5 tiếng default — hết quota window
 const COOLDOWN_INVALID     = 30 * 60 * 1000;    // 30 phút — token hết hạn/sai
 
+// Helper to normalize unix timestamps (seconds vs milliseconds) to timestamp number in ms
+function parseResetTime(resetValue) {
+  if (!resetValue) return null;
+  try {
+    if (typeof resetValue === 'number') {
+      return resetValue < 1e12 ? resetValue * 1000 : resetValue;
+    }
+    if (typeof resetValue === 'string') {
+      if (/^\d+$/.test(resetValue)) {
+        const timestamp = Number(resetValue);
+        return timestamp < 1e12 ? timestamp * 1000 : timestamp;
+      }
+      return new Date(resetValue).getTime();
+    }
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
 // ─── AccountPool ──────────────────────────────────────────────────────────────
 
 class AccountPool {
@@ -200,6 +220,8 @@ class AccountPool {
     let remainingPercent = 100;
     let primaryRemaining = 100;
     let secondaryRemaining = 100;
+    let primaryResetAt = null;
+    let secondaryResetAt = null;
 
     try {
       const { ChatGPTClient } = require('./ChatGPTClient');
@@ -229,10 +251,12 @@ class AccountPool {
         if (primary) {
           const used = primary.used_percent ?? primary.percent_used ?? 0;
           primaryRemaining = Math.max(0, 100 - Math.ceil(used));
+          primaryResetAt = parseResetTime(primary.reset_at || primary.resets_at);
         }
         if (secondary) {
           const used = secondary.used_percent ?? secondary.percent_used ?? 0;
           secondaryRemaining = Math.max(0, 100 - Math.ceil(used));
+          secondaryResetAt = parseResetTime(secondary.reset_at || secondary.resets_at);
         }
         
         remainingPercent = Math.min(primaryRemaining, secondaryRemaining);
@@ -252,7 +276,8 @@ class AccountPool {
       if (cached) return cached;
     }
 
-    const quotaInfo = { plan, remainingPercent, primaryRemaining, secondaryRemaining, updatedAt: now };
+    const resetAt = secondaryResetAt || primaryResetAt || null;
+    const quotaInfo = { plan, remainingPercent, primaryRemaining, secondaryRemaining, resetAt, updatedAt: now };
     this._quotaCache.set(sessionToken, quotaInfo);
     if (!this._plans) this._plans = new Map();
     this._plans.set(sessionToken, plan);
@@ -376,15 +401,46 @@ class AccountPool {
     }
 
     if (available.length > 0) {
-      // Bước 2: Ưu tiên acc đang rảnh nhất (in-flight thấp nhất) → phân phối đều khi nhiều user
+      // Bước 2: Sắp xếp tài khoản theo độ rảnh (inFlight) và thời gian reset quota sớm nhất
       available.sort((a, b) => {
+        // 1. Số request in-flight thấp nhất (tránh dồn dập vào 1 acc khi concurrency cao)
         const fa = this._inFlight.get(a.token) || 0;
         const fb = this._inFlight.get(b.token) || 0;
-        return fa - fb;
+        if (fa !== fb) return fa - fb;
+
+        // 2. Thời gian reset quota sớm nhất/gần nhất (resetAt tăng dần)
+        const qA = this._quotaCache?.get(a.token);
+        const qB = this._quotaCache?.get(b.token);
+        const resetA = qA?.resetAt || null;
+        const resetB = qB?.resetAt || null;
+
+        if (resetA !== null && resetB !== null) {
+          return resetA - resetB; // Ascending order
+        }
+        if (resetA !== null) return -1;
+        if (resetB !== null) return 1;
+
+        // 3. Giữ nguyên thứ tự idx ban đầu làm tie-breaker
+        return a.idx - b.idx;
       });
 
       const { account, idx, token } = available[0];
       this._index = (idx + 1) % total;
+
+      // Log chi tiết chọn tài khoản kèm inFlight và thời gian reset
+      const q = this._quotaCache?.get(token);
+      let resetInfo = 'unknown';
+      if (q && q.resetAt) {
+        const diff = q.resetAt - Date.now();
+        if (diff > 0) {
+          const days = Math.floor(diff / (24 * 3600 * 1000));
+          const hrs = Math.floor((diff % (24 * 3600 * 1000)) / (3600 * 1000));
+          resetInfo = `${days}d ${hrs}h (in ${Math.round(diff / 60000)}m)`;
+        } else {
+          resetInfo = 'due';
+        }
+      }
+      logger.debug(`Selected [${account.name}] (inFlight: ${this._inFlight.get(token) || 0}, resetAt: ${resetInfo}, quota: ${q?.remainingPercent ?? 'unknown'}%)`);
 
       // Cập nhật last_used_at (fire-and-forget)
       if (account.id) {
@@ -535,6 +591,8 @@ class AccountPool {
     this._errors.clear();
     if (this._plans) this._plans.clear();
     await this._loadAsync();
+    // Chạy ngầm refresh quota ngay để cập nhật dữ liệu mới nhất
+    this._backgroundRefreshQuotas().catch(() => {});
     return { count: this._accounts.length };
   }
 
@@ -596,13 +654,13 @@ const pool = new AccountPool();
 
 // Chạy background quota refresh mỗi 10 phút sau khi accounts đã load
 setTimeout(() => {
-  // Lần đầu sau 60s (chờ server khởi động xong)
+  // Lần đầu sau 5s (chờ server khởi động xong)
   pool._backgroundRefreshQuotas().catch(() => {});
   // Sau đó mỗi 10 phút
   setInterval(() => {
     pool._backgroundRefreshQuotas().catch(() => {});
   }, 10 * 60 * 1000);
-}, 60 * 1000);
+}, 5 * 1000);
 
 module.exports = pool;
 
