@@ -8,8 +8,24 @@ export default function GuidePage() {
   const isAntigravityPath = location.pathname.includes('/antigravity');
   const [activeTab, setActiveTab] = useState(isAntigravityPath ? 'antigravity' : 'codex');
   const [copiedText, setCopiedText] = useState('');
+  const [showBackToTop, setShowBackToTop] = useState(false);
   
   const hasAuth = !!localStorage.getItem('adminKey');
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 300);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  };
 
   useEffect(() => {
     setActiveTab(isAntigravityPath ? 'antigravity' : 'codex');
@@ -252,11 +268,11 @@ supports_websockets = false`,
         </div>
 
         {/* Content Container */}
-        <div className="reveal visible" style={{ marginTop: 20 }}>
+        <div key={activeTab} className="reveal visible" style={{ marginTop: 20 }}>
           {activeTab === 'codex' ? (
             <div>
               {/* Codex Guide */}
-              <div className="card mb-4">
+              <div className="stagger-item card mb-4" style={{ animationDelay: '0ms' }}>
                 <div className="card-header">
                   <span className="card-title">💻 Hướng Dẫn Cấu Hình Máy Khách Sử Dụng Codex API Portal</span>
                 </div>
@@ -266,7 +282,7 @@ supports_websockets = false`,
               </div>
 
               {/* Step 1 */}
-              <div className="card mb-4">
+              <div className="stagger-item card mb-4" style={{ animationDelay: '80ms' }}>
                 <div className="card-header">
                   <span className="card-title"><Shield size={15} style={{ color: 'var(--accent-light)' }} /> Bước 1: Cài đặt ứng dụng Codex</span>
                 </div>
@@ -295,7 +311,7 @@ supports_websockets = false`,
               </div>
 
               {/* Step 2 */}
-              <div className="card mb-4">
+              <div className="stagger-item card mb-4" style={{ animationDelay: '160ms' }}>
                 <div className="card-header">
                   <span className="card-title"><Code size={15} style={{ color: 'var(--accent-light)' }} /> Bước 2: Thiết lập file cấu hình config.toml</span>
                 </div>
@@ -333,7 +349,7 @@ supports_websockets = false`,
               </div>
 
               {/* Step 3 */}
-              <div className="card">
+              <div className="stagger-item card" style={{ animationDelay: '240ms' }}>
                 <div className="card-header">
                   <span className="card-title"><Terminal size={15} style={{ color: 'var(--accent-light)' }} /> Bước 3: Khởi động lại và Kiểm thử</span>
                 </div>
@@ -372,7 +388,7 @@ supports_websockets = false`,
           ) : (
             <div>
               {/* AntiGravity Guide */}
-              <div className="card mb-4">
+              <div className="stagger-item card mb-4" style={{ animationDelay: '0ms' }}>
                 <div className="card-header">
                   <span className="card-title">🪐 Hướng dẫn kết nối máy khách đến AntiGravity Portal</span>
                 </div>
@@ -382,7 +398,7 @@ supports_websockets = false`,
               </div>
 
               {/* Method A */}
-              <div className="card mb-4">
+              <div className="stagger-item card mb-4" style={{ animationDelay: '80ms' }}>
                 <div className="card-header">
                   <span className="card-title" style={{ color: 'var(--green)' }}><Code size={15} /> PHƯƠNG PHÁP A: Dành cho công cụ hỗ trợ Custom Base URL</span>
                 </div>
@@ -398,7 +414,7 @@ supports_websockets = false`,
               </div>
 
               {/* Method B */}
-              <div className="card mb-4">
+              <div className="stagger-item card mb-4" style={{ animationDelay: '160ms' }}>
                 <div className="card-header">
                   <span className="card-title" style={{ color: '#e0a82e' }}><Terminal size={15} /> PHƯƠNG PHÁP B: Sử dụng script Proxy siêu nhẹ (VS Code Extension)</span>
                 </div>
@@ -446,7 +462,7 @@ supports_websockets = false`,
               </div>
 
               {/* Method C */}
-              <div className="card">
+              <div className="stagger-item card" style={{ animationDelay: '240ms' }}>
                 <div className="card-header">
                   <span className="card-title" style={{ color: 'var(--purple)' }}><Cpu size={15} /> PHƯƠNG PHÁP C: Tích hợp thông qua phần mềm 9Router Client</span>
                 </div>
@@ -482,6 +498,52 @@ supports_websockets = false`,
             </div>
           )}
         </div>
+
+        {/* Back To Top Button from SkillUi.md Section 6 */}
+        <button
+          onClick={scrollToTop}
+          aria-label="Quay lại đầu trang"
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '48px',
+            height: '48px',
+            borderRadius: '50%',
+            border: '1px solid var(--border)',
+            background: 'var(--bg-elevated)',
+            backdropFilter: 'blur(8px)',
+            color: 'var(--text-primary)',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            transition: 'all 0.3s ease',
+            opacity: showBackToTop ? 1 : 0,
+            transform: showBackToTop ? 'translateY(0)' : 'translateY(16px)',
+            pointerEvents: showBackToTop ? 'auto' : 'none'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = activeTab === 'antigravity' ? 'var(--success)' : 'var(--accent)';
+            e.currentTarget.style.color = activeTab === 'antigravity' ? 'var(--success)' : 'var(--accent)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border)';
+            e.currentTarget.style.color = 'var(--text-primary)';
+          }}
+        >
+          <svg
+            style={{ width: '20px', height: '20px' }}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+          </svg>
+        </button>
       </div>
     </div>
   );

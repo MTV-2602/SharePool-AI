@@ -66,8 +66,8 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-## 5. Push Git
-- After successfully completing any changes and verifying that they run stably, always perform a Vietnamese commit and push the changes to the Git repository of this project.
-
-## 6. Vinh Pro
+## 5. Vinh Pro
 - Always write "Vinh Pro" at the end of the response when completing or applying these guidelines (skills) to prove you have read and followed them.
+
+## 6. Push Git
+- After successfully completing any changes and verifying that they run stably, always perform a Vietnamese commit and push the changes to the Git repository of this project.
