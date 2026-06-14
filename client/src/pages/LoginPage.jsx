@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Rocket, Lock, Eye, EyeOff, BookOpen } from 'lucide-react';
 import api from '../lib/api';
+import Tilt from '../components/Tilt';
 import './LoginPage.css';
 
 export default function LoginPage() {
@@ -54,9 +55,14 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
-      <div className="login-bg" />
+      <div className="login-bg">
+        <div className="orb orb-1" />
+        <div className="orb orb-2" />
+        <div className="orb orb-3" />
+      </div>
       <div className="login-noise" aria-hidden="true" />
-      <div className="login-card">
+      
+      <Tilt className="login-card">
         <div className="login-logo">
           <Rocket size={28} />
         </div>
@@ -105,14 +111,14 @@ export default function LoginPage() {
         <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
           <button
             type="button"
-            className="btn btn-ghost btn-sm w-full"
+            className="btn btn-ghost btn-sm w-full login-footer-btn"
             onClick={() => navigate('/guide')}
             style={{ justifyContent: 'center' }}
           >
             <BookOpen size={14} /> Xem hướng dẫn kết nối máy khách
           </button>
         </div>
-      </div>
+      </Tilt>
     </div>
   );
 }

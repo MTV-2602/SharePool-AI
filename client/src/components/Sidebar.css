@@ -129,3 +129,12 @@
   color: #f87171;
   background: rgba(239, 68, 68, 0.06);
 }
+
+/* AntiGravity Sidebar Theme override */
+.ag-sidebar .nav-item.active {
+  background: linear-gradient(135deg, rgba(224, 168, 46, 0.15), rgba(224, 168, 46, 0.08));
+  color: #e0a82e;
+  border: 1px solid rgba(224, 168, 46, 0.25);
+  box-shadow: 0 2px 12px rgba(224, 168, 46, 0.1);
+}
+

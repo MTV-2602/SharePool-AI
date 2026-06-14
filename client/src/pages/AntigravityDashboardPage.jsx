@@ -5,6 +5,7 @@ import {
   Copy, Check, Clock
 } from 'lucide-react';
 import api from '../lib/api';
+import Tilt from '../components/Tilt';
 
 export default function AntigravityDashboardPage() {
   const [stats, setStats] = useState(null);
@@ -86,19 +87,19 @@ export default function AntigravityDashboardPage() {
 
       <div className="stat-grid reveal">
         {statItems.map(({ icon: Icon, label, value, color, bg }) => (
-          <div key={label} className="stat-card">
+          <Tilt key={label} className="stat-card">
             <div className="stat-card-icon" style={{ background: bg }}>
               <Icon size={18} style={{ color }} />
             </div>
             <div className="stat-card-value">{value}</div>
             <div className="stat-card-label">{label}</div>
-          </div>
+          </Tilt>
         ))}
       </div>
 
       {/* Accounts pool summary */}
       {stats?.accounts && (
-        <div className="card" style={{ marginBottom: 16, marginTop: 16 }}>
+        <Tilt className="card" style={{ marginBottom: 16, marginTop: 16 }}>
           <div className="card-header">
             <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Bot size={16} style={{ color: '#e0a82e' }} />
@@ -112,18 +113,18 @@ export default function AntigravityDashboardPage() {
               { label: 'Đang Cooldown', value: stats.accounts.cooldown ?? 0, color: 'var(--yellow)' },
               { label: 'Bị Lỗi / Thất bại', value: stats.accounts.failed ?? 0, color: 'var(--red)' },
             ].map(({ label, value, color }) => (
-              <div key={label} className="stat-card" style={{ padding: 14 }}>
+              <Tilt key={label} className="stat-card" style={{ padding: 14 }}>
                 <div className="stat-card-value" style={{ color, fontSize: '1.3rem' }}>{value}</div>
                 <div className="stat-card-label">{label}</div>
-              </div>
+              </Tilt>
             ))}
           </div>
-        </div>
+        </Tilt>
       )}
 
       {/* Top Keys */}
       {stats?.topKeys?.length > 0 && (
-        <div className="card">
+        <Tilt className="card">
           <div className="card-header">
             <span className="card-title">
               <BarChart3 size={16} style={{ color: '#e0a82e' }} />
@@ -163,7 +164,7 @@ export default function AntigravityDashboardPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Tilt>
       )}
 
       <style>{`
@@ -218,16 +219,16 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
           { label: 'Tokens Input', value: (stats.tokensIn || 0).toLocaleString(), color: 'var(--cyan)' },
           { label: 'Tokens Output', value: (stats.tokensOut || 0).toLocaleString(), color: 'var(--purple)' },
         ].map(s => (
-          <div key={s.label} className="stat-card">
+          <Tilt key={s.label} className="stat-card">
             <div className="stat-card-value" style={{ color: s.color, fontSize: '1.4rem' }}>{s.value}</div>
             <div className="stat-card-label">{s.label}</div>
-          </div>
+          </Tilt>
         ))}
       </div>
 
       {/* API Key info */}
       <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-        <div className="card">
+        <Tilt className="card">
           <div className="card-header">
             <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Key size={16} style={{ color: '#e0a82e' }} />
@@ -251,9 +252,9 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
           <p style={{ marginTop: 12, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
             Sử dụng API Key này làm Bearer Token hoặc x-api-key cho endpoint: <code>/v1/antigravity</code>
           </p>
-        </div>
+        </Tilt>
 
-        <div className="card">
+        <Tilt className="card">
           <div className="card-header">
             <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Clock size={16} style={{ color: '#e0a82e' }} />
@@ -284,7 +285,7 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
               </div>
             )}
           </div>
-        </div>
+        </Tilt>
       </div>
     </div>
   );

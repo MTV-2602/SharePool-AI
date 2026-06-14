@@ -83,7 +83,7 @@ export default function Sidebar() {
   }, [role, isAntigravity]);
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isAntigravity ? 'ag-sidebar' : ''}`}>
       <div className="sidebar-brand">
         <div className="brand-icon" style={{ backgroundColor: isAntigravity ? '#e0a82e' : undefined }}>
           <Rocket size={18} />

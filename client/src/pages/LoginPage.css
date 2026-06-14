@@ -11,12 +11,61 @@
 .login-bg {
   position: fixed;
   inset: 0;
-  background:
-    radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.14) 0%, transparent 55%),
-    radial-gradient(ellipse at 80% 20%, rgba(168, 85, 247, 0.1) 0%, transparent 45%),
-    radial-gradient(ellipse at 50% 100%, rgba(216, 80, 66, 0.06) 0%, transparent 40%),
-    var(--bg);
+  background: var(--bg);
   z-index: 0;
+  overflow: hidden;
+}
+
+/* Floating 3D Ambient Orbs */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.14;
+  pointer-events: none;
+  animation: orbFloat 25s infinite alternate ease-in-out;
+}
+
+.orb-1 {
+  width: 450px;
+  height: 450px;
+  background: var(--accent);
+  top: -10%;
+  left: -5%;
+  animation-duration: 20s;
+}
+
+.orb-2 {
+  width: 550px;
+  height: 550px;
+  background: var(--purple);
+  bottom: -10%;
+  right: -5%;
+  animation-duration: 26s;
+  animation-delay: -5s;
+}
+
+.orb-3 {
+  width: 350px;
+  height: 350px;
+  background: var(--red);
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation-duration: 22s;
+  animation-delay: -10s;
+}
+
+@keyframes orbFloat {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translate(60px, 40px) scale(1.08) rotate(180deg);
+  }
+  100% {
+    transform: translate(-30px, -60px) scale(0.92) rotate(360deg);
+  }
 }
 
 .login-noise {
@@ -28,12 +77,12 @@
   mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
   -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
   pointer-events: none;
-  z-index: 0;
+  z-index: 1;
 }
 
 .login-card {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   background: rgba(15, 18, 24, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -44,6 +93,7 @@
   max-width: 420px;
   box-shadow: var(--shadow-lg), 0 0 80px rgba(99, 102, 241, 0.08);
   animation: slideUp 0.45s ease;
+  transform-style: preserve-3d;
 }
 
 .login-logo {
@@ -57,6 +107,8 @@
   color: white;
   margin: 0 auto 22px;
   box-shadow: 0 10px 32px var(--accent-glow);
+  transform: translateZ(35px);
+  transform-style: preserve-3d;
 }
 
 .login-title {
@@ -69,6 +121,7 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  transform: translateZ(28px);
 }
 
 .login-sub {
@@ -78,12 +131,15 @@
   margin-bottom: 30px;
   font-family: var(--font-serif);
   font-style: italic;
+  transform: translateZ(20px);
 }
 
 .login-form {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  transform: translateZ(15px);
+  transform-style: preserve-3d;
 }
 
 .input-wrapper {
@@ -119,14 +175,21 @@
 
 .input-toggle:hover { color: var(--text-primary); }
 
+.login-footer-btn {
+  transform: translateZ(10px);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    AntiGravity Login Variants
    ═══════════════════════════════════════════════════════════════════════════ */
-.ag-login-bg {
-  background:
-    radial-gradient(ellipse at 30% 60%, rgba(224, 168, 46, 0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 20%, rgba(245, 158, 11, 0.08) 0%, transparent 45%),
-    radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%) !important;
+.ag-login-bg .orb-1 {
+  background: #e0a82e;
+}
+.ag-login-bg .orb-2 {
+  background: #f59e0b;
+}
+.ag-login-bg .orb-3 {
+  background: #d97706;
 }
 
 .ag-login-card {
@@ -138,3 +201,4 @@
   background: linear-gradient(135deg, #e0a82e, #f59e0b) !important;
   box-shadow: 0 10px 32px rgba(224, 168, 46, 0.25) !important;
 }
+

@@ -5,6 +5,7 @@ import {
   Copy, Check, Clock
 } from 'lucide-react';
 import api from '../lib/api';
+import Tilt from '../components/Tilt';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
@@ -87,13 +88,13 @@ export default function DashboardPage() {
 
       <div className="stat-grid reveal">
         {statItems.map(({ icon: Icon, label, value, color, bg }) => (
-          <div key={label} className="stat-card">
+          <Tilt key={label} className="stat-card">
             <div className="stat-card-icon" style={{ background: bg }}>
               <Icon size={18} style={{ color }} />
             </div>
             <div className="stat-card-value">{value}</div>
             <div className="stat-card-label">{label}</div>
-          </div>
+          </Tilt>
         ))}
       </div>
 
@@ -114,7 +115,7 @@ export default function DashboardPage() {
         };
 
         return (
-          <div className="card" style={{ marginBottom: 16, marginTop: 16 }}>
+          <Tilt className="card" style={{ marginBottom: 16, marginTop: 16 }}>
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
               <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <TrendingUp size={16} style={{ color: 'var(--accent)' }} />
@@ -126,40 +127,40 @@ export default function DashboardPage() {
             </div>
             <div className="stat-grid" style={{ marginBottom: 14 }}>
               {totalCapacitySession > 0 ? (
-                <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid var(--accent)' }}>
+                <Tilt className="stat-card" style={{ padding: 14, borderLeft: '4px solid var(--accent)' }}>
                   <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
                     {formatTokens(totalCapacitySession)}
                   </div>
                   <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Hạn mức 5H thực tế (Raw Session)</div>
-                </div>
+                </Tilt>
               ) : (
-                <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid var(--accent)', opacity: 0.75 }}>
+                <Tilt className="stat-card" style={{ padding: 14, borderLeft: '4px solid var(--accent)', opacity: 0.75 }}>
                   <div className="stat-card-value" style={{ fontSize: '1.3rem', color: 'var(--text-muted)' }}>
                     Không áp dụng
                   </div>
                   <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Hạn mức 5H thực tế (Tài khoản Free)</div>
-                </div>
+                </Tilt>
               )}
-              <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid #a855f7' }}>
+              <Tilt className="stat-card" style={{ padding: 14, borderLeft: '4px solid #a855f7' }}>
                 <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
                   {formatTokens(totalCapacityMonthly)}
                 </div>
                 <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Hạn mức Tháng thực tế (Raw Monthly)</div>
-              </div>
-              <div className="stat-card" style={{ padding: 14, borderLeft: '4px solid #3b82f6' }}>
+              </Tilt>
+              <Tilt className="stat-card" style={{ padding: 14, borderLeft: '4px solid #3b82f6' }}>
                 <div className="stat-card-value" style={{ fontSize: '1.3rem' }}>
                   {(allocatedQuotaRaw / 1_000_000).toFixed(1)}M
                 </div>
                 <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>Dung lượng Quota đã bán (Quy đổi Raw)</div>
-              </div>
-              <div className="stat-card" style={{ padding: 14, borderLeft: `4px solid ${isSafe ? 'var(--green)' : 'var(--red)'}` }}>
+              </Tilt>
+              <Tilt className="stat-card" style={{ padding: 14, borderLeft: `4px solid ${isSafe ? 'var(--green)' : 'var(--red)'}` }}>
                 <div className="stat-card-value" style={{ fontSize: '1.3rem', color: isSafe ? 'var(--green)' : 'var(--red)' }}>
                   {(remainingToSellQuota / 1_000_000).toFixed(1)}M
                 </div>
                 <div className="stat-card-label" style={{ fontSize: '0.72rem' }}>
                   {isSafe ? 'Dung lượng Quota còn lại có thể bán thêm' : 'Dung lượng bán vượt mức (Over-sell)'}
                 </div>
-              </div>
+              </Tilt>
             </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-elevated)', padding: 12, borderRadius: 8 }}>
               <strong>💡 Gợi ý cho Admin:</strong>
@@ -173,13 +174,13 @@ export default function DashboardPage() {
                 </span>
               )}
             </div>
-          </div>
+          </Tilt>
         );
       })()}
 
       {/* Accounts pool */}
       {stats?.accounts && (
-        <div className="card" style={{ marginBottom: 16, marginTop: 16 }}>
+        <Tilt className="card" style={{ marginBottom: 16, marginTop: 16 }}>
           <div className="card-header">
             <span className="card-title">
               <Bot size={16} style={{ color: 'var(--accent)' }} />
@@ -193,18 +194,18 @@ export default function DashboardPage() {
               { label: 'Exhausted', value: stats.accounts.exhausted ?? 0, color: 'var(--yellow)' },
               { label: 'Failed', value: stats.accounts.failed ?? 0, color: 'var(--red)' },
             ].map(({ label, value, color }) => (
-              <div key={label} className="stat-card" style={{ padding: 14 }}>
+              <Tilt key={label} className="stat-card" style={{ padding: 14 }}>
                 <div className="stat-card-value" style={{ color, fontSize: '1.3rem' }}>{value}</div>
                 <div className="stat-card-label">{label}</div>
-              </div>
+              </Tilt>
             ))}
           </div>
-        </div>
+        </Tilt>
       )}
 
       {/* Top Keys */}
       {stats?.topKeys?.length > 0 && (
-        <div className="card">
+        <Tilt className="card">
           <div className="card-header">
             <span className="card-title">
               <BarChart3 size={16} style={{ color: 'var(--accent)' }} />
@@ -244,7 +245,7 @@ export default function DashboardPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Tilt>
       )}
 
       <style>{`
@@ -299,16 +300,16 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
           { label: 'Tokens Input', value: (stats.tokensIn || 0).toLocaleString(), color: 'var(--cyan)' },
           { label: 'Tokens Output', value: (stats.tokensOut || 0).toLocaleString(), color: 'var(--purple)' },
         ].map(s => (
-          <div key={s.label} className="stat-card">
+          <Tilt key={s.label} className="stat-card">
             <div className="stat-card-value" style={{ color: s.color, fontSize: '1.4rem' }}>{s.value}</div>
             <div className="stat-card-label">{s.label}</div>
-          </div>
+          </Tilt>
         ))}
       </div>
 
       {/* API Key info */}
       <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-        <div className="card">
+        <Tilt className="card">
           <div className="card-header">
             <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Key size={16} style={{ color: 'var(--accent)' }} />
@@ -332,9 +333,9 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
           <p style={{ marginTop: 12, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
             Sử dụng API Key này làm Bearer Token hoặc x-api-key trong ứng dụng của bạn.
           </p>
-        </div>
+        </Tilt>
 
-        <div className="card">
+        <Tilt className="card">
           <div className="card-header">
             <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Clock size={16} style={{ color: 'var(--accent)' }} />
@@ -365,7 +366,7 @@ function UserDashboard({ stats, error, fetchStats, loading }) {
               </div>
             )}
           </div>
-        </div>
+        </Tilt>
       </div>
       
       <style>{`

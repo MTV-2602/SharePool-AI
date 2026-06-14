@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { BookOpen, Copy, Check, Terminal, Code, Cpu, Shield, ArrowLeft, Download } from 'lucide-react';
+import Tilt from '../components/Tilt';
 
 export default function GuidePage() {
   const location = useLocation();
@@ -272,17 +273,17 @@ supports_websockets = false`,
           {activeTab === 'codex' ? (
             <div>
               {/* Codex Guide */}
-              <div className="stagger-item card mb-4" style={{ animationDelay: '0ms' }}>
+              <Tilt className="stagger-item card mb-4" max={3} perspective={1200} style={{ animationDelay: '0ms' }}>
                 <div className="card-header">
                   <span className="card-title">💻 Hướng Dẫn Cấu Hình Máy Khách Sử Dụng Codex API Portal</span>
                 </div>
                 <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)' }}>
                   Tài liệu này hướng dẫn chi tiết cách cấu hình một máy tính bất kỳ (máy khách) để kết nối và sử dụng Codex qua hệ thống API Portal của bạn tại địa chỉ: <code className="font-mono">{currentHost}</code>
                 </p>
-              </div>
+              </Tilt>
 
               {/* Step 1 */}
-              <div className="stagger-item card mb-4" style={{ animationDelay: '80ms' }}>
+              <Tilt className="stagger-item card mb-4" max={3} perspective={1200} style={{ animationDelay: '80ms' }}>
                 <div className="card-header">
                   <span className="card-title"><Shield size={15} style={{ color: 'var(--accent-light)' }} /> Bước 1: Cài đặt ứng dụng Codex</span>
                 </div>
@@ -308,10 +309,10 @@ supports_websockets = false`,
                     </div>
                   </div>
                 </div>
-              </div>
+              </Tilt>
 
               {/* Step 2 */}
-              <div className="stagger-item card mb-4" style={{ animationDelay: '160ms' }}>
+              <Tilt className="stagger-item card mb-4" max={3} perspective={1200} style={{ animationDelay: '160ms' }}>
                 <div className="card-header">
                   <span className="card-title"><Code size={15} style={{ color: 'var(--accent-light)' }} /> Bước 2: Thiết lập file cấu hình config.toml</span>
                 </div>
@@ -328,7 +329,7 @@ supports_websockets = false`,
                     </p>
                   </div>
                   <div>
-                    2. Mở file <code>config.toml</code> bằng Notepad hoặc Text Editor và điền cấu hình sau:
+                    2. Mở file <code>config.toml</code> và điền cấu hình sau:
                     <div className="code-container" style={{ position: 'relative', marginTop: 8 }}>
                       <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '12px 38px 12px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
                         {codeSnippets.codexToml}
@@ -338,27 +339,19 @@ supports_websockets = false`,
                       </button>
                     </div>
                   </div>
-                  <div>
-                    3. <strong>Thay đổi các giá trị cấu hình phù hợp</strong>:
-                    <ul style={{ paddingLeft: 20, marginTop: 4, color: 'var(--text-muted)' }}>
-                      <li>Thay thế <code>"KHOA_API_KEY_CUA_MAY_KHACH"</code> bằng mã API Key bạn tạo riêng cho máy khách từ Portal của bạn (có dạng <code>sk-...</code>).</li>
-                      <li>Thay thế <code>"{currentHost}/v1"</code> nếu máy chủ Portal của bạn được triển khai ở địa chỉ khác.</li>
-                    </ul>
-                  </div>
                 </div>
-              </div>
+              </Tilt>
 
-              {/* Step 3 */}
-              <div className="stagger-item card" style={{ animationDelay: '240ms' }}>
+              <Tilt className="stagger-item card" max={3} perspective={1200} style={{ animationDelay: '240ms' }}>
                 <div className="card-header">
                   <span className="card-title"><Terminal size={15} style={{ color: 'var(--accent-light)' }} /> Bước 3: Khởi động lại và Kiểm thử</span>
                 </div>
                 <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', display: 'grid', gap: 12 }}>
                   <div>
-                    1. Hãy <strong>tắt hoàn toàn</strong> ứng dụng Codex Desktop (hoặc đóng các cửa sổ Terminal đang mở) và khởi động lại để Codex nạp cấu hình mới.
+                    1. Hãy <strong>tắt hoàn toàn</strong> ứng dụng Codex Desktop và khởi động lại.
                   </div>
                   <div>
-                    2. Thử nghiệm gọi lệnh cơ bản qua CLI để kiểm tra kết nối:
+                    2. Thử nghiệm gọi lệnh cơ bản qua CLI:
                     <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
                       <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem' }}>
                         {codeSnippets.testCodex1}
@@ -369,7 +362,7 @@ supports_websockets = false`,
                     </div>
                   </div>
                   <div>
-                    3. Thử nghiệm tính năng chạy công cụ hệ thống (Tool-calling) của Codex trên máy khách:
+                    3. Thử nghiệm tính năng chạy công cụ hệ thống (Tool-calling):
                     <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
                       <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem' }}>
                         {codeSnippets.testCodex2}
@@ -378,91 +371,46 @@ supports_websockets = false`,
                         {copiedText === 'test2' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
                       </button>
                     </div>
-                    <p style={{ marginTop: 8, color: 'var(--text-muted)' }}>
-                      <strong>Kết quả đúng:</strong> Codex tự động gọi công cụ tạo file cục bộ và báo thành công mà không trả ra văn bản JSON thô. Lịch sử sử dụng sẽ hiển thị trên Dashboard Admin Portal của bạn.
-                    </p>
                   </div>
                 </div>
-              </div>
+              </Tilt>
             </div>
           ) : (
             <div>
-              {/* AntiGravity Guide */}
-              <div className="stagger-item card mb-4" style={{ animationDelay: '0ms' }}>
+              <Tilt className="stagger-item card mb-4" max={3} perspective={1200} style={{ animationDelay: '0ms' }}>
                 <div className="card-header">
                   <span className="card-title">🪐 Hướng dẫn kết nối máy khách đến AntiGravity Portal</span>
                 </div>
-                <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)' }}>
-                  Tài liệu này hướng dẫn chi tiết cách kết nối các máy khách để sử dụng chung **AntiGravity Pool (Gemini Code Assist)** xoay vòng tài khoản Google của bạn thông qua Server Portal tại địa chỉ: <code className="font-mono">{currentHost}</code>
-                </p>
-              </div>
+              </Tilt>
 
-              {/* Method A */}
-              <div className="stagger-item card mb-4" style={{ animationDelay: '80ms' }}>
+              <Tilt className="stagger-item card mb-4" max={3} perspective={1200} style={{ animationDelay: '80ms' }}>
                 <div className="card-header">
                   <span className="card-title" style={{ color: 'var(--green)' }}><Code size={15} /> PHƯƠNG PHÁP A: Dành cho công cụ hỗ trợ Custom Base URL</span>
                 </div>
-                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-                  Dành cho các công cụ hỗ trợ cấu hình Custom Base URL trực tiếp như **Cursor, Cline, RooCode, Continue...**
-                </p>
                 <div style={{ display: 'grid', gap: 10, fontSize: '0.88rem', background: 'var(--bg-elevated)', padding: 14, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                  <div><strong>1. Provider:</strong> <code>OpenAI Compatible</code> (hoặc Custom OpenAI)</div>
-                  <div><strong>2. API URL (Base URL):</strong> <code>{currentHost}/v1/antigravity</code></div>
-                  <div><strong>3. API Key:</strong> Nhập API Key do Portal cung cấp (dạng <code>sk-...</code>)</div>
-                  <div><strong>4. Models hỗ trợ:</strong> <code>gemini-2.5-pro</code>, <code>gemini-2.5-flash</code>, <code>gemini-2.0-flash</code></div>
+                  <div><strong>1. Provider:</strong> <code>OpenAI Compatible</code></div>
+                  <div><strong>2. API URL:</strong> <code>{currentHost}/v1/antigravity</code></div>
                 </div>
-              </div>
+              </Tilt>
 
-              {/* Method B */}
-              <div className="stagger-item card mb-4" style={{ animationDelay: '160ms' }}>
+              <Tilt className="stagger-item card mb-4" max={3} perspective={1200} style={{ animationDelay: '160ms' }}>
                 <div className="card-header">
-                  <span className="card-title" style={{ color: '#e0a82e' }}><Terminal size={15} /> PHƯƠNG PHÁP B: Sử dụng script Proxy siêu nhẹ (VS Code Extension)</span>
+                  <span className="card-title" style={{ color: '#e0a82e' }}><Terminal size={15} /> PHƯƠNG PHÁP B: Sử dụng script Proxy siêu nhẹ</span>
                 </div>
-                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-                  Đây là cách tối ưu nhất để kết nối trực tiếp extension **Google Gemini Code Assist** chính thức trên VS Code mà không cần cài đặt phần mềm 9Router.
-                </p>
-
                 <div className="form-group mb-3">
-                  <label>Bước 1: Cài đặt Node.js</label>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Tải và cài đặt Node.js (phiên bản &gt;= 18) trên máy khách.</p>
-                </div>
-
-                <div className="form-group mb-3">
-                  <label>Bước 2: Chạy script proxy trên máy khách</label>
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    <div>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Chạy trên Windows (PowerShell với quyền Administrator):</span>
-                      <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
-                        <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
-                          {codeSnippets.proxyWin}
-                        </pre>
-                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.proxyWin, 'win')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
-                          {copiedText === 'win' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Chạy trên macOS / Linux (Terminal):</span>
-                      <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
-                        <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
-                          {codeSnippets.proxyMac}
-                        </pre>
-                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.proxyMac, 'mac')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
-                          {copiedText === 'mac' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
-                        </button>
-                      </div>
-                    </div>
+                  <label>Chạy script proxy trên máy khách</label>
+                  <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
+                    <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
+                      {codeSnippets.proxyWin}
+                    </pre>
                   </div>
                 </div>
-
                 <div className="alert alert-info">
-                  <strong>Lưu ý:</strong> Khi bạn tắt script proxy (bằng cách ấn Ctrl+C), file <code>hosts</code> trên máy khách sẽ tự động được khôi phục về trạng thái sạch sẽ ban đầu.
+                  Khi tắt script (Ctrl+C), file <code>hosts</code> sẽ tự động khôi phục.
                 </div>
-              </div>
+              </Tilt>
 
-              {/* Method C */}
-              <div className="stagger-item card" style={{ animationDelay: '240ms' }}>
+              <Tilt className="stagger-item card" max={3} perspective={1200} style={{ animationDelay: '240ms' }}>
                 <div className="card-header">
                   <span className="card-title" style={{ color: 'var(--purple)' }}><Cpu size={15} /> PHƯƠNG PHÁP C: Tích hợp thông qua phần mềm 9Router Client</span>
                 </div>
@@ -494,8 +442,9 @@ supports_websockets = false`,
                   <div>1. Trên Dashboard 9Router local, chọn <strong>CLI Tools</strong> &rarr; <strong>Antigravity</strong>.</div>
                   <div>2. Bấm vào nút <strong>Start MITM</strong> để kích hoạt.</div>
                 </div>
-              </div>
+              </Tilt>
             </div>
+
           )}
         </div>
 
