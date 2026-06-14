@@ -281,13 +281,13 @@ select option { background: var(--bg-surface); }
    Áp dụng SkillUi.md Section 5 & 6: Glassmorphism & Card Design
    ═══════════════════════════════════════════════════════════════════════════ */
 .card {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(15, 18, 24, 0.82);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 22px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-md);
   transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
 }
 

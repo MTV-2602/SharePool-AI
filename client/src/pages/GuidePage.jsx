@@ -277,7 +277,7 @@ supports_websockets = false`,
                 <div className="card-header">
                   <span className="card-title">💻 Hướng Dẫn Cấu Hình Máy Khách Sử Dụng Codex API Portal</span>
                 </div>
-                <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)' }}>
+                <p style={{ fontSize: '0.92rem', color: 'var(--text-soft)' }}>
                   Tài liệu này hướng dẫn chi tiết cách cấu hình một máy tính bất kỳ (máy khách) để kết nối và sử dụng Codex qua hệ thống API Portal của bạn tại địa chỉ: <code className="font-mono">{currentHost}</code>
                 </p>
               </Tilt>
@@ -287,16 +287,16 @@ supports_websockets = false`,
                 <div className="card-header">
                   <span className="card-title"><Shield size={15} style={{ color: 'var(--accent-light)' }} /> Bước 1: Cài đặt ứng dụng Codex</span>
                 </div>
-                <div style={{ display: 'grid', gap: 16, fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                <div style={{ display: 'grid', gap: 16, fontSize: '0.88rem', color: 'var(--text-soft)' }}>
                   <div>
                     <strong>Cách 1: Sử dụng Codex Desktop App (Khuyên dùng)</strong>
-                    <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>
+                    <p style={{ color: 'var(--text-soft)', marginTop: 4, opacity: 0.85 }}>
                       Tải và cài đặt ứng dụng <strong>Codex Desktop</strong> chính thức do OpenAI phát hành trên máy tính của bạn.
                     </p>
                   </div>
                   <div>
                     <strong>Cách 2: Sử dụng Codex CLI (Nếu dùng giao diện dòng lệnh)</strong>
-                    <p style={{ color: 'var(--text-muted)', marginTop: 4, marginBottom: 8 }}>
+                    <p style={{ color: 'var(--text-soft)', marginTop: 4, marginBottom: 8, opacity: 0.85 }}>
                       Mở Terminal/PowerShell và cài đặt Codex CLI toàn cục:
                     </p>
                     <div className="code-container" style={{ position: 'relative' }}>
@@ -316,15 +316,15 @@ supports_websockets = false`,
                 <div className="card-header">
                   <span className="card-title"><Code size={15} style={{ color: 'var(--accent-light)' }} /> Bước 2: Thiết lập file cấu hình config.toml</span>
                 </div>
-                <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', display: 'grid', gap: 10 }}>
+                <div style={{ fontSize: '0.88rem', color: 'var(--text-soft)', display: 'grid', gap: 10 }}>
                   <p>Trên máy khách, cần tạo hoặc chỉnh sửa tệp cấu hình của Codex để chuyển tiếp cuộc gọi qua Server:</p>
                   <div>
                     1. Tìm tệp cấu hình <strong><code>config.toml</code></strong> theo đường dẫn hệ điều hành:
-                    <ul style={{ paddingLeft: 20, marginTop: 4, color: 'var(--text-muted)' }}>
+                    <ul style={{ paddingLeft: 20, marginTop: 4, color: 'var(--text-soft)', opacity: 0.85 }}>
                       <li><strong>Windows</strong>: <code>C:\Users\&lt;Tên_Tài_Khoản_Máy_Tính&gt;\.codex\config.toml</code></li>
                       <li><strong>Mac / Linux</strong>: <code>~/.codex/config.toml</code></li>
                     </ul>
-                    <p style={{ fontStyle: 'italic', fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: 4 }}>
+                    <p style={{ fontStyle: 'italic', fontSize: '0.8rem', color: 'var(--text-soft)', marginTop: 4, opacity: 0.75 }}>
                       (Nếu chưa có thư mục <code>.codex</code> hoặc file <code>config.toml</code>, hãy tự tạo thư mục và file văn bản mới).
                     </p>
                   </div>
@@ -346,7 +346,7 @@ supports_websockets = false`,
                 <div className="card-header">
                   <span className="card-title"><Terminal size={15} style={{ color: 'var(--accent-light)' }} /> Bước 3: Khởi động lại và Kiểm thử</span>
                 </div>
-                <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', display: 'grid', gap: 12 }}>
+                <div style={{ fontSize: '0.88rem', color: 'var(--text-soft)', display: 'grid', gap: 12 }}>
                   <div>
                     1. Hãy <strong>tắt hoàn toàn</strong> ứng dụng Codex Desktop và khởi động lại.
                   </div>
@@ -414,7 +414,7 @@ supports_websockets = false`,
                 <div className="card-header">
                   <span className="card-title" style={{ color: 'var(--purple)' }}><Cpu size={15} /> PHƯƠNG PHÁP C: Tích hợp thông qua phần mềm 9Router Client</span>
                 </div>
-                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-soft)', marginBottom: 12, opacity: 0.85 }}>
                   Thích hợp nếu máy khách muốn sử dụng giao diện Dashboard quản trị của 9Router để gộp chung với các nguồn AI khác.
                 </p>
 
@@ -430,14 +430,14 @@ supports_websockets = false`,
                   </div>
                 </div>
 
-                <div className="form-group mb-3" style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', display: 'grid', gap: 6 }}>
+                <div className="form-group mb-3" style={{ fontSize: '0.86rem', color: 'var(--text-soft)', display: 'grid', gap: 6 }}>
                   <label>Bước C.2: Cấu hình thêm Portal làm Provider trên 9Router Local</label>
                   <div>1. Truy cập Dashboard local <code>http://localhost:20128/dashboard</code>.</div>
                   <div>2. Mở menu <strong>Providers</strong> &rarr; Chọn <strong>Add Custom Provider</strong>.</div>
                   <div>3. Điền API Endpoint: <code>{currentHost}/v1</code> và API Key của bạn.</div>
                 </div>
 
-                <div className="form-group mb-3" style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', display: 'grid', gap: 6 }}>
+                <div className="form-group mb-3" style={{ fontSize: '0.86rem', color: 'var(--text-soft)', display: 'grid', gap: 6 }}>
                   <label>Bước C.3: Kích hoạt chặn kết nối (MITM) trên máy khách</label>
                   <div>1. Trên Dashboard 9Router local, chọn <strong>CLI Tools</strong> &rarr; <strong>Antigravity</strong>.</div>
                   <div>2. Bấm vào nút <strong>Start MITM</strong> để kích hoạt.</div>
