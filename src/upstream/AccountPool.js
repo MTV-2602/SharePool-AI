@@ -298,19 +298,38 @@ class AccountPool {
   }
 
   /**
-   * Đánh dấu acc đã hết quota window (5 tiếng hoặc theo Retry-After).
-   * Acc này sẽ bị bỏ qua cho đến khi quota_resets_at qua đi.
+   * Đánh dấu acc đã hết quota window.
+   * Acc này sẽ bị bỏ qua cho đến khi quota_resets_at qua đi (cooldown dài hạn theo đúng resetAt của OpenAI).
    */
   markQuotaExhausted(token, retryAfterMs = COOLDOWN_QUOTA_DEFAULT) {
-    const until = Date.now() + retryAfterMs;
+    let finalCooldownMs = retryAfterMs;
+    const cached = this._quotaCache?.get(token);
+    if (cached && cached.resetAt) {
+      const rem = cached.resetAt - Date.now();
+      if (rem > 0) {
+        // Sử dụng thời gian reset thực tế làm thời gian cooldown dài hạn
+        finalCooldownMs = rem;
+      }
+    }
+
+    const until = Date.now() + finalCooldownMs;
     // Lưu vào in-memory map để getNext() skip nhanh
     this._quotaExhausted.set(token, until);
     // Cũng đặt cooldown thông thường để _isOnCooldown() bắt được
     this._cooldowns.set(token, until);
 
     const account = this._accounts.find(a => a.client.sessionToken === token);
-    const hours   = Math.ceil(retryAfterMs / 3600000);
-    logger.warn(`[${account?.name ?? 'unknown'}] Quota exhausted — cooldown ${hours}h (hồi lúc ${new Date(until).toLocaleTimeString('vi-VN')})`);
+    
+    let durationText = '';
+    if (finalCooldownMs >= 24 * 3600000) {
+      const days = Math.floor(finalCooldownMs / (24 * 3600000));
+      const hours = Math.ceil((finalCooldownMs % (24 * 3600000)) / 3600000);
+      durationText = `${days}d ${hours}h`;
+    } else {
+      durationText = `${Math.ceil(finalCooldownMs / 3600000)}h`;
+    }
+
+    logger.warn(`[${account?.name ?? 'unknown'}] Quota exhausted — cooldown ${durationText} (hồi lúc ${new Date(until).toLocaleString('vi-VN')})`);
 
     // Persist vào DB để survive restart
     const db = require('../db');
@@ -382,15 +401,22 @@ class AccountPool {
 
       // ── PROACTIVE QUOTA CHECK ───────────────────────────────────────────────
       // Hệ thống đã biết quota từ _quotaCache (dashboard gọi getAccountQuota).
-      // Nếu cache còn mới (<30 phút) và remainingPercent = 0 → skip ngay, KHÔNG thử request.
+      // Nếu remainingPercent = 0, và:
+      //   - Hoặc dữ liệu cache còn mới (<30 phút)
+      //   - Hoặc thời gian reset (resetAt) vẫn ở tương lai (chắc chắn vẫn bằng 0%)
+      // -> skip ngay, KHÔNG thử request để tránh ban acc.
       const cachedQuota = this._quotaCache?.get(token);
       if (cachedQuota) {
         const cacheAge = Date.now() - cachedQuota.updatedAt;
-        if (cacheAge < 30 * 60 * 1000 && cachedQuota.remainingPercent <= 0) {
-          // Pre-mark quota exhausted dựa trên reset window (default 5h nếu không biết)
+        const isResetInFuture = cachedQuota.resetAt && cachedQuota.resetAt > Date.now();
+        const isCacheFresh = cacheAge < 30 * 60 * 1000;
+
+        if (cachedQuota.remainingPercent <= 0 && (isCacheFresh || isResetInFuture)) {
+          // Pre-mark quota exhausted dựa trên reset window (hoặc default 5h nếu không biết)
           if (!this._quotaExhausted.has(token)) {
+            const timeToReset = cachedQuota.resetAt ? (cachedQuota.resetAt - Date.now()) : COOLDOWN_QUOTA_DEFAULT;
             logger.info(`[${account.name}] Pre-skip: cache quota = 0% — đánh dấu exhausted proactively`);
-            this.markQuotaExhausted(token, COOLDOWN_QUOTA_DEFAULT);
+            this.markQuotaExhausted(token, timeToReset);
           }
           continue; // bỏ qua, KHÔNG thêm vào available
         }
