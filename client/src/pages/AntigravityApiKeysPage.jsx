@@ -67,6 +67,24 @@ export default function AntigravityApiKeysPage() {
     }
   };
 
+  const handleQuickExtend = async (k, days) => {
+    try {
+      const expRaw = k.expires_at || k.expiresAt;
+      const base = expRaw ? new Date(expRaw) : new Date();
+      const start = base < new Date() ? new Date() : base;
+      let newDate = null;
+      if (days !== null) {
+        start.setDate(start.getDate() + days);
+        newDate = start.toISOString().split('T')[0];
+      }
+      await api.patch(`/antigravity-admin-api/keys/${k.id}`, { expiresAt: newDate });
+      toast(days === null ? 'Đã đặt key không hết hạn!' : `Đã gia hạn thêm ${days} ngày!`);
+      fetchKeys();
+    } catch (e) {
+      toast('Lỗi gia hạn: ' + (e.response?.data?.error?.message || e.message), 'error');
+    }
+  };
+
 
   const usagePct = (k) => {
     const used = k.quotaUsed || k.quota_used || 0;
@@ -162,6 +180,16 @@ export default function AntigravityApiKeysPage() {
                             Hạn: {new Date(exp).toLocaleDateString('vi-VN')}{isExpired ? ' (Hết hạn)' : ''}
                           </div>;
                         })()}
+                        <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                          <button className="btn btn-ghost btn-xs" style={{ padding: '2px 5px', fontSize: '0.65rem', color: '#e0a82e', height: 'auto', minHeight: 0 }}
+                            onClick={() => handleQuickExtend(k, 7)} title="Gia hạn 7 ngày">+7đ</button>
+                          <button className="btn btn-ghost btn-xs" style={{ padding: '2px 5px', fontSize: '0.65rem', color: '#e0a82e', height: 'auto', minHeight: 0 }}
+                            onClick={() => handleQuickExtend(k, 30)} title="Gia hạn 30 ngày">+30đ</button>
+                          <button className="btn btn-ghost btn-xs" style={{ padding: '2px 5px', fontSize: '0.65rem', color: '#e0a82e', height: 'auto', minHeight: 0 }}
+                            onClick={() => handleQuickExtend(k, 90)} title="Gia hạn 90 ngày">+90đ</button>
+                          <button className="btn btn-ghost btn-xs" style={{ padding: '2px 5px', fontSize: '0.65rem', color: 'var(--text-muted)', height: 'auto', minHeight: 0 }}
+                            onClick={() => handleQuickExtend(k, null)} title="Không hết hạn">∞</button>
+                        </div>
                       </td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -231,8 +259,15 @@ export default function AntigravityApiKeysPage() {
 
 function CreateKeyModal({ onClose, onCreated }) {
   const [form, setForm] = useState({ name: '', quotaTotal: '', note: '' });
+  const [expiresAt, setExpiresAt] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+
+  const handleExtendDays = (days) => {
+    const base = expiresAt ? new Date(expiresAt) : new Date();
+    base.setDate(base.getDate() + days);
+    setExpiresAt(base.toISOString().split('T')[0]);
+  };
 
   const handleCreate = async () => {
     if (!form.name.trim()) return;
@@ -241,7 +276,8 @@ function CreateKeyModal({ onClose, onCreated }) {
       const res = await api.post('/antigravity-admin-api/keys', {
         name: form.name.trim(),
         quotaTotal: form.quotaTotal ? parseInt(form.quotaTotal) : undefined,
-        note: form.note.trim()
+        note: form.note.trim(),
+        expiresAt: expiresAt || null
       });
       setResult({ ok: true, key: res.data });
       onCreated();
@@ -269,6 +305,22 @@ function CreateKeyModal({ onClose, onCreated }) {
           <div className="form-group">
             <label>Ghi chú</label>
             <input placeholder="Mô tả..." value={form.note} onChange={e => setForm(v => ({ ...v, note: e.target.value }))} />
+          </div>
+          
+          {/* Expiration section */}
+          <div style={{ background: 'var(--bg-elevated)', padding: 14, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+            <label style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: 8, display: 'block' }}><Calendar size={13} style={{ verticalAlign: -2 }} /> Ngày hết hạn</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {[7, 30, 90].map(d => (
+                <button key={d} className="btn btn-ghost btn-sm" style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                  onClick={() => handleExtendDays(d)}>+{d} ngày</button>
+              ))}
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                onClick={() => setExpiresAt('')}>Không hết hạn</button>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <input type="date" value={expiresAt} onChange={e => setExpiresAt(e.target.value)} />
+            </div>
           </div>
         </div>
 

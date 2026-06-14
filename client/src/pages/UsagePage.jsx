@@ -2,6 +2,34 @@ import { useState, useEffect } from 'react';
 import { Activity, BarChart3, RefreshCw } from 'lucide-react';
 import api from '../lib/api';
 
+const formatDate = (dateStr) => {
+  if (!dateStr) return '—';
+  try {
+    const justDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    const parts = justDate.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
+    }
+    return dateStr;
+  } catch {
+    return dateStr;
+  }
+};
+
+const formatChartDate = (dateStr) => {
+  if (!dateStr) return '';
+  try {
+    const justDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    const parts = justDate.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}`; // DD/MM
+    }
+    return dateStr.slice(5, 10);
+  } catch {
+    return dateStr;
+  }
+};
+
 export default function UsagePage() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -155,7 +183,7 @@ export default function UsagePage() {
               {/* Interactive Dots */}
               {pointsIn.map((p, idx) => {
                 const pOut = pointsOut[idx];
-                const dateStr = (p.date || '').slice(5); // MM-DD
+                const dateStr = formatChartDate(p.date); // DD/MM
                 
                 return (
                   <g key={idx} className="chart-group">
@@ -183,7 +211,7 @@ export default function UsagePage() {
                         strokeWidth="1.5"
                         className="chart-dot"
                       >
-                        <title>{`${p.date}\nTokens In: ${p.val.toLocaleString()}`}</title>
+                        <title>{`${formatDate(p.date)}\nTokens In: ${p.val.toLocaleString()}`}</title>
                       </circle>
                     )}
 
@@ -198,7 +226,7 @@ export default function UsagePage() {
                         strokeWidth="1.5"
                         className="chart-dot"
                       >
-                        <title>{`${pOut.date}\nTokens Out: ${pOut.val.toLocaleString()}`}</title>
+                        <title>{`${formatDate(pOut.date)}\nTokens Out: ${pOut.val.toLocaleString()}`}</title>
                       </circle>
                     )}
                     
@@ -242,7 +270,7 @@ export default function UsagePage() {
                   const estCost = (tTotal / 1000000) * 5.0;
                   return (
                     <tr key={d.date || i}>
-                      <td style={{ fontWeight: 500 }}>{d.date || '—'}</td>
+                      <td style={{ fontWeight: 500 }}>{formatDate(d.date)}</td>
                       <td style={{ textAlign: 'right', color: 'var(--accent-light)', fontWeight: 600 }}>
                         {(d.requests || d.total || 0).toLocaleString()}
                       </td>
