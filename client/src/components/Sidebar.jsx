@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Key, Mail, Bot,
   Settings, LogOut, Rocket, ChevronRight,
-  Send, Activity, ArrowLeftRight, BookOpen
+  Send, Activity, ArrowLeftRight, BookOpen, X
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -26,7 +26,7 @@ const NAV_ANTIGRAVITY = [
   { to: '/antigravity/guide', icon: BookOpen, label: 'Hướng dẫn' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isMobileOpen, onClose }) {
   const navigate = useNavigate();
   const location = useLocation();
   const role = localStorage.getItem('role') || 'admin';
@@ -83,16 +83,19 @@ export default function Sidebar() {
   }, [role, isAntigravity]);
 
   return (
-    <aside className={`sidebar ${isAntigravity ? 'ag-sidebar' : ''}`}>
+    <aside className={`sidebar ${isAntigravity ? 'ag-sidebar' : ''} ${isMobileOpen ? 'mobile-open' : ''}`}>
       <div className="sidebar-brand">
         <div className="brand-icon" style={{ backgroundColor: isAntigravity ? '#e0a82e' : undefined }}>
           <Rocket size={18} />
         </div>
         <span className="brand-name">
           {isAntigravity 
-            ? (role === 'user' ? 'AntiGravity Portal' : 'AntiGravity Admin')
-            : (role === 'user' ? 'CodeX Portal' : 'CodeX Admin')}
+            ? (role === 'user' ? 'AntiGravity' : 'AntiGravity Admin')
+            : (role === 'user' ? 'CodeX' : 'CodeX Admin')}
         </span>
+        <button className="sidebar-close-btn" onClick={onClose} aria-label="Close sidebar">
+          <X size={18} />
+        </button>
       </div>
 
       <nav className="sidebar-nav">
