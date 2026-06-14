@@ -30,8 +30,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* CodeX Portal Routes */}
+        {/* Public Routes */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/guide" element={<GuidePage />} />
+        <Route path="/antigravity/login" element={<AntigravityLoginPage />} />
+        <Route path="/antigravity/guide" element={<GuidePage />} />
+
+        {/* CodeX Portal Routes */}
         <Route
           path="/"
           element={
@@ -48,11 +53,9 @@ export default function App() {
           <Route path="api-keys" element={<ApiKeysPage />} />
           <Route path="usage" element={<UsagePage />} />
           <Route path="settings" element={<SettingsPage />} />
-          <Route path="guide" element={<GuidePage />} />
         </Route>
 
         {/* AntiGravity Portal Routes */}
-        <Route path="/antigravity/login" element={<AntigravityLoginPage />} />
         <Route
           path="/antigravity"
           element={
@@ -66,7 +69,6 @@ export default function App() {
           <Route path="accounts" element={<AntigravityAccountsPage />} />
           <Route path="api-keys" element={<AntigravityApiKeysPage />} />
           <Route path="usage" element={<AntigravityUsagePage />} />
-          <Route path="guide" element={<GuidePage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

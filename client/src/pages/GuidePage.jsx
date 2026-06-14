@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { BookOpen, Copy, Check, Terminal, Code, Cpu, Shield, AlertTriangle } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { BookOpen, Copy, Check, Terminal, Code, Cpu, Shield, ArrowLeft, Download } from 'lucide-react';
 
 export default function GuidePage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const isAntigravityPath = location.pathname.includes('/antigravity');
   const [activeTab, setActiveTab] = useState(isAntigravityPath ? 'antigravity' : 'codex');
   const [copiedText, setCopiedText] = useState('');
+  
+  const hasAuth = !!localStorage.getItem('adminKey');
 
   useEffect(() => {
     setActiveTab(isAntigravityPath ? 'antigravity' : 'codex');
@@ -18,336 +21,467 @@ export default function GuidePage() {
     setTimeout(() => setCopiedText(''), 2000);
   };
 
+  const currentHost = window.location.origin;
+
+  const rawMarkdownCodex = `# 💻 Hướng Dẫn Cấu Hình Máy Khách Sử Dụng Codex API Portal
+
+Tài liệu này hướng dẫn chi tiết cách cấu hình một máy tính bất kỳ (máy khách) để kết nối và sử dụng Codex qua hệ thống API Portal của bạn đã được triển khai (ví dụ: \`${currentHost}\`).
+
+---
+
+## 🛠️ Bước 1: Cài đặt ứng dụng Codex
+
+Người dùng máy khách cần cài đặt một trong hai hình thức sau (hoặc cả hai):
+
+### Cách 1: Sử dụng Codex Desktop App (Khuyên dùng)
+Tải và cài đặt ứng dụng **Codex Desktop** chính thức do OpenAI phát hành trên máy tính.
+
+### Cách 2: Sử dụng Codex CLI (Nếu dùng giao diện dòng lệnh)
+Mở Terminal/PowerShell và cài đặt Codex CLI toàn cục qua npm:
+\`\`\`bash
+npm install -g @openai/codex
+\`\`\`
+
+---
+
+## ⚙️ Bước 2: Thiết lập file cấu hình \`config.toml\`
+
+Trên máy khách, cần tạo hoặc chỉnh sửa tệp cấu hình của Codex để chuyển tiếp cuộc gọi qua Server của bạn:
+
+1. Tìm tệp cấu hình **\`config.toml\`** theo đường dẫn hệ điều hành:
+   - **Windows**: \`C:\\Users\\<Tên_Tài_Khoản_Máy_Tính>\\.codex\\config.toml\`
+   - **Mac / Linux**: \`~/.codex/config.toml\`
+     _(Nếu chưa có thư mục \`.codex\` hoặc file \`config.toml\`, hãy tự tạo thư mục và file văn bản mới với tên tương ứng)._
+
+2. Mở file \`config.toml\` bằng Notepad hoặc Text Editor và điền cấu hình sau:
+
+\`\`\`toml
+model_reasoning_effort = "low"
+model_provider = "openai-custom"
+model = "gpt-5.5"
+
+[model_providers.openai-custom]
+experimental_bearer_token = "KHOA_API_KEY_CUA_MAY_KHACH"
+name = "VinAi"
+base_url = "${currentHost}/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+\`\`\`
+
+3. **Thay đổi các giá trị cấu hình phù hợp**:
+   - Thay thế \`"KHOA_API_KEY_CUA_MAY_KHACH"\` bằng mã API Key bạn tạo riêng cho máy khách đó từ trang Admin Portal của bạn (có dạng \`sk-...\`).
+   - Thay thế \`"${currentHost}/v1"\` nếu máy chủ Portal của bạn được triển khai ở địa chỉ khác.
+
+---
+
+## 🧪 Bước 3: Khởi động lại và Kiểm thử
+
+1. Hãy **tắt hoàn toàn** ứng dụng Codex Desktop (hoặc đóng các cửa sổ Terminal đang mở) và khởi động lại để Codex nạp cấu hình mới.
+2. Thử nghiệm gọi lệnh cơ bản qua CLI để kiểm tra kết nối:
+\`\`\`bash
+codex "say hello"
+\`\`\`
+3. Thử nghiệm tính năng chạy công cụ hệ thống (Tool-calling) của Codex trên máy khách:
+\`\`\`bash
+codex "tạo cho tôi 1 file test_connection.txt trong thư mục hiện tại"
+\`\`\`
+
+- **Kết quả đúng**: Codex tự động gọi công cụ tạo file cục bộ và báo thành công mà không trả ra văn bản JSON thô. Lịch sử sử dụng sẽ hiển thị trên Dashboard Admin Portal của bạn.`;
+
+  const rawMarkdownAntigravity = `# Hướng dẫn kết nối máy khách đến AntiGravity Portal (Gemini Code Assist)
+
+Tài liệu này hướng dẫn chi tiết cách kết nối các máy khách (Client) để sử dụng chung **Antigravity Pool (Gemini Code Assist)** xoay vòng tài khoản Google của bạn thông qua Server Portal (ví dụ: \`${currentHost}\`).
+
+---
+
+## 🧭 1. CƠ CHẾ HOẠT ĐỘNG
+
+Extension **Google Gemini Code Assist (Cloud Code)** trên VS Code được lập trình cứng để gọi đến địa chỉ API Google mặc định. Do đó, để chuyển hướng traffic này về hệ thống của bạn, bắt buộc máy khách phải có cơ chế chặn và giả lập kết nối.
+
+---
+
+## 📡 2. HƯỚNG DẪN KẾT NỐI MÁY KHÁCH (CLIENT SETUP)
+
+Có **3 phương pháp** để cấu hình các máy khách kết nối và sử dụng tài nguyên từ Server của bạn.
+
+### PHƯƠNG PHÁP A: Dành cho các công cụ hỗ trợ Custom Base URL (Cursor, Cline, RooCode, Continue...)
+Nếu người dùng sử dụng các công cụ hỗ trợ cấu hình Custom Base URL trực tiếp, việc cài đặt cực kỳ đơn giản:
+
+1.  **Chọn Provider:** \`OpenAI Compatible\` (hoặc Custom OpenAI).
+2.  **Base URL (API Endpoint):** \`${currentHost}/v1/antigravity\`
+3.  **API Key:** Điền mã API Key được cấp trên Portal của bạn (dạng \`sk-...\`).
+4.  **Model:** \`gemini-2.5-pro\`, \`gemini-2.5-flash\`, \`gemini-2.0-flash\`.
+
+---
+
+### PHƯƠNG PHÁP B: Sử dụng Script Proxy Siêu Nhẹ (Khuyên Dùng - Tốc độ cao & VS Code Extension)
+Đây là cách tối ưu nhất để kết nối trực tiếp extension **Google Gemini Code Assist** chính thức trên VS Code mà không cần cài đặt phần mềm 9Router.
+
+#### Các bước thực hiện trên máy khách:
+1.  **Cài đặt Node.js:** Đảm bảo máy khách đã cài Node.js (phiên bản >= 18).
+2.  **Tải file script:** Copy file \`client-proxy.js\` về máy khách.
+3.  **Chạy script với quyền Administrator / Root:**
+    *   **Trên Windows:** Mở PowerShell với quyền *Run as Administrator* rồi chạy:
+        \`\`\`powershell
+        node client-proxy.js --server ${currentHost} --key YOUR_PORTAL_API_KEY
+        \`\`\`
+    *   **Trên macOS / Linux:** Mở Terminal và chạy:
+        \`\`\`bash
+        sudo node client-proxy.js --server ${currentHost} --key YOUR_PORTAL_API_KEY
+        \`\`\`
+4.  **Khởi động lại VS Code:** Extension Gemini Code Assist sẽ tự động hoạt động thông qua pool tài khoản trên server của bạn. Khi tắt script bằng \`Ctrl+C\`, file \`hosts\` sẽ tự động được khôi phục về trạng thái sạch sẽ ban đầu.
+
+---
+
+### PHƯƠNG PHÁP C: Tích hợp thông qua phần mềm 9Router Client chính thức
+Nếu máy khách muốn sử dụng giao diện Dashboard quản trị của 9Router để gộp chung với các combo AI khác.
+
+#### Bước C.1: Khởi chạy 9Router trên máy khách
+Mở Terminal/PowerShell trên máy khách và chạy:
+\`\`\`bash
+npm install -g 9router
+9router
+\`\`\`
+
+#### Bước C.2: Cấu hình thêm Portal của bạn làm Provider trên 9Router Local
+1.  Truy cập Dashboard local \`http://localhost:20128/dashboard\`.
+2.  Mở menu **Providers** -> Chọn **Add Custom Provider**.
+3.  Điền các thông số:
+    *   **Name:** \`Codex Portal\`
+    *   **Base URL:** \`${currentHost}/v1\`
+    *   **API Key:** \`YOUR_PORTAL_API_KEY\` (Mã key \`sk-...\` do bạn cấp).
+4.  Bấm **Save**.
+
+#### Bước C.3: Kích hoạt chặn kết nối (MITM) trên máy khách
+1.  Trên Dashboard 9Router local, chọn **CLI Tools** -> **Antigravity**.
+2.  Bấm vào nút **Start MITM**.
+3.  VS Code sẽ tự động hoạt động thông qua pool của server.`;
+
   const codeSnippets = {
-    env: `REQUIRE_API_KEY=true
-ADMIN_KEY=your_admin_key_here
-ANTIGRAVITY_CLIENT_ID=1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com
-ANTIGRAVITY_CLIENT_SECRET=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`,
+    codexToml: `model_reasoning_effort = "low"
+model_provider = "openai-custom"
+model = "gpt-5.5"
+
+[model_providers.openai-custom]
+experimental_bearer_token = "KHOA_API_KEY_CUA_MAY_KHACH"
+name = "VinAi"
+base_url = "${currentHost}/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false`,
     
-    proxyWin: `node client-proxy.js --server https://vinhcousera.vercel.app --key YOUR_PORTAL_API_KEY`,
-    proxyMac: `sudo node client-proxy.js --server https://vinhcousera.vercel.app --key YOUR_PORTAL_API_KEY`,
-    
-    nineRouter: `npm install -g 9router
-9router`,
+    installCodex: `npm install -g @openai/codex`,
+    testCodex1: `codex "say hello"`,
+    testCodex2: `codex "tạo cho tôi 1 file test_connection.txt trong thư mục hiện tại"`,
 
-    nodeOpenAI: `const { OpenAI } = require('openai');
-
-const openai = new OpenAI({
-  apiKey: 'YOUR_PORTAL_API_KEY', // Thay bằng API Key của bạn từ Admin Portal
-  baseURL: 'https://vinhcousera.vercel.app/v1' // Trỏ về Portal xoay vòng ChatGPT
-});
-
-async function runChatbot() {
-  try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', // Chọn model ChatGPT muốn dùng
-      messages: [
-        { role: 'system', content: 'Bạn là một chatbot hỗ trợ đắc lực.' },
-        { role: 'user', content: 'Xin chào, hãy giới thiệu bản thân nhé.' }
-      ],
-      stream: false
-    });
-
-    console.log('Bot trả lời:', completion.choices[0].message.content);
-  } catch (error) {
-    console.error('Lỗi khi gọi API:', error.message);
-  }
-}
-
-runChatbot();`,
-
-    pythonOpenAI: `from openai import OpenAI
-
-client = OpenAI(
-    api_key="YOUR_PORTAL_API_KEY", # Thay bằng API Key của bạn từ Admin Portal
-    base_url="https://vinhcousera.vercel.app/v1" # Trỏ về Portal xoay vòng ChatGPT
-)
-
-try:
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Bạn là trợ lý AI thông thái."},
-            {"role": "user", "content": "Làm thế nào để học lập trình nhanh?"}
-        ]
-    )
-    print("Bot trả lời:", completion.choices[0].message.content)
-except Exception as e:
-    print("Lỗi kết nối:", e) `,
-
-    jsFetch: `async function askChatbot(prompt) {
-  const url = 'https://vinhcousera.vercel.app/v1/chat/completions';
-  const apiKey = 'YOUR_PORTAL_API_KEY'; // Thay bằng API Key từ Portal
-
-  const payload = {
-    model: 'gpt-4o-mini',
-    messages: [{ role: 'user', content: prompt }]
+    proxyWin: `node client-proxy.js --server ${currentHost} --key YOUR_PORTAL_API_KEY`,
+    proxyMac: `sudo node client-proxy.js --server ${currentHost} --key YOUR_PORTAL_API_KEY`,
+    installNineRouter: `npm install -g 9router
+9router`
   };
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': \`Bearer \${apiKey}\`
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-  } catch (error) {
-    console.error('Lỗi:', error.message);
-  }
-}`
+  const handleGoBack = () => {
+    if (hasAuth) {
+      navigate(isAntigravityPath ? '/antigravity/dashboard' : '/dashboard');
+    } else {
+      navigate(isAntigravityPath ? '/antigravity/login' : '/login');
+    }
   };
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      <div className="page-header">
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <BookOpen size={24} className={activeTab === 'antigravity' ? 'icon-amber' : 'icon-indigo'} />
-          Tài liệu Hướng dẫn & Tích hợp
-        </h1>
-        <p>Hướng dẫn kết nối API Key từ Portal của bạn vào các ứng dụng client</p>
-      </div>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text-primary)', position: 'relative', padding: '40px 20px' }}>
+      {/* Subtle noise and glow overlays */}
+      <div className="login-noise" aria-hidden="true" style={{ opacity: 0.04 }} />
+      <div style={{
+        position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0,
+        background: 'radial-gradient(circle at 50% 10%, rgba(99, 102, 241, 0.08), transparent 50%)'
+      }} />
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-4" role="tablist" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
-        <button
-          role="tab"
-          aria-selected={activeTab === 'antigravity'}
-          onClick={() => setActiveTab('antigravity')}
-          className={`btn btn-sm ${activeTab === 'antigravity' ? 'btn-primary ag-accent-bg' : 'btn-ghost'}`}
-        >
-          🪐 Hướng dẫn AntiGravity (Gemini)
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === 'codex'}
-          onClick={() => setActiveTab('codex')}
-          className={`btn btn-sm ${activeTab === 'codex' ? 'btn-primary' : 'btn-ghost'}`}
-        >
-          💬 Hướng dẫn ChatGPT API
-        </button>
-      </div>
+      <div style={{ maxWidth: 840, margin: '0 auto', position: 'relative', zIndex: 1 }}>
+        
+        {/* Navigation & Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+          <button className="btn btn-ghost btn-sm" onClick={handleGoBack}>
+            <ArrowLeft size={14} /> {hasAuth ? 'Quay lại Dashboard' : 'Quay lại Đăng nhập'}
+          </button>
+          
+          <button 
+            className={`btn btn-sm ${activeTab === 'antigravity' ? 'btn-success ag-accent-bg' : 'btn-primary'}`}
+            onClick={() => copyToClipboard(activeTab === 'antigravity' ? rawMarkdownAntigravity : rawMarkdownCodex, 'all')}
+          >
+            {copiedText === 'all' ? <Check size={14} /> : <Copy size={14} />}
+            {copiedText === 'all' ? 'Đã sao chép tài liệu!' : 'Sao chép toàn bộ tài liệu (Markdown)'}
+          </button>
+        </div>
 
-      <div className="space-y-4">
-        {activeTab === 'antigravity' ? (
-          <div className="reveal visible">
-            {/* Intro */}
-            <div className="card mb-4">
-              <div className="card-header">
-                <span className="card-title">🚀 Giới thiệu AntiGravity Gemini Portal</span>
+        <div className="page-header">
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--font-display)', fontWeight: 800 }}>
+            <BookOpen size={24} className={activeTab === 'antigravity' ? 'icon-amber' : 'icon-indigo'} />
+            Tài liệu Cấu hình Máy khách (Client Guide)
+          </h1>
+          <p style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', color: 'var(--text-secondary)' }}>
+            Hướng dẫn kết nối máy tính người dùng đến Server Portal của bạn
+          </p>
+        </div>
+
+        {/* Tab Selection */}
+        <div className="flex gap-2 mb-4" role="tablist" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+          <button
+            role="tab"
+            aria-selected={activeTab === 'codex'}
+            onClick={() => {
+              setActiveTab('codex');
+              navigate('/guide');
+            }}
+            className={`btn btn-sm ${activeTab === 'codex' ? 'btn-primary' : 'btn-ghost'}`}
+          >
+            💻 Hướng dẫn Codex (README)
+          </button>
+          <button
+            role="tab"
+            aria-selected={activeTab === 'antigravity'}
+            onClick={() => {
+              setActiveTab('antigravity');
+              navigate('/antigravity/guide');
+            }}
+            className={`btn btn-sm ${activeTab === 'antigravity' ? 'btn-primary ag-accent-bg' : 'btn-ghost'}`}
+          >
+            🪐 Kết nối AntiGravity (Gemini)
+          </button>
+        </div>
+
+        {/* Content Container */}
+        <div className="reveal visible" style={{ marginTop: 20 }}>
+          {activeTab === 'codex' ? (
+            <div>
+              {/* Codex Guide */}
+              <div className="card mb-4">
+                <div className="card-header">
+                  <span className="card-title">💻 Hướng Dẫn Cấu Hình Máy Khách Sử Dụng Codex API Portal</span>
+                </div>
+                <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)' }}>
+                  Tài liệu này hướng dẫn chi tiết cách cấu hình một máy tính bất kỳ (máy khách) để kết nối và sử dụng Codex qua hệ thống API Portal của bạn tại địa chỉ: <code className="font-mono">{currentHost}</code>
+                </p>
               </div>
-              <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)' }}>
-                Hệ thống **AntiGravity** cho phép xoay vòng các tài khoản Google để gọi API Google Gemini Code Assist với hiệu năng cực cao và khả năng bảo mật tối đa. Dưới đây là 3 phương pháp tích hợp API Key vào máy khách.
-              </p>
-            </div>
 
-            {/* Method A */}
-            <div className="card mb-4">
-              <div className="card-header">
-                <span className="card-title" style={{ color: 'var(--green)' }}><Code size={16} /> PHƯƠNG PHÁP A: Tích hợp trực tiếp (Direct API)</span>
-              </div>
-              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-                Dành cho các công cụ hỗ trợ cấu hình Custom Base URL trực tiếp như **Cursor, Cline, RooCode, Continue...**
-              </p>
-              <div style={{ display: 'grid', gap: 10, fontSize: '0.88rem', background: 'var(--bg-elevated)', padding: 14, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                <div><strong>1. Provider:</strong> <code>OpenAI Compatible</code> (hoặc Custom OpenAI)</div>
-                <div><strong>2. API URL (Base URL):</strong> <code>https://vinhcousera.vercel.app/v1/antigravity</code></div>
-                <div><strong>3. API Key:</strong> Nhập API Key do Portal cung cấp (dạng <code>sk-...</code>)</div>
-                <div><strong>4. Models hỗ trợ:</strong> <code>gemini-2.5-pro</code>, <code>gemini-2.5-flash</code>, <code>gemini-2.0-flash</code></div>
-              </div>
-            </div>
-
-            {/* Method B */}
-            <div className="card mb-4">
-              <div className="card-header">
-                <span className="card-title" style={{ color: '#e0a82e' }}><Terminal size={16} /> PHƯƠNG PHÁP B: Sử dụng script Proxy siêunhẹ (Khuyên dùng)</span>
-              </div>
-              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-                Phương pháp tối ưu nhất để kết nối trực tiếp extension **Google Gemini Code Assist** gốc trên VS Code mà không cần cài đặt phần mềm 9Router.
-              </p>
-
-              <div className="form-group mb-3">
-                <label>Bước 1: Cài đặt Node.js</label>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Tải và cài đặt Node.js (phiên bản &gt;= 18) trên máy khách.</p>
-              </div>
-
-              <div className="form-group mb-3">
-                <label>Bước 2: Chạy script proxy trên máy khách</label>
-                <div style={{ display: 'grid', gap: 10 }}>
+              {/* Step 1 */}
+              <div className="card mb-4">
+                <div className="card-header">
+                  <span className="card-title"><Shield size={15} style={{ color: 'var(--accent-light)' }} /> Bước 1: Cài đặt ứng dụng Codex</span>
+                </div>
+                <div style={{ display: 'grid', gap: 16, fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
                   <div>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Chạy trên Windows (PowerShell với quyền Administrator):</span>
-                    <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
-                      <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
-                        {codeSnippets.proxyWin}
+                    <strong>Cách 1: Sử dụng Codex Desktop App (Khuyên dùng)</strong>
+                    <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>
+                      Tải và cài đặt ứng dụng <strong>Codex Desktop</strong> chính thức do OpenAI phát hành trên máy tính của bạn.
+                    </p>
+                  </div>
+                  <div>
+                    <strong>Cách 2: Sử dụng Codex CLI (Nếu dùng giao diện dòng lệnh)</strong>
+                    <p style={{ color: 'var(--text-muted)', marginTop: 4, marginBottom: 8 }}>
+                      Mở Terminal/PowerShell và cài đặt Codex CLI toàn cục:
+                    </p>
+                    <div className="code-container" style={{ position: 'relative' }}>
+                      <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem' }}>
+                        {codeSnippets.installCodex}
                       </pre>
-                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.proxyWin, 'win')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
-                        {copiedText === 'win' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
+                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.installCodex, 'instCodex')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
+                        {copiedText === 'instCodex' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
                       </button>
                     </div>
                   </div>
+                </div>
+              </div>
 
+              {/* Step 2 */}
+              <div className="card mb-4">
+                <div className="card-header">
+                  <span className="card-title"><Code size={15} style={{ color: 'var(--accent-light)' }} /> Bước 2: Thiết lập file cấu hình config.toml</span>
+                </div>
+                <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', display: 'grid', gap: 10 }}>
+                  <p>Trên máy khách, cần tạo hoặc chỉnh sửa tệp cấu hình của Codex để chuyển tiếp cuộc gọi qua Server:</p>
                   <div>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Chạy trên macOS / Linux (Terminal):</span>
-                    <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
-                      <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
-                        {codeSnippets.proxyMac}
+                    1. Tìm tệp cấu hình <strong><code>config.toml</code></strong> theo đường dẫn hệ điều hành:
+                    <ul style={{ paddingLeft: 20, marginTop: 4, color: 'var(--text-muted)' }}>
+                      <li><strong>Windows</strong>: <code>C:\Users\&lt;Tên_Tài_Khoản_Máy_Tính&gt;\.codex\config.toml</code></li>
+                      <li><strong>Mac / Linux</strong>: <code>~/.codex/config.toml</code></li>
+                    </ul>
+                    <p style={{ fontStyle: 'italic', fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: 4 }}>
+                      (Nếu chưa có thư mục <code>.codex</code> hoặc file <code>config.toml</code>, hãy tự tạo thư mục và file văn bản mới).
+                    </p>
+                  </div>
+                  <div>
+                    2. Mở file <code>config.toml</code> bằng Notepad hoặc Text Editor và điền cấu hình sau:
+                    <div className="code-container" style={{ position: 'relative', marginTop: 8 }}>
+                      <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '12px 38px 12px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
+                        {codeSnippets.codexToml}
                       </pre>
-                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.proxyMac, 'mac')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
-                        {copiedText === 'mac' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
+                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.codexToml, 'toml')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
+                        {copiedText === 'toml' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
                       </button>
                     </div>
+                  </div>
+                  <div>
+                    3. <strong>Thay đổi các giá trị cấu hình phù hợp</strong>:
+                    <ul style={{ paddingLeft: 20, marginTop: 4, color: 'var(--text-muted)' }}>
+                      <li>Thay thế <code>"KHOA_API_KEY_CUA_MAY_KHACH"</code> bằng mã API Key bạn tạo riêng cho máy khách từ Portal của bạn (có dạng <code>sk-...</code>).</li>
+                      <li>Thay thế <code>"{currentHost}/v1"</code> nếu máy chủ Portal của bạn được triển khai ở địa chỉ khác.</li>
+                    </ul>
                   </div>
                 </div>
               </div>
 
-              <div className="alert alert-info">
-                <strong>Lưu ý:</strong> Khi bạn tắt script proxy (bằng cách ấn Ctrl+C), file <code>hosts</code> trên máy khách sẽ tự động được khôi phục về trạng thái sạch sẽ ban đầu.
-              </div>
-            </div>
-
-            {/* Method C */}
-            <div className="card mb-4">
-              <div className="card-header">
-                <span className="card-title" style={{ color: 'var(--purple)' }}><Cpu size={16} /> PHƯƠNG PHÁP C: Kết nối thông qua 9Router Client</span>
-              </div>
-              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 12 }}>
-                Thích hợp nếu máy khách đã cài đặt và sử dụng phần mềm quản lý 9Router Client local để gộp chung nhiều nguồn AI.
-              </p>
-
-              <div className="form-group mb-3">
-                <label>Bước 1: Khởi chạy 9Router trên máy khách</label>
-                <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
-                  <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
-                    {codeSnippets.nineRouter}
-                  </pre>
-                  <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.nineRouter, '9r')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
-                    {copiedText === '9r' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
-                  </button>
+              {/* Step 3 */}
+              <div className="card">
+                <div className="card-header">
+                  <span className="card-title"><Terminal size={15} style={{ color: 'var(--accent-light)' }} /> Bước 3: Khởi động lại và Kiểm thử</span>
                 </div>
-              </div>
-
-              <div className="form-group mb-3" style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', display: 'grid', gap: 6 }}>
-                <label>Bước 2: Cấu hình trên Dashboard 9Router local (localhost:20128)</label>
-                <div>1. Vào menu <strong>Providers</strong> &rarr; Click <strong>Add Custom Provider</strong></div>
-                <div>2. Điền API Endpoint: <code>https://vinhcousera.vercel.app/v1</code> và API Key của bạn.</div>
-                <div>3. Vào menu <strong>CLI Tools</strong> &rarr; Chọn <strong>Antigravity</strong> và click <strong>Start MITM</strong> để kích hoạt.</div>
-              </div>
-            </div>
-
-            {/* Comparison */}
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title"><Shield size={16} /> Bảng so sánh các phương pháp</span>
-              </div>
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Tiêu chí</th>
-                      <th>Phương pháp A (Direct)</th>
-                      <th>Phương pháp B (Script)</th>
-                      <th>Phương pháp C (9Router)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td style={{ fontWeight: 600 }}>Dành cho</td>
-                      <td>Cursor, Cline, RooCode</td>
-                      <td>Gemini Code Assist gốc</td>
-                      <td>Gemini Code Assist gốc</td>
-                    </tr>
-                    <tr>
-                      <td style={{ fontWeight: 600 }}>Cài đặt</td>
-                      <td>Không cần cài gì thêm</td>
-                      <td>Cần Node.js & script file</td>
-                      <td>Cần cài 9router qua npm</td>
-                    </tr>
-                    <tr>
-                      <td style={{ fontWeight: 600 }}>Quyền Admin</td>
-                      <td>Không yêu cầu</td>
-                      <td>Có (khi chạy script)</td>
-                      <td>Có (khi Start MITM)</td>
-                    </tr>
-                    <tr>
-                      <td style={{ fontWeight: 600 }}>Ưu điểm</td>
-                      <td style={{ color: 'var(--green)' }}>Đơn giản nhất, không overhead</td>
-                      <td style={{ color: 'var(--green)' }}>Dùng extension gốc, siêu nhẹ</td>
-                      <td style={{ color: 'var(--green)' }}>Quản lý đa provider, giao diện web</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="reveal visible">
-            {/* Codex ChatGPT Guide */}
-            <div className="card mb-4">
-              <div className="card-header">
-                <span className="card-title">💬 Tích hợp API Chatbot (ChatGPT Rotation)</span>
-              </div>
-              <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)', marginBottom: 12 }}>
-                Đặc tả API và mã mẫu để cấu hình tích hợp API Portal của bạn làm backend cho chatbot qua giao thức tương thích OpenAI.
-              </p>
-              <div style={{ display: 'grid', gap: 10, fontSize: '0.88rem', background: 'var(--bg-elevated)', padding: 14, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                <div><strong>HTTP Method:</strong> <code style={{ color: 'var(--green)' }}>POST</code></div>
-                <div><strong>Endpoint:</strong> <code>https://vinhcousera.vercel.app/v1/chat/completions</code></div>
-                <div><strong>Header:</strong> <code>Authorization: Bearer YOUR_PORTAL_API_KEY</code></div>
-                <div><strong>Models hỗ trợ:</strong> <code>gpt-4o</code>, <code>gpt-4o-mini</code>, <code>gpt-3.5-turbo</code></div>
-              </div>
-            </div>
-
-            {/* Code Snippets */}
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title"><Code size={16} /> Ví dụ các ngôn ngữ lập trình</span>
-              </div>
-
-              {/* Node.js OpenAI */}
-              <div className="form-group mb-4">
-                <label>1. Node.js (OpenAI SDK)</label>
-                <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
-                  <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '12px 38px 12px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto', maxHeight: 300 }}>
-                    {codeSnippets.nodeOpenAI}
-                  </pre>
-                  <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.nodeOpenAI, 'node')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
-                    {copiedText === 'node' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Python OpenAI */}
-              <div className="form-group mb-4">
-                <label>2. Python (OpenAI SDK)</label>
-                <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
-                  <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '12px 38px 12px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto', maxHeight: 300 }}>
-                    {codeSnippets.pythonOpenAI}
-                  </pre>
-                  <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.pythonOpenAI, 'py')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
-                    {copiedText === 'py' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* JS Fetch */}
-              <div className="form-group">
-                <label>3. JavaScript (Native Fetch - No Library)</label>
-                <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
-                  <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '12px 38px 12px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto', maxHeight: 300 }}>
-                    {codeSnippets.jsFetch}
-                  </pre>
-                  <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.jsFetch, 'js')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
-                    {copiedText === 'js' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
-                  </button>
+                <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', display: 'grid', gap: 12 }}>
+                  <div>
+                    1. Hãy <strong>tắt hoàn toàn</strong> ứng dụng Codex Desktop (hoặc đóng các cửa sổ Terminal đang mở) và khởi động lại để Codex nạp cấu hình mới.
+                  </div>
+                  <div>
+                    2. Thử nghiệm gọi lệnh cơ bản qua CLI để kiểm tra kết nối:
+                    <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
+                      <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem' }}>
+                        {codeSnippets.testCodex1}
+                      </pre>
+                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.testCodex1, 'test1')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
+                        {copiedText === 'test1' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    3. Thử nghiệm tính năng chạy công cụ hệ thống (Tool-calling) của Codex trên máy khách:
+                    <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
+                      <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem' }}>
+                        {codeSnippets.testCodex2}
+                      </pre>
+                      <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.testCodex2, 'test2')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
+                        {copiedText === 'test2' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
+                      </button>
+                    </div>
+                    <p style={{ marginTop: 8, color: 'var(--text-muted)' }}>
+                      <strong>Kết quả đúng:</strong> Codex tự động gọi công cụ tạo file cục bộ và báo thành công mà không trả ra văn bản JSON thô. Lịch sử sử dụng sẽ hiển thị trên Dashboard Admin Portal của bạn.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          ) : (
+            <div>
+              {/* AntiGravity Guide */}
+              <div className="card mb-4">
+                <div className="card-header">
+                  <span className="card-title">🪐 Hướng dẫn kết nối máy khách đến AntiGravity Portal</span>
+                </div>
+                <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)' }}>
+                  Tài liệu này hướng dẫn chi tiết cách kết nối các máy khách để sử dụng chung **AntiGravity Pool (Gemini Code Assist)** xoay vòng tài khoản Google của bạn thông qua Server Portal tại địa chỉ: <code className="font-mono">{currentHost}</code>
+                </p>
+              </div>
+
+              {/* Method A */}
+              <div className="card mb-4">
+                <div className="card-header">
+                  <span className="card-title" style={{ color: 'var(--green)' }}><Code size={15} /> PHƯƠNG PHÁP A: Dành cho công cụ hỗ trợ Custom Base URL</span>
+                </div>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Dành cho các công cụ hỗ trợ cấu hình Custom Base URL trực tiếp như **Cursor, Cline, RooCode, Continue...**
+                </p>
+                <div style={{ display: 'grid', gap: 10, fontSize: '0.88rem', background: 'var(--bg-elevated)', padding: 14, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                  <div><strong>1. Provider:</strong> <code>OpenAI Compatible</code> (hoặc Custom OpenAI)</div>
+                  <div><strong>2. API URL (Base URL):</strong> <code>{currentHost}/v1/antigravity</code></div>
+                  <div><strong>3. API Key:</strong> Nhập API Key do Portal cung cấp (dạng <code>sk-...</code>)</div>
+                  <div><strong>4. Models hỗ trợ:</strong> <code>gemini-2.5-pro</code>, <code>gemini-2.5-flash</code>, <code>gemini-2.0-flash</code></div>
+                </div>
+              </div>
+
+              {/* Method B */}
+              <div className="card mb-4">
+                <div className="card-header">
+                  <span className="card-title" style={{ color: '#e0a82e' }}><Terminal size={15} /> PHƯƠNG PHÁP B: Sử dụng script Proxy siêu nhẹ (VS Code Extension)</span>
+                </div>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Đây là cách tối ưu nhất để kết nối trực tiếp extension **Google Gemini Code Assist** chính thức trên VS Code mà không cần cài đặt phần mềm 9Router.
+                </p>
+
+                <div className="form-group mb-3">
+                  <label>Bước 1: Cài đặt Node.js</label>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Tải và cài đặt Node.js (phiên bản &gt;= 18) trên máy khách.</p>
+                </div>
+
+                <div className="form-group mb-3">
+                  <label>Bước 2: Chạy script proxy trên máy khách</label>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <div>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Chạy trên Windows (PowerShell với quyền Administrator):</span>
+                      <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
+                        <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
+                          {codeSnippets.proxyWin}
+                        </pre>
+                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.proxyWin, 'win')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
+                          {copiedText === 'win' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Chạy trên macOS / Linux (Terminal):</span>
+                      <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
+                        <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
+                          {codeSnippets.proxyMac}
+                        </pre>
+                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.proxyMac, 'mac')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
+                          {copiedText === 'mac' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="alert alert-info">
+                  <strong>Lưu ý:</strong> Khi bạn tắt script proxy (bằng cách ấn Ctrl+C), file <code>hosts</code> trên máy khách sẽ tự động được khôi phục về trạng thái sạch sẽ ban đầu.
+                </div>
+              </div>
+
+              {/* Method C */}
+              <div className="card">
+                <div className="card-header">
+                  <span className="card-title" style={{ color: 'var(--purple)' }}><Cpu size={15} /> PHƯƠNG PHÁP C: Tích hợp thông qua phần mềm 9Router Client</span>
+                </div>
+                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Thích hợp nếu máy khách muốn sử dụng giao diện Dashboard quản trị của 9Router để gộp chung với các nguồn AI khác.
+                </p>
+
+                <div className="form-group mb-3">
+                  <label>Bước C.1: Khởi chạy 9Router trên máy khách</label>
+                  <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
+                    <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
+                      {codeSnippets.installNineRouter}
+                    </pre>
+                    <button className="btn btn-ghost btn-sm btn-icon" onClick={() => copyToClipboard(codeSnippets.installNineRouter, '9r')} style={{ position: 'absolute', right: 6, top: 6, padding: 4 }}>
+                      {copiedText === '9r' ? <Check size={12} style={{ color: 'var(--green)' }} /> : <Copy size={12} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="form-group mb-3" style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', display: 'grid', gap: 6 }}>
+                  <label>Bước C.2: Cấu hình thêm Portal làm Provider trên 9Router Local</label>
+                  <div>1. Truy cập Dashboard local <code>http://localhost:20128/dashboard</code>.</div>
+                  <div>2. Mở menu <strong>Providers</strong> &rarr; Chọn <strong>Add Custom Provider</strong>.</div>
+                  <div>3. Điền API Endpoint: <code>{currentHost}/v1</code> và API Key của bạn.</div>
+                </div>
+
+                <div className="form-group mb-3" style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', display: 'grid', gap: 6 }}>
+                  <label>Bước C.3: Kích hoạt chặn kết nối (MITM) trên máy khách</label>
+                  <div>1. Trên Dashboard 9Router local, chọn <strong>CLI Tools</strong> &rarr; <strong>Antigravity</strong>.</div>
+                  <div>2. Bấm vào nút <strong>Start MITM</strong> để kích hoạt.</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

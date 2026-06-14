@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Rocket, Lock, Eye, EyeOff } from 'lucide-react';
+import { Rocket, Lock, Eye, EyeOff, BookOpen } from 'lucide-react';
 import api from '../lib/api';
 import './LoginPage.css'; // Reuse login styling
 
@@ -101,6 +101,17 @@ export default function AntigravityLoginPage() {
             {loading ? 'Đang xác thực...' : 'Đăng nhập'}
           </button>
         </form>
+
+        <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm w-full"
+            onClick={() => navigate('/antigravity/guide')}
+            style={{ justifyContent: 'center' }}
+          >
+            <BookOpen size={14} /> Xem hướng dẫn kết nối máy khách
+          </button>
+        </div>
       </div>
     </div>
   );
