@@ -530,6 +530,38 @@ const quotaRouteHandler = asyncHandler(async (req, res) => {
 
     const primaryQuota = limits[0] || null;
 
+    // Cập nhật ngược lại bộ đệm cache ở Backend và giải phóng Cooldown nếu quota > 0
+    if (limits.length > 0) {
+      const remainingPercent = limits.reduce((min, lim) => Math.min(min, lim.remaining), 100);
+      const resetAtTs = limits.reduce((earliest, lim) => {
+        if (!lim.resetAt) return earliest;
+        const ts = new Date(lim.resetAt).getTime();
+        if (earliest === null || ts < earliest) return ts;
+        return earliest;
+      }, null);
+
+      if (AccountPool._quotaCache) {
+        AccountPool._quotaCache.set(tokenClean, {
+          plan: data.plan_type || data.summary?.plan || 'unknown',
+          remainingPercent,
+          primaryRemaining: limits.find(l => l.id.includes('session'))?.remaining ?? 100,
+          secondaryRemaining: limits.find(l => l.id.includes('weekly'))?.remaining ?? 100,
+          resetAt: resetAtTs,
+          updatedAt: Date.now()
+        });
+      }
+
+      if (remainingPercent > 0) {
+        AccountPool._cooldowns.delete(tokenClean);
+        AccountPool._quotaExhausted.delete(tokenClean);
+        const db = require('../db');
+        db.run(
+          `UPDATE upstream_accounts SET quota_resets_at = NULL, last_error = NULL WHERE session_token = ?`,
+          [tokenClean]
+        ).catch(() => {});
+      }
+    }
+
     res.json({
       ok: true,
       plan: data.plan_type || data.summary?.plan || 'unknown',

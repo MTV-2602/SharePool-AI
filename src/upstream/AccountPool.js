@@ -260,6 +260,16 @@ class AccountPool {
         }
         
         remainingPercent = Math.min(primaryRemaining, secondaryRemaining);
+
+        if (remainingPercent > 0) {
+          this._cooldowns.delete(sessionToken);
+          this._quotaExhausted.delete(sessionToken);
+          const db = require('../db');
+          db.run(
+            `UPDATE upstream_accounts SET quota_resets_at = NULL, last_error = NULL WHERE session_token = ?`,
+            [sessionToken]
+          ).catch(() => {});
+        }
       } else {
         if (res.status === 401 || res.status === 403) {
           const err = new Error(`OpenAI Wham API returned HTTP ${res.status} (Session expired)`);
