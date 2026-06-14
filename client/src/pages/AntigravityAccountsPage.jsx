@@ -382,7 +382,7 @@ export default function AntigravityAccountsPage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="page-header page-header-flex" style={{ alignItems: 'center' }}>
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Bot size={22} style={{ color: '#e0a82e' }} />
@@ -390,7 +390,7 @@ export default function AntigravityAccountsPage() {
           </h1>
           <p>Danh sách các tài khoản Google kết nối xoay vòng cho Gemini Code Assist</p>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn btn-ghost btn-sm" onClick={() => setShowImportModal(true)} style={{ color: '#e0a82e', borderColor: '#e0a82e', border: '1px solid' }}>
             <Plus size={14} /> Nhập thủ công
           </button>

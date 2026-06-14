@@ -208,7 +208,7 @@ supports_websockets = false`,
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text-primary)', position: 'relative', padding: '40px 20px', overflowX: 'hidden' }}>
+    <div className="guide-page-container">
       {/* Three.js WebGL 3D Background */}
       <ThreeSpaceBackground activeTab={activeTab} />
 

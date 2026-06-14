@@ -1188,6 +1188,29 @@ pre {
 }
 
 code {
+  display: inline !important;
   word-break: break-all !important;
-  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: normal !important;
 }
+
+/* Responsive Guide Page Container and Cards */
+.guide-page-container {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text-primary);
+  position: relative;
+  padding: 40px 24px;
+  overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+  .guide-page-container {
+    padding: 20px 12px !important;
+  }
+  .card {
+    padding: 14px !important;
+  }
+}
+
