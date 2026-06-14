@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { BookOpen, Copy, Check, Terminal, Code, Cpu, Shield, ArrowLeft, Download } from 'lucide-react';
 import Tilt from '../components/Tilt';
+import ThreeSpaceBackground from '../components/ThreeSpaceBackground';
 
 export default function GuidePage() {
   const location = useLocation();
@@ -207,13 +208,12 @@ supports_websockets = false`,
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text-primary)', position: 'relative', padding: '40px 20px' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text-primary)', position: 'relative', padding: '40px 20px', overflowX: 'hidden' }}>
+      {/* Three.js WebGL 3D Background */}
+      <ThreeSpaceBackground activeTab={activeTab} />
+
       {/* Subtle noise and glow overlays */}
       <div className="login-noise" aria-hidden="true" style={{ opacity: 0.04 }} />
-      <div style={{
-        position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0,
-        background: 'radial-gradient(circle at 50% 10%, rgba(99, 102, 241, 0.08), transparent 50%)'
-      }} />
 
       <div style={{ maxWidth: 840, margin: '0 auto', position: 'relative', zIndex: 1 }}>
         
