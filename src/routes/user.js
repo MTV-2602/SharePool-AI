@@ -63,8 +63,8 @@ router.post('/login', asyncHandler(async (req, res) => {
     `SELECT SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out FROM usage_logs WHERE api_key = ?`,
     [rec.key]
   );
-  const tokensIn = parseInt(tokenSums?.tokens_in || 0, 10);
-  const tokensOut = parseInt(tokenSums?.tokens_out || 0, 10);
+  const tokensIn = parseInt(tokenSums?.tokensIn || tokenSums?.tokens_in || 0, 10);
+  const tokensOut = parseInt(tokenSums?.tokensOut || tokenSums?.tokens_out || 0, 10);
 
   res.json({
     ok: true,
@@ -90,8 +90,8 @@ router.get('/me', userAuth, asyncHandler(async (req, res) => {
     `SELECT SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out FROM usage_logs WHERE api_key = ?`,
     [rec.key]
   );
-  const tokensIn = parseInt(tokenSums?.tokens_in || 0, 10);
-  const tokensOut = parseInt(tokenSums?.tokens_out || 0, 10);
+  const tokensIn = parseInt(tokenSums?.tokensIn || tokenSums?.tokens_in || 0, 10);
+  const tokensOut = parseInt(tokenSums?.tokensOut || tokenSums?.tokens_out || 0, 10);
 
   res.json({
     name: rec.name,
