@@ -243,7 +243,7 @@ supports_websockets = false`,
         </div>
 
         {/* Tab Selection */}
-        <div className="flex gap-2 mb-4" role="tablist" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+        <div className="flex gap-2 mb-4" role="tablist" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12, flexWrap: 'wrap' }}>
           <button
             role="tab"
             aria-selected={activeTab === 'codex'}

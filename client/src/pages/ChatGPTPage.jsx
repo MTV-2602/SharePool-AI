@@ -484,7 +484,7 @@ function ChatGPTPool() {
 
       <div className="card reveal" style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             {[
               { label: 'Tổng', value: stats.total, color: 'var(--text-primary)' },
               { label: 'Active', value: stats.active, color: 'var(--green)' },

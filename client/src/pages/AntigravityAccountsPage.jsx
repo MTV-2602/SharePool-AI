@@ -438,7 +438,7 @@ export default function AntigravityAccountsPage() {
 
       {/* Summary grid */}
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           {[
             { label: 'Tổng số', value: stats.total, color: 'var(--text-primary)' },
             { label: 'Hoạt động', value: stats.available, color: 'var(--green)' },

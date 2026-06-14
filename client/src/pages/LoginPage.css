@@ -202,3 +202,9 @@
   box-shadow: 0 10px 32px rgba(224, 168, 46, 0.25) !important;
 }
 
+@media (max-width: 480px) {
+  .login-card {
+    padding: 24px 20px !important;
+  }
+}
+

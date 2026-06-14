@@ -1181,8 +1181,13 @@ tbody td {
   }
 }
 
-/* Global pre overflow fix for mobile screens */
+/* Global pre & code overflow fix for mobile screens */
 pre {
   overflow-x: auto !important;
   max-width: 100% !important;
+}
+
+code {
+  word-break: break-all !important;
+  white-space: pre-wrap !important;
 }
