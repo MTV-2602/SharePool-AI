@@ -461,9 +461,10 @@ class AccountPool {
           if (remA !== remB) {
             return remB - remA; // Nhiều quota hơn lên trước
           }
+        } else {
+          if (resetA !== null) return -1;
+          if (resetB !== null) return 1;
         }
-        if (resetA !== null) return -1;
-        if (resetB !== null) return 1;
 
         // 3. Giữ nguyên thứ tự idx ban đầu làm tie-breaker
         return a.idx - b.idx;

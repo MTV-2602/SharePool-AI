@@ -357,9 +357,10 @@ router.get('/accounts', asyncHandler(async (req, res) => {
       if (remA !== remB) {
         return remB - remA; // Nhiều quota hơn lên trước
       }
+    } else {
+      if (resetA !== null) return -1;
+      if (resetB !== null) return 1;
     }
-    if (resetA !== null) return -1;
-    if (resetB !== null) return 1;
 
     return String(a.name).localeCompare(String(b.name));
   });
