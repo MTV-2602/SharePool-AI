@@ -1,6 +1,25 @@
 'use strict';
 
 const logger = require('../utils/logger').create('ChatGPTClient');
+const { refreshCodexToken } = require('../services/codexTokenRefresh');
+
+const RESPONSES_API_ALLOWLIST = new Set([
+  'model',
+  'input',
+  'instructions',
+  'tools',
+  'tool_choice',
+  'stream',
+  'store',
+  'reasoning',
+  'service_tier',
+  'include',
+  'prompt_cache_key',
+  'client_metadata'
+]);
+
+const STORED_ITEM_ID_PREFIXES = ['rs_', 'fc_', 'resp_', 'msg_'];
+const CODEX_SSE_OVERLOADED_PATTERNS = ['server_is_overloaded', 'service_unavailable_error'];
 
 // ─── Model Mapping ────────────────────────────────────────────────────────────
 
@@ -131,6 +150,142 @@ function normalizeCodexTools(body) {
   }).filter(Boolean);
 }
 
+function normalizeSessionId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 96);
+}
+
+function convertSystemToDeveloperRole(body) {
+  if (!Array.isArray(body.input)) return;
+  for (const item of body.input) {
+    if (item && item.type === 'message' && item.role === 'system') {
+      item.role = 'developer';
+    }
+  }
+}
+
+function stripStoredItemReferences(value) {
+  if (Array.isArray(value)) {
+    for (let i = value.length - 1; i >= 0; i--) {
+      const item = value[i];
+      if (item && typeof item === 'object') {
+        const id = String(item.id || '');
+        if (STORED_ITEM_ID_PREFIXES.some(prefix => id.startsWith(prefix))) {
+          delete item.id;
+        }
+        stripStoredItemReferences(item);
+      }
+    }
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  for (const item of Object.values(value)) {
+    stripStoredItemReferences(item);
+  }
+}
+
+function parseCodexUsageLimit(errorPayload, fallbackText = '') {
+  const err = errorPayload?.error || errorPayload || {};
+  const type = err.type || err.code || '';
+  const message = err.message || fallbackText || '';
+  const text = `${type} ${message}`.toLowerCase();
+  if (!text.includes('usage_limit_reached')) return null;
+
+  const now = Date.now();
+  let resetsAtMs = null;
+  const resetsAt = err.resets_at || err.reset_at || err.resetsAt;
+  if (resetsAt) {
+    const parsed = typeof resetsAt === 'number'
+      ? (resetsAt < 1e12 ? resetsAt * 1000 : resetsAt)
+      : new Date(resetsAt).getTime();
+    if (parsed > now) resetsAtMs = parsed;
+  }
+  const seconds = err.resets_in_seconds || err.reset_after_seconds || err.retry_after_seconds;
+  if (!resetsAtMs && typeof seconds === 'number' && seconds > 0) {
+    resetsAtMs = now + seconds * 1000;
+  }
+
+  return {
+    message,
+    resetsAtMs,
+    retryAfter: resetsAtMs ? Math.max(1000, resetsAtMs - now) : null
+  };
+}
+
+function toAsyncIterator(stream) {
+  if (!stream) return null;
+  if (stream[Symbol.asyncIterator]) return stream[Symbol.asyncIterator]();
+  if (stream.getReader) {
+    return (async function* () {
+      const reader = stream.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          yield value;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    })();
+  }
+  return null;
+}
+
+async function prepareCodexSseResponse(response) {
+  if (!response?.body) return { overloaded: false, body: response?.body };
+  const iterator = toAsyncIterator(response.body);
+  if (!iterator) return { overloaded: false, body: response.body };
+
+  const { PassThrough } = require('stream');
+  const passthrough = new PassThrough();
+  let buffer = '';
+  const bufferedChunks = [];
+
+  try {
+    while (true) {
+      const { value, done } = await iterator.next();
+      if (done) break;
+      const chunk = value;
+      bufferedChunks.push(chunk);
+      buffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8')
+        : (chunk instanceof Uint8Array) ? new TextDecoder().decode(chunk)
+        : String(chunk);
+
+      const lower = buffer.toLowerCase();
+      if (CODEX_SSE_OVERLOADED_PATTERNS.some(pattern => lower.includes(pattern))) {
+        passthrough.destroy();
+        return { overloaded: true, body: null };
+      }
+      if (lower.includes('response.output_text.delta') || lower.includes('response.completed')) {
+        break;
+      }
+      if (buffer.length > 8192) break;
+    }
+
+    for (const chunk of bufferedChunks) passthrough.write(chunk);
+    (async () => {
+      try {
+        while (true) {
+          const { value, done } = await iterator.next();
+          if (done) break;
+          passthrough.write(value);
+        }
+      } catch (err) {
+        passthrough.destroy(err);
+        return;
+      }
+      passthrough.end();
+    })();
+
+    return { overloaded: false, body: passthrough };
+  } catch (err) {
+    passthrough.destroy(err);
+    return { overloaded: false, body: response.body };
+  }
+}
+
 // ─── ChatGPTClient ────────────────────────────────────────────────────────────
 
 /**
@@ -213,32 +368,9 @@ class ChatGPTClient {
 
       logger.info('Refreshing Codex OAuth access token using refresh_token...');
       try {
-        const response = await fetch('https://auth.openai.com/oauth/token', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
-          },
-          body: new URLSearchParams({
-            grant_type: 'refresh_token',
-            client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
-            refresh_token: wrapper.refreshToken,
-            scope: 'openid profile email offline_access',
-          }).toString(),
-        });
-
-        if (!response.ok) {
-          const errBody = await response.text();
-          throw new Error(`OpenAI token server returned ${response.status}: ${errBody}`);
-        }
-
-        const tokens = await response.json();
-        const nextAccessToken = tokens.access_token;
-        const nextRefreshToken = tokens.refresh_token || wrapper.refreshToken;
-
-        if (!nextAccessToken) {
-          throw new Error('Response did not contain access_token');
-        }
+        const tokens = await refreshCodexToken(wrapper.refreshToken, logger);
+        const nextAccessToken = tokens.accessToken;
+        const nextRefreshToken = tokens.refreshToken || wrapper.refreshToken;
 
         const newWrapper = {
           accessToken: nextAccessToken,
@@ -270,6 +402,7 @@ class ChatGPTClient {
         logger.error('Failed to refresh Codex OAuth token:', err.message);
         const error = new Error('Failed to refresh Codex OAuth token: ' + err.message);
         error.code = 'INVALID_SESSION';
+        error.permanent = Boolean(err.permanent);
         throw error;
       }
     }
@@ -409,7 +542,17 @@ class ChatGPTClient {
   _convertToCodexInput(messages) {
     const input = [];
     for (const msg of messages) {
-      if (msg.role === 'system') continue;
+      if (msg.role === 'system') {
+        const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || '');
+        if (text) {
+          input.push({
+            type: 'message',
+            role: 'developer',
+            content: [{ type: 'input_text', text }]
+          });
+        }
+        continue;
+      }
 
       if (msg.role === 'user' || msg.role === 'assistant') {
         const contentType = msg.role === 'user' ? 'input_text' : 'output_text';
@@ -467,12 +610,62 @@ class ChatGPTClient {
     return input;
   }
 
+  _normalizeResponsesInput(input, instructions) {
+    const normalized = [];
+
+    if (instructions && typeof instructions === 'string') {
+      normalized.push({
+        type: 'message',
+        role: 'developer',
+        content: [{ type: 'input_text', text: instructions }]
+      });
+    }
+
+    if (typeof input === 'string') {
+      normalized.push({
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: input }]
+      });
+    } else if (Array.isArray(input)) {
+      for (const item of input) {
+        if (!item || typeof item !== 'object') continue;
+        if (item.type === 'message' || item.role) {
+          const role = item.role === 'system' ? 'developer' : (item.role || 'user');
+          const content = Array.isArray(item.content)
+            ? item.content.map(part => {
+                if (!part || typeof part !== 'object') return null;
+                if (part.type === 'text') return { ...part, type: role === 'assistant' ? 'output_text' : 'input_text' };
+                if (part.type === 'input_text' || part.type === 'output_text') return part;
+                return part;
+              }).filter(Boolean)
+            : [{ type: role === 'assistant' ? 'output_text' : 'input_text', text: String(item.content || '') }];
+          normalized.push({ ...item, type: 'message', role, content });
+          continue;
+        }
+        normalized.push({ ...item });
+      }
+    }
+
+    if (normalized.length === 0) {
+      normalized.push({
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: '...' }]
+      });
+    }
+
+    return normalized;
+  }
+
   async _chatCodexResponses(messages, model, accessToken, options = {}) {
     const mappedModel = mapModel(model);
     
-    const input = options.isResponsesApi ? messages : this._convertToCodexInput(messages);
+    const input = options.isResponsesApi
+      ? this._normalizeResponsesInput(messages, options.instructions)
+      : this._convertToCodexInput(messages);
     const instructions = options.isResponsesApi
-      ? (options.instructions || "You are a helpful assistant.")
+      ? undefined
       : (this._extractInstructions(messages) || "You are a helpful assistant.");
 
     let reasoning = { effort: "low", summary: "auto" };
@@ -489,12 +682,13 @@ class ChatGPTClient {
     const body = {
       model: mappedModel,
       input: input,
-      instructions: instructions,
       stream: true,
       store: false,
-      prompt_cache_key: this.getDeviceId() || 'default',
+      prompt_cache_key: normalizeSessionId(options.prompt_cache_key || options.session_id || this.getDeviceId()) || 'default',
       reasoning
     };
+
+    if (instructions) body.instructions = instructions;
 
     if (options.tools) {
       body.tools = options.tools;
@@ -504,13 +698,21 @@ class ChatGPTClient {
       body.tool_choice = options.tool_choice;
     }
 
+    convertSystemToDeveloperRole(body);
+    stripStoredItemReferences(body);
+    delete body.previous_response_id;
+
+    for (const key of Object.keys(body)) {
+      if (!RESPONSES_API_ALLOWLIST.has(key)) delete body[key];
+    }
+
     const headers = {
       'Content-Type': 'application/json',
       'Accept': 'text/event-stream',
       'Authorization': `Bearer ${accessToken}`,
       'originator': 'codex_cli_rs',
-      'User-Agent': 'codex-cli/1.0.18 (macOS; arm64)',
-      'session_id': this.getDeviceId() || 'default'
+      'User-Agent': 'codex_cli_rs/0.136.0',
+      'session_id': body.prompt_cache_key || 'default'
     };
 
     logger.debug(`Sending request to Codex Responses API (model=${mappedModel})`);
@@ -540,9 +742,11 @@ class ChatGPTClient {
 
         if (fetchRes.status === 429) {
           // Phân biệt quota hết hẳn (5h) vs rate limit tạm thời (60s)
+          const preciseLimit = parseCodexUsageLimit(parsedError, message);
           const errCode  = parsedError?.error?.code  || '';
           const errType  = parsedError?.error?.type  || '';
           const isQuota  =
+            Boolean(preciseLimit)                ||
             errCode === 'insufficient_quota'     ||
             errCode === 'quota_exceeded'         ||
             errType === 'insufficient_quota'     ||
@@ -554,6 +758,7 @@ class ChatGPTClient {
           if (isQuota) {
             // Hết quota window (5h) — cooldown bằng thời gian OpenAI báo hoặc mặc định 5h
             err.code       = 'QUOTA_EXHAUSTED';
+            err.resetsAtMs = preciseLimit?.resetsAtMs || null;
             err.retryAfter = retryAfterHeader > 0
               ? retryAfterHeader * 1000
               : 5 * 60 * 60 * 1000; // 5 giờ default
@@ -591,4 +796,3 @@ class ChatGPTClient {
 }
 
 module.exports = { ChatGPTClient, mapModel };
-

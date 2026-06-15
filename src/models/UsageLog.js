@@ -16,6 +16,14 @@ function mapRow(row) {
     tokensOut:   row.tokensOut || row.tokens_out,
     tokensTotal: row.tokensTotal || row.tokens_total,
     reqId:       row.reqId || row.req_id,
+    endpoint:    row.endpoint || '',
+    upstreamAccountId: row.upstreamAccountId || row.upstream_account_id || null,
+    upstreamAccountName: row.upstreamAccountName || row.upstream_account_name || '',
+    status:      row.status || 'ok',
+    latencyMs:   row.latencyMs || row.latency_ms || 0,
+    errorCode:   row.errorCode || row.error_code || '',
+    errorMessage: row.errorMessage || row.error_message || '',
+    quotaReserved: row.quotaReserved || row.quota_reserved || 0,
     createdAt:   row.createdAt || row.created_at,
   };
 }
@@ -28,14 +36,47 @@ function mapRow(row) {
  * @param {{ apiKey: string, model?: string, tokensIn?: number, tokensOut?: number, reqId?: string }} opts
  * @returns {Promise<Object>} The created record.
  */
-async function create({ apiKey, model = 'gpt-4o', tokensIn = 0, tokensOut = 0, reqId = null } = {}) {
+async function create({
+  apiKey,
+  model = 'gpt-4o',
+  tokensIn = 0,
+  tokensOut = 0,
+  reqId = null,
+  endpoint = '',
+  upstreamAccountId = null,
+  upstreamAccountName = '',
+  status = 'ok',
+  latencyMs = 0,
+  errorCode = '',
+  errorMessage = '',
+  quotaReserved = 0
+} = {}) {
   const tokensTotal = tokensIn + tokensOut;
   const id          = reqId || uuidv4();
 
   const result = await db.run(
-    `INSERT INTO usage_logs (api_key, model, tokens_in, tokens_out, tokens_total, req_id)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [apiKey, model, tokensIn, tokensOut, tokensTotal, id]
+    `INSERT INTO usage_logs (
+       api_key, model, tokens_in, tokens_out, tokens_total, req_id,
+       endpoint, upstream_account_id, upstream_account_name, status,
+       latency_ms, error_code, error_message, quota_reserved
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      apiKey,
+      model,
+      tokensIn,
+      tokensOut,
+      tokensTotal,
+      id,
+      endpoint || '',
+      upstreamAccountId || null,
+      upstreamAccountName || '',
+      status || 'ok',
+      latencyMs || 0,
+      errorCode || '',
+      errorMessage || '',
+      quotaReserved || 0
+    ]
   );
 
   const row = await db.get('SELECT * FROM usage_logs WHERE id = ?', [result.lastInsertRowid]);

@@ -28,6 +28,35 @@ function parseResetTime(resetValue) {
   }
 }
 
+function parseJsonObject(value, fallback = {}) {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function stringifyJson(value) {
+  try {
+    return JSON.stringify(value || {});
+  } catch (_) {
+    return '{}';
+  }
+}
+
+function normalizeModelKey(model) {
+  return String(model || 'default').replace(/[^a-zA-Z0-9_.:-]/g, '_');
+}
+
+function quotaFamilyForModel(model) {
+  const name = String(model || '').toLowerCase();
+  if (name.includes('review')) return 'review';
+  return 'codex';
+}
+
 // ─── AccountPool ──────────────────────────────────────────────────────────────
 
 class AccountPool {
@@ -52,6 +81,8 @@ class AccountPool {
 
     /** @type {Map<string, number>} token → số request đang xử lý (in-flight) */
     this._inFlight = new Map();
+    this._selectionMutex = Promise.resolve();
+    this._selectionMeta = new Map();
 
     // Load from DB async (non-blocking at startup; reload() can be awaited later)
     this._loadAsync();
@@ -68,7 +99,9 @@ class AccountPool {
       const db = require('../db');
       const rows = await db.query(
         // Load last_used_at, quota_resets_at, last_error để restore state sau restart
-        `SELECT id, name, session_token, quota_resets_at, last_used_at, last_error
+        `SELECT id, name, session_token, quota_resets_at, last_used_at, last_error,
+                quota_remaining_percent, quota_primary_remaining, quota_secondary_remaining,
+                quota_reset_at, quota_checked_at, quota_family, model_locks, last_selected_at
          FROM upstream_accounts
          WHERE is_active = 1
          ORDER BY last_used_at ASC NULLS FIRST` // tiếp tục round-robin từ nơi đã dừng
@@ -87,6 +120,9 @@ class AccountPool {
         const id            = row.id;
         const quotaResetsAt = row.quotaResetsAt || row.quota_resets_at;
         const lastError     = row.lastError || row.last_error;
+        const quotaCheckedAt = row.quotaCheckedAt || row.quota_checked_at;
+        const quotaResetAt = row.quotaResetAt || row.quota_reset_at || quotaResetsAt;
+        const modelLocks = parseJsonObject(row.modelLocks || row.model_locks, {});
 
         if (!sessionToken) return null;
         let client = existingClients.get(sessionToken);
@@ -95,6 +131,22 @@ class AccountPool {
         }
         client.id = id;
         client.name = name;
+        client.lastUsedAt = row.lastUsedAt || row.last_used_at || null;
+        client.modelLocks = modelLocks;
+
+        if (!this._quotaCache) this._quotaCache = new Map();
+        if (quotaCheckedAt && row.quotaRemainingPercent !== null && row.quotaRemainingPercent !== undefined) {
+          this._quotaCache.set(sessionToken, {
+            plan: row.quotaFamily || row.quota_family || 'codex',
+            remainingPercent: Number(row.quotaRemainingPercent ?? row.quota_remaining_percent ?? 100),
+            primaryRemaining: Number(row.quotaPrimaryRemaining ?? row.quota_primary_remaining ?? row.quotaRemainingPercent ?? row.quota_remaining_percent ?? 100),
+            secondaryRemaining: Number(row.quotaSecondaryRemaining ?? row.quota_secondary_remaining ?? row.quotaRemainingPercent ?? row.quota_remaining_percent ?? 100),
+            resetAt: quotaResetAt ? new Date(quotaResetAt).getTime() : null,
+            updatedAt: new Date(quotaCheckedAt).getTime(),
+            family: row.quotaFamily || row.quota_family || 'codex',
+            persisted: true
+          });
+        }
 
         // Restore quota cooldown từ DB sau khi restart
         if (quotaResetsAt) {
@@ -206,6 +258,144 @@ class AccountPool {
     if (!until) return 0;
     const rem = until - Date.now();
     return rem > 0 ? rem : 0;
+  }
+
+  _getModelLocks(account) {
+    const locks = account?.client?.modelLocks;
+    return locks && typeof locks === 'object' ? locks : {};
+  }
+
+  _getActiveModelLock(account, model) {
+    const locks = this._getModelLocks(account);
+    const keys = [normalizeModelKey(model), quotaFamilyForModel(model), '__all'];
+    const now = Date.now();
+    for (const key of keys) {
+      const raw = locks[key];
+      const until = typeof raw === 'number' ? raw : parseResetTime(raw?.until || raw);
+      if (until && until > now) {
+        return { key, until, remainingMs: until - now };
+      }
+      if (until && until <= now) {
+        delete locks[key];
+      }
+    }
+    return null;
+  }
+
+  _setModelLock(token, model, untilMs) {
+    const account = this._accounts.find(a => a.client.sessionToken === token);
+    if (!account) return;
+    const locks = this._getModelLocks(account);
+    const key = normalizeModelKey(model || quotaFamilyForModel(model));
+    locks[key] = untilMs;
+    account.client.modelLocks = locks;
+
+    const db = require('../db');
+    const locksJson = stringifyJson(locks);
+    if (account.id) {
+      db.run(
+        `UPDATE upstream_accounts SET model_locks = ?, quota_resets_at = ?, last_error = 'quota_exhausted', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [locksJson, new Date(untilMs).toISOString(), account.id]
+      ).catch(err => logger.error('Failed to persist model lock: ' + err.message));
+    }
+  }
+
+  async _persistQuotaSnapshot(sessionToken, quotaInfo) {
+    const account = this._accounts.find(a => a.client.sessionToken === sessionToken);
+    if (!account?.id || !quotaInfo) return;
+    const db = require('../db');
+    await db.run(
+      `UPDATE upstream_accounts
+       SET quota_remaining_percent = ?,
+           quota_primary_remaining = ?,
+           quota_secondary_remaining = ?,
+           quota_reset_at = ?,
+           quota_checked_at = ?,
+           quota_family = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [
+        quotaInfo.remainingPercent ?? null,
+        quotaInfo.primaryRemaining ?? null,
+        quotaInfo.secondaryRemaining ?? null,
+        quotaInfo.resetAt ? new Date(quotaInfo.resetAt).toISOString() : null,
+        quotaInfo.updatedAt ? new Date(quotaInfo.updatedAt).toISOString() : new Date().toISOString(),
+        quotaInfo.family || quotaInfo.plan || 'codex',
+        account.id
+      ]
+    );
+  }
+
+  _buildRotationRows(model = null, includeUnavailable = false) {
+    const now = Date.now();
+    const rows = [];
+    for (let idx = 0; idx < this._accounts.length; idx++) {
+      const account = this._accounts[idx];
+      const token = account.client.sessionToken;
+      const quota = this._quotaCache?.get(token) || null;
+      const cooldownMs = this._cooldownRemaining(token);
+      const modelLock = model ? this._getActiveModelLock(account, model) : null;
+      const invalid = this._invalidTokens.has(token);
+      const inFlight = this._inFlight.get(token) || 0;
+      const lastUsedAt = account.client.lastUsedAt
+        ? new Date(account.client.lastUsedAt).getTime()
+        : 0;
+      const quotaAgeMs = quota?.updatedAt ? now - quota.updatedAt : null;
+      const stale = quotaAgeMs === null || quotaAgeMs > 10 * 60 * 1000;
+      let unavailableReason = '';
+
+      if (invalid) unavailableReason = 'invalid-session';
+      else if (cooldownMs > 0) unavailableReason = 'cooldown';
+      else if (modelLock) unavailableReason = `model-lock:${modelLock.key}`;
+      else if (quota && quota.remainingPercent <= 0 && (!quota.resetAt || quota.resetAt > now || quotaAgeMs < 30 * 60 * 1000)) unavailableReason = 'quota-empty';
+
+      if (unavailableReason && !includeUnavailable) continue;
+
+      rows.push({
+        account,
+        token,
+        idx,
+        quota,
+        quotaStale: stale,
+        cooldownMs,
+        modelLock,
+        invalid,
+        inFlight,
+        lastUsedAt,
+        unavailableReason,
+        selectionReason: unavailableReason || `available: inFlight=${inFlight}, lastUsed=${lastUsedAt || 'never'}, quota=${quota?.remainingPercent ?? 'unknown'}`
+      });
+    }
+
+    rows.sort((a, b) => {
+      const statusScore = row => row.unavailableReason ? 1 : 0;
+      const sa = statusScore(a);
+      const sb = statusScore(b);
+      if (sa !== sb) return sa - sb;
+      if (a.inFlight !== b.inFlight) return a.inFlight - b.inFlight;
+      if (a.lastUsedAt !== b.lastUsedAt) return a.lastUsedAt - b.lastUsedAt;
+      return a.idx - b.idx;
+    });
+
+    rows.forEach((row, i) => {
+      row.rotationRank = i + 1;
+    });
+    return rows;
+  }
+
+  getRotationRows(model = null) {
+    return this._buildRotationRows(model, true).map(row => ({
+      id: row.account.id,
+      name: row.account.name,
+      sessionToken: row.token,
+      rotationRank: row.rotationRank,
+      selectionReason: row.selectionReason,
+      inFlight: row.inFlight,
+      quotaStale: row.quotaStale,
+      quota: row.quota,
+      modelLock: row.modelLock,
+      lastSelectedAt: this._selectionMeta.get(row.token)?.lastSelectedAt || null
+    }));
   }
 
   async getAccountQuota(sessionToken) {
@@ -709,4 +899,3 @@ setTimeout(() => {
 }, 5 * 1000);
 
 module.exports = pool;
-

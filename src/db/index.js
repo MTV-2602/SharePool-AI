@@ -95,17 +95,34 @@ const KEY_MAPS = {
   usedat: 'usedAt',
   quota_total: 'quotaTotal',
   quota_used: 'quotaUsed',
+  model_allowlist: 'modelAllowlist',
+  max_concurrent: 'maxConcurrent',
+  rate_limit_per_minute: 'rateLimitPerMinute',
   expires_at: 'expiresAt',
   created_at: 'createdAt',
   updated_at: 'updatedAt',
   session_token: 'sessionToken',
   is_active: 'isActive',
   total_requests: 'totalRequests',
+  quota_remaining_percent: 'quotaRemainingPercent',
+  quota_primary_remaining: 'quotaPrimaryRemaining',
+  quota_secondary_remaining: 'quotaSecondaryRemaining',
+  quota_reset_at: 'quotaResetAt',
+  quota_checked_at: 'quotaCheckedAt',
+  quota_family: 'quotaFamily',
+  model_locks: 'modelLocks',
+  last_selected_at: 'lastSelectedAt',
   api_key: 'apiKey',
   tokens_in: 'tokensIn',
   tokens_out: 'tokensOut',
   tokens_total: 'tokensTotal',
   req_id: 'reqId',
+  upstream_account_id: 'upstreamAccountId',
+  upstream_account_name: 'upstreamAccountName',
+  latency_ms: 'latencyMs',
+  error_code: 'errorCode',
+  error_message: 'errorMessage',
+  quota_reserved: 'quotaReserved',
   last_error: 'lastError',
   quota_resets_at: 'quotaResetsAt',
   last_used_at: 'lastUsedAt',
@@ -240,9 +257,47 @@ async function initDB() {
 
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS last_error TEXT');
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT CURRENT_TIMESTAMP');
+  await _pgPool.query('ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS model_allowlist TEXT DEFAULT \'\'');
+  await _pgPool.query('ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS max_concurrent INTEGER DEFAULT 0');
+  await _pgPool.query('ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS rate_limit_per_minute INTEGER DEFAULT 0');
   // Giai đoạn 1: thêm cột quản lý quota cho scale
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS quota_resets_at TIMESTAMP');
   await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS quota_remaining_percent REAL');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS quota_primary_remaining REAL');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS quota_secondary_remaining REAL');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS quota_reset_at TIMESTAMP');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS quota_checked_at TIMESTAMP');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS quota_family TEXT DEFAULT \'codex\'');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS model_locks TEXT DEFAULT \'{}\'');
+  await _pgPool.query('ALTER TABLE upstream_accounts ADD COLUMN IF NOT EXISTS last_selected_at TIMESTAMP');
+  await _pgPool.query('ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS endpoint TEXT DEFAULT \'\'');
+  await _pgPool.query('ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS upstream_account_id INTEGER');
+  await _pgPool.query('ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS upstream_account_name TEXT DEFAULT \'\'');
+  await _pgPool.query('ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT \'ok\'');
+  await _pgPool.query('ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS latency_ms INTEGER DEFAULT 0');
+  await _pgPool.query('ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS error_code TEXT DEFAULT \'\'');
+  await _pgPool.query('ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS error_message TEXT DEFAULT \'\'');
+  await _pgPool.query('ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS quota_reserved INTEGER DEFAULT 0');
+  await _pgPool.query(`
+    CREATE TABLE IF NOT EXISTS request_details (
+      id         TEXT PRIMARY KEY,
+      req_id     TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      api_key    TEXT,
+      endpoint   TEXT,
+      model      TEXT,
+      upstream_account_id INTEGER,
+      upstream_account_name TEXT,
+      status     TEXT DEFAULT 'ok',
+      latency_ms INTEGER DEFAULT 0,
+      data       TEXT NOT NULL
+    )
+  `);
+  await _pgPool.query('CREATE INDEX IF NOT EXISTS idx_request_details_created_at ON request_details(created_at DESC)');
+  await _pgPool.query('CREATE INDEX IF NOT EXISTS idx_request_details_account ON request_details(upstream_account_id)');
+  await _pgPool.query('CREATE INDEX IF NOT EXISTS idx_usage_logs_account ON usage_logs(upstream_account_id)');
+  await _pgPool.query('CREATE INDEX IF NOT EXISTS idx_usage_logs_endpoint ON usage_logs(endpoint)');
   // Index để getNext() query nhanh trên 50k acc
   await _pgPool.query(`
     CREATE INDEX IF NOT EXISTS idx_upstream_rotation
