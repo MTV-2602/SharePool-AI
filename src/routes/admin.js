@@ -347,7 +347,16 @@ router.get('/accounts', asyncHandler(async (req, res) => {
     const resetB = qB?.resetAt || null;
 
     if (resetA !== null && resetB !== null) {
-      return resetA - resetB; // Ngày reset gần nhất xếp lên trước
+      const diff = Math.abs(resetA - resetB);
+      if (diff > 24 * 60 * 60 * 1000) {
+        return resetA - resetB; // Ngày reset gần nhất xếp lên trước
+      }
+      // Trong cùng lô reset (lệch nhau < 24h), ưu tiên acc còn nhiều quota (%) hơn xếp lên trước để dùng đều
+      const remA = qA?.remainingPercent ?? 100;
+      const remB = qB?.remainingPercent ?? 100;
+      if (remA !== remB) {
+        return remB - remA; // Nhiều quota hơn lên trước
+      }
     }
     if (resetA !== null) return -1;
     if (resetB !== null) return 1;

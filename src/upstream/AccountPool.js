@@ -451,7 +451,16 @@ class AccountPool {
         const resetB = qB?.resetAt || null;
 
         if (resetA !== null && resetB !== null) {
-          return resetA - resetB; // Ascending order
+          const diff = Math.abs(resetA - resetB);
+          if (diff > 24 * 60 * 60 * 1000) {
+            return resetA - resetB; // Ascending order
+          }
+          // Trong cùng lô reset (lệch nhau < 24h), ưu tiên acc còn nhiều quota (%) hơn để dùng đều các tài khoản
+          const remA = qA?.remainingPercent ?? 100;
+          const remB = qB?.remainingPercent ?? 100;
+          if (remA !== remB) {
+            return remB - remA; // Nhiều quota hơn lên trước
+          }
         }
         if (resetA !== null) return -1;
         if (resetB !== null) return 1;
