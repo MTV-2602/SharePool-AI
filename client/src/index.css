@@ -1188,11 +1188,23 @@ pre {
 }
 
 code {
-  display: inline !important;
-  word-break: break-all !important;
-  word-wrap: break-word !important;
-  overflow-wrap: break-word !important;
-  white-space: normal !important;
+  display: inline-block !important;
+  max-width: 100% !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  white-space: pre-wrap !important;
+  vertical-align: middle;
+}
+
+pre code {
+  display: block !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  white-space: pre !important;
+  max-width: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
 }
 
 /* Responsive Guide Page Container and Cards */
