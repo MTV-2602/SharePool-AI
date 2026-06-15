@@ -348,10 +348,10 @@ router.get('/accounts', asyncHandler(async (req, res) => {
 
     if (resetA !== null && resetB !== null) {
       const diff = Math.abs(resetA - resetB);
-      if (diff > 24 * 60 * 60 * 1000) {
+      if (diff > 60 * 1000) {
         return resetA - resetB; // Ngày reset gần nhất xếp lên trước
       }
-      // Trong cùng lô reset (lệch nhau < 24h), ưu tiên acc còn nhiều quota (%) hơn xếp lên trước để dùng đều
+      // Trong cùng lô reset (lệch nhau < 1 phút), ưu tiên acc còn nhiều quota (%) hơn xếp lên trước để dùng đều
       const remA = qA?.remainingPercent ?? 100;
       const remB = qB?.remainingPercent ?? 100;
       if (remA !== remB) {

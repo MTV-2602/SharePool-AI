@@ -452,10 +452,10 @@ class AccountPool {
 
         if (resetA !== null && resetB !== null) {
           const diff = Math.abs(resetA - resetB);
-          if (diff > 24 * 60 * 60 * 1000) {
+          if (diff > 60 * 1000) {
             return resetA - resetB; // Ascending order
           }
-          // Trong cùng lô reset (lệch nhau < 24h), ưu tiên acc còn nhiều quota (%) hơn để dùng đều các tài khoản
+          // Trong cùng lô reset (lệch nhau < 1 phút), ưu tiên acc còn nhiều quota (%) hơn để dùng đều các tài khoản
           const remA = qA?.remainingPercent ?? 100;
           const remB = qB?.remainingPercent ?? 100;
           if (remA !== remB) {
