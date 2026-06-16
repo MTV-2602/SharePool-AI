@@ -67,7 +67,7 @@ bot.on('message', async (msg) => {
       headers['x-telegram-bot-api-secret-token'] = config.TELEGRAM_WEBHOOK_SECRET;
     }
 
-    const response = await fetch(`${localBaseUrl}/api/telegram-webhook`, {
+    const response = await fetch(`${localBaseUrl}/api/telegram/webhook`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ message: msg })

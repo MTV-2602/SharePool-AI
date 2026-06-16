@@ -37,6 +37,8 @@ const PUBLIC_API_PATHS = [
   "/api/hotmail/mark-used",
   "/api/hotmail/read",
   "/api/oauth/codex/init",
+  "/api/telegram/webhook",
+  "/api/telegram-webhook",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
