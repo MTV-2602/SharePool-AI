@@ -38,42 +38,27 @@ export async function GET(request) {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
     const now = new Date().toISOString();
 
-    // Find next available account
-    const { data: accounts, error: fetchError } = await supabase
-      .from('hotmail_accounts')
-      .select('*')
-      .eq('status', 'available')
-      .order('usage_count', { ascending: true })
-      .limit(1);
+    // Reserve next available account atomically using RPC
+    const { data: reservedAccounts, error: rpcError } = await supabase
+      .rpc('reserve_hotmail_account', {
+        ip: ip,
+        note: note
+      });
 
-    if (fetchError || !accounts || accounts.length === 0) {
+    if (rpcError) {
+      return NextResponse.json({ error: rpcError.message }, { status: 500 });
+    }
+
+    if (!reservedAccounts || reservedAccounts.length === 0) {
       return NextResponse.json({ error: 'Hết tài khoản trống trong kho Hotmail.' }, { status: 404 });
     }
 
-    const account = accounts[0];
-
-    // Update account status to reserved
-    const { data: updatedData, error: updateError } = await supabase
-      .from('hotmail_accounts')
-      .update({
-        status: 'reserved',
-        reservedat: now,
-        reserved_by_ip: ip,
-        takenat: now,
-        takennote: note
-      })
-      .eq('id', account.id)
-      .select()
-      .single();
-
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
-    }
+    const account = reservedAccounts[0];
 
     return NextResponse.json({
       ok: true,
-      account: updatedData,
-      formatted: buildFormattedLine(updatedData)
+      account: account,
+      formatted: buildFormattedLine(account)
     });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
