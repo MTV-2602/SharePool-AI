@@ -1,0 +1,70 @@
+import { NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
+
+function buildFormattedLine(acc) {
+  const email = acc.email;
+  const password = acc.password || '';
+  const refresh = acc.refresh_token || '';
+  const client = acc.client_id || '';
+  const secret = acc.totp_secret || '';
+  return `${email}|${password}|${refresh}|${client}|${secret}`;
+}
+
+export async function GET(request) {
+  try {
+    const extensionToken = request.headers.get("x-extension-push-token") || request.headers.get("x-extension-token");
+    const configuredToken = process.env.EXTENSION_PUSH_TOKEN || "admin123";
+    if (configuredToken && extensionToken !== configuredToken) {
+      const adminKey = request.headers.get("x-admin-key") || "";
+      const configuredAdminKey = process.env.ADMIN_KEY || "admin123";
+      if (adminKey !== configuredAdminKey) {
+        return NextResponse.json({ error: "Unauthorized extension token" }, { status: 403 });
+      }
+    }
+
+    const { searchParams } = new URL(request.url);
+    const note = searchParams.get('note') || `Lấy lúc ${new Date().toISOString()}`;
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
+    const now = new Date().toISOString();
+
+    // Find next available account
+    const { data: accounts, error: fetchError } = await supabase
+      .from('hotmail_accounts')
+      .select('*')
+      .eq('status', 'available')
+      .order('usage_count', { ascending: true })
+      .limit(1);
+
+    if (fetchError || !accounts || accounts.length === 0) {
+      return NextResponse.json({ error: 'Hết tài khoản trống trong kho Hotmail.' }, { status: 404 });
+    }
+
+    const account = accounts[0];
+
+    // Update account status to reserved
+    const { data: updatedData, error: updateError } = await supabase
+      .from('hotmail_accounts')
+      .update({
+        status: 'reserved',
+        reservedat: now,
+        reserved_by_ip: ip,
+        takenat: now,
+        takennote: note
+      })
+      .eq('id', account.id)
+      .select()
+      .single();
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      account: updatedData,
+      formatted: buildFormattedLine(updatedData)
+    });
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}

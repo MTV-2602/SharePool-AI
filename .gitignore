@@ -29,3 +29,11 @@ Thumbs.db
 .vercel/
 
 .vercel
+
+# Next.js build output
+.next/
+
+# Scratch & Dev artifacts
+scratch/
+code_diff.txt
+repo_diff.md
