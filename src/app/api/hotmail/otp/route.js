@@ -45,41 +45,32 @@ export async function GET(request) {
         client_id: account.client_id || process.env.MS_GRAPH_CLIENT_ID || '00000000402b5328',
         refresh_token: account.refresh_token,
         grant_type: 'refresh_token',
+        scope: 'https://graph.microsoft.com/Mail.Read',
       }),
     });
 
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) {
-      return NextResponse.json({ error: 'Failed to obtain access token' }, { status: 401 });
+      return NextResponse.json({ error: 'Failed to obtain access token', details: tokenData }, { status: 401 });
     }
 
     // Read latest 5 emails and look for OTP patterns
-    const isLegacyToken = !tokenData.access_token.includes('.');
-    let messages = [];
+    const mailRes = await fetch(
+      'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=5&$orderby=receivedDateTime desc&$select=subject,body,receivedDateTime',
+      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+    );
 
-    if (isLegacyToken) {
-      const mailRes = await fetch(
-        'https://outlook.office.com/api/v2.0/me/messages?$top=5&$orderby=ReceivedDateTime desc&$select=Subject,Body,ReceivedDateTime',
-        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
-      );
-      const mailData = await mailRes.json();
-      messages = (mailData.value || []).map(m => ({
-        subject: m.Subject,
-        body: m.Body?.Content || "",
-        receivedDateTime: m.ReceivedDateTime
-      }));
-    } else {
-      const mailRes = await fetch(
-        'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=5&$orderby=receivedDateTime desc&$select=subject,body,receivedDateTime',
-        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
-      );
-      const mailData = await mailRes.json();
-      messages = (mailData.value || []).map(m => ({
-        subject: m.subject,
-        body: m.body?.content || "",
-        receivedDateTime: m.receivedDateTime
-      }));
+    if (!mailRes.ok) {
+      const errText = await mailRes.text().catch(() => "");
+      return NextResponse.json({ error: 'Failed to fetch messages from Microsoft Graph', details: errText, status: mailRes.status }, { status: mailRes.status });
     }
+
+    const mailData = await mailRes.json();
+    const messages = (mailData.value || []).map(m => ({
+      subject: m.subject,
+      body: m.body?.content || "",
+      receivedDateTime: m.receivedDateTime
+    }));
 
     // Extract OTP from email body using common patterns
     for (const msg of messages) {

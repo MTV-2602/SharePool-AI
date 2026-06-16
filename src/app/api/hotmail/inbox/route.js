@@ -36,6 +36,7 @@ export async function GET(request) {
         client_id: account.client_id || process.env.MS_GRAPH_CLIENT_ID || '00000000402b5328', // Fallback to a common MS ID if empty
         refresh_token: account.refresh_token,
         grant_type: 'refresh_token',
+        scope: 'https://graph.microsoft.com/Mail.Read',
       }),
     });
 
@@ -53,43 +54,25 @@ export async function GET(request) {
     }
 
     // Fetch latest inbox messages
-    const isLegacyToken = !tokenData.access_token.includes('.');
-    let messages = [];
+    const mailRes = await fetch(
+      'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=10&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,isRead',
+      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+    );
 
-    if (isLegacyToken) {
-      const mailRes = await fetch(
-        'https://outlook.office.com/api/v2.0/me/messages?$top=10&$orderby=ReceivedDateTime desc&$select=Subject,From,ReceivedDateTime,BodyPreview,IsRead',
-        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
-      );
-      const mailData = await mailRes.json();
-      messages = (mailData.value || []).map(m => ({
-        id: m.Id,
-        subject: m.Subject || "(No subject)",
-        receivedDateTime: m.ReceivedDateTime || "",
-        from: m.From ? {
-          emailAddress: {
-            address: m.From.EmailAddress?.Address || "(unknown)",
-            name: m.From.EmailAddress?.Name || "(unknown)"
-          }
-        } : { emailAddress: { address: "(unknown)", name: "(unknown)" } },
-        isRead: Boolean(m.IsRead),
-        bodyPreview: m.BodyPreview || ""
-      }));
-    } else {
-      const mailRes = await fetch(
-        'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=10&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,isRead',
-        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
-      );
-      const mailData = await mailRes.json();
-      messages = (mailData.value || []).map(m => ({
-        id: m.id,
-        subject: m.subject || "(No subject)",
-        receivedDateTime: m.receivedDateTime || "",
-        from: m.from || { emailAddress: { address: "(unknown)", name: "(unknown)" } },
-        isRead: Boolean(m.isRead),
-        bodyPreview: m.bodyPreview || ""
-      }));
+    if (!mailRes.ok) {
+      const errText = await mailRes.text().catch(() => "");
+      return NextResponse.json({ error: 'Failed to fetch messages from Microsoft Graph', details: errText, status: mailRes.status }, { status: mailRes.status });
     }
+
+    const mailData = await mailRes.json();
+    const messages = (mailData.value || []).map(m => ({
+      id: m.id,
+      subject: m.subject || "(No subject)",
+      receivedDateTime: m.receivedDateTime || "",
+      from: m.from || { emailAddress: { address: "(unknown)", name: "(unknown)" } },
+      isRead: Boolean(m.isRead),
+      bodyPreview: m.bodyPreview || ""
+    }));
 
     // Update usage stats
     await supabase
