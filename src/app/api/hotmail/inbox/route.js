@@ -36,7 +36,6 @@ export async function GET(request) {
         client_id: account.client_id || process.env.MS_GRAPH_CLIENT_ID || '00000000402b5328', // Fallback to a common MS ID if empty
         refresh_token: account.refresh_token,
         grant_type: 'refresh_token',
-        scope: 'https://graph.microsoft.com/Mail.Read offline_access',
       }),
     });
 

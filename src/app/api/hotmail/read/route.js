@@ -82,7 +82,6 @@ export async function POST(request) {
         client_id: cred.client_id,
         refresh_token: cred.refresh_token,
         grant_type: 'refresh_token',
-        scope: 'https://graph.microsoft.com/Mail.Read offline_access',
       }),
     });
 
