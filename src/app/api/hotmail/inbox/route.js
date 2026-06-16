@@ -53,9 +53,9 @@ export async function GET(request) {
         .eq('id', account.id);
     }
 
-    // Fetch latest inbox messages
+    // Fetch latest messages
     const mailRes = await fetch(
-      'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=10&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,isRead',
+      'https://graph.microsoft.com/v1.0/me/messages?$top=10&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,isRead',
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
 

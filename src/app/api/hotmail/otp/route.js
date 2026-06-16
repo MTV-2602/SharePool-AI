@@ -56,7 +56,7 @@ export async function GET(request) {
 
     // Read latest 5 emails and look for OTP patterns
     const mailRes = await fetch(
-      'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=5&$orderby=receivedDateTime desc&$select=subject,body,receivedDateTime',
+      'https://graph.microsoft.com/v1.0/me/messages?$top=5&$orderby=receivedDateTime desc&$select=subject,body,receivedDateTime',
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
 

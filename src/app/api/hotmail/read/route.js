@@ -101,9 +101,9 @@ export async function POST(request) {
 
     const topCount = Math.min(50, Math.max(1, parseInt(top || '10', 10)));
 
-    // Fetch latest inbox messages
+    // Fetch latest messages
     const mailRes = await fetch(
-      `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=${topCount}&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,body,isRead`,
+      `https://graph.microsoft.com/v1.0/me/messages?$top=${topCount}&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,body,isRead`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
 
