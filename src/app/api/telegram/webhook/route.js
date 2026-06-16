@@ -74,7 +74,7 @@ export async function POST(request) {
   try {
     const settings = await getSettings().catch(() => ({}));
     const botToken = settings?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
-    const scriptUrl = settings?.COURSERA_SHEET_SCRIPT_URL || process.env.COURSERA_SHEET_SCRIPT_URL;
+    const scriptUrl = settings?.COURSERA_SHEET_SCRIPT_URL || process.env.COURSERA_SHEET_SCRIPT_URL || process.env.GOOGLE_SHEET_SCRIPT_URL;
 
     const sendTelegramMessage = async (chatId, text, options = {}) => {
       if (!botToken) return;
