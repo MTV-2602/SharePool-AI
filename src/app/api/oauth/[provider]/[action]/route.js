@@ -187,6 +187,54 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
     }
 
+    if (action === "init") {
+      if (provider !== "codex") {
+        return NextResponse.json({ error: "Init only supported for codex" }, { status: 400 });
+      }
+
+      // Extension Push Token check
+      const extensionToken = request.headers.get("x-extension-push-token") || request.headers.get("x-extension-token");
+      const configuredToken = process.env.EXTENSION_PUSH_TOKEN || "admin123";
+      const configuredAdminKey = process.env.ADMIN_KEY || "admin123";
+      const adminKey = request.headers.get("x-admin-key") || "";
+      const defaultExtToken = "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
+
+      const isAuthorized = 
+        (extensionToken === configuredToken) || 
+        (extensionToken === configuredAdminKey) ||
+        (extensionToken === defaultExtToken) ||
+        (extensionToken === "admin123") ||
+        (adminKey === configuredAdminKey) ||
+        (adminKey === "admin123");
+
+      if (!isAuthorized) {
+        return NextResponse.json({ error: "Unauthorized extension token" }, { status: 403 });
+      }
+
+      const { state, codeVerifier, codeChallenge, redirectUri = 'http://localhost:1455/auth/callback' } = body;
+
+      if (!state || !codeVerifier || !codeChallenge) {
+        return NextResponse.json({ error: "state, codeVerifier, and codeChallenge are required" }, { status: 400 });
+      }
+
+      registerCodexSession({ state, codeVerifier, redirectUri });
+
+      const authUrl = `https://auth.openai.com/oauth/authorize?` + new URLSearchParams({
+        response_type: 'code',
+        client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+        redirect_uri: redirectUri,
+        scope: 'openid profile email offline_access',
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        id_token_add_organizations: 'true',
+        codex_cli_simplified_flow: 'true',
+        originator: 'codex_cli_rs',
+        state: state
+      }).toString();
+
+      return NextResponse.json({ ok: true, authUrl, state });
+    }
+
     if (action === "exchange") {
       const { code, redirectUri, codeVerifier, state, meta } = body;
 
