@@ -24,7 +24,11 @@ function makeJobId() {
 }
 
 function normalizeBackendBase(value) {
-  return String(value || BACKEND_BASE_DEFAULT).trim().replace(/\/+$/, "");
+  const val = String(value || "").trim().replace(/\/+$/, "");
+  if (!val || val.includes("localhost") || val.includes("127.0.0.1")) {
+    return BACKEND_BASE_DEFAULT;
+  }
+  return val;
 }
 
 function backendUrl(base, path) {

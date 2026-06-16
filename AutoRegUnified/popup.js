@@ -663,8 +663,22 @@ async function boot() {
     "showAdvancedSettings",
     "startup_log",
     "manualNamePrefix",
-    "manualAutoPush"
+    "manualAutoPush",
+    "migration_v2_reset_defaults"
   ]);
+
+  const migrationKey = "migration_v2_reset_defaults";
+  if (data[migrationKey] !== true) {
+    data.backendBaseUrl = DEFAULT_BACKEND;
+    data.mailSite = "hotmail_backend";
+    data.freeBatchTarget = DEFAULT_FREE_BATCH_TARGET;
+    await new Promise(r => chrome.storage.local.set({
+      backendBaseUrl: DEFAULT_BACKEND,
+      mailSite: "hotmail_backend",
+      freeBatchTarget: DEFAULT_FREE_BATCH_TARGET,
+      [migrationKey]: true
+    }, r));
+  }
 
   refs.autoPassword.checked = data.autoPassword === true;
   refs.password.value = data.password || "helloem1@@@@@";
