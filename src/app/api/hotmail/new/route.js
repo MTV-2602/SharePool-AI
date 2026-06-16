@@ -7,7 +7,10 @@ function buildFormattedLine(acc) {
   const refresh = acc.refresh_token || '';
   const client = acc.client_id || '';
   const secret = acc.totp_secret || '';
-  return `${email}|${password}|${refresh}|${client}|${secret}`;
+  if (secret) {
+    return `${email}|${password}|${refresh}|${client}|${secret}`;
+  }
+  return `${email}|${password}|${refresh}|${client}`;
 }
 
 export async function GET(request) {
