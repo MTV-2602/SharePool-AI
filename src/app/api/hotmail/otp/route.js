@@ -38,14 +38,14 @@ export async function GET(request) {
   }
 
   try {
-    const tokenRes = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+    const tokenRes = await fetch('https://login.microsoftonline.com/consumers/oauth2/v2.0/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: account.client_id || process.env.MS_GRAPH_CLIENT_ID || '00000000402b5328',
         refresh_token: account.refresh_token,
         grant_type: 'refresh_token',
-        scope: 'https://graph.microsoft.com/Mail.Read',
+        scope: 'offline_access https://outlook.office.com/IMAP.AccessAsUser.All',
       }),
     });
 
@@ -56,20 +56,20 @@ export async function GET(request) {
 
     // Read latest 5 emails and look for OTP patterns
     const mailRes = await fetch(
-      'https://graph.microsoft.com/v1.0/me/messages?$top=5&$orderby=receivedDateTime desc&$select=subject,body,receivedDateTime',
+      'https://outlook.office.com/api/v2.0/me/messages?$top=5&$orderby=ReceivedDateTime desc&$select=Subject,Body,ReceivedDateTime',
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
 
     if (!mailRes.ok) {
       const errText = await mailRes.text().catch(() => "");
-      return NextResponse.json({ error: 'Failed to fetch messages from Microsoft Graph', details: errText, status: mailRes.status }, { status: mailRes.status });
+      return NextResponse.json({ error: 'Failed to fetch messages from Outlook API', details: errText, status: mailRes.status }, { status: mailRes.status });
     }
 
     const mailData = await mailRes.json();
     const messages = (mailData.value || []).map(m => ({
-      subject: m.subject,
-      body: m.body?.content || "",
-      receivedDateTime: m.receivedDateTime
+      subject: m.Subject || m.subject,
+      body: m.Body?.Content || m.body?.content || m.BodyPreview || m.bodyPreview || "",
+      receivedDateTime: m.ReceivedDateTime || m.receivedDateTime
     }));
 
     // Extract OTP from email body using common patterns

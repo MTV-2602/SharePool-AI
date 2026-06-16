@@ -75,14 +75,14 @@ export async function POST(request) {
     }
 
     // Exchange refresh token for access token via MS Graph
-    const tokenRes = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+    const tokenRes = await fetch('https://login.microsoftonline.com/consumers/oauth2/v2.0/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: cred.client_id,
         refresh_token: cred.refresh_token,
         grant_type: 'refresh_token',
-        scope: 'https://graph.microsoft.com/Mail.Read',
+        scope: 'offline_access https://outlook.office.com/IMAP.AccessAsUser.All',
       }),
     });
 
@@ -103,24 +103,24 @@ export async function POST(request) {
 
     // Fetch latest messages
     const mailRes = await fetch(
-      `https://graph.microsoft.com/v1.0/me/messages?$top=${topCount}&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,body,isRead`,
+      `https://outlook.office.com/api/v2.0/me/messages?$top=${topCount}&$orderby=ReceivedDateTime desc&$select=Subject,From,ReceivedDateTime,BodyPreview,Body,IsRead`,
       { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
     );
 
     if (!mailRes.ok) {
       const errText = await mailRes.text().catch(() => "");
-      return NextResponse.json({ error: 'Failed to fetch messages from Microsoft Graph', details: errText, status: mailRes.status }, { status: mailRes.status });
+      return NextResponse.json({ error: 'Failed to fetch messages from Outlook API', details: errText, status: mailRes.status }, { status: mailRes.status });
     }
 
     const mailData = await mailRes.json();
     const messages = (mailData.value || []).map(m => ({
-      id: m.id,
-      subject: m.subject || "(No subject)",
-      receivedDateTime: m.receivedDateTime || "",
-      from: m.from || { emailAddress: { address: "(unknown)", name: "(unknown)" } },
-      isRead: Boolean(m.isRead),
-      bodyPreview: m.bodyPreview || "",
-      body: m.body?.content || m.bodyPreview || ""
+      id: m.Id || m.id,
+      subject: m.Subject || m.subject || "(No subject)",
+      receivedDateTime: m.ReceivedDateTime || m.receivedDateTime || "",
+      from: m.From || m.from || { emailAddress: { address: "(unknown)", name: "(unknown)" } },
+      isRead: Boolean(m.IsRead ?? m.isRead),
+      bodyPreview: m.BodyPreview || m.bodyPreview || "",
+      body: m.Body?.Content || m.body?.content || m.BodyPreview || m.bodyPreview || ""
     }));
 
     // Update lastreadat
