@@ -45,6 +45,7 @@ export async function GET(request) {
     }
 
     const expired = [];
+    const now = new Date();
 
     for (const cred of credentials) {
       const credEmail = (cred.email || "").trim().toLowerCase();
@@ -76,13 +77,38 @@ export async function GET(request) {
       }
 
       if (needsLogin) {
-        expired.push({
-          email: cred.email,
-          password: cred.password,
-          otpSecret: cred.otp_secret,
-          reason
-        });
+        // Check lock status: lock lasts for 5 minutes
+        let isLocked = false;
+        if (cred.reserved_at) {
+          const lockedTime = new Date(cred.reserved_at);
+          if ((now - lockedTime) <= 5 * 60 * 1000) {
+            isLocked = true;
+          }
+        }
+
+        if (!isLocked) {
+          expired.push({
+            email: cred.email,
+            password: cred.password,
+            otpSecret: cred.otp_secret,
+            reason
+          });
+        }
       }
+    }
+
+    // Lock the first unlocked expired account immediately
+    if (expired.length > 0) {
+      const target = expired[0];
+      const ip = request.headers.get("x-9r-real-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
+      
+      await supabase
+        .from("chatgpt_credentials")
+        .update({
+          reserved_at: now.toISOString(),
+          reserved_by_ip: ip
+        })
+        .eq("email", target.email);
     }
 
     return NextResponse.json({

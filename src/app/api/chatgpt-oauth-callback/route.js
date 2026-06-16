@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { supabase } from "@/lib/supabase";
 import { createProviderConnection } from "@/models";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
 
@@ -122,6 +123,19 @@ export async function POST(request) {
       providerSpecificData,
       testStatus: "active",
     });
+
+    // Update status and clear lease locks in chatgpt_credentials table
+    const targetEmail = email || accountName;
+    if (targetEmail) {
+      await supabase
+        .from("chatgpt_credentials")
+        .update({
+          status: "active",
+          reserved_at: null,
+          reserved_by_ip: null
+        })
+        .eq("email", targetEmail);
+    }
 
     return NextResponse.json({
       ok: true,

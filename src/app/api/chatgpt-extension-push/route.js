@@ -114,6 +114,8 @@ export async function POST(request) {
             otp_secret: otpSecret || "",
             source: source || "AutoRegUnified",
             status: "active",
+            reserved_at: null,
+            reserved_by_ip: null,
           })
           .eq("email", email);
         if (updateErr) throw updateErr;
@@ -126,6 +128,8 @@ export async function POST(request) {
             otp_secret: otpSecret || "",
             source: source || "AutoRegUnified",
             status: "active",
+            reserved_at: null,
+            reserved_by_ip: null,
           });
         if (insertErr) throw insertErr;
       }
