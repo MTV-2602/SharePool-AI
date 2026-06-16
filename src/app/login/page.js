@@ -239,6 +239,13 @@ export default function LoginPage() {
                     Security risk: no password set. You will be asked to set one when logging in remotely.
                   </p>
                 )}
+
+                <div className="text-xs text-center text-text-muted mt-4 border-t border-border/60 pt-3">
+                  Bạn là khách hàng?{" "}
+                  <a href="/check" className="text-primary hover:underline font-semibold">
+                    Tra cứu API Key & Hướng dẫn tại đây
+                  </a>
+                </div>
               </form>
             ) : (
               error && <p className="text-xs text-red-500">{error}</p>

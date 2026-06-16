@@ -1,23 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { getSettings } from '@/lib/localDb';
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const COURSERA_SHEET_SCRIPT_URL = process.env.COURSERA_SHEET_SCRIPT_URL;
 const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
-
-async function sendTelegramMessage(chatId, text, options = {}) {
-  if (!BOT_TOKEN) return;
-  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: 'HTML',
-      ...options
-    }),
-  });
-}
 
 function parseCourseraSheetAccounts(text = '') {
   const lines = text
@@ -87,6 +72,24 @@ async function pushToGoogleSheet(scriptUrl, sheetName = '', data = []) {
 
 export async function POST(request) {
   try {
+    const settings = await getSettings().catch(() => ({}));
+    const botToken = settings?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
+    const scriptUrl = settings?.COURSERA_SHEET_SCRIPT_URL || process.env.COURSERA_SHEET_SCRIPT_URL;
+
+    const sendTelegramMessage = async (chatId, text, options = {}) => {
+      if (!botToken) return;
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          parse_mode: 'HTML',
+          ...options
+        }),
+      });
+    };
+
     const update = await request.json();
     const message = update.message;
     if (!message?.text) return NextResponse.json({ ok: true });
@@ -189,13 +192,13 @@ export async function POST(request) {
         try {
           await sendTelegramMessage(chatId, `⏳ Đang thêm ${accounts.length} tài khoản Coursera vào Sheet...`);
           
-          const scriptUrl = COURSERA_SHEET_SCRIPT_URL;
-          if (!scriptUrl) {
+          const targetScriptUrl = scriptUrl;
+          if (!targetScriptUrl) {
             throw new Error('COURSERA_SHEET_SCRIPT_URL is not configured on server.');
           }
 
           const sheetData = accounts.map(a => [a.email, a.password, a.courseCode]);
-          await pushToGoogleSheet(scriptUrl, '', sheetData);
+          await pushToGoogleSheet(targetScriptUrl, '', sheetData);
 
           const successLines = [
             `<b>✅ ĐÃ THÊM ${accounts.length} TÀI KHOẢN COURSERA VÀO SHEET</b>`,
