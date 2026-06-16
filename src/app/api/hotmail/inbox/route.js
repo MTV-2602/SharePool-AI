@@ -53,15 +53,44 @@ export async function GET(request) {
     }
 
     // Fetch latest inbox messages
-    const mailRes = await fetch(
-      'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=10&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,isRead',
-      {
-        headers: { Authorization: `Bearer ${tokenData.access_token}` },
-      }
-    );
+    const isLegacyToken = !tokenData.access_token.includes('.');
+    let messages = [];
 
-    const mailData = await mailRes.json();
-    
+    if (isLegacyToken) {
+      const mailRes = await fetch(
+        'https://outlook.office.com/api/v2.0/me/messages?$top=10&$orderby=ReceivedDateTime desc&$select=Subject,From,ReceivedDateTime,BodyPreview,IsRead',
+        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+      );
+      const mailData = await mailRes.json();
+      messages = (mailData.value || []).map(m => ({
+        id: m.Id,
+        subject: m.Subject || "(No subject)",
+        receivedDateTime: m.ReceivedDateTime || "",
+        from: m.From ? {
+          emailAddress: {
+            address: m.From.EmailAddress?.Address || "(unknown)",
+            name: m.From.EmailAddress?.Name || "(unknown)"
+          }
+        } : { emailAddress: { address: "(unknown)", name: "(unknown)" } },
+        isRead: Boolean(m.IsRead),
+        bodyPreview: m.BodyPreview || ""
+      }));
+    } else {
+      const mailRes = await fetch(
+        'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=10&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,isRead',
+        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+      );
+      const mailData = await mailRes.json();
+      messages = (mailData.value || []).map(m => ({
+        id: m.id,
+        subject: m.subject || "(No subject)",
+        receivedDateTime: m.receivedDateTime || "",
+        from: m.from || { emailAddress: { address: "(unknown)", name: "(unknown)" } },
+        isRead: Boolean(m.isRead),
+        bodyPreview: m.bodyPreview || ""
+      }));
+    }
+
     // Update usage stats
     await supabase
       .from('hotmail_accounts')
@@ -73,7 +102,7 @@ export async function GET(request) {
 
     return NextResponse.json({
       email: account.email,
-      messages: mailData.value || [],
+      messages,
     });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });

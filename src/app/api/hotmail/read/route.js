@@ -101,23 +101,45 @@ export async function POST(request) {
     const topCount = Math.min(50, Math.max(1, parseInt(top || '10', 10)));
 
     // Fetch latest inbox messages
-    const mailRes = await fetch(
-      `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=${topCount}&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,body,isRead`,
-      {
-        headers: { Authorization: `Bearer ${tokenData.access_token}` },
-      }
-    );
+    const isLegacyToken = !tokenData.access_token.includes('.');
+    let messages = [];
 
-    const mailData = await mailRes.json();
-    const messages = (mailData.value || []).map(m => ({
-      id: m.id,
-      subject: m.subject || "(No subject)",
-      receivedDateTime: m.receivedDateTime || "",
-      from: m.from || { emailAddress: { address: "(unknown)", name: "(unknown)" } },
-      isRead: Boolean(m.isRead),
-      bodyPreview: m.bodyPreview || "",
-      body: m.body?.content || m.bodyPreview || ""
-    }));
+    if (isLegacyToken) {
+      const mailRes = await fetch(
+        `https://outlook.office.com/api/v2.0/me/messages?$top=${topCount}&$orderby=ReceivedDateTime desc&$select=Subject,From,ReceivedDateTime,BodyPreview,Body,IsRead`,
+        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+      );
+      const mailData = await mailRes.json();
+      messages = (mailData.value || []).map(m => ({
+        id: m.Id,
+        subject: m.Subject || "(No subject)",
+        receivedDateTime: m.ReceivedDateTime || "",
+        from: m.From ? {
+          emailAddress: {
+            address: m.From.EmailAddress?.Address || "(unknown)",
+            name: m.From.EmailAddress?.Name || "(unknown)"
+          }
+        } : { emailAddress: { address: "(unknown)", name: "(unknown)" } },
+        isRead: Boolean(m.IsRead),
+        bodyPreview: m.BodyPreview || "",
+        body: m.Body?.Content || m.BodyPreview || ""
+      }));
+    } else {
+      const mailRes = await fetch(
+        `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=${topCount}&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,body,isRead`,
+        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+      );
+      const mailData = await mailRes.json();
+      messages = (mailData.value || []).map(m => ({
+        id: m.id,
+        subject: m.subject || "(No subject)",
+        receivedDateTime: m.receivedDateTime || "",
+        from: m.from || { emailAddress: { address: "(unknown)", name: "(unknown)" } },
+        isRead: Boolean(m.isRead),
+        bodyPreview: m.bodyPreview || "",
+        body: m.body?.content || m.bodyPreview || ""
+      }));
+    }
 
     // Update lastreadat
     await supabase

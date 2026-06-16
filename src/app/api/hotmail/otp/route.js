@@ -54,17 +54,36 @@ export async function GET(request) {
     }
 
     // Read latest 5 emails and look for OTP patterns
-    const mailRes = await fetch(
-      'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=5&$orderby=receivedDateTime desc&$select=subject,body,receivedDateTime',
-      { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
-    );
+    const isLegacyToken = !tokenData.access_token.includes('.');
+    let messages = [];
 
-    const mailData = await mailRes.json();
-    const messages = mailData.value || [];
+    if (isLegacyToken) {
+      const mailRes = await fetch(
+        'https://outlook.office.com/api/v2.0/me/messages?$top=5&$orderby=ReceivedDateTime desc&$select=Subject,Body,ReceivedDateTime',
+        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+      );
+      const mailData = await mailRes.json();
+      messages = (mailData.value || []).map(m => ({
+        subject: m.Subject,
+        body: m.Body?.Content || "",
+        receivedDateTime: m.ReceivedDateTime
+      }));
+    } else {
+      const mailRes = await fetch(
+        'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=5&$orderby=receivedDateTime desc&$select=subject,body,receivedDateTime',
+        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+      );
+      const mailData = await mailRes.json();
+      messages = (mailData.value || []).map(m => ({
+        subject: m.subject,
+        body: m.body?.content || "",
+        receivedDateTime: m.receivedDateTime
+      }));
+    }
 
     // Extract OTP from email body using common patterns
     for (const msg of messages) {
-      const body = msg.body?.content || '';
+      const body = msg.body || '';
       // Matches a 4 to 8 digit number (common OTP length)
       const otpMatch = body.match(/\b(\d{4,8})\b/);
       if (otpMatch) {
