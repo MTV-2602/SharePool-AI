@@ -19,4 +19,4 @@ http.createServer = (...args) => {
   return origCreate(...rest, wrapped);
 };
 
-require("./server.js");
+require("./server_legacy.js");
