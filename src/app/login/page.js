@@ -650,7 +650,7 @@ supports_websockets = false`, "tomlConfigAG")}
                             </span>
                           </button>
                         </div>
-                        <div><strong>4. Models:</strong> <code>gemini-2.5-pro</code>, <code>gemini-2.5-flash</code></div>
+                        <div><strong>4. Models:</strong> <code>gemini-3.5-flash</code>, <code>gemini-3.1-pro</code></div>
                       </div>
                     </div>
                   </Card>
