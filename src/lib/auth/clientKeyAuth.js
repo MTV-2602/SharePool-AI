@@ -5,21 +5,25 @@ import { supabase } from '../supabase.js';
  * Returns { valid: true, keyData: {...} } or { valid: false, error: '...' }
  */
 export async function validateClientKey(bearerToken) {
-  const isCk = bearerToken && bearerToken.startsWith('ck-');
-  const isLegacySk = bearerToken && bearerToken.startsWith('sk-') && bearerToken.split('-').length === 2;
+  const token = (bearerToken || '').trim();
+  const isCk = token.startsWith('ck-');
+  const isLegacySk = token.startsWith('sk-') && token.split('-').length === 2;
 
-  if (!bearerToken || (!isCk && !isLegacySk)) {
-    return { valid: false, error: 'Invalid client key format. Expected ck-...' };
+  if (!token || (!isCk && !isLegacySk)) {
+    return { valid: false, error: 'Invalid client key format. Expected ck-... or sk-...' };
   }
 
   const { data: keys, error } = await supabase
     .from('client_keys')
     .select('*')
-    .eq('key', bearerToken)
+    .eq('key', token)
     .eq('active', true)
     .limit(1);
 
   if (error || !keys?.length) {
+    if (error) {
+      console.error('[ClientKeyAuth] Supabase query error:', error.message);
+    }
     return { valid: false, error: 'Invalid or inactive client key' };
   }
 
@@ -30,21 +34,29 @@ export async function validateClientKey(bearerToken) {
     return { valid: false, error: 'Client key has expired' };
   }
 
-  // Check token quota
-  if (keyData.quota_tokens > 0 && keyData.used_tokens >= keyData.quota_tokens) {
+  // Check token quota (ensure numeric comparison)
+  const quota = Number(keyData.quota_tokens) || 0;
+  const used = Number(keyData.used_tokens) || 0;
+  if (quota > 0 && used >= quota) {
     return { valid: false, error: 'Token quota exceeded' };
   }
 
   // Check rate limit (sliding window: count requests in last minute)
   const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
-  const { count } = await supabase
+  const { count, error: limitError } = await supabase
     .from('client_key_usage_logs')
     .select('*', { count: 'exact', head: true })
     .eq('client_key_id', keyData.id)
     .gte('created_at', oneMinuteAgo);
 
-  if (count >= keyData.rate_limit_per_minute) {
-    return { valid: false, error: `Rate limit exceeded (${keyData.rate_limit_per_minute}/min)` };
+  if (limitError) {
+    console.error('[ClientKeyAuth] Rate limit query error:', limitError.message);
+  }
+
+  const requestCount = count || 0;
+  const rateLimit = Number(keyData.rate_limit_per_minute) || 60;
+  if (requestCount >= rateLimit) {
+    return { valid: false, error: `Rate limit exceeded (${rateLimit}/min)` };
   }
 
   return { valid: true, keyData };
@@ -77,25 +89,24 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
  * Extract Bearer token from request headers.
  */
 export function extractBearerToken(request) {
-  // 1. Check Authorization Bearer
-  const authHeader = request.headers.get('authorization') || '';
-  if (authHeader.startsWith('Bearer ')) {
-    return authHeader.slice(7);
+  const authHeader = (request.headers.get("authorization") || request.headers.get("Authorization") || "").trim();
+  if (authHeader.startsWith("Bearer ")) {
+    return authHeader.slice(7).trim();
+  }
+  if (authHeader.startsWith("sk-") || authHeader.startsWith("ck-")) {
+    return authHeader;
   }
 
-  // 2. Check x-goog-api-key (Gemini clients)
-  const googKey = request.headers.get('x-goog-api-key');
-  if (googKey) return googKey;
+  const googKey = request.headers.get("x-goog-api-key") || request.headers.get("X-Goog-Api-Key");
+  if (googKey) return googKey.trim();
 
-  // 3. Check x-api-key (Claude / Cursor clients)
-  const xApiKey = request.headers.get('x-api-key');
-  if (xApiKey) return xApiKey;
+  const xApiKey = request.headers.get("x-api-key") || request.headers.get("X-Api-Key");
+  if (xApiKey) return xApiKey.trim();
 
-  // 4. Check query parameter ?key= (Gemini SDKs)
   try {
     const url = new URL(request.url);
-    const keyParam = url.searchParams.get('key');
-    if (keyParam) return keyParam;
+    const keyParam = url.searchParams.get("key");
+    if (keyParam) return keyParam.trim();
   } catch (e) {}
 
   return null;

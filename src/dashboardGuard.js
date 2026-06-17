@@ -123,19 +123,24 @@ function isPublicLlmApi(pathname) {
 }
 
 function extractApiKey(request) {
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
+  const authHeader = (request.headers.get("authorization") || request.headers.get("Authorization") || "").trim();
+  if (authHeader.startsWith("Bearer ")) {
+    return authHeader.slice(7).trim();
+  }
+  if (authHeader.startsWith("sk-") || authHeader.startsWith("ck-")) {
+    return authHeader;
+  }
 
-  const googKey = request.headers.get("x-goog-api-key");
-  if (googKey) return googKey;
+  const googKey = request.headers.get("x-goog-api-key") || request.headers.get("X-Goog-Api-Key");
+  if (googKey) return googKey.trim();
 
-  const xApiKey = request.headers.get("x-api-key");
-  if (xApiKey) return xApiKey;
+  const xApiKey = request.headers.get("x-api-key") || request.headers.get("X-Api-Key");
+  if (xApiKey) return xApiKey.trim();
 
   try {
     const url = new URL(request.url);
     const keyParam = url.searchParams.get("key");
-    if (keyParam) return keyParam;
+    if (keyParam) return keyParam.trim();
   } catch (e) {}
 
   return null;
@@ -148,24 +153,28 @@ async function hasValidApiKey(request) {
 }
 
 async function canAccessPublicLlmApi(request) {
-  if (isLocalRequest(request)) return true;
-  if (await hasValidCliToken(request)) return true;
+  if (isLocalRequest(request)) return { authorized: true };
+  if (await hasValidCliToken(request)) return { authorized: true };
 
   const apiKey = extractApiKey(request);
-  if (!apiKey) return false;
+  if (!apiKey) return { authorized: false, error: "API key required for remote API access" };
 
-  const isValidAdmin = await validateApiKey(apiKey);
-  if (isValidAdmin) return true;
+  try {
+    const isValidAdmin = await validateApiKey(apiKey);
+    if (isValidAdmin) return { authorized: true };
+  } catch (err) {
+    console.error("[Guard] Admin key validation failed:", err);
+  }
 
   try {
     const { validateClientKey } = await import("@/lib/auth/clientKeyAuth.js");
     const clientResult = await validateClientKey(apiKey);
-    if (clientResult.valid) return true;
+    if (clientResult.valid) return { authorized: true };
+    return { authorized: false, error: clientResult.error || "Invalid client key" };
   } catch (err) {
     console.error("[Guard] Failed to validate client key:", err);
+    return { authorized: false, error: `Client key validation error: ${err.message}` };
   }
-
-  return false;
 }
 
 async function canAccessLocalOnlyRoute(request) {
@@ -227,8 +236,9 @@ export async function proxy(request) {
   }
 
   if (isPublicLlmApi(pathname)) {
-    if (await canAccessPublicLlmApi(request)) return NextResponse.next();
-    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+    const authResult = await canAccessPublicLlmApi(request);
+    if (authResult.authorized) return NextResponse.next();
+    return NextResponse.json({ error: authResult.error }, { status: 401 });
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
