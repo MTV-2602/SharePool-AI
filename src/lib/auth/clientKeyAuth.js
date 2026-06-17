@@ -67,7 +67,34 @@ export async function validateClientKey(bearerToken) {
  * Log token usage for a client key after request completion.
  */
 export async function logClientKeyUsage(clientKeyId, model, promptTokens, completionTokens) {
-  const multiplier = 1; // Could be model-specific from keyData.model_multiplier
+  let multiplier = 1;
+  try {
+    const { data: keys, error: fetchError } = await supabase
+      .from('client_keys')
+      .select('model_multiplier')
+      .eq('id', clientKeyId)
+      .limit(1);
+    
+    if (fetchError) {
+      console.error('[ClientKeyAuth] Failed to fetch key multiplier:', fetchError.message);
+    } else if (keys?.length) {
+      const mm = keys[0].model_multiplier || {};
+      if (model && mm[model] !== undefined) {
+        multiplier = Number(mm[model]) || 1;
+      } else if (model) {
+        // Fallback pattern matching
+        for (const [keyPattern, value] of Object.entries(mm)) {
+          if (model.includes(keyPattern)) {
+            multiplier = Number(value) || 1;
+            break;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[ClientKeyAuth] Failed to load model multiplier:', err);
+  }
+
   const billedTokens = Math.ceil((promptTokens + completionTokens) * multiplier);
 
   // Insert usage log
@@ -79,9 +106,9 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
     billed_tokens: billedTokens,
   });
 
-  // Increment used_tokens on the key
+  // Increment used_tokens on the key using explicit type casts
   await supabase.rpc('exec_sql', {
-    query_text: 'UPDATE client_keys SET used_tokens = used_tokens + $1 WHERE id = $2',
+    query_text: 'UPDATE client_keys SET used_tokens = used_tokens + CAST($1 AS bigint) WHERE id = CAST($2 AS uuid)',
     query_params: [billedTokens, clientKeyId],
   });
 }
