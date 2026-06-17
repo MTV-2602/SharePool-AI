@@ -137,7 +137,22 @@ async function hasValidApiKey(request) {
 async function canAccessPublicLlmApi(request) {
   if (isLocalRequest(request)) return true;
   if (await hasValidCliToken(request)) return true;
-  return await hasValidApiKey(request);
+
+  const apiKey = extractApiKey(request);
+  if (!apiKey) return false;
+
+  const isValidAdmin = await validateApiKey(apiKey);
+  if (isValidAdmin) return true;
+
+  try {
+    const { validateClientKey } = await import("@/lib/auth/clientKeyAuth.js");
+    const clientResult = await validateClientKey(apiKey);
+    if (clientResult.valid) return true;
+  } catch (err) {
+    console.error("[Guard] Failed to validate client key:", err);
+  }
+
+  return false;
 }
 
 async function canAccessLocalOnlyRoute(request) {

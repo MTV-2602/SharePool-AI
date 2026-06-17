@@ -31,7 +31,8 @@ export async function POST(request) {
   await ensureInitialized();
   
   const token = extractBearerToken(request);
-  if (token && token.startsWith("ck-")) {
+  const isClientKey = token && (token.startsWith("ck-") || (token.startsWith("sk-") && token.split("-").length === 2));
+  if (isClientKey) {
     const authResult = await validateClientKey(token);
     if (!authResult.valid) {
       return new Response(JSON.stringify({ error: { message: authResult.error } }), {

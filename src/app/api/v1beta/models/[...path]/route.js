@@ -43,7 +43,7 @@ export async function POST(request, { params }) {
   await ensureInitialized();
 
   const token = extractBearerToken(request);
-  const isClientKey = token && token.startsWith("ck-");
+  const isClientKey = token && (token.startsWith("ck-") || (token.startsWith("sk-") && token.split("-").length === 2));
   let authResult;
 
   if (isClientKey) {
