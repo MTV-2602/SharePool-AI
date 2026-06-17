@@ -294,11 +294,26 @@ export function extractApiKey(request) {
     return authHeader.slice(7);
   }
 
+  // Check Gemini x-goog-api-key header
+  const googKey = request.headers.get("x-goog-api-key");
+  if (googKey) {
+    return googKey;
+  }
+
   // Check Anthropic x-api-key header
   const xApiKey = request.headers.get("x-api-key");
   if (xApiKey) {
     return xApiKey;
   }
+
+  // Check query parameter ?key=
+  try {
+    const url = new URL(request.url);
+    const keyParam = url.searchParams.get("key");
+    if (keyParam) {
+      return keyParam;
+    }
+  } catch (e) {}
 
   return null;
 }

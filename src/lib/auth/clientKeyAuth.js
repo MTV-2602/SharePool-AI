@@ -77,10 +77,27 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
  * Extract Bearer token from request headers.
  */
 export function extractBearerToken(request) {
+  // 1. Check Authorization Bearer
   const authHeader = request.headers.get('authorization') || '';
   if (authHeader.startsWith('Bearer ')) {
     return authHeader.slice(7);
   }
+
+  // 2. Check x-goog-api-key (Gemini clients)
+  const googKey = request.headers.get('x-goog-api-key');
+  if (googKey) return googKey;
+
+  // 3. Check x-api-key (Claude / Cursor clients)
+  const xApiKey = request.headers.get('x-api-key');
+  if (xApiKey) return xApiKey;
+
+  // 4. Check query parameter ?key= (Gemini SDKs)
+  try {
+    const url = new URL(request.url);
+    const keyParam = url.searchParams.get('key');
+    if (keyParam) return keyParam;
+  } catch (e) {}
+
   return null;
 }
 
