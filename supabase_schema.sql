@@ -238,7 +238,27 @@ BEGIN
             CASE WHEN param_count > 6 THEN query_params->>6 ELSE NULL END,
             CASE WHEN param_count > 7 THEN query_params->>7 ELSE NULL END,
             CASE WHEN param_count > 8 THEN query_params->>8 ELSE NULL END,
-            CASE WHEN param_count > 9 THEN query_params->>9 ELSE NULL END;
+            CASE WHEN param_count > 9 THEN query_params->>9 ELSE NULL END,
+            CASE WHEN param_count > 10 THEN query_params->>10 ELSE NULL END,
+            CASE WHEN param_count > 11 THEN query_params->>11 ELSE NULL END,
+            CASE WHEN param_count > 12 THEN query_params->>12 ELSE NULL END,
+            CASE WHEN param_count > 13 THEN query_params->>13 ELSE NULL END,
+            CASE WHEN param_count > 14 THEN query_params->>14 ELSE NULL END,
+            CASE WHEN param_count > 15 THEN query_params->>15 ELSE NULL END,
+            CASE WHEN param_count > 16 THEN query_params->>16 ELSE NULL END,
+            CASE WHEN param_count > 17 THEN query_params->>17 ELSE NULL END,
+            CASE WHEN param_count > 18 THEN query_params->>18 ELSE NULL END,
+            CASE WHEN param_count > 19 THEN query_params->>19 ELSE NULL END,
+            CASE WHEN param_count > 20 THEN query_params->>20 ELSE NULL END,
+            CASE WHEN param_count > 21 THEN query_params->>21 ELSE NULL END,
+            CASE WHEN param_count > 22 THEN query_params->>22 ELSE NULL END,
+            CASE WHEN param_count > 23 THEN query_params->>23 ELSE NULL END,
+            CASE WHEN param_count > 24 THEN query_params->>24 ELSE NULL END,
+            CASE WHEN param_count > 25 THEN query_params->>25 ELSE NULL END,
+            CASE WHEN param_count > 26 THEN query_params->>26 ELSE NULL END,
+            CASE WHEN param_count > 27 THEN query_params->>27 ELSE NULL END,
+            CASE WHEN param_count > 28 THEN query_params->>28 ELSE NULL END,
+            CASE WHEN param_count > 29 THEN query_params->>29 ELSE NULL END;
         
         RETURN val;
     ELSE
@@ -254,7 +274,27 @@ BEGIN
             CASE WHEN param_count > 6 THEN query_params->>6 ELSE NULL END,
             CASE WHEN param_count > 7 THEN query_params->>7 ELSE NULL END,
             CASE WHEN param_count > 8 THEN query_params->>8 ELSE NULL END,
-            CASE WHEN param_count > 9 THEN query_params->>9 ELSE NULL END;
+            CASE WHEN param_count > 9 THEN query_params->>9 ELSE NULL END,
+            CASE WHEN param_count > 10 THEN query_params->>10 ELSE NULL END,
+            CASE WHEN param_count > 11 THEN query_params->>11 ELSE NULL END,
+            CASE WHEN param_count > 12 THEN query_params->>12 ELSE NULL END,
+            CASE WHEN param_count > 13 THEN query_params->>13 ELSE NULL END,
+            CASE WHEN param_count > 14 THEN query_params->>14 ELSE NULL END,
+            CASE WHEN param_count > 15 THEN query_params->>15 ELSE NULL END,
+            CASE WHEN param_count > 16 THEN query_params->>16 ELSE NULL END,
+            CASE WHEN param_count > 17 THEN query_params->>17 ELSE NULL END,
+            CASE WHEN param_count > 18 THEN query_params->>18 ELSE NULL END,
+            CASE WHEN param_count > 19 THEN query_params->>19 ELSE NULL END,
+            CASE WHEN param_count > 20 THEN query_params->>20 ELSE NULL END,
+            CASE WHEN param_count > 21 THEN query_params->>21 ELSE NULL END,
+            CASE WHEN param_count > 22 THEN query_params->>22 ELSE NULL END,
+            CASE WHEN param_count > 23 THEN query_params->>23 ELSE NULL END,
+            CASE WHEN param_count > 24 THEN query_params->>24 ELSE NULL END,
+            CASE WHEN param_count > 25 THEN query_params->>25 ELSE NULL END,
+            CASE WHEN param_count > 26 THEN query_params->>26 ELSE NULL END,
+            CASE WHEN param_count > 27 THEN query_params->>27 ELSE NULL END,
+            CASE WHEN param_count > 28 THEN query_params->>28 ELSE NULL END,
+            CASE WHEN param_count > 29 THEN query_params->>29 ELSE NULL END;
         
         GET DIAGNOSTICS i = ROW_COUNT;
         RETURN jsonb_build_object('changes', i);
