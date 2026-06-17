@@ -551,13 +551,77 @@ supports_websockets = false`, "tomlConfig")}
 
               {guideTab === "antigravity" && (
                 <div className="space-y-6">
-                  <Card title="🪐 Hướng dẫn kết nối đến AntiGravity Portal (Gemini)" icon="info">
-                    <p className="text-sm text-text-muted mt-2">
-                      VS Code Extension **Google Gemini Code Assist (Cloud Code)** có thể được định cấu hình chuyển hướng traffic qua 9Router Server để xoay vòng tài nguyên của bạn.
-                    </p>
+                  <Card title="🪐 Phương pháp A: Sử dụng Antigravity Desktop App (Khuyên dùng - Bypass Đăng ký/Login)" icon="settings">
+                    <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <p>Sử dụng ứng dụng Antigravity Desktop (bản clone của Codex) và tự động bỏ qua màn hình Google Login:</p>
+                      <div>
+                        1. Truy cập thư mục cấu hình của Antigravity tùy theo hệ điều hành của bạn:
+                        <ul className="list-disc pl-5 mt-2 space-y-1">
+                          <li><strong>Windows</strong>: <code>C:\Users\&lt;Tên_Tài_Khoản_Máy_Tính&gt;\.antigravity\</code></li>
+                          <li><strong>Mac / Linux</strong>: <code>~/.antigravity/</code></li>
+                        </ul>
+                        <p className="italic text-xs mt-1">(Nếu chưa có thư mục <code>.antigravity</code>, hãy mở ứng dụng Antigravity một lần để nó tự tạo, hoặc tự tạo thư mục mới).</p>
+                      </div>
+
+                      <div>
+                        2. Tạo hoặc sửa file <strong className="text-text-main"><code>config.toml</code></strong> trong thư mục trên và dán nội dung:
+                        <div className="relative mt-2 bg-surface-2 border border-border rounded-lg p-4 font-mono text-xs text-text-main overflow-x-auto pr-12">
+                          <pre>{`model_reasoning_effort = "low"
+model_provider = "openai-custom"
+model = "gpt-5.5"
+
+[model_providers.openai-custom]
+experimental_bearer_token = "${savedKey}"
+name = "VinAi"
+base_url = "${origin}/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false`}</pre>
+                          <button
+                            onClick={() => copyText(`model_reasoning_effort = "low"
+model_provider = "openai-custom"
+model = "gpt-5.5"
+
+[model_providers.openai-custom]
+experimental_bearer_token = "${savedKey}"
+name = "VinAi"
+base_url = "${origin}/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false`, "tomlConfigAG")}
+                            className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
+                            title="Copy cấu hình config.toml"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "tomlConfigAG" ? "check" : "content_copy"}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        3. Tạo tiếp file <strong className="text-text-main"><code>auth.json</code></strong> trong cùng thư mục trên (để bypass login) và dán nội dung:
+                        <div className="relative mt-2 bg-surface-2 border border-border rounded-lg p-4 font-mono text-xs text-text-main overflow-x-auto pr-12">
+                          <pre>{`{
+  "auth_mode": "apikey",
+  "OPENAI_API_KEY": "${savedKey}"
+}`}</pre>
+                          <button
+                            onClick={() => copyText(`{\n  "auth_mode": "apikey",\n  "OPENAI_API_KEY": "${savedKey}"\n}`, "authConfigAG")}
+                            className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
+                            title="Copy cấu hình auth.json"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "authConfigAG" ? "check" : "content_copy"}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                      <p>4. Tắt hoàn toàn ứng dụng **Antigravity IDE / Desktop App** (nhớ tắt cả process chạy ngầm) và mở lại để áp dụng cấu hình.</p>
+                    </div>
                   </Card>
 
-                  <Card title="PHƯƠNG PHÁP A: Dành cho công cụ hỗ trợ Custom Base URL" icon="cloud">
+                  <Card title="🪐 Phương pháp B: Dành cho công cụ hỗ trợ Custom Base URL" icon="cloud">
                     <div className="space-y-3 text-sm text-text-muted mt-2">
                       <p>Nếu bạn dùng các công cụ lập trình hỗ trợ Custom Base URL (Cursor, Cline, RooCode, Continue...):</p>
                       <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-2 text-text-main">
@@ -591,7 +655,7 @@ supports_websockets = false`, "tomlConfig")}
                     </div>
                   </Card>
 
-                  <Card title="PHƯƠNG PHÁP B: Sử dụng Script Proxy Siêu Nhẹ (VS Code Extension)" icon="settings_ethernet">
+                  <Card title="🪐 Phương pháp C: Sử dụng Script Proxy Siêu Nhẹ (VS Code Extension)" icon="settings_ethernet">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
                       <p>Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạt động qua Server mà không cần đổi URL.</p>
                       <div>
