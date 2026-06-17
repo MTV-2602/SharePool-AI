@@ -1,4 +1,5 @@
 import { supabase } from '../supabase.js';
+import { extractUsage } from "open-sse/utils/usageTracking.js";
 
 /**
  * Validates a client key (prefix `ck-`) against Supabase.
@@ -155,9 +156,10 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                 if (dataStr && dataStr !== '[DONE]') {
                   try {
                     const parsed = JSON.parse(dataStr);
-                    // Check if usage information exists (standard in OpenAI SSE final chunk)
-                    if (parsed.usage) {
-                      const { prompt_tokens = 0, completion_tokens = 0 } = parsed.usage;
+                    // Check if usage information exists using general extractUsage (supports OpenAI, Responses API, Gemini, Claude)
+                    const usage = extractUsage(parsed);
+                    if (usage) {
+                      const { prompt_tokens = 0, completion_tokens = 0 } = usage;
                       if (prompt_tokens > 0 || completion_tokens > 0) {
                         // Log usage asynchronously to not block the stream finish
                         logClientKeyUsage(clientKeyId, parsed.model || model, prompt_tokens, completion_tokens)
@@ -188,14 +190,10 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
       const clonedResponse = response.clone();
       const body = await clonedResponse.json();
       
-      if (body.usage) {
-        const { prompt_tokens = 0, completion_tokens = 0 } = body.usage;
+      const usage = extractUsage(body);
+      if (usage) {
+        const { prompt_tokens = 0, completion_tokens = 0 } = usage;
         await logClientKeyUsage(clientKeyId, body.model || model, prompt_tokens, completion_tokens);
-      } else if (body.usageMetadata) {
-        // Gemini-compatible non-streaming format
-        const promptTokens = body.usageMetadata.promptTokenCount || 0;
-        const completionTokens = body.usageMetadata.candidatesTokenCount || 0;
-        await logClientKeyUsage(clientKeyId, body.modelVersion || model, promptTokens, completionTokens);
       }
     } catch (err) {
       console.error('[ClientKeyAuth] Failed to parse non-stream response for logging:', err.message);
