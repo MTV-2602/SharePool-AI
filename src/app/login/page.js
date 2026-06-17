@@ -628,9 +628,9 @@ supports_websockets = false`, "tomlConfigAG")}
                         <div><strong>1. Provider:</strong> <code>OpenAI Compatible</code> (hoặc Custom OpenAI)</div>
                         <div className="flex items-center gap-2">
                           <strong>2. Base URL:</strong>
-                          <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs">{origin}/v1/antigravity</code>
+                          <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs">{origin}/v1</code>
                           <button
-                            onClick={() => copyText(`${origin}/v1/antigravity`, "urlAG")}
+                            onClick={() => copyText(`${origin}/v1`, "urlAG")}
                             className="p-1 hover:bg-surface-3 rounded cursor-pointer"
                           >
                             <span className="material-symbols-outlined text-[12px]">
