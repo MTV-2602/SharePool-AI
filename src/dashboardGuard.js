@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { getSettings, validateApiKey } from "@/lib/localDb";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
@@ -8,6 +6,11 @@ const CLI_TOKEN_SALT = "9r-cli-auth";
 
 let cachedCliToken = null;
 async function getCliToken() {
+  if (process.env.NEXT_RUNTIME === "edge") {
+    return "disabled-on-edge";
+  }
+  const machineIdModule = "@/shared/utils/machineId";
+  const { getConsistentMachineId } = await import(machineIdModule);
   if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
   return cachedCliToken;
 }
@@ -146,10 +149,27 @@ function extractApiKey(request) {
   return null;
 }
 
+async function validateApiKeyDirect(key) {
+  if (process.env.NEXT_RUNTIME === "edge") {
+    const { supabase } = await import("@/lib/supabase");
+    if (!supabase) return false;
+    const { data, error } = await supabase
+      .from('api_keys')
+      .select('is_active')
+      .eq('key', key)
+      .limit(1);
+    if (error || !data || data.length === 0) return false;
+    return data[0].is_active === true || data[0].is_active === 1;
+  } else {
+    const { validateApiKey } = await import("@/lib/localDb");
+    return await validateApiKey(key);
+  }
+}
+
 async function hasValidApiKey(request) {
   const apiKey = extractApiKey(request);
   if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  return await validateApiKeyDirect(apiKey);
 }
 
 async function canAccessPublicLlmApi(request) {
@@ -160,7 +180,7 @@ async function canAccessPublicLlmApi(request) {
   if (!apiKey) return { authorized: false, error: "API key required for remote API access" };
 
   try {
-    const isValidAdmin = await validateApiKey(apiKey);
+    const isValidAdmin = await validateApiKeyDirect(apiKey);
     if (isValidAdmin) return { authorized: true };
   } catch (err) {
     console.error("[Guard] Admin key validation failed:", err);
@@ -192,8 +212,23 @@ async function hasValidToken(request) {
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
 async function loadSettings() {
   try {
-    return await getSettings();
-  } catch {
+    if (process.env.NEXT_RUNTIME === "edge") {
+      const { supabase } = await import("@/lib/supabase");
+      if (!supabase) return null;
+      const { data, error } = await supabase
+        .from('settings')
+        .select('data')
+        .eq('id', 1)
+        .maybeSingle();
+      if (error || !data) return null;
+      const raw = typeof data.data === 'string' ? JSON.parse(data.data) : data.data;
+      return raw;
+    } else {
+      const { getSettings } = await import("@/lib/localDb");
+      return await getSettings();
+    }
+  } catch (err) {
+    console.error("[Guard] Failed to load settings:", err);
     return null;
   }
 }
