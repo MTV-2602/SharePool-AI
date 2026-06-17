@@ -218,6 +218,14 @@ BEGIN
     final_query := replace(final_query, 'rateLimitedUntil', 'rate_limited_until');
     final_query := replace(final_query, 'expiresIn', 'expires_in');
     final_query := replace(final_query, 'consecutiveUseCount', 'consecutive_use_count');
+    final_query := replace(final_query, 'quotaTotal', 'quota_total');
+    final_query := replace(final_query, 'quotaUsed', 'quota_used');
+    final_query := replace(final_query, 'modelAllowlist', 'model_allowlist');
+    final_query := replace(final_query, 'maxConcurrent', 'max_concurrent');
+    final_query := replace(final_query, 'rateLimitPerMinute', 'rate_limit_per_minute');
+    final_query := replace(final_query, 'lastRefreshAt', 'last_refresh_at');
+    final_query := replace(final_query, 'idToken', 'id_token');
+    final_query := replace(final_query, 'dateKey', 'date_key');
 
     -- Handle PRAGMA (SQLite compat - return empty)
     IF UPPER(TRIM(final_query)) LIKE 'PRAGMA%' THEN
