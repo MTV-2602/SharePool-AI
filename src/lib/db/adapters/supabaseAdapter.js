@@ -45,7 +45,7 @@ function mapRowKeys(row) {
   return mapped;
 }
 
-const DATE_REGEX = /^\d{4}-\d{2}-\d{2}/;
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/;
 
 function addCastsToQuery(sql, params) {
   if (!params || params.length === 0) return sql;
