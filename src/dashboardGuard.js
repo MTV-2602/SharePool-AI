@@ -242,6 +242,7 @@ async function isAuthenticated(request) {
 
 function isPublicApi(pathname) {
   if (isPublicLlmApi(pathname)) return true;
+  if (pathname.match(/^\/api\/client-keys\/[^/]+\/usage$/)) return true;
   return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 

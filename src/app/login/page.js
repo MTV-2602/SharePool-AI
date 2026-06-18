@@ -25,6 +25,8 @@ export default function LoginPage() {
   const [copiedField, setCopiedField] = useState("");
   const [origin, setOrigin] = useState("https://vinhcousera.vercel.app");
   const [showKey, setShowKey] = useState(false);
+  const [usageLogs, setUsageLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
 
   const router = useRouter();
 
@@ -81,6 +83,28 @@ export default function LoginPage() {
     }
   };
 
+  const fetchUsageLogs = async (keyId, currentKey) => {
+    const keyToUse = currentKey || savedKey;
+    if (!keyToUse) return;
+
+    setLoadingLogs(true);
+    try {
+      const res = await fetch(`/api/client-keys/${keyId}/usage?limit=50`, {
+        headers: {
+          "Authorization": `Bearer ${keyToUse}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUsageLogs(data || []);
+      }
+    } catch (err) {
+      console.error("Lỗi khi tải lịch sử sử dụng:", err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
   const fetchClientKeyDetails = async (k) => {
     setLoading(true);
     setError("");
@@ -95,6 +119,7 @@ export default function LoginPage() {
         setKeyData(data.keyData);
         setSavedKey(k);
         localStorage.setItem("clientKey", k);
+        fetchUsageLogs(data.keyData.id, k);
       } else {
         setError(data.error || "Có lỗi xảy ra khi kiểm tra Key.");
         setKeyData(null);
@@ -155,6 +180,7 @@ export default function LoginPage() {
           setKeyData(checkData.keyData);
           setSavedKey(inputKey);
           localStorage.setItem("clientKey", inputKey);
+          fetchUsageLogs(checkData.keyData.id, inputKey);
         } else {
           // If both fail, show admin error
           const data = await res.json();
@@ -211,6 +237,124 @@ export default function LoginPage() {
     navigator.clipboard.writeText(text).catch(() => {});
     setCopiedField(fieldName);
     setTimeout(() => setCopiedField(""), 2000);
+  };
+
+  const getProviderFromModel = (model) => {
+    if (!model) return "N/A";
+    const m = model.toLowerCase();
+    if (m.includes("gemini")) return "Google Gemini";
+    if (m.includes("gpt-") || m.startsWith("gpt") || m.includes("o1") || m.includes("o3")) return "OpenAI";
+    if (m.includes("claude")) return "Anthropic";
+    if (m.includes("deepseek")) return "DeepSeek";
+    if (m.includes("llama") || m.includes("meta")) return "Meta";
+    return "Custom/Other";
+  };
+
+  const getCodexMarkdown = () => {
+    return `# Hướng dẫn kết nối máy khách - Codex
+
+## Bước 1: Cài đặt ứng dụng Codex
+- **Cách 1: Sử dụng Codex Desktop App (Khuyên dùng)**
+  Tải và cài đặt ứng dụng Codex Desktop chính thức do OpenAI phát hành trên máy tính.
+- **Cách 2: Sử dụng Codex CLI (Giao diện dòng lệnh)**
+  Mở Terminal/PowerShell và chạy lệnh sau để cài đặt:
+  \`\`\`bash
+  npm install -g @openai/codex
+  \`\`\`
+
+## Bước 2: Thiết lập file cấu hình config.toml
+Trên máy khách, cần tạo hoặc chỉnh sửa tệp cấu hình của Codex để chuyển tiếp cuộc gọi qua Server của bạn:
+1. Tìm tệp cấu hình **config.toml** theo đường dẫn hệ điều hành:
+   - **Windows**: \`C:\\Users\\<Tên_Tài_Khoản_Máy_Tính>\\.codex\\config.toml\`
+   - **Mac / Linux**: \`~/.codex/config.toml\`
+   *(Nếu chưa có thư mục \`.codex\` hoặc file \`config.toml\`, hãy tự tạo thư mục và file văn bản mới).*
+
+2. Mở file \`config.toml\` bằng Notepad hoặc Text Editor và điền cấu hình sau:
+\`\`\`toml
+model_reasoning_effort = "low"
+model_provider = "openai-custom"
+model = "gpt-5.5"
+
+[model_providers.openai-custom]
+experimental_bearer_token = "${savedKey}"
+name = "VinAi"
+base_url = "${origin}/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+\`\`\`
+
+## Bước 3: Khởi động lại và Kiểm thử
+1. Tắt hoàn toàn ứng dụng Codex Desktop (hoặc đóng các cửa sổ Terminal) và mở lại để Codex nạp cấu hình mới.
+2. Thử nghiệm lệnh cơ bản qua CLI để kiểm tra kết nối:
+   \`\`\`bash
+   codex "say hello"
+   \`\`\`
+3. Thử nghiệm tính năng chạy công cụ hệ thống (Tool-calling) của Codex trên máy khách:
+   \`\`\`bash
+   codex "tạo cho tôi 1 file test_connection.txt trong thư mục hiện tại"
+   \`\`\``;
+  };
+
+  const getAntigravityMarkdown = () => {
+    return `# Hướng dẫn kết nối máy khách - Antigravity (Gemini)
+
+## Phương pháp A: Sử dụng Antigravity Desktop App (Khuyên dùng - Bypass Đăng ký/Login)
+Sử dụng ứng dụng Antigravity Desktop (bản clone của Codex) và tự động bỏ qua màn hình Google Login:
+1. Truy cập thư mục cấu hình của Antigravity tùy theo hệ điều hành của bạn:
+   - **Windows**: \`C:\\Users\\<Tên_Tài_Khoản_Máy_Tính>\\.antigravity\\\`
+   - **Mac / Linux**: \`~/.antigravity/\`
+   *(Nếu chưa có thư mục \`.antigravity\`, hãy mở ứng dụng Antigravity một lần để nó tự tạo, hoặc tự tạo thư mục mới).*
+
+2. Tạo hoặc sửa file **config.toml** trong thư mục trên và dán nội dung:
+\`\`\`toml
+model_reasoning_effort = "low"
+model_provider = "openai-custom"
+model = "gpt-5.5"
+
+[model_providers.openai-custom]
+experimental_bearer_token = "${savedKey}"
+name = "VinAi"
+base_url = "${origin}/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+\`\`\`
+
+3. Tạo tiếp file **auth.json** trong cùng thư mục trên (để bypass login) và dán nội dung:
+\`\`\`json
+{
+  "auth_mode": "apikey",
+  "OPENAI_API_KEY": "${savedKey}"
+}
+\`\`\`
+
+4. Tắt hoàn toàn ứng dụng **Antigravity IDE / Desktop App** (nhớ tắt cả process chạy ngầm) và mở lại để áp dụng cấu hình.
+
+## Phương pháp B: Dành cho công cụ hỗ trợ Custom Base URL
+Nếu bạn dùng các công cụ lập trình hỗ trợ Custom Base URL (Cursor, Cline, RooCode, Continue...):
+1. **Provider**: \`OpenAI Compatible\` (hoặc Custom OpenAI)
+2. **Base URL**: \`${origin}/v1\`
+3. **API Key**: \`${savedKey}\`
+4. **Models**: \`gemini-3.5-flash\`, \`gemini-3.1-pro\`
+
+## Phương pháp C: Sử dụng Script Proxy Siêu Nhẹ (VS Code Extension)
+Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạt động qua Server mà không cần đổi URL.
+1. Cài đặt Node.js trên máy tính của bạn (bản 18 trở lên).
+2. Mở Terminal / PowerShell và chạy script proxy chuyển hướng với quyền Administrator:
+   - **Windows (chạy PowerShell bằng Admin)**:
+     \`\`\`powershell
+     node client-proxy.js --server ${origin} --key ${savedKey}
+     \`\`\`
+   - **macOS / Linux**:
+     \`\`\`bash
+     sudo node client-proxy.js --server ${origin} --key ${savedKey}
+     \`\`\``;
+  };
+
+  const handleCopyFullMarkdown = () => {
+    const md = guideTab === "codex" ? getCodexMarkdown() : getAntigravityMarkdown();
+    copyText(md, "fullMarkdown");
   };
 
   // Calculations for stats
@@ -418,27 +562,125 @@ export default function LoginPage() {
                   </div>
                 </Card>
               </div>
+
+              <Card title="Lịch sử yêu cầu (gần đây)" icon="history">
+                {loadingLogs ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-text-muted">
+                    <span className="material-symbols-outlined animate-spin text-[32px] text-primary">
+                      sync
+                    </span>
+                    <p className="text-sm mt-2">Đang tải lịch sử sử dụng...</p>
+                  </div>
+                ) : usageLogs.length === 0 ? (
+                  <div className="text-center py-12 text-text-muted">
+                    <span className="material-symbols-outlined text-[36px]">
+                      history_toggle_off
+                    </span>
+                    <p className="text-sm mt-2">Không có lịch sử yêu cầu nào gần đây.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto -mx-6 px-6 max-h-[400px] overflow-y-auto">
+                    <table className="w-full text-left border-collapse text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-text-muted font-medium text-xs uppercase tracking-wider">
+                          <th className="pb-3 pr-4">Thời gian</th>
+                          <th className="pb-3 px-4">Provider</th>
+                          <th className="pb-3 px-4">Model</th>
+                          <th className="pb-3 px-4 text-right">Prompt</th>
+                          <th className="pb-3 px-4 text-right">Completion</th>
+                          <th className="pb-3 pl-4 text-right">Tổng (Billed)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {usageLogs.map((log) => {
+                          const dateStr = log.created_at
+                            ? new Date(log.created_at).toLocaleString("vi-VN", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                              })
+                            : "Không rõ";
+                          
+                          const provider = getProviderFromModel(log.model);
+                          
+                          let modelBadgeColor = "bg-surface-3 text-text-muted border border-border";
+                          if (log.model?.includes("gemini")) {
+                            modelBadgeColor = "bg-blue-500/10 text-blue-400 border border-blue-500/20";
+                          } else if (log.model?.includes("gpt") || log.model?.includes("o1") || log.model?.includes("o3")) {
+                            modelBadgeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                          } else if (log.model?.includes("claude")) {
+                            modelBadgeColor = "bg-amber-500/10 text-amber-400 border border-amber-500/20";
+                          } else if (log.model?.includes("deepseek")) {
+                            modelBadgeColor = "bg-purple-500/10 text-purple-400 border border-purple-500/20";
+                          }
+
+                          return (
+                            <tr key={log.id} className="border-b border-border/50 hover:bg-surface-2/30 transition-colors last:border-0">
+                              <td className="py-3 pr-4 font-mono text-xs text-text-muted whitespace-nowrap">
+                                {dateStr}
+                              </td>
+                              <td className="py-3 px-4 font-medium text-text-main whitespace-nowrap">
+                                {provider}
+                              </td>
+                              <td className="py-3 px-4 whitespace-nowrap">
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-medium ${modelBadgeColor}`}>
+                                  {log.model}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono text-text-muted whitespace-nowrap">
+                                {(log.prompt_tokens || 0).toLocaleString()}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono text-text-muted whitespace-nowrap">
+                                {(log.completion_tokens || 0).toLocaleString()}
+                              </td>
+                              <td className="py-3 pl-4 text-right font-mono font-semibold text-primary whitespace-nowrap">
+                                {(log.billed_tokens || 0).toLocaleString()}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
             </div>
           )}
 
           {activeTab === "guide" && (
             <div className="space-y-6">
-              <div className="flex gap-2 border-b border-border/60 pb-3">
+              <div className="flex gap-2 border-b border-border/60 pb-3 justify-between items-center flex-wrap gap-y-2">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setGuideTab("codex")}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                      guideTab === "codex" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
+                    }`}
+                  >
+                    💻 Hướng dẫn Codex (README)
+                  </button>
+                  <button
+                    onClick={() => setGuideTab("antigravity")}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                      guideTab === "antigravity" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
+                    }`}
+                  >
+                    🪐 Hướng dẫn AntiGravity (Gemini)
+                  </button>
+                </div>
+
                 <button
-                  onClick={() => setGuideTab("codex")}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
-                    guideTab === "codex" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
-                  }`}
+                  onClick={handleCopyFullMarkdown}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface hover:bg-surface-2 text-text-main text-xs font-semibold transition-colors cursor-pointer animate-fade-in"
+                  title="Sao chép toàn bộ hướng dẫn bằng định dạng Markdown"
                 >
-                  💻 Hướng dẫn Codex (README)
-                </button>
-                <button
-                  onClick={() => setGuideTab("antigravity")}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
-                    guideTab === "antigravity" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
-                  }`}
-                >
-                  🪐 Hướng dẫn AntiGravity (Gemini)
+                  <span className="material-symbols-outlined text-[16px]">
+                    {copiedField === "fullMarkdown" ? "check" : "content_copy"}
+                  </span>
+                  {copiedField === "fullMarkdown" ? "Đã sao chép!" : "Copy Full Markdown"}
                 </button>
               </div>
 
