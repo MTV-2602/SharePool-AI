@@ -69,5 +69,16 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## 5. Vinh Pro
 - Always write "Vinh Pro" at the end of the response when completing or applying these guidelines (skills) to prove you have read and followed them.
 
-## 6. Push Git
-- After successfully completing any changes and verifying that they run stably, always perform a Vietnamese commit and push the changes to the Git repository of this project.
+## 6. Push Git (Đẩy Code Lên GitHub)
+- **Tự động Push:** Sau khi hoàn thành bất kỳ thay đổi nào và kiểm tra hoạt động ổn định, luôn thực hiện commit bằng tiếng Việt và push thay đổi lên Git repository của dự án này.
+- **Tránh lỗi treo khi Push (HTTPS):**
+  Để tránh việc Git bị treo do Git Credential Manager cố gắng mở hộp thoại popup UI đăng nhập (ở chế độ chạy ngầm non-interactive), remote origin URL của dự án phải được thiết lập kèm username `MTV-2602@`:
+  ```bash
+  git remote set-url origin https://MTV-2602@github.com/MTV-2602/web-ban-acc.git
+  ```
+- **Quy trình thực hiện:**
+  ```bash
+  git add .
+  git commit -m "nội dung commit bằng tiếng Việt"
+  git push origin main
+  ```
