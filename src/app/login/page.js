@@ -27,6 +27,7 @@ export default function LoginPage() {
   const [showKey, setShowKey] = useState(false);
   const [usageLogs, setUsageLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [showDetailedLogs, setShowDetailedLogs] = useState(false);
 
   const router = useRouter();
 
@@ -365,6 +366,37 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
   const usagePct = isInfinite ? 0 : Math.min(100, Math.round((used / total) * 100));
   const costUsd = (used / 1000000) * 5.0;
 
+  // Group logs by provider for aggregation
+  const getProviderSummary = () => {
+    const summary = {};
+    usageLogs.forEach((log) => {
+      const provider = getProviderFromModel(log.model);
+      if (!summary[provider]) {
+        summary[provider] = {
+          name: provider,
+          prompt: 0,
+          completion: 0,
+          total: 0,
+          count: 0,
+          models: new Set()
+        };
+      }
+      summary[provider].prompt += log.prompt_tokens || 0;
+      summary[provider].completion += log.completion_tokens || 0;
+      summary[provider].total += log.billed_tokens || 0;
+      summary[provider].count += 1;
+      if (log.model) {
+        summary[provider].models.add(log.model);
+      }
+    });
+    return Object.values(summary).map(p => ({
+      ...p,
+      models: Array.from(p.models)
+    }));
+  };
+
+  const summaryData = getProviderSummary();
+
   const oidcAvailable = oidcConfigured && ["oidc", "both"].includes(authMode);
   const passwordAvailable = authMode !== "oidc" || !oidcConfigured;
 
@@ -563,7 +595,23 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
                 </Card>
               </div>
 
-              <Card title="Lịch sử yêu cầu (gần đây)" icon="history">
+              <Card 
+                title={showDetailedLogs ? "Lịch sử yêu cầu (chi tiết)" : "Thống kê theo nhà cung cấp"} 
+                icon="history"
+                action={
+                  usageLogs.length > 0 && (
+                    <button
+                      onClick={() => setShowDetailedLogs(!showDetailedLogs)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-border bg-surface hover:bg-surface-2 text-text-main text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {showDetailedLogs ? "leaderboard" : "list"}
+                      </span>
+                      {showDetailedLogs ? "Xem tổng hợp" : "Xem chi tiết"}
+                    </button>
+                  )
+                }
+              >
                 {loadingLogs ? (
                   <div className="flex flex-col items-center justify-center py-12 text-text-muted">
                     <span className="material-symbols-outlined animate-spin text-[32px] text-primary">
@@ -578,7 +626,8 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
                     </span>
                     <p className="text-sm mt-2">Không có lịch sử yêu cầu nào gần đây.</p>
                   </div>
-                ) : (
+                ) : showDetailedLogs ? (
+                  // Detailed logs view
                   <div className="overflow-x-auto -mx-6 px-6 max-h-[400px] overflow-y-auto">
                     <table className="w-full text-left border-collapse text-sm">
                       <thead>
@@ -638,6 +687,72 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
                               </td>
                               <td className="py-3 pl-4 text-right font-mono font-semibold text-primary whitespace-nowrap">
                                 {(log.billed_tokens || 0).toLocaleString()}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Aggregated summary view
+                  <div className="overflow-x-auto -mx-6 px-6 max-h-[400px] overflow-y-auto">
+                    <table className="w-full text-left border-collapse text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-text-muted font-medium text-xs uppercase tracking-wider">
+                          <th className="pb-3 pr-4">Nhà cung cấp</th>
+                          <th className="pb-3 px-4 text-center">Yêu cầu</th>
+                          <th className="pb-3 px-4">Models đã gọi</th>
+                          <th className="pb-3 px-4 text-right">Tổng Prompt</th>
+                          <th className="pb-3 px-4 text-right">Tổng Completion</th>
+                          <th className="pb-3 pl-4 text-right">Tổng Billed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {summaryData.map((row) => {
+                          let providerColor = "text-text-main";
+                          if (row.name === "Google Gemini") providerColor = "text-blue-400 font-semibold";
+                          else if (row.name === "OpenAI") providerColor = "text-emerald-400 font-semibold";
+                          else if (row.name === "Anthropic") providerColor = "text-amber-400 font-semibold";
+                          else if (row.name === "DeepSeek") providerColor = "text-purple-400 font-semibold";
+
+                          return (
+                            <tr key={row.name} className="border-b border-border/50 hover:bg-surface-2/30 transition-colors last:border-0">
+                              <td className={`py-4 pr-4 whitespace-nowrap ${providerColor}`}>
+                                {row.name}
+                              </td>
+                              <td className="py-4 px-4 text-center font-mono whitespace-nowrap">
+                                {row.count.toLocaleString()}
+                              </td>
+                              <td className="py-4 px-4 max-w-xs md:max-w-md">
+                                <div className="flex flex-wrap gap-1">
+                                  {row.models.map((model) => {
+                                    let modelBadgeColor = "bg-surface-3 text-text-muted border border-border";
+                                    if (model.includes("gemini")) {
+                                      modelBadgeColor = "bg-blue-500/10 text-blue-400 border border-blue-500/20";
+                                    } else if (model.includes("gpt") || model.includes("o1") || model.includes("o3")) {
+                                      modelBadgeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                                    } else if (model.includes("claude")) {
+                                      modelBadgeColor = "bg-amber-500/10 text-amber-400 border border-amber-500/20";
+                                    } else if (model.includes("deepseek")) {
+                                      modelBadgeColor = "bg-purple-500/10 text-purple-400 border border-purple-500/20";
+                                    }
+                                    return (
+                                      <span key={model} className={`px-2 py-0.5 rounded-full text-xs font-mono font-medium whitespace-nowrap ${modelBadgeColor}`}>
+                                        {model}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+                              <td className="py-4 px-4 text-right font-mono text-text-muted whitespace-nowrap">
+                                {row.prompt.toLocaleString()}
+                              </td>
+                              <td className="py-4 px-4 text-right font-mono text-text-muted whitespace-nowrap">
+                                {row.completion.toLocaleString()}
+                              </td>
+                              <td className="py-4 pl-4 text-right font-mono font-semibold text-primary whitespace-nowrap">
+                                {row.total.toLocaleString()}
                               </td>
                             </tr>
                           );
