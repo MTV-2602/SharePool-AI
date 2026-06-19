@@ -246,22 +246,39 @@ export default function LoginPage() {
     if (!model) return "N/A";
     const m = model.toLowerCase();
     
+    // Explicitly check for Codex models
+    if (
+      m.startsWith("codex/") ||
+      m.startsWith("cx/") ||
+      m.includes("gpt-5.5") ||
+      m.includes("gpt-5.4") ||
+      m.includes("gpt-5.3")
+    ) {
+      return "Codex";
+    }
+
     // Explicitly check for antigravity prefix or specific antigravity models
+    const isAntigravityModel =
+      m === "gemini-3-flash" ||
+      m.startsWith("gemini-3-flash-a") ||
+      m.includes("gemini-3-flash-agent") ||
+      m.includes("gemini-3.5-flash") ||
+      m.includes("gemini-pro-agent") ||
+      m.includes("gemini-3.1-pro-low") ||
+      m.includes("gemini-pro-default") ||
+      m.includes("gpt-oss") ||
+      m.includes("claude-sonnet-4-6") ||
+      m.includes("claude-opus-4-6-thinking");
+
     if (
       m.startsWith("antigravity/") || 
       m.startsWith("ag/") ||
-      m.includes("gemini-3") ||
-      m.includes("gemini-pro-default") ||
-      m.includes("gemini-pro-agent") ||
-      m.includes("gpt-oss") ||
-      m.includes("claude-sonnet-4-6") ||
-      m.includes("claude-opus-4-6-thinking")
+      isAntigravityModel
     ) {
       return "Antigravity";
     }
 
     if (m.includes("gemini")) return "Google Gemini";
-    if (m.includes("gpt-5.5")) return "Codex";
     if (m.includes("gpt-") || m.startsWith("gpt") || m.includes("o1") || m.includes("o3")) return "OpenAI";
     if (m.includes("claude")) return "Anthropic";
     if (m.includes("deepseek")) return "DeepSeek";
@@ -372,29 +389,60 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
   };
 
   const getGeminiMarkdown = () => {
-    return `# Hướng dẫn kết nối Google Gemini (AI Studio) qua 9Router
+    return `# Hướng dẫn kết nối Google Gemini qua 9Router API Gateway
 
-## Bước 1: Lấy API Key miễn phí từ Google AI Studio
-1. Truy cập vào trang web [Google AI Studio](https://aistudio.google.com/app/apikey).
-2. Đăng nhập bằng tài khoản Google của bạn.
-3. Bấm nút **Create API Key** (Tạo API Key) -> Chọn dự án hoặc tạo dự án mới -> Sao chép đoạn key có dạng \`AIzaSy...\`.
-*(Lưu ý: API Key Gemini từ AI Studio hoàn toàn miễn phí và có giới hạn RPM/TPM mặc định rất thoải mái để lập trình).*
+Sử dụng API Key được cấp để gọi trực tiếp các model Google Gemini thông qua cổng kết nối 9Router.
 
-## Bước 2: Thiết lập Gemini API Key trên 9Router Admin
-Để chuyển tiếp yêu cầu từ client qua key Gemini của bạn:
-1. Đăng nhập vào trang quản trị Admin của 9Router.
-2. Đi tới tab **Providers** (Nhà cung cấp) -> Chọn **Gemini**.
-3. Điền API Key \`AIzaSy...\` bạn vừa copy ở Bước 1 vào ô API Key.
-4. Bấm **Lưu** và kích hoạt trạng thái **Active**.
+## 🛠️ 1. Thông số kết nối API
+Để kết nối, bạn điền cấu hình API sau vào công cụ của mình:
+- **Base URL (Endpoint)**: \`${origin}/v1\`
+- **API Key**: \`${savedKey}\`
+- **Model ID**: \`gemini-2.5-flash\` (hoặc \`gemini-2.0-flash\`, \`gemini-2.5-pro\`)
 
-## Bước 3: Sử dụng trên Client (Cursor, Cline, RooCode...)
-Sau khi Admin cấu hình xong, bạn có thể gọi trực tiếp model Gemini từ client thông qua 9Router:
-1. Cấu hình trên các công cụ lập trình (Cursor, Cline, RooCode, Continue...):
-   - **Provider**: \`OpenAI Compatible\` (hoặc Custom OpenAI)
-   - **Base URL**: \`${origin}/v1\`
-   - **API Key**: \`${savedKey}\` (Client Key của bạn)
-   - **Model**: Điền tên model Gemini chuẩn (ví dụ: \`gemini-2.5-flash\`, \`gemini-2.5-pro\`, \`gemini-2.0-flash\`).
-2. Khi bạn gửi yêu cầu, 9Router sẽ tự động định tuyến qua API Key Google AI Studio của bạn để xử lý và phản hồi lại.`;
+---
+
+## 💻 2. Cấu hình trên Cursor / Cline / RooCode (Lập trình AI)
+Cấu hình các công cụ lập trình của bạn như sau để chạy trực tiếp:
+1. **Provider**: Chọn \`OpenAI Compatible\` hoặc \`Custom OpenAI\`.
+2. **Base URL**: Điền \`${origin}/v1\`
+3. **API Key**: Điền \`${savedKey}\`
+4. **Model ID**: Điền \`gemini-2.5-flash\` (hoặc \`gemini-2.0-flash\`, \`gemini-2.5-pro\`).
+
+---
+
+## 🐍 3. Tích hợp Python (sử dụng thư viện OpenAI SDK)
+Cài đặt thư viện: \`pip install openai\` sau đó chạy đoạn mã:
+\`\`\`python
+import openai
+
+client = openai.OpenAI(
+    base_url="${origin}/v1",
+    api_key="${savedKey}"
+)
+
+response = client.chat.completions.create(
+    model="gemini-2.5-flash",
+    messages=[
+        {"role": "user", "content": "Xin chào, hãy giới thiệu ngắn gọn về bạn."}
+    ]
+)
+
+print(response.choices[0].message.content)
+\`\`\`
+
+---
+
+## 📡 4. Gọi nhanh qua cURL (Terminal / Giao diện dòng lệnh)
+Kiểm tra kết nối và chạy kiểm thử ngay lập tức bằng lệnh cURL:
+\`\`\`bash
+curl ${origin}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${savedKey}" \\
+  -d '{
+    "model": "gemini-2.5-flash",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+\`\`\``;
   };
 
   const handleCopyFullMarkdown = () => {
@@ -842,7 +890,7 @@ Sau khi Admin cấu hình xong, bạn có thể gọi trực tiếp model Gemini
                       guideTab === "gemini" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
                     }`}
                   >
-                    💎 Hướng dẫn Google Gemini (AI Studio)
+                    💎 Hướng dẫn Google Gemini (API/SDK)
                   </button>
                 </div>
 
@@ -1104,65 +1152,127 @@ supports_websockets = false`, "tomlConfigAG")}
 
               {guideTab === "gemini" && (
                 <div className="space-y-6 animate-fade-in">
-                  <Card title="🔑 Bước 1: Lấy API Key miễn phí từ Google AI Studio" icon="key">
+                  <Card title="⚙️ Thông số kết nối API" icon="api">
                     <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Để bắt đầu sử dụng Google Gemini miễn phí, bạn cần tạo API Key chính thức:</p>
-                      <ol className="list-decimal pl-5 space-y-2">
-                        <li>Truy cập <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Google AI Studio</a>.</li>
-                        <li>Đăng nhập bằng tài khoản Google (Gmail) của bạn.</li>
-                        <li>Bấm nút **Create API Key** (Tạo API Key) -&gt; Chọn hoặc Tạo dự án mới.</li>
-                        <li>Sao chép mã API Key được tạo (bắt đầu bằng <code>AIzaSy...</code>).</li>
-                      </ol>
-                      <p className="italic text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-lg">
-                        ⚠️ Lưu ý: API Key Gemini từ AI Studio hoàn toàn miễn phí và có hiệu lực ngay lập tức.
+                      <p>Sử dụng API Key và Gateway của bạn để kết nối trực tiếp với các dòng model Google Gemini:</p>
+                      <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-3 text-text-main">
+                        <div className="flex items-center justify-between flex-wrap gap-2 border-b border-border/40 pb-2">
+                          <div>
+                            <strong>Base URL:</strong>
+                            <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs ml-2 font-mono">{origin}/v1</code>
+                          </div>
+                          <button
+                            onClick={() => copyText(`${origin}/v1`, "urlGemini")}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "urlGemini" ? "check" : "content_copy"}
+                            </span>
+                            {copiedField === "urlGemini" ? "Đã copy" : "Copy"}
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between flex-wrap gap-2 border-b border-border/40 pb-2">
+                          <div>
+                            <strong>API Key:</strong>
+                            <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs ml-2 font-mono">{savedKey}</code>
+                          </div>
+                          <button
+                            onClick={() => copyText(savedKey, "keyGemini")}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "keyGemini" ? "check" : "content_copy"}
+                            </span>
+                            {copiedField === "keyGemini" ? "Đã copy" : "Copy"}
+                          </button>
+                        </div>
+                        <div>
+                          <strong>Các model khuyên dùng:</strong>
+                          <ul className="list-disc pl-5 mt-1 space-y-1 text-xs text-text-muted">
+                            <li><code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main">gemini-2.5-flash</code> (Tốc độ cực nhanh, đa năng)</li>
+                            <li><code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main">gemini-2.0-flash</code> (Ổn định, tiết kiệm)</li>
+                            <li><code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main">gemini-2.5-pro</code> (Thông minh nhất, hỗ trợ tốt tác vụ phức tạp)</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card title="💻 Cấu hình trên IDE / Cursor / Cline / RooCode" icon="terminal">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Nhập các thông số sau vào phần cấu hình Custom OpenAI hoặc OpenAI Compatible của ứng dụng lập trình:</p>
+                      <ul className="list-disc pl-5 space-y-1 text-text-muted">
+                        <li><strong>Provider/Dịch vụ:</strong> Chọn <code className="bg-surface px-1 rounded text-text-main">OpenAI Compatible</code> (hoặc Custom OpenAI/Compatible)</li>
+                        <li><strong>Base URL:</strong> Điền <code className="bg-surface px-1 rounded text-text-main">{origin}/v1</code></li>
+                        <li><strong>API Key:</strong> Điền Client Key của bạn (<code className="bg-surface px-1 rounded text-text-main">{savedKey}</code>)</li>
+                        <li><strong>Model ID:</strong> Nhập model mong muốn (ví dụ: <code className="bg-surface px-1 rounded text-text-main font-mono">gemini-2.5-flash</code>)</li>
+                      </ul>
+                      <p className="text-xs italic text-text-muted bg-surface-2 p-2.5 rounded-lg border border-border">
+                        💡 Mẹo: Cấu hình này giúp bạn lập trình trực tiếp bằng model Gemini cao cấp mà không cần tài khoản Google Studio hay VPN.
                       </p>
                     </div>
                   </Card>
 
-                  <Card title="⚙️ Bước 2: Thêm Gemini API Key vào 9Router Admin" icon="admin_panel_settings">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Sau khi có API Key, Admin hoặc bạn cần đưa nó vào hệ thống 9Router:</p>
-                      <ol className="list-decimal pl-5 space-y-2">
-                        <li>Truy cập trang quản trị 9Router của bạn (ví dụ: <code>{origin}/dashboard/providers</code>).</li>
-                        <li>Tìm và chọn nhà cung cấp **Gemini** (hoặc Google Gemini).</li>
-                        <li>Dán API Key (<code>AIzaSy...</code>) bạn vừa copy ở Bước 1 vào mục API Key.</li>
-                        <li>Bấm **Lưu** và chuyển trạng thái nhà cung cấp sang **Active (Bật)**.</li>
-                      </ol>
-                    </div>
-                  </Card>
+                  <Card title="🐍 Tích hợp trực tiếp bằng Code (Python / JavaScript / cURL)" icon="code">
+                    <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-semibold text-text-main">Ví dụ Python (OpenAI SDK):</span>
+                          <button
+                            onClick={() => {
+                              const code = `import openai\n\nclient = openai.OpenAI(\n    base_url="${origin}/v1",\n    api_key="${savedKey}"\n)\n\nresponse = client.chat.completions.create(\n    model="gemini-2.5-flash",\n    messages=[{"role": "user", "content": "Hello!"}]\n)\nprint(response.choices[0].message.content)`;
+                              copyText(code, "codePython");
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">
+                              {copiedField === "codePython" ? "check" : "content_copy"}
+                            </span>
+                            {copiedField === "codePython" ? "Đã copy" : "Copy Code"}
+                          </button>
+                        </div>
+                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+{`import openai
 
-                  <Card title="💻 Bước 3: Cấu hình và Gọi model từ Client" icon="terminal">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Sử dụng Client Key của bạn để gọi các model Gemini chính chủ thông qua 9Router:</p>
-                      <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-2 text-text-main">
-                        <div><strong>1. Provider:</strong> <code>OpenAI Compatible</code> (hoặc Custom OpenAI)</div>
-                        <div className="flex items-center gap-2">
-                          <strong>2. Base URL:</strong>
-                          <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs">{origin}/v1</code>
-                          <button
-                            onClick={() => copyText(`${origin}/v1`, "urlGemini")}
-                            className="p-1 hover:bg-surface-3 rounded cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[12px]">
-                              {copiedField === "urlGemini" ? "check" : "content_copy"}
-                            </span>
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <strong>3. API Key (Client Key của bạn):</strong>
-                          <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs">{savedKey}</code>
-                          <button
-                            onClick={() => copyText(savedKey, "keyGemini")}
-                            className="p-1 hover:bg-surface-3 rounded cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[12px]">
-                              {copiedField === "keyGemini" ? "check" : "content_copy"}
-                            </span>
-                          </button>
-                        </div>
-                        <div><strong>4. Models:</strong> Điền tên model Gemini chuẩn (Ví dụ: <code>gemini-2.5-flash</code>, <code>gemini-2.5-pro</code>, <code>gemini-2.0-flash</code>)</div>
+client = openai.OpenAI(
+    base_url="${origin}/v1",
+    api_key="${savedKey}"
+)
+
+response = client.chat.completions.create(
+    model="gemini-2.5-flash",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)`}
+                        </pre>
                       </div>
-                      <p className="text-xs">Bạn có thể cấu hình thông số này trên các phần mềm như <strong>Cursor, Cline, RooCode, Continue...</strong> để bắt đầu trò chuyện và lập trình với Gemini chính chủ.</p>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-semibold text-text-main">Ví dụ cURL (Terminal):</span>
+                          <button
+                            onClick={() => {
+                              const code = `curl ${origin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gemini-2.5-flash",\n    "messages": [{"role": "user", "content": "Hello!"}]\n  }'`;
+                              copyText(code, "codeCurl");
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">
+                              {copiedField === "codeCurl" ? "check" : "content_copy"}
+                            </span>
+                            {copiedField === "codeCurl" ? "Đã copy" : "Copy Code"}
+                          </button>
+                        </div>
+                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+{`curl ${origin}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${savedKey}" \\
+  -d '{
+    "model": "gemini-2.5-flash",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'`}
+                        </pre>
+                      </div>
                     </div>
                   </Card>
                 </div>
