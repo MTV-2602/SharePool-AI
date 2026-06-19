@@ -35,14 +35,14 @@ const OAUTH_TEST_CONFIG = {
     refreshable: true,
   },
   "gemini-cli": {
-    url: "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
+    url: "https://www.googleapis.com/oauth2/v3/userinfo",
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     refreshable: true,
   },
   antigravity: {
-    url: "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
+    url: "https://www.googleapis.com/oauth2/v3/userinfo",
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",

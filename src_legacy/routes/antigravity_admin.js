@@ -440,7 +440,7 @@ router.get('/oauth/google/callback', asyncHandler(async (req, res) => {
     const refreshToken = tokens.refresh_token;
 
     // 2. Fetch User Profile (email)
-    const userRes = await fetch('https://www.googleapis.com/oauth2/v1/userinfo?alt=json', {
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' }
     });
 
