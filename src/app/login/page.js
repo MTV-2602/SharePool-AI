@@ -445,12 +445,52 @@ curl ${origin}/v1/chat/completions \\
 \`\`\``;
   };
 
+  const getClineMarkdown = () => {
+    return `# Hướng dẫn cấu hình Cline kết nối qua 9Router API Gateway
+
+Cline (trước đây là Claude Dev) là một trợ lý lập trình AI tự trị chạy trên VS Code, Cursor, hoặc Windsurf. Bạn có thể cấu hình Cline sử dụng cổng 9Router theo 2 cách dưới đây.
+
+---
+
+## 🤖 CÁCH 1: Cấu hình tự động (Dành riêng cho Cline tự cài đặt)
+*Nếu bạn đang chạy Cline và muốn nhờ chính nó tự động cấu hình hoặc cập nhật cài đặt:*
+Hãy copy toàn bộ văn bản dưới đây và nhắn cho Cline:
+> **"Hãy cấu hình Cline hoạt động qua 9Router bằng cách chỉnh sửa trực tiếp file cấu hình \`cline_settings.json\` của bạn trên máy tính này. Các thông số cần thiết lập:**
+> - **Provider**: \`openai\`
+> - **Base URL**: \`${origin}/v1\`
+> - **API Key**: \`${savedKey}\`
+> - **Model ID**: \`gemini-2.5-flash\` (hoặc model mong muốn)
+> - **Custom Model IDs**: Thêm \`gemini-2.5-flash\`, \`gemini-2.5-pro\`, \`gemini-2.0-flash\`, \`gpt-5.5\`, \`gemini-3-flash-agent\`, \`gemini-pro-agent\`
+> 
+> **Đường dẫn tệp cấu hình trên các hệ điều hành thường gặp:**
+> - **Windows**: \`%%APPDATA%%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json\` (hoặc \`%%APPDATA%%\\Cursor\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json\` nếu dùng Cursor)
+> - **macOS**: \`~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\` (hoặc Cursor tương ứng)
+> - **Linux**: \`~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\`
+> 
+> **Hãy tự tìm file cài đặt của bạn, đọc nội dung hiện tại và sửa đúng các trường trên, sau đó báo cáo kết quả."**
+
+---
+
+## 🛠️ CÁCH 2: Cấu hình thủ công qua giao diện Cline
+Nếu bạn muốn tự tay cấu hình trong phần cài đặt của Cline:
+1. Mở extension **Cline** trên VS Code / Cursor.
+2. Click biểu tượng **Bánh răng (Settings)** ở góc trên bên phải.
+3. Trong mục **API Provider**, chọn **OpenAI Compatible**.
+4. Thiết lập các thông số sau:
+   - **Base URL**: Điền \`${origin}/v1\`
+   - **API Key**: Điền \`${savedKey}\`
+   - **Model ID**: Nhập model bạn muốn dùng (Ví dụ: \`gemini-2.5-flash\` hoặc \`gpt-5.5\`).
+5. Cuộn xuống dưới cùng và click **Done** (hoặc Save) để hoàn tất.`;
+  };
+
   const handleCopyFullMarkdown = () => {
     const md =
       guideTab === "codex"
         ? getCodexMarkdown()
         : guideTab === "antigravity"
         ? getAntigravityMarkdown()
+        : guideTab === "cline"
+        ? getClineMarkdown()
         : getGeminiMarkdown();
     copyText(md, "fullMarkdown");
   };
@@ -892,6 +932,14 @@ curl ${origin}/v1/chat/completions \\
                   >
                     💎 Hướng dẫn Google Gemini (API/SDK)
                   </button>
+                  <button
+                    onClick={() => setGuideTab("cline")}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                      guideTab === "cline" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
+                    }`}
+                  >
+                    🤖 Hướng dẫn Cline
+                  </button>
                 </div>
 
                 <button
@@ -1271,6 +1319,117 @@ print(response.choices[0].message.content)`}
     "model": "gemini-2.5-flash",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'`}
+                        </pre>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {guideTab === "cline" && (
+                <div className="space-y-6 animate-fade-in">
+                  <Card title="🤖 Cách 1: Nhờ Cline tự động cấu hình (Khuyên dùng)" icon="robot">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Do Cline là trợ lý AI tự trị có quyền đọc/ghi file trên máy của bạn, bạn chỉ cần gửi đoạn yêu cầu dưới đây để nó tự thiết lập:</p>
+                      
+                      <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold text-text-main text-xs">Copy yêu cầu này gửi cho Cline:</span>
+                          <button
+                            onClick={() => {
+                              const promptText = `Hãy cấu hình Cline hoạt động qua 9Router bằng cách chỉnh sửa trực tiếp file cấu hình cline_settings.json của bạn trên máy tính này. Các thông số cần thiết lập:\n- Provider: "openai"\n- Base URL: "${origin}/v1"\n- API Key: "${savedKey}"\n- Model ID: "gemini-2.5-flash"\n- Custom Model IDs: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gpt-5.5", "gemini-3-flash-agent", "gemini-pro-agent"]\n\nĐường dẫn tệp cấu hình trên các hệ điều hành thường gặp:\n- Windows: %APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json (hoặc %APPDATA%\\Cursor\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json nếu dùng Cursor)\n- macOS: ~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\n- Linux: ~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\n\nHãy tự tìm file cài đặt của bạn, đọc nội dung hiện tại và sửa đúng các trường trên, sau đó báo cáo kết quả.`;
+                              copyText(promptText, "promptCline");
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "promptCline" ? "check" : "content_copy"}
+                            </span>
+                            {copiedField === "promptCline" ? "Đã copy" : "Copy yêu cầu"}
+                          </button>
+                        </div>
+                        <blockquote className="border-l-4 border-primary/50 pl-3 py-1 italic text-text-main bg-surface/50 rounded-r text-xs whitespace-pre-wrap">
+{`Hãy cấu hình Cline hoạt động qua 9Router bằng cách chỉnh sửa trực tiếp file cấu hình cline_settings.json của bạn trên máy tính này. Các thông số cần thiết lập:
+- Provider: "openai"
+- Base URL: "${origin}/v1"
+- API Key: "${savedKey}"
+- Model ID: "gemini-2.5-flash"
+- Custom Model IDs: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gpt-5.5", "gemini-3-flash-agent", "gemini-pro-agent"]
+
+Đường dẫn tệp cấu hình trên các hệ điều hành thường gặp:
+- Windows: %APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json (hoặc %APPDATA%\\Cursor\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json nếu dùng Cursor)
+- macOS: ~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json
+- Linux: ~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json
+
+Hãy tự tìm file cài đặt của bạn, đọc nội dung hiện tại và sửa đúng các trường trên, sau đó báo cáo kết quả.`}
+                        </blockquote>
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card title="🛠️ Cách 2: Cấu hình thủ công qua giao diện Cline" icon="settings">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Nếu bạn muốn tự tay cấu hình trong phần cài đặt của Cline:</p>
+                      <ol className="list-decimal pl-5 space-y-2 text-text-muted">
+                        <li>Mở phần mở rộng **Cline** trên VS Code hoặc Cursor.</li>
+                        <li>Click biểu tượng **Bánh răng (Settings)** ở góc trên bên phải.</li>
+                        <li>Trong mục **API Provider**, chọn **OpenAI Compatible**.</li>
+                        <li>Thiết lập các thông số sau:
+                          <ul className="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong>Base URL:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono text-xs">{origin}/v1</code></li>
+                            <li><strong>API Key:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono text-xs">{savedKey}</code></li>
+                            <li><strong>Model ID:</strong> Nhập model bạn muốn dùng (Ví dụ: <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono text-xs">gemini-2.5-flash</code>)</li>
+                          </ul>
+                        </li>
+                        <li>Cuộn xuống dưới cùng và click **Done** để hoàn tất cấu hình.</li>
+                      </ol>
+                    </div>
+                  </Card>
+
+                  <Card title="📂 Chi tiết tệp cấu hình cline_settings.json" icon="folder_open">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Nếu bạn hoặc Cline muốn sửa thủ công tệp cấu hình, dưới đây là định dạng JSON chuẩn của tệp:</p>
+                      <div className="relative">
+                        <button
+                          onClick={() => {
+                            const configJson = JSON.stringify({
+                              apiProvider: "openai",
+                              openAiBaseUrl: `${origin}/v1`,
+                              openAiApiKey: savedKey,
+                              openAiModelId: "gemini-2.5-flash",
+                              openAiCustomModelIds: [
+                                "gemini-2.5-flash",
+                                "gemini-2.5-pro",
+                                "gemini-2.0-flash",
+                                "gpt-5.5",
+                                "gemini-3-flash-agent",
+                                "gemini-pro-agent"
+                              ]
+                            }, null, 2);
+                            copyText(configJson, "configJsonCline");
+                          }}
+                          className="absolute right-2 top-2 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[12px]">
+                            {copiedField === "configJsonCline" ? "check" : "content_copy"}
+                          </span>
+                          {copiedField === "configJsonCline" ? "Đã copy" : "Copy JSON"}
+                        </button>
+                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+{`{
+  "apiProvider": "openai",
+  "openAiBaseUrl": "${origin}/v1",
+  "openAiApiKey": "${savedKey}",
+  "openAiModelId": "gemini-2.5-flash",
+  "openAiCustomModelIds": [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash",
+    "gpt-5.5",
+    "gemini-3-flash-agent",
+    "gemini-pro-agent"
+  ]
+}`}
                         </pre>
                       </div>
                     </div>
