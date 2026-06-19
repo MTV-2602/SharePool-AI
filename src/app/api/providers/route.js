@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { supabase } from "@/lib/supabase";
 import {
   getProviderConnections,
   createProviderConnection,
@@ -60,12 +61,33 @@ export async function GET() {
       }
     } catch { }
 
+    // Fetch chatgpt_credentials to see which connection email is saved in Kho Acc
+    let credMap = {};
+    try {
+      const { data: gptCreds } = await supabase
+        .from('chatgpt_credentials')
+        .select('email');
+      if (gptCreds) {
+        gptCreds.forEach(c => {
+          if (c.email) {
+            credMap[c.email.toLowerCase().trim()] = true;
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to fetch chatgpt_credentials in providers list:", e.message);
+    }
+
     // Hide sensitive fields, enrich name for compatible providers
     const safeConnections = connections.map(c => {
       const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
       const name = isCompatible
         ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
+
+      const emailKey = (c.email || c.name || "").toLowerCase().trim();
+      const hasCredentialsInKho = !!credMap[emailKey];
+
       return {
         ...c,
         name,
@@ -73,6 +95,7 @@ export async function GET() {
         accessToken: undefined,
         refreshToken: undefined,
         idToken: undefined,
+        hasCredentialsInKho,
       };
     });
 

@@ -401,9 +401,24 @@ export default function HotmailPage() {
                         <div className="pt-1.5 mt-1.5 border-t border-slate-800/60">
                           {acc.hasChatGPT ? (
                             <div className="space-y-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">ChatGPT Account Linked</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">ChatGPT Account Linked</span>
+                                </div>
+                                {acc.hasProviderConnection ? (
+                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                    acc.providerConnection?.isActive
+                                      ? (acc.providerConnection?.testStatus === 'active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20')
+                                      : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
+                                  }`}>
+                                    OAuth: {acc.providerConnection?.isActive ? (acc.providerConnection?.testStatus || 'Active') : 'Disabled'}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 animate-pulse">
+                                    OAuth: Missing
+                                  </span>
+                                )}
                               </div>
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400 font-normal">
                                 {acc.chatgpt?.password && (

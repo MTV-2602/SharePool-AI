@@ -15,6 +15,12 @@ export async function GET() {
     .from('chatgpt_credentials')
     .select('*');
 
+  // Fetch provider connections for OpenAI Codex to link them in memory
+  const { data: connections } = await supabase
+    .from('provider_connections')
+    .select('email, is_active, test_status')
+    .eq('provider', 'codex');
+
   const gptMap = {};
   if (gptCreds) {
     gptCreds.forEach(c => {
@@ -22,9 +28,22 @@ export async function GET() {
     });
   }
 
+  const connMap = {};
+  if (connections) {
+    connections.forEach(c => {
+      if (c.email) {
+        connMap[c.email.toLowerCase().trim()] = {
+          isActive: c.is_active,
+          testStatus: c.test_status
+        };
+      }
+    });
+  }
+
   const result = hotmails.map(acc => {
     const emailKey = acc.email.toLowerCase().trim();
     const gpt = gptMap[emailKey];
+    const conn = connMap[emailKey];
     return {
       ...acc,
       hasChatGPT: !!gpt,
@@ -33,7 +52,9 @@ export async function GET() {
         otp_secret: gpt.otp_secret,
         status: gpt.status,
         created_at: gpt.created_at
-      } : null
+      } : null,
+      hasProviderConnection: !!conn,
+      providerConnection: conn || null
     };
   });
   

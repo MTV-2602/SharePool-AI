@@ -159,6 +159,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
+            {connection.hasCredentialsInKho !== undefined && (
+              <Badge variant={connection.hasCredentialsInKho ? "success" : "default"} size="sm">
+                {connection.hasCredentialsInKho ? "Trong kho" : "Thiếu kho"}
+              </Badge>
+            )}
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
