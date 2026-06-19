@@ -2593,7 +2593,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
             portalUrl = (data.backendBaseUrl || "https://vinhcousera.vercel.app").replace(/\/$/, "");
           }
           const urlObj = new URL(urlStr);
-          const callbackUrl = `${portalUrl}/admin-api/oauth/codex/callback${urlObj.search}`;
+          const isGoogleFlow = urlObj.searchParams.has('iss') || urlObj.searchParams.get('iss')?.includes('google') || urlStr.includes('accounts.google.com');
+          const callbackUrl = isGoogleFlow
+            ? `${portalUrl}/callback${urlObj.search}`
+            : `${portalUrl}/admin-api/oauth/codex/callback${urlObj.search}`;
           try {
             await chrome.tabs.update(tabId, { url: callbackUrl });
           } catch (e) {
