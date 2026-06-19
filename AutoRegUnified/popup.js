@@ -839,6 +839,8 @@ async function boot() {
 // Global active token/device variables for manual push
 let activeSessionToken = "";
 let activeDeviceId = "";
+let lastSessionToken = "";
+let cachedEmail = "";
 
 async function updateCookieStatusUi() {
   const cookieStatusDiv = $("manualCookieStatus");
@@ -857,39 +859,49 @@ async function updateCookieStatusUi() {
     if (cookie && cookie.value) {
       activeSessionToken = cookie.value;
       const masked = activeSessionToken.substring(0, 10) + "..." + activeSessionToken.slice(-6);
+      
+      const emailToShow = cachedEmail || "Đang lấy email...";
+      
       cookieStatusDiv.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
           <span>ChatGPT Session:</span>
           <span class="badge badge-ok">Active</span>
         </div>
-        <div id="manualCookieEmail" style="font-size:11px; color:#38bdf8; margin-bottom:4px; font-weight:bold;">Đang lấy email...</div>
+        <div id="manualCookieEmail" style="font-size:11px; color:#38bdf8; margin-bottom:4px; font-weight:bold;">${emailToShow}</div>
         <div style="font-family:monospace; font-size:10px; color:#94a3b8; word-break:break-all;">${masked}</div>
       `;
       pushBtn.disabled = false;
 
-      // Fetch user profile (email) from ChatGPT session API asynchronously
-      sendMessage({ type: "GET_SESSION_TOKEN" }).then(res => {
-        const emailDiv = $("manualCookieEmail");
-        if (res && res.success && res.user && res.user.email) {
-          const email = res.user.email;
-          if (emailDiv) {
-            emailDiv.textContent = `Email: ${email}`;
+      // Only fetch from API if the token changed or we don't have the cached email yet
+      if (activeSessionToken !== lastSessionToken || !cachedEmail) {
+        lastSessionToken = activeSessionToken;
+        sendMessage({ type: "GET_SESSION_TOKEN" }).then(res => {
+          const emailDiv = $("manualCookieEmail");
+          if (res && res.success && res.user && res.user.email) {
+            cachedEmail = `Email: ${res.user.email}`;
+            if (emailDiv) {
+              emailDiv.textContent = cachedEmail;
+            }
+            const prefixInput = $("manualNamePrefix");
+            if (prefixInput && prefixInput.value === "CodexAcc") {
+              prefixInput.value = res.user.email;
+            }
+          } else {
+            cachedEmail = "Chưa đăng nhập ChatGPT";
+            if (emailDiv) {
+              emailDiv.textContent = cachedEmail;
+            }
           }
-          const prefixInput = $("manualNamePrefix");
-          if (prefixInput && prefixInput.value === "CodexAcc") {
-            prefixInput.value = email;
-          }
-        } else {
-          if (emailDiv) {
-            emailDiv.textContent = "Chưa đăng nhập ChatGPT";
-          }
-        }
-      }).catch(() => {
-        const emailDiv = $("manualCookieEmail");
-        if (emailDiv) emailDiv.textContent = "Chưa đăng nhập ChatGPT";
-      });
+        }).catch(() => {
+          cachedEmail = "Chưa đăng nhập ChatGPT";
+          const emailDiv = $("manualCookieEmail");
+          if (emailDiv) emailDiv.textContent = cachedEmail;
+        });
+      }
     } else {
       activeSessionToken = "";
+      lastSessionToken = "";
+      cachedEmail = "";
       cookieStatusDiv.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <span>ChatGPT Session:</span>
