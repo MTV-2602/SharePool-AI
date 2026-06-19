@@ -215,7 +215,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // Authorization code flow - build redirect URI (some providers require fixed ports)
       const appPort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
       let redirectUri;
-      if (provider === "codex") {
+      if (provider === "codex" || provider === "antigravity") {
         redirectUri = "http://localhost:1455/auth/callback";
       } else if (provider === "xai") {
         redirectUri = "http://127.0.0.1:56121/callback";
@@ -290,8 +290,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (!popupRef.current) {
           setStep("input");
         }
-      } else if (!isLocalhost || provider === "codex" || provider === "xai") {
-        // Non-localhost or proxy failed: manual input mode
+      } else if (!isLocalhost || provider === "codex" || provider === "xai" || provider === "antigravity") {
+        // Non-localhost, proxy failed, or fixed-port provider: manual input mode
         setStep("input");
         window.open(data.authUrl, "_blank");
       } else {
@@ -513,7 +513,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const modalTitle = isXaiProvider ? "Connect Grok Build OAuth" : `Connect ${providerInfo.name}`;
   const manualPlaceholder = isXaiProvider
     ? "http://127.0.0.1:56121/callback?code=... or copied code"
-    : provider === "codex"
+    : (provider === "codex" || provider === "antigravity")
       ? "http://localhost:1455/auth/callback?code=... or paste eyJ..."
       : placeholderUrl;
 
@@ -556,14 +556,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
               <div>
                 <p className="text-sm font-medium mb-2">
-                  Step 2: Paste the {provider === "xai" ? "callback URL or copied code" : (provider === "codex" ? "callback URL or Access Token" : "callback URL")} here
+                  Step 2: Paste the {provider === "xai" ? "callback URL or copied code" : (["codex", "antigravity"].includes(provider) ? "callback URL or Access Token" : "callback URL")} here
                 </p>
                 <p className="text-xs text-text-muted mb-2">
                   {provider === "xai"
                     ? "If xAI shows a code instead of redirecting, paste that code here."
                     : provider === "codex"
                       ? "After authorization, copy the full URL from your browser (e.g. from port 1455), or paste the raw ChatGPT Access Token (starts with eyJ) directly."
-                      : "After authorization, copy the full URL from your browser."}
+                      : provider === "antigravity"
+                        ? "After authorization, copy the full URL from your browser (e.g. from port 1455)."
+                        : "After authorization, copy the full URL from your browser."}
                 </p>
                 <Input
                   value={callbackUrl}
