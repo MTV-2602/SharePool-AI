@@ -250,21 +250,18 @@ export default function LoginPage() {
     if (
       m.startsWith("antigravity/") || 
       m.startsWith("ag/") ||
-      [
-        "gemini-3-flash-agent",
-        "gemini-3.5-flash-low",
-        "gemini-3.5-flash-extra-low",
-        "gemini-pro-agent",
-        "gemini-3.1-pro-low",
-        "gpt-oss-120b-medium",
-        "gemini-3-flash",
-        "gemini-pro-default"
-      ].includes(m)
+      m.includes("gemini-3") ||
+      m.includes("gemini-pro-default") ||
+      m.includes("gemini-pro-agent") ||
+      m.includes("gpt-oss") ||
+      m.includes("claude-sonnet-4-6") ||
+      m.includes("claude-opus-4-6-thinking")
     ) {
       return "Antigravity";
     }
 
     if (m.includes("gemini")) return "Google Gemini";
+    if (m.includes("gpt-5.5")) return "Codex";
     if (m.includes("gpt-") || m.startsWith("gpt") || m.includes("o1") || m.includes("o3")) return "OpenAI";
     if (m.includes("claude")) return "Anthropic";
     if (m.includes("deepseek")) return "DeepSeek";
@@ -374,8 +371,39 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
      \`\`\``;
   };
 
+  const getGeminiMarkdown = () => {
+    return `# Hướng dẫn kết nối Google Gemini (AI Studio) qua 9Router
+
+## Bước 1: Lấy API Key miễn phí từ Google AI Studio
+1. Truy cập vào trang web [Google AI Studio](https://aistudio.google.com/app/apikey).
+2. Đăng nhập bằng tài khoản Google của bạn.
+3. Bấm nút **Create API Key** (Tạo API Key) -> Chọn dự án hoặc tạo dự án mới -> Sao chép đoạn key có dạng \`AIzaSy...\`.
+*(Lưu ý: API Key Gemini từ AI Studio hoàn toàn miễn phí và có giới hạn RPM/TPM mặc định rất thoải mái để lập trình).*
+
+## Bước 2: Thiết lập Gemini API Key trên 9Router Admin
+Để chuyển tiếp yêu cầu từ client qua key Gemini của bạn:
+1. Đăng nhập vào trang quản trị Admin của 9Router.
+2. Đi tới tab **Providers** (Nhà cung cấp) -> Chọn **Gemini**.
+3. Điền API Key \`AIzaSy...\` bạn vừa copy ở Bước 1 vào ô API Key.
+4. Bấm **Lưu** và kích hoạt trạng thái **Active**.
+
+## Bước 3: Sử dụng trên Client (Cursor, Cline, RooCode...)
+Sau khi Admin cấu hình xong, bạn có thể gọi trực tiếp model Gemini từ client thông qua 9Router:
+1. Cấu hình trên các công cụ lập trình (Cursor, Cline, RooCode, Continue...):
+   - **Provider**: \`OpenAI Compatible\` (hoặc Custom OpenAI)
+   - **Base URL**: \`${origin}/v1\`
+   - **API Key**: \`${savedKey}\` (Client Key của bạn)
+   - **Model**: Điền tên model Gemini chuẩn (ví dụ: \`gemini-2.5-flash\`, \`gemini-2.5-pro\`, \`gemini-2.0-flash\`).
+2. Khi bạn gửi yêu cầu, 9Router sẽ tự động định tuyến qua API Key Google AI Studio của bạn để xử lý và phản hồi lại.`;
+  };
+
   const handleCopyFullMarkdown = () => {
-    const md = guideTab === "codex" ? getCodexMarkdown() : getAntigravityMarkdown();
+    const md =
+      guideTab === "codex"
+        ? getCodexMarkdown()
+        : guideTab === "antigravity"
+        ? getAntigravityMarkdown()
+        : getGeminiMarkdown();
     copyText(md, "fullMarkdown");
   };
 
@@ -737,6 +765,7 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
                           else if (row.name === "Anthropic") providerColor = "text-amber-400 font-semibold";
                           else if (row.name === "DeepSeek") providerColor = "text-purple-400 font-semibold";
                           else if (row.name === "Antigravity") providerColor = "text-amber-500 font-semibold";
+                          else if (row.name === "Codex") providerColor = "text-indigo-400 font-semibold";
 
                           return (
                             <tr key={row.name} className="border-b border-border/50 hover:bg-surface-2/30 transition-colors last:border-0">
@@ -805,7 +834,15 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
                       guideTab === "antigravity" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
                     }`}
                   >
-                    🪐 Hướng dẫn AntiGravity (Gemini)
+                    🪐 Hướng dẫn AntiGravity (Code Assist)
+                  </button>
+                  <button
+                    onClick={() => setGuideTab("gemini")}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                      guideTab === "gemini" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
+                    }`}
+                  >
+                    💎 Hướng dẫn Google Gemini (AI Studio)
                   </button>
                 </div>
 
@@ -1060,6 +1097,72 @@ supports_websockets = false`, "tomlConfigAG")}
                           </button>
                         </div>
                       </div>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {guideTab === "gemini" && (
+                <div className="space-y-6 animate-fade-in">
+                  <Card title="🔑 Bước 1: Lấy API Key miễn phí từ Google AI Studio" icon="key">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Để bắt đầu sử dụng Google Gemini miễn phí, bạn cần tạo API Key chính thức:</p>
+                      <ol className="list-decimal pl-5 space-y-2">
+                        <li>Truy cập <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Google AI Studio</a>.</li>
+                        <li>Đăng nhập bằng tài khoản Google (Gmail) của bạn.</li>
+                        <li>Bấm nút **Create API Key** (Tạo API Key) -&gt; Chọn hoặc Tạo dự án mới.</li>
+                        <li>Sao chép mã API Key được tạo (bắt đầu bằng <code>AIzaSy...</code>).</li>
+                      </ol>
+                      <p className="italic text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-lg">
+                        ⚠️ Lưu ý: API Key Gemini từ AI Studio hoàn toàn miễn phí và có hiệu lực ngay lập tức.
+                      </p>
+                    </div>
+                  </Card>
+
+                  <Card title="⚙️ Bước 2: Thêm Gemini API Key vào 9Router Admin" icon="admin_panel_settings">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Sau khi có API Key, Admin hoặc bạn cần đưa nó vào hệ thống 9Router:</p>
+                      <ol className="list-decimal pl-5 space-y-2">
+                        <li>Truy cập trang quản trị 9Router của bạn (ví dụ: <code>{origin}/dashboard/providers</code>).</li>
+                        <li>Tìm và chọn nhà cung cấp **Gemini** (hoặc Google Gemini).</li>
+                        <li>Dán API Key (<code>AIzaSy...</code>) bạn vừa copy ở Bước 1 vào mục API Key.</li>
+                        <li>Bấm **Lưu** và chuyển trạng thái nhà cung cấp sang **Active (Bật)**.</li>
+                      </ol>
+                    </div>
+                  </Card>
+
+                  <Card title="💻 Bước 3: Cấu hình và Gọi model từ Client" icon="terminal">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Sử dụng Client Key của bạn để gọi các model Gemini chính chủ thông qua 9Router:</p>
+                      <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-2 text-text-main">
+                        <div><strong>1. Provider:</strong> <code>OpenAI Compatible</code> (hoặc Custom OpenAI)</div>
+                        <div className="flex items-center gap-2">
+                          <strong>2. Base URL:</strong>
+                          <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs">{origin}/v1</code>
+                          <button
+                            onClick={() => copyText(`${origin}/v1`, "urlGemini")}
+                            className="p-1 hover:bg-surface-3 rounded cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">
+                              {copiedField === "urlGemini" ? "check" : "content_copy"}
+                            </span>
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <strong>3. API Key (Client Key của bạn):</strong>
+                          <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs">{savedKey}</code>
+                          <button
+                            onClick={() => copyText(savedKey, "keyGemini")}
+                            className="p-1 hover:bg-surface-3 rounded cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">
+                              {copiedField === "keyGemini" ? "check" : "content_copy"}
+                            </span>
+                          </button>
+                        </div>
+                        <div><strong>4. Models:</strong> Điền tên model Gemini chuẩn (Ví dụ: <code>gemini-2.5-flash</code>, <code>gemini-2.5-pro</code>, <code>gemini-2.0-flash</code>)</div>
+                      </div>
+                      <p className="text-xs">Bạn có thể cấu hình thông số này trên các phần mềm như <strong>Cursor, Cline, RooCode, Continue...</strong> để bắt đầu trò chuyện và lập trình với Gemini chính chủ.</p>
                     </div>
                   </Card>
                 </div>
