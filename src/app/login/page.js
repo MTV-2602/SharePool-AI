@@ -412,7 +412,7 @@ Sử dụng ứng dụng Antigravity Desktop (bản clone của Codex) và tự 
 \`\`\`toml
 model_reasoning_effort = "low"
 model_provider = "openai-custom"
-model = "gpt-5.5"
+model = "gemini-3-flash-agent"
 
 [model_providers.openai-custom]
 experimental_bearer_token = "${savedKey}"
@@ -1122,7 +1122,7 @@ supports_websockets = false`, "tomlConfig")}
                         <div className="relative mt-2 bg-surface-2 border border-border rounded-lg p-4 font-mono text-xs text-text-main overflow-x-auto pr-12">
                           <pre>{`model_reasoning_effort = "low"
 model_provider = "openai-custom"
-model = "gpt-5.5"
+model = "gemini-3-flash-agent"
 
 [model_providers.openai-custom]
 experimental_bearer_token = "${savedKey}"
@@ -1134,7 +1134,7 @@ supports_websockets = false`}</pre>
                           <button
                             onClick={() => copyText(`model_reasoning_effort = "low"
 model_provider = "openai-custom"
-model = "gpt-5.5"
+model = "gemini-3-flash-agent"
 
 [model_providers.openai-custom]
 experimental_bearer_token = "${savedKey}"
