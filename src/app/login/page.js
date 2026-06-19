@@ -26,6 +26,7 @@ export default function LoginPage() {
   const [origin, setOrigin] = useState("https://vinhcousera.vercel.app");
   const [showKey, setShowKey] = useState(false);
   const [usageLogs, setUsageLogs] = useState([]);
+  const [usageSummary, setUsageSummary] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [showDetailedLogs, setShowDetailedLogs] = useState(false);
 
@@ -90,14 +91,15 @@ export default function LoginPage() {
 
     setLoadingLogs(true);
     try {
-      const res = await fetch(`/api/client-keys/${keyId}/usage?limit=50`, {
+      const res = await fetch(`/api/client-keys/${keyId}/usage?limit=50&include_summary=true`, {
         headers: {
           "Authorization": `Bearer ${keyToUse}`
         }
       });
       if (res.ok) {
         const data = await res.json();
-        setUsageLogs(data || []);
+        setUsageLogs(data.logs || []);
+        setUsageSummary(data.summary || []);
       }
     } catch (err) {
       console.error("Lỗi khi tải lịch sử sử dụng:", err);
@@ -369,7 +371,7 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
   // Group logs by provider for aggregation
   const getProviderSummary = () => {
     const summary = {};
-    usageLogs.forEach((log) => {
+    usageSummary.forEach((log) => {
       const provider = getProviderFromModel(log.model);
       if (!summary[provider]) {
         summary[provider] = {
@@ -384,7 +386,7 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
       summary[provider].prompt += log.prompt_tokens || 0;
       summary[provider].completion += log.completion_tokens || 0;
       summary[provider].total += log.billed_tokens || 0;
-      summary[provider].count += 1;
+      summary[provider].count += log.count || 0;
       if (log.model) {
         summary[provider].models.add(log.model);
       }

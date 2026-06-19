@@ -54,7 +54,9 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized. Yêu cầu không được phép truy cập.' }, { status: 401 });
   }
 
-  const { data, error } = await supabase
+  const includeSummary = searchParams.get('include_summary') === 'true';
+
+  const { data: logs, error } = await supabase
     .from('client_key_usage_logs')
     .select('*')
     .eq('client_key_id', id)
@@ -62,6 +64,31 @@ export async function GET(request, { params }) {
     .limit(limit);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+
+  if (includeSummary) {
+    const { data: summary, error: summaryError } = await supabase.rpc('exec_sql', {
+      query_text: `
+        SELECT 
+          model, 
+          COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens, 
+          COALESCE(SUM(completion_tokens), 0) AS completion_tokens, 
+          COALESCE(SUM(billed_tokens), 0) AS billed_tokens, 
+          COUNT(*) AS count
+        FROM client_key_usage_logs
+        WHERE client_key_id = CAST($1 AS uuid)
+        GROUP BY model
+      `,
+      query_params: [id]
+    });
+
+    if (summaryError) {
+      console.error("[Usage API] Summary query failed:", summaryError);
+      return NextResponse.json({ logs, summary: [] });
+    }
+
+    return NextResponse.json({ logs, summary: Array.isArray(summary) ? summary : [] });
+  }
+
+  return NextResponse.json(logs);
 }
 
