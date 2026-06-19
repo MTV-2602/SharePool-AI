@@ -576,33 +576,55 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               </div>
 
               {provider === "antigravity" && (
-                <div className="p-3 border border-primary/20 rounded-lg bg-primary/5 space-y-2">
+                <div className="p-3 border border-primary/20 rounded-lg bg-primary/5 space-y-3">
                   <div className="flex items-center gap-2 text-xs font-semibold text-primary">
                     <span className="material-symbols-outlined text-sm">terminal</span>
-                    Tự động bắt liên kết qua PowerShell (Khuyên dùng cho Windows)
+                    Tự động kết nối nhanh (Khuyên dùng cho Windows)
                   </div>
-                  <p className="text-xs text-text-muted">
-                    Chạy lệnh dưới đây trong PowerShell trước khi đăng nhập. Lệnh sẽ tự động nhận diện phản hồi từ Google và hoàn tất liên kết trên trình duyệt.
-                  </p>
-                  <div className="flex gap-2">
-                    <Input
-                      value={`$port=1455; $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add("http://localhost:$port/auth/callback/"); $listener.Start(); Write-Host "Listening on http://localhost:$port/auth/callback/..."; $context = $listener.GetContext(); $res = $context.Response; $res.Headers.Add("Content-Type", "text/html; charset=utf-8"); $html = "<html><body><script>if(window.opener){window.opener.postMessage({type:'oauth_callback',data:{code:new URLSearchParams(window.location.search).get('code'),state:new URLSearchParams(window.location.search).get('state')}},'*');document.write('<h2>OAuth Captured!</h2>');setTimeout(function(){window.close()},1000)}else{document.write('<h2>OAuth Captured! Please return to the app tab.</h2>')}</script></body></html>"; $buffer = [System.Text.Encoding]::UTF8.GetBytes($html); $res.ContentLength64 = $buffer.Length; $res.OutputStream.Write($buffer, 0, $buffer.Length); $res.Close(); $listener.Stop(); Write-Host "Done!"`}
-                      readOnly
-                      className="flex-1 font-mono text-xs bg-sidebar/50"
-                    />
+                  
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium">Cách 1: Tải và chạy file tự động (.bat)</p>
+                    <p className="text-[11px] text-text-muted">
+                      Tải file bên dưới về máy tính của bạn, nhấp đúp để mở lên, sau đó quay lại đây thực hiện đăng nhập.
+                    </p>
                     <Button
                       size="sm"
                       variant="secondary"
-                      icon={copied === "powershell_cmd" ? "check" : "content_copy"}
-                      onClick={() =>
-                        copy(
-                          `$port=1455; $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add("http://localhost:$port/auth/callback/"); $listener.Start(); Write-Host "Listening on http://localhost:$port/auth/callback/..."; $context = $listener.GetContext(); $res = $context.Response; $res.Headers.Add("Content-Type", "text/html; charset=utf-8"); $html = "<html><body><script>if(window.opener){window.opener.postMessage({type:'oauth_callback',data:{code:new URLSearchParams(window.location.search).get('code'),state:new URLSearchParams(window.location.search).get('state')}},'*');document.write('<h2>OAuth Captured!</h2>');setTimeout(function(){window.close()},1000)}else{document.write('<h2>OAuth Captured! Please return to the app tab.</h2>')}</script></body></html>"; $buffer = [System.Text.Encoding]::UTF8.GetBytes($html); $res.ContentLength64 = $buffer.Length; $res.OutputStream.Write($buffer, 0, $buffer.Length); $res.Close(); $listener.Stop(); Write-Host "Done!"`,
-                          "powershell_cmd"
-                        )
-                      }
+                      icon="download"
+                      fullWidth
+                      onClick={() => window.open("/antigravity_listener.bat", "_blank")}
                     >
-                      Copy
+                      Tải file antigravity_listener.bat
                     </Button>
+                  </div>
+
+                  <div className="border-t border-border/40 my-2" />
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium">Cách 2: Chạy dòng lệnh PowerShell thủ công</p>
+                    <p className="text-[11px] text-text-muted">
+                      Hoặc sao chép lệnh này dán vào PowerShell và chạy trước khi đăng nhập:
+                    </p>
+                    <div className="flex gap-2">
+                      <Input
+                        value={`$port=1455; $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add("http://localhost:$port/auth/callback/"); $listener.Start(); Write-Host "Listening on http://localhost:$port/auth/callback/..."; $context = $listener.GetContext(); $res = $context.Response; $res.Headers.Add("Content-Type", "text/html; charset=utf-8"); $html = "<html><body><script>if(window.opener){window.opener.postMessage({type:'oauth_callback',data:{code:new URLSearchParams(window.location.search).get('code'),state:new URLSearchParams(window.location.search).get('state')}},'*');document.write('<h2>OAuth Captured!</h2>');setTimeout(function(){window.close()},1000)}else{document.write('<h2>OAuth Captured! Please return to the app tab.</h2>')}</script></body></html>"; $buffer = [System.Text.Encoding]::UTF8.GetBytes($html); $res.ContentLength64 = $buffer.Length; $res.OutputStream.Write($buffer, 0, $buffer.Length); $res.Close(); $listener.Stop(); Write-Host "Done!"`}
+                        readOnly
+                        className="flex-1 font-mono text-xs bg-sidebar/50"
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={copied === "powershell_cmd" ? "check" : "content_copy"}
+                        onClick={() =>
+                          copy(
+                            `$port=1455; $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add("http://localhost:$port/auth/callback/"); $listener.Start(); Write-Host "Listening on http://localhost:$port/auth/callback/..."; $context = $listener.GetContext(); $res = $context.Response; $res.Headers.Add("Content-Type", "text/html; charset=utf-8"); $html = "<html><body><script>if(window.opener){window.opener.postMessage({type:'oauth_callback',data:{code:new URLSearchParams(window.location.search).get('code'),state:new URLSearchParams(window.location.search).get('state')}},'*');document.write('<h2>OAuth Captured!</h2>');setTimeout(function(){window.close()},1000)}else{document.write('<h2>OAuth Captured! Please return to the app tab.</h2>')}</script></body></html>"; $buffer = [System.Text.Encoding]::UTF8.GetBytes($html); $res.ContentLength64 = $buffer.Length; $res.OutputStream.Write($buffer, 0, $buffer.Length); $res.Close(); $listener.Stop(); Write-Host "Done!"`,
+                            "powershell_cmd"
+                          )
+                        }
+                      >
+                        Copy
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
