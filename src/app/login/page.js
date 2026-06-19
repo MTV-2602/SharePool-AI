@@ -245,6 +245,25 @@ export default function LoginPage() {
   const getProviderFromModel = (model) => {
     if (!model) return "N/A";
     const m = model.toLowerCase();
+    
+    // Explicitly check for antigravity prefix or specific antigravity models
+    if (
+      m.startsWith("antigravity/") || 
+      m.startsWith("ag/") ||
+      [
+        "gemini-3-flash-agent",
+        "gemini-3.5-flash-low",
+        "gemini-3.5-flash-extra-low",
+        "gemini-pro-agent",
+        "gemini-3.1-pro-low",
+        "gpt-oss-120b-medium",
+        "gemini-3-flash",
+        "gemini-pro-default"
+      ].includes(m)
+    ) {
+      return "Antigravity";
+    }
+
     if (m.includes("gemini")) return "Google Gemini";
     if (m.includes("gpt-") || m.startsWith("gpt") || m.includes("o1") || m.includes("o3")) return "OpenAI";
     if (m.includes("claude")) return "Anthropic";
@@ -717,6 +736,7 @@ Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạ
                           else if (row.name === "OpenAI") providerColor = "text-emerald-400 font-semibold";
                           else if (row.name === "Anthropic") providerColor = "text-amber-400 font-semibold";
                           else if (row.name === "DeepSeek") providerColor = "text-purple-400 font-semibold";
+                          else if (row.name === "Antigravity") providerColor = "text-amber-500 font-semibold";
 
                           return (
                             <tr key={row.name} className="border-b border-border/50 hover:bg-surface-2/30 transition-colors last:border-0">
