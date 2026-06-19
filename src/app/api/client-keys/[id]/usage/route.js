@@ -77,7 +77,7 @@ export async function GET(request, { params }) {
         FROM client_key_usage_logs
         WHERE client_key_id = CAST($1 AS uuid)
         GROUP BY model
-      `,
+      `.trim(),
       query_params: [id]
     });
 
