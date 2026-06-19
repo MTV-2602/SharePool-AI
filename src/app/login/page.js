@@ -502,13 +502,72 @@ curl \${origin}/v1/chat/completions \\
 \`\`\``;
   };
 
+  const getContinueMarkdown = () => {
+    return `# Hướng dẫn kết nối Continue Extension (VS Code / JetBrains)
+
+Để cấu hình tiện ích mở rộng Continue kết nối trực tiếp với 9Router API Gateway qua API Key của bạn:
+
+---
+
+## ⚙️ 1. Mở file cấu hình config.json của Continue
+Bạn có thể mở file này bằng một trong các cách sau:
+1. **Qua VS Code**: Click vào biểu tượng bánh răng (Settings) ở góc dưới bên phải của khung giao diện Continue, hoặc nhấn tổ hợp phím \`Ctrl+Shift+P\` (hoặc \`Cmd+Shift+P\` trên Mac) và tìm kiếm lệnh \`Continue: Open config.json\`.
+2. **Đường dẫn thư mục**:
+   - **Windows**: \`%%USERPROFILE%%\\.continue\\config.json\` (ví dụ: \`C:\\Users\\tên_máy\\.continue\\config.json\`)
+   - **Mac / Linux**: \`~/.continue/config.json\`
+
+---
+
+## 📝 2. Điền nội dung cấu hình vào config.json
+Mở tệp \`config.json\` và thêm hoặc thay thế phần \`models\` và \`tabAutocompleteModel\` (tùy chọn tự động hoàn thành code) bằng định dạng sau:
+
+\`\`\`json
+{
+  "models": [
+    {
+      "title": "Gemini 2.5 Flash",
+      "provider": "openai",
+      "model": "gemini-2.5-flash",
+      "apiBase": "${origin}/v1",
+      "apiKey": "${savedKey}"
+    },
+    {
+      "title": "Gemini 2.5 Pro",
+      "provider": "openai",
+      "model": "gemini-2.5-pro",
+      "apiBase": "${origin}/v1",
+      "apiKey": "${savedKey}"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Gemini 2.5 Flash Autocomplete",
+    "provider": "openai",
+    "model": "gemini-2.5-flash",
+    "apiBase": "${origin}/v1",
+    "apiKey": "${savedKey}"
+  }
+}
+\`\`\`
+
+---
+
+## ⚙️ 3. Các cài đặt khuyên dùng trong Continue (User Settings)
+Để việc tự động hoàn thành code hoạt động nhạy bén và trơn tru nhất:
+1. **Multiline Autocompletions**: Nên để \`Auto\` hoặc \`true\` để Continue hiển thị gợi ý code nhiều dòng.
+2. **Autocomplete Timeout (ms)**: Đặt khoảng \`150\` (ms) để tối ưu thời gian chờ phản hồi.
+3. **Autocomplete Debounce (ms)**: Đặt khoảng \`250\` (ms) để tránh gửi quá nhiều yêu cầu liên tiếp khi đang gõ phím.
+4. **Enable experimental tools**: Nếu muốn Continue tự động gọi các tool thông minh khi chat, hãy bật cài đặt này lên trong mục Experimental.`;
+  };
+
   const handleCopyFullMarkdown = () => {
     const md =
       guideTab === "codex"
         ? getCodexMarkdown()
         : guideTab === "antigravity"
         ? getAntigravityMarkdown()
-        : getGeminiMarkdown();
+        : guideTab === "gemini"
+        ? getGeminiMarkdown()
+        : getContinueMarkdown();
     copyText(md, "fullMarkdown");
   };
 
@@ -949,6 +1008,14 @@ curl \${origin}/v1/chat/completions \\
                   >
                     💎 Hướng dẫn Google Gemini (API/SDK)
                   </button>
+                  <button
+                    onClick={() => setGuideTab("continue")}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                      guideTab === "continue" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
+                    }`}
+                  >
+                    ⏩ Hướng dẫn Continue
+                  </button>
                 </div>
 
                 <button
@@ -1259,6 +1326,137 @@ print(response.choices[0].message.content)`}
     "messages": [{"role": "user", "content": "Hello!"}]
   }'`}
                         </pre>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {guideTab === "continue" && (
+                <div className="space-y-6 animate-fade-in">
+                  <Card title="⚙️ Bước 1: Mở file cấu hình config.json của Continue" icon="folder_open">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Để cấu hình Custom Base URL cho Continue, bạn cần sửa đổi tệp cấu hình JSON của tiện ích này:</p>
+                      <div className="space-y-2">
+                        <strong className="text-text-main block">Cách 1: Mở trực tiếp trong VS Code / Cursor (Khuyên dùng)</strong>
+                        <ul className="list-decimal pl-5 space-y-1">
+                          <li>Mở VS Code. Click vào <strong>biểu tượng bánh răng (Settings)</strong> ở góc dưới cùng bên phải của thanh tiện ích Continue (ở sidebar bên trái hoặc bên phải).</li>
+                          <li>Hoặc nhấn tổ hợp phím <kbd className="bg-surface-2 px-1.5 py-0.5 rounded border border-border text-xs text-text-main font-mono">Ctrl + Shift + P</kbd> (Windows) hoặc <kbd className="bg-surface-2 px-1.5 py-0.5 rounded border border-border text-xs text-text-main font-mono">Cmd + Shift + P</kbd> (Mac) → Gõ tìm kiếm và chọn lệnh <span className="text-text-main font-semibold"><code>Continue: Open config.json</code></span>.</li>
+                        </ul>
+                      </div>
+                      <div className="space-y-1 pt-2">
+                        <strong className="text-text-main block">Cách 2: Mở file trực tiếp từ ổ đĩa</strong>
+                        <p>Tìm tệp cấu hình theo đường dẫn tương ứng với hệ điều hành của bạn:</p>
+                        <ul className="list-disc pl-5 space-y-1">
+                          <li><strong>Windows</strong>: <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-xs text-text-main select-all">%USERPROFILE%\.continue\config.json</code></li>
+                          <li><strong>Mac / Linux</strong>: <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-xs text-text-main select-all">~/.continue/config.json</code></li>
+                        </ul>
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card title="📝 Bước 2: Điền cấu hình Custom OpenAI vào file config.json" icon="edit_note">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <div className="flex justify-between items-center mb-1">
+                        <span>Copy đoạn JSON cấu hình bên dưới và dán đè/bổ sung vào file <code className="text-text-main">config.json</code> của bạn:</span>
+                        <button
+                          onClick={() => {
+                            const code = `{
+  "models": [
+    {
+      "title": "Gemini 2.5 Flash",
+      "provider": "openai",
+      "model": "gemini-2.5-flash",
+      "apiBase": "${origin}/v1",
+      "apiKey": "${savedKey}"
+    },
+    {
+      "title": "Gemini 2.5 Pro",
+      "provider": "openai",
+      "model": "gemini-2.5-pro",
+      "apiBase": "${origin}/v1",
+      "apiKey": "${savedKey}"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Gemini 2.5 Flash Autocomplete",
+    "provider": "openai",
+    "model": "gemini-2.5-flash",
+    "apiBase": "${origin}/v1",
+    "apiKey": "${savedKey}"
+  }
+}`;
+                            copyText(code, "configContinue");
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">
+                            {copiedField === "configContinue" ? "check" : "content_copy"}
+                          </span>
+                          {copiedField === "configContinue" ? "Đã copy JSON" : "Copy Cấu Hình JSON"}
+                        </button>
+                      </div>
+                      <pre className="bg-surface-2 border border-border rounded-lg p-4 text-xs overflow-x-auto text-text-main font-mono leading-relaxed">
+{`{
+  "models": [
+    {
+      "title": "Gemini 2.5 Flash",
+      "provider": "openai",
+      "model": "gemini-2.5-flash",
+      "apiBase": "${origin}/v1",
+      "apiKey": "${savedKey}"
+    },
+    {
+      "title": "Gemini 2.5 Pro",
+      "provider": "openai",
+      "model": "gemini-2.5-pro",
+      "apiBase": "${origin}/v1",
+      "apiKey": "${savedKey}"
+    }
+  ],
+  "tabAutocompleteModel": {
+    "title": "Gemini 2.5 Flash Autocomplete",
+    "provider": "openai",
+    "model": "gemini-2.5-flash",
+    "apiBase": "${origin}/v1",
+    "apiKey": "${savedKey}"
+  }
+}`}
+                      </pre>
+                    </div>
+                  </Card>
+
+                  <Card title="⚙️ Bước 3: Thiết lập khuyên dùng cho Chat & Autocomplete" icon="build">
+                    <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <p>Để tối ưu hóa trải nghiệm tự động hoàn thành code và gọi model nhanh chóng, hãy cấu hình các thông số sau trong phần <strong>Extension Settings</strong> của Continue trong VS Code:</p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-surface-2 border border-border rounded-lg p-3.5 space-y-2">
+                          <strong className="text-text-main block border-b border-border/40 pb-1">⚡ Autocomplete Settings</strong>
+                          <ul className="space-y-2 text-xs">
+                            <li>
+                              <strong>Multiline Autocompletions</strong>: Chọn <code className="bg-surface px-1 text-text-main">Auto</code> hoặc <code className="bg-surface px-1 text-text-main">true</code> (cho phép gợi ý nhiều dòng code).
+                            </li>
+                            <li>
+                              <strong>Autocomplete Timeout (ms)</strong>: Đặt <code className="bg-surface px-1 text-text-main">150</code> (ms) (thời gian chờ lấy gợi ý từ server).
+                            </li>
+                            <li>
+                              <strong>Autocomplete Debounce (ms)</strong>: Đặt <code className="bg-surface px-1 text-text-main">250</code> (ms) (độ trễ khi gõ phím để tránh spam request).
+                            </li>
+                          </ul>
+                        </div>
+
+                        <div className="bg-surface-2 border border-border rounded-lg p-3.5 space-y-2">
+                          <strong className="text-text-main block border-b border-border/40 pb-1">🛠️ Experimental / Chat Settings</strong>
+                          <ul className="space-y-2 text-xs">
+                            <li>
+                              <strong>Enable experimental tools</strong>: <code className="bg-surface px-1 text-text-main">Bật (On)</code> nếu bạn muốn cho phép Continue tự động sử dụng các tool nâng cao (đọc/ghi file, lệnh hệ thống) giống như Cline.
+                            </li>
+                            <li>
+                              <strong>Add Current File by Default</strong>: Có thể tắt để tránh việc tự động gửi file đang mở làm rác context chat nếu không cần thiết.
+                            </li>
+                          </ul>
+                        </div>
                       </div>
                     </div>
                   </Card>
