@@ -289,49 +289,35 @@ export default function LoginPage() {
   const getCodexMarkdown = () => {
     return `# Hướng dẫn kết nối máy khách - Codex
 
-Bạn có thể kết nối Codex CLI / Desktop App của mình để gọi qua API Gateway 9Router theo hai cách dưới đây:
+Bạn có thể kết nối Codex CLI / Desktop App hoặc cấu hình các công cụ lập trình của mình để gọi qua API Gateway 9Router theo các cách dưới đây:
 
 ---
 
-## 🤖 CÁCH 1: Tự động cấu hình bằng Cline (Khuyên dùng)
-Nếu bạn đang chạy Cline và muốn nhờ nó tự thiết lập Codex, hãy copy toàn bộ yêu cầu dưới đây gửi cho Cline:
-> **"Hãy cấu hình Codex hoạt động qua 9Router bằng cách tạo hoặc chỉnh sửa trực tiếp tệp \`config.toml\` của Codex trên máy tính này. Các thông số cần thiết lập:**
-> - **model_reasoning_effort**: \`"low"\`
-> - **model_provider**: \`"openai-custom"\`
-> - **model**: \`"gpt-5.5"\`
-> - **[model_providers.openai-custom]**:
->   - **experimental_bearer_token**: \`"${savedKey}"\`
->   - **name**: \`"VinAi"\`
->   - **base_url**: \`${origin}/v1\`
->   - **wire_api**: \`"responses"\`
->   - **requires_openai_auth**: \`false\`
->   - **supports_websockets**: \`false\`
-> 
-> **Đường dẫn tệp cấu hình trên các hệ điều hành:**
-> - **Windows**: \`%%USERPROFILE%%\\.codex\\config.toml\`
-> - **macOS / Linux**: \`~/.codex/config.toml\`
-> 
-> **Hãy tự tạo thư mục \`.codex\` nếu chưa tồn tại, tạo tệp \`config.toml\` với nội dung trên, sau đó báo cáo kết quả."**
+## 🛠️ 1. Thông số kết nối API cơ bản
+Để cấu hình thủ công cho các thư viện hoặc phần mềm khác:
+- **Base URL (Endpoint)**: \`${origin}/v1\`
+- **API Key**: \`${savedKey}\`
+- **Model ID khuyên dùng**: \`gpt-5.5\` (hoặc \`gpt-5.4\`, \`gpt-5.3-codex\`)
 
 ---
 
-## 🛠️ CÁCH 2: Cài đặt và Cấu hình thủ công
+## 💻 2. Cài đặt và Cấu hình thủ công trên Codex Desktop App / CLI
 ### Bước 1: Cài đặt ứng dụng Codex
-- **Cách 1: Sử dụng Codex Desktop App**
+- **Cách A: Sử dụng Codex Desktop App**
   Tải và cài đặt ứng dụng Codex Desktop chính thức do OpenAI phát hành trên máy tính.
-- **Cách 2: Sử dụng Codex CLI (Giao diện dòng lệnh)**
+- **Cách B: Sử dụng Codex CLI (Giao diện dòng lệnh)**
   Mở Terminal/PowerShell và chạy lệnh:
   \`\`\`bash
   npm install -g @openai/codex
   \`\`\`
 
 ### Bước 2: Thiết lập file cấu hình config.toml
-1. Tìm tệp cấu hình **config.toml** theo đường dẫn hệ điều hành:
-   - **Windows**: \`%%USERPROFILE%%\\.codex\\config.toml\` (Ví dụ: \`C:\\Users\\your_user\\.codex\\config.toml\`)
+1. Tìm hoặc tạo tệp cấu hình **config.toml** theo đường dẫn hệ điều hành của bạn:
+   - **Windows**: \`%%USERPROFILE%%\\.codex\\config.toml\` (Ví dụ: \`C:\\Users\\tên_user\\.codex\\config.toml\`)
    - **Mac / Linux**: \`~/.codex/config.toml\`
-   *(Nếu chưa có thư mục \`.codex\` hoặc file \`config.toml\`, hãy tự tạo thư mục và file mới).*
+   *(Nếu chưa có thư mục \`.codex\` hoặc file \`config.toml\`, bạn hãy tự tạo thư mục và file mới).*
 
-2. Mở file \`config.toml\` và điền cấu hình sau:
+2. Mở file \`config.toml\` bằng Notepad hoặc Text Editor và điền cấu hình sau:
 \`\`\`toml
 model_reasoning_effort = "low"
 model_provider = "openai-custom"
@@ -355,55 +341,70 @@ supports_websockets = false
 3. Thử nghiệm Tool-calling:
    \`\`\`bash
    codex "tạo cho tôi 1 file test_connection.txt trong thư mục hiện tại"
-   \`\`\``;
+   \`\`\`
+
+---
+
+## 🚀 3. Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)
+1. **Provider**: Chọn \`OpenAI Compatible\` (hoặc Custom OpenAI).
+2. **Base URL**: Điền \`${origin}/v1\`
+3. **API Key**: Điền \`${savedKey}\`
+4. **Model ID**: Điền \`gpt-5.5\` (hoặc model mong muốn).
+
+---
+
+## 🐍 4. Tích hợp Python (sử dụng thư viện OpenAI SDK)
+\`\`\`python
+import openai
+
+client = openai.OpenAI(
+    base_url="${origin}/v1",
+    api_key="${savedKey}"
+)
+
+response = client.chat.completions.create(
+    model="gpt-5.5",
+    messages=[
+        {"role": "user", "content": "Hello!"}
+    ]
+)
+
+print(response.choices[0].message.content)
+\`\`\`
+
+---
+
+## 📡 5. Gọi nhanh qua cURL (Terminal / Command Prompt)
+\`\`\`bash
+curl ${origin}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${savedKey}" \\
+  -d '{
+    "model": "gpt-5.5",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+\`\`\``;
   };
 
   const getAntigravityMarkdown = () => {
     return `# Hướng dẫn kết nối máy khách - Antigravity (Gemini)
 
-Bạn có thể kết nối Antigravity Desktop App hoặc các công cụ lập trình qua 9Router theo hai cách dưới đây:
+Bạn có thể kết nối Antigravity Desktop App hoặc cấu hình các công cụ lập trình của mình để gọi qua API Gateway 9Router theo các cách dưới đây:
 
 ---
 
-## 🤖 CÁCH 1: Tự động cấu hình bằng Cline (Khuyên dùng)
-Nếu bạn đang chạy Cline và muốn nhờ nó thiết lập Antigravity, hãy copy toàn bộ yêu cầu dưới đây gửi cho Cline:
-> **"Hãy cấu hình Antigravity hoạt động qua 9Router bằng cách chỉnh sửa hoặc tạo hai tệp cấu hình \`config.toml\` và \`auth.json\` trong thư mục cấu hình Antigravity trên máy tính này. Các thông số cần thiết lập:**
-> 
-> **1. Tệp \`config.toml\`:**
-> \`\`\`toml
-> model_reasoning_effort = "low"
-> model_provider = "openai-custom"
-> model = "gpt-5.5"
-> 
-> [model_providers.openai-custom]
-> experimental_bearer_token = "${savedKey}"
-> name = "VinAi"
-> base_url = "${origin}/v1"
-> wire_api = "responses"
-> requires_openai_auth = false
-> supports_websockets = false
-> \`\`\`
-> 
-> **2. Tệp \`auth.json\`:**
-> \`\`\`json
-> {
->   "auth_mode": "apikey",
->   "OPENAI_API_KEY": "${savedKey}"
-> }
-> \`\`\`
-> 
-> **Đường dẫn thư mục cấu hình Antigravity:**
-> - **Windows**: \`%%USERPROFILE%%\\.antigravity\` (tạo tệp \`%%USERPROFILE%%\\.antigravity\\config.toml\` và \`%%USERPROFILE%%\\.antigravity\\auth.json\`)
-> - **macOS / Linux**: \`~/.antigravity\` (tạo tệp \`~/.antigravity/config.toml\` và \`~/.antigravity/auth.json\`)
-> 
-> **Hãy tự tạo thư mục \`.antigravity\` nếu chưa tồn tại, tạo cả hai tệp với nội dung trên, sau đó báo cáo kết quả."**
+## 🛠️ 1. Thông số kết nối API cơ bản
+Để cấu hình thủ công cho các thư viện hoặc phần mềm khác:
+- **Base URL (Endpoint)**: \`${origin}/v1\`
+- **API Key**: \`${savedKey}\`
+- **Model ID khuyên dùng**: \`gemini-3-flash-agent\` (hoặc \`gemini-pro-agent\`)
 
 ---
 
-## 🛠️ CÁCH 2: Cấu hình thủ công
-### Phương pháp A: Sử dụng Antigravity Desktop App (Bypass Đăng ký/Login)
-1. Truy cập thư mục cấu hình của Antigravity tùy theo hệ điều hành:
-   - **Windows**: \`%%USERPROFILE%%\\.antigravity\\config.toml\` và \`%%USERPROFILE%%\\.antigravity\\auth.json\`
+## 💻 2. Cài đặt và Cấu hình thủ công trên Antigravity Desktop App / CLI
+Sử dụng ứng dụng Antigravity Desktop (bản clone của Codex) và tự động bypass màn hình Google Login:
+1. Tìm hoặc tạo thư mục cấu hình của Antigravity tùy theo hệ điều hành của bạn:
+   - **Windows**: \`%%USERPROFILE%%\\.antigravity\` (Ví dụ: \`C:\\Users\\tên_user\\.antigravity\`)
    - **Mac / Linux**: \`~/.antigravity/\`
    *(Nếu chưa có thư mục \`.antigravity\`, hãy mở ứng dụng Antigravity một lần hoặc tự tạo thư mục mới).*
 
@@ -422,7 +423,7 @@ requires_openai_auth = false
 supports_websockets = false
 \`\`\`
 
-3. Tạo tiếp file **auth.json** trong cùng thư mục trên và dán nội dung:
+3. Tạo tiếp file **auth.json** trong cùng thư mục trên (để bypass login) và dán nội dung:
 \`\`\`json
 {
   "auth_mode": "apikey",
@@ -432,24 +433,47 @@ supports_websockets = false
 
 4. Khởi động lại ứng dụng **Antigravity IDE / Desktop App** để áp dụng cấu hình.
 
-### Phương pháp B: Dành cho công cụ hỗ trợ Custom Base URL (Cursor, Cline, RooCode...)
-1. **Provider**: \`OpenAI Compatible\` (hoặc Custom OpenAI)
-2. **Base URL**: \`${origin}/v1\`
-3. **API Key**: \`${savedKey}\`
-4. **Models**: \`gemini-3-flash-agent\`, \`gemini-pro-agent\`
+---
 
-### Phương pháp C: Sử dụng Script Proxy Siêu Nhẹ (VS Code Extension)
-Phương pháp này cho phép Extension Gemini chính thức trên VS Code hoạt động qua Server mà không cần đổi URL.
-1. Cài đặt Node.js trên máy tính của bạn (bản 18 trở lên).
-2. Mở Terminal / PowerShell và chạy script proxy chuyển hướng với quyền Administrator:
-   - **Windows (chạy PowerShell bằng Admin)**:
-     \`\`\`powershell
-     node client-proxy.js --server ${origin} --key ${savedKey}
-     \`\`\`
-   - **macOS / Linux**:
-     \`\`\`bash
-     sudo node client-proxy.js --server ${origin} --key ${savedKey}
-     \`\`\``;
+## 🚀 3. Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)
+1. **Provider**: Chọn \`OpenAI Compatible\` (hoặc Custom OpenAI).
+2. **Base URL**: Điền \`${origin}/v1\`
+3. **API Key**: Điền \`${savedKey}\`
+4. **Model ID**: Điền \`gemini-3-flash-agent\` (hoặc \`gemini-pro-agent\`).
+
+---
+
+## 🐍 4. Tích hợp Python (sử dụng thư viện OpenAI SDK)
+\`\`\`python
+import openai
+
+client = openai.OpenAI(
+    base_url="${origin}/v1",
+    api_key="${savedKey}"
+)
+
+response = client.chat.completions.create(
+    model="gemini-3-flash-agent",
+    messages=[
+        {"role": "user", "content": "Hello!"}
+    ]
+)
+
+print(response.choices[0].message.content)
+\`\`\`
+
+---
+
+## 📡 5. Gọi nhanh qua cURL (Terminal / Command Prompt)
+\`\`\`bash
+curl ${origin}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${savedKey}" \\
+  -d '{
+    "model": "gemini-3-flash-agent",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+\`\`\``;
   };
 
   const getGeminiMarkdown = () => {
@@ -459,26 +483,7 @@ Sử dụng API Key được cấp để gọi trực tiếp các model Google G
 
 ---
 
-## 🤖 CÁCH 1: Tự động cấu hình bằng Cline (Khuyên dùng)
-Nếu bạn đang chạy Cline và muốn thiết lập tự động kết nối gọi Google Gemini, hãy copy yêu cầu sau gửi cho Cline:
-> **"Hãy cấu hình Cline hoạt động qua 9Router bằng cách chỉnh sửa trực tiếp file cấu hình \`cline_settings.json\` của bạn trên máy tính này. Các thông số cần thiết lập:**
-> - **Provider**: \`openai\`
-> - **Base URL**: \`${origin}/v1\`
-> - **API Key**: \`${savedKey}\`
-> - **Model ID**: \`gemini-2.5-flash\`
-> - **Custom Model IDs**: Thêm \`gemini-2.5-flash\`, \`gemini-2.5-pro\`, \`gemini-2.0-flash\`
-> 
-> **Đường dẫn tệp cấu hình trên các hệ điều hành:**
-> - **Windows**: \`%%APPDATA%%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json\`
-> - **macOS**: \`~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\`
-> - **Linux**: \`~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\`
-> 
-> **Hãy tự tìm file, đọc nội dung hiện tại và cập nhật các trường trên, sau đó báo cáo kết quả."**
-
----
-
-## 🛠️ CÁCH 2: Thiết lập thủ công
-### 1. Thông số kết nối API
+## 🛠️ 1. Thông số kết nối API
 Để kết nối, bạn điền cấu hình API sau vào công cụ của mình:
 - **Base URL (Endpoint)**: \`${origin}/v1\`
 - **API Key**: \`${savedKey}\`
@@ -520,52 +525,14 @@ print(response.choices[0].message.content)
 ## 📡 4. Gọi nhanh qua cURL (Terminal / Giao diện dòng lệnh)
 Kiểm tra kết nối và chạy kiểm thử ngay lập tức bằng lệnh cURL:
 \`\`\`bash
-curl ${origin}/v1/chat/completions \\
+curl \${origin}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ${savedKey}" \\
+  -H "Authorization: Bearer \${savedKey}" \\
   -d '{
     "model": "gemini-2.5-flash",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 \`\`\``;
-  };
-
-  const getClineMarkdown = () => {
-    return `# Hướng dẫn cấu hình Cline kết nối qua 9Router API Gateway
-
-Cline (trước đây là Claude Dev) là một trợ lý lập trình AI tự trị chạy trên VS Code, Cursor, hoặc Windsurf. Bạn có thể cấu hình Cline sử dụng cổng 9Router theo 2 cách dưới đây.
-
----
-
-## 🤖 CÁCH 1: Cấu hình tự động (Dành riêng cho Cline tự cài đặt)
-*Nếu bạn đang chạy Cline và muốn nhờ chính nó tự động cấu hình hoặc cập nhật cài đặt:*
-Hãy copy toàn bộ văn bản dưới đây và nhắn cho Cline:
-> **"Hãy cấu hình Cline hoạt động qua 9Router bằng cách chỉnh sửa trực tiếp file cấu hình \`cline_settings.json\` của bạn trên máy tính này. Các thông số cần thiết lập:**
-> - **Provider**: \`openai\`
-> - **Base URL**: \`${origin}/v1\`
-> - **API Key**: \`${savedKey}\`
-> - **Model ID**: \`gemini-2.5-flash\` (hoặc model mong muốn)
-> - **Custom Model IDs**: Thêm \`gemini-2.5-flash\`, \`gemini-2.5-pro\`, \`gemini-2.0-flash\`, \`gpt-5.5\`, \`gemini-3-flash-agent\`, \`gemini-pro-agent\`
-> 
-> **Đường dẫn tệp cấu hình trên các hệ điều hành thường gặp:**
-> - **Windows**: \`%%APPDATA%%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json\` (hoặc \`%%APPDATA%%\\Cursor\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json\` nếu dùng Cursor)
-> - **macOS**: \`~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\` (hoặc Cursor tương ứng)
-> - **Linux**: \`~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\`
-> 
-> **Hãy tự tìm file cài đặt của bạn, đọc nội dung hiện tại và sửa đúng các trường trên, sau đó báo cáo kết quả."**
-
----
-
-## 🛠️ CÁCH 2: Cấu hình thủ công qua giao diện Cline
-Nếu bạn muốn tự tay cấu hình trong phần cài đặt của Cline:
-1. Mở extension **Cline** trên VS Code / Cursor.
-2. Click biểu tượng **Bánh răng (Settings)** ở góc trên bên phải.
-3. Trong mục **API Provider**, chọn **OpenAI Compatible**.
-4. Thiết lập các thông số sau:
-   - **Base URL**: Điền \`${origin}/v1\`
-   - **API Key**: Điền \`${savedKey}\`
-   - **Model ID**: Nhập model bạn muốn dùng (Ví dụ: \`gemini-2.5-flash\` hoặc \`gpt-5.5\`).
-5. Cuộn xuống dưới cùng và click **Done** (hoặc Save) để hoàn tất.`;
   };
 
   const handleCopyFullMarkdown = () => {
@@ -574,8 +541,6 @@ Nếu bạn muốn tự tay cấu hình trong phần cài đặt của Cline:
         ? getCodexMarkdown()
         : guideTab === "antigravity"
         ? getAntigravityMarkdown()
-        : guideTab === "cline"
-        ? getClineMarkdown()
         : getGeminiMarkdown();
     copyText(md, "fullMarkdown");
   };
@@ -1017,14 +982,6 @@ Nếu bạn muốn tự tay cấu hình trong phần cài đặt của Cline:
                   >
                     💎 Hướng dẫn Google Gemini (API/SDK)
                   </button>
-                  <button
-                    onClick={() => setGuideTab("cline")}
-                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
-                      guideTab === "cline" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
-                    }`}
-                  >
-                    🤖 Hướng dẫn Cline
-                  </button>
                 </div>
 
                 <button
@@ -1041,49 +998,6 @@ Nếu bạn muốn tự tay cấu hình trong phần cài đặt của Cline:
 
               {guideTab === "codex" && (
                 <div className="space-y-6">
-                  <Card title="🤖 Nhờ Cline tự động cấu hình (Khuyên dùng)" icon="robot">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Nếu bạn đang chạy Cline làm trợ lý lập trình, bạn có thể copy yêu cầu sau gửi cho Cline để nó tự động thiết lập tệp cấu hình của Codex:</p>
-                      
-                      <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="font-semibold text-text-main text-xs">Copy yêu cầu này gửi cho Cline:</span>
-                          <button
-                            onClick={() => {
-                              const promptText = `Hãy cấu hình Codex hoạt động qua 9Router bằng cách tạo hoặc chỉnh sửa trực tiếp tệp config.toml của Codex trên máy tính này. Các thông số cần thiết lập:\n- model_reasoning_effort: "low"\n- model_provider: "openai-custom"\n- model: "gpt-5.5"\n- [model_providers.openai-custom]:\n  - experimental_bearer_token: "${savedKey}"\n  - name: "VinAi"\n  - base_url: "${origin}/v1"\n  - wire_api: "responses"\n  - requires_openai_auth: false\n  - supports_websockets: false\n\nĐường dẫn tệp cấu hình trên các hệ điều hành:\n- Windows: %USERPROFILE%\\.codex\\config.toml\n- macOS / Linux: ~/.codex/config.toml\n\nHãy tự tạo thư mục .codex nếu chưa tồn tại, tạo tệp config.toml với nội dung trên, sau đó báo cáo kết quả.`;
-                              copyText(promptText, "promptCodexCline");
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "promptCodexCline" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "promptCodexCline" ? "Đã copy" : "Copy yêu cầu"}
-                          </button>
-                        </div>
-                        <blockquote className="border-l-4 border-primary/50 pl-3 py-1 italic text-text-main bg-surface/50 rounded-r text-xs whitespace-pre-wrap">
-{`Hãy cấu hình Codex hoạt động qua 9Router bằng cách tạo hoặc chỉnh sửa trực tiếp tệp config.toml của Codex trên máy tính này. Các thông số cần thiết lập:
-- model_reasoning_effort: "low"
-- model_provider: "openai-custom"
-- model: "gpt-5.5"
-- [model_providers.openai-custom]:
-  - experimental_bearer_token: "${savedKey}"
-  - name: "VinAi"
-  - base_url: "${origin}/v1"
-  - wire_api: "responses"
-  - requires_openai_auth: false
-  - supports_websockets: false
-
-Đường dẫn tệp cấu hình trên các hệ điều hành:
-- Windows: %USERPROFILE%\\.codex\\config.toml
-- macOS / Linux: ~/.codex/config.toml
-
-Hãy tự tạo thư mục .codex nếu chưa tồn tại, tạo tệp config.toml với nội dung trên, sau đó báo cáo kết quả.`}
-                        </blockquote>
-                      </div>
-                    </div>
-                  </Card>
-
                   <Card title="🛠️ Bước 1: Cài đặt ứng dụng Codex" icon="settings">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
                       <div>
@@ -1191,63 +1105,7 @@ supports_websockets = false`, "tomlConfig")}
 
               {guideTab === "antigravity" && (
                 <div className="space-y-6">
-                  <Card title="🤖 Nhờ Cline tự động cấu hình (Khuyên dùng)" icon="robot">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Nếu bạn đang chạy Cline làm trợ lý lập trình, bạn có thể copy yêu cầu sau gửi cho Cline để nó tự động cấu hình Antigravity:</p>
-                      
-                      <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="font-semibold text-text-main text-xs">Copy yêu cầu này gửi cho Cline:</span>
-                          <button
-                            onClick={() => {
-                              const promptText = `Hãy cấu hình Antigravity hoạt động qua 9Router bằng cách chỉnh sửa hoặc tạo hai tệp cấu hình config.toml và auth.json trong thư mục cấu hình Antigravity trên máy tính này. Các thông số cần thiết lập:\n\n1. Tệp config.toml:\n\`\`\`toml\nmodel_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.5"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${origin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\n\`\`\`\n\n2. Tệp auth.json:\n\`\`\`json\n{\n  "auth_mode": "apikey",\n  "OPENAI_API_KEY": "${savedKey}"\n}\n\`\`\`\n\nĐường dẫn thư mục cấu hình Antigravity:\n- Windows: %USERPROFILE%\\.antigravity (tạo tệp %USERPROFILE%\\.antigravity\\config.toml và %USERPROFILE%\\.antigravity\\auth.json)\n- macOS / Linux: ~/.antigravity (tạo tệp ~/.antigravity/config.toml và ~/.antigravity/auth.json)\n\nHãy tự tạo thư mục .antigravity nếu chưa tồn tại, tạo cả hai tệp với nội dung trên, sau đó báo cáo kết quả.`;
-                              copyText(promptText, "promptAGCline");
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "promptAGCline" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "promptAGCline" ? "Đã copy" : "Copy yêu cầu"}
-                          </button>
-                        </div>
-                        <blockquote className="border-l-4 border-primary/50 pl-3 py-1 italic text-text-main bg-surface/50 rounded-r text-xs whitespace-pre-wrap">
-{`Hãy cấu hình Antigravity hoạt động qua 9Router bằng cách chỉnh sửa hoặc tạo hai tệp cấu hình config.toml và auth.json trong thư mục cấu hình Antigravity trên máy tính này. Các thông số cần thiết lập:
-
-1. Tệp config.toml:
-\`\`\`toml
-model_reasoning_effort = "low"
-model_provider = "openai-custom"
-model = "gpt-5.5"
-
-[model_providers.openai-custom]
-experimental_bearer_token = "${savedKey}"
-name = "VinAi"
-base_url = "${origin}/v1"
-wire_api = "responses"
-requires_openai_auth = false
-supports_websockets = false
-\`\`\`
-
-2. Tệp auth.json:
-\`\`\`json
-{
-  "auth_mode": "apikey",
-  "OPENAI_API_KEY": "${savedKey}"
-}
-\`\`\`
-
-Đường dẫn thư mục cấu hình Antigravity:
-- Windows: %USERPROFILE%\\.antigravity (tạo tệp %USERPROFILE%\\.antigravity\\config.toml và %USERPROFILE%\\.antigravity\\auth.json)
-- macOS / Linux: ~/.antigravity (tạo tệp ~/.antigravity/config.toml và ~/.antigravity/auth.json)
-
-Hãy tự tạo thư mục .antigravity nếu chưa tồn tại, tạo cả hai tệp với nội dung trên, sau đó báo cáo kết quả.`}
-                        </blockquote>
-                      </div>
-                    </div>
-                  </Card>
-
-                  <Card title="🪐 Phương pháp A: Sử dụng Antigravity Desktop App (Bypass Đăng ký/Login)" icon="settings">
+                  <Card title="🪐 Hướng dẫn AntiGravity (Bản build Desktop)" icon="settings">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
                       <p>Sử dụng ứng dụng Antigravity Desktop (bản clone của Codex) và tự động bỏ qua màn hình Google Login:</p>
                       <div>
@@ -1384,45 +1242,6 @@ supports_websockets = false`, "tomlConfigAG")}
 
               {guideTab === "gemini" && (
                 <div className="space-y-6 animate-fade-in">
-                  <Card title="🤖 Nhờ Cline tự động cấu hình (Khuyên dùng)" icon="robot">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Nếu bạn đang chạy Cline làm trợ lý lập trình, bạn có thể copy yêu cầu sau gửi cho Cline để nó tự động cấu hình kết nối Google Gemini:</p>
-                      
-                      <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="font-semibold text-text-main text-xs">Copy yêu cầu này gửi cho Cline:</span>
-                          <button
-                            onClick={() => {
-                              const promptText = `Hãy cấu hình Cline hoạt động qua 9Router bằng cách chỉnh sửa trực tiếp file cấu hình cline_settings.json của bạn trên máy tính này. Các thông số cần thiết lập:\n- Provider: "openai"\n- Base URL: "${origin}/v1"\n- API Key: "${savedKey}"\n- Model ID: "gemini-2.5-flash"\n- Custom Model IDs: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]\n\nĐường dẫn tệp cấu hình trên các hệ điều hành:\n- Windows: %APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json (hoặc %APPDATA%\\Cursor\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json nếu dùng Cursor)\n- macOS: ~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\n- Linux: ~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\n\nHãy tự tìm file, đọc nội dung hiện tại và cập nhật các trường trên, sau đó báo cáo kết quả.`;
-                              copyText(promptText, "promptGeminiCline");
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "promptGeminiCline" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "promptGeminiCline" ? "Đã copy" : "Copy yêu cầu"}
-                          </button>
-                        </div>
-                        <blockquote className="border-l-4 border-primary/50 pl-3 py-1 italic text-text-main bg-surface/50 rounded-r text-xs whitespace-pre-wrap">
-{`Hãy cấu hình Cline hoạt động qua 9Router bằng cách chỉnh sửa trực tiếp file cấu hình cline_settings.json của bạn trên máy tính này. Các thông số cần thiết lập:
-- Provider: "openai"
-- Base URL: "${origin}/v1"
-- API Key: "${savedKey}"
-- Model ID: "gemini-2.5-flash"
-- Custom Model IDs: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
-
-Đường dẫn tệp cấu hình trên các hệ điều hành:
-- Windows: %APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json (hoặc %APPDATA%\\Cursor\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json nếu dùng Cursor)
-- macOS: ~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json
-- Linux: ~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json
-
-Hãy tự tìm file, đọc nội dung hiện tại và cập nhật các trường trên, sau đó báo cáo kết quả.`}
-                        </blockquote>
-                      </div>
-                    </div>
-                  </Card>
-
                   <Card title="⚙️ Thông số kết nối API" icon="api">
                     <div className="space-y-3 text-sm text-text-muted mt-2">
                       <p>Sử dụng API Key và Gateway của bạn để kết nối trực tiếp với các dòng model Google Gemini:</p>
@@ -1549,116 +1368,7 @@ print(response.choices[0].message.content)`}
                 </div>
               )}
 
-              {guideTab === "cline" && (
-                <div className="space-y-6 animate-fade-in">
-                  <Card title="🤖 Cách 1: Nhờ Cline tự động cấu hình (Khuyên dùng)" icon="robot">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Do Cline là trợ lý AI tự trị có quyền đọc/ghi file trên máy của bạn, bạn chỉ cần gửi đoạn yêu cầu dưới đây để nó tự thiết lập:</p>
-                      
-                      <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="font-semibold text-text-main text-xs">Copy yêu cầu này gửi cho Cline:</span>
-                          <button
-                            onClick={() => {
-                              const promptText = `Hãy cấu hình Cline hoạt động qua 9Router bằng cách chỉnh sửa trực tiếp file cấu hình cline_settings.json của bạn trên máy tính này. Các thông số cần thiết lập:\n- Provider: "openai"\n- Base URL: "${origin}/v1"\n- API Key: "${savedKey}"\n- Model ID: "gemini-2.5-flash"\n- Custom Model IDs: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gpt-5.5", "gemini-3-flash-agent", "gemini-pro-agent"]\n\nĐường dẫn tệp cấu hình trên các hệ điều hành thường gặp:\n- Windows: %APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json (hoặc %APPDATA%\\Cursor\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json nếu dùng Cursor)\n- macOS: ~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\n- Linux: ~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json\n\nHãy tự tìm file cài đặt của bạn, đọc nội dung hiện tại và sửa đúng các trường trên, sau đó báo cáo kết quả.`;
-                              copyText(promptText, "promptCline");
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "promptCline" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "promptCline" ? "Đã copy" : "Copy yêu cầu"}
-                          </button>
-                        </div>
-                        <blockquote className="border-l-4 border-primary/50 pl-3 py-1 italic text-text-main bg-surface/50 rounded-r text-xs whitespace-pre-wrap">
-{`Hãy cấu hình Cline hoạt động qua 9Router bằng cách chỉnh sửa trực tiếp file cấu hình cline_settings.json của bạn trên máy tính này. Các thông số cần thiết lập:
-- Provider: "openai"
-- Base URL: "${origin}/v1"
-- API Key: "${savedKey}"
-- Model ID: "gemini-2.5-flash"
-- Custom Model IDs: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gpt-5.5", "gemini-3-flash-agent", "gemini-pro-agent"]
 
-Đường dẫn tệp cấu hình trên các hệ điều hành thường gặp:
-- Windows: %APPDATA%\\Code\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json (hoặc %APPDATA%\\Cursor\\User\\globalStorage\\saoudrizwan.claude-dev\\settings\\cline_settings.json nếu dùng Cursor)
-- macOS: ~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json
-- Linux: ~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_settings.json
-
-Hãy tự tìm file cài đặt của bạn, đọc nội dung hiện tại và sửa đúng các trường trên, sau đó báo cáo kết quả.`}
-                        </blockquote>
-                      </div>
-                    </div>
-                  </Card>
-
-                  <Card title="🛠️ Cách 2: Cấu hình thủ công qua giao diện Cline" icon="settings">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Nếu bạn muốn tự tay cấu hình trong phần cài đặt của Cline:</p>
-                      <ol className="list-decimal pl-5 space-y-2 text-text-muted">
-                        <li>Mở phần mở rộng **Cline** trên VS Code hoặc Cursor.</li>
-                        <li>Click biểu tượng **Bánh răng (Settings)** ở góc trên bên phải.</li>
-                        <li>Trong mục **API Provider**, chọn **OpenAI Compatible**.</li>
-                        <li>Thiết lập các thông số sau:
-                          <ul className="list-disc pl-5 mt-1 space-y-1">
-                            <li><strong>Base URL:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono text-xs">{origin}/v1</code></li>
-                            <li><strong>API Key:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono text-xs">{savedKey}</code></li>
-                            <li><strong>Model ID:</strong> Nhập model bạn muốn dùng (Ví dụ: <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono text-xs">gemini-2.5-flash</code>)</li>
-                          </ul>
-                        </li>
-                        <li>Cuộn xuống dưới cùng và click **Done** để hoàn tất cấu hình.</li>
-                      </ol>
-                    </div>
-                  </Card>
-
-                  <Card title="📂 Chi tiết tệp cấu hình cline_settings.json" icon="folder_open">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Nếu bạn hoặc Cline muốn sửa thủ công tệp cấu hình, dưới đây là định dạng JSON chuẩn của tệp:</p>
-                      <div className="relative">
-                        <button
-                          onClick={() => {
-                            const configJson = JSON.stringify({
-                              apiProvider: "openai",
-                              openAiBaseUrl: `${origin}/v1`,
-                              openAiApiKey: savedKey,
-                              openAiModelId: "gemini-2.5-flash",
-                              openAiCustomModelIds: [
-                                "gemini-2.5-flash",
-                                "gemini-2.5-pro",
-                                "gemini-2.0-flash",
-                                "gpt-5.5",
-                                "gemini-3-flash-agent",
-                                "gemini-pro-agent"
-                              ]
-                            }, null, 2);
-                            copyText(configJson, "configJsonCline");
-                          }}
-                          className="absolute right-2 top-2 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[12px]">
-                            {copiedField === "configJsonCline" ? "check" : "content_copy"}
-                          </span>
-                          {copiedField === "configJsonCline" ? "Đã copy" : "Copy JSON"}
-                        </button>
-                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`{
-  "apiProvider": "openai",
-  "openAiBaseUrl": "${origin}/v1",
-  "openAiApiKey": "${savedKey}",
-  "openAiModelId": "gemini-2.5-flash",
-  "openAiCustomModelIds": [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2.0-flash",
-    "gpt-5.5",
-    "gemini-3-flash-agent",
-    "gemini-pro-agent"
-  ]
-}`}
-                        </pre>
-                      </div>
-                    </div>
-                  </Card>
-                </div>
-              )}
             </div>
           )}
         </main>
