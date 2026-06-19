@@ -53,6 +53,10 @@ export default {
     { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)" },
     { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)" },
     { id: "gemini-3-flash", name: "Gemini 3 Flash", thinking: false },
+    { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash (Fallback)", upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.5-flash-high", name: "Gemini 3.5 Flash (High) (Fallback)", upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.5-flash-medium", name: "Gemini 3.5 Flash (Medium) (Fallback)", upstreamModelId: "gemini-3.5-flash-low" },
+    { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro (High) (Fallback)", upstreamModelId: "gemini-pro-agent" },
   ],
   oauth: {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
