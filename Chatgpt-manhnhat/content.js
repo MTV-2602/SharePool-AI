@@ -276,8 +276,8 @@ function parseCredentialLine(rawLine) {
 
   const parts = clean.split(sep).map((v) => String(v || "").trim());
 
-  // Neu co 5 phan (Hotmail Full), parse day du
-  if (parts.length >= 5) {
+  // Hotmail OAuth: email|pass|refresh_token|client_id(|2fa)
+  if (parts.length >= 4) {
     return {
       account: parts[0] || "",
       password: parts[1] || "",
@@ -4403,11 +4403,14 @@ function injectEmailQuickDock() {
     const username = String(parsed?.account || "").trim();
     const password = String(parsed?.password || "").trim();
     const otpSecret = normalizeOtpSecret(parsed?.twofaSecret || "");
+    const refreshToken = String(parsed?.refreshToken || "").trim();
+    const clientId = String(parsed?.clientId || "").trim();
+    const hasOauth = !!(refreshToken && clientId);
 
-    if (!rawLine || !hasCredentialShape || !username || !password || !otpSecret) {
+    if (!rawLine || !hasCredentialShape || !username || !password || (!otpSecret && !hasOauth)) {
       return {
         ok: false,
-        error: "Chua co tk|mk|2fa de day",
+        error: "Chua co tk|mk|2fa hoac email|pass|refresh|client_id de day",
       };
     }
 
@@ -4416,6 +4419,13 @@ function injectEmailQuickDock() {
       username,
       password,
       otpSecret,
+      refreshToken,
+      clientId,
+      credentialKind: hasOauth
+        ? otpSecret
+          ? "inventory_with_oauth_quota"
+          : "oauth_quota"
+        : "inventory",
       rawLine,
     };
   };
@@ -4428,6 +4438,30 @@ function injectEmailQuickDock() {
     if (status === "missing") return " | Chua co acc trong Hotmail";
     if (status === "error") return ` | ${hotmailLink?.message || "Loi noi Hotmail"}`;
     return "";
+  };
+
+  const getExtensionPushResultText = (json = {}, fallbackUser = "") => {
+    const username = String(json?.account?.username || fallbackUser || "").trim();
+    const inventoryStatus = String(json?.inventoryStatus || "").trim();
+    const oauthStatus = String(json?.oauthStatus || "").trim();
+    const parts = [];
+    if (inventoryStatus === "skipped") {
+      parts.push(`Khong tao kho acc${username ? `: ${username}` : ""}`);
+    } else if (inventoryStatus === "duplicate") {
+      parts.push(`Kho da co${username ? `: ${username}` : ""}`);
+    } else {
+      parts.push(`Da day len kho${username ? `: ${username}` : ""}`);
+    }
+    if (oauthStatus && oauthStatus !== "skipped") {
+      parts.push(
+        oauthStatus === "error"
+          ? `OAuth loi: ${json?.oauth?.error || "khong luu duoc"}`
+          : `OAuth ${oauthStatus}`,
+      );
+    }
+    const hotmailText = getHotmailLinkStatusText(json?.hotmailLink);
+    if (hotmailText) parts.push(hotmailText.replace(/^\s*\|\s*/, ""));
+    return parts.filter(Boolean).join(" | ");
   };
 
   window.tryRebuildEmailQuickDock = () => {
@@ -5075,6 +5109,10 @@ function injectEmailQuickDock() {
           username: credential.username,
           password: credential.password,
           otpSecret: credential.otpSecret,
+          refreshToken: credential.refreshToken,
+          clientId: credential.clientId,
+          credentialKind: credential.credentialKind,
+          rawLine: credential.rawLine,
           workerId: worker.id,
           source: "extension_quick_dock",
           originHost: String(location.hostname || location.href || "").slice(0, 120),
@@ -5082,7 +5120,7 @@ function injectEmailQuickDock() {
       });
       const json = await resp.json().catch(() => ({}));
 
-      if (resp.status === 409 || json?.duplicate) {
+      if (resp.status === 409 || (json?.duplicate && !json?.ok)) {
         btn.textContent = "Trung";
         btn.style.background = "#d97706";
         toast("Acc da co trong he thong", "#e67e22");
@@ -5101,10 +5139,7 @@ function injectEmailQuickDock() {
       btn.textContent = "Da day";
       btn.style.background = "#16a34a";
       clearQuickDockInput();
-      toast(
-        `Da day len inventory va clear o nhap: ${pushedUser}${getHotmailLinkStatusText(json?.hotmailLink)}`,
-        "#27ae60",
-      );
+      toast(`${getExtensionPushResultText(json, pushedUser)} | Da clear o nhap`, "#27ae60");
     } catch (err) {
       btn.textContent = "Loi";
       btn.style.background = "#c0392b";

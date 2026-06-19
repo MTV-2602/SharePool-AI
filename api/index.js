@@ -17258,6 +17258,8 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
     const username = String(req.body?.username || req.body?.email || "").trim();
     const password = String(req.body?.password || "").trim();
     const otpSecret = String(req.body?.otpSecret || "").trim();
+    const refreshToken = String(req.body?.refreshToken || "").trim();
+    const clientId = String(req.body?.clientId || "").trim();
     const originHost = String(req.body?.originHost || "").trim().slice(0, 120);
     const source = String(req.body?.source || "extension_quick_dock")
       .trim()
@@ -17265,11 +17267,21 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
     const link = String(req.body?.link || "").trim();
     const note = String(req.body?.note || "").trim();
     const workerId = String(req.body?.workerId || "").trim();
+    const oauthCredential = {
+      email: username,
+      username,
+      password,
+      refreshToken,
+      clientId,
+      secret2fa: otpSecret,
+      otpSecret,
+    };
+    const hasOauthCredential = hasHotmailOauthCredential(oauthCredential);
 
-    if (!username || !password || !otpSecret) {
+    if (!username || !password || (!otpSecret && !hasOauthCredential)) {
       return res.status(400).json({
         ok: false,
-        error: "Thieu username, password hoac 2FA de day.",
+        error: "Thieu username/password va can 2FA cho kho acc hoac refreshToken/clientId cho OAuth.",
       });
     }
     if (!workerId) {
@@ -17293,6 +17305,43 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
 
     const duplicate = await findChatgptAccountByUsernameExact(username);
     if (duplicate) {
+      let oauthResult = null;
+      let hotmailLink = null;
+      if (hasOauthCredential) {
+        try {
+          oauthResult = await upsertExtensionHotmailOauthCredential(oauthCredential, {
+            account: duplicate,
+            worker: workerInfo,
+            source,
+            originHost,
+          });
+          hotmailLink = await getHotmailLinkInfoForEmail(username, { sync: false });
+          bumpDataVersion();
+          notifyClients();
+        } catch (oauthError) {
+          oauthResult = {
+            saved: false,
+            status: "error",
+            error: oauthError?.message || "Khong the luu OAuth Hotmail.",
+          };
+        }
+      }
+
+      if (hasOauthCredential) {
+        return res.status(200).json({
+          ok: true,
+          duplicate: true,
+          inventoryStatus: "duplicate",
+          oauthStatus: oauthResult?.status || "skipped",
+          oauth: oauthResult,
+          hotmailLink,
+          message: oauthResult?.saved
+            ? "Acc da co trong kho. OAuth/quota da duoc cap nhat rieng."
+            : "Acc da co trong kho. OAuth/quota chua duoc cap nhat.",
+          account: sanitizeHotmailChatgptAccount(duplicate),
+          worker: workerInfo,
+        });
+      }
       return res.status(409).json({
         ok: false,
         duplicate: true,
@@ -17301,8 +17350,40 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
       });
     }
 
+    if (!otpSecret && hasOauthCredential) {
+      let oauthResult = null;
+      try {
+        oauthResult = await upsertExtensionHotmailOauthCredential(oauthCredential, {
+          worker: workerInfo,
+          source,
+          originHost,
+        });
+        bumpDataVersion();
+        notifyClients();
+      } catch (oauthError) {
+        oauthResult = {
+          saved: false,
+          status: "error",
+          error: oauthError?.message || "Khong the luu OAuth Hotmail.",
+        };
+      }
+
+      return res.status(oauthResult?.saved ? 201 : 400).json({
+        ok: !!oauthResult?.saved,
+        duplicate: false,
+        inventoryStatus: "skipped",
+        oauthStatus: oauthResult?.status || "error",
+        oauth: oauthResult,
+        message: oauthResult?.saved
+          ? "Da luu OAuth/quota. Khong tao kho acc vi payload khong co 2FA."
+          : "Khong the luu OAuth/quota.",
+        account: null,
+        worker: workerInfo,
+      });
+    }
+
     const nowIso = new Date().toISOString();
-    const { account, hotmailLink } = await createPublicChatgptAccount(
+    const createdResult = await createPublicChatgptAccount(
       {
         username,
         password,
@@ -17319,6 +17400,27 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
       },
       { source },
     );
+    const account = createdResult.account;
+    let hotmailLink = createdResult.hotmailLink;
+
+    let oauthResult = null;
+    if (hasOauthCredential) {
+      try {
+        oauthResult = await upsertExtensionHotmailOauthCredential(oauthCredential, {
+          account,
+          worker: workerInfo,
+          source,
+          originHost,
+        });
+        hotmailLink = await getHotmailLinkInfoForEmail(username, { sync: false });
+      } catch (oauthError) {
+        oauthResult = {
+          saved: false,
+          status: "error",
+          error: oauthError?.message || "Khong the luu OAuth Hotmail.",
+        };
+      }
+    }
 
     await createExtensionWorkerPushLog({
       account,
@@ -17350,6 +17452,9 @@ app.post("/api/chatgpt-extension-push", cors(), verifyExtensionPushToken, async 
       message: "Day account thanh cong.",
       account,
       hotmailLink,
+      inventoryStatus: "created",
+      oauthStatus: oauthResult?.status || "skipped",
+      oauth: oauthResult,
       worker: workerInfo,
       telegramNotified: !!telegramResult?.sent,
       duplicate: false,
@@ -19134,6 +19239,101 @@ function parseStrictHotmailSaveLine(rawLine) {
     refreshToken: String(parts[2] || "").trim(),
     clientId: String(parts[3] || "").trim(),
     secret2fa: String(parts[4] || "").trim(),
+  };
+}
+
+function buildHotmailLineFromCredential(cred = {}) {
+  const email = normalizeHotmailEmail(cred?.email || cred?.username);
+  const password = String(cred?.password || "").trim();
+  const refreshToken = String(cred?.refreshToken || "").trim();
+  const clientId = String(cred?.clientId || "").trim();
+  const secret2fa = String(cred?.secret2fa || cred?.otpSecret || "").trim();
+  if (!email || !password || !refreshToken || !clientId) return "";
+  return [email, password, refreshToken, clientId, secret2fa]
+    .map((part) => String(part || "").trim())
+    .join("|");
+}
+
+function hasHotmailOauthCredential(cred = {}) {
+  return !!(
+    normalizeHotmailEmail(cred?.email || cred?.username) &&
+    String(cred?.password || "").trim() &&
+    String(cred?.refreshToken || "").trim() &&
+    String(cred?.clientId || "").trim()
+  );
+}
+
+function buildExtensionHotmailTakenNote({ account = {}, worker = {}, source = "", originHost = "" } = {}) {
+  const base = buildHotmailChatgptLockNote(account);
+  const workerName = normalizeExtensionWorkerName(worker?.name || account?.createdByWorkerName || "");
+  const details = [
+    workerName ? `worker: ${workerName}` : "",
+    source ? `source: ${String(source).trim()}` : "",
+    originHost ? `host: ${String(originHost).trim()}` : "",
+  ].filter(Boolean);
+  return [base, ...details].join(" | ").slice(0, 500);
+}
+
+async function upsertExtensionHotmailOauthCredential(credInput = {}, context = {}) {
+  const line = buildHotmailLineFromCredential(credInput);
+  if (!line) {
+    return {
+      saved: false,
+      status: "skipped",
+      message: "Payload khong co refreshToken/clientId nen khong luu OAuth.",
+    };
+  }
+
+  const parsed = parseStrictHotmailSaveLine(line);
+  if (!parsed) {
+    throw createHttpError("OAuth Hotmail sai format email|pass|refresh_token|client_id|2FA.", 400);
+  }
+
+  const validation = await validateHotmailCredentialLive(parsed, { top: 1 });
+  const validatedCred = validation?.credential || parsed;
+  const now = new Date().toISOString();
+  const existing = await HotmailAccount.findOne({ email: validatedCred.email }).lean();
+  const account = context?.account || null;
+  const shouldLockForChatgpt = !!account?.id;
+  const nextState = shouldLockForChatgpt ? "reserved" : String(existing?.state || "available").trim() || "available";
+  const nextTakenNote = shouldLockForChatgpt
+    ? buildExtensionHotmailTakenNote(context)
+    : String(existing?.takenNote || "").trim();
+
+  const update = {
+    ...validatedCred,
+    state: nextState,
+    updatedAt: now,
+  };
+  if (shouldLockForChatgpt) {
+    update.reservedAt = String(existing?.reservedAt || now).trim() || now;
+    update.takenByIp = HOTMAIL_CHATGPT_LINK_ACTOR;
+    update.takenAt = now;
+    update.takenNote = nextTakenNote;
+  }
+
+  const saved = await HotmailAccount.findOneAndUpdate(
+    { email: validatedCred.email },
+    {
+      $set: update,
+      $setOnInsert: {
+        usedCount: 0,
+        createdAt: now,
+      },
+    },
+    { new: true, upsert: true },
+  ).lean();
+
+  return {
+    saved: true,
+    status: existing ? "updated" : "created",
+    email: validatedCred.email,
+    account: saved,
+    validated: true,
+    liveMessage: validation?.liveMessage || "Live OK",
+    messageCount: Number(validation?.messageCount || 0),
+    scope: validation?.scope || "",
+    rotatedRefreshToken: validation?.rotatedRefreshToken || "",
   };
 }
 
