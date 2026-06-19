@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
 import { createProviderConnection } from "@/models";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
 
 // POST /api/chatgpt-oauth-callback
-// Exchange OAuth authorization code for tokens and add to provider pool
+// Nhận authorization code từ OAuth flow, exchange lấy access+refresh token,
+// và lưu vào OAuth pool (provider connections) để chia sẻ quota Codex.
+// KHÔNG lưu password vào đây. Kho acc được quản lý riêng tại /api/chatgpt-extension-push.
 export async function POST(request) {
   try {
     // 1. Extension Push Token check
@@ -123,19 +124,6 @@ export async function POST(request) {
       providerSpecificData,
       testStatus: "active",
     });
-
-    // Update status and clear lease locks in chatgpt_credentials table
-    const targetEmail = email || accountName;
-    if (targetEmail) {
-      await supabase
-        .from("chatgpt_credentials")
-        .update({
-          status: "active",
-          reserved_at: null,
-          reserved_by_ip: null
-        })
-        .eq("email", targetEmail);
-    }
 
     return NextResponse.json({
       ok: true,

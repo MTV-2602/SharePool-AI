@@ -1936,26 +1936,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const isFreePush = isGptFreeJob(job);
         const targetShelf = isFreePush ? normalizeFreeTargetShelf(job.freeTargetShelf || job.targetShelf) : "none";
 
-        // Query JWE session cookie and device ID from browser cookies
-        const sessionTokenCookie = await new Promise(r => {
-          chrome.cookies.get({ url: "https://chatgpt.com", name: "__Secure-next-auth.session-token" }, r);
-        });
-        const sessionTokenVal = sessionTokenCookie ? sessionTokenCookie.value : "";
-
-        const oaiDidCookie = await new Promise(r => {
-          chrome.cookies.get({ url: "https://chatgpt.com", name: "oai-did" }, r);
-        });
-        const deviceIdVal = oaiDidCookie ? oaiDidCookie.value : "";
-
-        const finalSessionToken = sessionTokenVal || job.sessionToken || "";
-
-        if (finalSessionToken) {
-          addLog(targetTabId, `Da lay JWE session token tu cookie. Chieu dai: ${finalSessionToken.length}`);
-        } else {
-          addLog(targetTabId, "Canh bao: Khong lay duoc session token tu cookie hoac job.");
-        }
-
-        const resp = await fetchWithTimeout(backendUrl(cfg.backendBaseUrl, EXTENSION_PUSH_PATH), {
+        // ─── BƯỚC 1: Lưu credentials (email/pass/OTP) vào KHO ACC ───────────
+        // Mục đích: khi acc lỗi → vào kho lấy thông tin để đăng nhập lại
+        // KHÔNG gửi session token / OAuth token vào đây
+        addLog(targetTabId, `[Kho Acc] Dang luu credentials cho ${job.email}...`);
+        const credResp = await fetchWithTimeout(backendUrl(cfg.backendBaseUrl, EXTENSION_PUSH_PATH), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -1965,24 +1950,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             username: job.email,
             password: job.password,
             otpSecret: job.secret,
-            sessionToken: finalSessionToken,
-            deviceId: deviceIdVal,
-            emailSource: job.mailSite,
-            mailCheckProvider: job.mailSite,
-            targetType: isFreePush ? "free" : "unassigned",
-            targetShelf,
             source: isFreePush ? "AutoRegUnifiedFree" : "AutoRegUnified",
-            originHost: "AutoRegUnified"
           }),
           timeout: 30000
         });
-        const data = await resp.json().catch(() => ({}));
-        if (resp.status === 409 || data.duplicate) {
-          throw new Error(getErrorMessage(data.error, "Acc da co trong he thong."));
+        const credData = await credResp.json().catch(() => ({}));
+        if (!credResp.ok || !credData.ok) {
+          throw new Error(getErrorMessage(credData.error, `Kho acc push HTTP ${credResp.status}`));
         }
-        if (!resp.ok || !data.ok) {
-          throw new Error(getErrorMessage(data.error, `Push HTTP ${resp.status}`));
-        }
+        addLog(targetTabId, `[Kho Acc] Da luu credentials thanh cong cho ${job.email}.`);
 
         await markBackendHotmailUsed(job, "Push thành công từ AutoRegUnified.");
         Object.assign(job, {
@@ -1991,21 +1967,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           logoutPending: true,
           step: "logout_pending"
         });
-        addLog(targetTabId, `Da Push thanh cong: ${job.email}. Dang logout ChatGPT truoc khi ket thuc job.`);
+        addLog(targetTabId, `[Kho Acc] Da Push kho acc thanh cong: ${job.email}. Dang chuan bi OAuth...`);
         setJob(targetTabId, job);
 
-        // Auto-trigger OAuth flow giống bấm "Kết nối Codex (OAuth)" trên web
-        // Tab đang đăng nhập → OpenAI sẽ redirect thẳng về server callback
+        // ─── BƯỚC 2: Trigger OAuth flow để lưu access+refresh token vào OAuth pool ───
+        // Tab đang đăng nhập → OpenAI redirect về server callback → chatgpt-oauth-callback
         const oauthTriggered = await triggerOAuthForJob(targetTabId, job, cfg);
         if (oauthTriggered) {
           // OAuth đang chạy — tab sẽ tự navigate về server callback
-          // Server sẽ tự lưu tokens, không cần logout thủ công
-          sendResponse({ success: true, email: job.email, oauthPending: true, message: "Push OK + OAuth tu dong dang xu ly" });
+          // chatgpt-oauth-callback sẽ lưu token vào OAuth pool
+          sendResponse({ success: true, email: job.email, oauthPending: true, message: "[Kho Acc] OK + [OAuth] tu dong dang xu ly" });
           return;
         }
 
-        // Fallback: OAuth thất bại → logout bình thường
-        const releaseResult = await finishPushedJobAfterLogout(targetTabId, job, data);
+        // Fallback: OAuth thất bại → logout bình thường (kho acc đã lưu rồi)
+        addLog(targetTabId, `[OAuth] That bai, fallback logout. Kho acc da duoc luu truoc do.`);
+        const releaseResult = await finishPushedJobAfterLogout(targetTabId, job, null);
         sendResponse(releaseResult);
 
       } catch (err) {

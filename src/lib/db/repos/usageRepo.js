@@ -544,6 +544,7 @@ export async function getUsageStats(period = "all") {
     );
 
     for (const r of filtered) {
+      stats.totalRequests++; // Đếm trực tiếp — tránh miss khi provider null
       const tokens = parseJson(r.tokens, {}) || {};
       const promptTokens = tokens.prompt_tokens || 0;
       const completionTokens = tokens.completion_tokens || 0;
@@ -613,7 +614,10 @@ export async function getUsageStats(period = "all") {
     }
   }
 
-  stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+  // Nhánh 7d/30d/60d: tổng requests từ byProvider (daily summary không có row-level count)
+  if (stats.totalRequests === 0) {
+    stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+  }
   return stats;
 }
 
@@ -628,7 +632,7 @@ export async function getChartData(period = "7d") {
     startOfDay.setHours(0, 0, 0, 0);
     const startTime = startOfDay.getTime();
     const endTime = startTime + bucketCount * bucketMs;
-    const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const labelFn = (ts) => new Date(ts).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
     const rows = await db.all(
@@ -650,7 +654,8 @@ export async function getChartData(period = "7d") {
   if (period === "24h") {
     const bucketCount = 24;
     const bucketMs = 3600000;
-    const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+    // Dùng "vi-VN" để label chart khớp với múi giờ local của server (UTC+7)
+    const labelFn = (ts) => new Date(ts).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
     const startTime = now - bucketCount * bucketMs;
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 

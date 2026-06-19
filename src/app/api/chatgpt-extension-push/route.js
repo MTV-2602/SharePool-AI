@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { createProviderConnection } from "@/models";
-import { extractCodexAccountInfo } from "@/lib/oauth/providers";
 
 // POST /api/chatgpt-extension-push
-// Save newly registered ChatGPT credentials into `chatgpt_credentials`
-// and optionally save/update session tokens in the provider connections pool.
+// Lưu thông tin đăng nhập (email/password/OTP) vào kho acc chatgpt_credentials.
+// MỤC ĐÍCH: Khi acc lỗi → vào kho lấy thông tin để đăng nhập lại.
+// KHÔNG lưu session token / OAuth token vào đây.
+// OAuth pool được xử lý riêng tại /api/chatgpt-oauth-callback.
 export async function POST(request) {
   try {
     // 1. Extension Push Token check
@@ -15,8 +15,8 @@ export async function POST(request) {
     const adminKey = request.headers.get("x-admin-key") || "";
     const defaultExtToken = "b081ea5e6a6ad57e154c2f8d440ae1f62e5b3e978d0efb82eae9b75a7bc8ef8b";
 
-    const isAuthorized = 
-      (extensionToken === configuredToken) || 
+    const isAuthorized =
+      (extensionToken === configuredToken) ||
       (extensionToken === configuredAdminKey) ||
       (extensionToken === defaultExtToken) ||
       (extensionToken === "admin123") ||
@@ -28,131 +28,58 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { username, password, otpSecret, sessionToken, deviceId, source } = body;
+    const { username, password, otpSecret, source } = body;
 
     if (!username || typeof username !== "string") {
       return NextResponse.json({ error: "username is required" }, { status: 400 });
     }
 
-    let savedToken = false;
-    let savedCred = false;
-
-    // CASE 1: Save session token to provider pool if present
-    if (sessionToken && sessionToken.trim()) {
-      const tokenClean = sessionToken.trim();
-      const nameClean = username.trim();
-      
-      let tokenToSave = tokenClean;
-      if (deviceId) {
-        try {
-          if (tokenClean.startsWith("{")) {
-            const obj = JSON.parse(tokenClean);
-            obj.deviceId = deviceId;
-            tokenToSave = JSON.stringify(obj);
-          } else {
-            tokenToSave = JSON.stringify({
-              accessToken: tokenClean,
-              deviceId: deviceId
-            });
-          }
-        } catch (_) {}
-      }
-
-      // Check if this is a JWT or JSON wrapper containing accessToken and refreshToken
-      let accessToken = tokenToSave;
-      let refreshToken = null;
-      try {
-        if (tokenToSave.startsWith("{")) {
-          const parsed = JSON.parse(tokenToSave);
-          accessToken = parsed.accessToken || accessToken;
-          refreshToken = parsed.refreshToken || null;
-        }
-      } catch (_) {}
-
-      // Backfill info from JWT
-      let email = nameClean;
-      let providerSpecificData = { authMethod: "access_token" };
-      if (deviceId) {
-        providerSpecificData.deviceId = deviceId;
-      }
-      try {
-        const info = extractCodexAccountInfo(accessToken) || {};
-        if (info.email) email = info.email;
-        if (info.chatgptAccountId) providerSpecificData.chatgptAccountId = info.chatgptAccountId;
-        if (info.chatgptPlanType) providerSpecificData.chatgptPlanType = info.chatgptPlanType;
-      } catch (_) {}
-
-      await createProviderConnection({
-        provider: "codex",
-        authType: refreshToken ? "oauth" : "access_token",
-        accessToken,
-        refreshToken,
-        email,
-        name: nameClean,
-        providerSpecificData,
-        testStatus: "active",
-      });
-      savedToken = true;
+    if (!password || !password.trim()) {
+      return NextResponse.json({ error: "password is required for kho acc push" }, { status: 400 });
     }
 
-    // CASE 2: Save credentials into chatgpt_credentials table
-    if (password && password.trim()) {
-      const email = username.trim();
-      
-      // Check if credentials already exist
-      const { data: existing } = await supabase
+    const email = username.trim();
+
+    // Upsert vào kho acc — dùng để đăng nhập lại khi acc bị lỗi
+    const { data: existing } = await supabase
+      .from("chatgpt_credentials")
+      .select("id")
+      .eq("email", email)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      const { error: updateErr } = await supabase
         .from("chatgpt_credentials")
-        .select("*")
-        .eq("email", email)
-        .limit(1);
-
-      if (existing && existing.length > 0) {
-        const { error: updateErr } = await supabase
-          .from("chatgpt_credentials")
-          .update({
-            password: password.trim(),
-            otp_secret: otpSecret || "",
-            source: source || "AutoRegUnified",
-            status: "active",
-            reserved_at: null,
-            reserved_by_ip: null,
-          })
-          .eq("email", email);
-        if (updateErr) throw updateErr;
-      } else {
-        const { error: insertErr } = await supabase
-          .from("chatgpt_credentials")
-          .insert({
-            email,
-            password: password.trim(),
-            otp_secret: otpSecret || "",
-            source: source || "AutoRegUnified",
-            status: "active",
-            reserved_at: null,
-            reserved_by_ip: null,
-          });
-        if (insertErr) throw insertErr;
-      }
-      savedCred = true;
+        .update({
+          password: password.trim(),
+          otp_secret: otpSecret || "",
+          source: source || "AutoRegUnified",
+          status: "active",
+          reserved_at: null,
+          reserved_by_ip: null,
+        })
+        .eq("email", email);
+      if (updateErr) throw updateErr;
+    } else {
+      const { error: insertErr } = await supabase
+        .from("chatgpt_credentials")
+        .insert({
+          email,
+          password: password.trim(),
+          otp_secret: otpSecret || "",
+          source: source || "AutoRegUnified",
+          status: "active",
+          reserved_at: null,
+          reserved_by_ip: null,
+        });
+      if (insertErr) throw insertErr;
     }
 
-    if (savedToken || savedCred) {
-      let msg = "";
-      if (savedToken && savedCred) {
-        msg = `Credentials and session token for '${username}' saved successfully`;
-      } else if (savedToken) {
-        msg = `Account '${username}' session token added to pool`;
-      } else {
-        msg = `Credentials for '${username}' saved to database`;
-      }
-      return NextResponse.json({
-        ok: true,
-        message: msg,
-        email: username
-      });
-    }
-
-    return NextResponse.json({ error: "sessionToken or password is required" }, { status: 400 });
+    return NextResponse.json({
+      ok: true,
+      message: `Đã lưu thông tin đăng nhập cho '${email}' vào kho acc.`,
+      email,
+    });
   } catch (err) {
     console.error("chatgpt-extension-push error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
