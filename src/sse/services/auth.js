@@ -323,5 +323,24 @@ export function extractApiKey(request) {
  */
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+
+  // 1. Check developer/admin API keys (localDb)
+  const isDevKey = await validateApiKey(apiKey);
+  if (isDevKey) return true;
+
+  // 2. Check Client Resale Keys (Supabase)
+  const isClientKeyFormat = apiKey.startsWith("ck-") || (apiKey.startsWith("sk-") && apiKey.split("-").length === 2);
+  if (isClientKeyFormat) {
+    try {
+      const { validateClientKey } = await import("@/lib/auth/clientKeyAuth.js");
+      const clientKeyResult = await validateClientKey(apiKey);
+      if (clientKeyResult.valid) {
+        return true;
+      }
+    } catch (e) {
+      console.error("[Auth] Error validating client key in isValidApiKey:", e);
+    }
+  }
+
+  return false;
 }
