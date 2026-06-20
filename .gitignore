@@ -37,3 +37,4 @@ Thumbs.db
 scratch/
 code_diff.txt
 repo_diff.md
+.env*

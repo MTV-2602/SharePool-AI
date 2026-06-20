@@ -19,6 +19,10 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     return flushEvents(state);
   }
   
+  if (chunk.usage && typeof chunk.usage === "object") {
+    state.usage = chunk.usage;
+  }
+  
   if (!chunk.choices?.length) return [];
   
   const events = [];
@@ -329,7 +333,7 @@ function closeToolCall(state, emit, idx) {
 function sendCompleted(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
-    emit("response.completed", {
+    const completedEvent = {
       type: "response.completed",
       response: {
         id: state.responseId,
@@ -339,7 +343,17 @@ function sendCompleted(state, emit) {
         background: false,
         error: null
       }
-    });
+    };
+    if (state.usage) {
+      completedEvent.response.usage = {
+        input_tokens: state.usage.prompt_tokens || 0,
+        output_tokens: state.usage.completion_tokens || 0,
+        total_tokens: (state.usage.prompt_tokens || 0) + (state.usage.completion_tokens || 0),
+        input_tokens_details: state.usage.prompt_tokens_details || {},
+        output_tokens_details: state.usage.completion_tokens_details || {}
+      };
+    }
+    emit("response.completed", completedEvent);
   }
 }
 

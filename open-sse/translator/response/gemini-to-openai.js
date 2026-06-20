@@ -133,8 +133,8 @@ export function geminiToOpenAIResponse(chunk, state) {
   }
 
   // Usage metadata - extract before finish reason so we can include it
-  const usageMeta = response.usageMetadata || chunk.usageMetadata;
-  const geminiUsage = toOpenAIUsage(usageMeta, "gemini");
+  const currentUsageMeta = response.usageMetadata || chunk.usageMetadata;
+  const geminiUsage = toOpenAIUsage(currentUsageMeta, "gemini");
   if (geminiUsage) state.usage = geminiUsage;
 
   // Finish reason - include usage in final chunk
