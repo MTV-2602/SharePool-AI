@@ -458,6 +458,51 @@ curl ${origin}/v1/chat/completions \\
     "`" + "`" + "`" + "";
   };
 
+  const getOpenclawMarkdown = () => {
+    return '# Hướng dẫn kết nối máy khách - OpenClaw\n\n' +
+      'Bạn có thể cấu hình OpenClaw để gọi qua API Gateway 9Router theo các cách dưới đây:\n\n' +
+      '---\n\n' +
+      '## 🛠️ 1. Cấu hình tự động từ Dashboard\n' +
+      'Nếu bạn cài đặt OpenClaw cục bộ trên cùng máy chủ 9Router:\n' +
+      '1. Truy cập vào giao diện quản trị 9Router: **Dashboard** → **CLI Tools** → **OpenClaw**.\n' +
+      '2. Chọn mô hình bạn muốn sử dụng và nhấn **Áp dụng**. Hệ thống sẽ tự động ghi đè tệp cấu hình của OpenClaw.\n\n' +
+      '---\n\n' +
+      '## 💻 2. Cấu hình thủ công qua tệp tin openclaw.json\n' +
+      'Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ máy khách từ xa:\n' +
+      '1. Mở hoặc tạo tệp cấu hình của OpenClaw theo hệ điều hành:\n' +
+      '   - **Windows**: `' + "`" + '%%USERPROFILE%%\\.openclaw\\openclaw.json' + "`" + ' (Ví dụ: `' + "`" + 'C:\\Users\\tên_user\\.openclaw\\openclaw.json' + "`" + ')\n' +
+      '   - **Mac / Linux**: `' + "`" + '~/.openclaw/openclaw.json' + "`" + '\n' +
+      '   *(Nếu chưa có thư mục `' + "`" + '.openclaw' + "`" + ', hãy mở ứng dụng OpenClaw một lần hoặc tự tạo thư mục mới).*\n\n' +
+      '2. Chỉnh sửa tệp **openclaw.json** và dán nội dung cấu hình nhà cung cấp `' + "`" + '9router' + "`" + ' vào phần `' + "`" + 'models.providers' + "`" + ':\n' +
+      "`" + "`" + "`" + 'json\n' +
+      '{\n' +
+      '  "models": {\n' +
+      '    "providers": {\n' +
+      '      "9router": {\n' +
+      '        "baseUrl": "' + '${origin}/v1' + '",\n' +
+      '        "apiKey": "' + '${savedKey}' + '",\n' +
+      '        "api": "openai-completions",\n' +
+      '        "models": [\n' +
+      '          { "id": "claude-sonnet-4-5-20250929", "name": "claude-sonnet-4-5-20250929" }\n' +
+      '        ]\n' +
+      '      }\n' +
+      '    }\n' +
+      '  },\n' +
+      '  "agents": {\n' +
+      '    "defaults": {\n' +
+      '      "model": {\n' +
+      '        "primary": "9router/claude-sonnet-4-5-20250929"\n' +
+      '      },\n' +
+      '      "models": {\n' +
+      '        "9router/claude-sonnet-4-5-20250929": {}\n' +
+      '      }\n' +
+      '    }\n' +
+      '  }\n' +
+      '}\n' +
+      "`" + "`" + "`" + '\n\n' +
+      '3. Lưu lại và khởi động lại **OpenClaw CLI** để áp dụng cấu hình mới.\n';
+  };
+
   const getGeminiMarkdown = () => {
     return `# Hướng dẫn kết nối Google Gemini qua 9Router API Gateway
 
@@ -521,6 +566,10 @@ curl \${origin}/v1/chat/completions \\
     const md =
       guideTab === "codex"
         ? getCodexMarkdown()
+        : guideTab === "antigravity"
+        ? getAntigravityMarkdown()
+        : guideTab === "openclaw"
+        ? getOpenclawMarkdown()
         : getGeminiMarkdown();
     copyText(md, "fullMarkdown");
   };
@@ -962,6 +1011,14 @@ curl \${origin}/v1/chat/completions \\
                   >
                     💎 Hướng dẫn Google Gemini (API/SDK)
                   </button>
+                  <button
+                    onClick={() => setGuideTab("openclaw")}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                      guideTab === "openclaw" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
+                    }`}
+                  >
+                    🐾 Hướng dẫn OpenClaw
+                  </button>
                 </div>
 
                 <button
@@ -1319,6 +1376,69 @@ print(response.choices[0].message.content)`}
                   </Card>
                 </div>
               )}
+              {guideTab === "openclaw" && (
+                <div className="space-y-6 animate-fade-in">
+                  <Card title="🛠️ 1. Cấu hình tự động từ Dashboard" icon="construction">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Nếu bạn cài đặt OpenClaw cục bộ trên cùng máy chủ với 9Router:</p>
+                      <ul className="list-disc pl-5 space-y-1 text-text-muted animate-fade-in">
+                        <li>Truy cập vào giao diện quản trị 9Router: <strong>Dashboard</strong> → <strong>CLI Tools</strong> → <strong>OpenClaw</strong>.</li>
+                        <li>Chọn mô hình bạn mong muốn sử dụng và nhấn <strong>Áp dụng</strong>. Hệ thống sẽ tự động ghi đè tệp cấu hình của OpenClaw một cách chính xác.</li>
+                      </ul>
+                    </div>
+                  </Card>
+
+                  <Card title="💻 2. Cài đặt và Cấu hình thủ công" icon="laptop_mac">
+                    <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <div>
+                        <p className="text-xs mb-2">1. Tìm hoặc tạo tệp cấu hình của OpenClaw tùy theo hệ điều hành:</p>
+                        <ul className="list-disc pl-5 text-xs mb-2 space-y-1">
+                          <li><strong>Windows</strong>: <code>%USERPROFILE%\.openclaw\openclaw.json</code> (Ví dụ: <code>C:\Users\tên_user\.openclaw\openclaw.json</code>)</li>
+                          <li><strong>Mac / Linux</strong>: <code>~/.openclaw/openclaw.json</code></li>
+                        </ul>
+                        <p className="text-xs mb-2">2. Chỉnh sửa tệp <code>openclaw.json</code> và dán nội dung cấu hình nhà cung cấp <code>9router</code> vào phần <code>models.providers</code>:</p>
+                        <div className="relative bg-surface-2 border border-border rounded-lg p-3 font-mono text-xs text-text-main overflow-x-auto pr-12">
+                          <pre>{`{
+  "models": {
+    "providers": {
+      "9router": {
+        "baseUrl": "${origin}/v1",
+        "apiKey": "${savedKey}",
+        "api": "openai-completions",
+        "models": [
+          { "id": "claude-sonnet-4-5-20250929", "name": "claude-sonnet-4-5-20250929" }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "9router/claude-sonnet-4-5-20250929"
+      },
+      "models": {
+        "9router/claude-sonnet-4-5-20250929": {}
+      }
+    }
+  }
+}`}</pre>
+                          <button
+                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${origin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "claude-sonnet-4-5-20250929", "name": "claude-sonnet-4-5-20250929" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/claude-sonnet-4-5-20250929"\n      },\n      "models": {\n        "9router/claude-sonnet-4-5-20250929": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
+                            className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
+                            title="Copy cấu hình openclaw.json"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "jsonConfigOpenClaw" ? "check" : "content_copy"}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs">3. Khởi động lại <strong>OpenClaw CLI</strong> để áp dụng cấu hình mới.</p>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
 {guideTab === "gemini" && (
                 <div className="space-y-6 animate-fade-in">
                   <Card title="⚙️ Thông số kết nối API" icon="api">
