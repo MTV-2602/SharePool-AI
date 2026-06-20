@@ -251,7 +251,6 @@ export default function LoginPage() {
       m.startsWith("codex/") ||
       m.startsWith("cx/") ||
       m.includes("gpt-5.5") ||
-      m.includes("gpt-5.4") ||
       m.includes("gpt-5.3")
     ) {
       return "Codex";
@@ -268,7 +267,8 @@ export default function LoginPage() {
       m.includes("gemini-pro-default") ||
       m.includes("gpt-oss") ||
       m.includes("claude-sonnet-4-6") ||
-      m.includes("claude-opus-4-6-thinking");
+      m.includes("claude-opus-4-6-thinking") ||
+      m.includes("gpt-5.4");
 
     if (
       m.startsWith("antigravity/") || 
