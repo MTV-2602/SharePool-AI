@@ -43,14 +43,15 @@ export async function POST(request) {
     
     // Parse the body to extract the model (for logging fallback)
     let model = "unknown";
+    let reqBody = null;
     try {
       const clonedReq = request.clone();
-      const body = await clonedReq.json();
-      model = body.model || model;
+      reqBody = await clonedReq.json();
+      model = reqBody.model || model;
     } catch (e) {}
 
     const response = await handleChat(request);
-    return await wrapResponseWithClientKeyLogging(response, authResult.keyData.id, model);
+    return await wrapResponseWithClientKeyLogging(response, authResult.keyData.id, model, reqBody);
   }
 
   // Fallback to local handling (developer sk- key or other credentials)

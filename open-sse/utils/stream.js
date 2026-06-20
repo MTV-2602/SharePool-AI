@@ -335,9 +335,13 @@ export function createSSEStream(options = {}) {
           }
 
           if (hasValidUsage(usage)) {
-            logUsage(provider, usage, model, connectionId, apiKey, endpoint);
+            if (!onStreamComplete) {
+              logUsage(provider, usage, model, connectionId, apiKey, endpoint);
+            }
           } else {
-            appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+            if (!onStreamComplete) {
+              appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+            }
           }
           
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
@@ -418,9 +422,13 @@ export function createSSEStream(options = {}) {
         }
 
         if (hasValidUsage(state?.usage)) {
-          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey, endpoint);
+          if (!onStreamComplete) {
+            logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey, endpoint);
+          }
         } else {
-          appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+          if (!onStreamComplete) {
+            appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+          }
         }
         
         if (onStreamComplete) {

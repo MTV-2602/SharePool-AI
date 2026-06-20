@@ -52,7 +52,7 @@ export async function POST(request) {
   const response = await handleChat(newRequest);
   
   if (isClientKey && authResult) {
-    return await wrapResponseWithClientKeyLogging(response, authResult.keyData.id, body.model || "unknown");
+    return await wrapResponseWithClientKeyLogging(response, authResult.keyData.id, body.model || "unknown", body);
   }
   return response;
 }

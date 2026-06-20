@@ -140,7 +140,29 @@ export function extractBearerToken(request) {
 /**
  * Wrap a Next.js Response to intercept, read tokens usage, and log it to Supabase.
  */
-export async function wrapResponseWithClientKeyLogging(response, clientKeyId, model) {
+
+function extractTextFromChunk(parsed) {
+  if (!parsed) return "";
+  if (parsed.choices?.[0]?.delta?.content) {
+    return parsed.choices[0].delta.content;
+  }
+  if (parsed.delta?.text) {
+    return parsed.delta.text;
+  }
+  if (parsed.content?.text) {
+    return parsed.content.text;
+  }
+  if (parsed.candidates?.[0]?.content?.parts?.[0]?.text) {
+    return parsed.candidates[0].content.parts[0].text;
+  }
+  const parts = parsed.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    return parts.map(p => p.text || "").join("");
+  }
+  return "";
+}
+
+export async function wrapResponseWithClientKeyLogging(response, clientKeyId, model, reqBody = null) {
   if (!response.ok) return response;
 
   const contentType = response.headers.get('content-type') || '';
@@ -152,6 +174,8 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
     const encoder = new TextEncoder();
 
     let buffer = '';
+    let hasLogged = false;
+    let accumulatedText = '';
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -160,17 +184,19 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
             const { done, value } = await reader.read();
             if (done) {
               if (buffer) {
-                const lines = buffer.split('\n');
+                const lines = buffer.split(/\r?\n/);
                 for (const line of lines) {
                   if (line.startsWith('data:')) {
                     const dataStr = line.slice(5).trim();
                     if (dataStr && dataStr !== '[DONE]') {
                       try {
                         const parsed = JSON.parse(dataStr);
+                        accumulatedText += extractTextFromChunk(parsed);
                         const usage = extractUsage(parsed);
                         if (usage) {
                           const { prompt_tokens = 0, completion_tokens = 0 } = usage;
                           if (prompt_tokens > 0 || completion_tokens > 0) {
+                            hasLogged = true;
                             logClientKeyUsage(clientKeyId, parsed.model || model, prompt_tokens, completion_tokens)
                               .catch(err => console.error('[ClientKeyAuth] Failed to log usage:', err.message));
                           }
@@ -180,6 +206,15 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                   }
                 }
               }
+
+              // Fallback if no usage was returned in stream
+              if (!hasLogged) {
+                const promptTokens = reqBody ? Math.ceil(JSON.stringify(reqBody).length / 4) : 1000;
+                const completionTokens = Math.max(1, Math.floor(accumulatedText.length / 4));
+                logClientKeyUsage(clientKeyId, model, promptTokens, completionTokens)
+                  .catch(err => console.error('[ClientKeyAuth] Failed to log fallback usage:', err.message));
+              }
+
               controller.close();
               break;
             }
@@ -191,7 +226,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
             const text = decoder.decode(value, { stream: true });
             buffer += text;
 
-            const lines = buffer.split('\n');
+            const lines = buffer.split(/\r?\n/);
             // Keep the last partial line in buffer
             buffer = lines.pop() || '';
 
@@ -201,11 +236,13 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                 if (dataStr && dataStr !== '[DONE]') {
                   try {
                     const parsed = JSON.parse(dataStr);
+                    accumulatedText += extractTextFromChunk(parsed);
                     // Check if usage information exists using general extractUsage (supports OpenAI, Responses API, Gemini, Claude)
                     const usage = extractUsage(parsed);
                     if (usage) {
                       const { prompt_tokens = 0, completion_tokens = 0 } = usage;
                       if (prompt_tokens > 0 || completion_tokens > 0) {
+                        hasLogged = true;
                         // Log usage asynchronously to not block the stream finish
                         logClientKeyUsage(clientKeyId, parsed.model || model, prompt_tokens, completion_tokens)
                           .catch(err => console.error('[ClientKeyAuth] Failed to log usage:', err.message));
@@ -235,7 +272,14 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
       const clonedResponse = response.clone();
       const body = await clonedResponse.json();
       
-      const usage = extractUsage(body);
+      let usage = extractUsage(body);
+      if (!usage) {
+        const content = body.choices?.[0]?.message?.content || body.content || "";
+        usage = {
+          prompt_tokens: reqBody ? Math.ceil(JSON.stringify(reqBody).length / 4) : 1000,
+          completion_tokens: Math.max(1, Math.floor(content.length / 4))
+        };
+      }
       if (usage) {
         const { prompt_tokens = 0, completion_tokens = 0 } = usage;
         await logClientKeyUsage(clientKeyId, body.model || model, prompt_tokens, completion_tokens);

@@ -338,8 +338,27 @@ export async function getUsageStats(period = "all") {
 
   let allApiKeys = [];
   try { allApiKeys = await getApiKeys(); } catch {}
+
+  let allClientKeys = [];
+  try {
+    const { supabase } = await import("../../supabase.js");
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('client_keys')
+        .select('key, label, created_at');
+      if (!error && data) {
+        allClientKeys = data;
+      }
+    }
+  } catch (err) {
+    console.error("[usageRepo] Failed to fetch client keys for usage mapping:", err);
+  }
+
   const apiKeyMap = {};
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
+  for (const ck of allClientKeys) {
+    apiKeyMap[ck.key] = { name: ck.label || "Unnamed Client Key", id: ck.key, createdAt: ck.created_at };
+  }
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
   const recentRows = await db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
