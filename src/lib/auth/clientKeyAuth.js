@@ -7,11 +7,8 @@ import { extractUsage } from "open-sse/utils/usageTracking.js";
  */
 export async function validateClientKey(bearerToken) {
   const token = (bearerToken || '').trim();
-  const isCk = token.startsWith('ck-');
-  const isLegacySk = token.startsWith('sk-') && token.split('-').length === 2;
-
-  if (!token || (!isCk && !isLegacySk)) {
-    return { valid: false, error: 'Invalid client key format. Expected ck-... or sk-...' };
+  if (!token) {
+    return { valid: false, error: 'Invalid client key' };
   }
 
   const { data: keys, error } = await supabase
@@ -162,6 +159,27 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
           while (true) {
             const { done, value } = await reader.read();
             if (done) {
+              if (buffer) {
+                const lines = buffer.split('\n');
+                for (const line of lines) {
+                  if (line.startsWith('data:')) {
+                    const dataStr = line.slice(5).trim();
+                    if (dataStr && dataStr !== '[DONE]') {
+                      try {
+                        const parsed = JSON.parse(dataStr);
+                        const usage = extractUsage(parsed);
+                        if (usage) {
+                          const { prompt_tokens = 0, completion_tokens = 0 } = usage;
+                          if (prompt_tokens > 0 || completion_tokens > 0) {
+                            logClientKeyUsage(clientKeyId, parsed.model || model, prompt_tokens, completion_tokens)
+                              .catch(err => console.error('[ClientKeyAuth] Failed to log usage:', err.message));
+                          }
+                        }
+                      } catch (e) {}
+                    }
+                  }
+                }
+              }
               controller.close();
               break;
             }
