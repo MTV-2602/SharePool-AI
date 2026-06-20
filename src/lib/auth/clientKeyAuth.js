@@ -1,6 +1,9 @@
 import { supabase } from '../supabase.js';
 import { extractUsage } from "open-sse/utils/usageTracking.js";
 
+// Cache of sent quota alerts to avoid spamming (keyId -> timestamp)
+const sentQuotaAlerts = new Map();
+
 /**
  * Validates a client key (prefix `ck-`) against Supabase.
  * Returns { valid: true, keyData: {...} } or { valid: false, error: '...' }
@@ -95,19 +98,65 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
   const billedTokens = Math.ceil((promptTokens + completionTokens) * multiplier);
 
   // Insert usage log
-  await supabase.from('client_key_usage_logs').insert({
+  const { error: insertError } = await supabase.from('client_key_usage_logs').insert({
     client_key_id: clientKeyId,
     model,
     prompt_tokens: promptTokens,
     completion_tokens: completionTokens,
     billed_tokens: billedTokens,
   });
+  if (insertError) {
+    console.error('[ClientKeyAuth] Failed to insert usage log:', insertError.message);
+  }
 
   // Increment used_tokens on the key using explicit type casts
-  await supabase.rpc('exec_sql', {
+  const { error: rpcError } = await supabase.rpc('exec_sql', {
     query_text: 'UPDATE client_keys SET used_tokens = used_tokens + CAST($1 AS bigint) WHERE id = CAST($2 AS uuid)',
     query_params: [billedTokens, clientKeyId],
   });
+  if (rpcError) {
+    console.error('[ClientKeyAuth] Failed to increment used_tokens via exec_sql:', rpcError.message);
+  }
+
+  // Quota Threshold Alert (>= 90%)
+  try {
+    const { data: updatedKeys, error: checkError } = await supabase
+      .from('client_keys')
+      .select('key, label, used_tokens, quota_tokens')
+      .eq('id', clientKeyId)
+      .limit(1);
+
+    if (!checkError && updatedKeys?.length) {
+      const keyData = updatedKeys[0];
+      const used = Number(keyData.used_tokens) || 0;
+      const quota = Number(keyData.quota_tokens) || 0;
+
+      if (quota > 0) {
+        const pct = (used / quota) * 100;
+        if (pct >= 90) {
+          const keyId = clientKeyId.toString();
+          const now = Date.now();
+          const lastAlertTime = sentQuotaAlerts.get(keyId) || 0;
+          // Send alert only once every 12 hours per key
+          if (now - lastAlertTime > 12 * 60 * 60 * 1000) {
+            sentQuotaAlerts.set(keyId, now);
+            const { sendTelegramAlert } = await import('@/lib/telegramAlert.js');
+            const maskedKey = keyData.key ? keyData.key.slice(0, 7) + '...' + keyData.key.slice(-4) : 'unknown';
+            sendTelegramAlert(
+              '⚠️ <b>[9Router Alert] Client Key Quota Near Limit (>= 90%)</b>\n' +
+              '• Key Label: <code>' + (keyData.label || 'Unnamed Key') + '</code>\n' +
+              '• Key Value: <code>' + maskedKey + '</code>\n' +
+              '• Used: <code>' + used.toLocaleString() + '</code> tokens\n' +
+              '• Quota: <code>' + quota.toLocaleString() + '</code> tokens\n' +
+              '• Usage: <b>' + pct.toFixed(2) + '%</b>'
+            ).catch(err => console.error('[QuotaAlert] Alert failed:', err));
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[ClientKeyAuth] Quota threshold check failed:', err.message);
+  }
 }
 
 /**

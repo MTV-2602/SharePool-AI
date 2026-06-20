@@ -229,12 +229,29 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     backoffLevel: newBackoffLevel ?? backoffLevel
   });
 
-  const lockKey = Object.keys(lockUpdate)[0];
+    const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
 
   if (provider && status && reason) {
-    console.error(`❌ ${provider} [${status}]: ${reason}`);
+    console.error(`â Œ ${provider} [${status}]: ${reason}`);
+  }
+
+  // Send Telegram Alert for account lock
+  try {
+    const cooldownSec = Math.round(cooldownMs / 1000);
+    const { sendTelegramAlert } = await import("@/lib/telegramAlert.js");
+    sendTelegramAlert(
+      `⚠️ <b>[9Router Alert] Upstream Account Locked</b>\n` +
+      `• Account: <code>${connName}</code>\n` +
+      `• Provider: <code>${provider || 'unknown'}</code>\n` +
+      `• Model: <code>${model || 'all'}</code>\n` +
+      `• Status: <code>${status}</code>\n` +
+      `• Cooldown: <code>${cooldownSec}s</code>\n` +
+      `• Reason: <code>${reason}</code>`
+    ).catch(err => console.error('[markAccountUnavailable] Alert failed:', err));
+  } catch (err) {
+    console.error('[markAccountUnavailable] Failed to send Telegram alert:', err.message);
   }
 
   return { shouldFallback: true, cooldownMs };

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
@@ -387,93 +387,75 @@ curl ${origin}/v1/chat/completions \\
   };
 
   const getAntigravityMarkdown = () => {
-    return `# Hướng dẫn kết nối máy khách - AntiGravity (Gemini)
-
-Bạn có thể kết nối AntiGravity Desktop App hoặc cấu hình các công cụ lập trình của mình để gọi qua API Gateway 9Router theo các cách dưới đây:
-
----
-
-## 🛠️ 1. Thông số kết nối API cơ bản
-Để cấu hình thủ công cho các thư viện hoặc phần mềm khác:
-- **Base URL (Endpoint)**: \`${origin}/v1\`
-- **API Key**: \`${savedKey}\`
-- **Model ID khuyên dùng**: \`gpt-5.4\`
-
----
-
-## 💻 2. Cài đặt và Cấu hình thủ công trên AntiGravity Desktop App
-Sử dụng ứng dụng AntiGravity Desktop và tự động bypass màn hình login:
-1. Tìm hoặc tạo thư mục cấu hình của AntiGravity tùy theo hệ điều hành của bạn:
-   - **Windows**: \`%%USERPROFILE%%\\.antigravity\\config.toml\` (Ví dụ: \`C:\\Users\\tên_user\\.antigravity\\config.toml\`)
-   - **Mac / Linux**: \`~/.antigravity/config.toml\`
-   *(Nếu chưa có thư mục \`.antigravity\`, hãy mở ứng dụng AntiGravity một lần hoặc tự tạo thư mục mới).*
-
-2. Tạo hoặc sửa file **config.toml** trong thư mục trên và dán nội dung:
-\`\`\`toml
-model_reasoning_effort = "low"
-model_provider = "openai-custom"
-model = "gpt-5.4"
-
-[model_providers.openai-custom]
-experimental_bearer_token = "${savedKey}"
-name = "VinAi"
-base_url = "${origin}/v1"
-wire_api = "responses"
-requires_openai_auth = false
-supports_websockets = false
-\`\`\`
-
-3. Tạo tiếp file **auth.json** trong cùng thư mục trên (để bypass login) và dán nội dung:
-\`\`\`json
-{
-  "auth_mode": "apikey",
-  "OPENAI_API_KEY": "${savedKey}"
-}
-\`\`\`
-
-4. Khởi động lại ứng dụng **AntiGravity IDE / Desktop App** để áp dụng cấu hình.
-
----
-
-## 🚀 3. Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)
-1. **Provider**: Chọn \`OpenAI Compatible\` (hoặc Custom OpenAI).
-2. **Base URL**: Điền \`${origin}/v1\`
-3. **API Key**: Điền \`${savedKey}\`
-4. **Model ID**: Điền \`gpt-5.4\`.
-
----
-
-## 🐍 4. Tích hợp Python (sử dụng thư viện OpenAI SDK)
-\`\`\`python
-import openai
-
-client = openai.OpenAI(
-    base_url="${origin}/v1",
-    api_key="${savedKey}"
-)
-
-response = client.chat.completions.create(
-    model="gpt-5.4",
-    messages=[
-        {"role": "user", "content": "Hello!"}
-    ]
-)
-
-print(response.choices[0].message.content)
-\`\`\`
-
----
-
-## 📡 5. Gọi nhanh qua cURL (Terminal / Command Prompt)
-\`\`\`bash
-curl ${origin}/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ${savedKey}" \\
-  -d '{
-    "model": "gpt-5.4",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-\`\`\``;
+  return '# Hướng dẫn kết nối máy khách - AntiGravity (Gemini)\n\n' +
+    'Bạn có thể kết nối Codex Desktop App hoặc cấu hình các công cụ lập trình của mình để gọi qua API Gateway 9Router theo các cách dưới đây:\n\n' +
+    '---\n\n' +
+    '## 🛠️ 1. Thông số kết nối API cơ bản\n' +
+    'Để cấu hình thủ công cho các thư viện hoặc phần mềm khác:\n' +
+    '- **Base URL (Endpoint)**: `' + "`" + '${origin}/v1' + "`" + '\n' +
+    '- **API Key**: `' + "`" + '${savedKey}' + "`" + '\n' +
+    '- **Model ID khuyên dùng**: `' + "`" + 'gpt-5.4' + "`" + '\n\n' +
+    '---\n\n' +
+    '## 💻 2. Cài đặt và Cấu hình thủ công trên Codex Desktop App\n' +
+    'Sử dụng ứng dụng Codex Desktop và tự động bypass màn hình login:\n' +
+    '1. Tìm hoặc tạo thư mục cấu hình của Codex tùy theo hệ điều hành của bạn:\n' +
+    '   - **Windows**: `' + "`" + '%%USERPROFILE%%\\.codex\\config.toml' + "`" + ' (Ví dụ: `' + "`" + 'C:\\Users\\tên_user\\.codex\\config.toml' + "`" + ')\n' +
+    '   - **Mac / Linux**: `' + "`" + '~/.codex/config.toml' + "`" + '\n' +
+    '   *(Nếu chưa có thư mục `' + "`" + '.codex' + "`" + ', hãy mở ứng dụng Codex một lần hoặc tự tạo thư mục mới).*\n\n' +
+    '2. Tạo hoặc sửa file **config.toml** trong thư mục trên và dán nội dung:\n' +
+    "`" + "`" + "`" + 'toml\n' +
+    'model_reasoning_effort = "low"\n' +
+    'model_provider = "openai-custom"\n' +
+    'model = "gpt-5.4"\n\n' +
+    '[model_providers.openai-custom]\n' +
+    'experimental_bearer_token = "' + '${savedKey}' + '"\n' +
+    'name = "VinAi"\n' +
+    'base_url = "' + '${origin}/v1' + '"\n' +
+    'wire_api = "responses"\n' +
+    'requires_openai_auth = false\n' +
+    'supports_websockets = false\n' +
+    "`" + "`" + "`" + '\n\n' +
+    '3. Tạo tiếp file **auth.json** trong cùng thư mục trên (để bypass login) và dán nội dung:\n' +
+    "`" + "`" + "`" + 'json\n' +
+    '{\n' +
+    '  "auth_mode": "apikey",\n' +
+    '  "OPENAI_API_KEY": "' + '${savedKey}' + '"\n' +
+    '}\n' +
+    "`" + "`" + "`" + '\n\n' +
+    '4. Khởi động lại ứng dụng **Codex IDE / Desktop App** để áp dụng cấu hình.\n\n' +
+    '---\n\n' +
+    '## 🚀 3. Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)\n' +
+    '1. **Provider**: Chọn `' + "`" + 'OpenAI Compatible' + "`" + ' (hoặc Custom OpenAI).\n' +
+    '2. **Base URL**: Điền `' + "`" + '${origin}/v1' + "`" + '\n' +
+    '3. **API Key**: Điền `' + "`" + '${savedKey}' + "`" + '\n' +
+    '4. **Model ID**: Điền `' + "`" + 'gpt-5.4' + "`" + '.\n\n' +
+    '---\n\n' +
+    '## 🐍 4. Tích hợp Python (sử dụng thư viện OpenAI SDK)\n' +
+    "`" + "`" + "`" + 'python\n' +
+    'import openai\n\n' +
+    'client = openai.OpenAI(\n' +
+    '    base_url="' + '${origin}/v1' + '",\n' +
+    '    api_key="' + '${savedKey}' + '"\n' +
+    ')\n\n' +
+    'response = client.chat.completions.create(\n' +
+    '    model="gpt-5.4",\n' +
+    '    messages=[\n' +
+    '        {"role": "user", "content": "Hello!"}\n' +
+    '    ]\n' +
+    ')\n\n' +
+    'print(response.choices[0].message.content)\n' +
+    "`" + "`" + "`" + '\n\n' +
+    '---\n\n' +
+    '## 📡 5. Gọi nhanh qua cURL (Terminal / Command Prompt)\n' +
+    "`" + "`" + "`" + 'bash\n' +
+    'curl ' + '${origin}/v1/chat/completions' + ' \\\\\n' +
+    '  -H "Content-Type: application/json" \\\\\n' +
+    '  -H "Authorization: Bearer ' + '${savedKey}' + '" \\\\\n' +
+    \'  -d \'{\n\' +
+    \'    "model": "gpt-5.4",\n\' +
+    \'    "messages": [{"role": "user", "content": "Hello!"}]\n\' +
+    \'  }\'\n' +
+    "`" + "`" + "`" + "";
   };
 
   const getGeminiMarkdown = () => {
@@ -1209,13 +1191,13 @@ print(response.choices[0].message.content)`}
                     </div>
                   </Card>
 
-                  <Card title="💻 2. Cài đặt và Cấu hình thủ công trên AntiGravity Desktop App / CLI" icon="laptop_mac">
+                  <Card title="💻 2. Cài đặt và Cấu hình thủ công trên Codex Desktop App" icon="laptop_mac">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
                       <div>
-                        <p className="text-xs mb-2">1. Tạo hoặc sửa file <code>config.toml</code> trong thư mục cấu hình của AntiGravity:</p>
+                        <p className="text-xs mb-2">1. Tạo hoặc sửa file <code>config.toml</code> trong thư mục cấu hình của Codex (cho model AntiGravity gpt-5.4):</p>
                         <ul className="list-disc pl-5 text-xs mb-2 space-y-1">
-                          <li><strong>Windows</strong>: <code>%USERPROFILE%\.antigravity\config.toml</code></li>
-                          <li><strong>Mac / Linux</strong>: <code>~/.antigravity/config.toml</code></li>
+                          <li><strong>Windows</strong>: <code>%USERPROFILE%\.codex\config.toml</code></li>
+                          <li><strong>Mac / Linux</strong>: <code>~/.codex/config.toml</code></li>
                         </ul>
                         <p className="text-xs mb-2">2. Dán nội dung cấu hình dưới đây vào file <code>config.toml</code>:</p>
                         <div className="relative bg-surface-2 border border-border rounded-lg p-3 font-mono text-xs text-text-main overflow-x-auto pr-12">
@@ -1243,7 +1225,7 @@ supports_websockets = false`}</pre>
                       </div>
 
                       <div className="pt-2">
-                        <p className="text-xs mb-2">3. Tạo tiếp file <code>auth.json</code> trong cùng thư mục cấu hình trên để tự động bỏ qua màn hình đăng nhập Google:</p>
+                        <p className="text-xs mb-2">3. Tạo tiếp file <code>auth.json</code> trong cùng thư mục cấu hình <code>.codex</code> để tự động bỏ qua màn hình đăng nhập OpenAI:</p>
                         <div className="relative bg-surface-2 border border-border rounded-lg p-3 font-mono text-xs text-text-main overflow-x-auto pr-12">
                           <pre>{`{\n  "auth_mode": "apikey",\n  "OPENAI_API_KEY": "${savedKey}"\n}`}</pre>
                           <button
@@ -1257,7 +1239,7 @@ supports_websockets = false`}</pre>
                           </button>
                         </div>
                       </div>
-                      <p className="text-xs">4. Tắt hoàn toàn ứng dụng <strong>AntiGravity IDE / Desktop App</strong> và mở lại để áp dụng cấu hình.</p>
+                      <p className="text-xs">4. Tắt hoàn toàn ứng dụng <strong>Codex IDE / Desktop App</strong> và mở lại để áp dụng cấu hình.</p>
                     </div>
                   </Card>
 
@@ -1280,7 +1262,7 @@ supports_websockets = false`}</pre>
                           <span className="font-semibold text-text-main">Ví dụ Python (OpenAI SDK):</span>
                           <button
                             onClick={() => {
-                              const code = `import openai\n\nclient = openai.OpenAI(\n    base_url="${origin}/v1",\n    api_key="${savedKey}"\n)\n\nresponse = client.chat.completions.create(\n    model="gpt-5.4",\n    messages=[{"role": "user", "content": "Hello!"}]\n)\nprint(response.choices[0].message.content)`;
+                              const code = `import openai\\n\\nclient = openai.OpenAI(\\n    base_url="${origin}/v1",\\n    api_key="${savedKey}"\\n)\\n\\nresponse = client.chat.completions.create(\\n    model="gpt-5.4",\\n    messages=[{"role": "user", "content": "Hello!"}]\\n)\\nprint(response.choices[0].message.content)`;
                               copyText(code, "codePythonAG");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1312,7 +1294,7 @@ print(response.choices[0].message.content)`}
                           <span className="font-semibold text-text-main">Gọi nhanh qua cURL:</span>
                           <button
                             onClick={() => {
-                              const code = `curl ${origin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gpt-5.4",\n    "messages": [{"role": "user", "content": "Hello!"}]\n  }'`;
+                              const code = `curl ${origin}/v1/chat/completions \\\\n  -H "Content-Type: application/json" \\\\n  -H "Authorization: Bearer ${savedKey}" \\\\n  -d '{\\n    "model": "gpt-5.4",\\n    "messages": [{"role": "user", "content": "Hello!"}]\\n  }'`;
                               copyText(code, "curlAG");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1337,7 +1319,6 @@ print(response.choices[0].message.content)`}
                   </Card>
                 </div>
               )}
-
 {guideTab === "gemini" && (
                 <div className="space-y-6 animate-fade-in">
                   <Card title="⚙️ Thông số kết nối API" icon="api">

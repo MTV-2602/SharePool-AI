@@ -6,26 +6,47 @@ const cleanEnvVar = (val) => {
 };
 
 const supabaseUrl = cleanEnvVar(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL);
-const supabaseKey = cleanEnvVar(
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_KEY ||
-  process.env.SUPABASE_KEY ||
-  process.env.SUPABASE_ANON_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_KEY
-);
 
-if (!supabaseUrl || !supabaseKey) {
-  console.warn('[Supabase] Missing SUPABASE_URL or SUPABASE_KEY in environment variables');
+function getSupabaseKey() {
+  return cleanEnvVar(
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_KEY
+  );
 }
 
-// Use global singleton to survive Next.js hot-reload
-if (!global._supabaseClient) {
-  global._supabaseClient = supabaseUrl && supabaseKey
-    ? createClient(supabaseUrl, supabaseKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      })
-    : null;
+const clientCache = new Map();
+
+function getClient() {
+  const url = supabaseUrl;
+  const key = getSupabaseKey();
+  if (!url || !key) {
+    return null;
+  }
+  const cacheKey = `${url}:${key}`;
+  if (!clientCache.has(cacheKey)) {
+    const client = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    clientCache.set(cacheKey, client);
+  }
+  return clientCache.get(cacheKey);
 }
 
-export const supabase = global._supabaseClient;
+export const supabase = new Proxy({}, {
+  get(target, prop) {
+    const client = getClient();
+    if (!client) {
+      console.warn(`[Supabase] Client not initialized. Property: "${String(prop)}"`);
+      return undefined;
+    }
+    const val = Reflect.get(client, prop);
+    if (typeof val === 'function') {
+      return val.bind(client);
+    }
+    return val;
+  }
+});
