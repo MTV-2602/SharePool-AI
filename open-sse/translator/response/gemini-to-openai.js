@@ -35,7 +35,30 @@ export function geminiToOpenAIResponse(chunk, state) {
   
   // Handle Antigravity wrapper
   const response = chunk.response || chunk;
-  if (!response || !response.candidates?.[0]) return null;
+  if (!response) return null;
+
+  // Extract usage metadata from final chunks that have no candidates
+  const usageMeta = response.usageMetadata || chunk.usageMetadata;
+  if (usageMeta && (!response.candidates || response.candidates.length === 0)) {
+    const geminiUsage = toOpenAIUsage(usageMeta, "gemini");
+    if (geminiUsage) state.usage = geminiUsage;
+    
+    if (!state.messageId) {
+      state.messageId = response.responseId || `msg_${Date.now()}`;
+      state.model = response.modelVersion || "gemini";
+    }
+    
+    return [{
+      id: `chatcmpl-${state.messageId}`,
+      object: "chat.completion.chunk",
+      created: Math.floor(Date.now() / 1000),
+      model: state.model,
+      choices: [],
+      usage: geminiUsage
+    }];
+  }
+
+  if (!response.candidates?.[0]) return null;
 
   const results = [];
   const candidate = response.candidates[0];
