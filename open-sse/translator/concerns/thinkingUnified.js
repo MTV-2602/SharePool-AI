@@ -4,7 +4,7 @@
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { PROVIDERS } from "../../providers/index.js";
-import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget } from "./thinking.js";
+import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
@@ -170,7 +170,8 @@ function applyFormat(fmt, body, cfg, caps) {
       break;
     }
     case "gemini-level": {
-      const level = none ? "minimal" : (toLevel(eff) || "high");
+      const rawLevel = none ? "minimal" : (toLevel(eff) || "high");
+      const level = effortToThinkingLevel(rawLevel);
       setGeminiThinking(body, { thinkingLevel: level, includeThoughts: level !== "minimal" });
       break;
     }
