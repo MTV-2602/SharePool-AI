@@ -88,8 +88,11 @@ supports_websockets = false
 \`\`\`
 
 3. **Thay đổi các giá trị cấu hình phù hợp**:
-   - Thay thế \`"KHOA_API_KEY_CUA_MAY_KHACH"\` bằng mã API Key bạn tạo riêng cho máy khách đó từ trang Admin Portal của bạn (có dạng \`sk-...\`).
+   - Thay thế \`"KHOA_API_KEY_CUA_MAY_KHACH"\` bằng mã API Key bạn tạo riêng cho máy khách đó từ trang Admin Portal của bạn (có dạng \`sk-...\` hoặc \`ck-...\`).
    - Thay thế \`"${currentHost}/v1"\` nếu máy chủ Portal của bạn được triển khai ở địa chỉ khác.
+   - **Lựa chọn Model**:
+     - Sử dụng \`model = "gpt-5.5"\` để gọi **Codex (ChatGPT)**.
+     - Sử dụng \`model = "gpt-5.4"\` để gọi **Antigravity (Gemini)**.
 
 ---
 
@@ -115,66 +118,48 @@ Tài liệu này hướng dẫn chi tiết cách kết nối các máy khách (C
 
 ## 🧭 1. CƠ CHẾ HOẠT ĐỘNG
 
-Extension **Google Gemini Code Assist (Cloud Code)** trên VS Code được lập trình cứng để gọi đến địa chỉ API Google mặc định. Do đó, để chuyển hướng traffic này về hệ thống của bạn, bắt buộc máy khách phải có cơ chế chặn và giả lập kết nối.
+Các công cụ lập trình hỗ trợ chỉ định custom API endpoint (như Cursor, Cline, RooCode, Continue...) có thể gọi trực tiếp thông qua API key được cấp.
 
 ---
 
 ## 📡 2. HƯỚNG DẪN KẾT NỐI MÁY KHÁCH (CLIENT SETUP)
 
-Có **3 phương pháp** để cấu hình các máy khách kết nối và sử dụng tài nguyên từ Server của bạn.
+Có **2 phương pháp** chính để kết nối:
 
-### PHƯƠNG PHÁP A: Dành cho các công cụ hỗ trợ Custom Base URL (Cursor, Cline, RooCode, Continue...)
+### PHƯƠNG PHÁP A: Cấu hình qua Custom Base URL (Cursor, Cline, RooCode, Continue...)
 Nếu người dùng sử dụng các công cụ hỗ trợ cấu hình Custom Base URL trực tiếp, việc cài đặt cực kỳ đơn giản:
 
 1.  **Chọn Provider:** \`OpenAI Compatible\` (hoặc Custom OpenAI).
-2.  **Base URL (API Endpoint):** \`${currentHost}/v1/antigravity\`
-3.  **API Key:** Điền mã API Key được cấp trên Portal của bạn (dạng \`sk-...\`).
-4.  **Model:** \`gemini-2.5-pro\`, \`gemini-2.5-flash\`, \`gemini-2.0-flash\`.
+2.  **Base URL (API Endpoint):** \`${currentHost}/v1\`
+3.  **API Key:** Điền mã API Key được cấp trên Portal của bạn (dạng \`sk-...\` hoặc \`ck-...\`).
+4.  **Model:** 
+    - \`gpt-5.4\` (để dùng Gemini 3.5 Flash qua Antigravity)
+    - \`gpt-5.5\` (để dùng Codex/ChatGPT)
 
 ---
 
-### PHƯƠNG PHÁP B: Sử dụng Script Proxy Siêu Nhẹ (Khuyên Dùng - Tốc độ cao & VS Code Extension)
-Đây là cách tối ưu nhất để kết nối trực tiếp extension **Google Gemini Code Assist** chính thức trên VS Code mà không cần cài đặt phần mềm 9Router.
-
-#### Các bước thực hiện trên máy khách:
-1.  **Cài đặt Node.js:** Đảm bảo máy khách đã cài Node.js (phiên bản >= 18).
-2.  **Tải file script:** Copy file \`client-proxy.js\` về máy khách.
-3.  **Chạy script với quyền Administrator / Root:**
-    *   **Trên Windows:** Mở PowerShell với quyền *Run as Administrator* rồi chạy:
-        \`\`\`powershell
-        node client-proxy.js --server ${currentHost} --key YOUR_PORTAL_API_KEY
-        \`\`\`
-    *   **Trên macOS / Linux:** Mở Terminal và chạy:
-        \`\`\`bash
-        sudo node client-proxy.js --server ${currentHost} --key YOUR_PORTAL_API_KEY
-        \`\`\`
-4.  **Khởi động lại VS Code:** Extension Gemini Code Assist sẽ tự động hoạt động thông qua pool tài khoản trên server của bạn. Khi tắt script bằng \`Ctrl+C\`, file \`hosts\` sẽ tự động được khôi phục về trạng thái sạch sẽ ban đầu.
-
----
-
-### PHƯƠNG PHÁP C: Tích hợp thông qua phần mềm 9Router Client chính thức
+### PHƯƠNG PHÁP B: Tích hợp thông qua phần mềm 9Router Client chính thức
 Nếu máy khách muốn sử dụng giao diện Dashboard quản trị của 9Router để gộp chung với các combo AI khác.
 
-#### Bước C.1: Khởi chạy 9Router trên máy khách
+#### Bước B.1: Khởi chạy 9Router trên máy khách
 Mở Terminal/PowerShell trên máy khách và chạy:
 \`\`\`bash
 npm install -g 9router
 9router
 \`\`\`
 
-#### Bước C.2: Cấu hình thêm Portal của bạn làm Provider trên 9Router Local
+#### Bước B.2: Cấu hình thêm Portal của bạn làm Provider trên 9Router Local
 1.  Truy cập Dashboard local \`http://localhost:20128/dashboard\`.
 2.  Mở menu **Providers** -> Chọn **Add Custom Provider**.
 3.  Điền các thông số:
     *   **Name:** \`Codex Portal\`
     *   **Base URL:** \`${currentHost}/v1\`
-    *   **API Key:** \`YOUR_PORTAL_API_KEY\` (Mã key \`sk-...\` do bạn cấp).
+    *   **API Key:** \`YOUR_PORTAL_API_KEY\` (Mã key \`sk-...\` hoặc \`ck-...\` do bạn cấp).
 4.  Bấm **Save**.
 
-#### Bước C.3: Kích hoạt chặn kết nối (MITM) trên máy khách
+#### Bước B.3: Kích hoạt chặn kết nối (MITM) trên máy khách
 1.  Trên Dashboard 9Router local, chọn **CLI Tools** -> **Antigravity**.
-2.  Bấm vào nút **Start MITM**.
-3.  VS Code sẽ tự động hoạt động thông qua pool của server.`;
+2.  Bấm vào nút **Start MITM** để VS Code Extension sử dụng tài nguyên từ pool của server.`;
 
   const codeSnippets = {
     codexToml: `model_reasoning_effort = "low"
@@ -192,9 +177,6 @@ supports_websockets = false`,
     installCodex: `npm install -g @openai/codex`,
     testCodex1: `codex "say hello"`,
     testCodex2: `codex "tạo cho tôi 1 file test_connection.txt trong thư mục hiện tại"`,
-
-    proxyWin: `node client-proxy.js --server ${currentHost} --key YOUR_PORTAL_API_KEY`,
-    proxyMac: `sudo node client-proxy.js --server ${currentHost} --key YOUR_PORTAL_API_KEY`,
     installNineRouter: `npm install -g 9router
 9router`
   };
@@ -264,7 +246,7 @@ supports_websockets = false`,
             }}
             className={`btn btn-sm ${activeTab === 'antigravity' ? 'btn-primary ag-accent-bg' : 'btn-ghost'}`}
           >
-            🪐 Kết nối AntiGravity (Gemini)
+            🪐 Hướng dẫn AntiGravity (Gemini)
           </button>
         </div>
 
@@ -275,7 +257,7 @@ supports_websockets = false`,
               {/* Codex Guide */}
               <Tilt className="stagger-item card mb-4" max={3} perspective={1200} style={{ animationDelay: '0ms' }}>
                 <div className="card-header">
-                  <span className="card-title">💻 Hướng Dẫn Cấu Hình Máy Khách Sử Dụng Codex API Portal</span>
+                  <span className="card-title">💻 Hướng Dẫn Cấu Hướng Dẫn Cấu Hình Máy Khách Sử Dụng Codex API Portal</span>
                 </div>
                 <p style={{ fontSize: '0.92rem', color: 'var(--text-soft)' }}>
                   Tài liệu này hướng dẫn chi tiết cách cấu hình một máy tính bất kỳ (máy khách) để kết nối và sử dụng Codex qua hệ thống API Portal của bạn tại địa chỉ: <code className="font-mono">{currentHost}</code>
@@ -339,6 +321,13 @@ supports_websockets = false`,
                       </button>
                     </div>
                   </div>
+                  <div style={{ marginTop: 8 }}>
+                    3. <strong>Lựa chọn Model trong config.toml</strong>:
+                    <ul style={{ paddingLeft: 20, marginTop: 4, color: 'var(--text-soft)', opacity: 0.85 }}>
+                      <li>Để sử dụng <strong>Codex (ChatGPT)</strong>: Thiết lập <code>model = "gpt-5.5"</code></li>
+                      <li>Để sử dụng <strong>Antigravity (Gemini)</strong>: Thiết lập <code>model = "gpt-5.4"</code></li>
+                    </ul>
+                  </div>
                 </div>
               </Tilt>
 
@@ -385,41 +374,31 @@ supports_websockets = false`,
 
               <Tilt className="stagger-item card mb-4" max={3} perspective={1200} style={{ animationDelay: '80ms' }}>
                 <div className="card-header">
-                  <span className="card-title" style={{ color: 'var(--green)' }}><Code size={15} /> PHƯƠNG PHÁP A: Dành cho công cụ hỗ trợ Custom Base URL</span>
+                  <span className="card-title" style={{ color: 'var(--green)' }}><Code size={15} /> PHƯƠNG PHÁP A: Dành cho công cụ hỗ trợ Custom Base URL (Cursor, Cline, RooCode, Continue...)</span>
                 </div>
                 <div style={{ display: 'grid', gap: 10, fontSize: '0.88rem', background: 'var(--bg-elevated)', padding: 14, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                  <div><strong>1. Provider:</strong> <code>OpenAI Compatible</code></div>
-                  <div><strong>2. API URL:</strong> <code>{currentHost}/v1/antigravity</code></div>
+                  <div><strong>1. Provider:</strong> <code>OpenAI Compatible</code> (hoặc Custom OpenAI)</div>
+                  <div><strong>2. API URL:</strong> <code>{currentHost}/v1</code></div>
+                  <div><strong>3. API Key:</strong> Điền mã Resale Key được cấp trên Portal của bạn (dạng <code>sk-...</code> hoặc <code>ck-...</code>)</div>
+                  <div><strong>4. Lựa chọn Model:</strong> 
+                    <ul style={{ paddingLeft: 20, marginTop: 4 }}>
+                      <li>Để sử dụng <strong>Antigravity (Gemini)</strong>: Điền model ID là <code>gpt-5.4</code></li>
+                      <li>Để sử dụng <strong>Codex (ChatGPT)</strong>: Điền model ID là <code>gpt-5.5</code></li>
+                    </ul>
+                  </div>
                 </div>
               </Tilt>
 
               <Tilt className="stagger-item card mb-4" max={3} perspective={1200} style={{ animationDelay: '160ms' }}>
                 <div className="card-header">
-                  <span className="card-title" style={{ color: '#e0a82e' }}><Terminal size={15} /> PHƯƠNG PHÁP B: Sử dụng script Proxy siêu nhẹ</span>
-                </div>
-                <div className="form-group mb-3">
-                  <label>Chạy script proxy trên máy khách</label>
-                  <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
-                    <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
-                      {codeSnippets.proxyWin}
-                    </pre>
-                  </div>
-                </div>
-                <div className="alert alert-info">
-                  Khi tắt script (Ctrl+C), file <code>hosts</code> sẽ tự động khôi phục.
-                </div>
-              </Tilt>
-
-              <Tilt className="stagger-item card" max={3} perspective={1200} style={{ animationDelay: '240ms' }}>
-                <div className="card-header">
-                  <span className="card-title" style={{ color: 'var(--purple)' }}><Cpu size={15} /> PHƯƠNG PHÁP C: Tích hợp thông qua phần mềm 9Router Client</span>
+                  <span className="card-title" style={{ color: 'var(--purple)' }}><Cpu size={15} /> PHƯƠNG PHÁP B: Tích hợp thông qua phần mềm 9Router Client chính thức</span>
                 </div>
                 <p style={{ fontSize: '0.88rem', color: 'var(--text-soft)', marginBottom: 12, opacity: 0.85 }}>
                   Thích hợp nếu máy khách muốn sử dụng giao diện Dashboard quản trị của 9Router để gộp chung với các nguồn AI khác.
                 </p>
 
                 <div className="form-group mb-3">
-                  <label>Bước C.1: Khởi chạy 9Router trên máy khách</label>
+                  <label>Bước B.1: Khởi chạy 9Router trên máy khách</label>
                   <div className="code-container" style={{ position: 'relative', marginTop: 4 }}>
                     <pre className="font-mono" style={{ background: 'var(--bg-elevated)', padding: '10px 38px 10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: '0.78rem', overflowX: 'auto' }}>
                       {codeSnippets.installNineRouter}
@@ -431,7 +410,7 @@ supports_websockets = false`,
                 </div>
 
                 <div className="form-group mb-3" style={{ fontSize: '0.86rem', color: 'var(--text-soft)', display: 'grid', gap: 6 }}>
-                  <label>Bước C.2: Cấu hình thêm Portal làm Provider trên 9Router Local</label>
+                  <label>Bước B.2: Cấu hình thêm Portal làm Provider trên 9Router Local</label>
                   <div>1. Truy cập Dashboard local <code>http://localhost:20128/dashboard</code>.</div>
                   <div>2. Mở menu <strong>Providers</strong> &rarr; Chọn <strong>Add Custom Provider</strong>.</div>
                   <div>3. Điền API Endpoint: <code>{currentHost}/v1</code> và API Key của bạn.</div>
