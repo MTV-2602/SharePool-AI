@@ -451,10 +451,10 @@ curl ${origin}/v1/chat/completions \\
     'curl ' + '${origin}/v1/chat/completions' + ' \\\\\n' +
     '  -H "Content-Type: application/json" \\\\\n' +
     '  -H "Authorization: Bearer ' + '${savedKey}' + '" \\\\\n' +
-    \'  -d \'{\n\' +
-    \'    "model": "gpt-5.4",\n\' +
-    \'    "messages": [{"role": "user", "content": "Hello!"}]\n\' +
-    \'  }\'\n' +
+    '  -d \'{\n' +
+    '    "model": "gpt-5.4",\n' +
+    '    "messages": [{"role": "user", "content": "Hello!"}]\n' +
+    '  }\'\n' +
     "`" + "`" + "`" + "";
   };
 
