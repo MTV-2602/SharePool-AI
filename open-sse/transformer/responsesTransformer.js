@@ -238,12 +238,18 @@ export function createResponsesApiTransformStream(logger = null) {
         }
       };
       if (state.usage) {
+        const cached = state.usage.cached_tokens ?? state.usage.prompt_tokens_details?.cached_tokens ?? 0;
+        const reasoning = state.usage.reasoning_tokens ?? state.usage.completion_tokens_details?.reasoning_tokens ?? 0;
         responseCompletedEvent.response.usage = {
           input_tokens: state.usage.prompt_tokens || 0,
           output_tokens: state.usage.completion_tokens || 0,
           total_tokens: (state.usage.prompt_tokens || 0) + (state.usage.completion_tokens || 0),
-          input_tokens_details: state.usage.prompt_tokens_details || {},
-          output_tokens_details: state.usage.completion_tokens_details || {}
+          input_tokens_details: {
+            cached_tokens: cached
+          },
+          output_tokens_details: {
+            reasoning_tokens: reasoning
+          }
         };
       }
       emit(controller, "response.completed", responseCompletedEvent);
