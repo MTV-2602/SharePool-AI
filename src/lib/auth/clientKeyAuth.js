@@ -116,6 +116,31 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
   });
   if (rpcError) {
     console.error('[ClientKeyAuth] Failed to increment used_tokens via exec_sql:', rpcError.message);
+    try {
+      const { data: keyData, error: fetchError } = await supabase
+        .from('client_keys')
+        .select('used_tokens')
+        .eq('id', clientKeyId)
+        .limit(1)
+        .single();
+      if (!fetchError && keyData) {
+        const currentUsed = Number(keyData.used_tokens) || 0;
+        const newUsed = currentUsed + billedTokens;
+        const { error: updateError } = await supabase
+          .from('client_keys')
+          .update({ used_tokens: newUsed })
+          .eq('id', clientKeyId);
+        if (updateError) {
+          console.error('[ClientKeyAuth] Fallback update failed:', updateError.message);
+        } else {
+          console.log('[ClientKeyAuth] Fallback update succeeded. New used_tokens:', newUsed);
+        }
+      } else {
+        console.error('[ClientKeyAuth] Fallback fetch failed:', fetchError ? fetchError.message : 'no keyData');
+      }
+    } catch (fallbackErr) {
+      console.error('[ClientKeyAuth] Fallback process failed:', fallbackErr);
+    }
   }
 
   // Quota Threshold Alert (>= 90%)

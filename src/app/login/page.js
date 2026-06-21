@@ -296,29 +296,27 @@ export default function LoginPage() {
     return "Custom/Other";
   };
 
-  const getCodexMarkdown = () => {
-    return `# Hướng dẫn kết nối máy khách - Codex
+﻿  const getCodexMarkdown = () => {
+    return `# Hướng dẫn kết nối Client - Codex & AntiGravity
 
-Bạn có thể kết nối Codex Desktop/CLI hoặc cấu hình các công cụ lập trình của mình (Cursor, Cline, RooCode...) để gọi qua API Gateway 9Router theo các cách dưới đây:
-
----
-
-## 🛠️ 1. Thông số kết nối API cơ bản
-Để cấu hình thủ công cho các thư viện hoặc phần mềm khác:
-- **Base URL (Endpoint)**: \`${origin}/v1\`
-- **API Key**: \`${savedKey}\`
-- **Model ID khuyên dùng**: \`gpt-5.5\`
+Để sử dụng ứng dụng **Codex Desktop App / IDE** với cổng API Gateway, bạn cần cấu hình tệp cấu hình của Codex. Hệ thống hỗ trợ 2 dòng model chính chạy qua Codex App:
+- **Codex (ChatGPT-backed)**: Sử dụng Model ID \`gpt-5.5\`
+- **AntiGravity (Gemini-backed)**: Sử dụng Model ID \`gpt-5.4\`
 
 ---
 
-## 💻 2. Cài đặt và Cấu hình thủ công trên Codex Desktop App / CLI
-Sử dụng ứng dụng Codex Desktop và tự động bypass màn hình login:
-1. Tìm hoặc tạo thư mục cấu hình của Codex tùy theo hệ điều hành của bạn:
-   - **Windows**: \`%%USERPROFILE%%\\.codex\\config.toml\` (Ví dụ: \`C:\\Users\\tên_user\\.codex\\config.toml\`)
-   - **Mac / Linux**: \`~/.codex/config.toml\`
-   *(Nếu chưa có thư mục \`.codex\`, hãy mở ứng dụng Codex một lần hoặc tự tạo thư mục mới).*
+## 🛠️ 1. Thư mục cấu hình của Codex
+Tìm hoặc tạo thư mục cấu hình của Codex tùy theo hệ điều hành:
+- **Windows**: \`%%USERPROFILE%%\\.codex\\config.toml\` (Ví dụ: \`C:\\Users\\tên_user\\.codex\\config.toml\`)
+- **Mac / Linux**: \`~/.codex/config.toml\`
+*(Nếu chưa có thư mục \`.codex\`, hãy mở ứng dụng Codex một lần hoặc tự tạo thư mục mới).*
 
-2. Tạo hoặc sửa file **config.toml** trong thư mục trên và dán nội dung:
+---
+
+## 💻 2. Cấu hình file config.toml
+Tạo hoặc sửa file **config.toml** trong thư mục cấu hình trên. Bạn chọn 1 trong 2 cấu hình dưới đây tương ứng với model bạn muốn sử dụng:
+
+### Cách A: Cấu hình sử dụng model Codex (ChatGPT-backed - gpt-5.5)
 \`\`\`toml
 model_reasoning_effort = "low"
 model_provider = "openai-custom"
@@ -333,7 +331,25 @@ requires_openai_auth = false
 supports_websockets = false
 \`\`\`
 
-3. Tạo tiếp file **auth.json** trong cùng thư mục trên (để bypass login) và dán nội dung:
+### Cách B: Cấu hình sử dụng model AntiGravity (Gemini-backed - gpt-5.4)
+\`\`\`toml
+model_reasoning_effort = "low"
+model_provider = "openai-custom"
+model = "gpt-5.4"
+
+[model_providers.openai-custom]
+experimental_bearer_token = "${savedKey}"
+name = "VinAi"
+base_url = "${origin}/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+\`\`\`
+
+---
+
+## 🔑 3. Cấu hình file auth.json (Bypass Login)
+Tạo tiếp file **auth.json** trong cùng thư mục \`.codex\` và dán nội dung:
 \`\`\`json
 {
   "auth_mode": "apikey",
@@ -341,19 +357,104 @@ supports_websockets = false
 }
 \`\`\`
 
-4. Khởi động lại ứng dụng **Codex IDE / Desktop App** để áp dụng cấu hình.
+---
+
+## 🔄 4. Khởi động lại ứng dụng
+Tắt hoàn toàn ứng dụng **Codex Desktop App** và mở lại để áp dụng cấu hình mới.`;
+  };
+
+
+﻿  const getAntigravityMarkdown = () => {
+    return `# Hướng dẫn kết nối Cursor / Cline / RooCode
+
+Bạn có thể kết nối các công cụ lập trình AI (Cursor, Cline, RooCode) thông qua API Gateway bằng cấu hình tương thích OpenAI.
 
 ---
 
-## 🚀 3. Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)
-1. **Provider**: Chọn \`OpenAI Compatible\` (hoặc Custom OpenAI).
-2. **Base URL**: Điền \`${origin}/v1\`
-3. **API Key**: Điền \`${savedKey}\`
-4. **Model ID**: Điền \`gpt-5.5\`.
+## 🚀 1. Cấu hình trên Cursor
+1. Mở cài đặt Cursor (Settings) -> **Models** -> **OpenAI Connection**.
+2. Nhập các thông tin sau:
+   - **Base URL**: \`${origin}/v1\`
+   - **API Key**: \`${savedKey}\`
+3. Nhấp **Add model** và thêm các model mong muốn:
+   - \`gpt-5.5\` (để sử dụng model Codex)
+   - \`gpt-5.4\` (để sử dụng model AntiGravity / Gemini)
+4. Tắt các model mặc định khác để đảm bảo Cursor gọi đúng model trên.
 
 ---
 
-## 🐍 4. Tích hợp Python (sử dụng thư viện OpenAI SDK)
+## 🤖 2. Cấu hình trên Cline / RooCode
+1. Chọn Provider là **OpenAI Compatible** (hoặc Custom OpenAI).
+2. Nhập các thông số cấu hình:
+   - **Base URL**: \`${origin}/v1\`
+   - **API Key**: \`${savedKey}\`
+   - **Model ID**: \`gpt-5.5\` (Codex) hoặc \`gpt-5.4\` (AntiGravity / Gemini).`;
+  };
+
+
+﻿  const getOpenclawMarkdown = () => {
+    return `# Hướng dẫn cấu hình OpenClaw
+
+Cấu hình OpenClaw để gọi qua API Gateway sử dụng các model tích hợp.
+
+---
+
+## 🛠️ 1. Cấu hình tự động từ Dashboard
+Nếu bạn chạy OpenClaw cục bộ trên cùng máy chủ 9Router:
+1. Truy cập giao diện quản trị 9Router: **Dashboard** -> **CLI Tools** -> **OpenClaw**.
+2. Chọn mô hình bạn muốn sử dụng và nhấn **Áp dụng**. Hệ thống sẽ tự động ghi đè tệp cấu hình của OpenClaw.
+
+---
+
+## 📄 2. Cấu hình thủ công qua openclaw.json
+Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
+1. Mở hoặc tạo tệp cấu hình của OpenClaw theo hệ điều hành:
+   - **Windows**: \`%%USERPROFILE%%\\.openclaw\\openclaw.json\` (Ví dụ: \`C:\\Users\\tên_user\\.openclaw\\openclaw.json\`)
+   - **Mac / Linux**: \`~/.openclaw/openclaw.json\`
+2. Chỉnh sửa tệp **openclaw.json** và dán nội dung cấu hình nhà cung cấp \`9router\` vào phần \`models.providers\` (sử dụng \`gpt-5.5\` hoặc \`gpt-5.4\`):
+\`\`\`json
+{
+  "models": {
+    "providers": {
+      "9router": {
+        "baseUrl": "${origin}/v1",
+        "apiKey": "${savedKey}",
+        "api": "openai-completions",
+        "models": [
+          { "id": "gpt-5.5", "name": "gpt-5.5" },
+          { "id": "gpt-5.4", "name": "gpt-5.4" }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "9router/gpt-5.5"
+      },
+      "models": {
+        "9router/gpt-5.5": {},
+        "9router/gpt-5.4": {}
+      }
+    }
+  }
+}
+\`\`\`
+3. Khởi động lại **OpenClaw CLI** để áp dụng cấu hình mới.`;
+  };
+
+
+﻿  const getGeminiMarkdown = () => {
+    return `# Hướng dẫn tích hợp Python & cURL
+
+Kết nối nhanh bằng Code hoặc Terminal thông qua API Gateway 9Router.
+
+---
+
+## 🐍 1. Ví dụ Python (sử dụng thư viện openai)
+Cài đặt thư viện: \`pip install openai\` sau đó chạy đoạn mã dưới đây:
+
+### Gọi model Codex (gpt-5.5)
 \`\`\`python
 import openai
 
@@ -372,163 +473,7 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 \`\`\`
 
----
-
-## 📡 5. Gọi nhanh qua cURL (Terminal / Command Prompt)
-\`\`\`bash
-curl ${origin}/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ${savedKey}" \\
-  -d '{
-    "model": "gpt-5.5",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-\`\`\``;
-  };
-
-  const getAntigravityMarkdown = () => {
-  return '# Hướng dẫn kết nối máy khách - AntiGravity (Gemini)\n\n' +
-    'Bạn có thể kết nối Codex Desktop App hoặc cấu hình các công cụ lập trình của mình để gọi qua API Gateway 9Router theo các cách dưới đây:\n\n' +
-    '---\n\n' +
-    '## 🛠️ 1. Thông số kết nối API cơ bản\n' +
-    'Để cấu hình thủ công cho các thư viện hoặc phần mềm khác:\n' +
-    '- **Base URL (Endpoint)**: `' + "`" + '${origin}/v1' + "`" + '\n' +
-    '- **API Key**: `' + "`" + '${savedKey}' + "`" + '\n' +
-    '- **Model ID khuyên dùng**: `' + "`" + 'gpt-5.4' + "`" + '\n\n' +
-    '---\n\n' +
-    '## 💻 2. Cài đặt và Cấu hình thủ công trên Codex Desktop App\n' +
-    'Sử dụng ứng dụng Codex Desktop và tự động bypass màn hình login:\n' +
-    '1. Tìm hoặc tạo thư mục cấu hình của Codex tùy theo hệ điều hành của bạn:\n' +
-    '   - **Windows**: `' + "`" + '%%USERPROFILE%%\\.codex\\config.toml' + "`" + ' (Ví dụ: `' + "`" + 'C:\\Users\\tên_user\\.codex\\config.toml' + "`" + ')\n' +
-    '   - **Mac / Linux**: `' + "`" + '~/.codex/config.toml' + "`" + '\n' +
-    '   *(Nếu chưa có thư mục `' + "`" + '.codex' + "`" + ', hãy mở ứng dụng Codex một lần hoặc tự tạo thư mục mới).*\n\n' +
-    '2. Tạo hoặc sửa file **config.toml** trong thư mục trên và dán nội dung:\n' +
-    "`" + "`" + "`" + 'toml\n' +
-    'model_reasoning_effort = "low"\n' +
-    'model_provider = "openai-custom"\n' +
-    'model = "gpt-5.4"\n\n' +
-    '[model_providers.openai-custom]\n' +
-    'experimental_bearer_token = "' + '${savedKey}' + '"\n' +
-    'name = "VinAi"\n' +
-    'base_url = "' + '${origin}/v1' + '"\n' +
-    'wire_api = "responses"\n' +
-    'requires_openai_auth = false\n' +
-    'supports_websockets = false\n' +
-    "`" + "`" + "`" + '\n\n' +
-    '3. Tạo tiếp file **auth.json** trong cùng thư mục trên (để bypass login) và dán nội dung:\n' +
-    "`" + "`" + "`" + 'json\n' +
-    '{\n' +
-    '  "auth_mode": "apikey",\n' +
-    '  "OPENAI_API_KEY": "' + '${savedKey}' + '"\n' +
-    '}\n' +
-    "`" + "`" + "`" + '\n\n' +
-    '4. Khởi động lại ứng dụng **Codex IDE / Desktop App** để áp dụng cấu hình.\n\n' +
-    '---\n\n' +
-    '## 🚀 3. Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)\n' +
-    '1. **Provider**: Chọn `' + "`" + 'OpenAI Compatible' + "`" + ' (hoặc Custom OpenAI).\n' +
-    '2. **Base URL**: Điền `' + "`" + '${origin}/v1' + "`" + '\n' +
-    '3. **API Key**: Điền `' + "`" + '${savedKey}' + "`" + '\n' +
-    '4. **Model ID**: Điền `' + "`" + 'gpt-5.4' + "`" + '.\n\n' +
-    '---\n\n' +
-    '## 🐍 4. Tích hợp Python (sử dụng thư viện OpenAI SDK)\n' +
-    "`" + "`" + "`" + 'python\n' +
-    'import openai\n\n' +
-    'client = openai.OpenAI(\n' +
-    '    base_url="' + '${origin}/v1' + '",\n' +
-    '    api_key="' + '${savedKey}' + '"\n' +
-    ')\n\n' +
-    'response = client.chat.completions.create(\n' +
-    '    model="gpt-5.4",\n' +
-    '    messages=[\n' +
-    '        {"role": "user", "content": "Hello!"}\n' +
-    '    ]\n' +
-    ')\n\n' +
-    'print(response.choices[0].message.content)\n' +
-    "`" + "`" + "`" + '\n\n' +
-    '---\n\n' +
-    '## 📡 5. Gọi nhanh qua cURL (Terminal / Command Prompt)\n' +
-    "`" + "`" + "`" + 'bash\n' +
-    'curl ' + '${origin}/v1/chat/completions' + ' \\\\\n' +
-    '  -H "Content-Type: application/json" \\\\\n' +
-    '  -H "Authorization: Bearer ' + '${savedKey}' + '" \\\\\n' +
-    '  -d \'{\n' +
-    '    "model": "gpt-5.4",\n' +
-    '    "messages": [{"role": "user", "content": "Hello!"}]\n' +
-    '  }\'\n' +
-    "`" + "`" + "`" + "";
-  };
-
-  const getOpenclawMarkdown = () => {
-    return '# Hướng dẫn kết nối máy khách - OpenClaw\n\n' +
-      'Bạn có thể cấu hình OpenClaw để gọi qua API Gateway 9Router theo các cách dưới đây:\n\n' +
-      '---\n\n' +
-      '## 🛠️ 1. Cấu hình tự động từ Dashboard\n' +
-      'Nếu bạn cài đặt OpenClaw cục bộ trên cùng máy chủ 9Router:\n' +
-      '1. Truy cập vào giao diện quản trị 9Router: **Dashboard** → **CLI Tools** → **OpenClaw**.\n' +
-      '2. Chọn mô hình bạn muốn sử dụng và nhấn **Áp dụng**. Hệ thống sẽ tự động ghi đè tệp cấu hình của OpenClaw.\n\n' +
-      '---\n\n' +
-      '## 💻 2. Cấu hình thủ công qua tệp tin openclaw.json\n' +
-      'Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ máy khách từ xa:\n' +
-      '1. Mở hoặc tạo tệp cấu hình của OpenClaw theo hệ điều hành:\n' +
-      '   - **Windows**: `' + "`" + '%%USERPROFILE%%\\.openclaw\\openclaw.json' + "`" + ' (Ví dụ: `' + "`" + 'C:\\Users\\tên_user\\.openclaw\\openclaw.json' + "`" + ')\n' +
-      '   - **Mac / Linux**: `' + "`" + '~/.openclaw/openclaw.json' + "`" + '\n' +
-      '   *(Nếu chưa có thư mục `' + "`" + '.openclaw' + "`" + ', hãy mở ứng dụng OpenClaw một lần hoặc tự tạo thư mục mới).*\n\n' +
-      '2. Chỉnh sửa tệp **openclaw.json** và dán nội dung cấu hình nhà cung cấp `' + "`" + '9router' + "`" + ' vào phần `' + "`" + 'models.providers' + "`" + ':\n' +
-      "`" + "`" + "`" + 'json\n' +
-      '{\n' +
-      '  "models": {\n' +
-      '    "providers": {\n' +
-      '      "9router": {\n' +
-      '        "baseUrl": "' + '${origin}/v1' + '",\n' +
-      '        "apiKey": "' + '${savedKey}' + '",\n' +
-      '        "api": "openai-completions",\n' +
-      '        "models": [\n' +
-      '          { "id": "claude-sonnet-4-5-20250929", "name": "claude-sonnet-4-5-20250929" }\n' +
-      '        ]\n' +
-      '      }\n' +
-      '    }\n' +
-      '  },\n' +
-      '  "agents": {\n' +
-      '    "defaults": {\n' +
-      '      "model": {\n' +
-      '        "primary": "9router/claude-sonnet-4-5-20250929"\n' +
-      '      },\n' +
-      '      "models": {\n' +
-      '        "9router/claude-sonnet-4-5-20250929": {}\n' +
-      '      }\n' +
-      '    }\n' +
-      '  }\n' +
-      '}\n' +
-      "`" + "`" + "`" + '\n\n' +
-      '3. Lưu lại và khởi động lại **OpenClaw CLI** để áp dụng cấu hình mới.\n';
-  };
-
-  const getGeminiMarkdown = () => {
-    return `# Hướng dẫn kết nối Google Gemini qua 9Router API Gateway
-
-Sử dụng API Key được cấp để gọi trực tiếp các model Google Gemini thông qua cổng kết nối 9Router.
-
----
-
-## 🛠️ 1. Thông số kết nối API
-Để kết nối, bạn điền cấu hình API sau vào công cụ của mình:
-- **Base URL (Endpoint)**: \`${origin}/v1\`
-- **API Key**: \`${savedKey}\`
-- **Model ID**: \`gemini-2.5-flash\` (hoặc \`gemini-2.0-flash\`, \`gemini-2.5-pro\`)
-
----
-
-## 💻 2. Cấu hình trên Cursor / Cline / RooCode (Lập trình AI)
-Cấu hình các công cụ lập trình của bạn như sau để chạy trực tiếp:
-1. **Provider**: Chọn \`OpenAI Compatible\` hoặc \`Custom OpenAI\`.
-2. **Base URL**: Điền \`${origin}/v1\`
-3. **API Key**: Điền \`${savedKey}\`
-4. **Model ID**: Điền \`gemini-2.5-flash\` (hoặc \`gemini-2.0-flash\`, \`gemini-2.5-pro\`).
-
----
-
-## 🐍 3. Tích hợp Python (sử dụng thư viện OpenAI SDK)
-Cài đặt thư viện: \`pip install openai\` sau đó chạy đoạn mã:
+### Gọi model AntiGravity (gpt-5.4)
 \`\`\`python
 import openai
 
@@ -538,9 +483,9 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gemini-2.5-flash",
+    model="gpt-5.4",
     messages=[
-        {"role": "user", "content": "Xin chào, hãy giới thiệu ngắn gọn về bạn."}
+        {"role": "user", "content": "Hello!"}
     ]
 )
 
@@ -549,14 +494,26 @@ print(response.choices[0].message.content)
 
 ---
 
-## 📡 4. Gọi nhanh qua cURL (Terminal / Giao diện dòng lệnh)
-Kiểm tra kết nối và chạy kiểm thử ngay lập tức bằng lệnh cURL:
+## 📡 2. Gọi nhanh qua cURL (Terminal / Command Prompt)
+
+### Gọi model Codex (gpt-5.5)
 \`\`\`bash
-curl \${origin}/v1/chat/completions \\
+curl ${origin}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer \${savedKey}" \\
+  -H "Authorization: Bearer ${savedKey}" \\
   -d '{
-    "model": "gemini-2.5-flash",
+    "model": "gpt-5.5",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+\`\`\`
+
+### Gọi model AntiGravity (gpt-5.4)
+\`\`\`bash
+curl ${origin}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${savedKey}" \\
+  -d '{
+    "model": "gpt-5.4",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 \`\`\``;
@@ -573,6 +530,7 @@ curl \${origin}/v1/chat/completions \\
         : getGeminiMarkdown();
     copyText(md, "fullMarkdown");
   };
+
 
   // Calculations for stats
   const used = keyData?.used_tokens || 0;
@@ -987,13 +945,13 @@ curl \${origin}/v1/chat/completions \\
             <div className="space-y-6">
               <div className="flex gap-2 border-b border-border/60 pb-3 justify-between items-center flex-wrap gap-y-2">
                 <div className="flex gap-2">
-                  <button
+                  ﻿                  <button
                     onClick={() => setGuideTab("codex")}
                     className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
                       guideTab === "codex" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
                     }`}
                   >
-                    💻 Hướng dẫn Codex (README)
+                    💻 Codex Desktop App
                   </button>
                   <button
                     onClick={() => setGuideTab("antigravity")}
@@ -1001,15 +959,7 @@ curl \${origin}/v1/chat/completions \\
                       guideTab === "antigravity" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
                     }`}
                   >
-                    🪐 Hướng dẫn AntiGravity (Code Assist)
-                  </button>
-                  <button
-                    onClick={() => setGuideTab("gemini")}
-                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
-                      guideTab === "gemini" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
-                    }`}
-                  >
-                    💎 Hướng dẫn Google Gemini (API/SDK)
+                    🚀 Cursor / Cline / RooCode
                   </button>
                   <button
                     onClick={() => setGuideTab("openclaw")}
@@ -1017,9 +967,18 @@ curl \${origin}/v1/chat/completions \\
                       guideTab === "openclaw" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
                     }`}
                   >
-                    🐾 Hướng dẫn OpenClaw
+                    🐾 OpenClaw
+                  </button>
+                  <button
+                    onClick={() => setGuideTab("gemini")}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                      guideTab === "gemini" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
+                    }`}
+                  >
+                    🐍 Python & cURL
                   </button>
                 </div>
+
 
                 <button
                   onClick={handleCopyFullMarkdown}
@@ -1033,9 +992,9 @@ curl \${origin}/v1/chat/completions \\
                 </button>
               </div>
 
-              {guideTab === "codex" && (
-                <div className="space-y-6">
-                  <Card title="🛠️ 1. Thông số kết nối API cơ bản" icon="api">
+              ﻿              {guideTab === "codex" && (
+                <div className="space-y-6 animate-fade-in">
+                  <Card title="⚙️ Thông số kết nối API cơ bản" icon="api">
                     <div className="space-y-3 text-sm text-text-muted mt-2">
                       <p>Sử dụng các thông số dưới đây để cấu hình thủ công hoặc điền vào các công cụ lập trình hỗ trợ Custom Base URL:</p>
                       <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-3 text-text-main">
@@ -1069,24 +1028,44 @@ curl \${origin}/v1/chat/completions \\
                             {copiedField === "keyBaseCodex" ? "Đã copy" : "Copy"}
                           </button>
                         </div>
-                        <div>
-                          <strong>Model khuyên dùng:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-xs ml-1 font-mono">gpt-5.5</code>
+                        <div className="space-y-1 text-xs text-text-muted">
+                          <div>
+                            <strong>Model Codex (ChatGPT-backed):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.5</code>
+                          </div>
+                          <div className="mt-1">
+                            <strong>Model AntiGravity (Gemini-backed):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.4</code>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </Card>
 
-                  <Card title="💻 2. Cài đặt và Cấu hình thủ công trên Codex Desktop App / CLI" icon="laptop_mac">
+                  <Card title="💻 Cấu hình trên Codex Desktop App / IDE" icon="laptop_mac">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <p>Sử dụng ứng dụng Codex Desktop App và tự động bypass màn hình login:</p>
                       <div>
-                        <p className="text-xs mb-2">1. Tạo hoặc sửa file <code>config.toml</code> trong thư mục cấu hình của Codex:</p>
-                        <ul className="list-disc pl-5 text-xs mb-2 space-y-1">
-                          <li><strong>Windows</strong>: <code>%USERPROFILE%\.codex\config.toml</code></li>
+                        <p className="text-xs mb-2 font-semibold text-text-main">1. Tìm hoặc tạo thư mục cấu hình của Codex:</p>
+                        <ul className="list-disc pl-5 text-xs mb-3 space-y-1">
+                          <li><strong>Windows</strong>: <code>%USERPROFILE%\.codex\config.toml</code> (Ví dụ: <code>C:\Users\tên_user\.codex\config.toml</code>)</li>
                           <li><strong>Mac / Linux</strong>: <code>~/.codex/config.toml</code></li>
                         </ul>
-                        <p className="text-xs mb-2">2. Dán nội dung cấu hình dưới đây vào file <code>config.toml</code>:</p>
-                        <div className="relative bg-surface-2 border border-border rounded-lg p-3 font-mono text-xs text-text-main overflow-x-auto pr-12">
-                          <pre>{`model_reasoning_effort = "low"
+
+                        <div className="space-y-4">
+                          <div>
+                            <div className="flex justify-between items-center mb-1.5">
+                              <span className="text-xs font-semibold text-text-main">Cấu hình file config.toml cho model Codex (gpt-5.5):</span>
+                              <button
+                                onClick={() => copyText(`model_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.5"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${origin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false`, "tomlConfigCodex")}
+                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">
+                                  {copiedField === "tomlConfigCodex" ? "check" : "content_copy"}
+                                </span>
+                                {copiedField === "tomlConfigCodex" ? "Đã copy" : "Copy"}
+                              </button>
+                            </div>
+                            <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+{`model_reasoning_effort = "low"
 model_provider = "openai-custom"
 model = "gpt-5.5"
 
@@ -1096,55 +1075,175 @@ name = "VinAi"
 base_url = "${origin}/v1"
 wire_api = "responses"
 requires_openai_auth = false
-supports_websockets = false`}</pre>
-                          <button
-                            onClick={() => copyText(`model_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.5"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${origin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false`, "tomlConfigCodex")}
-                            className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
-                            title="Copy cấu hình config.toml"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "tomlConfigCodex" ? "check" : "content_copy"}
-                            </span>
-                          </button>
+supports_websockets = false`}
+                            </pre>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between items-center mb-1.5">
+                              <span className="text-xs font-semibold text-text-main">Cấu hình file config.toml cho model AntiGravity (gpt-5.4):</span>
+                              <button
+                                onClick={() => copyText(`model_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.4"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${origin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false`, "tomlConfigAG")}
+                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">
+                                  {copiedField === "tomlConfigAG" ? "check" : "content_copy"}
+                                </span>
+                                {copiedField === "tomlConfigAG" ? "Đã copy" : "Copy"}
+                              </button>
+                            </div>
+                            <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+{`model_reasoning_effort = "low"
+model_provider = "openai-custom"
+model = "gpt-5.4"
+
+[model_providers.openai-custom]
+experimental_bearer_token = "${savedKey}"
+name = "VinAi"
+base_url = "${origin}/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false`}
+                            </pre>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="pt-2">
-                        <p className="text-xs mb-2">3. Tạo tiếp file <code>auth.json</code> trong cùng thư mục cấu hình trên để tự động bỏ qua màn hình đăng nhập OpenAI:</p>
-                        <div className="relative bg-surface-2 border border-border rounded-lg p-3 font-mono text-xs text-text-main overflow-x-auto pr-12">
-                          <pre>{`{\n  "auth_mode": "apikey",\n  "OPENAI_API_KEY": "${savedKey}"\n}`}</pre>
+                      <div className="pt-2 border-t border-border/40">
+                        <div className="flex justify-between items-center mb-1.5">
+                          <p className="text-xs font-semibold text-text-main">2. Tạo tiếp file auth.json trong cùng thư mục để bypass login:</p>
                           <button
                             onClick={() => copyText(`{\n  "auth_mode": "apikey",\n  "OPENAI_API_KEY": "${savedKey}"\n}`, "authConfigCodex")}
-                            className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
-                            title="Copy cấu hình auth.json"
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
                           >
                             <span className="material-symbols-outlined text-[14px]">
                               {copiedField === "authConfigCodex" ? "check" : "content_copy"}
                             </span>
+                            {copiedField === "authConfigCodex" ? "Đã copy" : "Copy"}
                           </button>
                         </div>
+                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+{`{
+  "auth_mode": "apikey",
+  "OPENAI_API_KEY": "${savedKey}"
+}`}
+                        </pre>
                       </div>
-                      <p className="text-xs">4. Tắt hoàn toàn ứng dụng <strong>Codex IDE / Desktop App</strong> và mở lại để áp dụng cấu hình.</p>
+
+                      <p className="text-xs italic text-text-muted bg-surface-2 p-2.5 rounded-lg border border-border/60">
+                        💡 Lưu ý: Tắt hoàn toàn ứng dụng <strong>Codex Desktop App</strong> và mở lại để áp dụng cấu hình mới. Cả 2 cách cấu hình trên đều gọi trực tiếp về hệ thống Codex của bạn.
+                      </p>
                     </div>
                   </Card>
+                </div>
+              )}
 
-                  <Card title="🚀 3. Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)" icon="rocket">
+              {guideTab === "antigravity" && (
+                <div className="space-y-6 animate-fade-in">
+                  <Card title="🚀 Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)" icon="rocket">
+                    <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <p>Bạn có thể sử dụng trực tiếp khóa API này trên các IDE phổ biến để gọi model qua Gateway:</p>
+                      
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-text-main text-xs">Cấu hình chung:</h4>
+                        <ul className="list-disc pl-5 space-y-1 text-xs">
+                          <li><strong>Provider:</strong> Chọn <code>OpenAI Compatible</code> (hoặc Custom OpenAI)</li>
+                          <li><strong>Base URL:</strong> Điền <code>{origin}/v1</code></li>
+                          <li><strong>API Key:</strong> Điền Client Key của bạn (<code>{savedKey}</code>)</li>
+                        </ul>
+                      </div>
+
+                      <div className="space-y-3 pt-3 border-t border-border/40">
+                        <h4 className="font-semibold text-text-main text-xs">Lựa chọn Model ID:</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="bg-surface-2 border border-border rounded-lg p-3">
+                            <strong className="text-xs text-text-main block mb-1">Model Codex (ChatGPT-backed)</strong>
+                            <span className="text-xs text-text-muted">Nhập Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gpt-5.5</code></span>
+                          </div>
+                          <div className="bg-surface-2 border border-border rounded-lg p-3">
+                            <strong className="text-xs text-text-main block mb-1">Model AntiGravity (Gemini-backed)</strong>
+                            <span className="text-xs text-text-muted">Nhập Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gpt-5.4</code></span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {guideTab === "openclaw" && (
+                <div className="space-y-6 animate-fade-in">
+                  <Card title="🛠️ 1. Cấu hình tự động từ Dashboard" icon="construction">
                     <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Nhập các thông số sau vào phần cấu hình Custom OpenAI hoặc OpenAI Compatible của ứng dụng lập trình:</p>
+                      <p>Nếu bạn cài đặt OpenClaw cục bộ trên cùng máy chủ với 9Router:</p>
                       <ul className="list-disc pl-5 space-y-1 text-text-muted">
-                        <li><strong>Provider/Dịch vụ:</strong> Chọn <code className="bg-surface px-1 rounded text-text-main">OpenAI Compatible</code> (hoặc Custom OpenAI/Compatible)</li>
-                        <li><strong>Base URL:</strong> Điền <code className="bg-surface px-1 rounded text-text-main">{origin}/v1</code></li>
-                        <li><strong>API Key:</strong> Điền Client Key của bạn (<code className="bg-surface px-1 rounded text-text-main">{savedKey}</code>)</li>
-                        <li><strong>Model ID:</strong> Nhập model <code className="bg-surface px-1 rounded text-text-main font-mono">gpt-5.5</code></li>
+                        <li>Truy cập vào giao diện quản trị 9Router: <strong>Dashboard</strong> → <strong>CLI Tools</strong> → <strong>OpenClaw</strong>.</li>
+                        <li>Chọn mô hình bạn mong muốn sử dụng và nhấn <strong>Áp dụng</strong>. Hệ thống sẽ tự động ghi đè tệp cấu hình của OpenClaw một cách chính xác.</li>
                       </ul>
                     </div>
                   </Card>
 
-                  <Card title="🐍 4. Tích hợp Python & gọi cURL" icon="code">
+                  <Card title="💻 2. Cài đặt và Cấu hình thủ công" icon="laptop_mac">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
                       <div>
+                        <p className="text-xs mb-2">1. Tìm hoặc tạo tệp cấu hình của OpenClaw tùy theo hệ điều hành:</p>
+                        <ul className="list-disc pl-5 text-xs mb-2 space-y-1">
+                          <li><strong>Windows</strong>: <code>%USERPROFILE%\.openclaw\openclaw.json</code> (Ví dụ: <code>C:\Users\tên_user\.openclaw\openclaw.json</code>)</li>
+                          <li><strong>Mac / Linux</strong>: <code>~/.openclaw/openclaw.json</code></li>
+                        </ul>
+                        <p className="text-xs mb-2">2. Chỉnh sửa tệp <code>openclaw.json</code> và dán nội dung cấu hình nhà cung cấp <code>9router</code> vào phần <code>models.providers</code>:</p>
+                        <div className="relative bg-surface-2 border border-border rounded-lg p-3 font-mono text-xs text-text-main overflow-x-auto pr-12">
+                          <pre>{`{
+  "models": {
+    "providers": {
+      "9router": {
+        "baseUrl": "${origin}/v1",
+        "apiKey": "${savedKey}",
+        "api": "openai-completions",
+        "models": [
+          { "id": "gpt-5.5", "name": "gpt-5.5" },
+          { "id": "gpt-5.4", "name": "gpt-5.4" }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "9router/gpt-5.5"
+      },
+      "models": {
+        "9router/gpt-5.5": {},
+        "9router/gpt-5.4": {}
+      }
+    }
+  }
+}`}</pre>
+                          <button
+                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${origin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "gpt-5.5", "name": "gpt-5.5" },\n          { "id": "gpt-5.4", "name": "gpt-5.4" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/gpt-5.5"\n      },\n      "models": {\n        "9router/gpt-5.5": {},\n        "9router/gpt-5.4": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
+                            className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
+                            title="Copy cấu hình openclaw.json"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "jsonConfigOpenClaw" ? "check" : "content_copy"}
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs">3. Khởi động lại <strong>OpenClaw CLI</strong> để áp dụng cấu hình mới.</p>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {guideTab === "gemini" && (
+                <div className="space-y-6 animate-fade-in">
+                  <Card title="🐍 Tích hợp trực tiếp bằng Code (Python)" icon="code">
+                    <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <p>Sử dụng thư viện <code>openai</code> trong Python để gọi trực tiếp các model:</p>
+                      <div>
                         <div className="flex justify-between items-center mb-1">
-                          <span className="font-semibold text-text-main">Ví dụ Python (OpenAI SDK):</span>
+                          <span className="font-semibold text-text-main text-xs">Cấu hình gọi model Codex (gpt-5.5):</span>
                           <button
                             onClick={() => {
                               const code = `import openai\n\nclient = openai.OpenAI(\n    base_url="${origin}/v1",\n    api_key="${savedKey}"\n)\n\nresponse = client.chat.completions.create(\n    model="gpt-5.5",\n    messages=[{"role": "user", "content": "Hello!"}]\n)\nprint(response.choices[0].message.content)`;
@@ -1176,150 +1275,10 @@ print(response.choices[0].message.content)`}
 
                       <div>
                         <div className="flex justify-between items-center mb-1">
-                          <span className="font-semibold text-text-main">Gọi nhanh qua cURL:</span>
+                          <span className="font-semibold text-text-main text-xs">Cấu hình gọi model AntiGravity (gpt-5.4):</span>
                           <button
                             onClick={() => {
-                              const code = `curl ${origin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gpt-5.5",\n    "messages": [{"role": "user", "content": "Hello!"}]\n  }'`;
-                              copyText(code, "curlCodex");
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[12px]">
-                              {copiedField === "curlCodex" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "curlCodex" ? "Đã copy" : "Copy Code"}
-                          </button>
-                        </div>
-                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`curl ${origin}/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${savedKey}" \
-  -d '{
-    "model": "gpt-5.5",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'`}
-                        </pre>
-                      </div>
-                    </div>
-                  </Card>
-                </div>
-              )}
-
-              {guideTab === "antigravity" && (
-                <div className="space-y-6">
-                  <Card title="🛠️ 1. Thông số kết nối API cơ bản" icon="api">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Sử dụng các thông số dưới đây để cấu hình thủ công hoặc điền vào các công cụ lập trình hỗ trợ Custom Base URL:</p>
-                      <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-3 text-text-main">
-                        <div className="flex items-center justify-between flex-wrap gap-2 border-b border-border/40 pb-2">
-                          <div>
-                            <strong>Base URL (Endpoint):</strong>
-                            <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs ml-2 font-mono">{origin}/v1</code>
-                          </div>
-                          <button
-                            onClick={() => copyText(`${origin}/v1`, "urlBaseAG")}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "urlBaseAG" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "urlBaseAG" ? "Đã copy" : "Copy"}
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between flex-wrap gap-2 border-b border-border/40 pb-2">
-                          <div>
-                            <strong>API Key:</strong>
-                            <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs ml-2 font-mono">{savedKey}</code>
-                          </div>
-                          <button
-                            onClick={() => copyText(savedKey, "keyBaseAG")}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "keyBaseAG" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "keyBaseAG" ? "Đã copy" : "Copy"}
-                          </button>
-                        </div>
-                        <div>
-                          <strong>Model khuyên dùng:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-xs ml-1 font-mono">gpt-5.4</code>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-
-                  <Card title="💻 2. Cài đặt và Cấu hình thủ công trên Codex Desktop App" icon="laptop_mac">
-                    <div className="space-y-4 text-sm text-text-muted mt-2">
-                      <div>
-                        <p className="text-xs mb-2">1. Tạo hoặc sửa file <code>config.toml</code> trong thư mục cấu hình của Codex (cho model AntiGravity gpt-5.4):</p>
-                        <ul className="list-disc pl-5 text-xs mb-2 space-y-1">
-                          <li><strong>Windows</strong>: <code>%USERPROFILE%\.codex\config.toml</code></li>
-                          <li><strong>Mac / Linux</strong>: <code>~/.codex/config.toml</code></li>
-                        </ul>
-                        <p className="text-xs mb-2">2. Dán nội dung cấu hình dưới đây vào file <code>config.toml</code>:</p>
-                        <div className="relative bg-surface-2 border border-border rounded-lg p-3 font-mono text-xs text-text-main overflow-x-auto pr-12">
-                          <pre>{`model_reasoning_effort = "low"
-model_provider = "openai-custom"
-model = "gpt-5.4"
-
-[model_providers.openai-custom]
-experimental_bearer_token = "${savedKey}"
-name = "VinAi"
-base_url = "${origin}/v1"
-wire_api = "responses"
-requires_openai_auth = false
-supports_websockets = false`}</pre>
-                          <button
-                            onClick={() => copyText(`model_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.4"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${origin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false`, "tomlConfigAG")}
-                            className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
-                            title="Copy cấu hình config.toml"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "tomlConfigAG" ? "check" : "content_copy"}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="pt-2">
-                        <p className="text-xs mb-2">3. Tạo tiếp file <code>auth.json</code> trong cùng thư mục cấu hình <code>.codex</code> để tự động bỏ qua màn hình đăng nhập OpenAI:</p>
-                        <div className="relative bg-surface-2 border border-border rounded-lg p-3 font-mono text-xs text-text-main overflow-x-auto pr-12">
-                          <pre>{`{\n  "auth_mode": "apikey",\n  "OPENAI_API_KEY": "${savedKey}"\n}`}</pre>
-                          <button
-                            onClick={() => copyText(`{\n  "auth_mode": "apikey",\n  "OPENAI_API_KEY": "${savedKey}"\n}`, "authConfigAG")}
-                            className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
-                            title="Copy cấu hình auth.json"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "authConfigAG" ? "check" : "content_copy"}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-xs">4. Tắt hoàn toàn ứng dụng <strong>Codex IDE / Desktop App</strong> và mở lại để áp dụng cấu hình.</p>
-                    </div>
-                  </Card>
-
-                  <Card title="🚀 3. Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)" icon="rocket">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Nhập các thông số sau vào phần cấu hình Custom OpenAI hoặc OpenAI Compatible của ứng dụng lập trình:</p>
-                      <ul className="list-disc pl-5 space-y-1 text-text-muted">
-                        <li><strong>Provider/Dịch vụ:</strong> Chọn <code className="bg-surface px-1 rounded text-text-main">OpenAI Compatible</code> (hoặc Custom OpenAI/Compatible)</li>
-                        <li><strong>Base URL:</strong> Điền <code className="bg-surface px-1 rounded text-text-main">{origin}/v1</code></li>
-                        <li><strong>API Key:</strong> Điền Client Key của bạn (<code className="bg-surface px-1 rounded text-text-main">{savedKey}</code>)</li>
-                        <li><strong>Model ID:</strong> Nhập model <code className="bg-surface px-1 rounded text-text-main font-mono">gpt-5.4</code></li>
-                      </ul>
-                    </div>
-                  </Card>
-
-                  <Card title="🐍 4. Tích hợp Python & gọi cURL" icon="code">
-                    <div className="space-y-4 text-sm text-text-muted mt-2">
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-semibold text-text-main">Ví dụ Python (OpenAI SDK):</span>
-                          <button
-                            onClick={() => {
-                              const code = `import openai\\n\\nclient = openai.OpenAI(\\n    base_url="${origin}/v1",\\n    api_key="${savedKey}"\\n)\\n\\nresponse = client.chat.completions.create(\\n    model="gpt-5.4",\\n    messages=[{"role": "user", "content": "Hello!"}]\\n)\\nprint(response.choices[0].message.content)`;
+                              const code = `import openai\n\nclient = openai.OpenAI(\n    base_url="${origin}/v1",\n    api_key="${savedKey}"\n)\n\nresponse = client.chat.completions.create(\n    model="gpt-5.4",\n    messages=[{"role": "user", "content": "Hello!"}]\n)\nprint(response.choices[0].message.content)`;
                               copyText(code, "codePythonAG");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1345,13 +1304,44 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)`}
                         </pre>
                       </div>
+                    </div>
+                  </Card>
+
+                  <Card title="📡 Gọi nhanh qua cURL (Terminal)" icon="terminal">
+                    <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-semibold text-text-main text-xs">Gọi model Codex (gpt-5.5):</span>
+                          <button
+                            onClick={() => {
+                              const code = `curl ${origin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gpt-5.5",\n    "messages": [{"role": "user", "content": "Hello!"}]\n  }'`;
+                              copyText(code, "curlCodex");
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">
+                              {copiedField === "curlCodex" ? "check" : "content_copy"}
+                            </span>
+                            {copiedField === "curlCodex" ? "Đã copy" : "Copy Code"}
+                          </button>
+                        </div>
+                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+{`curl ${origin}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${savedKey}" \\
+  -d '{
+    "model": "gpt-5.5",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'`}
+                        </pre>
+                      </div>
 
                       <div>
                         <div className="flex justify-between items-center mb-1">
-                          <span className="font-semibold text-text-main">Gọi nhanh qua cURL:</span>
+                          <span className="font-semibold text-text-main text-xs">Gọi model AntiGravity (gpt-5.4):</span>
                           <button
                             onClick={() => {
-                              const code = `curl ${origin}/v1/chat/completions \\\\n  -H "Content-Type: application/json" \\\\n  -H "Authorization: Bearer ${savedKey}" \\\\n  -d '{\\n    "model": "gpt-5.4",\\n    "messages": [{"role": "user", "content": "Hello!"}]\\n  }'`;
+                              const code = `curl ${origin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gpt-5.4",\n    "messages": [{"role": "user", "content": "Hello!"}]\n  }'`;
                               copyText(code, "curlAG");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1363,9 +1353,9 @@ print(response.choices[0].message.content)`}
                           </button>
                         </div>
                         <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`curl ${origin}/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${savedKey}" \
+{`curl ${origin}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${savedKey}" \\
   -d '{
     "model": "gpt-5.4",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -1376,196 +1366,7 @@ print(response.choices[0].message.content)`}
                   </Card>
                 </div>
               )}
-              {guideTab === "openclaw" && (
-                <div className="space-y-6 animate-fade-in">
-                  <Card title="🛠️ 1. Cấu hình tự động từ Dashboard" icon="construction">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Nếu bạn cài đặt OpenClaw cục bộ trên cùng máy chủ với 9Router:</p>
-                      <ul className="list-disc pl-5 space-y-1 text-text-muted animate-fade-in">
-                        <li>Truy cập vào giao diện quản trị 9Router: <strong>Dashboard</strong> → <strong>CLI Tools</strong> → <strong>OpenClaw</strong>.</li>
-                        <li>Chọn mô hình bạn mong muốn sử dụng và nhấn <strong>Áp dụng</strong>. Hệ thống sẽ tự động ghi đè tệp cấu hình của OpenClaw một cách chính xác.</li>
-                      </ul>
-                    </div>
-                  </Card>
 
-                  <Card title="💻 2. Cài đặt và Cấu hình thủ công" icon="laptop_mac">
-                    <div className="space-y-4 text-sm text-text-muted mt-2">
-                      <div>
-                        <p className="text-xs mb-2">1. Tìm hoặc tạo tệp cấu hình của OpenClaw tùy theo hệ điều hành:</p>
-                        <ul className="list-disc pl-5 text-xs mb-2 space-y-1">
-                          <li><strong>Windows</strong>: <code>%USERPROFILE%\.openclaw\openclaw.json</code> (Ví dụ: <code>C:\Users\tên_user\.openclaw\openclaw.json</code>)</li>
-                          <li><strong>Mac / Linux</strong>: <code>~/.openclaw/openclaw.json</code></li>
-                        </ul>
-                        <p className="text-xs mb-2">2. Chỉnh sửa tệp <code>openclaw.json</code> và dán nội dung cấu hình nhà cung cấp <code>9router</code> vào phần <code>models.providers</code>:</p>
-                        <div className="relative bg-surface-2 border border-border rounded-lg p-3 font-mono text-xs text-text-main overflow-x-auto pr-12">
-                          <pre>{`{
-  "models": {
-    "providers": {
-      "9router": {
-        "baseUrl": "${origin}/v1",
-        "apiKey": "${savedKey}",
-        "api": "openai-completions",
-        "models": [
-          { "id": "claude-sonnet-4-5-20250929", "name": "claude-sonnet-4-5-20250929" }
-        ]
-      }
-    }
-  },
-  "agents": {
-    "defaults": {
-      "model": {
-        "primary": "9router/claude-sonnet-4-5-20250929"
-      },
-      "models": {
-        "9router/claude-sonnet-4-5-20250929": {}
-      }
-    }
-  }
-}`}</pre>
-                          <button
-                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${origin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "claude-sonnet-4-5-20250929", "name": "claude-sonnet-4-5-20250929" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/claude-sonnet-4-5-20250929"\n      },\n      "models": {\n        "9router/claude-sonnet-4-5-20250929": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
-                            className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
-                            title="Copy cấu hình openclaw.json"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "jsonConfigOpenClaw" ? "check" : "content_copy"}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-xs">3. Khởi động lại <strong>OpenClaw CLI</strong> để áp dụng cấu hình mới.</p>
-                    </div>
-                  </Card>
-                </div>
-              )}
-
-{guideTab === "gemini" && (
-                <div className="space-y-6 animate-fade-in">
-                  <Card title="⚙️ Thông số kết nối API" icon="api">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Sử dụng API Key và Gateway của bạn để kết nối trực tiếp với các dòng model Google Gemini:</p>
-                      <div className="bg-surface-2 border border-border rounded-lg p-4 space-y-3 text-text-main">
-                        <div className="flex items-center justify-between flex-wrap gap-2 border-b border-border/40 pb-2">
-                          <div>
-                            <strong>Base URL:</strong>
-                            <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs ml-2 font-mono">{origin}/v1</code>
-                          </div>
-                          <button
-                            onClick={() => copyText(`${origin}/v1`, "urlGemini")}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "urlGemini" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "urlGemini" ? "Đã copy" : "Copy"}
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between flex-wrap gap-2 border-b border-border/40 pb-2">
-                          <div>
-                            <strong>API Key:</strong>
-                            <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs ml-2 font-mono">{savedKey}</code>
-                          </div>
-                          <button
-                            onClick={() => copyText(savedKey, "keyGemini")}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">
-                              {copiedField === "keyGemini" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "keyGemini" ? "Đã copy" : "Copy"}
-                          </button>
-                        </div>
-                        <div>
-                          <strong>Các model khuyên dùng:</strong>
-                          <ul className="list-disc pl-5 mt-1 space-y-1 text-xs text-text-muted">
-                            <li><code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main">gemini-2.5-flash</code> (Tốc độ cực nhanh, đa năng)</li>
-                            <li><code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main">gemini-2.0-flash</code> (Ổn định, tiết kiệm)</li>
-                            <li><code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main">gemini-2.5-pro</code> (Thông minh nhất, hỗ trợ tốt tác vụ phức tạp)</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-
-                  <Card title="💻 Cấu hình trên IDE / Cursor / Cline / RooCode" icon="terminal">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Nhập các thông số sau vào phần cấu hình Custom OpenAI hoặc OpenAI Compatible của ứng dụng lập trình:</p>
-                      <ul className="list-disc pl-5 space-y-1 text-text-muted">
-                        <li><strong>Provider/Dịch vụ:</strong> Chọn <code className="bg-surface px-1 rounded text-text-main">OpenAI Compatible</code> (hoặc Custom OpenAI/Compatible)</li>
-                        <li><strong>Base URL:</strong> Điền <code className="bg-surface px-1 rounded text-text-main">{origin}/v1</code></li>
-                        <li><strong>API Key:</strong> Điền Client Key của bạn (<code className="bg-surface px-1 rounded text-text-main">{savedKey}</code>)</li>
-                        <li><strong>Model ID:</strong> Nhập model mong muốn (ví dụ: <code className="bg-surface px-1 rounded text-text-main font-mono">gemini-2.5-flash</code>)</li>
-                      </ul>
-                      <p className="text-xs italic text-text-muted bg-surface-2 p-2.5 rounded-lg border border-border">
-                        💡 Mẹo: Cấu hình này giúp bạn lập trình trực tiếp bằng model Gemini cao cấp mà không cần tài khoản Google Studio hay VPN.
-                      </p>
-                    </div>
-                  </Card>
-
-                  <Card title="🐍 Tích hợp trực tiếp bằng Code (Python / JavaScript / cURL)" icon="code">
-                    <div className="space-y-4 text-sm text-text-muted mt-2">
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-semibold text-text-main">Ví dụ Python (OpenAI SDK):</span>
-                          <button
-                            onClick={() => {
-                              const code = `import openai\n\nclient = openai.OpenAI(\n    base_url="${origin}/v1",\n    api_key="${savedKey}"\n)\n\nresponse = client.chat.completions.create(\n    model="gemini-2.5-flash",\n    messages=[{"role": "user", "content": "Hello!"}]\n)\nprint(response.choices[0].message.content)`;
-                              copyText(code, "codePython");
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[12px]">
-                              {copiedField === "codePython" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "codePython" ? "Đã copy" : "Copy Code"}
-                          </button>
-                        </div>
-                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`import openai
-
-client = openai.OpenAI(
-    base_url="${origin}/v1",
-    api_key="${savedKey}"
-)
-
-response = client.chat.completions.create(
-    model="gemini-2.5-flash",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-print(response.choices[0].message.content)`}
-                        </pre>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-semibold text-text-main">Ví dụ cURL (Terminal):</span>
-                          <button
-                            onClick={() => {
-                              const code = `curl ${origin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gemini-2.5-flash",\n    "messages": [{"role": "user", "content": "Hello!"}]\n  }'`;
-                              copyText(code, "codeCurl");
-                            }}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[12px]">
-                              {copiedField === "codeCurl" ? "check" : "content_copy"}
-                            </span>
-                            {copiedField === "codeCurl" ? "Đã copy" : "Copy Code"}
-                          </button>
-                        </div>
-                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`curl ${origin}/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ${savedKey}" \\
-  -d '{
-    "model": "gemini-2.5-flash",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'`}
-                        </pre>
-                      </div>
-                    </div>
-                  </Card>
-                </div>
-              )}
 
 
             </div>
