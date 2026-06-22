@@ -210,7 +210,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Success (2xx) - return response
       if (result.ok) {
         log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+        try {
+          const newHeaders = new Headers(result.headers);
+          newHeaders.set("x-9r-actual-model", modelStr);
+          return new Response(result.body, {
+            status: result.status,
+            statusText: result.statusText,
+            headers: newHeaders
+          });
+        } catch (e) {
+          return result;
+        }
       }
 
       // Extract error info from response

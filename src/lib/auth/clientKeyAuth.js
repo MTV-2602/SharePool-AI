@@ -239,6 +239,8 @@ function extractTextFromChunk(parsed) {
 export async function wrapResponseWithClientKeyLogging(response, clientKeyId, model, reqBody = null) {
   if (!response.ok) return response;
 
+  const actualModel = response.headers.get("x-9r-actual-model") || model;
+
   const contentType = response.headers.get('content-type') || '';
   const isStream = contentType.includes('text/event-stream');
 
@@ -271,7 +273,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                           const { prompt_tokens = 0, completion_tokens = 0 } = usage;
                           if (prompt_tokens > 0 || completion_tokens > 0) {
                             hasLogged = true;
-                            logClientKeyUsage(clientKeyId, parsed.model || model, prompt_tokens, completion_tokens)
+                            logClientKeyUsage(clientKeyId, actualModel, prompt_tokens, completion_tokens)
                               .catch(err => console.error('[ClientKeyAuth] Failed to log usage:', err.message));
                           }
                         }
@@ -285,7 +287,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
               if (!hasLogged) {
                 const promptTokens = reqBody ? Math.ceil(JSON.stringify(reqBody).length / 4) : 1000;
                 const completionTokens = Math.max(1, Math.floor(accumulatedText.length / 4));
-                logClientKeyUsage(clientKeyId, model, promptTokens, completionTokens)
+                logClientKeyUsage(clientKeyId, actualModel, promptTokens, completionTokens)
                   .catch(err => console.error('[ClientKeyAuth] Failed to log fallback usage:', err.message));
               }
 
@@ -318,7 +320,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                       if (prompt_tokens > 0 || completion_tokens > 0) {
                         hasLogged = true;
                         // Log usage asynchronously to not block the stream finish
-                        logClientKeyUsage(clientKeyId, parsed.model || model, prompt_tokens, completion_tokens)
+                        logClientKeyUsage(clientKeyId, actualModel, prompt_tokens, completion_tokens)
                           .catch(err => console.error('[ClientKeyAuth] Failed to log usage:', err.message));
                       }
                     }
@@ -356,7 +358,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
       }
       if (usage) {
         const { prompt_tokens = 0, completion_tokens = 0 } = usage;
-        await logClientKeyUsage(clientKeyId, body.model || model, prompt_tokens, completion_tokens);
+        await logClientKeyUsage(clientKeyId, actualModel, prompt_tokens, completion_tokens);
       }
     } catch (err) {
       console.error('[ClientKeyAuth] Failed to parse non-stream response for logging:', err.message);
