@@ -41,7 +41,7 @@ export async function GET(request) {
     const { quota_tokens = 0, used_tokens = 0 } = authResult.keyData || {};
     const quota = Number(quota_tokens) || 0;
     const used = Number(used_tokens) || 0;
-    const isInfinite = quota === 0 || quota >= 9999999999;
+    const isInfinite = quota === 0 || quota >= 999999999999;
 
     if (isInfinite) {
       const costUsd = (used / 1000000) * 5.0;

@@ -100,9 +100,27 @@ export default function LoginPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        const normalizedLogs = (data.logs || []).map(log => ({ ...log, model: log.model === 'gpt-5.4' ? 'ag/gemini-3.5-flash-high' : log.model }));
+        const cleanModelName = (modelName) => {
+          let m = modelName || "";
+          if (m === "gpt-5.4" || m === "ag/gpt-5.4" || m === "antigravity/gpt-5.4") {
+            m = "gemini-3.5-flash-high";
+          } else if (m === "gpt-5.5" || m === "codex/gpt-5.5") {
+            m = "gpt-5.5";
+          }
+          if (m.startsWith("ag/")) {
+            m = m.slice(3);
+          }
+          if (m.startsWith("antigravity/")) {
+            m = m.slice(12);
+          }
+          if (m.startsWith("codex/")) {
+            m = m.slice(6);
+          }
+          return m;
+        };
+        const normalizedLogs = (data.logs || []).map(log => ({ ...log, model: cleanModelName(log.model) }));
         const normalizedSummary = (data.summary || []).reduce((acc, item) => {
-          const modelName = item.model === 'gpt-5.4' ? 'ag/gemini-3.5-flash-high' : item.model;
+          const modelName = cleanModelName(item.model);
           const existing = acc.find(x => x.model === modelName);
           if (existing) {
             existing.prompt_tokens += Number(item.prompt_tokens) || 0;
@@ -531,7 +549,7 @@ curl -X POST "\${origin}/v1beta/models/gemini-2.5-flash:generateContent?key=\${s
   // Calculations for stats
   const used = keyData?.used_tokens || 0;
   const total = keyData?.quota_tokens || 0;
-  const isInfinite = total === 0 || total >= 9999999999;
+  const isInfinite = total === 0 || total >= 999999999999;
   const remaining = isInfinite ? 0 : Math.max(0, total - used);
   const usagePct = isInfinite ? 0 : Math.min(100, Math.round((used / total) * 100));
   const costUsd = (used / 1000000) * 5.0;
