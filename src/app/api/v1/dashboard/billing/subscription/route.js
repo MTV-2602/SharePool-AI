@@ -37,6 +37,17 @@ export async function GET(request) {
         headers
       });
     }
+    const { quota_tokens = 0, used_tokens = 0 } = authResult.keyData || {};
+    const quota = Number(quota_tokens) || 0;
+    const used = Number(used_tokens) || 0;
+    const isInfinite = quota === 0 || quota >= 9999999999;
+    if (isInfinite) {
+      const costUsd = (used / 1000000) * 5.0;
+      hardLimitUsd = Math.max(120.0, Math.ceil(costUsd) + 50.0);
+    } else {
+      hardLimitUsd = (quota / 1000000) * 5.0;
+      if (hardLimitUsd <= 0) hardLimitUsd = 120.0;
+    }
   }
 
   const responseBody = {

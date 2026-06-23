@@ -38,19 +38,22 @@ export async function GET(request) {
       });
     }
 
-    const { quota_tokens = 0, used_tokens = 0 } = authResult.keyData;
+    const { quota_tokens = 0, used_tokens = 0 } = authResult.keyData || {};
     const quota = Number(quota_tokens) || 0;
     const used = Number(used_tokens) || 0;
+    const isInfinite = quota === 0 || quota >= 9999999999;
 
-    if (quota > 0) {
-      const usedRatio = Math.min(1.0, used / quota);
-      // Hard limit is $120.00 (12000 cents)
-      totalUsageCents = Math.round(usedRatio * 120.0 * 100);
+    if (isInfinite) {
+      const costUsd = (used / 1000000) * 5.0;
+      totalUsageCents = Math.round(costUsd * 100);
     } else {
-      // If unlimited, usage is 0, showing 100% remaining
-      totalUsageCents = 0;
-    }
-  }
+      const costUsd = (used / 1000000) * 5.0;
+      totalUsageCents = Math.round(costUsd * 100);
+      const quotaCostCents = Math.round((quota / 1000000) * 5.0 * 100);
+      if (totalUsageCents > quotaCostCents) {
+        totalUsageCents = quotaCostCents;
+      }
+    }}
 
   const responseBody = {
     "object": "list",
