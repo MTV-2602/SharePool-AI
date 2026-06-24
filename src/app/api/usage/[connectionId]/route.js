@@ -179,49 +179,7 @@ export async function GET(request, { params }) {
       }
     }
 
-    // Overwrite Antigravity quotas with actual usage from database since Google API always returns remainingFraction = 1
-    if (connection.provider === "antigravity" && usage && usage.quotas) {
-      try {
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const { getAdapter } = await import("@/lib/db/index.js");
-        const db = await getAdapter();
-        const rows = await db.all(
-          "SELECT model, COUNT(*) as count FROM usageHistory WHERE connectionId = ? AND timestamp >= ? GROUP BY model",
-          [connection.id, oneDayAgo]
-        );
 
-        const MODEL_MAPPING = {
-          "gemini-3-flash-agent": ["gemini-3-flash-agent", "gemini-3.5-flash-high", "gemini-3.5-flash"],
-          "gemini-3.5-flash-low": ["gemini-3.5-flash-low", "gemini-3.5-flash-medium"],
-          "gemini-3.5-flash-extra-low": ["gemini-3.5-flash-extra-low"],
-          "gemini-pro-agent": ["gemini-pro-agent", "gemini-3.1-pro-high"],
-          "gemini-3.1-pro-low": ["gemini-3.1-pro-low"],
-          "claude-sonnet-4-6": ["claude-sonnet-4-6"],
-          "claude-opus-4-6-thinking": ["claude-opus-4-6-thinking"],
-          "gpt-oss-120b-medium": ["gpt-oss-120b-medium"],
-          "gemini-3-flash": ["gemini-3-flash"]
-        };
-
-        for (const [modelKey, quota] of Object.entries(usage.quotas)) {
-          const targets = MODEL_MAPPING[modelKey] || [modelKey];
-          let totalCount = 0;
-          for (const row of rows) {
-            const m = (row.model || "").toLowerCase();
-            const isMatch = targets.some(t => {
-              const targetLower = t.toLowerCase();
-              return m === targetLower || m.endsWith("/" + targetLower);
-            });
-            if (isMatch) {
-              totalCount += Number(row.count) || 0;
-            }
-          }
-          quota.used = totalCount;
-          quota.remainingPercentage = Math.max(0, Math.round(((quota.total - totalCount) / quota.total) * 100));
-        }
-      } catch (dbErr) {
-        console.error("[Usage API] Failed to compute real Antigravity usage from db:", dbErr.message);
-      }
-    }
 
     return Response.json(usage);
   } catch (error) {
