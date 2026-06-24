@@ -127,6 +127,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
+        "Client-Metadata": JSON.stringify(CLIENT_METADATA),
         "Content-Type": "application/json",
         "X-Client-Name": "antigravity",
         "X-Client-Version": "1.107.0",
