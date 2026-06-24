@@ -120,7 +120,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
   try {
     // Fetch subscription info once — reuse for both projectId and plan
     const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions);
-    const projectId = subscriptionInfo?.cloudaicompanionProject || null;
+    const projectId = normalizeCloudCodeProjectId(subscriptionInfo?.cloudaicompanionProject);
 
     const response = await fetchWithTimeout(ANTIGRAVITY_CONFIG.quotaApiUrl, {
       method: "POST",
