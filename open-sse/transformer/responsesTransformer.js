@@ -225,16 +225,27 @@ export function createResponsesApiTransformStream(logger = null) {
   const sendCompleted = (controller) => {
     if (!state.completedSent) {
       state.completedSent = true;
+      const response = {
+        id: state.responseId,
+        object: "response",
+        created_at: state.created,
+        status: "completed",
+        background: false,
+        error: null
+      };
+      if (state.usage) {
+        response.usage = {
+          input_tokens: state.usage.prompt_tokens || 0,
+          output_tokens: state.usage.completion_tokens || 0,
+          total_tokens: state.usage.total_tokens || 0,
+          input_tokens_details: {
+            cached_tokens: state.usage.prompt_tokens_details?.cached_tokens || state.usage.prompt_cache_hit_tokens || 0
+          }
+        };
+      }
       emit(controller, "response.completed", {
         type: "response.completed",
-        response: {
-          id: state.responseId,
-          object: "response",
-          created_at: state.created,
-          status: "completed",
-          background: false,
-          error: null
-        }
+        response
       });
     }
   };
@@ -262,6 +273,10 @@ export function createResponsesApiTransformStream(logger = null) {
           parsed = JSON.parse(dataStr);
         } catch {
           continue;
+        }
+
+        if (parsed.usage) {
+          state.usage = parsed.usage;
         }
 
         if (!parsed.choices?.length) continue;

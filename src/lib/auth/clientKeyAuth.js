@@ -220,6 +220,9 @@ function extractTextFromChunk(parsed) {
   if (parsed.choices?.[0]?.delta?.content) {
     return parsed.choices[0].delta.content;
   }
+  if (typeof parsed.delta === "string") {
+    return parsed.delta;
+  }
   if (parsed.delta?.text) {
     return parsed.delta.text;
   }
