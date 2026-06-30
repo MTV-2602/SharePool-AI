@@ -40,6 +40,15 @@ export function parseSuffix(model) {
 export function extractThinking(body) {
   if (!body || typeof body !== "object") return null;
 
+  // Claude output_config.effort (explicit) — priority over adaptive thinking
+  const oc = body.output_config?.effort;
+  if (typeof oc === "string" && oc) {
+    const e = oc.toLowerCase();
+    if (e === "none" || e === "off") return { mode: "none" };
+    if (e === "auto") return { mode: "auto" };
+    return { mode: "level", level: e };
+  }
+
   // Claude shape
   const t = body.thinking;
   if (t && typeof t === "object") {
@@ -118,6 +127,11 @@ function toLevel(cfg) {
   return null;
 }
 
+function toGeminiThinkingLevel(cfg) {
+  const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
+  return effortToThinkingLevel(raw);
+}
+
 // Gemini nests thinkingConfig under generationConfig. gemini-cli / antigravity wrap
 // the whole request in a { request: { generationConfig } } envelope — target the
 // envelope's generationConfig when present, else the top-level one.
@@ -170,8 +184,7 @@ function applyFormat(fmt, body, cfg, caps) {
       break;
     }
     case "gemini-level": {
-      const rawLevel = none ? "minimal" : (toLevel(eff) || "high");
-      const level = effortToThinkingLevel(rawLevel);
+      const level = none ? "minimal" : toGeminiThinkingLevel(eff);
       setGeminiThinking(body, { thinkingLevel: level, includeThoughts: level !== "minimal" });
       break;
     }

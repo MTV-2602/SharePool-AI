@@ -43,7 +43,6 @@ export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
 // Cooldown durations (ms)
 const COOLDOWN = {
-  quota: 2 * 60 * 60 * 1000, // 2 hours for quota limits / upgrade plan
   long: 2 * 60 * 1000,
   short: 5 * 1000,
 };
@@ -62,11 +61,9 @@ export const ERROR_RULES = [
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
-  { text: "quota reached",            cooldownMs: COOLDOWN.quota },
-  { text: "upgrade your plan",        cooldownMs: COOLDOWN.quota },
-  { text: "quota exceeded",           cooldownMs: COOLDOWN.quota },
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
+  { text: "quota exceeded",           backoff: true },
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
 

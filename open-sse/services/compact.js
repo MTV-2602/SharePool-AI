@@ -49,17 +49,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
 
     // Success or client error - return response
     if (result.ok || result.status < 500) {
-      try {
-        const newHeaders = new Headers(result.headers);
-        newHeaders.set("x-9r-actual-model", modelStr);
-        return new Response(result.body, {
-          status: result.status,
-          statusText: result.statusText,
-          headers: newHeaders
-        });
-      } catch (e) {
-        return result;
-      }
+      return result;
     }
 
     // 5xx error - try next model

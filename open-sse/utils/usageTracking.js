@@ -2,7 +2,6 @@
  * Token Usage Tracking - Extract, normalize, estimate and log token usage
  */
 
-import { saveRequestUsage, appendRequestLog } from "@/lib/usageDb.js";
 import { FORMATS } from "../translator/formats.js";
 
 // ANSI color codes
@@ -16,7 +15,7 @@ export const COLORS = {
 };
 
 // Buffer tokens to prevent context errors
-const BUFFER_TOKENS = 0;
+const BUFFER_TOKENS = 2000;
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -303,7 +302,7 @@ export function estimateUsage(body, contentLength, targetFormat = FORMATS.OPENAI
 /**
  * Log usage with cache info (green color)
  */
-export function logUsage(provider, usage, model = null, connectionId = null, apiKey = null, endpoint = null) {
+export function logUsage(provider, usage, model = null, connectionId = null, apiKey = null) {
   if (!usage || typeof usage !== "object") return;
 
   const p = provider?.toUpperCase() || "UNKNOWN";
@@ -333,15 +332,4 @@ export function logUsage(provider, usage, model = null, connectionId = null, api
   if (reasoning) msg += ` | reasoning=${reasoning}`;
 
   console.log(msg);
-
-  // Save to usage DB
-  const tokens = {
-    prompt_tokens: inTokens,
-    completion_tokens: outTokens,
-    cache_read_input_tokens: cacheRead || 0,
-    cache_creation_input_tokens: cacheCreation || 0,
-    reasoning_tokens: reasoning || 0
-  };
-  saveRequestUsage({ model, provider, connectionId, tokens, apiKey: apiKey || undefined, endpoint: endpoint || undefined }).catch(() => { });
-  appendRequestLog({ model, provider, connectionId, tokens, status: "200 OK" }).catch(() => { });
 }

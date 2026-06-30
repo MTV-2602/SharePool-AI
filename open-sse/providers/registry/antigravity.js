@@ -18,6 +18,7 @@ export default {
     deprecationNotice: "RISK_NOTICE",
   },
   category: "oauth",
+  serviceKinds: ["llm", "image"],
   transport: {
     baseUrls: [
       "https://daily-cloudcode-pa.googleapis.com",
@@ -29,7 +30,10 @@ export default {
     },
     retry: {
       "429": {
-        attempts: 6,
+        attempts: 3,
+      },
+      "500": {
+        attempts: 3,
       },
       "503": {
         attempts: 3,
@@ -53,15 +57,13 @@ export default {
     { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)" },
     { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)" },
     { id: "gemini-3-flash", name: "Gemini 3 Flash", thinking: false },
-    { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash (Fallback)", upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.5-flash-high", name: "Gemini 3.5 Flash (High) (Fallback)", upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.5-flash-medium", name: "Gemini 3.5 Flash (Medium) (Fallback)", upstreamModelId: "gemini-3.5-flash-low" },
-    { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro (High) (Fallback)", upstreamModelId: "gemini-pro-agent" },
+    // Image generation models
+    { id: "gemini-3.1-flash-image", name: "Gemini 3.1 Flash (Image)", kind: "image", imageGen: true, capabilities: ["textToImage"] },
   ],
   oauth: {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
-    userInfoUrl: "https://www.googleapis.com/oauth2/v3/userinfo",
+    userInfoUrl: "https://www.googleapis.com/oauth2/v1/userinfo",
     scopes: [
       "https://www.googleapis.com/auth/cloud-platform",
       "https://www.googleapis.com/auth/userinfo.email",

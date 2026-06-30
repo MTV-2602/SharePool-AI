@@ -19,10 +19,6 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     return flushEvents(state);
   }
   
-  if (chunk.usage && typeof chunk.usage === "object") {
-    state.usage = chunk.usage;
-  }
-  
   if (!chunk.choices?.length) return [];
   
   const events = [];
@@ -333,7 +329,7 @@ function closeToolCall(state, emit, idx) {
 function sendCompleted(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
-    const completedEvent = {
+    emit("response.completed", {
       type: "response.completed",
       response: {
         id: state.responseId,
@@ -343,23 +339,7 @@ function sendCompleted(state, emit) {
         background: false,
         error: null
       }
-    };
-    if (state.usage) {
-      const cached = state.usage.cached_tokens ?? state.usage.prompt_tokens_details?.cached_tokens ?? 0;
-      const reasoning = state.usage.reasoning_tokens ?? state.usage.completion_tokens_details?.reasoning_tokens ?? 0;
-      completedEvent.response.usage = {
-        input_tokens: state.usage.prompt_tokens || 0,
-        output_tokens: state.usage.completion_tokens || 0,
-        total_tokens: (state.usage.prompt_tokens || 0) + (state.usage.completion_tokens || 0),
-        input_tokens_details: {
-          cached_tokens: cached
-        },
-        output_tokens_details: {
-          reasoning_tokens: reasoning
-        }
-      };
-    }
-    emit("response.completed", completedEvent);
+    });
   }
 }
 
