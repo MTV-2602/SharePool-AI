@@ -26,6 +26,7 @@ import {
   setQuotaCache,
   QUOTA_CACHE_KEY,
   REFRESH_INTERVAL_MS,
+  CLAUDE_REFRESH_INTERVAL_MS,
   DEPLETED_QUOTA_THRESHOLD,
   AUTO_REFRESH_STORAGE_KEY,
   CONNECTIONS_PAGE_SIZE,
@@ -37,6 +38,58 @@ import {
 import Card from "@/shared/components/Card";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+
+// Maps the stored providerSpecificData.authMethod to a human label for Kiro.
+// Values come from the Kiro connect flows: builder-id/idc (device code),
+// google/github (social), imported (refresh-token paste), api_key (headless).
+const KIRO_METHOD_LABELS = {
+  "builder-id": "AWS Builder ID",
+  idc: "IAM Identity Center",
+  google: "Google",
+  github: "GitHub",
+  imported: "Imported Token",
+  api_key: "API Key",
+};
+
+const AUTO_PING_SETTINGS_KEYS = {
+  claude: "claudeAutoPing",
+  codex: "codexAutoPing",
+};
+
+const AUTO_PING_TOOLTIPS = {
+  claude: "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.",
+  codex: "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota.",
+};
+
+function kiroMethodLabel(conn) {
+  const m = conn.providerSpecificData?.authMethod;
+  if (m && KIRO_METHOD_LABELS[m]) return KIRO_METHOD_LABELS[m];
+  return conn.authType === "api_key" ? "API Key" : "OAuth";
+}
+
+function getConnectionSecondaryLabel(connection) {
+  if (connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()) {
+    return connection.email.trim();
+  }
+
+  if (connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()) {
+    return connection.displayName.trim();
+  }
+
+  return null;
+}
+
+// Region is stored for builder-id/idc/api_key flows; social and imported flows
+// omit it, so fall back to the region segment of the profileArn
+// (arn:aws:codewhisperer:<region>:...).
+function kiroRegion(conn) {
+  const r = conn.providerSpecificData?.region;
+  if (r) return r;
+  const arn = conn.providerSpecificData?.profileArn;
+  const seg = typeof arn === "string" ? arn.split(":")[3] : "";
+  return seg || "";
+}
 
 function getCodexResetCreditCount(quota) {
   const value = quota?.raw?.resetCredits?.availableCount;
@@ -45,11 +98,13 @@ function getCodexResetCreditCount(quota) {
 }
 
 export default function ProviderLimits() {
+  const { copied, copy } = useCopyToClipboard();
   const [connections, setConnections] = useState([]);
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
   const [errors, setErrors] = useState({});
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoPingMaps, setAutoPingMaps] = useState({ claude: {}, codex: {} });
   const [lastUpdated, setLastUpdated] = useState(null);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -87,6 +142,7 @@ export default function ProviderLimits() {
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
+  const tickCountRef = useRef(0);
 
   const fetchConnections = useCallback(
     async (targetPage = page) => {
@@ -357,11 +413,17 @@ export default function ProviderLimits() {
     };
   }, []);
 
-  const refreshAll = useCallback(async () => {
+  const refreshAll = useCallback(async (force = false) => {
     if (refreshingAll) return;
 
     setRefreshingAll(true);
     setCountdown(60);
+
+    // Throttle Claude: poll its quota every Nth auto-tick (manual force bypasses)
+    const tick = (tickCountRef.current += 1);
+    const claudeEvery = Math.round(CLAUDE_REFRESH_INTERVAL_MS / REFRESH_INTERVAL_MS);
+    const shouldFetch = (conn) =>
+      force || conn.provider !== "claude" || tick % claudeEvery === 0;
 
     try {
       const visibleConnections = await fetchConnections(page);
@@ -375,7 +437,9 @@ export default function ProviderLimits() {
       );
 
       await Promise.all(
-        visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        visibleConnections
+          .filter(shouldFetch)
+          .map((conn) => fetchQuota(conn.id, conn.provider)),
       );
 
       setLastUpdated(new Date());
@@ -422,6 +486,39 @@ export default function ProviderLimits() {
     if (typeof window === "undefined" || !hasHydratedAutoRefresh) return;
     window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(autoRefresh));
   }, [autoRefresh, hasHydratedAutoRefresh]);
+
+  // Load auto-ping per-connection maps
+  useEffect(() => {
+    fetch("/api/settings", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((s) => setAutoPingMaps({
+        claude: s?.claudeAutoPing?.connections || {},
+        codex: s?.codexAutoPing?.connections || {},
+      }))
+      .catch(() => {});
+  }, []);
+
+  const toggleAutoPing = useCallback(async (connectionId, provider, on) => {
+    const settingsKey = AUTO_PING_SETTINGS_KEYS[provider];
+    if (!settingsKey) return;
+
+    const previous = autoPingMaps;
+    const nextProviderMap = { ...(autoPingMaps[provider] || {}), [connectionId]: on };
+    const nextMaps = { ...autoPingMaps, [provider]: nextProviderMap };
+    setAutoPingMaps(nextMaps);
+    try {
+      const r = await fetch("/api/settings", { cache: "no-store" });
+      const s = r.ok ? await r.json() : {};
+      const cfg = { ...(s[settingsKey] || {}), connections: nextProviderMap };
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [settingsKey]: cfg }),
+      });
+    } catch {
+      setAutoPingMaps(previous);
+    }
+  }, [autoPingMaps]);
 
   // Auto-refresh interval
   useEffect(() => {
@@ -470,7 +567,7 @@ export default function ProviderLimits() {
         }
       } else if (autoRefresh && hasHydratedAutoRefresh) {
         // Resume auto-refresh when tab becomes visible
-        intervalRef.current = setInterval(refreshAll, REFRESH_INTERVAL_MS);
+        intervalRef.current = setInterval(() => refreshAll(), REFRESH_INTERVAL_MS);
         countdownRef.current = setInterval(() => {
           setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
         }, 1000);
@@ -793,10 +890,11 @@ export default function ProviderLimits() {
             )}
           </button>
 
+
           {/* Refresh all button */}
           <button
             type="button"
-            onClick={refreshAll}
+            onClick={() => refreshAll(true)}
             disabled={refreshingAll}
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2 text-xs text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5 disabled:opacity-50"
             title="Refresh all"
@@ -860,41 +958,94 @@ export default function ProviderLimits() {
                           {getConnectionLabel(conn)}
                         </p>
                       ) : null}
-                      {isCodex && (
-                        <p className="text-[11px] text-text-muted truncate">
-                          Reset eligible: {resetCreditCount}
+                      {getConnectionSecondaryLabel(conn) ? (
+                        <p className="text-[11px] text-text-muted/80 truncate">
+                          {getConnectionSecondaryLabel(conn)}
                         </p>
+                      ) : null}
+                      {conn.provider === "kiro" && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold text-brand-600 dark:text-brand-300">
+                            {kiroMethodLabel(conn)}
+                          </span>
+                          {kiroRegion(conn) && (
+                            <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                              {kiroRegion(conn)}
+                            </span>
+                          )}
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              isInactive
+                                ? "bg-surface-2 text-text-muted"
+                                : conn.testStatus === "active" || conn.testStatus === "success"
+                                  ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                  : conn.testStatus === "error" || conn.testStatus === "expired" || conn.testStatus === "unavailable"
+                                    ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                                    : "bg-surface-2 text-text-muted"
+                            }`}
+                          >
+                            {isInactive ? "disabled" : conn.testStatus || "unknown"}
+                          </span>
+                          {conn.providerSpecificData?.profileArn && (
+                            <button
+                              type="button"
+                              onClick={() => copy(conn.providerSpecificData.profileArn, conn.id)}
+                              title={conn.providerSpecificData.profileArn}
+                              className="inline-flex max-w-full items-center gap-1 rounded-full border border-border-subtle px-2 py-0.5 text-[10px] text-text-muted transition-colors hover:text-primary"
+                            >
+                              <span className="material-symbols-outlined text-[12px]">
+                                {copied === conn.id ? "check" : "content_copy"}
+                              </span>
+                              <code className="truncate font-mono">
+                                {conn.providerSpecificData.profileArn}
+                              </code>
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
                     {isCodex && (
-                      <Tooltip text={`Codex reset credits remaining: ${resetCreditCount}`}>
-                        <div
-                          className={`hidden h-8 items-center gap-1 rounded-lg border px-2 text-[11px] sm:flex ${
-                            resetCreditCount > 0
-                              ? "border-primary/30 bg-primary/5 text-primary"
-                              : "border-black/10 bg-black/[0.02] text-text-muted dark:border-white/10 dark:bg-white/[0.03]"
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[14px]">restart_alt</span>
-                          <span className="tabular-nums">{resetCreditCount}</span>
-                        </div>
-                      </Tooltip>
-                    )}
-                    {isCodex && resetCreditCount > 0 && (
-                      <Tooltip text={`Use one Codex reset credit. Available: ${resetCreditCount}`}>
+                      <Tooltip
+                        text={
+                          resetCreditCount > 0
+                            ? `Use one Codex reset credit. Available: ${resetCreditCount}`
+                            : "No Codex reset credits available"
+                        }
+                      >
                         <button
                           type="button"
                           onClick={() => setResetConfirmState({ connection: conn, resetCreditCount })}
-                          disabled={isLoading || rowBusy}
-                          className="flex h-8 items-center gap-1 rounded-lg border border-primary/30 px-2 text-[11px] text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+                          disabled={resetCreditCount <= 0 || isLoading || rowBusy}
+                          aria-label={
+                            resetCreditCount > 0
+                              ? `Use one Codex reset credit. ${resetCreditCount} available.`
+                              : "No Codex reset credits available"
+                          }
+                          className={`flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-medium tabular-nums transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary/60 disabled:cursor-not-allowed disabled:opacity-60 ${
+                            resetCreditCount > 0
+                              ? "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
+                              : "border-black/10 bg-black/[0.02] text-text-muted dark:border-white/10 dark:bg-white/[0.03]"
+                          }`}
                         >
                           <span className={`material-symbols-outlined text-[15px] ${isResettingLimit ? "animate-spin" : ""}`}>
-                            {isResettingLimit ? "progress_activity" : "bolt"}
+                            {isResettingLimit ? "progress_activity" : "restart_alt"}
                           </span>
-                          <span className="hidden lg:inline">Reset limit</span>
+                          <span>{resetCreditCount}</span>
+                        </button>
+                      </Tooltip>
+                    )}
+                    {AUTO_PING_SETTINGS_KEYS[conn.provider] && conn.authType === "oauth" && (
+                      <Tooltip text={AUTO_PING_TOOLTIPS[conn.provider]}>
+                        <button
+                          type="button"
+                          onClick={() => toggleAutoPing(conn.id, conn.provider, !(autoPingMaps[conn.provider]?.[conn.id] === true))}
+                          aria-label="Toggle auto-ping"
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPingMaps[conn.provider]?.[conn.id] === true ? "text-primary" : "text-text-muted"}`}
+                        >
+                          <span className="material-symbols-outlined text-[18px]">bolt</span>
                         </button>
                       </Tooltip>
                     )}
