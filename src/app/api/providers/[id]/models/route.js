@@ -154,7 +154,7 @@ const PROVIDER_MODELS_CONFIG = {
     parseResponse: parseCodexModels
   },
   antigravity: {
-    url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
+    url: "https://cloudcode-pa.googleapis.com/v1internal:models",
     method: "POST",
     headers: { "Content-Type": "application/json" },
     authHeader: "Authorization",

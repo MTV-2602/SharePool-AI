@@ -21,8 +21,8 @@ export default {
   serviceKinds: ["llm", "image"],
   transport: {
     baseUrls: [
+      "https://cloudcode-pa.googleapis.com",
       "https://daily-cloudcode-pa.googleapis.com",
-      "https://daily-cloudcode-pa.sandbox.googleapis.com",
     ],
     format: "antigravity",
     headers: {
@@ -40,8 +40,8 @@ export default {
       },
     },
     usage: {
-      quotaApiUrl: "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-      loadProjectApiUrl: "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+      quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+      loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
       tokenUrl: "https://oauth2.googleapis.com/token",
     },
     clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
