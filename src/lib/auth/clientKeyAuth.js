@@ -4,9 +4,39 @@ import { extractUsage } from "open-sse/utils/usageTracking.js";
 // Cache of sent quota alerts to avoid spamming (keyId -> timestamp)
 const sentQuotaAlerts = new Map();
 
+// ─── In-memory cache: giảm số lần query Supabase ─────────────────────────────
+// TTL 30 giây — đủ để giảm tải nhưng không bỏ lỡ quota cập nhật quan trọng
+const KEY_CACHE_TTL_MS = 30_000;
+const keyCache = new Map(); // token -> { data, expiresAt }
+
+function getCachedKey(token) {
+  const entry = keyCache.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    keyCache.delete(token);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedKey(token, data) {
+  keyCache.set(token, { data, expiresAt: Date.now() + KEY_CACHE_TTL_MS });
+  // Giới hạn cache size để tránh memory leak
+  if (keyCache.size > 500) {
+    const firstKey = keyCache.keys().next().value;
+    keyCache.delete(firstKey);
+  }
+}
+
+function invalidateCachedKey(token) {
+  keyCache.delete(token);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Validates a client key (prefix `ck-`) against Supabase.
  * Returns { valid: true, keyData: {...} } or { valid: false, error: '...' }
+ * Uses 30s in-memory cache to reduce Supabase round-trips.
  */
 export async function validateClientKey(bearerToken) {
   const token = (bearerToken || '').trim();
@@ -14,6 +44,24 @@ export async function validateClientKey(bearerToken) {
     return { valid: false, error: 'Invalid client key' };
   }
 
+  // Thử lấy từ cache trước
+  const cached = getCachedKey(token);
+  if (cached) {
+    // Vẫn kiểm tra quota từ cached data (nhanh, không tốn DB call)
+    if (cached.expires_at && new Date(cached.expires_at) < new Date()) {
+      invalidateCachedKey(token);
+      return { valid: false, error: 'Client key has expired' };
+    }
+    const quota = Number(cached.quota_tokens) || 0;
+    const used = Number(cached.used_tokens) || 0;
+    if (quota > 0 && used >= quota) {
+      invalidateCachedKey(token); // Force refresh khi hết quota
+      return { valid: false, error: 'Token quota exceeded' };
+    }
+    return { valid: true, keyData: cached };
+  }
+
+  // Cache miss → query Supabase (bao gồm luôn model_multiplier để tránh query lần 2)
   const { data: keys, error } = await supabase
     .from('client_keys')
     .select('*')
@@ -60,28 +108,47 @@ export async function validateClientKey(bearerToken) {
     return { valid: false, error: `Rate limit exceeded (${rateLimit}/min)` };
   }
 
+  // Lưu vào cache
+  setCachedKey(token, keyData);
+
   return { valid: true, keyData };
 }
 
+
+// Cache model_multiplier theo keyId (không cần TTL — cùng lifecycle với keyCache)
+const multiplierCache = new Map(); // clientKeyId -> model_multiplier object
+
 /**
  * Log token usage for a client key after request completion.
+ * Không query lại model_multiplier nếu đã có trong cache.
  */
 export async function logClientKeyUsage(clientKeyId, model, promptTokens, completionTokens) {
   let multiplier = 1;
   try {
-    const { data: keys, error: fetchError } = await supabase
-      .from('client_keys')
-      .select('model_multiplier')
-      .eq('id', clientKeyId)
-      .limit(1);
-    
-    if (fetchError) {
-      console.error('[ClientKeyAuth] Failed to fetch key multiplier:', fetchError.message);
-    } else if (keys?.length) {
-      const mm = keys[0].model_multiplier || {};
-      if (model && mm[model] !== undefined) {
+    // Dùng multiplier cache trước
+    let mm = multiplierCache.get(clientKeyId);
+    if (!mm) {
+      const { data: keys, error: fetchError } = await supabase
+        .from('client_keys')
+        .select('model_multiplier')
+        .eq('id', clientKeyId)
+        .limit(1);
+      
+      if (fetchError) {
+        console.error('[ClientKeyAuth] Failed to fetch key multiplier:', fetchError.message);
+      } else if (keys?.length) {
+        mm = keys[0].model_multiplier || {};
+        multiplierCache.set(clientKeyId, mm);
+        if (multiplierCache.size > 500) {
+          const firstKey = multiplierCache.keys().next().value;
+          multiplierCache.delete(firstKey);
+        }
+      }
+    }
+    if (mm && model) {
+      if (mm[model] !== undefined) {
         multiplier = Number(mm[model]) || 1;
-      } else if (model) {
+      } else {
         // Fallback pattern matching
         for (const [keyPattern, value] of Object.entries(mm)) {
           if (model.includes(keyPattern)) {
