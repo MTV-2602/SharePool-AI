@@ -58,7 +58,8 @@ export async function GET() {
           state.closed = true;
           clearInterval(state.keepalive);
         }
-      }, 25000);
+      }, 55000); // 55s thay vì 25s — giảm số lần wakeup Vercel Function
+
     },
 
     cancel() {

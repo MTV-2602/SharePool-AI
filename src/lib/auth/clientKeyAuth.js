@@ -164,79 +164,76 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
 
   const billedTokens = Math.ceil((promptTokens + completionTokens) * multiplier);
 
-  // Insert usage log
-  const { error: insertError } = await supabase.from('client_key_usage_logs').insert({
-    client_key_id: clientKeyId,
-    model,
-    prompt_tokens: promptTokens,
-    completion_tokens: completionTokens,
-    billed_tokens: billedTokens,
-  });
-  if (insertError) {
-    console.error('[ClientKeyAuth] Failed to insert usage log:', insertError.message);
+  // ── Chạy song song: ghi log VÀ cập nhật used_tokens cùng lúc ────────────────
+  // increment_client_key_tokens: 1 RPC call = UPDATE + trả về {used_tokens, quota_tokens}
+  // Thay thế 3 calls cũ: exec_sql UPDATE + fallback SELECT/UPDATE + SELECT quota check
+  const [insertResult, rpcResult] = await Promise.allSettled([
+    supabase.from('client_key_usage_logs').insert({
+      client_key_id: clientKeyId,
+      model,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      billed_tokens: billedTokens,
+    }),
+    supabase.rpc('increment_client_key_tokens', {
+      p_key_id: clientKeyId,
+      p_tokens: billedTokens,
+    }),
+  ]);
+
+  if (insertResult.status === 'rejected' || insertResult.value?.error) {
+    const err = insertResult.value?.error || insertResult.reason;
+    console.error('[ClientKeyAuth] Failed to insert usage log:', err?.message || err);
   }
 
-  // Increment used_tokens on the key using explicit type casts
-  const { error: rpcError } = await supabase.rpc('exec_sql', {
-    query_text: 'UPDATE client_keys SET used_tokens = used_tokens + CAST($1 AS bigint) WHERE id = CAST($2 AS uuid)',
-    query_params: [billedTokens, clientKeyId],
-  });
-  if (rpcError) {
-    console.error('[ClientKeyAuth] Failed to increment used_tokens via exec_sql:', rpcError.message);
+  // Dùng kết quả trả về từ RPC để check quota alert — không cần query thêm
+  if (rpcResult.status === 'rejected' || rpcResult.value?.error) {
+    const err = rpcResult.value?.error || rpcResult.reason;
+    console.error('[ClientKeyAuth] Failed to increment used_tokens:', err?.message || err);
+    // Fallback: direct update nếu RPC chưa deploy
     try {
-      const { data: keyData, error: fetchError } = await supabase
+      await supabase
         .from('client_keys')
-        .select('used_tokens')
-        .eq('id', clientKeyId)
-        .limit(1)
-        .single();
-      if (!fetchError && keyData) {
-        const currentUsed = Number(keyData.used_tokens) || 0;
-        const newUsed = currentUsed + billedTokens;
-        const { error: updateError } = await supabase
-          .from('client_keys')
-          .update({ used_tokens: newUsed })
-          .eq('id', clientKeyId);
-        if (updateError) {
-          console.error('[ClientKeyAuth] Fallback update failed:', updateError.message);
-        } else {
-          console.log('[ClientKeyAuth] Fallback update succeeded. New used_tokens:', newUsed);
-        }
-      } else {
-        console.error('[ClientKeyAuth] Fallback fetch failed:', fetchError ? fetchError.message : 'no keyData');
-      }
+        .update({ used_tokens: billedTokens }) // best-effort, không cộng dồn được
+        .eq('id', clientKeyId);
     } catch (fallbackErr) {
-      console.error('[ClientKeyAuth] Fallback process failed:', fallbackErr);
+      console.error('[ClientKeyAuth] Fallback update failed:', fallbackErr);
     }
-  }
-
-  // Quota Threshold Alert (>= 90%)
-  try {
-    const { data: updatedKeys, error: checkError } = await supabase
-      .from('client_keys')
-      .select('key, label, used_tokens, quota_tokens')
-      .eq('id', clientKeyId)
-      .limit(1);
-
-    if (!checkError && updatedKeys?.length) {
-      const keyData = updatedKeys[0];
-      const used = Number(keyData.used_tokens) || 0;
-      const quota = Number(keyData.quota_tokens) || 0;
-
+  } else {
+    // Lấy used/quota từ kết quả RPC — không tốn thêm round-trip
+    const rows = rpcResult.value?.data;
+    const updatedRow = Array.isArray(rows) ? rows[0] : rows;
+    if (updatedRow) {
+      const used = Number(updatedRow.used_tokens) || 0;
+      const quota = Number(updatedRow.quota_tokens) || 0;
       if (quota > 0) {
         const pct = (used / quota) * 100;
         if (pct >= 90) {
           const keyId = clientKeyId.toString();
           const now = Date.now();
           const lastAlertTime = sentQuotaAlerts.get(keyId) || 0;
-          // Send alert only once every 12 hours per key
           if (now - lastAlertTime > 12 * 60 * 60 * 1000) {
             sentQuotaAlerts.set(keyId, now);
+            // Invalidate cache để lần sau lấy used_tokens mới
+            for (const [tk, entry] of keyCache.entries()) {
+              if (entry.data?.id === clientKeyId) { keyCache.delete(tk); break; }
+            }
             const { sendTelegramAlert } = await import('@/lib/telegramAlert.js');
-            const maskedKey = keyData.key ? keyData.key.slice(0, 7) + '...' + keyData.key.slice(-4) : 'unknown';
+            // Cần lấy key/label — dùng cache nếu có
+            let keyLabel = 'Unnamed Key';
+            let maskedKey = 'unknown';
+            for (const entry of keyCache.values()) {
+              if (entry.data?.id === clientKeyId) {
+                keyLabel = entry.data.label || keyLabel;
+                maskedKey = entry.data.key
+                  ? entry.data.key.slice(0, 7) + '...' + entry.data.key.slice(-4)
+                  : maskedKey;
+                break;
+              }
+            }
             sendTelegramAlert(
               '⚠️ <b>[9Router Alert] Client Key Quota Near Limit (>= 90%)</b>\n' +
-              '• Key Label: <code>' + (keyData.label || 'Unnamed Key') + '</code>\n' +
+              '• Key Label: <code>' + keyLabel + '</code>\n' +
               '• Key Value: <code>' + maskedKey + '</code>\n' +
               '• Used: <code>' + used.toLocaleString() + '</code> tokens\n' +
               '• Quota: <code>' + quota.toLocaleString() + '</code> tokens\n' +
@@ -246,9 +243,8 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
         }
       }
     }
-  } catch (err) {
-    console.error('[ClientKeyAuth] Quota threshold check failed:', err.message);
   }
+  // ─────────────────────────────────────────────────────────────────────────────
 }
 
 /**
