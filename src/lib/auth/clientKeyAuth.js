@@ -120,20 +120,30 @@ const multiplierCache = new Map(); // clientKeyId -> model_multiplier object
 
 /**
  * Log token usage for a client key after request completion.
- * Không query lại model_multiplier nếu đã có trong cache.
+ * model_multiplier lấy từ keyCache (SELECT * đã có sẵn) — không query lại.
  */
 export async function logClientKeyUsage(clientKeyId, model, promptTokens, completionTokens) {
   let multiplier = 1;
   try {
-    // Dùng multiplier cache trước
+    // ưu tiên lấy model_multiplier từ keyCache (SELECT * đã fetch sẵn trong validateClientKey)
     let mm = multiplierCache.get(clientKeyId);
     if (!mm) {
+      // Tìm trong keyCache theo clientKeyId
+      for (const entry of keyCache.values()) {
+        if (entry.data?.id === clientKeyId) {
+          mm = entry.data.model_multiplier || {};
+          multiplierCache.set(clientKeyId, mm);
+          break;
+        }
+      }
+    }
+    if (!mm) {
+      // Chỉ query Supabase nếu cache miss hoàn toàn (hiếm khi xảy ra)
       const { data: keys, error: fetchError } = await supabase
         .from('client_keys')
         .select('model_multiplier')
         .eq('id', clientKeyId)
         .limit(1);
-      
       if (fetchError) {
         console.error('[ClientKeyAuth] Failed to fetch key multiplier:', fetchError.message);
       } else if (keys?.length) {
@@ -190,12 +200,12 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
   if (rpcResult.status === 'rejected' || rpcResult.value?.error) {
     const err = rpcResult.value?.error || rpcResult.reason;
     console.error('[ClientKeyAuth] Failed to increment used_tokens:', err?.message || err);
-    // Fallback: direct update nếu RPC chưa deploy
+    // Fallback: dùng direct UPDATE nếu RPC chưa deploy — dùng RPC exec_sql để cộng dồn đúng
     try {
-      await supabase
-        .from('client_keys')
-        .update({ used_tokens: billedTokens }) // best-effort, không cộng dồn được
-        .eq('id', clientKeyId);
+      await supabase.rpc('exec_sql', {
+        query_text: 'UPDATE client_keys SET used_tokens = used_tokens + CAST($1 AS bigint) WHERE id = CAST($2 AS uuid)',
+        query_params: [billedTokens, clientKeyId],
+      });
     } catch (fallbackErr) {
       console.error('[ClientKeyAuth] Fallback update failed:', fallbackErr);
     }
