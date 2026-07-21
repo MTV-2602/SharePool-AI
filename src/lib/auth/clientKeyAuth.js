@@ -216,6 +216,16 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
     if (updatedRow) {
       const used = Number(updatedRow.used_tokens) || 0;
       const quota = Number(updatedRow.quota_tokens) || 0;
+
+      // ── Sync used_tokens mới vào keyCache để quota check trong 30s tiếp chính xác ──
+      for (const [tk, entry] of keyCache.entries()) {
+        if (entry.data?.id === clientKeyId) {
+          entry.data.used_tokens = used; // cập nhật in-place, giữ nguyên TTL
+          break;
+        }
+      }
+      // ────────────────────────────────────────────────────────────────────────────────
+
       if (quota > 0) {
         const pct = (used / quota) * 100;
         if (pct >= 90) {
@@ -224,12 +234,8 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
           const lastAlertTime = sentQuotaAlerts.get(keyId) || 0;
           if (now - lastAlertTime > 12 * 60 * 60 * 1000) {
             sentQuotaAlerts.set(keyId, now);
-            // Invalidate cache để lần sau lấy used_tokens mới
-            for (const [tk, entry] of keyCache.entries()) {
-              if (entry.data?.id === clientKeyId) { keyCache.delete(tk); break; }
-            }
             const { sendTelegramAlert } = await import('@/lib/telegramAlert.js');
-            // Cần lấy key/label — dùng cache nếu có
+            // Lấy key/label từ cache
             let keyLabel = 'Unnamed Key';
             let maskedKey = 'unknown';
             for (const entry of keyCache.values()) {
