@@ -102,18 +102,11 @@ export default function LoginPage() {
         const data = await res.json();
         const cleanModelName = (modelName) => {
           let m = modelName || "";
-          if (m === "gpt-5.4" || m === "ag/gpt-5.4" || m === "antigravity/gpt-5.4") {
-            m = "gemini-3.5-flash-high";
-          } else if (m === "gpt-5.5" || m === "codex/gpt-5.5") {
-            m = "gpt-5.5";
-          }
           if (m.startsWith("ag/")) {
             m = m.slice(3);
-          }
-          if (m.startsWith("antigravity/")) {
+          } else if (m.startsWith("antigravity/")) {
             m = m.slice(12);
-          }
-          if (m.startsWith("codex/")) {
+          } else if (m.startsWith("codex/")) {
             m = m.slice(6);
           }
           return m;
