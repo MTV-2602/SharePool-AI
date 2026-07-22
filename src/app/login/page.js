@@ -288,7 +288,7 @@ export default function LoginPage() {
     if (!model) return "N/A";
     const m = model.toLowerCase();
     
-    // Explicitly check for Codex models
+    // Codex models
     if (
       m.startsWith("codex/") ||
       m.startsWith("cx/") ||
@@ -299,23 +299,19 @@ export default function LoginPage() {
       return "Codex";
     }
 
-    // Antigravity models (gemini-3.x, agent slots, claude on AG, gpt-oss)
-    const isAntigravityModel =
+    // Antigravity models (All Gemini models, AG slots, Claude on AG, GPT-OSS, gpt-5.4 combo)
+    if (
       m.startsWith("antigravity/") || 
       m.startsWith("ag/") ||
-      m.includes("gemini-3") ||
-      m.includes("gemini-pro-agent") ||
-      m.includes("gemini-flash-agent") ||
+      m.includes("gemini") ||
       m.includes("gpt-oss") ||
-      m.includes("claude-sonnet-4-6") ||
-      m.includes("claude-opus-4-6") ||
-      m === "gpt-5.4";
-
-    if (isAntigravityModel) {
+      m.includes("claude-sonnet-4") ||
+      m.includes("claude-opus-4") ||
+      m === "gpt-5.4"
+    ) {
       return "Antigravity";
     }
 
-    if (m.includes("gemini")) return "Google Gemini";
     if (m.includes("gpt-") || m.startsWith("gpt") || m.includes("o1") || m.includes("o3")) return "OpenAI";
     if (m.includes("claude")) return "Anthropic";
     if (m.includes("deepseek")) return "DeepSeek";
