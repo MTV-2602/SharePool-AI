@@ -326,34 +326,22 @@ Hệ thống hỗ trợ 2 dòng model chính chạy qua cổng API Gateway:
 - **Codex (ChatGPT-backed)**: Sử dụng Model ID \`gpt-5.5\`
 - **AntiGravity (Gemini / Claude / GPT-OSS)**: Sử dụng Model ID \`gemini-3.6-flash-high\` (hoặc Combo ID \`gpt-5.4\`)
 
-Các Model Antigravity hỗ trợ trực tiếp:
-- \`gemini-3.6-flash-high\` (Mới nhất - Flash High)
-- \`gemini-3.5-flash-low\` (Flash Medium)
-- \`gemini-3.5-flash-extra-low\` (Flash Low)
-- \`gemini-3.1-pro-low\` (Pro Low)
-- \`gemini-pro-agent\` (Pro High)
-- \`claude-sonnet-4-6\` (Sonnet 4.6)
-- \`claude-opus-4-6-thinking\` (Opus 4.6)
-- \`gpt-oss-120b-medium\` (GPT-OSS)
-
 ---
 
-## 💻 1. Cấu hình trên Codex Desktop App / IDE
-Tìm hoặc tạo thư mục cấu hình của Codex tùy theo hệ điều hành:
-- **Windows**: \`%%USERPROFILE%%\\.codex\\config.toml\` (Ví dụ: \`C:\\Users\\tên_user\\.codex\\config.toml\`)
-- **Mac / Linux**: \`~/.codex/config.toml\`
-*(Nếu chưa có thư mục \`.codex\`, hãy mở ứng dụng Codex một lần hoặc tự tạo thư mục mới).*
+## ⚡ 1. Cấu hình tự động 1-Click trên Terminal (Khuyên dùng)
+Copy và dán dòng lệnh bên dưới vào Terminal để hệ thống tự động tạo thư mục và ghi file cấu hình \`.codex/config.toml\` & \`.codex/auth.json\` với API Key của bạn:
 
----
+### 🔷 Trên Windows (Mở PowerShell dán lệnh sau):
+\`\`\`powershell
+mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.4\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"\${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"\${origin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"\${savedKey}"}'
+\`\`\`
 
-## ⚙️ 2. Cấu hình file config.toml
-Tạo hoặc sửa file **config.toml** trong thư mục cấu hình trên. Bạn chọn 1 trong 2 cấu hình dưới đây tương ứng với model bạn muốn sử dụng làm model mặc định:
-
-### Cách A: Cấu hình sử dụng model Codex (ChatGPT-backed - gpt-5.5)
-\`\`\`toml
+### 🍎 Trên Mac / Linux (Mở Terminal dán lệnh sau):
+\`\`\`bash
+mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml
 model_reasoning_effort = "low"
 model_provider = "openai-custom"
-model = "gpt-5.5"
+model = "gpt-5.4"
 
 [model_providers.openai-custom]
 experimental_bearer_token = "\${savedKey}"
@@ -362,9 +350,35 @@ base_url = "\${origin}/v1"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
+EOF
+echo '{"auth_mode":"apikey","OPENAI_API_KEY":"\${savedKey}"}' > ~/.codex/auth.json
 \`\`\`
 
-### Cách B: Cấu hình sử dụng model AntiGravity (Gemini 3.6 Flash High qua gpt-5.4)
+*(Lưu ý: Tắt hoàn toàn ứng dụng Codex Desktop App và mở lại để áp dụng cấu hình).*
+
+---
+
+## 🧪 2. Kiểm tra kết nối nhanh trên Terminal (Quick Test)
+Bạn có thể copy lệnh này dán vào Terminal để test gọi trực tiếp xem API có phản hồi chuẩn chưa:
+
+\`\`\`bash
+curl \${origin}/v1/chat/completions \\
+  -H "Authorization: Bearer \${savedKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gemini-3.6-flash-high",
+    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]
+  }'
+\`\`\`
+
+---
+
+## ⚙️ 3. Cấu hình thủ công qua file config.toml
+Nếu bạn muốn sửa file thủ công, hãy tìm file theo đường dẫn:
+- **Windows**: \`%%USERPROFILE%%\\.codex\\config.toml\` (Ví dụ: \`C:\\Users\\tên_user\\.codex\\config.toml\`)
+- **Mac / Linux**: \`~/.codex/config.toml\`
+
+### Mẫu file config.toml (Sử dụng model AntiGravity Gemini 3.6 Flash High qua gpt-5.4):
 \`\`\`toml
 model_reasoning_effort = "low"
 model_provider = "openai-custom"
@@ -379,10 +393,7 @@ requires_openai_auth = false
 supports_websockets = false
 \`\`\`
 
----
-
-## 🔑 3. Cấu hình file auth.json (Bypass Login)
-Tạo tiếp file **auth.json** trong cùng thư mục \`.codex\` để bypass màn hình đăng nhập:
+### Mẫu file auth.json (Bypass Login):
 \`\`\`json
 {
   "auth_mode": "apikey",
@@ -390,21 +401,13 @@ Tạo tiếp file **auth.json** trong cùng thư mục \`.codex\` để bypass m
 }
 \`\`\`
 
-*Lưu ý: Tắt hoàn toàn ứng dụng Codex Desktop App và mở lại để áp dụng cấu hình.*
-
 ---
 
 ## 🚀 4. Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)
-Bạn cũng có thể sử dụng các công cụ lập trình AI khác kết nối với cổng Gateway thông qua API tương thích OpenAI:
-
-### Cấu hình chung trên IDE:
 - **Provider**: Chọn \`OpenAI Compatible\` (hoặc Custom OpenAI)
 - **Base URL**: \`\${origin}/v1\`
-- **API Key**: Client Key của bạn (\`\${savedKey}\`)
-
-### Lựa chọn Model ID:
-- **Model Codex**: Nhập Model ID \`gpt-5.5\`
-- **Model AntiGravity**: Nhập Model ID \`gemini-3.6-flash-high\` (hoặc \`gpt-5.4\`, \`claude-sonnet-4-6\`, \`claude-opus-4-6-thinking\`, \`gpt-oss-120b-medium\`)`;
+- **API Key**: \`\${savedKey}\`
+- **Model ID**: \`gemini-3.6-flash-high\` (hoặc \`gpt-5.4\`, \`claude-sonnet-4-6\`, \`claude-opus-4-6-thinking\`, \`gpt-oss-120b-medium\`)`;
   };
 
 
@@ -472,7 +475,22 @@ Bạn có thể gọi trực tiếp các model Gemini & Antigravity (ví dụ: \
 
 ---
 
-## 🐍 1. Sử dụng Google GenAI SDK (Thư viện Gemini chính thức)
+## ⚡ 1. Test kết nối nhanh trên Terminal (Quick Test cURL)
+Copy và dán lệnh cURL bên dưới vào Terminal để test gọi trực tiếp model \`gemini-3.6-flash-high\`:
+
+\`\`\`bash
+curl \${origin}/v1/chat/completions \\
+  -H "Authorization: Bearer \${savedKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gemini-3.6-flash-high",
+    "messages": [{"role": "user", "content": "Xin chào! Bạn là ai?"}]
+  }'
+\`\`\`
+
+---
+
+## 🐍 2. Sử dụng Google GenAI SDK (Thư viện Gemini chính thức)
 Cài đặt thư viện chính thức của Google:
 \`\`\`bash
 pip install google-genai
@@ -497,7 +515,7 @@ print(response.text)
 
 ---
 
-## 🤖 2. Sử dụng OpenAI SDK tương thích (Python)
+## 🤖 3. Sử dụng OpenAI SDK tương thích (Python)
 Cài đặt thư viện: \`pip install openai\`
 \`\`\`python
 import openai
@@ -519,7 +537,7 @@ print(response.choices[0].message.content)
 
 ---
 
-## 📡 3. Gọi qua REST API Gemini gốc (cURL)
+## 📡 4. Gọi qua REST API Gemini gốc (cURL)
 Bạn cũng có thể gọi trực tiếp Endpoint tương thích định dạng API của Google AI Studio:
 \`\`\`bash
 curl -X POST "\${origin}/v1beta/models/antigravity/gemini-3.6-flash-high:streamGenerateContent?key=\${savedKey}" \\
