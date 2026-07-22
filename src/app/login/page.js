@@ -319,12 +319,22 @@ export default function LoginPage() {
     return "Custom/Other";
   };
 
-﻿  const getCodexMarkdown = () => {
+  const getCodexMarkdown = () => {
     return `# Hướng dẫn tích hợp Client (Codex Desktop App & IDEs)
 
 Hệ thống hỗ trợ 2 dòng model chính chạy qua cổng API Gateway:
 - **Codex (ChatGPT-backed)**: Sử dụng Model ID \`gpt-5.5\`
-- **AntiGravity (Gemini-backed)**: Sử dụng Model ID \`gpt-5.4\`
+- **AntiGravity (Gemini / Claude / GPT-OSS)**: Sử dụng Model ID \`gemini-3.6-flash-high\` (hoặc Combo ID \`gpt-5.4\`)
+
+Các Model Antigravity hỗ trợ trực tiếp:
+- \`gemini-3.6-flash-high\` (Mới nhất - Flash High)
+- \`gemini-3.5-flash-low\` (Flash Medium)
+- \`gemini-3.5-flash-extra-low\` (Flash Low)
+- \`gemini-3.1-pro-low\` (Pro Low)
+- \`gemini-pro-agent\` (Pro High)
+- \`claude-sonnet-4-6\` (Sonnet 4.6)
+- \`claude-opus-4-6-thinking\` (Opus 4.6)
+- \`gpt-oss-120b-medium\` (GPT-OSS)
 
 ---
 
@@ -354,11 +364,11 @@ requires_openai_auth = false
 supports_websockets = false
 \`\`\`
 
-### Cách B: Cấu hình sử dụng model AntiGravity (Gemini-backed - gpt-5.4)
+### Cách B: Cấu hình sử dụng model AntiGravity (Gemini-backed - gemini-3.6-flash-high / gpt-5.4)
 \`\`\`toml
 model_reasoning_effort = "low"
 model_provider = "openai-custom"
-model = "gpt-5.4"
+model = "gemini-3.6-flash-high"
 
 [model_providers.openai-custom]
 experimental_bearer_token = "\${savedKey}"
@@ -394,7 +404,7 @@ Bạn cũng có thể sử dụng các công cụ lập trình AI khác kết n�
 
 ### Lựa chọn Model ID:
 - **Model Codex**: Nhập Model ID \`gpt-5.5\`
-- **Model AntiGravity**: Nhập Model ID \`gpt-5.4\``;
+- **Model AntiGravity**: Nhập Model ID \`gemini-3.6-flash-high\` (hoặc \`gpt-5.4\`, \`claude-sonnet-4-6\`, \`claude-opus-4-6-thinking\`, \`gpt-oss-120b-medium\`)`;
   };
 
 
@@ -420,7 +430,7 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
 1. Mở hoặc tạo tệp cấu hình của OpenClaw theo hệ điều hành:
    - **Windows**: \`%%USERPROFILE%%\\.openclaw\\openclaw.json\` (Ví dụ: \`C:\\Users\\tên_user\\.openclaw\\openclaw.json\`)
    - **Mac / Linux**: \`~/.openclaw/openclaw.json\`
-2. Chỉnh sửa tệp **openclaw.json** và dán nội dung cấu hình nhà cung cấp \`9router\` vào phần \`models.providers\` (sử dụng \`gpt-5.5\` hoặc \`gpt-5.4\`):
+2. Chỉnh sửa tệp **openclaw.json** và dán nội dung cấu hình nhà cung cấp \`9router\` vào phần \`models.providers\` (sử dụng \`gpt-5.5\`, \`gemini-3.6-flash-high\` hoặc \`gpt-5.4\`):
 \`\`\`json
 {
   "models": {
@@ -431,6 +441,7 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
         "api": "openai-completions",
         "models": [
           { "id": "gpt-5.5", "name": "gpt-5.5" },
+          { "id": "gemini-3.6-flash-high", "name": "gemini-3.6-flash-high" },
           { "id": "gpt-5.4", "name": "gpt-5.4" }
         ]
       }
@@ -439,10 +450,11 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/gpt-5.5"
+        "primary": "9router/gemini-3.6-flash-high"
       },
       "models": {
         "9router/gpt-5.5": {},
+        "9router/gemini-3.6-flash-high": {},
         "9router/gpt-5.4": {}
       }
     }
@@ -454,9 +466,9 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
 
 
 ﻿  const getGeminiMarkdown = () => {
-    return `# Hướng dẫn tích hợp trực tiếp Google Gemini
+    return `# Hướng dẫn tích hợp trực tiếp Google Gemini & AntiGravity API
 
-Bạn có thể gọi và tích hợp trực tiếp các model Google Gemini chính thức (ví dụ: \`gemini-2.5-flash\`, \`gemini-1.5-pro\`) thông qua API Gateway bằng các cách dưới đây:
+Bạn có thể gọi trực tiếp các model Gemini & Antigravity (ví dụ: \`gemini-3.6-flash-high\`, \`gemini-3.5-flash-low\`, \`gemini-pro-agent\`, \`claude-sonnet-4-6\`) thông qua API Gateway bằng các định dạng dưới đây:
 
 ---
 
@@ -469,7 +481,6 @@ pip install google-genai
 Sau đó chạy đoạn mã Python dưới đây. Thiết lập \`api_endpoint\` trỏ về địa chỉ Gateway của bạn:
 \`\`\`python
 from google import genai
-from google.genai import types
 
 client = genai.Client(
     api_key="\${savedKey}",
@@ -477,7 +488,7 @@ client = genai.Client(
 )
 
 response = client.models.generate_content(
-    model="gemini-2.5-flash",
+    model="gemini-3.6-flash-high",
     contents="Xin chào! Bạn là ai?"
 )
 
@@ -486,7 +497,7 @@ print(response.text)
 
 ---
 
-## 🤖 2. Sử dụng OpenAI SDK tương thích
+## 🤖 2. Sử dụng OpenAI SDK tương thích (Python)
 Cài đặt thư viện: \`pip install openai\`
 \`\`\`python
 import openai
@@ -497,7 +508,31 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gemini-2.5-flash",
+    model="gemini-3.6-flash-high",
+    messages=[
+        {"role": "user", "content": "Xin chào! Bạn là ai?"}
+    ]
+)
+
+print(response.choices[0].message.content)
+\`\`\`
+
+---
+
+## 📡 3. Gọi qua REST API Gemini gốc (cURL)
+Bạn cũng có thể gọi trực tiếp Endpoint tương thích định dạng API của Google AI Studio:
+\`\`\`bash
+curl -X POST "\${origin}/v1beta/models/antigravity/gemini-3.6-flash-high:streamGenerateContent?key=\${savedKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "contents": [{
+      "parts": [{
+        "text": "Hello!"
+      }]
+    }]
+  }'
+\`\`\``;
+  };
     messages=[
         {"role": "user", "content": "Xin chào! Bạn là ai?"}
     ]
