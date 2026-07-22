@@ -1014,6 +1014,96 @@ curl -X POST "\${origin}/v1beta/models/antigravity/gemini-3.6-flash-high:streamG
 
                             {guideTab === "codex" && (
                 <div className="space-y-6 animate-fade-in">
+                  <Card title="⚡ 1-Click Cấu hình tự động trên Terminal (Khuyên dùng)" icon="bolt">
+                    <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <p>Không cần sửa file thủ công. Chỉ cần mở Terminal trên máy tính, copy 1 dòng lệnh dưới đây và dán vào để tự động cấu hình Codex Desktop App:</p>
+                      
+                      <div>
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-xs font-semibold text-text-main flex items-center gap-1">
+                            🔷 Trên Windows (Mở PowerShell dán lệnh này):
+                          </span>
+                          <button
+                            onClick={() => copyText(`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.4\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${origin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`, "cmdPsCodex")}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-white hover:opacity-90 text-xs font-semibold cursor-pointer transition-opacity"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "cmdPsCodex" ? "check" : "content_copy"}
+                            </span>
+                            {copiedField === "cmdPsCodex" ? "Đã copy!" : "Copy lệnh PowerShell"}
+                          </button>
+                        </div>
+                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono whitespace-pre-wrap break-all">
+{`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.4\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${origin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`}
+                        </pre>
+                      </div>
+
+                      <div className="pt-3 border-t border-border/40">
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-xs font-semibold text-text-main flex items-center gap-1">
+                            🍎 Trên Mac / Linux (Mở Terminal dán lệnh này):
+                          </span>
+                          <button
+                            onClick={() => copyText(`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml\nmodel_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.4"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${origin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\nEOF\necho '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`, "cmdBashCodex")}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-white hover:opacity-90 text-xs font-semibold cursor-pointer transition-opacity"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "cmdBashCodex" ? "check" : "content_copy"}
+                            </span>
+                            {copiedField === "cmdBashCodex" ? "Đã copy!" : "Copy lệnh Bash"}
+                          </button>
+                        </div>
+                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+{`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml
+model_reasoning_effort = "low"
+model_provider = "openai-custom"
+model = "gpt-5.4"
+
+[model_providers.openai-custom]
+experimental_bearer_token = "${savedKey}"
+name = "VinAi"
+base_url = "${origin}/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+EOF
+echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`}
+                        </pre>
+                      </div>
+
+                      <p className="text-xs italic text-amber-600 dark:text-amber-400 bg-amber-500/10 p-2.5 rounded-lg border border-amber-500/20">
+                        💡 <strong>Sau khi dán lệnh xong:</strong> Hãy tắt hoàn toàn ứng dụng <strong>Codex Desktop App</strong> và mở lại để áp dụng cấu hình mới.
+                      </p>
+                    </div>
+                  </Card>
+
+                  <Card title="🧪 Kiểm tra kết nối nhanh trên Terminal (Quick Test)" icon="terminal">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Copy lệnh cURL này dán vào Terminal để test ngay xem API Gateway có phản hồi chuẩn chưa:</p>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-text-main">Lệnh cURL Quick Test:</span>
+                        <button
+                          onClick={() => copyText(`curl ${origin}/v1/chat/completions \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.6-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]\n  }'`, "cmdTestCurl")}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">
+                            {copiedField === "cmdTestCurl" ? "check" : "content_copy"}
+                          </span>
+                          {copiedField === "cmdTestCurl" ? "Đã copy!" : "Copy Test cURL"}
+                        </button>
+                      </div>
+                      <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+{`curl ${origin}/v1/chat/completions \\
+  -H "Authorization: Bearer ${savedKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gemini-3.6-flash-high",
+    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]
+  }'`}
+                      </pre>
+                    </div>
+                  </Card>
+
                   <Card title="⚙️ Thông số kết nối API cơ bản" icon="api">
                     <div className="space-y-3 text-sm text-text-muted mt-2">
                       <p>Sử dụng các thông số dưới đây để cấu hình thủ công hoặc điền vào các công cụ lập trình hỗ trợ Custom Base URL:</p>
@@ -1053,7 +1143,7 @@ curl -X POST "\${origin}/v1beta/models/antigravity/gemini-3.6-flash-high:streamG
                             <strong>Model Codex (ChatGPT-backed):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.5</code>
                           </div>
                           <div className="mt-1">
-                            <strong>Model AntiGravity (Gemini-backed):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.4</code>
+                            <strong>Model AntiGravity (Gemini-backed):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gemini-3.6-flash-high</code> (hoặc <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.4</code>)
                           </div>
                         </div>
                       </div>
@@ -1178,7 +1268,7 @@ supports_websockets = false`}
                           </div>
                           <div className="bg-surface-2 border border-border rounded-lg p-3">
                             <strong className="text-xs text-text-main block mb-1">Model AntiGravity (Gemini-backed)</strong>
-                            <span className="text-xs text-text-muted">Nhập Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gpt-5.4</code></span>
+                            <span className="text-xs text-text-muted">Nhập Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gemini-3.6-flash-high</code> (hoặc <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-semibold">gpt-5.4</code>)</span>
                           </div>
                         </div>
                       </div>
@@ -1220,6 +1310,7 @@ supports_websockets = false`}
         "api": "openai-completions",
         "models": [
           { "id": "gpt-5.5", "name": "gpt-5.5" },
+          { "id": "gemini-3.6-flash-high", "name": "gemini-3.6-flash-high" },
           { "id": "gpt-5.4", "name": "gpt-5.4" }
         ]
       }
@@ -1228,17 +1319,18 @@ supports_websockets = false`}
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/gpt-5.5"
+        "primary": "9router/gemini-3.6-flash-high"
       },
       "models": {
         "9router/gpt-5.5": {},
+        "9router/gemini-3.6-flash-high": {},
         "9router/gpt-5.4": {}
       }
     }
   }
 }`}</pre>
                           <button
-                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${origin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "gpt-5.5", "name": "gpt-5.5" },\n          { "id": "gpt-5.4", "name": "gpt-5.4" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/gpt-5.5"\n      },\n      "models": {\n        "9router/gpt-5.5": {},\n        "9router/gpt-5.4": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
+                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${origin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "gpt-5.5", "name": "gpt-5.5" },\n          { "id": "gemini-3.6-flash-high", "name": "gemini-3.6-flash-high" },\n          { "id": "gpt-5.4", "name": "gpt-5.4" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/gemini-3.6-flash-high"\n      },\n      "models": {\n        "9router/gpt-5.5": {},\n        "9router/gemini-3.6-flash-high": {},\n        "9router/gpt-5.4": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
                             className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
                             title="Copy cấu hình openclaw.json"
                           >
@@ -1256,6 +1348,33 @@ supports_websockets = false`}
 
               {guideTab === "gemini" && (
                 <div className="space-y-6 animate-fade-in">
+                  <Card title="🧪 Kiểm tra kết nối nhanh trên Terminal (Quick Test)" icon="terminal">
+                    <div className="space-y-3 text-sm text-text-muted mt-2">
+                      <p>Copy lệnh cURL này dán vào Terminal để test gọi trực tiếp model <strong>gemini-3.6-flash-high</strong>:</p>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-text-main">Lệnh cURL Quick Test:</span>
+                        <button
+                          onClick={() => copyText(`curl ${origin}/v1/chat/completions \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.6-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]\n  }'`, "cmdTestCurlGemini")}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">
+                            {copiedField === "cmdTestCurlGemini" ? "check" : "content_copy"}
+                          </span>
+                          {copiedField === "cmdTestCurlGemini" ? "Đã copy!" : "Copy Test cURL"}
+                        </button>
+                      </div>
+                      <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+{`curl ${origin}/v1/chat/completions \\
+  -H "Authorization: Bearer ${savedKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gemini-3.6-flash-high",
+    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]
+  }'`}
+                      </pre>
+                    </div>
+                  </Card>
+
                   <Card title="🐍 Tích hợp trực tiếp bằng Code (Python)" icon="code">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
                       <p>Sử dụng thư viện chính thức hoặc thư viện tương thích OpenAI để gọi trực tiếp các model Gemini:</p>
@@ -1264,7 +1383,7 @@ supports_websockets = false`}
                           <span className="font-semibold text-text-main text-xs">Option 1: Sử dụng Google GenAI SDK (Thư viện chính thức):</span>
                           <button
                             onClick={() => {
-                              const code = `from google import genai\\n\\nclient = genai.Client(\\n    api_key=\"${savedKey}\",\\n    http_options={\"api_endpoint\": \"${origin}\"}\n)\\n\\nresponse = client.models.generate_content(\\n    model=\"gemini-2.5-flash\",\\n    contents=\"Xin chào! Bạn là ai?\"\\n)\\nprint(response.text)`;
+                              const code = `from google import genai\\n\\nclient = genai.Client(\\n    api_key=\"${savedKey}\",\\n    http_options={\"api_endpoint\": \"${origin}\"}\n)\\n\\nresponse = client.models.generate_content(\\n    model=\"gemini-3.6-flash-high\",\\n    contents=\"Xin chào! Bạn là ai?\"\\n)\\nprint(response.text)`;
                               copyText(code, "codePythonGeminiSDK");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1272,7 +1391,7 @@ supports_websockets = false`}
                             <span className="material-symbols-outlined text-[12px]">
                               {copiedField === "codePythonGeminiSDK" ? "check" : "content_copy"}
                             </span>
-                            {copiedField === "codePythonGeminiSDK" ? "Đã copy" : "Copy Code"}
+                            {copiedField === "codePythonGeminiSDK" ? "Đã copy!" : "Copy Code"}
                           </button>
                         </div>
                         <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
@@ -1284,7 +1403,7 @@ client = genai.Client(
 )
 
 response = client.models.generate_content(
-    model="gemini-2.5-flash",
+    model="gemini-3.6-flash-high",
     contents="Xin chào! Bạn là ai?"
 )
 print(response.text)`}
@@ -1296,7 +1415,7 @@ print(response.text)`}
                           <span className="font-semibold text-text-main text-xs">Option 2: Sử dụng OpenAI SDK (Thư viện tương thích):</span>
                           <button
                             onClick={() => {
-                              const code = `import openai\\n\\nclient = openai.OpenAI(\\n    base_url=\"${origin}/v1\",\\n    api_key=\"${savedKey}\"\\n)\\n\\nresponse = client.chat.completions.create(\\n    model=\"gemini-2.5-flash\",\\n    messages=[{\"role\": \"user\", \"content\": \"Xin chào! Bạn là ai?\"}]\\n)\\nprint(response.choices[0].message.content)`;
+                              const code = `import openai\\n\\nclient = openai.OpenAI(\\n    base_url=\"${origin}/v1\",\\n    api_key=\"${savedKey}\"\\n)\\n\\nresponse = client.chat.completions.create(\\n    model=\"gemini-3.6-flash-high\",\\n    messages=[{\"role\": \"user\", \"content\": \"Xin chào! Bạn là ai?\"}]\\n)\\nprint(response.choices[0].message.content)`;
                               copyText(code, "codePythonGeminiOpenAI");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1304,7 +1423,7 @@ print(response.text)`}
                             <span className="material-symbols-outlined text-[12px]">
                               {copiedField === "codePythonGeminiOpenAI" ? "check" : "content_copy"}
                             </span>
-                            {copiedField === "codePythonGeminiOpenAI" ? "Đã copy" : "Copy Code"}
+                            {copiedField === "codePythonGeminiOpenAI" ? "Đã copy!" : "Copy Code"}
                           </button>
                         </div>
                         <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
@@ -1316,7 +1435,7 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gemini-2.5-flash",
+    model="gemini-3.6-flash-high",
     messages=[{"role": "user", "content": "Xin chào! Bạn là ai?"}]
 )
 print(response.choices[0].message.content)`}
@@ -1325,14 +1444,14 @@ print(response.choices[0].message.content)`}
                     </div>
                   </Card>
 
-                  <Card title="📡 Gọi nhanh qua cURL (Terminal)" icon="terminal">
+                  <Card title="📡 Gọi qua REST API Gemini gốc (cURL)" icon="terminal">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
                       <div>
                         <div className="flex justify-between items-center mb-1">
                           <span className="font-semibold text-text-main text-xs">Option 1: Gọi qua định dạng OpenAI Chat Completions:</span>
                           <button
                             onClick={() => {
-                              const code = `curl ${origin}/v1/chat/completions \\\\n  -H \"Content-Type: application/json\" \\\\n  -H \"Authorization: Bearer ${savedKey}\" \\\\n  -d \'{\\n    \"model\": \"gemini-2.5-flash\",\\n    \"messages\": [{\"role\": \"user\", \"content\": \"Xin chào!\"}]\\n  }\'`;
+                              const code = `curl ${origin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gemini-3.6-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào!"}]\n  }'`;
                               copyText(code, "curlGeminiOpenAI");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1340,7 +1459,7 @@ print(response.choices[0].message.content)`}
                             <span className="material-symbols-outlined text-[12px]">
                               {copiedField === "curlGeminiOpenAI" ? "check" : "content_copy"}
                             </span>
-                            {copiedField === "curlGeminiOpenAI" ? "Đã copy" : "Copy Code"}
+                            {copiedField === "curlGeminiOpenAI" ? "Đã copy!" : "Copy Code"}
                           </button>
                         </div>
                         <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
@@ -1348,7 +1467,7 @@ print(response.choices[0].message.content)`}
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${savedKey}" \
   -d '{
-    "model": "gemini-2.5-flash",
+    "model": "gemini-3.6-flash-high",
     "messages": [{"role": "user", "content": "Xin chào!"}]
   }'`}
                         </pre>
