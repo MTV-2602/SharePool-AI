@@ -48,20 +48,29 @@ export default {
     clientSecret: "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",
   },
   models: [
-    { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
-    { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
-    { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)" },
-    { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)" },
-    { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)" },
-    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)" },
-    { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)" },
-    { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)" },
-    { id: "gemini-3-flash", name: "Gemini 3 Flash", thinking: false },
-    { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash (Fallback)", upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.5-flash-high", name: "Gemini 3.5 Flash (High) (Fallback)", upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.5-flash-medium", name: "Gemini 3.5 Flash (Medium) (Fallback)", upstreamModelId: "gemini-3.5-flash-low" },
-    { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro (High) (Fallback)", upstreamModelId: "gemini-pro-agent" },
-    // Image generation models
+    // ── Slot thật (ID gửi thẳng lên Antigravity API) ──────────────────────────
+    { id: "gemini-3-flash-agent",        name: "Gemini 3.6 Flash (High)" },
+    { id: "gemini-3.5-flash-low",        name: "Gemini 3.5 Flash (Medium)" },
+    { id: "gemini-3.5-flash-extra-low",  name: "Gemini 3.5 Flash (Low)" },
+    { id: "gemini-pro-agent",            name: "Gemini 3.1 Pro (High)" },
+    { id: "gemini-3.1-pro-low",          name: "Gemini 3.1 Pro (Low)" },
+    { id: "claude-sonnet-4-6",           name: "Claude Sonnet 4.6 (Thinking)" },
+    { id: "claude-opus-4-6-thinking",    name: "Claude Opus 4.6 (Thinking)" },
+    { id: "gpt-oss-120b-medium",         name: "GPT-OSS 120B (Medium)" },
+    { id: "gemini-3-flash",              name: "Gemini 3 Flash", thinking: false },
+
+    // ── Alias 3.6 (model mới nhất — trỏ về cùng slot thật) ───────────────────
+    { id: "gemini-3.6-flash-high",       name: "Gemini 3.6 Flash (High)",   upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.6-flash-medium",     name: "Gemini 3.6 Flash (Medium)", upstreamModelId: "gemini-3.5-flash-low" },
+    { id: "gemini-3.6-flash-low",        name: "Gemini 3.6 Flash (Low)",    upstreamModelId: "gemini-3.5-flash-extra-low" },
+
+    // ── Alias 3.5 / fallback (giữ backward compat) ───────────────────────────
+    { id: "gemini-3.5-flash",            name: "Gemini 3.5 Flash (High) – alias",   upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.5-flash-high",       name: "Gemini 3.5 Flash (High) – alias",   upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.5-flash-medium",     name: "Gemini 3.5 Flash (Medium) – alias", upstreamModelId: "gemini-3.5-flash-low" },
+    { id: "gemini-3.1-pro-high",         name: "Gemini 3.1 Pro (High) – alias",     upstreamModelId: "gemini-pro-agent" },
+
+    // ── Image generation ──────────────────────────────────────────────────────
     { id: "gemini-3.1-flash-image", name: "Gemini 3.1 Flash (Image)", kind: "image", imageGen: true, capabilities: ["textToImage"] },
   ],
   oauth: {
