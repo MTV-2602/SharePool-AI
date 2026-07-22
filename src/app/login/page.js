@@ -1078,29 +1078,50 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                   </Card>
 
                   <Card title="🧪 Kiểm tra kết nối nhanh trên Terminal (Quick Test)" icon="terminal">
-                    <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Copy lệnh cURL này dán vào Terminal để test ngay xem API Gateway có phản hồi chuẩn chưa:</p>
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-semibold text-text-main">Lệnh cURL Quick Test:</span>
-                        <button
-                          onClick={() => copyText(`curl ${origin}/v1/chat/completions \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.6-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]\n  }'`, "cmdTestCurl")}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">
-                            {copiedField === "cmdTestCurl" ? "check" : "content_copy"}
-                          </span>
-                          {copiedField === "cmdTestCurl" ? "Đã copy!" : "Copy Test cURL"}
-                        </button>
+                    <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <p>Bạn có thể copy lệnh test bên dưới dán trực tiếp vào Terminal trên máy tính của bạn:</p>
+
+                      <div>
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-xs font-semibold text-text-main">🔷 Trên Windows (Command Prompt / CMD):</span>
+                          <button
+                            onClick={() => copyText(`curl -X POST "${origin}/v1/chat/completions" -H "Authorization: Bearer ${savedKey}" -H "Content-Type: application/json" -d "{\\"model\\":\\"gpt-5.4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Xin chao!\\"}]}"`, "cmdTestCurlWin")}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "cmdTestCurlWin" ? "check" : "content_copy"}
+                            </span>
+                            {copiedField === "cmdTestCurlWin" ? "Đã copy!" : "Copy lệnh Windows CMD"}
+                          </button>
+                        </div>
+                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono whitespace-pre-wrap break-all">
+{`curl -X POST "${origin}/v1/chat/completions" -H "Authorization: Bearer ${savedKey}" -H "Content-Type: application/json" -d "{\\"model\\":\\"gpt-5.4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Xin chao!\\"}]}"`}
+                        </pre>
                       </div>
-                      <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
+
+                      <div className="pt-3 border-t border-border/40">
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-xs font-semibold text-text-main">🍎 Trên Mac / Linux / Git Bash:</span>
+                          <button
+                            onClick={() => copyText(`curl ${origin}/v1/chat/completions \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gpt-5.4",\n    "messages": [{"role": "user", "content": "Xin chào!"}]\n  }'`, "cmdTestCurlMac")}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">
+                              {copiedField === "cmdTestCurlMac" ? "check" : "content_copy"}
+                            </span>
+                            {copiedField === "cmdTestCurlMac" ? "Đã copy!" : "Copy lệnh Mac/Linux"}
+                          </button>
+                        </div>
+                        <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
 {`curl ${origin}/v1/chat/completions \\
   -H "Authorization: Bearer ${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gemini-3.6-flash-high",
-    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]
+    "model": "gpt-5.4",
+    "messages": [{"role": "user", "content": "Xin chào!"}]
   }'`}
-                      </pre>
+                        </pre>
+                      </div>
                     </div>
                   </Card>
 
