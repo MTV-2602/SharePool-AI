@@ -321,7 +321,12 @@ function extractTextFromChunk(parsed) {
 export async function wrapResponseWithClientKeyLogging(response, clientKeyId, model, reqBody = null) {
   if (!response.ok) return response;
 
-  const actualModel = response.headers.get("x-9r-actual-model") || model;
+  // Dùng tên model khách gọi (model gốc từ request) để log vào usage history.
+  // x-9r-actual-model là tên slot nội bộ của 9Router (vd: gemini-3-flash-agent),
+  // không nên override tên khách thấy (vd: gemini-3.6-flash-high).
+  const internalModel = response.headers.get("x-9r-actual-model");
+  const actualModel = model || internalModel || "unknown";
+
 
   const contentType = response.headers.get('content-type') || '';
   const isStream = contentType.includes('text/event-stream');
