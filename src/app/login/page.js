@@ -299,24 +299,19 @@ export default function LoginPage() {
       return "Codex";
     }
 
-    // Explicitly check for antigravity prefix or specific antigravity models
+    // Antigravity models (gemini-3.x, agent slots, claude on AG, gpt-oss)
     const isAntigravityModel =
-      m === "gpt-5.4" || m === "gemini-3-flash" ||
-      m.startsWith("gemini-3-flash-a") ||
-      m.includes("gemini-3-flash-agent") ||
-      m.includes("gemini-3.5-flash") ||
-      m.includes("gemini-pro-agent") ||
-      m.includes("gemini-3.1-pro-low") ||
-      m.includes("gemini-pro-default") ||
-      m.includes("gpt-oss") ||
-      m.includes("claude-sonnet-4-6") ||
-      m.includes("claude-opus-4-6-thinking");
-
-    if (
       m.startsWith("antigravity/") || 
       m.startsWith("ag/") ||
-      isAntigravityModel
-    ) {
+      m.includes("gemini-3") ||
+      m.includes("gemini-pro-agent") ||
+      m.includes("gemini-flash-agent") ||
+      m.includes("gpt-oss") ||
+      m.includes("claude-sonnet-4-6") ||
+      m.includes("claude-opus-4-6") ||
+      m === "gpt-5.4";
+
+    if (isAntigravityModel) {
       return "Antigravity";
     }
 
