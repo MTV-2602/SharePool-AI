@@ -408,10 +408,10 @@ Bạn cũng có thể sử dụng các công cụ lập trình AI khác kết n�
   };
 
 
-﻿  const getAntigravityMarkdown = () => { return ""; };
+  const getAntigravityMarkdown = () => { return ""; };
 
 
-﻿  const getOpenclawMarkdown = () => {
+  const getOpenclawMarkdown = () => {
     return `# Hướng dẫn cấu hình OpenClaw
 
 Cấu hình OpenClaw để gọi qua API Gateway sử dụng các model tích hợp.
@@ -465,7 +465,7 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
   };
 
 
-﻿  const getGeminiMarkdown = () => {
+  const getGeminiMarkdown = () => {
     return `# Hướng dẫn tích hợp trực tiếp Google Gemini & AntiGravity API
 
 Bạn có thể gọi trực tiếp các model Gemini & Antigravity (ví dụ: \`gemini-3.6-flash-high\`, \`gemini-3.5-flash-low\`, \`gemini-pro-agent\`, \`claude-sonnet-4-6\`) thông qua API Gateway bằng các định dạng dưới đây:
@@ -531,30 +531,6 @@ curl -X POST "\${origin}/v1beta/models/antigravity/gemini-3.6-flash-high:streamG
       }]
     }]
   }'
-\`\`\``;
-  };
-    messages=[
-        {"role": "user", "content": "Xin chào! Bạn là ai?"}
-    ]
-)
-
-print(response.choices[0].message.content)
-\`\`\`
-
----
-
-## 📡 3. Gọi qua REST API Gemini gốc (cURL)
-Bạn cũng có thể gọi trực tiếp Endpoint tương thích định dạng API của Google AI Studio:
-\`\`\`bash
-curl -X POST "\${origin}/v1beta/models/gemini-2.5-flash:generateContent?key=\${savedKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '\\{
-    "contents": [\\{
-      "parts": [\\{
-        "text": "Hello!"
-      \\}]
-    \\}]
-  \\}'
 \`\`\``;
   };
 
@@ -978,7 +954,7 @@ curl -X POST "\${origin}/v1beta/models/gemini-2.5-flash:generateContent?key=\${s
             <div className="space-y-6">
               <div className="flex gap-2 border-b border-border/60 pb-3 justify-between items-center flex-wrap gap-y-2">
                 <div className="flex gap-2">
-                  ﻿                  <button
+                                    <button
                     onClick={() => setGuideTab("codex")}
                     className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
                       guideTab === "codex" ? "bg-surface-2 text-primary" : "text-text-muted hover:text-text-main"
@@ -1018,7 +994,7 @@ curl -X POST "\${origin}/v1beta/models/gemini-2.5-flash:generateContent?key=\${s
                 </button>
               </div>
 
-              ﻿              {guideTab === "codex" && (
+                            {guideTab === "codex" && (
                 <div className="space-y-6 animate-fade-in">
                   <Card title="⚙️ Thông số kết nối API cơ bản" icon="api">
                     <div className="space-y-3 text-sm text-text-muted mt-2">
