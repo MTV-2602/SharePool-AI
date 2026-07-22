@@ -274,7 +274,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      const cleanActualModel = modelStr.startsWith("ag/")
+        ? modelStr.slice(3)
+        : modelStr.startsWith("antigravity/")
+        ? modelStr.slice(12)
+        : modelStr.startsWith("codex/")
+        ? modelStr.slice(6)
+        : modelStr;
+
+      try {
+        result.response.headers.set("x-9r-actual-model", cleanActualModel);
+        return result.response;
+      } catch (e) {
+        const newHeaders = new Headers(result.response.headers);
+        newHeaders.set("x-9r-actual-model", cleanActualModel);
+        return new Response(result.response.body, {
+          status: result.response.status,
+          statusText: result.response.statusText,
+          headers: newHeaders,
+        });
+      }
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);

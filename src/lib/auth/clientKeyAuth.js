@@ -321,11 +321,10 @@ function extractTextFromChunk(parsed) {
 export async function wrapResponseWithClientKeyLogging(response, clientKeyId, model, reqBody = null) {
   if (!response.ok) return response;
 
-  // Dùng tên model khách gọi (model gốc từ request) để log vào usage history.
-  // x-9r-actual-model là tên slot nội bộ của 9Router (vd: gemini-3-flash-agent),
-  // không nên override tên khách thấy (vd: gemini-3.6-flash-high).
+  // Lấy tên model thực tế được thực thi từ header x-9r-actual-model (vd: gemini-3.6-flash-high).
+  // Nếu gọi qua Combo (vd: gpt-5.4), header này sẽ chứa model thực sự đã chạy.
   const internalModel = response.headers.get("x-9r-actual-model");
-  const actualModel = model || internalModel || "unknown";
+  const actualModel = internalModel || model || "unknown";
 
 
   const contentType = response.headers.get('content-type') || '';
