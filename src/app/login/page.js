@@ -364,11 +364,11 @@ requires_openai_auth = false
 supports_websockets = false
 \`\`\`
 
-### Cách B: Cấu hình sử dụng model AntiGravity (Gemini-backed - gemini-3.6-flash-high / gpt-5.4)
+### Cách B: Cấu hình sử dụng model AntiGravity (Gemini 3.6 Flash High qua gpt-5.4)
 \`\`\`toml
 model_reasoning_effort = "low"
 model_provider = "openai-custom"
-model = "gemini-3.6-flash-high"
+model = "gpt-5.4"
 
 [model_providers.openai-custom]
 experimental_bearer_token = "\${savedKey}"
