@@ -81,5 +81,23 @@ CREATE INDEX IF NOT EXISTS idx_hotmail_email ON hotmail_accounts (email);
 CREATE INDEX IF NOT EXISTS idx_hotmail_state ON hotmail_accounts (state);
 CREATE INDEX IF NOT EXISTS idx_upstream_is_active ON upstream_accounts (is_active);
 
+-- Function to increment client key used_tokens safely
+CREATE OR REPLACE FUNCTION public.increment_client_key_tokens(p_key_id uuid, p_tokens bigint)
+ RETURNS TABLE(used_tokens bigint, quota_tokens bigint)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  UPDATE client_keys ck
+  SET used_tokens = ck.used_tokens + p_tokens
+  WHERE ck.id = p_key_id;
+
+  RETURN QUERY
+  SELECT ck.used_tokens, ck.quota_tokens
+  FROM client_keys ck
+  WHERE ck.id = p_key_id;
+END;
+$function$;
+
 -- Done!
 SELECT 'Migration completed successfully ✓' AS status;
