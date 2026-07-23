@@ -1,0 +1,3 @@
+module.exports=[461196,e=>{"use strict";var t=e.i(254799);let r=process.env.API_KEY_SECRET||"endpoint-proxy-api-key-secret";e.s(["generateApiKeyWithMachine",0,function(e){let a=function(){let e="abcdefghijklmnopqrstuvwxyz0123456789",t="";for(let r=0;r<6;r++)t+=e.charAt(Math.floor(Math.random()*e.length));return t}(),n=t.default.createHmac("sha256",r).update(e+a).digest("hex").slice(0,8);return{key:`sk-${e}-${a}-${n}`,keyId:a}}])}];
+
+//# sourceMappingURL=codex%20xoay_src_shared_utils_apiKey_04-lkmd.js.map

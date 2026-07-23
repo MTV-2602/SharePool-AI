@@ -1,0 +1,11 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/tunnel/tailscale-enable/route.js")
+R.c("server/chunks/[root-of-the-server]__1zqkb6m._.js")
+R.c("server/chunks/codex xoay_src_lib_tunnel_index_0sg8iff.js")
+R.c("server/chunks/[root-of-the-server]__0gk0n9j._.js")
+R.c("server/chunks/[root-of-the-server]__0_kkss-._.js")
+R.c("server/chunks/codex xoay_0nvcci6._.js")
+R.c("server/chunks/1g8g_next_1xmxjye._.js")
+R.c("server/chunks/codex xoay_src_lib_db_12ns7lj._.js")
+R.c("server/chunks/1dm7__next-internal_server_app_api_tunnel_tailscale-enable_route_actions_13xz7a3.js")
+R.m(52392)
+module.exports=R.m(52392).exports

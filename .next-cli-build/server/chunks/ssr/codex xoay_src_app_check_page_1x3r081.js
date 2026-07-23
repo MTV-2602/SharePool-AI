@@ -1,0 +1,3 @@
+module.exports=[421116,a=>{"use strict";var b=a.i(93736),c=a.i(343707),d=a.i(844326);a.s(["default",0,function(){let a=(0,d.useRouter)();return(0,c.useEffect)(()=>{a.replace("/login")},[a]),(0,b.jsx)("div",{className:"min-h-screen flex items-center justify-center bg-bg",children:(0,b.jsxs)("div",{className:"text-center",children:[(0,b.jsx)("div",{className:"inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"}),(0,b.jsx)("p",{className:"text-text-muted mt-4",children:"Đang chuyển hướng..."})]})})}])}];
+
+//# sourceMappingURL=codex%20xoay_src_app_check_page_1x3r081.js.map

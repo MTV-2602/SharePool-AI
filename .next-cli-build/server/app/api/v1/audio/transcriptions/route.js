@@ -1,0 +1,11 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/v1/audio/transcriptions/route.js")
+R.c("server/chunks/[root-of-the-server]__07qvgzt._.js")
+R.c("server/chunks/[root-of-the-server]__1zqkb6m._.js")
+R.c("server/chunks/1g8g_next_dist_esm_build_templates_app-route_0-4y_vk.js")
+R.c("server/chunks/[root-of-the-server]__0_kkss-._.js")
+R.c("server/chunks/codex xoay_src_lib_db_12ns7lj._.js")
+R.c("server/chunks/codex xoay_open-sse_providers_1ei4vkh._.js")
+R.c("server/chunks/[root-of-the-server]__04yvg79._.js")
+R.c("server/chunks/1dm7__next-internal_server_app_api_v1_audio_transcriptions_route_actions_139t6_2.js")
+R.m(726413)
+module.exports=R.m(726413).exports

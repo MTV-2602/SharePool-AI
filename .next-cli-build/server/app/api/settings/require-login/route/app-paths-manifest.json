@@ -1,0 +1,3 @@
+{
+  "/api/settings/require-login/route": "app/api/settings/require-login/route.js"
+}

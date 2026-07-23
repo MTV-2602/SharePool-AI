@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/mcp/[plugin]/message": {},
+    "/api/mcp/[plugin]/sse": {},
+    "/api/v1/audio/transcriptions": {
+      "maxDuration": 300
+    }
+  }
+}

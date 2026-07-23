@@ -1,0 +1,3 @@
+{
+  "/api/oauth/cursor/auto-import/route": "app/api/oauth/cursor/auto-import/route.js"
+}

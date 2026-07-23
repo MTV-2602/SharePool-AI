@@ -1,0 +1,13 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/v1/models/route.js")
+R.c("server/chunks/[root-of-the-server]__1x8ysd1._.js")
+R.c("server/chunks/codex xoay_0wb9gd_._.js")
+R.c("server/chunks/[root-of-the-server]__1scntsc._.js")
+R.c("server/chunks/[root-of-the-server]__06cw83o._.js")
+R.c("server/chunks/codex xoay_src_lib_db_12ns7lj._.js")
+R.c("server/chunks/[root-of-the-server]__0_kkss-._.js")
+R.c("server/chunks/[root-of-the-server]__0muy048._.js")
+R.c("server/chunks/codex xoay_open-sse_providers_1ei4vkh._.js")
+R.c("server/chunks/codex xoay_open-sse_19meq3u._.js")
+R.c("server/chunks/codex xoay__next-internal_server_app_api_v1_models_route_actions_1_bcunt.js")
+R.m(217112)
+module.exports=R.m(217112).exports

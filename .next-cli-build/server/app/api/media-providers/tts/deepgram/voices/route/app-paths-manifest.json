@@ -1,0 +1,3 @@
+{
+  "/api/media-providers/tts/deepgram/voices/route": "app/api/media-providers/tts/deepgram/voices/route.js"
+}

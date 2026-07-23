@@ -1,0 +1,3 @@
+{
+  "/api/version/shutdown/route": "app/api/version/shutdown/route.js"
+}

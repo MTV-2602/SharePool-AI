@@ -1,0 +1,3 @@
+module.exports=[254799,(e,t,r)=>{t.exports=e.x("crypto",()=>require("crypto"))},461196,e=>{"use strict";var t=e.i(254799);let r=process.env.API_KEY_SECRET||"endpoint-proxy-api-key-secret";e.s(["generateApiKeyWithMachine",0,function(e){let o=function(){let e="abcdefghijklmnopqrstuvwxyz0123456789",t="";for(let r=0;r<6;r++)t+=e.charAt(Math.floor(Math.random()*e.length));return t}(),a=t.default.createHmac("sha256",r).update(e+o).digest("hex").slice(0,8);return{key:`sk-${e}-${o}-${a}`,keyId:o}}])}];
+
+//# sourceMappingURL=%5Broot-of-the-server%5D__0n-dnw9._.js.map

@@ -1,0 +1,3 @@
+{
+  "/api/auth/oidc/test/route": "app/api/auth/oidc/test/route.js"
+}
