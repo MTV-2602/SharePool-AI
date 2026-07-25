@@ -295,6 +295,25 @@ export default function ProfilePage() {
     }
   };
 
+  const updateCooldownSeconds = async (seconds) => {
+    const numSec = parseInt(seconds);
+    if (isNaN(numSec) || numSec < 10) return;
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rateLimitCooldownSeconds: numSec }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, rateLimitCooldownSeconds: numSec }));
+        notify.success(`Global Cooldown updated to ${numSec} seconds`);
+      }
+    } catch (err) {
+      console.error("Failed to update rate limit cooldown:", err);
+    }
+  };
+
   const updateRequireLogin = async (requireLogin) => {
     try {
       const res = await fetch("/api/settings", {
@@ -961,6 +980,25 @@ export default function ProfilePage() {
                 />
               </div>
             )}
+
+            {/* Rate Limit Cooldown */}
+            <div className="flex items-center justify-between pt-4 border-t border-border/50">
+              <div>
+                <p className="font-medium text-sm sm:text-base">Rate Limit Cooldown (giây)</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Thời gian khóa tài khoản khi dính 429 Rate Limit (Mặc định: 300s = 5m. Ví dụ: 900s = 15m, 1800s = 30m)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="10"
+                max="86400"
+                value={settings.rateLimitCooldownSeconds || 300}
+                onChange={(e) => updateCooldownSeconds(e.target.value)}
+                disabled={loading}
+                className="w-20 sm:w-24 text-center shrink-0"
+              />
+            </div>
 
             {/* Combo Round Robin */}
             <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">

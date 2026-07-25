@@ -217,6 +217,21 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
+  // Allow custom override for rate limit cooldown from Web Admin Settings (per-provider or global)
+  if (status === 429 || Number(status) === 429) {
+    try {
+      const settings = await getSettings();
+      const providerId = provider ? resolveProviderId(provider) : null;
+      const providerOverride = providerId ? ((settings.providerStrategies || {})[providerId] || {}) : {};
+      const customSec = providerOverride.rateLimitCooldownSeconds ?? settings.rateLimitCooldownSeconds;
+      if (customSec && Number(customSec) > 0) {
+        cooldownMs = Number(customSec) * 1000;
+      }
+    } catch (e) {
+      console.error("[markAccountUnavailable] Failed to resolve custom cooldown from settings:", e);
+    }
+  }
+
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(model, cooldownMs);
 

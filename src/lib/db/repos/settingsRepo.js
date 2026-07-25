@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
   tailscaleEnabled: false,
   tailscaleUrl: "",
   stickyRoundRobinLimit: 3,
+  rateLimitCooldownSeconds: 300,
   providerStrategies: {},
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,

@@ -191,6 +191,26 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
     }),
   ]);
 
+  // Sync log into Admin Dashboard (usageHistory table / ring buffer)
+  try {
+    const { saveRequestUsage } = await import("../db/repos/usageRepo.js");
+    const providerCandidate = model.startsWith("gemini") || model.includes("flash") || model.includes("pro")
+      ? "antigravity"
+      : model.startsWith("gpt")
+      ? "codex"
+      : "antigravity";
+    saveRequestUsage({
+      timestamp: new Date().toISOString(),
+      provider: providerCandidate,
+      model: model,
+      apiKey: clientKeyId,
+      tokens: { prompt_tokens: promptTokens, completion_tokens: completionTokens },
+      status: "ok"
+    }).catch(e => console.error("[ClientKeyAuth] Failed to sync usage to Admin Dashboard:", e));
+  } catch (syncErr) {
+    console.error("[ClientKeyAuth] Error importing usageRepo:", syncErr);
+  }
+
   if (insertResult.status === 'rejected' || insertResult.value?.error) {
     const err = insertResult.value?.error || insertResult.reason;
     console.error('[ClientKeyAuth] Failed to insert usage log:', err?.message || err);
