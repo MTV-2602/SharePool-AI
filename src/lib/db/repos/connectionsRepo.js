@@ -2,6 +2,20 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
+// ─── In-memory cache cho getProviderConnections() ──────────────────────────────
+const CONNECTIONS_CACHE_TTL_MS = 30_000; // 30 giây
+// filter key -> { data, ts }
+const _connectionsCache = new Map();
+
+function _getConnectionsCacheKey(filter = {}) {
+  return JSON.stringify(filter);
+}
+
+function _invalidateConnectionsCache() {
+  _connectionsCache.clear();
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
   "accessToken", "refreshToken", "expiresAt", "tokenType",
@@ -57,6 +71,11 @@ async function upsert(db, c) {
 }
 
 export async function getProviderConnections(filter = {}) {
+  const cacheKey = _getConnectionsCacheKey(filter);
+  const cached = _connectionsCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CONNECTIONS_CACHE_TTL_MS) {
+    return cached.data;
+  }
   const db = await getAdapter();
   const where = [];
   const params = [];
@@ -66,6 +85,7 @@ export async function getProviderConnections(filter = {}) {
   const rows = await db.all(sql, params);
   const list = rows.map(rowToConn);
   list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  _connectionsCache.set(cacheKey, { data: list, ts: Date.now() });
   return list;
 }
 
@@ -151,6 +171,7 @@ export async function createProviderConnection(data) {
     result = conn;
   });
 
+  _invalidateConnectionsCache(); // Invalidate cache sau khi create
   return result;
 }
 
@@ -167,6 +188,7 @@ export async function updateProviderConnection(id, data) {
     if (data.priority !== undefined) await reorderInTx(db, existing.provider);
     result = merged;
   });
+  _invalidateConnectionsCache(); // Invalidate cache sau khi update
   return result;
 }
 
@@ -180,6 +202,7 @@ export async function deleteProviderConnection(id) {
     await reorderInTx(db, row.provider);
     ok = true;
   });
+  _invalidateConnectionsCache(); // Invalidate cache sau khi delete
   return ok;
 }
 

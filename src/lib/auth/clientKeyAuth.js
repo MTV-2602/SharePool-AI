@@ -4,8 +4,7 @@ import { extractUsage } from "open-sse/utils/usageTracking.js";
 // Cache of sent quota alerts to avoid spamming (keyId -> timestamp)
 const sentQuotaAlerts = new Map();
 
-// ─── In-memory cache: giảm số lần query Supabase ─────────────────────────────
-// TTL 30 giây — đủ để giảm tải nhưng không bỏ lỡ quota cập nhật quan trọng
+// ─── In-memory cache: giảm số lần query Supabase ──────────────────────────────────
 const KEY_CACHE_TTL_MS = 30_000;
 const keyCache = new Map(); // token -> { data, expiresAt }
 
@@ -22,7 +21,7 @@ function getCachedKey(token) {
 function setCachedKey(token, data) {
   keyCache.set(token, { data, expiresAt: Date.now() + KEY_CACHE_TTL_MS });
   // Giới hạn cache size để tránh memory leak
-  if (keyCache.size > 500) {
+  if (keyCache.size > 5000) {
     const firstKey = keyCache.keys().next().value;
     keyCache.delete(firstKey);
   }
@@ -30,6 +29,31 @@ function setCachedKey(token, data) {
 
 function invalidateCachedKey(token) {
   keyCache.delete(token);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Rate limit sliding window (thay thế COUNT Supabase per request) ────────────
+const rateLimitWindows = new Map();
+const RATE_WINDOW_MS = 60_000;
+
+function checkRateLimitLocal(keyId, rateLimit) {
+  const now = Date.now();
+  const cutoff = now - RATE_WINDOW_MS;
+  // Lọc timestamps cũ
+  const window = (rateLimitWindows.get(keyId) || []).filter(t => t > cutoff);
+  if (window.length >= rateLimit) {
+    rateLimitWindows.set(keyId, window);
+    return { allowed: false, count: window.length };
+  }
+  // Ghi timestamp mới
+  window.push(now);
+  rateLimitWindows.set(keyId, window);
+  // Giới hạn entries để tránh memory leak
+  if (rateLimitWindows.size > 10000) {
+    const firstKey = rateLimitWindows.keys().next().value;
+    rateLimitWindows.delete(firstKey);
+  }
+  return { allowed: true, count: window.length };
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -90,21 +114,10 @@ export async function validateClientKey(bearerToken) {
     return { valid: false, error: 'Token quota exceeded' };
   }
 
-  // Check rate limit (sliding window: count requests in last minute)
-  const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
-  const { count, error: limitError } = await supabase
-    .from('client_key_usage_logs')
-    .select('*', { count: 'exact', head: true })
-    .eq('client_key_id', keyData.id)
-    .gte('created_at', oneMinuteAgo);
-
-  if (limitError) {
-    console.error('[ClientKeyAuth] Rate limit query error:', limitError.message);
-  }
-
-  const requestCount = count || 0;
+  // Check rate limit bằng in-memory sliding window (thay thế COUNT Supabase)
   const rateLimit = Number(keyData.rate_limit_per_minute) || 60;
-  if (requestCount >= rateLimit) {
+  const rlResult = checkRateLimitLocal(keyData.id, rateLimit);
+  if (!rlResult.allowed) {
     return { valid: false, error: `Rate limit exceeded (${rateLimit}/min)` };
   }
 
@@ -464,7 +477,8 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
       }
       if (usage) {
         const { prompt_tokens = 0, completion_tokens = 0 } = usage;
-        await logClientKeyUsage(clientKeyId, actualModel, prompt_tokens, completion_tokens);
+        logClientKeyUsage(clientKeyId, actualModel, prompt_tokens, completion_tokens)
+          .catch(err => console.error('[ClientKeyAuth] Failed to log non-stream usage:', err.message));
       }
     } catch (err) {
       console.error('[ClientKeyAuth] Failed to parse non-stream response for logging:', err.message);

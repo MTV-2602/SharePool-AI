@@ -1,6 +1,17 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
+// ─── In-memory settings cache ─────────────────────────────────────────────────
+let _settingsCache = null;
+let _settingsCacheTs = 0;
+const SETTINGS_CACHE_TTL_MS = 60_000; // 60 giây
+
+function invalidateSettingsCache() {
+  _settingsCache = null;
+  _settingsCacheTs = 0;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
 const DEFAULT_SETTINGS = {
@@ -65,8 +76,13 @@ function mergeWithDefaults(raw) {
 }
 
 export async function getSettings() {
+  if (_settingsCache && Date.now() - _settingsCacheTs < SETTINGS_CACHE_TTL_MS) {
+    return _settingsCache;
+  }
   const raw = await readRaw();
-  return mergeWithDefaults(raw);
+  _settingsCache = mergeWithDefaults(raw);
+  _settingsCacheTs = Date.now();
+  return _settingsCache;
 }
 
 // Atomic read-merge-write inside transaction (prevents losing concurrent updates)
@@ -82,6 +98,7 @@ export async function updateSettings(updates) {
       [stringifyJson(next)]
     );
   });
+  invalidateSettingsCache(); // Xóa cache sau khi update
   return mergeWithDefaults(next);
 }
 
