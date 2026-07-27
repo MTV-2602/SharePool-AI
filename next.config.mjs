@@ -47,6 +47,32 @@ const nextConfig = {
     return config;
   },
   async rewrites() {
+    const targetCloud = process.env.NEXT_PUBLIC_CLOUD_URL || process.env.CLOUD_URL;
+    if (targetCloud) {
+      const cleanTarget = targetCloud.replace(/\/+$/, "");
+      return [
+        {
+          source: "/v1/v1/:path*",
+          destination: `${cleanTarget}/v1/:path*`
+        },
+        {
+          source: "/v1/v1",
+          destination: `${cleanTarget}/v1`
+        },
+        {
+          source: "/codex/:path*",
+          destination: `${cleanTarget}/api/v1/responses`
+        },
+        {
+          source: "/v1/:path*",
+          destination: `${cleanTarget}/v1/:path*`
+        },
+        {
+          source: "/v1",
+          destination: `${cleanTarget}/v1`
+        }
+      ];
+    }
     return [
       {
         source: "/v1/v1/:path*",
