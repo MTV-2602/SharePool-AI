@@ -38,3 +38,6 @@ scratch/
 code_diff.txt
 repo_diff.md
 .env*
+vps_management_guide.md
+*.guide.md
+
