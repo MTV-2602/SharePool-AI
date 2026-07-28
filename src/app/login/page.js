@@ -1267,30 +1267,192 @@ supports_websockets = false`}
                     </div>
                   </Card>
 
-                  <Card title="🚀 Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)" icon="rocket">
+                  <Card title="🚀 Cấu hình trên Cursor / Cline / RooCode / VS Code Extensions" icon="rocket">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
                       <p>Bạn có thể sử dụng trực tiếp khóa API này trên các IDE phổ biến để gọi model qua Gateway:</p>
                       
                       <div className="space-y-3">
                         <h4 className="font-semibold text-text-main text-xs">Cấu hình chung:</h4>
-                        <ul className="list-disc pl-5 space-y-1 text-xs">
-                          <li><strong>Provider:</strong> Chọn <code>OpenAI Compatible</code> (hoặc Custom OpenAI)</li>
-                          <li><strong>Base URL:</strong> Điền <code>{origin}/v1</code></li>
-                          <li><strong>API Key:</strong> Điền Client Key của bạn (<code>{savedKey}</code>)</li>
-                        </ul>
+                        <div className="bg-surface-2 border border-border rounded-lg p-3 space-y-2.5">
+                          <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+                            <div>
+                              <strong>Provider:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main">OpenAI Compatible</code> <span className="text-text-muted">(hoặc Custom OpenAI)</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between flex-wrap gap-2 text-xs pt-2 border-t border-border/40">
+                            <div className="flex items-center gap-1.5 overflow-hidden">
+                              <strong>Base URL:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main truncate max-w-[280px] sm:max-w-[400px]">{origin}/v1</code>
+                            </div>
+                            <button
+                              onClick={() => copyText(`${origin}/v1`, "cursorBaseUrl")}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">
+                                {copiedField === "cursorBaseUrl" ? "check" : "content_copy"}
+                              </span>
+                              {copiedField === "cursorBaseUrl" ? "Đã copy" : "Copy"}
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between flex-wrap gap-2 text-xs pt-2 border-t border-border/40">
+                            <div className="flex items-center gap-1.5 overflow-hidden">
+                              <strong>API Key:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main truncate max-w-[280px] sm:max-w-[400px]">{savedKey}</code>
+                            </div>
+                            <button
+                              onClick={() => copyText(savedKey, "cursorApiKey")}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">
+                                {copiedField === "cursorApiKey" ? "check" : "content_copy"}
+                              </span>
+                              {copiedField === "cursorApiKey" ? "Đã copy" : "Copy"}
+                            </button>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="space-y-3 pt-3 border-t border-border/40">
-                        <h4 className="font-semibold text-text-main text-xs">Lựa chọn Model ID:</h4>
+                        <h4 className="font-semibold text-text-main text-xs">Lựa chọn Model ID (Có nút Copy):</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="bg-surface-2 border border-border rounded-lg p-3">
-                            <strong className="text-xs text-text-main block mb-1">Model Codex (ChatGPT-backed)</strong>
-                            <span className="text-xs text-text-muted">Nhập Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gpt-5.5</code></span>
+                          <div className="bg-surface-2 border border-border rounded-lg p-3 flex flex-col justify-between gap-2">
+                            <div>
+                              <strong className="text-xs text-text-main block mb-1">Model Codex (ChatGPT-backed)</strong>
+                              <span className="text-xs text-text-muted">Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gpt-5.5</code></span>
+                            </div>
+                            <button
+                              onClick={() => copyText("gpt-5.5", "modelCodex55")}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors self-start"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">
+                                {copiedField === "modelCodex55" ? "check" : "content_copy"}
+                              </span>
+                              {copiedField === "modelCodex55" ? "Đã copy gpt-5.5" : "Copy gpt-5.5"}
+                            </button>
                           </div>
-                          <div className="bg-surface-2 border border-border rounded-lg p-3">
-                            <strong className="text-xs text-text-main block mb-1">Model AntiGravity (Gemini-backed)</strong>
-                            <span className="text-xs text-text-muted">Nhập Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gemini-3.6-flash-high</code> (hoặc <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-semibold">gpt-5.4</code>)</span>
+
+                          <div className="bg-surface-2 border border-border rounded-lg p-3 flex flex-col justify-between gap-2">
+                            <div>
+                              <strong className="text-xs text-text-main block mb-1">Model AntiGravity (Gemini-backed)</strong>
+                              <span className="text-xs text-text-muted">Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gemini-3.6-flash-high</code></span>
+                            </div>
+                            <div className="flex gap-1.5 flex-wrap">
+                              <button
+                                onClick={() => copyText("gemini-3.6-flash-high", "modelAGFlash")}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">
+                                  {copiedField === "modelAGFlash" ? "check" : "content_copy"}
+                                </span>
+                                {copiedField === "modelAGFlash" ? "Đã copy" : "Copy gemini-3.6-flash-high"}
+                              </button>
+                              <button
+                                onClick={() => copyText("gpt-5.4", "modelGpt54")}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">
+                                  {copiedField === "modelGpt54" ? "check" : "content_copy"}
+                                </span>
+                                {copiedField === "modelGpt54" ? "Đã copy" : "Copy gpt-5.4"}
+                              </button>
+                            </div>
                           </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card title="💻 Cài đặt & Hướng dẫn sử dụng các CLI Tools phổ biến" icon="terminal">
+                    <div className="space-y-4 text-sm text-text-muted mt-2">
+                      <p>Hệ thống 9Router tương thích 100% với các công cụ CLI AI lập trình phổ biến. Dưới đây là hướng dẫn cài đặt và lệnh khởi chạy từng công cụ:</p>
+
+                      <div className="space-y-4">
+                        {/* Codex CLI */}
+                        <div className="bg-surface-2 border border-border rounded-lg p-3.5 space-y-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <strong className="text-xs text-text-main flex items-center gap-1.5">
+                              🤖 1. Codex CLI (OpenAI Official Command Line)
+                            </strong>
+                            <button
+                              onClick={() => copyText("npm install -g @openai/codex", "installCodexCli")}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">
+                                {copiedField === "installCodexCli" ? "check" : "content_copy"}
+                              </span>
+                              {copiedField === "installCodexCli" ? "Đã copy" : "Copy lệnh cài đặt"}
+                            </button>
+                          </div>
+                          <p className="text-xs text-text-muted">Cài đặt công cụ Codex CLI toàn cục bằng Node.js (npm):</p>
+                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main">
+npm install -g @openai/codex
+                          </pre>
+                          <p className="text-xs text-text-muted">Sau khi cài đặt xong và chạy 1-Click tự động ở thẻ <strong>Codex App & IDEs</strong> phía trên, bạn có thể gọi trực tiếp trên Terminal:</p>
+                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main">
+codex "Viết một script Node.js kết nối Supabase"
+                          </pre>
+                        </div>
+
+                        {/* OpenClaw CLI */}
+                        <div className="bg-surface-2 border border-border rounded-lg p-3.5 space-y-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <strong className="text-xs text-text-main flex items-center gap-1.5">
+                              🦀 2. OpenClaw CLI
+                            </strong>
+                            <button
+                              onClick={() => copyText("npm install -g openclaw", "installOpenClawCli")}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">
+                                {copiedField === "installOpenClawCli" ? "check" : "content_copy"}
+                              </span>
+                              {copiedField === "installOpenClawCli" ? "Đã copy" : "Copy lệnh cài đặt"}
+                            </button>
+                          </div>
+                          <p className="text-xs text-text-muted">Cài đặt OpenClaw CLI toàn cục:</p>
+                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main">
+npm install -g openclaw
+                          </pre>
+                          <p className="text-xs text-text-muted">Chạy nhanh bằng npx mà không cần cài đặt cố định:</p>
+                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main">
+npx openclaw
+                          </pre>
+                        </div>
+
+                        {/* Aider AI CLI */}
+                        <div className="bg-surface-2 border border-border rounded-lg p-3.5 space-y-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <strong className="text-xs text-text-main flex items-center gap-1.5">
+                              🐍 3. Aider AI CLI (Pair Programming in Terminal)
+                            </strong>
+                            <button
+                              onClick={() => copyText("pip install aider-chat", "installAiderCli")}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">
+                                {copiedField === "installAiderCli" ? "check" : "content_copy"}
+                              </span>
+                              {copiedField === "installAiderCli" ? "Đã copy" : "Copy lệnh cài đặt"}
+                            </button>
+                          </div>
+                          <p className="text-xs text-text-muted">Cài đặt Aider CLI thông qua Python pip:</p>
+                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main">
+pip install aider-chat
+                          </pre>
+                          <p className="text-xs text-text-muted">Lệnh khởi chạy Aider trỏ thẳng tới Gateway 9Router của bạn:</p>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[11px] font-mono text-text-muted">Chạy trên Terminal / PowerShell:</span>
+                            <button
+                              onClick={() => copyText(`aider --openai-api-base "${origin}/v1" --openai-api-key "${savedKey}" --model "openai/gpt-5.5"`, "cmdAiderWin")}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border text-xs cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[12px]">{copiedField === "cmdAiderWin" ? "check" : "content_copy"}</span>
+                              {copiedField === "cmdAiderWin" ? "Đã copy" : "Copy"}
+                            </button>
+                          </div>
+                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main overflow-x-auto">
+{`aider --openai-api-base "${origin}/v1" --openai-api-key "${savedKey}" --model "openai/gpt-5.5"`}
+                          </pre>
                         </div>
                       </div>
                     </div>
