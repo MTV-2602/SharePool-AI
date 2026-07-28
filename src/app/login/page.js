@@ -1362,96 +1362,108 @@ supports_websockets = false`}
                     </div>
                   </Card>
 
-                  <Card title="💻 Cài đặt & Hướng dẫn sử dụng các CLI Tools phổ biến" icon="terminal">
+                  <Card title="🤖 Hướng dẫn Cài đặt & Kết nối Codex CLI" icon="terminal">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
-                      <p>Hệ thống 9Router tương thích 100% với các công cụ CLI AI lập trình phổ biến. Dưới đây là hướng dẫn cài đặt và lệnh khởi chạy từng công cụ:</p>
+                      <p>Codex CLI cho phép bạn chạy mô hình AI trực tiếp trong Terminal của máy tính. Dưới đây là hướng dẫn cài đặt và kết nối 1-Click về máy chủ 9Router:</p>
 
                       <div className="space-y-4">
-                        {/* Codex CLI */}
+                        {/* Bước 1: Cài đặt */}
                         <div className="bg-surface-2 border border-border rounded-lg p-3.5 space-y-2">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <strong className="text-xs text-text-main flex items-center gap-1.5">
-                              🤖 1. Codex CLI (OpenAI Official Command Line)
+                              📥 Bước 1: Cài đặt Codex CLI toàn cục (Global)
                             </strong>
                             <button
-                              onClick={() => copyText("npm install -g @openai/codex", "installCodexCli")}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                              onClick={() => copyText("npm install -g @openai/codex", "installCodexCliOnly")}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-white hover:opacity-90 text-xs font-semibold cursor-pointer transition-opacity"
                             >
                               <span className="material-symbols-outlined text-[13px]">
-                                {copiedField === "installCodexCli" ? "check" : "content_copy"}
+                                {copiedField === "installCodexCliOnly" ? "check" : "content_copy"}
                               </span>
-                              {copiedField === "installCodexCli" ? "Đã copy" : "Copy lệnh cài đặt"}
+                              {copiedField === "installCodexCliOnly" ? "Đã copy!" : "Copy lệnh cài đặt"}
                             </button>
                           </div>
-                          <p className="text-xs text-text-muted">Cài đặt công cụ Codex CLI toàn cục bằng Node.js (npm):</p>
-                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main">
+                          <p className="text-xs text-text-muted">Mở Terminal/PowerShell và chạy lệnh dưới đây để cài đặt Codex CLI:</p>
+                          <pre className="bg-surface border border-border rounded p-2.5 text-xs font-mono text-text-main">
 npm install -g @openai/codex
                           </pre>
-                          <p className="text-xs text-text-muted">Sau khi cài đặt xong và chạy 1-Click tự động ở thẻ <strong>Codex App & IDEs</strong> phía trên, bạn có thể gọi trực tiếp trên Terminal:</p>
-                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main">
-codex "Viết một script Node.js kết nối Supabase"
-                          </pre>
                         </div>
 
-                        {/* OpenClaw CLI */}
+                        {/* Bước 2: Cấu hình kết nối */}
+                        <div className="bg-surface-2 border border-border rounded-lg p-3.5 space-y-3">
+                          <strong className="text-xs text-text-main block">
+                            ⚙️ Bước 2: Cấu hình 1-Click tự động kết nối với Server 9Router
+                          </strong>
+                          
+                          <div>
+                            <div className="flex justify-between items-center mb-1.5">
+                              <span className="text-xs font-semibold text-text-main">🔷 Trên Windows (Mở PowerShell dán lệnh này):</span>
+                              <button
+                                onClick={() => copyText(`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.5\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${origin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`, "cmdPsCodexCli")}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">
+                                  {copiedField === "cmdPsCodexCli" ? "check" : "content_copy"}
+                                </span>
+                                {copiedField === "cmdPsCodexCli" ? "Đã copy!" : "Copy PowerShell"}
+                              </button>
+                            </div>
+                            <pre className="bg-surface border border-border rounded p-2.5 text-xs font-mono text-text-main whitespace-pre-wrap break-all">
+{`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.5\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${origin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`}
+                            </pre>
+                          </div>
+
+                          <div className="pt-2 border-t border-border/40">
+                            <div className="flex justify-between items-center mb-1.5">
+                              <span className="text-xs font-semibold text-text-main">🍎 Trên Mac / Linux (Mở Terminal dán lệnh này):</span>
+                              <button
+                                onClick={() => copyText(`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml\nmodel_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.5"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${origin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\nEOF\necho '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`, "cmdBashCodexCli")}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">
+                                  {copiedField === "cmdBashCodexCli" ? "check" : "content_copy"}
+                                </span>
+                                {copiedField === "cmdBashCodexCli" ? "Đã copy!" : "Copy Mac/Linux"}
+                              </button>
+                            </div>
+                            <pre className="bg-surface border border-border rounded p-2.5 text-xs font-mono text-text-main">
+{`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml
+model_reasoning_effort = "low"
+model_provider = "openai-custom"
+model = "gpt-5.5"
+
+[model_providers.openai-custom]
+experimental_bearer_token = "${savedKey}"
+name = "VinAi"
+base_url = "${origin}/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+EOF
+echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`}
+                            </pre>
+                          </div>
+                        </div>
+
+                        {/* Bước 3: Sử dụng */}
                         <div className="bg-surface-2 border border-border rounded-lg p-3.5 space-y-2">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <strong className="text-xs text-text-main flex items-center gap-1.5">
-                              🦀 2. OpenClaw CLI
+                              🚀 Bước 3: Khởi chạy Codex CLI
                             </strong>
                             <button
-                              onClick={() => copyText("npm install -g openclaw", "installOpenClawCli")}
+                              onClick={() => copyText('codex "Viết một hàm Node.js kết nối Supabase"', "runCodexExample")}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
                             >
                               <span className="material-symbols-outlined text-[13px]">
-                                {copiedField === "installOpenClawCli" ? "check" : "content_copy"}
+                                {copiedField === "runCodexExample" ? "check" : "content_copy"}
                               </span>
-                              {copiedField === "installOpenClawCli" ? "Đã copy" : "Copy lệnh cài đặt"}
+                              {copiedField === "runCodexExample" ? "Đã copy" : "Copy ví dụ"}
                             </button>
                           </div>
-                          <p className="text-xs text-text-muted">Cài đặt OpenClaw CLI toàn cục:</p>
-                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main">
-npm install -g openclaw
-                          </pre>
-                          <p className="text-xs text-text-muted">Chạy nhanh bằng npx mà không cần cài đặt cố định:</p>
-                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main">
-npx openclaw
-                          </pre>
-                        </div>
-
-                        {/* Aider AI CLI */}
-                        <div className="bg-surface-2 border border-border rounded-lg p-3.5 space-y-2">
-                          <div className="flex items-center justify-between flex-wrap gap-2">
-                            <strong className="text-xs text-text-main flex items-center gap-1.5">
-                              🐍 3. Aider AI CLI (Pair Programming in Terminal)
-                            </strong>
-                            <button
-                              onClick={() => copyText("pip install aider-chat", "installAiderCli")}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
-                            >
-                              <span className="material-symbols-outlined text-[13px]">
-                                {copiedField === "installAiderCli" ? "check" : "content_copy"}
-                              </span>
-                              {copiedField === "installAiderCli" ? "Đã copy" : "Copy lệnh cài đặt"}
-                            </button>
-                          </div>
-                          <p className="text-xs text-text-muted">Cài đặt Aider CLI thông qua Python pip:</p>
-                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main">
-pip install aider-chat
-                          </pre>
-                          <p className="text-xs text-text-muted">Lệnh khởi chạy Aider trỏ thẳng tới Gateway 9Router của bạn:</p>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-[11px] font-mono text-text-muted">Chạy trên Terminal / PowerShell:</span>
-                            <button
-                              onClick={() => copyText(`aider --openai-api-base "${origin}/v1" --openai-api-key "${savedKey}" --model "openai/gpt-5.5"`, "cmdAiderWin")}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border text-xs cursor-pointer"
-                            >
-                              <span className="material-symbols-outlined text-[12px]">{copiedField === "cmdAiderWin" ? "check" : "content_copy"}</span>
-                              {copiedField === "cmdAiderWin" ? "Đã copy" : "Copy"}
-                            </button>
-                          </div>
-                          <pre className="bg-surface border border-border rounded p-2 text-xs font-mono text-text-main overflow-x-auto">
-{`aider --openai-api-base "${origin}/v1" --openai-api-key "${savedKey}" --model "openai/gpt-5.5"`}
+                          <p className="text-xs text-text-muted">Bây giờ bạn có thể gõ câu hỏi trực tiếp cho AI ngay trên Terminal:</p>
+                          <pre className="bg-surface border border-border rounded p-2.5 text-xs font-mono text-text-main">
+codex "Viết một hàm Node.js kết nối Supabase"
                           </pre>
                         </div>
                       </div>
