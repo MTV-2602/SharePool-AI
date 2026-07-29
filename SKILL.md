@@ -1,4 +1,4 @@
----
+﻿---
 name: karpathy-guidelines
 description: Behavioral guidelines to reduce common LLM coding mistakes. Use when writing, reviewing, or refactoring code to avoid overcomplication, make surgical changes, surface assumptions, and define verifiable success criteria.
 license: MIT
@@ -78,7 +78,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
        ```bash
        git remote set-url origin git@github.com:<OWNER>/<REPO>.git
        ```
-  2. **Nếu phải dùng HTTPS:** 
+  2. **Nếu phải dùng HTTPS:**
      - Chạy `git remote -v` để xem URL hiện tại và `git config user.name` để xem username cấu hình.
      - Nếu URL chưa có username, hãy cập nhật lại remote URL chứa username (ví dụ `<USERNAME>@`) để Git tự động lấy thông tin xác thực đã lưu trong Credential Manager của hệ thống mà không yêu cầu tương tác UI:
        ```bash
@@ -91,3 +91,38 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   git commit -m "nội dung commit ngắn gọn bằng tiếng Việt"
   git push origin <tên_nhánh_hiện_tại>
   ```
+
+---
+
+## 7. Quy Tắc Deploy 9Router (KHÔNG BUILD VPS KHI SỬA UI)
+
+> **QUAN TRỌNG:** VPS Oracle chỉ có 952MB RAM. Build 2-3 lần liên tiếp = RAM 91% = VPS chết!
+
+### 🟢 Chỉ sửa UI / text / CSS → CHỈ GIT PUSH, KHÔNG ĐỘNG VPS:
+Áp dụng khi sửa: `src/app/login/`, `src/app/dashboard/`, `*.css`, `public/`
+```bash
+git add . && git commit -m "ui: mô tả thay đổi" && git push origin main
+```
+Vercel tự build và deploy trong 1-2 phút. Không cần SSH vào VPS!
+
+### 🔴 Sửa API / Backend / Config → Mới cần SSH VPS và Build:
+Áp dụng khi sửa: `src/app/api/`, `src/lib/`, `next.config.mjs`, `package.json`
+```bash
+# LUÔN kiểm tra trước khi build:
+ps aux | grep 'next build' | grep -v grep
+# Nếu có process zombie → Kill trước:
+pkill -9 -f 'next build' && sleep 3
+# Mới build:
+cd ~/9router && git pull origin main && npm run build && pm2 restart 9router --update-env
+```
+
+### 🚨 Cấp cứu RAM VPS đầy (> 80%):
+```bash
+ps aux | grep 'next build' | grep -v grep   # Tìm PID zombie
+kill -9 <PID1> <PID2>                       # Kill đúng PID
+free -h && pm2 status                       # Kiểm tra kết quả
+```
+
+### Thông tin kết nối VPS:
+- **IP:** `161.118.250.92` | **Port:** `20127` | **User:** `ubuntu`
+- **SSH:** `ssh -i "C:\Users\vinhmt\Downloads\ssh-key-2026-07-27.key" -o StrictHostKeyChecking=no ubuntu@161.118.250.92`
