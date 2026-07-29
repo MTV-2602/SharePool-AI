@@ -52,6 +52,14 @@ const nextConfig = {
       const cleanTarget = targetCloud.replace(/\/+$/, "");
       return [
         {
+          source: "/v1code/:path*",
+          destination: `${cleanTarget}/api/v1/responses`
+        },
+        {
+          source: "/v1/code/:path*",
+          destination: `${cleanTarget}/api/v1/responses`
+        },
+        {
           source: "/v1/v1/:path*",
           destination: `${cleanTarget}/v1/:path*`
         },
@@ -74,6 +82,14 @@ const nextConfig = {
       ];
     }
     return [
+      {
+        source: "/v1code/:path*",
+        destination: "/api/v1/responses"
+      },
+      {
+        source: "/v1/code/:path*",
+        destination: "/api/v1/responses"
+      },
       {
         source: "/v1/v1/:path*",
         destination: "/api/v1/:path*"
