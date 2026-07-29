@@ -23,7 +23,8 @@ export default function LoginPage() {
   const [activeTab, setActiveTab] = useState("usage");
   const [guideTab, setGuideTab] = useState("codex");
   const [copiedField, setCopiedField] = useState("");
-  const [origin, setOrigin] = useState("https://vinhcousera.vercel.app");
+  const [origin, setOrigin] = useState("https://ainoname.site");
+  const [apiOrigin, setApiOrigin] = useState("https://api.ainoname.site");
   const [showKey, setShowKey] = useState(false);
   const [usageLogs, setUsageLogs] = useState([]);
   const [usageSummary, setUsageSummary] = useState([]);
@@ -42,6 +43,11 @@ export default function LoginPage() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOrigin(window.location.origin);
+      if (window.location.hostname.includes("ainoname.site") || window.location.hostname.includes("vercel.app")) {
+        setApiOrigin("https://api.ainoname.site");
+      } else {
+        setApiOrigin(window.location.origin);
+      }
       
       // Check if clientKey is stored in localStorage
       const storedClientKey = localStorage.getItem("clientKey");
@@ -333,7 +339,7 @@ Copy và dán dòng lệnh bên dưới vào Terminal để hệ thống tự đ
 
 ### 🔷 Trên Windows (Mở PowerShell dán lệnh sau):
 \`\`\`powershell
-mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.4\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"\${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"\${origin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"\${savedKey}"}'
+mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.4\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"\${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"\${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"\${savedKey}"}'
 \`\`\`
 
 ### 🍎 Trên Mac / Linux (Mở Terminal dán lệnh sau):
@@ -346,7 +352,7 @@ model = "gpt-5.4"
 [model_providers.openai-custom]
 experimental_bearer_token = "\${savedKey}"
 name = "VinAi"
-base_url = "\${origin}/v1"
+base_url = "\${apiOrigin}/v1"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
@@ -362,7 +368,7 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"\${savedKey}"}' > ~/.codex/auth.js
 Bạn có thể copy lệnh này dán vào Terminal để test gọi trực tiếp xem API có phản hồi chuẩn chưa:
 
 \`\`\`bash
-curl \${origin}/v1/chat/completions \\
+curl \${apiOrigin}/v1/chat/completions \\
   -H "Authorization: Bearer \${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -387,7 +393,7 @@ model = "gpt-5.4"
 [model_providers.openai-custom]
 experimental_bearer_token = "\${savedKey}"
 name = "VinAi"
-base_url = "\${origin}/v1"
+base_url = "\${apiOrigin}/v1"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
@@ -405,7 +411,7 @@ supports_websockets = false
 
 ## 🚀 4. Cấu hình trên Cursor / Cline / RooCode (OpenAI Compatible)
 - **Provider**: Chọn \`OpenAI Compatible\` (hoặc Custom OpenAI)
-- **Base URL**: \`\${origin}/v1\`
+- **Base URL**: \`\${apiOrigin}/v1\`
 - **API Key**: \`\${savedKey}\`
 - **Model ID**: \`gemini-3.6-flash-high\` (hoặc \`gpt-5.4\`, \`claude-sonnet-4-6\`, \`claude-opus-4-6-thinking\`, \`gpt-oss-120b-medium\`)`;
   };
@@ -439,7 +445,7 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
   "models": {
     "providers": {
       "9router": {
-        "baseUrl": "${origin}/v1",
+        "baseUrl": "${apiOrigin}/v1",
         "apiKey": "${savedKey}",
         "api": "openai-completions",
         "models": [
@@ -479,7 +485,7 @@ Bạn có thể gọi trực tiếp các model Gemini & Antigravity (ví dụ: \
 Copy và dán lệnh cURL bên dưới vào Terminal để test gọi trực tiếp model \`gemini-3.6-flash-high\`:
 
 \`\`\`bash
-curl \${origin}/v1/chat/completions \\
+curl \${apiOrigin}/v1/chat/completions \\
   -H "Authorization: Bearer \${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -521,7 +527,7 @@ Cài đặt thư viện: \`pip install openai\`
 import openai
 
 client = openai.OpenAI(
-    base_url="\${origin}/v1",
+    base_url="\${apiOrigin}/v1",
     api_key="\${savedKey}"
 )
 
@@ -540,7 +546,7 @@ print(response.choices[0].message.content)
 ## 📡 4. Gọi qua REST API Gemini gốc (cURL)
 Bạn cũng có thể gọi trực tiếp Endpoint tương thích định dạng API của Google AI Studio:
 \`\`\`bash
-curl -X POST "\${origin}/v1beta/models/antigravity/gemini-3.6-flash-high:streamGenerateContent?key=\${savedKey}" \\
+curl -X POST "\${apiOrigin}/v1beta/models/antigravity/gemini-3.6-flash-high:streamGenerateContent?key=\${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
     "contents": [{
@@ -1024,7 +1030,7 @@ curl -X POST "\${origin}/v1beta/models/antigravity/gemini-3.6-flash-high:streamG
                             🔷 Trên Windows (Mở PowerShell dán lệnh này):
                           </span>
                           <button
-                            onClick={() => copyText(`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.4\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${origin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`, "cmdPsCodex")}
+                            onClick={() => copyText(`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.4\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`, "cmdPsCodex")}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-white hover:opacity-90 text-xs font-semibold cursor-pointer transition-opacity"
                           >
                             <span className="material-symbols-outlined text-[14px]">
@@ -1034,7 +1040,7 @@ curl -X POST "\${origin}/v1beta/models/antigravity/gemini-3.6-flash-high:streamG
                           </button>
                         </div>
                         <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono whitespace-pre-wrap break-all">
-{`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.4\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${origin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`}
+{`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.4\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`}
                         </pre>
                       </div>
 
@@ -1044,7 +1050,7 @@ curl -X POST "\${origin}/v1beta/models/antigravity/gemini-3.6-flash-high:streamG
                             🍎 Trên Mac / Linux (Mở Terminal dán lệnh này):
                           </span>
                           <button
-                            onClick={() => copyText(`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml\nmodel_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.4"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${origin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\nEOF\necho '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`, "cmdBashCodex")}
+                            onClick={() => copyText(`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml\nmodel_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.4"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${apiOrigin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\nEOF\necho '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`, "cmdBashCodex")}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-white hover:opacity-90 text-xs font-semibold cursor-pointer transition-opacity"
                           >
                             <span className="material-symbols-outlined text-[14px]">
@@ -1062,7 +1068,7 @@ model = "gpt-5.4"
 [model_providers.openai-custom]
 experimental_bearer_token = "${savedKey}"
 name = "VinAi"
-base_url = "${origin}/v1"
+base_url = "${apiOrigin}/v1"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
@@ -1085,7 +1091,7 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                         <div className="flex justify-between items-center mb-1.5">
                           <span className="text-xs font-semibold text-text-main">🔷 Trên Windows (Command Prompt / CMD):</span>
                           <button
-                            onClick={() => copyText(`curl -X POST "${origin}/v1/chat/completions" -H "Authorization: Bearer ${savedKey}" -H "Content-Type: application/json" -d "{\\"model\\":\\"gpt-5.4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Xin chao!\\"}]}"`, "cmdTestCurlWin")}
+                            onClick={() => copyText(`curl -X POST "${apiOrigin}/v1/chat/completions" -H "Authorization: Bearer ${savedKey}" -H "Content-Type: application/json" -d "{\\"model\\":\\"gpt-5.4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Xin chao!\\"}]}"`, "cmdTestCurlWin")}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
                           >
                             <span className="material-symbols-outlined text-[14px]">
@@ -1095,7 +1101,7 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                           </button>
                         </div>
                         <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono whitespace-pre-wrap break-all">
-{`curl -X POST "${origin}/v1/chat/completions" -H "Authorization: Bearer ${savedKey}" -H "Content-Type: application/json" -d "{\\"model\\":\\"gpt-5.4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Xin chao!\\"}]}"`}
+{`curl -X POST "${apiOrigin}/v1/chat/completions" -H "Authorization: Bearer ${savedKey}" -H "Content-Type: application/json" -d "{\\"model\\":\\"gpt-5.4\\",\\"messages\\":[{\\"role\\":\\"user\\",\\"content\\":\\"Xin chao!\\"}]}"`}
                         </pre>
                       </div>
 
@@ -1103,7 +1109,7 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                         <div className="flex justify-between items-center mb-1.5">
                           <span className="text-xs font-semibold text-text-main">🍎 Trên Mac / Linux / Git Bash:</span>
                           <button
-                            onClick={() => copyText(`curl ${origin}/v1/chat/completions \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gpt-5.4",\n    "messages": [{"role": "user", "content": "Xin chào!"}]\n  }'`, "cmdTestCurlMac")}
+                            onClick={() => copyText(`curl ${apiOrigin}/v1/chat/completions \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gpt-5.4",\n    "messages": [{"role": "user", "content": "Xin chào!"}]\n  }'`, "cmdTestCurlMac")}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
                           >
                             <span className="material-symbols-outlined text-[14px]">
@@ -1113,7 +1119,7 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                           </button>
                         </div>
                         <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`curl ${origin}/v1/chat/completions \\
+{`curl ${apiOrigin}/v1/chat/completions \\
   -H "Authorization: Bearer ${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -1132,10 +1138,10 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                         <div className="flex items-center justify-between flex-wrap gap-2 border-b border-border/40 pb-2">
                           <div>
                             <strong>Base URL (Endpoint):</strong>
-                            <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs ml-2 font-mono">{origin}/v1</code>
+                            <code className="bg-surface px-2 py-0.5 rounded border border-border text-xs ml-2 font-mono">{apiOrigin}/v1</code>
                           </div>
                           <button
-                            onClick={() => copyText(`${origin}/v1`, "urlBaseCodex")}
+                            onClick={() => copyText(`${apiOrigin}/v1`, "urlBaseCodex")}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
                           >
                             <span className="material-symbols-outlined text-[14px]">
@@ -1186,7 +1192,7 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                             <div className="flex justify-between items-center mb-1.5">
                               <span className="text-xs font-semibold text-text-main">Cấu hình file config.toml cho model Codex (gpt-5.5):</span>
                               <button
-                                onClick={() => copyText(`model_reasoning_effort = \"low\"\nmodel_provider = \"openai-custom\"\nmodel = \"gpt-5.5\"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = \"${savedKey}\"\nname = \"VinAi\"\nbase_url = \"${origin}/v1\"\nwire_api = \"responses\"\nrequires_openai_auth = false\nsupports_websockets = false`, "tomlConfigCodex")}
+                                onClick={() => copyText(`model_reasoning_effort = \"low\"\nmodel_provider = \"openai-custom\"\nmodel = \"gpt-5.5\"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = \"${savedKey}\"\nname = \"VinAi\"\nbase_url = \"${apiOrigin}/v1\"\nwire_api = \"responses\"\nrequires_openai_auth = false\nsupports_websockets = false`, "tomlConfigCodex")}
                                 className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[14px]">
@@ -1203,7 +1209,7 @@ model = "gpt-5.5"
 [model_providers.openai-custom]
 experimental_bearer_token = "${savedKey}"
 name = "VinAi"
-base_url = "${origin}/v1"
+base_url = "${apiOrigin}/v1"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false`}
@@ -1214,7 +1220,7 @@ supports_websockets = false`}
                             <div className="flex justify-between items-center mb-1.5">
                               <span className="text-xs font-semibold text-text-main">Cấu hình file config.toml cho model AntiGravity (gpt-5.4):</span>
                               <button
-                                onClick={() => copyText(`model_reasoning_effort = \"low\"\nmodel_provider = \"openai-custom\"\nmodel = \"gpt-5.4\"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = \"${savedKey}\"\nname = \"VinAi\"\nbase_url = \"${origin}/v1\"\nwire_api = \"responses\"\nrequires_openai_auth = false\nsupports_websockets = false`, "tomlConfigAG")}
+                                onClick={() => copyText(`model_reasoning_effort = \"low\"\nmodel_provider = \"openai-custom\"\nmodel = \"gpt-5.4\"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = \"${savedKey}\"\nname = \"VinAi\"\nbase_url = \"${apiOrigin}/v1\"\nwire_api = \"responses\"\nrequires_openai_auth = false\nsupports_websockets = false`, "tomlConfigAG")}
                                 className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[14px]">
@@ -1231,7 +1237,7 @@ model = "gpt-5.4"
 [model_providers.openai-custom]
 experimental_bearer_token = "${savedKey}"
 name = "VinAi"
-base_url = "${origin}/v1"
+base_url = "${apiOrigin}/v1"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false`}
@@ -1282,10 +1288,10 @@ supports_websockets = false`}
 
                           <div className="flex items-center justify-between flex-wrap gap-2 text-xs pt-2 border-t border-border/40">
                             <div className="flex items-center gap-1.5 overflow-hidden">
-                              <strong>Base URL:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main truncate max-w-[280px] sm:max-w-[400px]">{origin}/v1</code>
+                              <strong>Base URL:</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main truncate max-w-[280px] sm:max-w-[400px]">{apiOrigin}/v1</code>
                             </div>
                             <button
-                              onClick={() => copyText(`${origin}/v1`, "cursorBaseUrl")}
+                              onClick={() => copyText(`${apiOrigin}/v1`, "cursorBaseUrl")}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
                             >
                               <span className="material-symbols-outlined text-[13px]">
@@ -1399,7 +1405,7 @@ npm install -g @openai/codex
                             <div className="flex justify-between items-center mb-1.5">
                               <span className="text-xs font-semibold text-text-main">🔷 Trên Windows (Mở PowerShell dán lệnh này):</span>
                               <button
-                                onClick={() => copyText(`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.5\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${origin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`, "cmdPsCodexCli")}
+                                onClick={() => copyText(`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.5\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`, "cmdPsCodexCli")}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
                               >
                                 <span className="material-symbols-outlined text-[13px]">
@@ -1409,7 +1415,7 @@ npm install -g @openai/codex
                               </button>
                             </div>
                             <pre className="bg-surface border border-border rounded p-2.5 text-xs font-mono text-text-main whitespace-pre-wrap break-all">
-{`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.5\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${origin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`}
+{`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.5\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`}
                             </pre>
                           </div>
 
@@ -1417,7 +1423,7 @@ npm install -g @openai/codex
                             <div className="flex justify-between items-center mb-1.5">
                               <span className="text-xs font-semibold text-text-main">🍎 Trên Mac / Linux (Mở Terminal dán lệnh này):</span>
                               <button
-                                onClick={() => copyText(`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml\nmodel_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.5"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${origin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\nEOF\necho '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`, "cmdBashCodexCli")}
+                                onClick={() => copyText(`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml\nmodel_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.5"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${apiOrigin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\nEOF\necho '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`, "cmdBashCodexCli")}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
                               >
                                 <span className="material-symbols-outlined text-[13px]">
@@ -1435,7 +1441,7 @@ model = "gpt-5.5"
 [model_providers.openai-custom]
 experimental_bearer_token = "${savedKey}"
 name = "VinAi"
-base_url = "${origin}/v1"
+base_url = "${apiOrigin}/v1"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
@@ -1500,7 +1506,7 @@ codex "Viết một hàm Node.js kết nối Supabase"
   "models": {
     "providers": {
       "9router": {
-        "baseUrl": "${origin}/v1",
+        "baseUrl": "${apiOrigin}/v1",
         "apiKey": "${savedKey}",
         "api": "openai-completions",
         "models": [
@@ -1525,7 +1531,7 @@ codex "Viết một hàm Node.js kết nối Supabase"
   }
 }`}</pre>
                           <button
-                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${origin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "gpt-5.5", "name": "gpt-5.5" },\n          { "id": "gemini-3.6-flash-high", "name": "gemini-3.6-flash-high" },\n          { "id": "gpt-5.4", "name": "gpt-5.4" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/gemini-3.6-flash-high"\n      },\n      "models": {\n        "9router/gpt-5.5": {},\n        "9router/gemini-3.6-flash-high": {},\n        "9router/gpt-5.4": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
+                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${apiOrigin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "gpt-5.5", "name": "gpt-5.5" },\n          { "id": "gemini-3.6-flash-high", "name": "gemini-3.6-flash-high" },\n          { "id": "gpt-5.4", "name": "gpt-5.4" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/gemini-3.6-flash-high"\n      },\n      "models": {\n        "9router/gpt-5.5": {},\n        "9router/gemini-3.6-flash-high": {},\n        "9router/gpt-5.4": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
                             className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
                             title="Copy cấu hình openclaw.json"
                           >
@@ -1549,7 +1555,7 @@ codex "Viết một hàm Node.js kết nối Supabase"
                       <div className="flex justify-between items-center">
                         <span className="text-xs font-semibold text-text-main">Lệnh cURL Quick Test:</span>
                         <button
-                          onClick={() => copyText(`curl ${origin}/v1/chat/completions \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.6-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]\n  }'`, "cmdTestCurlGemini")}
+                          onClick={() => copyText(`curl ${apiOrigin}/v1/chat/completions \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.6-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]\n  }'`, "cmdTestCurlGemini")}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
                         >
                           <span className="material-symbols-outlined text-[14px]">
@@ -1559,7 +1565,7 @@ codex "Viết một hàm Node.js kết nối Supabase"
                         </button>
                       </div>
                       <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`curl ${origin}/v1/chat/completions \\
+{`curl ${apiOrigin}/v1/chat/completions \\
   -H "Authorization: Bearer ${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -1610,7 +1616,7 @@ print(response.text)`}
                           <span className="font-semibold text-text-main text-xs">Option 2: Sử dụng OpenAI SDK (Thư viện tương thích):</span>
                           <button
                             onClick={() => {
-                              const code = `import openai\\n\\nclient = openai.OpenAI(\\n    base_url=\"${origin}/v1\",\\n    api_key=\"${savedKey}\"\\n)\\n\\nresponse = client.chat.completions.create(\\n    model=\"gemini-3.6-flash-high\",\\n    messages=[{\"role\": \"user\", \"content\": \"Xin chào! Bạn là ai?\"}]\\n)\\nprint(response.choices[0].message.content)`;
+                              const code = `import openai\\n\\nclient = openai.OpenAI(\\n    base_url=\"${apiOrigin}/v1\",\\n    api_key=\"${savedKey}\"\\n)\\n\\nresponse = client.chat.completions.create(\\n    model=\"gemini-3.6-flash-high\",\\n    messages=[{\"role\": \"user\", \"content\": \"Xin chào! Bạn là ai?\"}]\\n)\\nprint(response.choices[0].message.content)`;
                               copyText(code, "codePythonGeminiOpenAI");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1625,7 +1631,7 @@ print(response.text)`}
 {`import openai
 
 client = openai.OpenAI(
-    base_url="${origin}/v1",
+    base_url="${apiOrigin}/v1",
     api_key="${savedKey}"
 )
 
@@ -1646,7 +1652,7 @@ print(response.choices[0].message.content)`}
                           <span className="font-semibold text-text-main text-xs">Option 1: Gọi qua định dạng OpenAI Chat Completions:</span>
                           <button
                             onClick={() => {
-                              const code = `curl ${origin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gemini-3.6-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào!"}]\n  }'`;
+                              const code = `curl ${apiOrigin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gemini-3.6-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào!"}]\n  }'`;
                               copyText(code, "curlGeminiOpenAI");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1658,7 +1664,7 @@ print(response.choices[0].message.content)`}
                           </button>
                         </div>
                         <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`curl ${origin}/v1/chat/completions \
+{`curl ${apiOrigin}/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${savedKey}" \
   -d '{
@@ -1673,7 +1679,7 @@ print(response.choices[0].message.content)`}
                           <span className="font-semibold text-text-main text-xs">Option 2: Gọi qua REST API Gemini gốc (cURL):</span>
                           <button
                             onClick={() => {
-                              const code = `curl -X POST \"${origin}/v1beta/models/gemini-2.5-flash:generateContent?key=${savedKey}\" \\\\n  -H \"Content-Type: application/json\" \\\\n  -d \'{\\n    \"contents\": [{\"parts\": [{\"text\": \"Hello!\"}]}]\\n  }\'`;
+                              const code = `curl -X POST \"${apiOrigin}/v1beta/models/gemini-2.5-flash:generateContent?key=${savedKey}\" \\\\n  -H \"Content-Type: application/json\" \\\\n  -d \'{\\n    \"contents\": [{\"parts\": [{\"text\": \"Hello!\"}]}]\\n  }\'`;
                               copyText(code, "curlGeminiREST");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1685,7 +1691,7 @@ print(response.choices[0].message.content)`}
                           </button>
                         </div>
                         <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`curl -X POST "${origin}/v1beta/models/gemini-2.5-flash:generateContent?key=${savedKey}" \
+{`curl -X POST "${apiOrigin}/v1beta/models/gemini-2.5-flash:generateContent?key=${savedKey}" \
   -H "Content-Type: application/json" \
   -d '{
     "contents": [{"parts": [{"text": "Hello!"}]}]
