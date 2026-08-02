@@ -41,6 +41,7 @@ const PUBLIC_API_PATHS = [
   "/api/hotmail/read",
   "/api/oauth/codex/init",
   "/api/telegram/webhook",
+  "/api/telegram/setup",
   "/api/telegram-webhook",
   "/api/client-keys/check",
 ];
