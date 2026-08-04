@@ -1,4 +1,4 @@
-﻿---
+---
 name: karpathy-guidelines
 description: Behavioral guidelines to reduce common LLM coding mistakes. Use when writing, reviewing, or refactoring code to avoid overcomplication, make surgical changes, surface assumptions, and define verifiable success criteria.
 license: MIT
@@ -126,3 +126,10 @@ free -h && pm2 status                       # Kiểm tra kết quả
 ### Thông tin kết nối VPS:
 - **IP:** `161.118.250.92` | **Port:** `20127` | **User:** `ubuntu`
 - **SSH:** `ssh -i "C:\Users\vinhmt\Downloads\ssh-key-2026-07-27.key" -o StrictHostKeyChecking=no ubuntu@161.118.250.92`
+
+---
+
+## 8. Quy Tắc Dọn Dẹp File Test / Scratch Tạm Thời (Temporary Test Clean Up)
+- **Tự động Dọn Dẹp:** Bất kỳ file script test, scratch, benchmark hay debug tạm thời nào được tạo ra trong quá trình làm việc (như các file `.js`, `.mjs`, `.py` lẻ trong thư mục `scratch/`) **PHẢI ĐƯỢC XÓA SẠCH NGAY** sau khi hoàn thành test hoặc kết thúc công việc.
+- Tuyệt đối không để lại file rác tích tụ trong codebase làm rối dự án!
+
