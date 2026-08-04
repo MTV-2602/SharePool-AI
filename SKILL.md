@@ -133,3 +133,10 @@ free -h && pm2 status                       # Kiểm tra kết quả
 - **Tự động Dọn Dẹp:** Bất kỳ file script test, scratch, benchmark hay debug tạm thời nào được tạo ra trong quá trình làm việc (như các file `.js`, `.mjs`, `.py` lẻ trong thư mục `scratch/`) **PHẢI ĐƯỢC XÓA SẠCH NGAY** sau khi hoàn thành test hoặc kết thúc công việc.
 - Tuyệt đối không để lại file rác tích tụ trong codebase làm rối dự án!
 
+---
+
+## 9. Thư Mục Dự Án Mắt Kính AI CyberVision AR (Project Root Location)
+- **Đường dẫn thư mục cố định:** Tất cả mã nguồn, giao diện (`index.html`), server proxy (`server.js`), file thực thi và tệp cấu hình của dự án Mắt Kính AI CyberVision AR **BẮT BUỘC CHỈ NẰM TRONG**:
+  `D:\codex xoay\scratch\ai-glasses-demo\`
+
+
