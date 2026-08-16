@@ -59,7 +59,13 @@ export default {
     { id: "gpt-oss-120b-medium",         name: "GPT-OSS 120B (Medium)" },
     { id: "gemini-3-flash",              name: "Gemini 3 Flash", thinking: false },
 
-    // ── Alias 3.6 (model mới nhất — trỏ về cùng slot thật) ───────────────────
+    // ── Alias 3.7 (model mới nhất — trỏ về cùng slot thật) ───────────────────
+    { id: "gemini-3.7-flash-high",       name: "Gemini 3.7 Flash (High)",   upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.7-flash",            name: "Gemini 3.7 Flash",          upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.7-flash-medium",     name: "Gemini 3.7 Flash (Medium)", upstreamModelId: "gemini-3.5-flash-low" },
+    { id: "gemini-3.7-flash-low",        name: "Gemini 3.7 Flash (Low)",    upstreamModelId: "gemini-3.5-flash-extra-low" },
+
+    // ── Alias 3.6 ────────────────────────────────────────────────────────────
     { id: "gemini-3.6-flash-high",       name: "Gemini 3.6 Flash (High)",   upstreamModelId: "gemini-3-flash-agent" },
     { id: "gemini-3.6-flash-medium",     name: "Gemini 3.6 Flash (Medium)", upstreamModelId: "gemini-3.5-flash-low" },
     { id: "gemini-3.6-flash-low",        name: "Gemini 3.6 Flash (Low)",    upstreamModelId: "gemini-3.5-flash-extra-low" },
