@@ -354,10 +354,11 @@ function extractTextFromChunk(parsed) {
 export async function wrapResponseWithClientKeyLogging(response, clientKeyId, model, reqBody = null) {
   if (!response.ok) return response;
 
-  // Lấy tên model thực tế được thực thi từ header x-9r-actual-model (vd: gemini-3.6-flash-high).
-  // Nếu gọi qua Combo (vd: gpt-5.4), header này sẽ chứa model thực sự đã chạy.
+  // Nếu user gọi model cụ thể (vd: gemini-3.7-flash-high), giữ nguyên model đó cho log dashboard.
+  // Nếu gọi qua Combo (vd: gpt-5.4 / gpt-5.5), dùng internalModel từ header x-9r-actual-model.
   const internalModel = response.headers.get("x-9r-actual-model");
-  const actualModel = internalModel || model || "unknown";
+  const isCombo = !model || model === "gpt-5.4" || model === "gpt-5.5" || model.startsWith("combo-");
+  const actualModel = isCombo ? (internalModel || model || "unknown") : model;
 
 
   const contentType = response.headers.get('content-type') || '';
