@@ -130,7 +130,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         "Client-Metadata": JSON.stringify(CLIENT_METADATA),
         "Content-Type": "application/json",
         "X-Client-Name": "antigravity",
-        "X-Client-Version": "1.107.0",
+        "X-Client-Version": "1.120.0",
         "x-request-source": "local", // MITM bypass
       },
       body: JSON.stringify({

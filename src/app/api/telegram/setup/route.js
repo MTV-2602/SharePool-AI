@@ -4,17 +4,17 @@ import { getSettings } from '@/lib/localDb';
 export async function GET(request) {
   try {
     const settings = await getSettings().catch(() => ({}));
-    const botToken = settings?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
-
-    if (!botToken) {
-      return NextResponse.json({
-        ok: false,
-        error: 'TELEGRAM_BOT_TOKEN is not configured in settings or environment variables.'
-      }, { status: 400 });
+    const CURRENT_VALID_TOKEN = '8101230396:AAEk6TMGXo6QLH2rlCwRt0-em5wnouroWxc';
+    let botToken = settings?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || CURRENT_VALID_TOKEN;
+    if (botToken.includes('AAE_l8KqCJ5yTruNTZSwOrQLSwsVc-DOuco')) {
+      botToken = CURRENT_VALID_TOKEN;
     }
 
-    // Determine host from request headers
-    const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
+    // Determine host from request headers, strip 'api.' prefix if called from API domain
+    let host = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
+    if (host.startsWith('api.')) {
+      host = host.slice(4);
+    }
     const protocol = request.headers.get('x-forwarded-proto') || 'https';
     
     if (!host) {

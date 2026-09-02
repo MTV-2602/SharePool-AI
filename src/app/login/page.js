@@ -43,11 +43,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOrigin(window.location.origin);
-      if (window.location.hostname.includes("ainoname.site") || window.location.hostname.includes("vercel.app")) {
-        setApiOrigin("https://api.ainoname.site");
-      } else {
-        setApiOrigin(window.location.origin);
-      }
+      setApiOrigin(window.location.origin);
       
       // Check if clientKey is stored in localStorage
       const storedClientKey = localStorage.getItem("clientKey");
@@ -330,7 +326,7 @@ export default function LoginPage() {
 
 Hệ thống hỗ trợ 2 dòng model chính chạy qua cổng API Gateway:
 - **Codex (ChatGPT-backed)**: Sử dụng Model ID \`gpt-5.5\`
-- **AntiGravity (Gemini / Claude / GPT-OSS)**: Sử dụng Model ID \`gemini-3.7-flash-high\` (hoặc Combo ID \`gpt-5.4\`)
+- **AntiGravity (Gemini / Claude / GPT-OSS)**: Sử dụng Model ID \`gemini-3.8-flash-high\` (hoặc Combo ID \`gpt-5.4\`)
 
 ---
 
@@ -372,7 +368,7 @@ curl \${apiOrigin}/v1/chat/completions \\
   -H "Authorization: Bearer \${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gemini-3.7-flash-high",
+    "model": "gemini-3.8-flash-high",
     "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]
   }'
 \`\`\`
@@ -384,7 +380,7 @@ Nếu bạn muốn sửa file thủ công, hãy tìm file theo đường dẫn:
 - **Windows**: \`%%USERPROFILE%%\\.codex\\config.toml\` (Ví dụ: \`C:\\Users\\tên_user\\.codex\\config.toml\`)
 - **Mac / Linux**: \`~/.codex/config.toml\`
 
-### Mẫu file config.toml (Sử dụng model AntiGravity Gemini 3.7 Flash High qua gpt-5.4):
+### Mẫu file config.toml (Sử dụng model AntiGravity Gemini 3.8 Flash High qua gpt-5.4):
 \`\`\`toml
 model_reasoning_effort = "low"
 model_provider = "openai-custom"
@@ -413,7 +409,7 @@ supports_websockets = false
 - **Provider**: Chọn \`OpenAI Compatible\` (hoặc Custom OpenAI)
 - **Base URL**: \`\${apiOrigin}/v1\`
 - **API Key**: \`\${savedKey}\`
-- **Model ID**: \`gemini-3.7-flash-high\` (hoặc \`gpt-5.4\`, \`claude-sonnet-4-6\`, \`claude-opus-4-6-thinking\`, \`gpt-oss-120b-medium\`)`;
+- **Model ID**: \`gemini-3.8-flash-high\` (hoặc \`gpt-5.4\`, \`claude-sonnet-4-6\`, \`claude-opus-4-6-thinking\`, \`gpt-oss-120b-medium\`)`;
   };
 
 
@@ -439,7 +435,7 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
 1. Mở hoặc tạo tệp cấu hình của OpenClaw theo hệ điều hành:
    - **Windows**: \`%%USERPROFILE%%\\.openclaw\\openclaw.json\` (Ví dụ: \`C:\\Users\\tên_user\\.openclaw\\openclaw.json\`)
    - **Mac / Linux**: \`~/.openclaw/openclaw.json\`
-2. Chỉnh sửa tệp **openclaw.json** và dán nội dung cấu hình nhà cung cấp \`9router\` vào phần \`models.providers\` (sử dụng \`gpt-5.5\`, \`gemini-3.7-flash-high\` hoặc \`gpt-5.4\`):
+2. Chỉnh sửa tệp **openclaw.json** và dán nội dung cấu hình nhà cung cấp \`9router\` vào phần \`models.providers\` (sử dụng \`gpt-5.5\`, \`gemini-3.8-flash-high\` hoặc \`gpt-5.4\`):
 \`\`\`json
 {
   "models": {
@@ -450,7 +446,7 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
         "api": "openai-completions",
         "models": [
           { "id": "gpt-5.5", "name": "gpt-5.5" },
-          { "id": "gemini-3.7-flash-high", "name": "gemini-3.7-flash-high" },
+          { "id": "gemini-3.8-flash-high", "name": "gemini-3.8-flash-high" },
           { "id": "gpt-5.4", "name": "gpt-5.4" }
         ]
       }
@@ -459,11 +455,11 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/gemini-3.7-flash-high"
+        "primary": "9router/gemini-3.8-flash-high"
       },
       "models": {
         "9router/gpt-5.5": {},
-        "9router/gemini-3.7-flash-high": {},
+        "9router/gemini-3.8-flash-high": {},
         "9router/gpt-5.4": {}
       }
     }
@@ -477,19 +473,19 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
   const getGeminiMarkdown = () => {
     return `# Hướng dẫn tích hợp trực tiếp Google Gemini & AntiGravity API
 
-Bạn có thể gọi trực tiếp các model Gemini & Antigravity (ví dụ: \`gemini-3.7-flash-high\`, \`gemini-3.5-flash-low\`, \`gemini-pro-agent\`, \`claude-sonnet-4-6\`) thông qua API Gateway bằng các định dạng dưới đây:
+Bạn có thể gọi trực tiếp các model Gemini & Antigravity (ví dụ: \`gemini-3.8-flash-high\`, \`gemini-3.8-flash\`, \`gemini-pro-agent\`, \`claude-sonnet-4-6\`) thông qua API Gateway bằng các định dạng dưới đây:
 
 ---
 
 ## ⚡ 1. Test kết nối nhanh trên Terminal (Quick Test cURL)
-Copy và dán lệnh cURL bên dưới vào Terminal để test gọi trực tiếp model \`gemini-3.7-flash-high\`:
+Copy và dán lệnh cURL bên dưới vào Terminal để test gọi trực tiếp model \`gemini-3.8-flash-high\`:
 
 \`\`\`bash
 curl \${apiOrigin}/v1/chat/completions \\
   -H "Authorization: Bearer \${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gemini-3.7-flash-high",
+    "model": "gemini-3.8-flash-high",
     "messages": [{"role": "user", "content": "Xin chào! Bạn là ai?"}]
   }'
 \`\`\`
@@ -512,7 +508,7 @@ client = genai.Client(
 )
 
 response = client.models.generate_content(
-    model="gemini-3.7-flash-high",
+    model="gemini-3.8-flash-high",
     contents="Xin chào! Bạn là ai?"
 )
 
@@ -532,7 +528,7 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gemini-3.7-flash-high",
+    model="gemini-3.8-flash-high",
     messages=[
         {"role": "user", "content": "Xin chào! Bạn là ai?"}
     ]
@@ -546,7 +542,7 @@ print(response.choices[0].message.content)
 ## 📡 4. Gọi qua REST API Gemini gốc (cURL)
 Bạn cũng có thể gọi trực tiếp Endpoint tương thích định dạng API của Google AI Studio:
 \`\`\`bash
-curl -X POST "\${apiOrigin}/v1beta/models/antigravity/gemini-3.7-flash-high:streamGenerateContent?key=\${savedKey}" \\
+curl -X POST "\${apiOrigin}/v1beta/models/antigravity/gemini-3.8-flash-high:streamGenerateContent?key=\${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
     "contents": [{
@@ -1170,7 +1166,7 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                             <strong>Model Codex (ChatGPT-backed):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.5</code>
                           </div>
                           <div className="mt-1">
-                            <strong>Model AntiGravity (Gemini-backed):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gemini-3.7-flash-high</code> (hoặc <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.4</code>)
+                            <strong>Model AntiGravity (Gemini-backed):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gemini-3.8-flash-high</code> (hoặc <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.4</code>)
                           </div>
                         </div>
                       </div>
@@ -1340,17 +1336,17 @@ supports_websockets = false`}
                           <div className="bg-surface-2 border border-border rounded-lg p-3 flex flex-col justify-between gap-2">
                             <div>
                               <strong className="text-xs text-text-main block mb-1">Model AntiGravity (Gemini-backed)</strong>
-                              <span className="text-xs text-text-muted">Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gemini-3.7-flash-high</code></span>
+                              <span className="text-xs text-text-muted">Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gemini-3.8-flash-high</code></span>
                             </div>
                             <div className="flex gap-1.5 flex-wrap">
                               <button
-                                onClick={() => copyText("gemini-3.7-flash-high", "modelAGFlash")}
+                                onClick={() => copyText("gemini-3.8-flash-high", "modelAGFlash")}
                                 className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
                               >
                                 <span className="material-symbols-outlined text-[13px]">
                                   {copiedField === "modelAGFlash" ? "check" : "content_copy"}
                                 </span>
-                                {copiedField === "modelAGFlash" ? "Đã copy" : "Copy gemini-3.7-flash-high"}
+                                {copiedField === "modelAGFlash" ? "Đã copy" : "Copy gemini-3.8-flash-high"}
                               </button>
                               <button
                                 onClick={() => copyText("gpt-5.4", "modelGpt54")}
@@ -1511,7 +1507,7 @@ codex "Viết một hàm Node.js kết nối Supabase"
         "api": "openai-completions",
         "models": [
           { "id": "gpt-5.5", "name": "gpt-5.5" },
-          { "id": "gemini-3.7-flash-high", "name": "gemini-3.7-flash-high" },
+          { "id": "gemini-3.8-flash-high", "name": "gemini-3.8-flash-high" },
           { "id": "gpt-5.4", "name": "gpt-5.4" }
         ]
       }
@@ -1520,18 +1516,18 @@ codex "Viết một hàm Node.js kết nối Supabase"
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/gemini-3.7-flash-high"
+        "primary": "9router/gemini-3.8-flash-high"
       },
       "models": {
         "9router/gpt-5.5": {},
-        "9router/gemini-3.7-flash-high": {},
+        "9router/gemini-3.8-flash-high": {},
         "9router/gpt-5.4": {}
       }
     }
   }
 }`}</pre>
                           <button
-                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${apiOrigin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "gpt-5.5", "name": "gpt-5.5" },\n          { "id": "gemini-3.7-flash-high", "name": "gemini-3.7-flash-high" },\n          { "id": "gpt-5.4", "name": "gpt-5.4" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/gemini-3.7-flash-high"\n      },\n      "models": {\n        "9router/gpt-5.5": {},\n        "9router/gemini-3.7-flash-high": {},\n        "9router/gpt-5.4": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
+                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${apiOrigin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "gpt-5.5", "name": "gpt-5.5" },\n          { "id": "gemini-3.8-flash-high", "name": "gemini-3.8-flash-high" },\n          { "id": "gpt-5.4", "name": "gpt-5.4" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/gemini-3.8-flash-high"\n      },\n      "models": {\n        "9router/gpt-5.5": {},\n        "9router/gemini-3.8-flash-high": {},\n        "9router/gpt-5.4": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
                             className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
                             title="Copy cấu hình openclaw.json"
                           >
@@ -1551,11 +1547,11 @@ codex "Viết một hàm Node.js kết nối Supabase"
                 <div className="space-y-6 animate-fade-in">
                   <Card title="🧪 Kiểm tra kết nối nhanh trên Terminal (Quick Test)" icon="terminal">
                     <div className="space-y-3 text-sm text-text-muted mt-2">
-                      <p>Copy lệnh cURL này dán vào Terminal để test gọi trực tiếp model <strong>gemini-3.7-flash-high</strong>:</p>
+                      <p>Copy lệnh cURL này dán vào Terminal để test gọi trực tiếp model <strong>gemini-3.8-flash-high</strong>:</p>
                       <div className="flex justify-between items-center">
                         <span className="text-xs font-semibold text-text-main">Lệnh cURL Quick Test:</span>
                         <button
-                          onClick={() => copyText(`curl ${apiOrigin}/v1/chat/completions \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.7-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]\n  }'`, "cmdTestCurlGemini")}
+                          onClick={() => copyText(`curl ${apiOrigin}/v1/chat/completions \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "gemini-3.8-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]\n  }'`, "cmdTestCurlGemini")}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
                         >
                           <span className="material-symbols-outlined text-[14px]">
@@ -1569,7 +1565,7 @@ codex "Viết một hàm Node.js kết nối Supabase"
   -H "Authorization: Bearer ${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gemini-3.7-flash-high",
+    "model": "gemini-3.8-flash-high",
     "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]
   }'`}
                       </pre>
@@ -1584,7 +1580,7 @@ codex "Viết một hàm Node.js kết nối Supabase"
                           <span className="font-semibold text-text-main text-xs">Option 1: Sử dụng Google GenAI SDK (Thư viện chính thức):</span>
                           <button
                             onClick={() => {
-                              const code = `from google import genai\\n\\nclient = genai.Client(\\n    api_key=\"${savedKey}\",\\n    http_options={\"api_endpoint\": \"${origin}\"}\n)\\n\\nresponse = client.models.generate_content(\\n    model=\"gemini-3.7-flash-high\",\\n    contents=\"Xin chào! Bạn là ai?\"\\n)\\nprint(response.text)`;
+                              const code = `from google import genai\\n\\nclient = genai.Client(\\n    api_key=\"${savedKey}\",\\n    http_options={\"api_endpoint\": \"${origin}\"}\n)\\n\\nresponse = client.models.generate_content(\\n    model=\"gemini-3.8-flash-high\",\\n    contents=\"Xin chào! Bạn là ai?\"\\n)\\nprint(response.text)`;
                               copyText(code, "codePythonGeminiSDK");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1604,7 +1600,7 @@ client = genai.Client(
 )
 
 response = client.models.generate_content(
-    model="gemini-3.7-flash-high",
+    model="gemini-3.8-flash-high",
     contents="Xin chào! Bạn là ai?"
 )
 print(response.text)`}
@@ -1616,7 +1612,7 @@ print(response.text)`}
                           <span className="font-semibold text-text-main text-xs">Option 2: Sử dụng OpenAI SDK (Thư viện tương thích):</span>
                           <button
                             onClick={() => {
-                              const code = `import openai\\n\\nclient = openai.OpenAI(\\n    base_url=\"${apiOrigin}/v1\",\\n    api_key=\"${savedKey}\"\\n)\\n\\nresponse = client.chat.completions.create(\\n    model=\"gemini-3.7-flash-high\",\\n    messages=[{\"role\": \"user\", \"content\": \"Xin chào! Bạn là ai?\"}]\\n)\\nprint(response.choices[0].message.content)`;
+                              const code = `import openai\\n\\nclient = openai.OpenAI(\\n    base_url=\"${apiOrigin}/v1\",\\n    api_key=\"${savedKey}\"\\n)\\n\\nresponse = client.chat.completions.create(\\n    model=\"gemini-3.8-flash-high\",\\n    messages=[{\"role\": \"user\", \"content\": \"Xin chào! Bạn là ai?\"}]\\n)\\nprint(response.choices[0].message.content)`;
                               copyText(code, "codePythonGeminiOpenAI");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1636,7 +1632,7 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gemini-3.7-flash-high",
+    model="gemini-3.8-flash-high",
     messages=[{"role": "user", "content": "Xin chào! Bạn là ai?"}]
 )
 print(response.choices[0].message.content)`}
@@ -1652,7 +1648,7 @@ print(response.choices[0].message.content)`}
                           <span className="font-semibold text-text-main text-xs">Option 1: Gọi qua định dạng OpenAI Chat Completions:</span>
                           <button
                             onClick={() => {
-                              const code = `curl ${apiOrigin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gemini-3.7-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào!"}]\n  }'`;
+                              const code = `curl ${apiOrigin}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${savedKey}" \\\n  -d '{\n    "model": "gemini-3.8-flash-high",\n    "messages": [{"role": "user", "content": "Xin chào!"}]\n  }'`;
                               copyText(code, "curlGeminiOpenAI");
                             }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
@@ -1668,7 +1664,7 @@ print(response.choices[0].message.content)`}
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${savedKey}" \
   -d '{
-    "model": "gemini-3.7-flash-high",
+    "model": "gemini-3.8-flash-high",
     "messages": [{"role": "user", "content": "Xin chào!"}]
   }'`}
                         </pre>

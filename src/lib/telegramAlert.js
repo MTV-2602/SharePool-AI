@@ -3,7 +3,11 @@ import { getSettings } from "./localDb";
 export async function sendTelegramAlert(text) {
   try {
     const settings = await getSettings().catch(() => ({}));
-    const botToken = settings?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
+    const CURRENT_VALID_TOKEN = '8101230396:AAEk6TMGXo6QLH2rlCwRt0-em5wnouroWxc';
+    let botToken = settings?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || CURRENT_VALID_TOKEN;
+    if (botToken.includes('AAE_l8KqCJ5yTruNTZSwOrQLSwsVc-DOuco')) {
+      botToken = CURRENT_VALID_TOKEN;
+    }
     
     let chatIds = [];
     const envAllowed = process.env.ALLOWED_USER_IDS || settings?.ALLOWED_USER_IDS;
