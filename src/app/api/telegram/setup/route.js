@@ -13,8 +13,11 @@ export async function GET(request) {
       }, { status: 400 });
     }
 
-    // Determine host from request headers
-    const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
+    // Determine host from request headers, strip 'api.' prefix if called from API domain
+    let host = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
+    if (host.startsWith('api.')) {
+      host = host.slice(4);
+    }
     const protocol = request.headers.get('x-forwarded-proto') || 'https';
     
     if (!host) {

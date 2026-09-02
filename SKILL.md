@@ -133,3 +133,87 @@ free -h && pm2 status                       # Kiểm tra kết quả
 - **Tự động Dọn Dẹp:** Bất kỳ file script test, scratch, benchmark hay debug tạm thời nào được tạo ra trong quá trình làm việc (như các file `.js`, `.mjs`, `.py` lẻ trong thư mục `scratch/`) **PHẢI ĐƯỢC XÓA SẠCH NGAY** sau khi hoàn thành test hoặc kết thúc công việc.
 - Tuyệt đối không để lại file rác tích tụ trong codebase làm rối dự án!
 
+---
+
+## 9. Cẩm Nang Cập Nhật Model Antigravity Mới Nhanh & Chuẩn Xác (Playbook)
+
+Khi Google Antigravity ra mắt model mới (ví dụ `gemini-3.8-flash`, `gemini-3.9-flash`, `gemini-4.0-flash`...), hãy làm đúng theo 5 bước dưới đây để cập nhật toàn diện chỉ trong 3-5 phút:
+
+### ⚠️ NGUYÊN TẮC VÀNG UPSTREAM CỦA GOOGLE ANTIGRAVITY:
+1. **Slot nội bộ hợp lệ của Google:**
+   - Dòng Flash: Hiện tại Google Cloud Code dùng slot **`gemini-3-flash`**.
+   - Dòng Pro: Google dùng slot **`gemini-pro-agent`** (High) và **`gemini-3.1-pro-low`** (Low).
+   - Tuyệt đối **KHÔNG** trỏ upstream về các slot đã bị Google khai tử như `gemini-3.5-flash-low`, `gemini-3-flash-agent` (sẽ dính ngay lỗi: *"Gemini 3.5 Flash is no longer available"*).
+2. **User-Agent Antigravity:**
+   - Luôn duy trì User-Agent phiên bản mới (`antigravity/1.120.0` trở lên) tại `open-sse/config/appConstants.js` và `open-sse/providers/registry/antigravity.js` để tránh bị Google chặn version cũ.
+
+---
+
+### 📋 Checklist 7 File Cần Sửa:
+
+#### 1. Provider Registry: `open-sse/providers/registry/antigravity.js`
+Thêm khai báo model mới vào mảng `models`, trỏ `upstreamModelId` về slot nội bộ chuẩn (`gemini-3-flash`):
+```javascript
+{ id: "gemini-3.8-flash-high",   name: "Gemini 3.8 Flash (High)",   upstreamModelId: "gemini-3-flash" },
+{ id: "gemini-3.8-flash",        name: "Gemini 3.8 Flash",          upstreamModelId: "gemini-3-flash" },
+```
+
+#### 2. Nhận diện Prefix Model: `open-sse/services/model.js`
+Cập nhật regex `MODEL_PREFIX_PROVIDERS` để nhận diện phiên bản mới và tự map sang provider `antigravity`:
+```javascript
+[/^gemini-3\.[5678]/, "antigravity"], // Cập nhật số phiên bản nếu lên 3.9, 4.0...
+```
+
+#### 3. Bảng giá Token: `open-sse/providers/pricing.js`
+Thêm giá token cho model mới vào object pricing:
+```javascript
+"gemini-3.8-flash-high": { input: 0.50, output: 2.00 },
+"gemini-3.8-flash":      { input: 0.15, output: 0.60 },
+```
+
+#### 4. Proxy MITM: `src/mitm/config.js`
+Thêm ánh xạ đồng nghĩa vào `MODEL_SYNONYMS.antigravity` và regex trong `MODEL_PATTERNS`:
+```javascript
+"gemini-3.8-flash-high": "gemini-3-flash",
+"gemini-3.8-flash": "gemini-3-flash",
+```
+
+#### 5. Menu CLI & Constants:
+- **`src/shared/constants/cliTools.js`**: Cập nhật `modelAliases` và `defaultModels` của `MITM_TOOLS.antigravity`.
+- **`cli/src/cli/menus/providers.js`**: Cập nhật danh sách model hiển thị ở menu `ag`.
+
+#### 6. Ứng dụng Web AI Studio:
+- **`ai-studio/src/core/gateway/client.js`**: Cập nhật danh sách `POPULAR_MODELS` và `model = 'gemini-3.8-flash-high'` mặc định.
+- **`ai-studio/src/App.jsx`**: Cập nhật `activeModel` state mặc định và bộ lọc `localStorage` để tự loại bỏ các model cũ đã ngừng hỗ trợ.
+
+#### 7. Hướng dẫn Portal / Trang đăng nhập: `src/app/login/page.js`
+Cập nhật thẻ thông số kết nối API cơ bản:
+```jsx
+<strong>Model AntiGravity (Gemini-backed):</strong> <code>gemini-3.8-flash-high</code>
+```
+Và cập nhật tên model mẫu trong hàm `getTomlMarkdown()` / `getGeminiMarkdown()`.
+
+---
+
+### 🧪 Lệnh Test Tự Động Xác Nhận:
+Chạy lệnh test nhanh trực tiếp qua Gateway:
+```bash
+node -e "fetch('https://ainoname.site/v1/chat/completions', { method: 'POST', headers: { 'Authorization': 'Bearer sk-913895af49422e1ced953e6531e01d831ec235c818c9ceb5', 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'ag/gemini-3.8-flash-high', messages: [{ role: 'user', content: 'chao ban' }] }) }).then(r => r.text()).then(t => console.log(t.slice(0, 200)))"
+```
+*Yêu cầu:* Phải trả về `HTTP 200 OK` và nội dung chữ stream bình thường (không có thông báo lỗi "is no longer available").
+
+---
+
+### 🚀 Quy Trình Deploy Đồng Bộ (1 Lần Là Xong):
+1. **Gom thành 1 commit duy nhất bằng tiếng Việt và push:**
+   ```bash
+   git commit -a --amend -m "feat: cap nhat ho tro model Gemini <VERSION> tren toan he thong"
+   git push origin main --force
+   ```
+2. **Cập nhật VPS qua SSH (không build lại tránh tràn RAM):**
+   ```bash
+   ssh -i "C:\Users\vinhmt\Downloads\ssh-key-2026-07-27.key" -o StrictHostKeyChecking=no ubuntu@161.118.250.92 "cd ~/9router && git fetch origin main && git reset --hard origin/main && pm2 restart 9router --update-env"
+   ```
+3. Đợi Vercel hoàn tất build giao diện (khoảng 1 phút).
+
+

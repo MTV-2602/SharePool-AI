@@ -51,10 +51,11 @@ function parseHotmailLine(line) {
 }
 
 async function pushToGoogleSheet(scriptUrl, sheetName = '', data = []) {
-  if (!scriptUrl) {
+  const cleanUrl = String(scriptUrl || '').replace(/[\r\n\s]/g, '').trim();
+  if (!cleanUrl) {
     throw new Error('Google Sheet script URL is not configured.');
   }
-  const res = await fetch(scriptUrl, {
+  const res = await fetch(cleanUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sheetName, data })
@@ -72,26 +73,42 @@ async function pushToGoogleSheet(scriptUrl, sheetName = '', data = []) {
 
 export async function POST(request) {
   try {
-    const settings = await getSettings().catch(() => ({}));
-    const botToken = settings?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
-    const scriptUrl = settings?.COURSERA_SHEET_SCRIPT_URL || process.env.COURSERA_SHEET_SCRIPT_URL || process.env.GOOGLE_SHEET_SCRIPT_URL;
+    let settings = {};
+    try {
+      settings = (await getSettings()) || {};
+    } catch (e) {
+      console.warn('[Telegram Webhook] getSettings fallback:', e?.message);
+    }
+
+    const botToken = settings?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '8101230396:AAE_l8KqCJ5yTruNTZSwOrQLSwsVc-DOuco';
+    const scriptUrl = settings?.COURSERA_SHEET_SCRIPT_URL || process.env.COURSERA_SHEET_SCRIPT_URL || process.env.GOOGLE_SHEET_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
 
     const sendTelegramMessage = async (chatId, text, options = {}) => {
       if (!botToken) return;
-      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: 'HTML',
-          ...options
-        }),
-      });
+      try {
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text,
+            parse_mode: 'HTML',
+            ...options
+          }),
+        });
+      } catch (err) {
+        console.error('[Telegram Send Error]', err);
+      }
     };
 
-    const update = await request.json();
-    const message = update.message;
+    let update;
+    try {
+      update = await request.json();
+    } catch (e) {
+      return NextResponse.json({ ok: true, message: 'Invalid JSON payload' });
+    }
+
+    const message = update?.message;
     if (!message?.text) return NextResponse.json({ ok: true });
 
     const chatId = message.chat.id;
@@ -113,29 +130,34 @@ export async function POST(request) {
       }
 
       if (text === '/listhotmail') {
-        const { data } = await supabase
-          .from('hotmail_accounts')
-          .select('email, status, usage_count')
-          .order('created_at', { ascending: false })
-          .limit(20);
+        let list = 'No accounts';
+        try {
+          const { data } = await supabase
+            .from('hotmail_accounts')
+            .select('email, status, usage_count')
+            .order('created_at', { ascending: false })
+            .limit(20);
+          list = data?.map(a => `• ${a.email} [${a.status}] (${a.usage_count} uses)`).join('\n') || list;
+        } catch (e) {}
 
-        const list = data?.map(a => `• ${a.email} [${a.status}] (${a.usage_count} uses)`).join('\n') || 'No accounts';
         await sendTelegramMessage(chatId, `<b>📧 Hotmail Accounts:</b>\n${list}`);
         return NextResponse.json({ ok: true });
       }
 
       if (text === '/status') {
-        const { count: hotmailCount } = await supabase
-          .from('hotmail_accounts')
-          .select('*', { count: 'exact', head: true });
-        const { count: keyCount } = await supabase
-          .from('client_keys')
-          .select('*', { count: 'exact', head: true });
+        let hotmailCount = 0;
+        let keyCount = 0;
+        try {
+          const res1 = await supabase.from('hotmail_accounts').select('*', { count: 'exact', head: true });
+          hotmailCount = res1.count || 0;
+          const res2 = await supabase.from('client_keys').select('*', { count: 'exact', head: true });
+          keyCount = res2.count || 0;
+        } catch (e) {}
 
         await sendTelegramMessage(chatId,
           `<b>📊 System Status:</b>\n` +
-          `📧 Hotmail accounts: ${hotmailCount || 0}\n` +
-          `🔑 Client keys: ${keyCount || 0}`
+          `📧 Hotmail accounts: ${hotmailCount}\n` +
+          `🔑 Client keys: ${keyCount}`
         );
         return NextResponse.json({ ok: true });
       }
@@ -225,6 +247,7 @@ export async function POST(request) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[Telegram Webhook Error]', err);
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    // Always return HTTP 200 to Telegram so Telegram does not disable or fail the webhook
+    return NextResponse.json({ ok: false, error: err.message });
   }
 }
