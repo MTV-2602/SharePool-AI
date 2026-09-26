@@ -55,8 +55,38 @@ export function stripThinkingSuffix(modelId) {
   return m ? m[1].trim() : modelId;
 }
 
+// Live model IDs discovered from Antigravity's fetchAvailableModels endpoint at runtime
+const liveAntigravityModels = new Set();
+
+export function registerLiveAntigravityModels(modelIds = []) {
+  if (!Array.isArray(modelIds)) return;
+  for (const id of modelIds) {
+    if (typeof id === "string" && id.trim()) {
+      liveAntigravityModels.add(id.trim().toLowerCase());
+    }
+  }
+}
+
+function getLatestAntigravityFlashUpstream(level = "high") {
+  const bucket = level === "medium" ? "medium" : (level === "low" || level === "minimal" ? "low" : "high");
+  let bestModel = `gemini-3.8-flash-${bucket}`;
+  let bestVer = 3.8;
+
+  for (const id of liveAntigravityModels) {
+    const m = id.match(/^gemini-(\d+(?:\.\d+)?)-flash-(high|medium|low)$/i);
+    if (m && m[2].toLowerCase() === bucket) {
+      const ver = parseFloat(m[1]);
+      if (!Number.isNaN(ver) && ver >= bestVer) {
+        bestVer = ver;
+        bestModel = id;
+      }
+    }
+  }
+  return bestModel;
+}
+
 /**
- * Dynamically resolve any current or future Gemini model on Antigravity (e.g. gemini-3.8-flash-high,
+ * Dynamically map any current or future Gemini model on Antigravity (e.g. gemini-3.8-flash-high,
  * gemini-3.9-flash-medium, gemini-4.0-flash, gemini-3.9-pro-low) to its valid Antigravity upstream slot
  * while preserving the thinking level as "(level)" for thinkingUnified.js.
  */
@@ -74,8 +104,8 @@ function resolveDynamicAntigravityUpstream(modelId, explicitUpstream = null) {
     return `${stripThinkingSuffix(resolved)}(${level})`;
   }
 
-  // 2. Keep image models intact
-  if (/image|imagen/i.test(modelId)) {
+  // 2. Keep image and lite models intact
+  if (/image|imagen|flash-lite/i.test(modelId)) {
     return explicitUpstream || modelId;
   }
 
@@ -84,17 +114,27 @@ function resolveDynamicAntigravityUpstream(modelId, explicitUpstream = null) {
   const rawLevel = dashMatch ? dashMatch[2].toLowerCase() : null;
   const normLevel = rawLevel === "extra-low" ? "minimal" : rawLevel;
   const baseModel = dashMatch ? dashMatch[1].toLowerCase() : modelId.toLowerCase();
+  const lowerId = modelId.toLowerCase();
 
   // Flash family (gemini-3-flash, gemini-3.7-flash, gemini-3.8-flash, gemini-3.9-flash, gemini-4.x-flash...)
   if (/^gemini-\d+(?:\.\d+)?-flash(?:-agent)?$/i.test(baseModel) || baseModel === "gemini-default") {
-    const target = explicitUpstream || "gemini-3-flash-agent";
+    let target = explicitUpstream;
+    if (!target) {
+      if (liveAntigravityModels.has(lowerId) && lowerId !== "gemini-3-flash-agent") {
+        target = lowerId;
+      } else if (baseModel === "gemini-3-flash" && !normLevel) {
+        target = "gemini-3-flash";
+      } else {
+        target = getLatestAntigravityFlashUpstream(normLevel || "high");
+      }
+    }
     return normLevel ? `${target}(${normLevel})` : target;
   }
 
   // Pro family (gemini-pro-agent, gemini-3.1-pro, gemini-3.9-pro, gemini-4.x-pro...)
   if (/^gemini-(?:pro-agent|\d+(?:\.\d+)?-pro(?:-agent)?)$/i.test(baseModel)) {
     const isLow = normLevel === "low" || normLevel === "minimal";
-    const target = explicitUpstream || (isLow ? "gemini-3.1-pro-low" : "gemini-3.1-pro-high");
+    const target = explicitUpstream || (isLow ? "gemini-3.1-pro-low" : "gemini-pro-agent");
     const effectiveLevel = normLevel || (target.endsWith("-low") ? "low" : "high");
     return `${target}(${effectiveLevel})`;
   }

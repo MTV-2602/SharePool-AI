@@ -61,7 +61,7 @@ export const ANTIGRAVITY_OAUTH_CLIENT = {
 };
 
 // Antigravity desktop IDE fingerprint (single source for registry, headers, OAuth, usage)
-export const ANTIGRAVITY_IDE_VERSION = "2.11.0";
+export const ANTIGRAVITY_IDE_VERSION = "2.20.0";
 // Official Antigravity IDE sends all traffic (loadCodeAssist, fetchAvailableModels, streamGenerateContent)
 // to the daily sandbox host. Using prod cloudcode-pa.googleapis.com triggers 429 on models that still have quota.
 export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";

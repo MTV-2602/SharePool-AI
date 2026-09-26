@@ -3,6 +3,7 @@
  */
 
 import { CLIENT_METADATA } from "../../config/appConstants.js";
+import { registerLiveAntigravityModels } from "../../config/providerModels.js";
 import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION, ANTIGRAVITY_OAUTH_CLIENT } from "../../providers/shared.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
 import { fetchAntigravityWeeklyQuota } from "./antigravity-weekly.js";
@@ -159,6 +160,9 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     }
 
     const data = await response.json();
+    if (data?.models) {
+      registerLiveAntigravityModels(Object.keys(data.models));
+    }
     const quotas = {};
 
     // Best-effort weekly & 5h session quota summary from retrieveUserQuotaSummary

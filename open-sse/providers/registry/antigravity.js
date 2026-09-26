@@ -47,31 +47,33 @@ export default {
   },
   models: [
     // ── Upstream Antigravity IDE models + Thinking variants ──────────────────
-    { id: "gemini-3-flash",              name: "Gemini 3 Flash",              upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3-flash-agent",        name: "Gemini 3 Flash Agent",        upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3-flash(high)",        name: "Gemini 3 Flash (High)",       upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3-flash(medium)",      name: "Gemini 3 Flash (Medium)",     upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3-flash(low)",         name: "Gemini 3 Flash (Low)",        upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.1-pro(high)",        name: "Gemini 3.1 Pro (High)",       upstreamModelId: "gemini-3.1-pro-high" },
+    { id: "gemini-3-flash",              name: "Gemini 3 Flash",              upstreamModelId: "gemini-3-flash" },
+    { id: "gemini-3-flash-agent",        name: "Gemini 3 Flash Agent",        upstreamModelId: "gemini-3.8-flash-high" },
+    { id: "gemini-3-flash(high)",        name: "Gemini 3 Flash (High)",       upstreamModelId: "gemini-3.8-flash-high" },
+    { id: "gemini-3-flash(medium)",      name: "Gemini 3 Flash (Medium)",     upstreamModelId: "gemini-3.8-flash-medium" },
+    { id: "gemini-3-flash(low)",         name: "Gemini 3 Flash (Low)",        upstreamModelId: "gemini-3.8-flash-low" },
+    { id: "gemini-3.1-flash-lite",       name: "Gemini 3.1 Flash Lite",       upstreamModelId: "gemini-3.1-flash-lite" },
+    { id: "gemini-3.1-pro(high)",        name: "Gemini 3.1 Pro (High)",       upstreamModelId: "gemini-pro-agent" },
     { id: "gemini-3.1-pro(low)",         name: "Gemini 3.1 Pro (Low)",        upstreamModelId: "gemini-3.1-pro-low" },
-    { id: "gemini-3.1-pro-high",         name: "Gemini 3.1 Pro High",         upstreamModelId: "gemini-3.1-pro-high" },
+    { id: "gemini-3.1-pro-high",         name: "Gemini 3.1 Pro High",         upstreamModelId: "gemini-pro-agent" },
     { id: "gemini-3.1-pro-low",          name: "Gemini 3.1 Pro Low",          upstreamModelId: "gemini-3.1-pro-low" },
-    { id: "gemini-pro-agent",            name: "Gemini Pro Agent",            upstreamModelId: "gemini-3.1-pro-high" },
+    { id: "gemini-pro-agent",            name: "Gemini Pro Agent",            upstreamModelId: "gemini-pro-agent" },
     { id: "claude-sonnet-4-6",           name: "Claude Sonnet 4.6 (Thinking)" },
     { id: "claude-opus-4-6-thinking",    name: "Claude Opus 4.6 (Thinking)" },
     { id: "gpt-oss-120b-medium",         name: "GPT-OSS 120B (Medium)" },
 
-    // ── Alias 3.8 (tương thích ngược cho khách hàng đang gọi) ────────────────
-    { id: "gemini-3.8-flash-high",       name: "Gemini 3.8 Flash (High)",     upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.8-flash",            name: "Gemini 3.8 Flash",            upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.8-flash-medium",     name: "Gemini 3.8 Flash (Medium)",   upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.8-flash-low",        name: "Gemini 3.8 Flash (Low)",      upstreamModelId: "gemini-3-flash-agent" },
+    // ── Alias 3.8 (mặc định chính cho khách hàng) ────────────────────────────
+    { id: "gemini-3.8-flash-high",       name: "Gemini 3.8 Flash (High)",     upstreamModelId: "gemini-3.8-flash-high" },
+    { id: "gemini-3.8-flash",            name: "Gemini 3.8 Flash",            upstreamModelId: "gemini-3.8-flash-high" },
+    { id: "gemini-3.8-flash-medium",     name: "Gemini 3.8 Flash (Medium)",   upstreamModelId: "gemini-3.8-flash-medium" },
+    { id: "gemini-3.8-flash-low",        name: "Gemini 3.8 Flash (Low)",      upstreamModelId: "gemini-3.8-flash-low" },
+    { id: "gemini-3.8-flash-tiered",     name: "Gemini 3.8 Flash (Tiered)",   upstreamModelId: "gemini-3.8-flash-tiered" },
 
     // ── Alias 3.7 (tương thích ngược cho khách hàng đang gọi) ────────────────
-    { id: "gemini-3.7-flash-high",       name: "Gemini 3.7 Flash (High)",     upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.7-flash",            name: "Gemini 3.7 Flash",            upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.7-flash-medium",     name: "Gemini 3.7 Flash (Medium)",   upstreamModelId: "gemini-3-flash-agent" },
-    { id: "gemini-3.7-flash-low",        name: "Gemini 3.7 Flash (Low)",      upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.7-flash-high",       name: "Gemini 3.7 Flash (High)",     upstreamModelId: "gemini-3.8-flash-high" },
+    { id: "gemini-3.7-flash",            name: "Gemini 3.7 Flash",            upstreamModelId: "gemini-3.8-flash-high" },
+    { id: "gemini-3.7-flash-medium",     name: "Gemini 3.7 Flash (Medium)",   upstreamModelId: "gemini-3.8-flash-medium" },
+    { id: "gemini-3.7-flash-low",        name: "Gemini 3.7 Flash (Low)",      upstreamModelId: "gemini-3.8-flash-low" },
 
     // ── Image generation ──────────────────────────────────────────────────────
     { id: "gemini-3.1-flash-image", name: "Gemini 3.1 Flash (Image)", kind: "image", imageGen: true, capabilities: ["textToImage"] },
