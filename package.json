@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev --port 20127",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --port 20127",
     "dev:custom": "node custom-server.js"
   },
   "dependencies": {
