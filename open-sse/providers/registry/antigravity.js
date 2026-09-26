@@ -20,23 +20,20 @@ export default {
   category: "oauth",
   serviceKinds: ["llm", "image"],
   transport: {
-    baseUrls: [
-      ANTIGRAVITY_IDE_BASE_URL,
-      "https://cloudcode-pa.googleapis.com",
-    ],
+    baseUrls: [ANTIGRAVITY_IDE_BASE_URL],
     format: "antigravity",
     headers: {
       "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
     },
     retry: {
       "429": {
-        attempts: 3,
+        attempts: 1,
       },
       "500": {
-        attempts: 3,
+        attempts: 2,
       },
       "503": {
-        attempts: 3,
+        attempts: 2,
       },
     },
     usage: {
