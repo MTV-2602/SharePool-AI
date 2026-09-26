@@ -1,5 +1,5 @@
 import { platform, arch } from "os";
-import { ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
+import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
 
 export default {
   id: "antigravity",
@@ -21,12 +21,12 @@ export default {
   serviceKinds: ["llm", "image"],
   transport: {
     baseUrls: [
+      ANTIGRAVITY_IDE_BASE_URL,
       "https://cloudcode-pa.googleapis.com",
-      "https://daily-cloudcode-pa.googleapis.com",
     ],
     format: "antigravity",
     headers: {
-      "User-Agent": "antigravity/1.120.0 darwin/arm64",
+      "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
     },
     retry: {
       "429": {
@@ -40,7 +40,8 @@ export default {
       },
     },
     usage: {
-      quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+      quotaApiUrl: `${ANTIGRAVITY_IDE_BASE_URL}/v1internal:fetchAvailableModels`,
+      quotaSummaryApiUrl: `${ANTIGRAVITY_IDE_BASE_URL}/v1internal:retrieveUserQuotaSummary`,
       loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
       tokenUrl: "https://oauth2.googleapis.com/token",
     },
