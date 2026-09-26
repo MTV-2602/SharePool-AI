@@ -1,13 +1,14 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_PROMPT_REWRITES } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_DEFAULT_SYSTEM, ANTIGRAVITY_PROMPT_REWRITES } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
+import { cleanJSONSchemaForAntigravity, normalizeGeminiContents } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
-import { getModelUpstreamId, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { getModelUpstreamId, PROVIDER_ID_TO_ALIAS, stripThinkingSuffix } from "../config/providerModels.js";
+import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -20,7 +21,21 @@ function sanitizeFunctionName(name) {
 const MAX_RETRY_AFTER_MS = 10000;
 const ANTIGRAVITY_TRANSIENT_RETRY_MAX_MS = 15000;
 const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 64000;
-const ANTIGRAVITY_IDE_REQUEST_ID_RE = /^agent\/[^/]+\/\d+\/[^/]+\/\d+$/;
+
+// Derive a deterministic UUID v4-formatted string from a seed string.
+function deterministicUuid(seed) {
+  const hex = crypto.createHash("sha256").update(String(seed)).digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+// Official Antigravity IDE requestId format: agent/<conversationId>/<ts>/<trajectoryId>/<step>
+function buildIdeRequestId(sessionId, contentsLength = 0) {
+  const seed = sessionId || crypto.randomUUID();
+  const conversationId = deterministicUuid(`conv:${seed}`);
+  const trajectoryId = deterministicUuid(`traj:${seed}`);
+  const step = Math.max(0, Math.floor(contentsLength / 2));
+  return `agent/${conversationId}/${Date.now()}/${trajectoryId}/${step}`;
+}
 
 const ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS = [
   /high\s+traffic/i,
@@ -89,27 +104,6 @@ function parseImageConfig(model) {
   return config;
 }
 
-function uuidFromSeed(seed) {
-  const bytes = crypto.createHash("sha256").update(String(seed || "antigravity")).digest().subarray(0, 16);
-  bytes[6] = (bytes[6] & 0x0f) | 0x50;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = bytes.toString("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-function buildIdeRequestId({ body, request, credentials, model, requestType }) {
-  if (ANTIGRAVITY_IDE_REQUEST_ID_RE.test(body?.requestId || "")) {
-    return body.requestId;
-  }
-
-  const sessionId = request?.sessionId || body?.request?.sessionId || credentials?._clientSessionId || credentials?.connectionId || credentials?.email || "anonymous";
-  const conversationId = uuidFromSeed(`antigravity:conversation:${sessionId}`);
-  const trajectoryId = uuidFromSeed(`antigravity:trajectory:${sessionId}:${model}:${requestType}`);
-  const contentCount = Array.isArray(request?.contents) ? request.contents.length : 1;
-  const step = Math.max(1, contentCount * 2 - 1);
-  return `agent/${conversationId}/${Date.now()}/${trajectoryId}/${step}`;
-}
-
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
     super("antigravity", PROVIDERS.antigravity);
@@ -124,7 +118,9 @@ export class AntigravityExecutor extends BaseExecutor {
     return `${baseUrl}/v1internal:${action}`;
   }
 
-  buildHeaders(credentials, stream = true, sessionId = null) {
+  // Official Antigravity IDE sends only Content-Type, Authorization, and User-Agent.
+  // Do NOT send x-request-source, X-Machine-Session-Id, or Accept — upstream fingerprints non-IDE headers.
+  buildHeaders(credentials) {
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
@@ -134,7 +130,6 @@ export class AntigravityExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     const projectId = credentials?.projectId || this.generateProjectId();
-    if (stream !== true) delete body.stream_options;
 
     // ─── Image generation: completely different request structure ───
     if (isImageModel(model)) {
@@ -166,7 +161,7 @@ export class AntigravityExecutor extends BaseExecutor {
         model: cleanModel,
         userAgent: "antigravity",
         requestType: "image_gen",
-        requestId: `agent-${crypto.randomUUID()}`,
+        requestId: buildIdeRequestId(sessionId, contents.length),
         request: {
           contents,
           generationConfig: {
@@ -176,42 +171,56 @@ export class AntigravityExecutor extends BaseExecutor {
             maxOutputTokens: 8192,
             imageConfig,
           },
-          sessionId,
+          sessionId: toNumericSessionId(sessionId),
           // No tools, no systemInstruction, no safetySettings for image gen
         },
       };
     }
 
     // ─── Standard (non-image) request ───
-    // Fix contents for Claude models via Antigravity
-    const contents = body.request?.contents?.map(c => {
+    const resolvedSessionId = body.request?.sessionId || resolveSessionId({
+      headers: credentials?.rawHeaders,
+      body,
+      connectionId: credentials?.email || credentials?.connectionId,
+      scope: "antigravity",
+    });
+
+    // Fix contents for Gemini 3+ and Claude models via Antigravity
+    const rawContents = body.request?.contents?.map(c => {
       let role = c.role;
       // functionResponse must be role "user" for Claude models
       if (c.parts?.some(p => p.functionResponse)) {
         role = "user";
       }
       // Strip thought-only parts, keep thoughtSignature on functionCall parts (Gemini 3+ requires it)
-      const parts = c.parts?.filter(p => {
+      const filteredParts = c.parts?.filter(p => {
         if (p.thought && !p.functionCall) return false;
         if (p.thoughtSignature && !p.functionCall && !p.text) return false;
         return true;
       });
-      // Gemini 3+ rejects functionCall parts without thoughtSignature. Clients (Claude Code, IDE)
-      // don't persist thoughtSignature in their history, so backfill the default signature on any
-      // functionCall part that arrives without one.
-      const needsBackfill = parts?.some(p => p.functionCall && !p.thoughtSignature) ?? false;
-      if (role !== c.role || parts?.length !== c.parts?.length || needsBackfill) {
-        return {
-          ...c, role,
-          parts: needsBackfill
-            ? parts.map(p => (p.functionCall && !p.thoughtSignature)
-                ? { ...p, thoughtSignature: DEFAULT_THINKING_AG_SIGNATURE }
-                : p)
-            : parts,
-        };
+      // Gemini 3+ parallel function calls rule: ONLY the FIRST functionCall in a model turn carries
+      // thoughtSignature. Subsequent parallel functionCalls in the same turn must omit thoughtSignature.
+      let firstFunctionCallSeen = false;
+      const parts = filteredParts?.map(p => {
+        if (!p.functionCall) return p;
+        if (!firstFunctionCallSeen) {
+          firstFunctionCallSeen = true;
+          if (p.thoughtSignature) return p;
+          const cachedSig = getGeminiThoughtSignatureSync(p.functionCall.id, resolvedSessionId, model);
+          return { ...p, thoughtSignature: cachedSig || DEFAULT_THINKING_AG_SIGNATURE };
+        }
+        if (p.thoughtSignature) {
+          const { thoughtSignature: _omit, ...rest } = p;
+          return rest;
+        }
+        return p;
+      });
+      if (role !== c.role || parts?.length !== c.parts?.length || parts !== filteredParts) {
+        return { ...c, role, parts };
       }
       return c;
     });
+    const contents = rawContents ? normalizeGeminiContents(rawContents) : undefined;
 
     // Sanitize tool schemas and function names before sending to Antigravity.
     let tools = body.request?.tools;
@@ -240,56 +249,68 @@ export class AntigravityExecutor extends BaseExecutor {
     // Strip tools/toolConfig (handled separately) and blacklisted fields that Google rejects
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
-
-    if (requestWithoutTools.systemInstruction?.parts) {
-      for (const part of requestWithoutTools.systemInstruction.parts) {
-        if (typeof part.text !== "string") continue;
-        for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
-          part.text = part.text.replaceAll(from, to);
-        }
-      }
-    }
-
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
     if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
     }
 
-    const rawSessionId = body.request?.sessionId || resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.email || credentials?.connectionId, scope: "antigravity" });
-    const sessionId = toNumericSessionId(rawSessionId) || rawSessionId;
+    // Rewrite competing client identities in systemInstruction and ensure Antigravity default prompt is present once.
+    let systemInstruction = requestWithoutTools.systemInstruction;
+    if (systemInstruction?.parts && Array.isArray(systemInstruction.parts)) {
+      const cleanedParts = [];
+      for (const part of systemInstruction.parts) {
+        if (typeof part?.text !== "string") {
+          cleanedParts.push(part);
+          continue;
+        }
+        // Drop legacy duplicate [ignore]...[/ignore] injection if present
+        if (part.text.startsWith("Please ignore the following [ignore]")) continue;
+        let text = part.text;
+        for (const rule of ANTIGRAVITY_PROMPT_REWRITES) {
+          text = text.replace(rule.pattern, rule.replacement);
+        }
+        if (text.trim()) cleanedParts.push({ ...part, text });
+      }
+      const hasDefaultPrompt = cleanedParts.some(
+        p => typeof p?.text === "string" && p.text.includes("You are Antigravity, a powerful agentic AI coding assistant")
+      );
+      if (!hasDefaultPrompt) {
+        cleanedParts.unshift({ text: ANTIGRAVITY_DEFAULT_SYSTEM });
+      }
+      systemInstruction = { ...systemInstruction, role: systemInstruction.role || "user", parts: cleanedParts };
+    } else {
+      systemInstruction = { role: "user", parts: [{ text: ANTIGRAVITY_DEFAULT_SYSTEM }] };
+    }
 
+    const numericSessionId = toNumericSessionId(resolvedSessionId);
     const transformedRequest = {
       ...requestWithoutTools,
+      systemInstruction,
       generationConfig,
       ...(contents && { contents }),
       ...(tools && { tools }),
-      sessionId,
+      sessionId: numericSessionId,
       safetySettings: undefined,
       ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
     };
 
     // Strip blacklisted thinking fields from top-level body (set by thinkingUnified.js at root, not body.request)
     stripBlacklisted(body);
+    // Official Antigravity IDE omits requestType on agent chat requests.
+    // Sending requestType: "agent" causes daily-cloudcode-pa to return detail-free 429 RESOURCE_EXHAUSTED.
+    delete body.requestType;
 
-    this._lastSessionId = transformedRequest.sessionId; // cached for buildHeaders (base.execute order)
+    this._lastSessionId = numericSessionId;
 
     const alias = PROVIDER_ID_TO_ALIAS[this.provider] || this.provider;
-    const upstreamModel = getModelUpstreamId(alias, model);
-
-    // Official Antigravity client omits `requestType` entirely on the agent
-    // (chat) path. Sending `requestType: "agent"` here (or leaking it through
-    // from an upstream envelope via the ...body spread below) makes Google
-    // bucket the request and return a detail-free 429 RESOURCE_EXHAUSTED even
-    // with quota available. `image_gen` and
-    // `search` buckets are unaffected and keep their own requestType.
-    delete body.requestType;
+    const upstreamModel = stripThinkingSuffix(getModelUpstreamId(alias, model));
 
     return {
       ...body,
       project: projectId,
       model: upstreamModel,
       userAgent: "antigravity",
-      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model: upstreamModel, requestType: "agent" }),
+      requestId: buildIdeRequestId(resolvedSessionId, contents?.length || 0),
       request: transformedRequest
     };
   }

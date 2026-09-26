@@ -121,7 +121,10 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
   try {
     // Fetch subscription info once — reuse for both projectId and plan
     const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions);
-    const projectId = subscriptionInfo?.cloudaicompanionProject || null;
+    const projectId =
+      normalizeCloudCodeProjectId(subscriptionInfo?.cloudaicompanionProject) ||
+      normalizeCloudCodeProjectId(providerSpecificData?.projectId) ||
+      null;
 
     const response = await fetchWithTimeout(ANTIGRAVITY_CONFIG.quotaApiUrl, {
       method: "POST",
@@ -158,41 +161,41 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     const data = await response.json();
     const quotas = {};
 
+    // Best-effort weekly & 5h session quota summary from retrieveUserQuotaSummary
+    let weeklyQuotas = {};
+    try {
+      weeklyQuotas = await fetchAntigravityWeeklyQuota(
+        accessToken,
+        projectId,
+        proxyOptions
+      );
+    } catch {
+      weeklyQuotas = {};
+    }
+
     // Detect tier: free-tier accounts only have weekly quotas (no separate 5h window).
-    // On free-tier, fetchAvailableModels returns misleading per-model quota info.
+    // On free-tier, fetchAvailableModels returns misleading per-model quota info
+    // unless weeklyQuotas failed to return anything (in which case we fall back to data.models).
     const paidTierId = subscriptionInfo?.paidTier?.id;
     const isFreeTier = !paidTierId || paidTierId === "free-tier";
+    const hasSummaryQuotas = Object.keys(weeklyQuotas).length > 0;
 
-    // Parse model quotas only for paid-tier accounts.
-    if (!isFreeTier && data.models) {
-      const importantModels = [
-        'gemini-3.8-flash-high',
-        'gemini-3.8-flash-medium',
-        'gemini-3.8-flash-low',
-        'gemini-3.7-flash-high',
-        'gemini-3.7-flash-medium',
-        'gemini-3.7-flash-low',
-        'gemini-3.6-flash-high',
-        'gemini-3.6-flash-medium',
-        'gemini-3.6-flash-low',
-        'gemini-3.5-flash-low',
-        'gemini-3.5-flash-extra-low',
-        'gemini-pro-agent',
-        'gemini-3.1-pro-low',
-        'claude-sonnet-4-6',
-        'claude-opus-4-6-thinking',
-        'gpt-oss-120b-medium',
-        'gemini-3-flash',
-        'gemini-3.1-flash-image',
-      ];
-
+    if ((!isFreeTier || !hasSummaryQuotas) && data.models) {
       for (const [modelKey, info] of Object.entries(data.models)) {
-        if (!info.quotaInfo) continue;
-        if (info.isInternal || !importantModels.includes(modelKey)) continue;
+        if (!info?.quotaInfo || info.isInternal) {
+          continue;
+        }
+
+        // Accept any Gemini 3+/Pro, Claude, GPT-OSS, or Image model (future-proof for Gemini 3.9, 4.0, etc.)
+        if (!/^(gemini-[3-9]|gemini-pro|claude-|gpt-oss-)/i.test(modelKey)) {
+          continue;
+        }
 
         const remainingFraction = info.quotaInfo.remainingFraction || 0;
         const remainingPercentage = remainingFraction * 100;
-        const total = 1000;
+
+        // Convert percentage to used/total for UI compatibility
+        const total = 1000; // Normalized base
         const remaining = Math.round(total * remainingFraction);
         const used = total - remaining;
 
@@ -205,17 +208,30 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           displayName: info.displayName || modelKey,
         };
       }
+    } else if (isFreeTier && data.models) {
+      // On free tier when weeklyQuotas is present, still include standalone image generation models if available
+      for (const [modelKey, info] of Object.entries(data.models)) {
+        if (!info?.quotaInfo || info.isInternal || !modelKey.includes("image")) {
+          continue;
+        }
+        const remainingFraction = info.quotaInfo.remainingFraction || 0;
+        const total = 1000;
+        const remaining = Math.round(total * remainingFraction);
+        quotas[modelKey] = {
+          used: total - remaining,
+          total,
+          resetAt: parseResetTime(info.quotaInfo.resetTime),
+          remainingPercentage: remainingFraction * 100,
+          unlimited: false,
+          displayName: info.displayName || modelKey,
+        };
+      }
     }
 
-    // Best-effort weekly quota overlay — never blocks or breaks per-model results
-    try {
-      const weeklyQuotas = await fetchAntigravityWeeklyQuota(
-        accessToken,
-        projectId,
-        proxyOptions
-      );
-
+    if (hasSummaryQuotas) {
       // Reconcile short-window session quota if models are exhausted:
+      // If every model in a family is locked/exhausted (remainingPercentage === 0)
+      // until a future reset time, update the 5h session row (not the weekly row).
       const entries = Object.entries(quotas);
       const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image"));
       const claudeModels = entries.filter(([k]) => k.startsWith("claude-"));
@@ -249,8 +265,6 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       }
 
       Object.assign(quotas, weeklyQuotas);
-    } catch {
-      // Silently ignore — weekly is best-effort
     }
 
     return {
@@ -275,7 +289,6 @@ async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) 
         "Authorization": `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
-        "x-request-source": "local", // MITM bypass
       },
       body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
     }, 10000, proxyOptions);

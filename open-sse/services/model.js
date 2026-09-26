@@ -119,9 +119,9 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 // Config-driven prefix → provider inference (first match wins, fallback "openai").
 const MODEL_PREFIX_PROVIDERS = [
   [/^claude-/, "anthropic"],
-  [/^gemini-3.*(agent|high|medium|extra-low|low)/, "antigravity"],
-  [/^gemini-3\.[5678]/, "antigravity"],
-  [/^gemini-3-flash/, "antigravity"],
+  // Future-proof Antigravity Gemini matching: any gemini-3.x / gemini-4.x+ flash/pro/agent or thinking suffix
+  [/^gemini-[3-9].*(agent|high|medium|extra-low|low|minimal|\()/, "antigravity"],
+  [/^gemini-[3-9](\.\d+)?-(flash|pro)/, "antigravity"],
   [/^gemini-pro-agent/, "antigravity"],
   [/^gemini-/, "gemini"],
   [/^gpt-/, "openai"],

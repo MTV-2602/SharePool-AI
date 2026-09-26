@@ -6,6 +6,7 @@
 
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getAntigravityUsage } from "open-sse/services/usage/google.js";
+import { getModelUpstreamId, stripThinkingSuffix } from "open-sse/config/providerModels.js";
 import * as log from "../utils/logger.js";
 
 // In-memory cache: connectionId → { [modelId]: { remainingPercentage, resetAt } }
@@ -27,6 +28,63 @@ const STRIKE_THRESHOLD = 3;
 const STRIKE_BLOCK_MS = 15 * 60_000;
 const strikeCounts = new Map(); // "connectionId|model" → { count, windowStart (anchored at first strike) }
 const strikeBlocks = new Map(); // "connectionId|model" → blockedUntil ms
+
+/**
+ * Resolve the effective quota entry for a requested model from a quotas map.
+ * Checks exact model ID, stripped thinking suffix, upstream mapped ID (e.g. gemini-3-flash-agent),
+ * and family summary buckets (gemini_session / gemini_weekly or claude_gpt_session / claude_gpt_weekly).
+ * If any applicable bucket is exhausted (remainingPercentage <= 0), returns that exhausted bucket.
+ */
+export function resolveQuotaForModel(quotas, model) {
+  if (!quotas || !model) return null;
+
+  const bareModel = stripThinkingSuffix(model);
+  const upstreamId = stripThinkingSuffix(getModelUpstreamId("antigravity", model) || bareModel);
+  const candidateKeys = new Set([model, bareModel, upstreamId]);
+
+  const lower = bareModel.toLowerCase();
+  if (lower.startsWith("gemini-") && !lower.includes("image")) {
+    candidateKeys.add("gemini_session");
+    candidateKeys.add("gemini_weekly");
+  } else if (lower.startsWith("claude-") || lower.startsWith("gpt-oss-")) {
+    candidateKeys.add("claude_gpt_session");
+    candidateKeys.add("claude_gpt_weekly");
+  }
+
+  const matches = [];
+  for (const key of candidateKeys) {
+    if (quotas[key]) {
+      matches.push(quotas[key]);
+    }
+  }
+
+  if (matches.length === 0) return null;
+
+  // Prefer any exhausted bucket with a future resetAt
+  const now = Date.now();
+  const exhausted = matches.filter(
+    (q) => (q.remainingPercentage ?? 100) <= 0 && q.resetAt && new Date(q.resetAt).getTime() > now
+  );
+  if (exhausted.length > 0) {
+    return exhausted.reduce((latest, cur) =>
+      new Date(cur.resetAt).getTime() > new Date(latest.resetAt).getTime() ? cur : latest
+    );
+  }
+
+  // Otherwise return the most restrictive bucket (lowest remainingPercentage)
+  return matches.reduce((min, cur) =>
+    (cur.remainingPercentage ?? 100) < (min.remainingPercentage ?? 100) ? cur : min
+  );
+}
+
+/**
+ * Convenience helper for auth.js pre-filter.
+ */
+export function getModelQuotaFromCache(connectionId, model) {
+  const quotas = quotaCache.get(connectionId);
+  if (!quotas) return null;
+  return resolveQuotaForModel(quotas, model);
+}
 
 /**
  * Re-apply active strike blocks onto a fresh quotas snapshot so the auth
@@ -93,7 +151,7 @@ export async function refreshAntigravityQuota(connectionId, accessToken, provide
 
   // Record every attempt so failed quota calls cannot amplify an upstream 429 burst.
   lastRefreshAt.set(connectionId, now);
-  const promise = _doRefresh(connectionId, accessToken, providerSpecificData, now);
+  const promise = _doRefresh(connectionId, accessToken, providerSpecificData);
   inflightRefresh.set(connectionId, promise);
   try {
     return await promise;
@@ -102,7 +160,7 @@ export async function refreshAntigravityQuota(connectionId, accessToken, provide
   }
 }
 
-async function _doRefresh(connectionId, accessToken, providerSpecificData, now) {
+async function _doRefresh(connectionId, accessToken, providerSpecificData) {
   try {
     const proxyCfg = await resolveConnectionProxyConfig(providerSpecificData || {});
     const proxyOptions = {
@@ -140,7 +198,8 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
 
   // Throttle applies to error paths too: one quota request per account/30s.
   // The first 409/429 populates cache; concurrent or repeated errors reuse it.
-  const quota = (await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData))?.[model];
+  const quotas = await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData);
+  const quota = resolveQuotaForModel(quotas, model);
 
   // Strike breaker: count every 429 whose quota reading is either optimistic
   // (remaining > 0) or unavailable (quota API 403/error). 3 within the window
@@ -149,8 +208,6 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
     const key = `${connectionId}|${model}`;
     const now = Date.now();
     const strike = strikeCounts.get(key);
-    // Fixed window anchored at the FIRST qualifying strike: three 429s must
-    // all land within 60s of that first one, not within 60s of each other.
     const windowStart = strike && now - strike.windowStart <= STRIKE_WINDOW_MS ? strike.windowStart : now;
     const count = strike && windowStart === strike.windowStart ? strike.count + 1 : 1;
     strikeCounts.set(key, { count, windowStart });
@@ -159,8 +216,6 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
       const blockedUntil = now + STRIKE_BLOCK_MS;
       const reading = quota ? `${Math.round(quota.remainingPercentage)}%` : "unknown";
       log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | STRIKE_${status} ${model} — ${count}x 429 (quota ${reading}); CACHE_BLOCK 15m`);
-      // Synthesize a 0% entry in the shared cache so the auth pre-filter skips
-      // this pair on subsequent requests too, not just the current retry loop
       const cached = quotaCache.get(connectionId) || {};
       cached[model] = { remainingPercentage: 0, resetAt: new Date(blockedUntil).toISOString() };
       quotaCache.set(connectionId, cached);

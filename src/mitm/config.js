@@ -35,20 +35,6 @@ const MODEL_SYNONYMS = {
   antigravity: {
     "gemini-default": "gemini-3-flash",
     "gemini-3-flash-agent": "gemini-3-flash",
-    "gemini-3.8-flash-high": "gemini-3-flash",
-    "gemini-3.8-flash": "gemini-3-flash",
-    "gemini-3.8-flash-medium": "gemini-3-flash",
-    "gemini-3.8-flash-low": "gemini-3-flash",
-    "gemini-3.7-flash-high": "gemini-3-flash",
-    "gemini-3.7-flash": "gemini-3-flash",
-    "gemini-3.7-flash-medium": "gemini-3-flash",
-    "gemini-3.7-flash-low": "gemini-3-flash",
-    "gemini-3.6-flash-high": "gemini-3-flash",
-    "gemini-3.6-flash-medium": "gemini-3-flash",
-    "gemini-3.6-flash-low": "gemini-3-flash",
-    "gemini-3.5-flash-high": "gemini-3-flash",
-    "gemini-3.5-flash-medium": "gemini-3-flash",
-    "gemini-3.5-flash-extra-low": "gemini-3-flash",
     "gemini-3.1-pro-high": "gemini-pro-agent",
     "gemini-3-pro-high": "gemini-pro-agent",
     "gemini-3-pro-low": "gemini-3.1-pro-low",
@@ -56,10 +42,9 @@ const MODEL_SYNONYMS = {
 };
 
 // Pattern fallback: rawModel regex → canonical alias key (when exact + prefix match fail)
-// Order matters: more specific patterns first. Catches AG renamed variants (e.g. gemini-pro-agent)
+// Order matters: more specific patterns first. Version-agnostic so any 3.x / 4.x release works automatically.
 const MODEL_PATTERNS = {
   antigravity: [
-    { match: /3\.[5678].*flash|flash.*3\.[5678]/i,                   alias: "gemini-3-flash" },
     { match: /flash.*extra.*low|extra.*low.*flash|flash.*low|low.*flash/i, alias: "gemini-3-flash" },
     { match: /flash.*medium|medium.*flash/i,                       alias: "gemini-3-flash" },
     { match: /flash.*agent|agent.*flash|flash/i,                   alias: "gemini-3-flash" },

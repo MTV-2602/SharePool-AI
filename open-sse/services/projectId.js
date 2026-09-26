@@ -83,7 +83,7 @@ startCacheCleanup();
  * @param {string} accessToken  - Valid OAuth access token
  * @returns {Promise<string|null>} Real project ID or null
  */
-export async function getProjectIdForConnection(connectionId, accessToken, provider = "antigravity") {
+export async function getProjectIdForConnection(connectionId, accessToken, provider = "gemini-cli") {
     if (!connectionId || !accessToken) return null;
 
     // Return cached value if still fresh
@@ -155,9 +155,10 @@ export function removeConnection(connectionId) {
  * @param {AbortSignal} signal
  * @returns {Promise<string|null>}
  */
-async function fetchProjectId(accessToken, signal, provider = "antigravity") {
+async function fetchProjectId(accessToken, signal, provider) {
+    const endpoints = CLOUD_CODE_API[provider] || CLOUD_CODE_API["gemini-cli"];
     const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
-    const response = await fetch(CLOUD_CODE_API.loadCodeAssist, {
+    const response = await fetch(endpoints.loadCodeAssist, {
         method: "POST",
         headers: { ...headers, "Authorization": `Bearer ${accessToken}` },
         body: JSON.stringify({ metadata: LOAD_CODE_ASSIST_METADATA }),
@@ -186,7 +187,7 @@ async function fetchProjectId(accessToken, signal, provider = "antigravity") {
         }
     }
 
-    return onboardUser(accessToken, tierID, signal, provider);
+    return onboardUser(accessToken, tierID, signal, endpoints, provider);
 }
 
 /**
@@ -197,12 +198,13 @@ async function fetchProjectId(accessToken, signal, provider = "antigravity") {
  * @param {AbortSignal} externalSignal  – propagated from the connection's AbortController
  * @returns {Promise<string|null>}
  */
-async function onboardUser(accessToken, tierID, externalSignal, provider = "antigravity") {
+async function onboardUser(accessToken, tierID, externalSignal, endpoints, provider) {
     console.log(`[ProjectId] Onboarding user with tier: ${tierID}`);
 
     const reqBody = { tierId: tierID, metadata: LOAD_CODE_ASSIST_METADATA };
     const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
-    const MAX_ATTEMPTS = 2;
+    const MAX_ATTEMPTS = Number(process.env.ONBOARD_MAX_ATTEMPTS) || 2;
+    const BASE_RETRY_DELAY_MS = Number(process.env.ONBOARD_RETRY_DELAY_MS) || 12_000;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         // Bail out immediately if the connection was removed
@@ -215,7 +217,7 @@ async function onboardUser(accessToken, tierID, externalSignal, provider = "anti
         externalSignal?.addEventListener("abort", forwardAbort);
 
         try {
-            const response = await fetch(CLOUD_CODE_API.onboardUser, {
+            const response = await fetch(endpoints.onboardUser, {
                 method: "POST",
                 headers: { ...headers, "Authorization": `Bearer ${accessToken}` },
                 body: JSON.stringify(reqBody),
@@ -240,9 +242,10 @@ async function onboardUser(accessToken, tierID, externalSignal, provider = "anti
                 throw new Error("onboardUser done but no project_id in response");
             }
 
-            // Server not done yet – wait and retry
+            // Server not done yet – wait and retry with jitter
+            const jitter = Math.floor(Math.random() * 5000);
             console.log(`[ProjectId] Onboard attempt ${attempt}/${MAX_ATTEMPTS}: not done yet, waiting...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, BASE_RETRY_DELAY_MS + jitter));
 
         } catch (error) {
             clearTimeout(timeoutId);
@@ -255,9 +258,10 @@ async function onboardUser(accessToken, tierID, externalSignal, provider = "anti
                 console.warn(`[ProjectId] onboardUser failed after ${MAX_ATTEMPTS} attempts: ${error.message}`);
                 return null;
             }
-            // Continue to next attempt instead of throwing (which would skip remaining retries)
+            // Wait with jitter before retrying
+            const jitter = Math.floor(Math.random() * 5000);
             console.warn(`[ProjectId] onboardUser attempt ${attempt} failed: ${error.message}, retrying...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, BASE_RETRY_DELAY_MS + jitter));
         } finally {
             clearTimeout(timeoutId);
             externalSignal?.removeEventListener("abort", forwardAbort);

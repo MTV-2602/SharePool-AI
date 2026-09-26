@@ -60,13 +60,13 @@ export function getPlatformEnum() {
 }
 
 export function getPlatformUserAgent() {
-  return `antigravity/1.104.0 ${platform()}/${arch()}`;
+  return ANTIGRAVITY_IDE_USER_AGENT;
 }
 
 export const CLIENT_METADATA = {
-  ideType: IDE_TYPE.ANTIGRAVITY,
-  platform: getPlatformEnum(),
-  pluginType: PLUGIN_TYPE.GEMINI
+  ideType: "ANTIGRAVITY",
+  platform: "PLATFORM_UNSPECIFIED",
+  pluginType: "GEMINI"
 };
 
 // Internal anti-loop header
@@ -128,44 +128,55 @@ export const AG_DEFAULT_TOOLS = new Set([
   "write_to_file"
 ]);
 
-// Antigravity chat/stream headers
+// Antigravity chat/stream headers (official desktop IDE fingerprint)
 export const ANTIGRAVITY_HEADERS = {
   "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
 };
 
-// Cloud Code Assist API
+// Cloud Code Assist API — per-provider endpoints (each pulls from its own registry entry)
 export const CLOUD_CODE_API = {
-  loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-  onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+  // Default fallback properties for direct callers
+  loadCodeAssist: PROVIDERS["gemini-cli"]?.oauth?.loadCodeAssistEndpoint || "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+  onboardUser: PROVIDERS["gemini-cli"]?.oauth?.onboardUserEndpoint || "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+  "gemini-cli": {
+    loadCodeAssist: PROVIDERS["gemini-cli"]?.oauth?.loadCodeAssistEndpoint,
+    onboardUser: PROVIDERS["gemini-cli"]?.oauth?.onboardUserEndpoint,
+  },
+  antigravity: {
+    loadCodeAssist: PROVIDERS.antigravity?.oauth?.loadCodeAssistEndpoint,
+    onboardUser: PROVIDERS.antigravity?.oauth?.onboardUserEndpoint,
+  },
 };
 
+// Gemini CLI loadCodeAssist headers (kept as-is for gemini-cli provider)
 export const LOAD_CODE_ASSIST_HEADERS = {
   "Content-Type": "application/json",
-  "User-Agent": "google-api-nodejs-client/9.15.1",
-  "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  "Client-Metadata": JSON.stringify({ ideType: IDE_TYPE.ANTIGRAVITY, platform: getPlatformEnum(), pluginType: PLUGIN_TYPE.GEMINI }),
+  "User-Agent": PROVIDERS["gemini-cli"]?.oauth?.loadCodeAssistUserAgent || "google-api-nodejs-client/9.15.1",
+  "X-Goog-Api-Client": PROVIDERS["gemini-cli"]?.oauth?.loadCodeAssistApiClient || "google-cloud-sdk vscode_cloudshelleditor/0.1",
+  "Client-Metadata": JSON.stringify(CLIENT_METADATA),
 };
 
+// Antigravity loadCodeAssist / onboardUser headers: omit X-Goog-Api-Client and Client-Metadata header.
+// Sending X-Goog-Api-Client: "gl-node/..." or Client-Metadata header on loadCodeAssist causes Google
+// to omit cloudaicompanionProject from the response and reject onboardUser on new accounts.
 export const ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS = {
   "Content-Type": "application/json",
   "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
 };
 
-export const LOAD_CODE_ASSIST_METADATA = {
-  ideType: IDE_TYPE.ANTIGRAVITY,
-  platform: getPlatformEnum(),
-  pluginType: PLUGIN_TYPE.GEMINI,
-};
+export const LOAD_CODE_ASSIST_METADATA = CLIENT_METADATA;
 
 // System prompts
 export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude.";
-export const ANTIGRAVITY_PROMPT_REWRITES = [
-  { from: "You are a Claude agent, built on Anthropic's Claude Agent SDK.", to: "" },
-  { from: /You are Hermes Agent,\s*(an intelligent AI assistant)(?: created by Nous Research)?\./gi, to: "You are Hermes Agent. You are $1." },
-  { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
-  { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") }
-];
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
+
+// Competing client identity strings in systemInstruction that trigger immediate 429 on Antigravity upstream.
+export const ANTIGRAVITY_PROMPT_REWRITES = [
+  { pattern: /x-anthropic-billing-header:[^\n]*\n?/gi, replacement: "" },
+  { pattern: /You are a Claude agent, built on Anthropic's Claude Agent SDK\./gi, replacement: "" },
+  { pattern: /You are Claude Code, Anthropic's official CLI for Claude\./gi, replacement: "You are Antigravity, a powerful agentic AI coding assistant." },
+  { pattern: /OpenCode/gi, replacement: "Antigravity" },
+];
 
 // Derive từ registry oauth.refreshLeadMs
 export const REFRESH_LEAD_MS = Object.fromEntries(

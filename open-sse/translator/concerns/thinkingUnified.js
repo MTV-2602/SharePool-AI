@@ -35,6 +35,11 @@ export function parseSuffix(model) {
   return { cleanModel, override: null };
 }
 
+// Strip "(high)"/"(low)"/... suffix from a model string so upstream APIs receive the clean model ID.
+export function stripThinkingSuffix(model) {
+  return parseSuffix(model).cleanModel;
+}
+
 // Extract unified thinking intent from a request body (post-translation, mixed shapes).
 // Returns { mode, budget?, level? } or null when no thinking intent present.
 export function extractThinking(body) {

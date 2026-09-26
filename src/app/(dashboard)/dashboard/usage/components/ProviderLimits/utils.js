@@ -36,6 +36,17 @@ export function getConnectionQuotaRemaining(connection, quotaData) {
   return Number.POSITIVE_INFINITY;
 }
 
+// Stable group-by-provider: first-seen provider order, original order within group.
+function groupByProviderStable(connections) {
+  const seen = new Map();
+  for (const conn of connections) {
+    const key = conn.provider || "";
+    if (!seen.has(key)) seen.set(key, []);
+    seen.get(key).push(conn);
+  }
+  return Array.from(seen.values()).flat();
+}
+
 export function sortVisibleConnections(
   connections,
   quotaData,
@@ -58,7 +69,7 @@ export function sortVisibleConnections(
     });
   }
 
-  if (!expiringFirst) return connections;
+  if (!expiringFirst) return groupByProviderStable(connections);
 
   const getEarliestResetTime = (connection) => {
     const resetTimes = (quotaData[connection.id]?.quotas || [])
@@ -300,6 +311,42 @@ export function getRemainingPercentage(quota) {
   return calculatePercentage(quota?.used, quota?.total);
 }
 
+export function getQuotaVisibilityKey(quota) {
+  if (!quota || typeof quota !== "object") return "";
+  return String(quota.modelKey || quota.name || "").trim();
+}
+
+/**
+ * Trim hidden quota keys to only those matching currently valid quotas.
+ * Stale or obsolete model keys are dropped.
+ */
+export function trimHiddenQuotaKeys(hidden = [], quotas = []) {
+  if (!Array.isArray(hidden) || hidden.length === 0) return [];
+  const validKeys = new Set(quotas.map(getQuotaVisibilityKey).filter(Boolean));
+  return [...new Set(hidden.map((k) => String(k).trim()).filter((k) => validKeys.has(k)))];
+}
+
+function getProviderHiddenQuotaSet(provider, quotaVisibility, quotas = []) {
+  const hidden = quotaVisibility?.[provider]?.hidden;
+  if (!Array.isArray(hidden) || hidden.length === 0) return new Set();
+  const trimmed = quotas.length > 0 ? trimHiddenQuotaKeys(hidden, quotas) : hidden;
+  return new Set(trimmed.map(String));
+}
+
+export function filterQuotasByVisibility(provider, quotas = [], quotaVisibility = {}) {
+  if (!Array.isArray(quotas) || quotas.length === 0) return [];
+  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility, quotas);
+  if (hidden.size === 0) return quotas;
+  return quotas.filter((quota) => !hidden.has(getQuotaVisibilityKey(quota)));
+}
+
+export function getHiddenQuotaRows(provider, quotas = [], quotaVisibility = {}) {
+  if (!Array.isArray(quotas) || quotas.length === 0) return [];
+  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility, quotas);
+  if (hidden.size === 0) return [];
+  return quotas.filter((quota) => hidden.has(getQuotaVisibilityKey(quota)));
+}
+
 /**
  * Parse provider-specific quota structures into normalized array
  * @param {string} provider - Provider name (github, antigravity, codex, kiro, claude)
@@ -448,8 +495,9 @@ export function parseQuotaData(provider, data) {
           });
 
           // 4. Other models:
-          // In Antigravity, GPT-OSS is explicitly part of the Claude and GPT models group.
-          // When summary quotas are present, GPT-OSS is already represented by Claude & GPT family rows.
+          // In Antigravity, GPT-OSS is explicitly documented by Google as part of the "Claude and GPT models" group.
+          // When summary quotas (claude_gpt_session / claude_gpt_weekly) are present, GPT-OSS is already represented
+          // by the "Claude & GPT" family rows. We only include otherModels if no summary exists for that pool.
           if (!hasClaudeWeekly && !hasClaudeSession) {
             otherModels.forEach(([modelKey, quota]) => {
               normalizedQuotas.push({
@@ -493,14 +541,6 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "qoder":
-        // Qoder ships a `user` quota and (optionally) an `organization`
-        // quota, both with same shape: {total, used, remaining, unit, resetAt}.
-        // Skip an organization bucket when its total is 0 — most personal
-        // Qoder accounts won't have one and rendering "0/0" is misleading.
-        // Don't forward Qoder's `remaining` field: it's an absolute credit
-        // count, but getRemainingPercentage / QuotaTable interpret
-        // `remaining` as a 0-100 percentage and would render 348 credits
-        // as "348%". The percentage is computed from used/total instead.
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
             if (quotaType === "organization" && (!quota || (Number(quota.total) || 0) === 0)) {
@@ -519,7 +559,6 @@ export function parseQuotaData(provider, data) {
 
       case "claude":
         if (data.message) {
-          // Handle error message case
           normalizedQuotas.push({
             name: "error",
             used: 0,
@@ -540,10 +579,6 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "vercel-ai-gateway":
-        // Vercel returns currency credit balance, not request quotas.
-        // The 'Remaining (USD)' row needs explicit remainingPercentage because
-        // its used/total values would otherwise compute the wrong direction
-        // (e.g. used=95.5 / total=100 → 4% instead of 96%).
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
@@ -558,10 +593,6 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "codebuddy-cn":
-        // CodeBuddy CN mixes recurring refill packs ("Monthly"/"Weekly"/...)
-        // with one-shot bonus packs ("Bonus Pack N"). Forward `recurring`
-        // so the UI can show "Expires in" for bonus packs (whose resetAt is
-        // a hard expiry, not a refresh) instead of "Reset in".
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
@@ -576,7 +607,6 @@ export function parseQuotaData(provider, data) {
         break;
 
       default:
-        // Generic fallback for unknown providers
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
@@ -593,19 +623,19 @@ export function parseQuotaData(provider, data) {
     return [];
   }
 
+  // Antigravity is already ordered cleanly by family (Gemini 5h -> Gemini Weekly -> Claude & GPT 5h -> Claude & GPT Weekly -> Image)
+  if (provider?.toLowerCase() === "antigravity") {
+    return normalizedQuotas;
+  }
+
   // Sort quotas according to PROVIDER_MODELS order
   const modelOrder = getModelsByProviderId(provider);
   if (modelOrder.length > 0) {
     const orderMap = new Map(modelOrder.map((m, i) => [m.id, i]));
     
     normalizedQuotas.sort((a, b) => {
-      // Use modelKey for antigravity (mapped to family anchor), otherwise use name
-      let keyA = a.modelKey || a.name;
-      let keyB = b.modelKey || b.name;
-      if (keyA === "gemini" || keyA === "gemini_session") keyA = "gemini-3.8-flash-high";
-      if (keyA === "claude" || keyA === "claude_gpt_session") keyA = "claude-sonnet-4-6";
-      if (keyB === "gemini" || keyB === "gemini_session") keyB = "gemini-3.8-flash-high";
-      if (keyB === "claude" || keyB === "claude_gpt_session") keyB = "claude-sonnet-4-6";
+      const keyA = a.modelKey || a.name;
+      const keyB = b.modelKey || b.name;
       const orderA = orderMap.get(keyA) ?? 999;
       const orderB = orderMap.get(keyB) ?? 999;
       return orderA - orderB;

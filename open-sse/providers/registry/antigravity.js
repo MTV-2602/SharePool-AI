@@ -1,5 +1,4 @@
-import { platform, arch } from "os";
-import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
+import { ANTIGRAVITY_OAUTH_CLIENT, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_BASE_URL } from "../shared.js";
 
 export default {
   id: "antigravity",
@@ -20,26 +19,22 @@ export default {
   category: "oauth",
   serviceKinds: ["llm", "image"],
   transport: {
-    baseUrls: [ANTIGRAVITY_IDE_BASE_URL],
+    baseUrls: [
+      ANTIGRAVITY_IDE_BASE_URL,
+    ],
     format: "antigravity",
-    timeoutMs: 30000,
     headers: {
       "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
     },
     retry: {
       "429": {
-        attempts: 1,
+        attempts: 3,
       },
       "500": {
-        attempts: 1,
-      },
-      "502": {
-        attempts: 1,
-        delayMs: 1000,
+        attempts: 3,
       },
       "503": {
-        attempts: 1,
-        delayMs: 1000,
+        attempts: 3,
       },
     },
     usage: {
@@ -48,30 +43,35 @@ export default {
       loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
       tokenUrl: "https://oauth2.googleapis.com/token",
     },
-    clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
-    clientSecret: "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",
+    ...ANTIGRAVITY_OAUTH_CLIENT,
   },
   models: [
-    // ── Slot thật & điều hướng tối ưu tốc độ trên Antigravity API ─────────────
-    { id: "gemini-3-flash",              name: "Gemini 3 Flash",              upstreamModelId: "gemini-3.7-flash-tiered", thinking: false },
-    { id: "gemini-3-flash-agent",        name: "Gemini 3 Flash Agent",        upstreamModelId: "gemini-3.7-flash-tiered" },
-    { id: "gemini-pro-agent",            name: "Gemini 3.1 Pro (High)" },
-    { id: "gemini-3.1-pro-low",          name: "Gemini 3.1 Pro (Low)" },
+    // ── Upstream Antigravity IDE models + Thinking variants ──────────────────
+    { id: "gemini-3-flash",              name: "Gemini 3 Flash",              upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3-flash-agent",        name: "Gemini 3 Flash Agent",        upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3-flash(high)",        name: "Gemini 3 Flash (High)",       upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3-flash(medium)",      name: "Gemini 3 Flash (Medium)",     upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3-flash(low)",         name: "Gemini 3 Flash (Low)",        upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.1-pro(high)",        name: "Gemini 3.1 Pro (High)",       upstreamModelId: "gemini-3.1-pro-high" },
+    { id: "gemini-3.1-pro(low)",         name: "Gemini 3.1 Pro (Low)",        upstreamModelId: "gemini-3.1-pro-low" },
+    { id: "gemini-3.1-pro-high",         name: "Gemini 3.1 Pro High",         upstreamModelId: "gemini-3.1-pro-high" },
+    { id: "gemini-3.1-pro-low",          name: "Gemini 3.1 Pro Low",          upstreamModelId: "gemini-3.1-pro-low" },
+    { id: "gemini-pro-agent",            name: "Gemini Pro Agent",            upstreamModelId: "gemini-3.1-pro-high" },
     { id: "claude-sonnet-4-6",           name: "Claude Sonnet 4.6 (Thinking)" },
     { id: "claude-opus-4-6-thinking",    name: "Claude Opus 4.6 (Thinking)" },
     { id: "gpt-oss-120b-medium",         name: "GPT-OSS 120B (Medium)" },
 
-    // ── Alias 3.8 (mới nhất) ──────────────────────────────────────────────────
-    { id: "gemini-3.8-flash-high",       name: "Gemini 3.8 Flash (High)",     upstreamModelId: "gemini-3.8-flash-high" },
-    { id: "gemini-3.8-flash",            name: "Gemini 3.8 Flash",            upstreamModelId: "gemini-3.8-flash-high" },
-    { id: "gemini-3.8-flash-medium",     name: "Gemini 3.8 Flash (Medium)",   upstreamModelId: "gemini-3.7-flash-medium" },
-    { id: "gemini-3.8-flash-low",        name: "Gemini 3.8 Flash (Low)",      upstreamModelId: "gemini-3.8-flash-low" },
+    // ── Alias 3.8 (tương thích ngược cho khách hàng đang gọi) ────────────────
+    { id: "gemini-3.8-flash-high",       name: "Gemini 3.8 Flash (High)",     upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.8-flash",            name: "Gemini 3.8 Flash",            upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.8-flash-medium",     name: "Gemini 3.8 Flash (Medium)",   upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.8-flash-low",        name: "Gemini 3.8 Flash (Low)",      upstreamModelId: "gemini-3-flash-agent" },
 
-    // ── Alias 3.7 ────────────────────────────────────────────────────────────
-    { id: "gemini-3.7-flash-high",       name: "Gemini 3.7 Flash (High)",     upstreamModelId: "gemini-3.7-flash-tiered" },
-    { id: "gemini-3.7-flash",            name: "Gemini 3.7 Flash",            upstreamModelId: "gemini-3.7-flash-tiered" },
-    { id: "gemini-3.7-flash-medium",     name: "Gemini 3.7 Flash (Medium)",   upstreamModelId: "gemini-3.7-flash-medium" },
-    { id: "gemini-3.7-flash-low",        name: "Gemini 3.7 Flash (Low)",      upstreamModelId: "gemini-3.7-flash-low" },
+    // ── Alias 3.7 (tương thích ngược cho khách hàng đang gọi) ────────────────
+    { id: "gemini-3.7-flash-high",       name: "Gemini 3.7 Flash (High)",     upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.7-flash",            name: "Gemini 3.7 Flash",            upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.7-flash-medium",     name: "Gemini 3.7 Flash (Medium)",   upstreamModelId: "gemini-3-flash-agent" },
+    { id: "gemini-3.7-flash-low",        name: "Gemini 3.7 Flash (Low)",      upstreamModelId: "gemini-3-flash-agent" },
 
     // ── Image generation ──────────────────────────────────────────────────────
     { id: "gemini-3.1-flash-image", name: "Gemini 3.1 Flash (Image)", kind: "image", imageGen: true, capabilities: ["textToImage"] },
@@ -87,15 +87,16 @@ export default {
       "https://www.googleapis.com/auth/cclog",
       "https://www.googleapis.com/auth/experimentsandconfigs",
     ],
-    apiEndpoint: "https://cloudcode-pa.googleapis.com",
+    apiEndpoint: ANTIGRAVITY_IDE_BASE_URL,
     apiVersion: "v1internal",
+    // Keep loadCodeAssist/onboardUser on prod cloudcode-pa (daily endpoint has stricter rate limit on onboarding)
     loadCodeAssistEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
     onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
-    loadCodeAssistUserAgent: "google-api-nodejs-client/9.15.1",
-    loadCodeAssistApiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
+    loadCodeAssistUserAgent: ANTIGRAVITY_IDE_USER_AGENT,
     refreshLeadMs: 300000,
   },
   features: {
     usage: true,
   },
 };
+

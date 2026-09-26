@@ -78,21 +78,20 @@ export class AntigravityService {
   }
 
   /**
-   * Get common headers for Antigravity API calls
+   * Get common headers for Antigravity API calls.
+   * Omit X-Goog-Api-Client and Client-Metadata headers — Google fingerprints those headers on
+   * loadCodeAssist/onboardUser and refuses to return cloudaicompanionProject.
    */
   getApiHeaders(accessToken) {
     return {
       "Authorization": `Bearer ${accessToken}`,
       "Content-Type": "application/json",
       "User-Agent": this.config.loadCodeAssistUserAgent,
-      "X-Goog-Api-Client": this.config.loadCodeAssistApiClient,
-      "Client-Metadata": this.config.loadCodeAssistClientMetadata,
     };
   }
 
   /**
    * Get metadata object for loadCodeAssist / onboardUser API calls.
-   * Uses numeric enum values matching Antigravity binary ClientMetadata.
    */
   getMetadata() {
     return getOAuthClientMetadata();

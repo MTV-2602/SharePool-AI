@@ -60,11 +60,12 @@ export const ANTIGRAVITY_OAUTH_CLIENT = {
   clientSecret: "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"
 };
 
-// Official Antigravity IDE Desktop 2.11.0 fingerprint captured from macOS arm64.
-// Keep this static even when 9router runs on Linux: the provider profile is
-// intentionally matching the IDE client, not the server host.
+// Antigravity desktop IDE fingerprint (single source for registry, headers, OAuth, usage)
 export const ANTIGRAVITY_IDE_VERSION = "2.11.0";
+// Official Antigravity IDE sends all traffic (loadCodeAssist, fetchAvailableModels, streamGenerateContent)
+// to the daily sandbox host. Using prod cloudcode-pa.googleapis.com triggers 429 on models that still have quota.
 export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
+// Official desktop IDE User-Agent is static "antigravity/ide/<ver> darwin/arm64" even on Linux builds.
 export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
 
 // Gemini (Google) OAuth client credentials (public CLI client — shared by gemini, gemini-cli, src/lib/oauth)
