@@ -5,17 +5,21 @@ import { extractUsage } from "open-sse/utils/usageTracking.js";
 const sentQuotaAlerts = new Map();
 
 // ─── In-memory cache: giảm số lần query Supabase ──────────────────────────────────
-const KEY_CACHE_TTL_MS = 30_000;
+const KEY_CACHE_TTL_MS = 120_000;
 const keyCache = new Map(); // token -> { data, expiresAt }
 
 function getCachedKey(token) {
   const entry = keyCache.get(token);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) {
-    keyCache.delete(token);
     return null;
   }
   return entry.data;
+}
+
+function getStaleCachedKey(token) {
+  const entry = keyCache.get(token);
+  return entry ? entry.data : null;
 }
 
 function setCachedKey(token, data) {
@@ -60,7 +64,7 @@ function checkRateLimitLocal(keyId, rateLimit) {
 /**
  * Validates a client key (prefix `ck-`) against Supabase.
  * Returns { valid: true, keyData: {...} } or { valid: false, error: '...' }
- * Uses 30s in-memory cache to reduce Supabase round-trips.
+ * Uses 120s in-memory cache to reduce Supabase round-trips.
  */
 export async function validateClientKey(bearerToken) {
   const token = (bearerToken || '').trim();
@@ -96,6 +100,11 @@ export async function validateClientKey(bearerToken) {
   if (error || !keys?.length) {
     if (error) {
       console.error('[ClientKeyAuth] Supabase query error:', error.message);
+      const stale = getStaleCachedKey(token);
+      if (stale) {
+        setCachedKey(token, stale);
+        return { valid: true, keyData: stale };
+      }
     }
     return { valid: false, error: 'Invalid or inactive client key' };
   }

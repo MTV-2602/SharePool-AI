@@ -316,7 +316,15 @@ async function loadDaysInRange(adapter, maxDays) {
   return await adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
 }
 
+const _usageStatsCache = new Map();
+const USAGE_STATS_CACHE_TTL_MS = 15_000;
+
 export async function getUsageStats(period = "all") {
+  const cachedEntry = _usageStatsCache.get(period);
+  if (cachedEntry && Date.now() - cachedEntry.ts < USAGE_STATS_CACHE_TTL_MS) {
+    return cachedEntry.data;
+  }
+
   const db = await getAdapter();
 
   const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
@@ -361,7 +369,12 @@ export async function getUsageStats(period = "all") {
   }
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = await db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  let recentRows = [];
+  try {
+    recentRows = await db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  } catch (err) {
+    console.warn("[usageRepo] recentRows query failed:", err?.message || err);
+  }
   const seen = new Set();
   const recentRequests = recentRows
     .map((r) => {
@@ -419,10 +432,15 @@ export async function getUsageStats(period = "all") {
     bucketMap[ts] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
     stats.last10Minutes.push(bucketMap[ts]);
   }
-  const recent10 = await db.all(
-    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
-    [tenMinutesAgo.toISOString(), now.toISOString()]
-  );
+  let recent10 = [];
+  try {
+    recent10 = await db.all(
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ? LIMIT 1000`,
+      [tenMinutesAgo.toISOString(), now.toISOString()]
+    );
+  } catch (err) {
+    console.warn("[usageRepo] recent10 query failed:", err?.message || err);
+  }
   for (const r of recent10) {
     const tt = new Date(r.timestamp).getTime();
     const minuteStart = Math.floor(tt / 60000) * 60000;
@@ -443,16 +461,22 @@ export async function getUsageStats(period = "all") {
     cutoff = new Date(Date.now() - PERIOD_MS[period]).toISOString();
   }
 
-  let filtered;
-  if (cutoff) {
-    filtered = await db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
-      [cutoff]
-    );
-  } else {
-    filtered = await db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory`
-    );
+  let filtered = [];
+  try {
+    if (cutoff) {
+      filtered = await db.all(
+        `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ? ORDER BY id DESC LIMIT 2000`,
+        [cutoff]
+      );
+    } else {
+      filtered = await db.all(
+        `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory ORDER BY id DESC LIMIT 2000`
+      );
+    }
+  } catch (err) {
+    console.warn("[usageRepo] getUsageStats query failed:", err?.message || err);
+    if (cachedEntry) return cachedEntry.data;
+    filtered = [];
   }
 
   for (const r of filtered) {
@@ -529,6 +553,7 @@ export async function getUsageStats(period = "all") {
   if (stats.totalRequests === 0) {
     stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
   }
+  _usageStatsCache.set(period, { data: stats, ts: Date.now() });
   return stats;
 }
 
@@ -546,10 +571,13 @@ export async function getChartData(period = "7d") {
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
-    const rows = await db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
-    );
+    let rows = [];
+    try {
+      rows = await db.all(
+        `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? ORDER BY id DESC LIMIT 2000`,
+        [new Date(startTime).toISOString()]
+      );
+    } catch {}
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t >= endTime) continue;
@@ -570,10 +598,13 @@ export async function getChartData(period = "7d") {
     const startTime = now - bucketCount * bucketMs;
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
-    const rows = await db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
-    );
+    let rows = [];
+    try {
+      rows = await db.all(
+        `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? ORDER BY id DESC LIMIT 2000`,
+        [new Date(startTime).toISOString()]
+      );
+    } catch {}
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t > now) continue;
@@ -593,10 +624,13 @@ export async function getChartData(period = "7d") {
   cutoffDate.setDate(cutoffDate.getDate() - bucketCount + 1);
   cutoffDate.setHours(0, 0, 0, 0);
 
-  const rows = await db.all(
-    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-    [cutoffDate.toISOString()]
-  );
+  let rows = [];
+  try {
+    rows = await db.all(
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? ORDER BY id DESC LIMIT 2000`,
+      [cutoffDate.toISOString()]
+    );
+  } catch {}
 
   const dayMap = {};
   for (const r of rows) {

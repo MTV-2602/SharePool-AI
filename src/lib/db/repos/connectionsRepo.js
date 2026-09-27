@@ -3,7 +3,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 // ─── In-memory cache cho getProviderConnections() ──────────────────────────────
-const CONNECTIONS_CACHE_TTL_MS = 30_000; // 30 giây
+const CONNECTIONS_CACHE_TTL_MS = 60_000; // 60 giây
 // filter key -> { data, ts }
 const _connectionsCache = new Map();
 
@@ -13,6 +13,17 @@ function _getConnectionsCacheKey(filter = {}) {
 
 function _invalidateConnectionsCache() {
   _connectionsCache.clear();
+}
+
+function _patchConnectionInCache(updatedConn) {
+  if (!updatedConn || !updatedConn.id) return;
+  for (const [, entry] of _connectionsCache.entries()) {
+    if (!Array.isArray(entry?.data)) continue;
+    const idx = entry.data.findIndex(c => c.id === updatedConn.id);
+    if (idx !== -1) {
+      entry.data[idx] = { ...entry.data[idx], ...updatedConn };
+    }
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -76,20 +87,33 @@ export async function getProviderConnections(filter = {}) {
   if (cached && Date.now() - cached.ts < CONNECTIONS_CACHE_TTL_MS) {
     return cached.data;
   }
-  const db = await getAdapter();
-  const where = [];
-  const params = [];
-  if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
-  if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
-  const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
-  const rows = await db.all(sql, params);
-  const list = rows.map(rowToConn);
-  list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
-  _connectionsCache.set(cacheKey, { data: list, ts: Date.now() });
-  return list;
+  try {
+    const db = await getAdapter();
+    const where = [];
+    const params = [];
+    if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
+    if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
+    const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
+    const rows = await db.all(sql, params);
+    const list = rows.map(rowToConn);
+    list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+    _connectionsCache.set(cacheKey, { data: list, ts: Date.now() });
+    return list;
+  } catch (err) {
+    console.warn("[connectionsRepo] Transient DB error reading connections, using cached:", err?.message || err);
+    if (cached) {
+      cached.ts = Date.now();
+      return cached.data;
+    }
+    throw err;
+  }
 }
 
 export async function getProviderConnectionById(id) {
+  for (const [, entry] of _connectionsCache.entries()) {
+    const found = entry?.data?.find?.(c => c.id === id);
+    if (found && Date.now() - entry.ts < CONNECTIONS_CACHE_TTL_MS) return found;
+  }
   const db = await getAdapter();
   const row = await db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
   return rowToConn(row);
@@ -177,19 +201,30 @@ export async function createProviderConnection(data) {
 
 // Critical: OAuth refresh token race — atomic merge inside transaction
 export async function updateProviderConnection(id, data) {
-  const db = await getAdapter();
-  let result;
-  await db.transaction(async () => {
-    const row = await db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
-    if (!row) { result = null; return; }
-    const existing = rowToConn(row);
-    const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
-    await upsert(db, merged);
-    if (data.priority !== undefined) await reorderInTx(db, existing.provider);
-    result = merged;
-  });
-  _invalidateConnectionsCache(); // Invalidate cache sau khi update
-  return result;
+  const updatedAt = new Date().toISOString();
+  _patchConnectionInCache({ id, ...data, updatedAt });
+  try {
+    const db = await getAdapter();
+    let result;
+    await db.transaction(async () => {
+      const row = await db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+      if (!row) { result = null; return; }
+      const existing = rowToConn(row);
+      const merged = { ...existing, ...data, updatedAt };
+      await upsert(db, merged);
+      if (data.priority !== undefined) await reorderInTx(db, existing.provider);
+      result = merged;
+    });
+    if (data.priority !== undefined || data.isActive !== undefined) {
+      _invalidateConnectionsCache();
+    } else if (result) {
+      _patchConnectionInCache(result);
+    }
+    return result;
+  } catch (err) {
+    console.warn("[connectionsRepo] Transient DB error updating connection, applied to RAM cache:", err?.message || err);
+    return { id, ...data, updatedAt };
+  }
 }
 
 export async function deleteProviderConnection(id) {

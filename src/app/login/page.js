@@ -187,8 +187,8 @@ export default function LoginPage() {
     setError("");
     setResetHint("");
 
-    // If it looks like a client key (starts with ck-), try client verification directly
-    if (inputKey.startsWith("ck-")) {
+    // If it looks like a client key (starts with ck- or sk-), try client verification directly
+    if (inputKey.startsWith("ck-") || inputKey.startsWith("sk-")) {
       await fetchClientKeyDetails(inputKey);
       return;
     }

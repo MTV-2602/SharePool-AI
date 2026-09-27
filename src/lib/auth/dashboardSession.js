@@ -3,30 +3,11 @@ import { SignJWT, jwtVerify } from "jose";
 const DEFAULT_PASSWORD = "123456";
 let SECRET = null;
 
+const JWT_SECRET_FALLBACK = "9router-jwt-secret-stable-key-portal-fallback";
+
 async function getJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  if (process.env.NEXT_RUNTIME === "edge") {
-    // Return a default secret on edge if JWT_SECRET is missing to prevent crash
-    return "default-edge-secret-for-middleware";
-  }
-
-  // Node.js environment - load dynamically to bypass Edge Runtime compiler issues
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const crypto = await import("node:crypto");
-  const { DATA_DIR } = await import("@/lib/dataDir");
-
-  const file = path.join(DATA_DIR, "jwt-secret");
-  try {
-    return fs.readFileSync(file, "utf8").trim();
-  } catch {}
-
-  const generated = crypto.randomBytes(32).toString("hex");
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(file, generated, { mode: 0o600 });
-  } catch {}
-  return generated;
+  return JWT_SECRET_FALLBACK;
 }
 
 async function getSecretKey() {
