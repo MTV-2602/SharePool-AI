@@ -198,15 +198,10 @@ export class AntigravityExecutor extends BaseExecutor {
         if (p.thoughtSignature && !p.functionCall && !p.text) return false;
         return true;
       });
-      // If a historical model turn only had thought parts, preserve its text as normal text
-      // so the turn is not emptied and dropped (which would corrupt user/model alternation)
+      // If a historical model turn only had thought parts, preserve a neutral placeholder
+      // so the turn is not emptied and dropped (without leaking English thoughts into model reply history)
       if ((!filteredParts || filteredParts.length === 0) && Array.isArray(c.parts) && c.parts.length > 0) {
-        const fallbackText = c.parts
-          .map(p => (typeof p.text === "string" ? p.text : ""))
-          .filter(Boolean)
-          .join("\n")
-          .trim();
-        filteredParts = [{ text: fallbackText || "..." }];
+        filteredParts = [{ text: "..." }];
       }
       if (role !== c.role || filteredParts?.length !== c.parts?.length) {
         return { ...c, role, parts: filteredParts };

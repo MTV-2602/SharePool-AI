@@ -118,19 +118,15 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
         // 2) If tool_calls are present in the same turn, do NOT push a separate dummy `{ thoughtSignature, text: "" }`
         //    because the first functionCall part below already carries the turn's thoughtSignature.
         if (reasoningText) {
-          if (!text && !hasToolCalls) {
-            parts.push({ text: reasoningText });
-          } else {
+          parts.push({
+            thought: true,
+            text: reasoningText
+          });
+          if (!hasToolCalls) {
             parts.push({
-              thought: true,
-              text: reasoningText
+              thoughtSignature: signature,
+              text: ""
             });
-            if (!hasToolCalls) {
-              parts.push({
-                thoughtSignature: signature,
-                text: ""
-              });
-            }
           }
         }
 
