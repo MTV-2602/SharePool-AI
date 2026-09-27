@@ -79,10 +79,19 @@ export async function getSettings() {
   if (_settingsCache && Date.now() - _settingsCacheTs < SETTINGS_CACHE_TTL_MS) {
     return _settingsCache;
   }
-  const raw = await readRaw();
-  _settingsCache = mergeWithDefaults(raw);
-  _settingsCacheTs = Date.now();
-  return _settingsCache;
+  try {
+    const raw = await readRaw();
+    _settingsCache = mergeWithDefaults(raw);
+    _settingsCacheTs = Date.now();
+    return _settingsCache;
+  } catch (err) {
+    console.warn("[settingsRepo] Transient DB error reading settings, using cached/default:", err?.message || err);
+    if (_settingsCache) {
+      _settingsCacheTs = Date.now();
+      return _settingsCache;
+    }
+    return mergeWithDefaults({});
+  }
 }
 
 // Atomic read-merge-write inside transaction (prevents losing concurrent updates)

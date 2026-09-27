@@ -249,9 +249,10 @@ export function createSSEStream(options = {}) {
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
         
-        // Gemini format
-        if (parsed.candidates?.[0]?.content?.parts) {
-          for (const part of parsed.candidates[0].content.parts) {
+        // Gemini / Antigravity format
+        const geminiRoot = parsed.response || parsed;
+        if (geminiRoot.candidates?.[0]?.content?.parts) {
+          for (const part of geminiRoot.candidates[0].content.parts) {
             if (part.text && typeof part.text === "string") {
               totalContentLength += part.text.length;
               // Check if this is thinking content
@@ -260,6 +261,8 @@ export function createSSEStream(options = {}) {
               } else {
                 accumulatedContent += part.text;
               }
+            } else if (part.functionCall?.name) {
+              accumulatedContent += `[Tool Call: ${part.functionCall.name}]`;
             }
           }
         }
@@ -419,7 +422,7 @@ export function createSSEStream(options = {}) {
           openAIResponsesTerminalSeen = true;
         }
 
-        if (keepsOpenAIResponsesFormat && !openAIResponsesDoneSent && !streamDoneSent) {
+        if ((keepsOpenAIResponsesFormat || sourceFormat === FORMATS.OPENAI) && !openAIResponsesDoneSent && !streamDoneSent) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));

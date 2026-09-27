@@ -193,34 +193,58 @@ export class AntigravityExecutor extends BaseExecutor {
         role = "user";
       }
       // Strip thought-only parts, keep thoughtSignature on functionCall parts (Gemini 3+ requires it)
-      const filteredParts = c.parts?.filter(p => {
+      let filteredParts = c.parts?.filter(p => {
         if (p.thought && !p.functionCall) return false;
         if (p.thoughtSignature && !p.functionCall && !p.text) return false;
         return true;
       });
-      // Gemini 3+ parallel function calls rule: ONLY the FIRST functionCall in a model turn carries
-      // thoughtSignature. Subsequent parallel functionCalls in the same turn must omit thoughtSignature.
+      // If a historical model turn only had thought parts, preserve its text as normal text
+      // so the turn is not emptied and dropped (which would corrupt user/model alternation)
+      if ((!filteredParts || filteredParts.length === 0) && Array.isArray(c.parts) && c.parts.length > 0) {
+        const fallbackText = c.parts
+          .map(p => (typeof p.text === "string" ? p.text : ""))
+          .filter(Boolean)
+          .join("\n")
+          .trim();
+        filteredParts = [{ text: fallbackText || "..." }];
+      }
+      if (role !== c.role || filteredParts?.length !== c.parts?.length) {
+        return { ...c, role, parts: filteredParts };
+      }
+      return c;
+    });
+    const normalizedContents = rawContents ? normalizeGeminiContents(rawContents) : undefined;
+    // Gemini 3+ parallel function calls rule: ONLY the FIRST functionCall in a normalized model turn
+    // carries thoughtSignature. Subsequent functionCalls or text parts in the same turn must omit it.
+    const contents = normalizedContents?.map(c => {
+      if (c.role !== "model" || !Array.isArray(c.parts)) return c;
       let firstFunctionCallSeen = false;
-      const parts = filteredParts?.map(p => {
-        if (!p.functionCall) return p;
+      let modified = false;
+      const parts = c.parts.map(p => {
+        if (!p.functionCall) {
+          if (p.thoughtSignature) {
+            modified = true;
+            const { thoughtSignature: _omit, ...rest } = p;
+            return rest;
+          }
+          return p;
+        }
         if (!firstFunctionCallSeen) {
           firstFunctionCallSeen = true;
           if (p.thoughtSignature) return p;
+          modified = true;
           const cachedSig = getGeminiThoughtSignatureSync(p.functionCall.id, resolvedSessionId, model);
           return { ...p, thoughtSignature: cachedSig || DEFAULT_THINKING_AG_SIGNATURE };
         }
         if (p.thoughtSignature) {
+          modified = true;
           const { thoughtSignature: _omit, ...rest } = p;
           return rest;
         }
         return p;
       });
-      if (role !== c.role || parts?.length !== c.parts?.length || parts !== filteredParts) {
-        return { ...c, role, parts };
-      }
-      return c;
+      return modified ? { ...c, parts } : c;
     });
-    const contents = rawContents ? normalizeGeminiContents(rawContents) : undefined;
 
     // Sanitize tool schemas and function names before sending to Antigravity.
     let tools = body.request?.tools;
