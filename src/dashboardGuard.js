@@ -210,27 +210,47 @@ async function hasValidToken(request) {
   return await verifyDashboardAuthToken(token);
 }
 
+// In-memory cache for middleware guard so DB outages never block routing
+let _guardSettingsCache = { requireLogin: true, tunnelDashboardAccess: true };
+let _guardSettingsTs = 0;
+const GUARD_SETTINGS_TTL = 60_000;
+
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
 async function loadSettings() {
+  const now = Date.now();
+  if (_guardSettingsCache && (now - _guardSettingsTs < GUARD_SETTINGS_TTL)) {
+    return _guardSettingsCache;
+  }
   try {
     if (process.env.NEXT_RUNTIME === "edge") {
       const { supabase } = await import("@/lib/supabase");
-      if (!supabase) return null;
-      const { data, error } = await supabase
+      if (!supabase) return _guardSettingsCache;
+      // Strict 1s timeout for Edge middleware: routing must NEVER stall on slow DB
+      const queryPromise = supabase
         .from('settings')
         .select('data')
         .eq('id', 1)
         .maybeSingle();
-      if (error || !data) return null;
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Guard settings timeout")), 1000)
+      );
+      const res = await Promise.race([queryPromise, timeoutPromise]);
+      const { data, error } = res || {};
+      if (error || !data) return _guardSettingsCache;
       const raw = typeof data.data === 'string' ? JSON.parse(data.data) : data.data;
+      _guardSettingsCache = raw;
+      _guardSettingsTs = Date.now();
       return raw;
     } else {
       const { getSettings } = await import("@/lib/localDb");
-      return await getSettings();
+      const res = await getSettings();
+      _guardSettingsCache = res;
+      _guardSettingsTs = Date.now();
+      return res;
     }
   } catch (err) {
-    console.error("[Guard] Failed to load settings:", err);
-    return null;
+    // Fail-fast and return cached/default settings
+    return _guardSettingsCache;
   }
 }
 
@@ -288,6 +308,13 @@ export async function proxy(request) {
 
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
+    // 1. If valid JWT auth token is already present, grant access immediately (0ms)
+    const token = request.cookies.get("auth_token")?.value;
+    if (token && await verifyDashboardAuthToken(token)) {
+      return NextResponse.next();
+    }
+
+    // 2. Check if requireLogin is disabled (using in-memory cache/fast timeout)
     let requireLogin = true;
     let tunnelDashboardAccess = true;
 
@@ -313,16 +340,6 @@ export async function proxy(request) {
 
     // If login not required, allow through
     if (!requireLogin) return NextResponse.next();
-
-    // Verify JWT token
-    const token = request.cookies.get("auth_token")?.value;
-    if (token) {
-      if (await verifyDashboardAuthToken(token)) {
-        return NextResponse.next();
-      } else {
-        return NextResponse.redirect(new URL("/login", request.url));
-      }
-    }
 
     return NextResponse.redirect(new URL("/login", request.url));
   }
