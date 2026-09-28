@@ -1,10 +1,12 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { getDiskCache, setDiskCache } from "../helpers/diskCache.js";
 
 // ─── In-memory settings cache ─────────────────────────────────────────────────
 let _settingsCache = null;
 let _settingsCacheTs = 0;
 const SETTINGS_CACHE_TTL_MS = 60_000; // 60 giây
+const DISK_KEY = "repo:settings";
 
 function invalidateSettingsCache() {
   _settingsCache = null;
@@ -83,6 +85,7 @@ export async function getSettings() {
     const raw = await readRaw();
     _settingsCache = mergeWithDefaults(raw);
     _settingsCacheTs = Date.now();
+    setDiskCache(DISK_KEY, _settingsCache);
     return _settingsCache;
   } catch (err) {
     console.warn("[settingsRepo] Transient DB error reading settings, using cached/default:", err?.message || err);
@@ -90,7 +93,10 @@ export async function getSettings() {
       _settingsCacheTs = Date.now();
       return _settingsCache;
     }
-    return mergeWithDefaults({});
+    const disk = getDiskCache(DISK_KEY, null);
+    _settingsCache = mergeWithDefaults(disk || {});
+    _settingsCacheTs = Date.now();
+    return _settingsCache;
   }
 }
 

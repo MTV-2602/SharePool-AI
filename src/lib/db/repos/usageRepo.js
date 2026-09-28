@@ -240,92 +240,94 @@ export async function getActiveRequests() {
   return { activeRequests, recentRequests, errorProvider };
 }
 
-export async function saveRequestUsage(entry) {
+import { getDiskCache, setDiskCache } from "../helpers/diskCache.js";
+
+const USAGE_SLICE_CACHE_TTL_MS = 20_000;
+const DISK_SLICE_KEY = "repo:usageHistorySlice";
+let _recentHistoryCache = { data: null, ts: 0 };
+
+async function getRecentHistorySlice() {
+  if (_recentHistoryCache.data && Date.now() - _recentHistoryCache.ts < USAGE_SLICE_CACHE_TTL_MS) {
+    return _recentHistoryCache.data;
+  }
   try {
     const db = await getAdapter();
+    // Query last 500 rows WITHOUT WHERE clause — stops instantly at 500 rows using pkey index, NO full table scan!
+    const rows = await db.all(
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens FROM usageHistory ORDER BY id DESC LIMIT 500`
+    );
+    _recentHistoryCache = { data: rows, ts: Date.now() };
+    setDiskCache(DISK_SLICE_KEY, rows);
+    return rows;
+  } catch (err) {
+    console.warn("[usageRepo] Error reading usage history slice, using cached/disk:", err?.message || err);
+    if (_recentHistoryCache.data) {
+      _recentHistoryCache.ts = Date.now();
+      return _recentHistoryCache.data;
+    }
+    const disk = getDiskCache(DISK_SLICE_KEY, []);
+    _recentHistoryCache = { data: disk, ts: Date.now() };
+    return disk;
+  }
+}
 
+export async function saveRequestUsage(entry) {
+  try {
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
-    entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    try {
+      entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    } catch {
+      entry.cost = 0;
+    }
 
     const tokens = entry.tokens || {};
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
-    // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
-    // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
-    await db.transaction(async () => {
-      await db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
-          promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
-        ]
-      );
-
-      const dateKey = getLocalDateKey(entry.timestamp);
-      const row = await db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
-      const day = row ? parseJson(row.data, {}) : {
-        requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
-        byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
-      };
-      aggregateEntryToDay(day, entry);
-      await db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
-
-      // Atomic counter increment in same transaction
-      const cur = await db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
-      const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
-      await db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
-    });
-
+    // 1. Immediate in-memory update for 0ms Dashboard latency
     pushToRing(entry);
+    if (_recentHistoryCache.data) {
+      _recentHistoryCache.data.unshift({
+        timestamp: entry.timestamp,
+        provider: entry.provider || null,
+        model: entry.model || null,
+        connectionId: entry.connectionId || null,
+        apiKey: entry.apiKey || null,
+        endpoint: entry.endpoint || null,
+        promptTokens,
+        completionTokens,
+        cost: entry.cost || 0,
+        status: entry.status || "ok",
+        tokens: stringifyJson(tokens),
+      });
+      if (_recentHistoryCache.data.length > 500) _recentHistoryCache.data.pop();
+    }
     statsEmitter.emit("update");
+
+    // 2. Single asynchronous DB insert (skip redundant daily/meta query storms)
+    const db = await getAdapter();
+    await db.run(
+      `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        entry.timestamp, entry.provider || null, entry.model || null,
+        entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
+        promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
+        stringifyJson(tokens), stringifyJson({}),
+      ]
+    );
   } catch (e) {
-    console.error("Failed to save usage stats:", e);
+    console.warn("[usageRepo] Failed to save usage stats to DB:", e?.message || e);
   }
 }
 
-export async function getUsageHistory(filter = {}) {
-  const db = await getAdapter();
-  const conds = [];
-  const params = [];
-
-  if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
-  if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
-  if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
-  if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
-
-  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-  const rows = await db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`, params);
-
-  return rows.map((r) => ({
-    timestamp: r.timestamp, provider: r.provider, model: r.model,
-    connectionId: r.connectionId, apiKey: r.apiKey, endpoint: r.endpoint,
-    cost: r.cost, status: r.status, tokens: parseJson(r.tokens, {}),
-  }));
-}
-
-async function loadDaysInRange(adapter, maxDays) {
-  if (maxDays == null) {
-    return await adapter.all(`SELECT dateKey, data FROM usageDaily`);
-  }
-  const today = new Date();
-  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - maxDays + 1);
-  const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}-${String(cutoff.getDate()).padStart(2, "0")}`;
-  return await adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
-}
-
-const _usageStatsCache = new Map();
-const USAGE_STATS_CACHE_TTL_MS = 15_000;
+let _clientKeysCache = { data: [], ts: 0 };
+const CLIENT_KEYS_CACHE_TTL_MS = 60_000;
 
 export async function getUsageStats(period = "all") {
   const cachedEntry = _usageStatsCache.get(period);
   if (cachedEntry && Date.now() - cachedEntry.ts < USAGE_STATS_CACHE_TTL_MS) {
     return cachedEntry.data;
   }
-
-  const db = await getAdapter();
 
   const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
     import("./connectionsRepo.js"),
@@ -348,18 +350,21 @@ export async function getUsageStats(period = "all") {
   try { allApiKeys = await getApiKeys(); } catch {}
 
   let allClientKeys = [];
-  try {
-    const { supabase } = await import("../../supabase.js");
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('client_keys')
-        .select('key, label, created_at');
-      if (!error && data) {
-        allClientKeys = data;
+  if (Date.now() - _clientKeysCache.ts < CLIENT_KEYS_CACHE_TTL_MS) {
+    allClientKeys = _clientKeysCache.data;
+  } else {
+    try {
+      const { supabase } = await import("../../supabase.js");
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('client_keys')
+          .select('key, label, created_at');
+        if (!error && data) {
+          allClientKeys = data;
+          _clientKeysCache = { data, ts: Date.now() };
+        }
       }
-    }
-  } catch (err) {
-    console.error("[usageRepo] Failed to fetch client keys for usage mapping:", err);
+    } catch {}
   }
 
   const apiKeyMap = {};
@@ -368,15 +373,11 @@ export async function getUsageStats(period = "all") {
     apiKeyMap[ck.key] = { name: ck.label || "Unnamed Client Key", id: ck.key, createdAt: ck.created_at };
   }
 
-  // recentRequests from live history (last 100 entries enough for 20 deduped)
-  let recentRows = [];
-  try {
-    recentRows = await db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
-  } catch (err) {
-    console.warn("[usageRepo] recentRows query failed:", err?.message || err);
-  }
+  // Get cached history slice (500 rows, fast, zero full table scans)
+  const historySlice = await getRecentHistorySlice();
+
   const seen = new Set();
-  const recentRequests = recentRows
+  const recentRequests = historySlice
     .map((r) => {
       const t = parseJson(r.tokens, {}) || {};
       return {
@@ -422,65 +423,44 @@ export async function getUsageStats(period = "all") {
     }
   }
 
-  // last10Minutes — query 10min window
+  // last10Minutes — aggregated in memory from slice
   const now = new Date();
   const currentMinuteStart = new Date(Math.floor(now.getTime() / 60000) * 60000);
-  const tenMinutesAgo = new Date(currentMinuteStart.getTime() - 9 * 60 * 1000);
+  const tenMinutesAgoMs = currentMinuteStart.getTime() - 9 * 60 * 1000;
   const bucketMap = {};
   for (let i = 0; i < 10; i++) {
     const ts = currentMinuteStart.getTime() - (9 - i) * 60 * 1000;
     bucketMap[ts] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
     stats.last10Minutes.push(bucketMap[ts]);
   }
-  let recent10 = [];
-  try {
-    recent10 = await db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ? LIMIT 1000`,
-      [tenMinutesAgo.toISOString(), now.toISOString()]
-    );
-  } catch (err) {
-    console.warn("[usageRepo] recent10 query failed:", err?.message || err);
-  }
-  for (const r of recent10) {
+  for (const r of historySlice) {
     const tt = new Date(r.timestamp).getTime();
-    const minuteStart = Math.floor(tt / 60000) * 60000;
-    if (bucketMap[minuteStart]) {
-      bucketMap[minuteStart].requests++;
-      bucketMap[minuteStart].promptTokens += r.promptTokens || 0;
-      bucketMap[minuteStart].completionTokens += r.completionTokens || 0;
-      bucketMap[minuteStart].cost += r.cost || 0;
+    if (tt >= tenMinutesAgoMs && tt <= now.getTime()) {
+      const minuteStart = Math.floor(tt / 60000) * 60000;
+      if (bucketMap[minuteStart]) {
+        bucketMap[minuteStart].requests++;
+        bucketMap[minuteStart].promptTokens += r.promptTokens || 0;
+        bucketMap[minuteStart].completionTokens += r.completionTokens || 0;
+        bucketMap[minuteStart].cost += r.cost || 0;
+      }
     }
   }
 
-  let cutoff = null;
+  let cutoffTimeMs = 0;
   if (period === "today") {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    cutoff = startOfDay.toISOString();
+    cutoffTimeMs = startOfDay.getTime();
   } else if (PERIOD_MS[period]) {
-    cutoff = new Date(Date.now() - PERIOD_MS[period]).toISOString();
+    cutoffTimeMs = Date.now() - PERIOD_MS[period];
   }
 
-  let filtered = [];
-  try {
-    if (cutoff) {
-      filtered = await db.all(
-        `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ? ORDER BY id DESC LIMIT 2000`,
-        [cutoff]
-      );
-    } else {
-      filtered = await db.all(
-        `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory ORDER BY id DESC LIMIT 2000`
-      );
-    }
-  } catch (err) {
-    console.warn("[usageRepo] getUsageStats query failed:", err?.message || err);
-    if (cachedEntry) return cachedEntry.data;
-    filtered = [];
-  }
+  const filtered = cutoffTimeMs > 0
+    ? historySlice.filter((r) => new Date(r.timestamp).getTime() >= cutoffTimeMs)
+    : historySlice;
 
   for (const r of filtered) {
-    stats.totalRequests++; // Đếm trực tiếp — tránh miss khi provider null
+    stats.totalRequests++;
     const tokens = parseJson(r.tokens, {}) || {};
     const promptTokens = tokens.prompt_tokens || 0;
     const completionTokens = tokens.completion_tokens || 0;
@@ -549,18 +529,23 @@ export async function getUsageStats(period = "all") {
     if (new Date(r.timestamp) > new Date(epe.lastUsed)) epe.lastUsed = r.timestamp;
   }
 
-  // Nhánh 7d/30d/60d: tổng requests từ byProvider (daily summary không có row-level count)
-  if (stats.totalRequests === 0) {
-    stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
-  }
   _usageStatsCache.set(period, { data: stats, ts: Date.now() });
   return stats;
 }
 
-export async function getChartData(period = "7d") {
-  const db = await getAdapter();
-  const now = Date.now();
+const _chartDataCache = new Map();
+const CHART_CACHE_TTL_MS = 20_000;
 
+export async function getChartData(period = "7d") {
+  const cached = _chartDataCache.get(period);
+  if (cached && Date.now() - cached.ts < CHART_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const now = Date.now();
+  const rows = await getRecentHistorySlice();
+
+  let result;
   if (period === "today") {
     const bucketCount = 24;
     const bucketMs = 3600000;
@@ -571,13 +556,6 @@ export async function getChartData(period = "7d") {
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
-    let rows = [];
-    try {
-      rows = await db.all(
-        `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? ORDER BY id DESC LIMIT 2000`,
-        [new Date(startTime).toISOString()]
-      );
-    } catch {}
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t >= endTime) continue;
@@ -587,24 +565,14 @@ export async function getChartData(period = "7d") {
         buckets[idx].cost += r.cost || 0;
       }
     }
-    return buckets;
-  }
-
-  if (period === "24h") {
+    result = buckets;
+  } else if (period === "24h") {
     const bucketCount = 24;
     const bucketMs = 3600000;
-    // Dùng "vi-VN" để label chart khớp với múi giờ local của server (UTC+7)
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
     const startTime = now - bucketCount * bucketMs;
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
-    let rows = [];
-    try {
-      rows = await db.all(
-        `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? ORDER BY id DESC LIMIT 2000`,
-        [new Date(startTime).toISOString()]
-      );
-    } catch {}
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t > now) continue;
@@ -612,48 +580,43 @@ export async function getChartData(period = "7d") {
       buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
       buckets[idx].cost += r.cost || 0;
     }
-    return buckets;
-  }
+    result = buckets;
+  } else {
+    const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
+    const today = new Date();
+    const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - bucketCount + 1);
+    cutoffDate.setHours(0, 0, 0, 0);
+    const cutoffMs = cutoffDate.getTime();
 
-  const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
-  const today = new Date();
-  const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-
-  // Cutoff date is bucketCount days ago at 00:00:00 local time
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - bucketCount + 1);
-  cutoffDate.setHours(0, 0, 0, 0);
-
-  let rows = [];
-  try {
-    rows = await db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? ORDER BY id DESC LIMIT 2000`,
-      [cutoffDate.toISOString()]
-    );
-  } catch {}
-
-  const dayMap = {};
-  for (const r of rows) {
-    const d = new Date(r.timestamp);
-    const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    if (!dayMap[dateKey]) {
-      dayMap[dateKey] = { tokens: 0, cost: 0 };
+    const dayMap = {};
+    for (const r of rows) {
+      const d = new Date(r.timestamp);
+      if (d.getTime() < cutoffMs) continue;
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      if (!dayMap[dateKey]) {
+        dayMap[dateKey] = { tokens: 0, cost: 0 };
+      }
+      dayMap[dateKey].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+      dayMap[dateKey].cost += r.cost || 0;
     }
-    dayMap[dateKey].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
-    dayMap[dateKey].cost += r.cost || 0;
+
+    result = Array.from({ length: bucketCount }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - (bucketCount - 1 - i));
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const dayData = dayMap[dateKey];
+      return {
+        label: labelFn(d),
+        tokens: dayData ? dayData.tokens : 0,
+        cost: dayData ? dayData.cost : 0,
+      };
+    });
   }
 
-  return Array.from({ length: bucketCount }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (bucketCount - 1 - i));
-    const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const dayData = dayMap[dateKey];
-    return {
-      label: labelFn(d),
-      tokens: dayData ? dayData.tokens : 0,
-      cost: dayData ? dayData.cost : 0,
-    };
-  });
+  _chartDataCache.set(period, { data: result, ts: Date.now() });
+  return result;
 }
 
 function formatLogDate(date = new Date()) {

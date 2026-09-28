@@ -1,6 +1,11 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { getDiskCache, setDiskCache } from "../helpers/diskCache.js";
+
+const NODES_CACHE_TTL_MS = 60_000;
+const DISK_KEY = "repo:providerNodes";
+let _nodesCache = { data: null, ts: 0 };
 
 function rowToNode(row) {
   if (!row) return null;
@@ -38,18 +43,39 @@ async function upsert(db, n) {
   );
 }
 
+async function loadAllNodes() {
+  if (_nodesCache.data && Date.now() - _nodesCache.ts < NODES_CACHE_TTL_MS) {
+    return _nodesCache.data;
+  }
+  try {
+    const db = await getAdapter();
+    const rows = await db.all(`SELECT * FROM providerNodes`);
+    const list = rows.map(rowToNode);
+    _nodesCache = { data: list, ts: Date.now() };
+    setDiskCache(DISK_KEY, list);
+    return list;
+  } catch (err) {
+    if (_nodesCache.data) {
+      _nodesCache.ts = Date.now();
+      return _nodesCache.data;
+    }
+    const disk = getDiskCache(DISK_KEY, []);
+    _nodesCache = { data: disk, ts: Date.now() };
+    return disk;
+  }
+}
+
 export async function getProviderNodes(filter = {}) {
-  const db = await getAdapter();
-  const where = [];
-  const params = [];
-  if (filter.type) { where.push("type = ?"); params.push(filter.type); }
-  const sql = `SELECT * FROM providerNodes${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
-  return (await db.all(sql, params)).map(rowToNode);
+  const all = await loadAllNodes();
+  if (filter.type) {
+    return all.filter((n) => n.type === filter.type);
+  }
+  return all;
 }
 
 export async function getProviderNodeById(id) {
-  const db = await getAdapter();
-  return rowToNode(await db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]));
+  const all = await loadAllNodes();
+  return all.find((n) => n.id === id) || null;
 }
 
 export async function createProviderNode(data) {
@@ -66,6 +92,7 @@ export async function createProviderNode(data) {
     updatedAt: now,
   };
   await upsert(db, node);
+  _nodesCache = { data: null, ts: 0 };
   return node;
 }
 
@@ -79,6 +106,7 @@ export async function updateProviderNode(id, data) {
     await upsert(db, merged);
     result = merged;
   });
+  _nodesCache = { data: null, ts: 0 };
   return result;
 }
 
@@ -91,5 +119,6 @@ export async function deleteProviderNode(id) {
     removed = rowToNode(row);
     await db.run(`DELETE FROM providerNodes WHERE id = ?`, [id]);
   });
+  _nodesCache = { data: null, ts: 0 };
   return removed;
 }

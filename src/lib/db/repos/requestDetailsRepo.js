@@ -15,7 +15,7 @@ async function getObservabilityConfig() {
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
-    const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
+    const envEnabled = process.env.OBSERVABILITY_ENABLED === "true";
     const enabled = typeof settings.enableObservability2 === "boolean"
       ? settings.enableObservability2
       : envEnabled;
@@ -61,11 +61,24 @@ function generateDetailId(model) {
 }
 
 function truncateField(obj, maxSize) {
-  const str = JSON.stringify(obj || {});
-  if (str.length > maxSize) {
-    return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
+  if (!obj || typeof obj !== "object") return {};
+  // Fast path for large messages array to avoid JSON.stringify on 5MB payloads
+  if (Array.isArray(obj.messages) && obj.messages.length > 10) {
+    return {
+      _truncated: true,
+      _preview: `[Large messages array: ${obj.messages.length} messages]`,
+      model: obj.model,
+    };
   }
-  return obj || {};
+  try {
+    const str = JSON.stringify(obj);
+    if (str.length > maxSize) {
+      return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
+    }
+    return obj;
+  } catch {
+    return { _truncated: true, _preview: "[Unstringifiable object]" };
+  }
 }
 
 async function flushToDatabase() {
@@ -116,7 +129,7 @@ async function flushToDatabase() {
       });
     }
   } catch (e) {
-    console.error("[requestDetailsRepo] Batch write failed:", e);
+    console.warn("[requestDetailsRepo] Batch write skipped/failed:", e?.message || e);
   } finally {
     isFlushing = false;
   }
@@ -126,13 +139,13 @@ export async function saveRequestDetail(detail) {
   const config = await getObservabilityConfig();
   if (!config.enabled) return;
 
+  // Prevent memory accumulation by limiting buffer size
+  if (writeBuffer.length > 50) writeBuffer.splice(0, 20);
   writeBuffer.push(detail);
 
-  // Trigger immediate flush if batch threshold reached.
-  // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.
   if (writeBuffer.length >= config.batchSize) {
     if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    flushToDatabase().catch((e) => console.error("[requestDetailsRepo] flush err:", e));
+    flushToDatabase().catch(() => {});
   } else if (!flushTimer) {
     flushTimer = setTimeout(() => {
       flushTimer = null;

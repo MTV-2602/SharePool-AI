@@ -106,11 +106,14 @@ export function createSupabaseAdapter() {
         query_params: params,
       });
       if (error) {
-        console.error('[DB] Supabase RPC error (all):', error.message, '| SQL:', sql);
-        throw new Error(`[DB] ${error.message}`);
+        const msg = typeof error.message === 'string' && (error.message.includes('<!DOCTYPE') || error.message.length > 200)
+          ? 'Supabase 522/504 Timeout'
+          : error.message;
+        console.warn('[DB] Supabase RPC error (all):', msg, '| SQL:', sql.slice(0, 100));
+        throw new Error(`[DB] ${msg}`);
       }
       if (data && data.error) {
-        console.error('[DB] SQL execution error:', data.error, '| SQL:', sql);
+        console.error('[DB] SQL execution error:', data.error, '| SQL:', sql.slice(0, 100));
         throw new Error(`[DB] ${data.error}`);
       }
       return Array.isArray(data) ? data.map(mapRowKeys) : [];
@@ -140,11 +143,14 @@ export function createSupabaseAdapter() {
         query_params: params,
       });
       if (error) {
-        console.error('[DB] Supabase RPC error (run):', error.message, '| SQL:', sql);
-        throw new Error(`[DB] ${error.message}`);
+        const msg = typeof error.message === 'string' && (error.message.includes('<!DOCTYPE') || error.message.length > 200)
+          ? 'Supabase 522/504 Timeout'
+          : error.message;
+        console.warn('[DB] Supabase RPC error (run):', msg, '| SQL:', sql.slice(0, 100));
+        throw new Error(`[DB] ${msg}`);
       }
       if (data && data.error) {
-        console.error('[DB] SQL execution error:', data.error, '| SQL:', sql);
+        console.error('[DB] SQL execution error:', data.error, '| SQL:', sql.slice(0, 100));
         throw new Error(`[DB] ${data.error}`);
       }
       return { changes: data?.changes ?? 0 };

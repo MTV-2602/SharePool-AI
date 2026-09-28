@@ -1,11 +1,13 @@
 import { supabase } from '../supabase.js';
 import { extractUsage } from "open-sse/utils/usageTracking.js";
+import { getDiskCache, setDiskCache } from "../db/helpers/diskCache.js";
 
 // Cache of sent quota alerts to avoid spamming (keyId -> timestamp)
 const sentQuotaAlerts = new Map();
 
-// ─── In-memory cache: giảm số lần query Supabase ──────────────────────────────────
+// ─── In-memory + Disk cache: giảm số lần query Supabase ───────────────────────────
 const KEY_CACHE_TTL_MS = 120_000;
+const DISK_CACHE_KEY = "auth:clientKeysByToken";
 const keyCache = new Map(); // token -> { data, expiresAt }
 
 function getCachedKey(token) {
@@ -19,7 +21,9 @@ function getCachedKey(token) {
 
 function getStaleCachedKey(token) {
   const entry = keyCache.get(token);
-  return entry ? entry.data : null;
+  if (entry) return entry.data;
+  const diskMap = getDiskCache(DISK_CACHE_KEY, {});
+  return diskMap[token] || null;
 }
 
 function setCachedKey(token, data) {
@@ -29,6 +33,9 @@ function setCachedKey(token, data) {
     const firstKey = keyCache.keys().next().value;
     keyCache.delete(firstKey);
   }
+  const diskMap = getDiskCache(DISK_CACHE_KEY, {});
+  diskMap[token] = data;
+  setDiskCache(DISK_CACHE_KEY, diskMap);
 }
 
 function invalidateCachedKey(token) {
@@ -213,43 +220,26 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
     }),
   ]);
 
-  // Sync log into Admin Dashboard (usageHistory table / ring buffer)
-  try {
-    const { saveRequestUsage } = await import("../db/repos/usageRepo.js");
-    const providerCandidate = model.startsWith("gemini") || model.includes("flash") || model.includes("pro")
-      ? "antigravity"
-      : model.startsWith("gpt")
-      ? "codex"
-      : "antigravity";
-    saveRequestUsage({
-      timestamp: new Date().toISOString(),
-      provider: providerCandidate,
-      model: model,
-      apiKey: clientKeyId,
-      tokens: { prompt_tokens: promptTokens, completion_tokens: completionTokens },
-      status: "ok"
-    }).catch(e => console.error("[ClientKeyAuth] Failed to sync usage to Admin Dashboard:", e));
-  } catch (syncErr) {
-    console.error("[ClientKeyAuth] Error importing usageRepo:", syncErr);
-  }
-
   if (insertResult.status === 'rejected' || insertResult.value?.error) {
     const err = insertResult.value?.error || insertResult.reason;
-    console.error('[ClientKeyAuth] Failed to insert usage log:', err?.message || err);
+    console.warn('[ClientKeyAuth] Failed to insert usage log:', err?.message || err);
   }
 
   // Dùng kết quả trả về từ RPC để check quota alert — không cần query thêm
   if (rpcResult.status === 'rejected' || rpcResult.value?.error) {
     const err = rpcResult.value?.error || rpcResult.reason;
-    console.error('[ClientKeyAuth] Failed to increment used_tokens:', err?.message || err);
-    // Fallback: dùng direct UPDATE nếu RPC chưa deploy — dùng RPC exec_sql để cộng dồn đúng
-    try {
-      await supabase.rpc('exec_sql', {
-        query_text: 'UPDATE client_keys SET used_tokens = used_tokens + CAST($1 AS bigint) WHERE id = CAST($2 AS uuid)',
-        query_params: [billedTokens, clientKeyId],
-      });
-    } catch (fallbackErr) {
-      console.error('[ClientKeyAuth] Fallback update failed:', fallbackErr);
+    const errMsg = String(err?.message || err || '');
+    console.warn('[ClientKeyAuth] Failed to increment used_tokens:', errMsg);
+    // Chỉ chạy fallback nếu không phải lỗi circuit breaker / timeout của Supabase
+    if (!errMsg.includes('circuit') && !errMsg.includes('timeout') && !errMsg.includes('503') && !errMsg.includes('504')) {
+      try {
+        await supabase.rpc('exec_sql', {
+          query_text: 'UPDATE client_keys SET used_tokens = used_tokens + CAST($1 AS bigint) WHERE id = CAST($2 AS uuid)',
+          query_params: [billedTokens, clientKeyId],
+        });
+      } catch (fallbackErr) {
+        console.warn('[ClientKeyAuth] Fallback update failed:', fallbackErr?.message || fallbackErr);
+      }
     }
   } else {
     // Lấy used/quota từ kết quả RPC — không tốn thêm round-trip
@@ -360,8 +350,12 @@ function extractTextFromChunk(parsed) {
   return "";
 }
 
-export async function wrapResponseWithClientKeyLogging(response, clientKeyId, model, reqBody = null) {
+export async function wrapResponseWithClientKeyLogging(response, clientKeyId, model, reqBodyOrTokens = null) {
   if (!response.ok) return response;
+
+  const fallbackPromptTokens = typeof reqBodyOrTokens === "number"
+    ? reqBodyOrTokens
+    : (reqBodyOrTokens ? Math.ceil(JSON.stringify(reqBodyOrTokens).length / 4) : 1000);
 
   // Nếu user gọi model cụ thể (vd: gemini-3.7-flash-high), giữ nguyên model đó cho log dashboard.
   // Nếu gọi qua Combo (vd: gpt-5.4 / gpt-5.5), dùng internalModel từ header x-9r-actual-model.
@@ -376,11 +370,10 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
   if (isStream && response.body) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
 
     let buffer = '';
     let hasLogged = false;
-    let accumulatedText = '';
+    let accumulatedLen = 0;
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -396,7 +389,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                     if (dataStr && dataStr !== '[DONE]') {
                       try {
                         const parsed = JSON.parse(dataStr);
-                        accumulatedText += extractTextFromChunk(parsed);
+                        accumulatedLen += extractTextFromChunk(parsed).length;
                         const usage = extractUsage(parsed);
                         if (usage) {
                           const { prompt_tokens = 0, completion_tokens = 0 } = usage;
@@ -414,9 +407,8 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
 
               // Fallback if no usage was returned in stream
               if (!hasLogged) {
-                const promptTokens = reqBody ? Math.ceil(JSON.stringify(reqBody).length / 4) : 1000;
-                const completionTokens = Math.max(1, Math.floor(accumulatedText.length / 4));
-                logClientKeyUsage(clientKeyId, actualModel, promptTokens, completionTokens)
+                const completionTokens = Math.max(1, Math.floor(accumulatedLen / 4));
+                logClientKeyUsage(clientKeyId, actualModel, fallbackPromptTokens, completionTokens)
                   .catch(err => console.error('[ClientKeyAuth] Failed to log fallback usage:', err.message));
               }
 
@@ -441,7 +433,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                 if (dataStr && dataStr !== '[DONE]') {
                   try {
                     const parsed = JSON.parse(dataStr);
-                    accumulatedText += extractTextFromChunk(parsed);
+                    accumulatedLen += extractTextFromChunk(parsed).length;
                     // Check if usage information exists using general extractUsage (supports OpenAI, Responses API, Gemini, Claude)
                     const usage = extractUsage(parsed);
                     if (usage) {
@@ -462,7 +454,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
           }
         } catch (err) {
           console.error('[ClientKeyAuth] Stream processing error:', err);
-          controller.error(err);
+          try { controller.error(err); } catch {}
         }
       }
     });
@@ -481,7 +473,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
       if (!usage) {
         const content = body.choices?.[0]?.message?.content || body.content || "";
         usage = {
-          prompt_tokens: reqBody ? Math.ceil(JSON.stringify(reqBody).length / 4) : 1000,
+          prompt_tokens: fallbackPromptTokens,
           completion_tokens: Math.max(1, Math.floor(content.length / 4))
         };
       }

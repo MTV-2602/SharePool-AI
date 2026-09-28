@@ -146,11 +146,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (current && current.lastUsedAt && currentCount < stickyLimit) {
         // Stay with current account
         connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
+        // Update lastUsedAt and increment count in memory/disk cache without blocking on DB
         await updateProviderConnection(connection.id, {
           lastUsedAt: new Date().toISOString(),
           consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
-        });
+        }, { memoryOnly: true });
       } else {
         // Pick the least recently used (excluding current if possible)
         const sortedByOldest = [...availableConnections].sort((a, b) => {
@@ -162,11 +162,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
         connection = sortedByOldest[0];
 
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
+        // Update lastUsedAt and reset count to 1 in memory/disk cache without blocking on DB
         await updateProviderConnection(connection.id, {
           lastUsedAt: new Date().toISOString(),
           consecutiveUseCount: 1
-        });
+        }, { memoryOnly: true });
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)

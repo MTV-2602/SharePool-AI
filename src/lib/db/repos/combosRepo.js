@@ -1,6 +1,11 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { getDiskCache, setDiskCache } from "../helpers/diskCache.js";
+
+const COMBOS_CACHE_TTL_MS = 60_000;
+const DISK_KEY = "repo:combos";
+let _combosCache = { data: null, ts: 0 };
 
 function rowToCombo(row) {
   if (!row) return null;
@@ -15,21 +20,35 @@ function rowToCombo(row) {
 }
 
 export async function getCombos() {
-  const db = await getAdapter();
-  const rows = await db.all(`SELECT * FROM combos ORDER BY createdAt ASC`);
-  return rows.map(rowToCombo);
+  if (_combosCache.data && Date.now() - _combosCache.ts < COMBOS_CACHE_TTL_MS) {
+    return _combosCache.data;
+  }
+  try {
+    const db = await getAdapter();
+    const rows = await db.all(`SELECT * FROM combos ORDER BY createdAt ASC`);
+    const list = rows.map(rowToCombo);
+    _combosCache = { data: list, ts: Date.now() };
+    setDiskCache(DISK_KEY, list);
+    return list;
+  } catch (err) {
+    if (_combosCache.data) {
+      _combosCache.ts = Date.now();
+      return _combosCache.data;
+    }
+    const disk = getDiskCache(DISK_KEY, []);
+    _combosCache = { data: disk, ts: Date.now() };
+    return disk;
+  }
 }
 
 export async function getComboById(id) {
-  const db = await getAdapter();
-  const row = await db.get(`SELECT * FROM combos WHERE id = ?`, [id]);
-  return rowToCombo(row);
+  const all = await getCombos();
+  return all.find((c) => c.id === id) || null;
 }
 
 export async function getComboByName(name) {
-  const db = await getAdapter();
-  const row = await db.get(`SELECT * FROM combos WHERE name = ?`, [name]);
-  return rowToCombo(row);
+  const all = await getCombos();
+  return all.find((c) => c.name === name) || null;
 }
 
 export async function createCombo(data) {
@@ -47,6 +66,7 @@ export async function createCombo(data) {
     `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
     [combo.id, combo.name, combo.kind, stringifyJson(combo.models), combo.createdAt, combo.updatedAt]
   );
+  _combosCache = { data: null, ts: 0 };
   return combo;
 }
 
@@ -63,11 +83,13 @@ export async function updateCombo(id, data) {
     );
     result = merged;
   });
+  _combosCache = { data: null, ts: 0 };
   return result;
 }
 
 export async function deleteCombo(id) {
   const db = await getAdapter();
   const res = await db.run(`DELETE FROM combos WHERE id = ?`, [id]);
+  _combosCache = { data: null, ts: 0 };
   return (res?.changes ?? 0) > 0;
 }

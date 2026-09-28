@@ -1,28 +1,31 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { getDiskCache, setDiskCache } from "../helpers/diskCache.js";
 
-// ─── In-memory cache cho getProviderConnections() ──────────────────────────────
+// ─── In-memory + Disk cache cho getProviderConnections() ───────────────────────
 const CONNECTIONS_CACHE_TTL_MS = 60_000; // 60 giây
-// filter key -> { data, ts }
-const _connectionsCache = new Map();
-
-function _getConnectionsCacheKey(filter = {}) {
-  return JSON.stringify(filter);
+const DISK_KEY = "repo:providerConnections";
+if (!global._allConnectionsCache) {
+  global._allConnectionsCache = { data: null, ts: 0 };
 }
+const _allCache = global._allConnectionsCache;
 
 function _invalidateConnectionsCache() {
-  _connectionsCache.clear();
+  _allCache.ts = 0;
 }
 
 function _patchConnectionInCache(updatedConn) {
   if (!updatedConn || !updatedConn.id) return;
-  for (const [, entry] of _connectionsCache.entries()) {
-    if (!Array.isArray(entry?.data)) continue;
-    const idx = entry.data.findIndex(c => c.id === updatedConn.id);
-    if (idx !== -1) {
-      entry.data[idx] = { ...entry.data[idx], ...updatedConn };
-    }
+  if (!Array.isArray(_allCache.data)) {
+    const disk = getDiskCache(DISK_KEY, null);
+    if (Array.isArray(disk)) _allCache.data = disk;
+  }
+  if (!Array.isArray(_allCache.data)) return;
+  const idx = _allCache.data.findIndex(c => c.id === updatedConn.id);
+  if (idx !== -1) {
+    _allCache.data[idx] = { ..._allCache.data[idx], ...updatedConn };
+    setDiskCache(DISK_KEY, _allCache.data);
   }
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,42 +84,47 @@ async function upsert(db, c) {
   );
 }
 
-export async function getProviderConnections(filter = {}) {
-  const cacheKey = _getConnectionsCacheKey(filter);
-  const cached = _connectionsCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < CONNECTIONS_CACHE_TTL_MS) {
-    return cached.data;
+async function loadAllConnections() {
+  if (Array.isArray(_allCache.data) && Date.now() - _allCache.ts < CONNECTIONS_CACHE_TTL_MS) {
+    return _allCache.data;
   }
   try {
     const db = await getAdapter();
-    const where = [];
-    const params = [];
-    if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
-    if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
-    const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
-    const rows = await db.all(sql, params);
+    const rows = await db.all(`SELECT * FROM providerConnections`);
     const list = rows.map(rowToConn);
     list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
-    _connectionsCache.set(cacheKey, { data: list, ts: Date.now() });
+    _allCache.data = list;
+    _allCache.ts = Date.now();
+    setDiskCache(DISK_KEY, list);
     return list;
   } catch (err) {
     console.warn("[connectionsRepo] Transient DB error reading connections, using cached:", err?.message || err);
-    if (cached) {
-      cached.ts = Date.now();
-      return cached.data;
+    if (Array.isArray(_allCache.data)) {
+      _allCache.ts = Date.now();
+      return _allCache.data;
     }
-    throw err;
+    const disk = getDiskCache(DISK_KEY, []);
+    _allCache.data = disk;
+    _allCache.ts = Date.now();
+    return disk;
   }
 }
 
-export async function getProviderConnectionById(id) {
-  for (const [, entry] of _connectionsCache.entries()) {
-    const found = entry?.data?.find?.(c => c.id === id);
-    if (found && Date.now() - entry.ts < CONNECTIONS_CACHE_TTL_MS) return found;
+export async function getProviderConnections(filter = {}) {
+  let list = await loadAllConnections();
+  if (filter.provider) {
+    list = list.filter((c) => c.provider === filter.provider);
   }
-  const db = await getAdapter();
-  const row = await db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
-  return rowToConn(row);
+  if (filter.isActive !== undefined) {
+    const want = !!filter.isActive;
+    list = list.filter((c) => !!c.isActive === want);
+  }
+  return list;
+}
+
+export async function getProviderConnectionById(id) {
+  const list = await loadAllConnections();
+  return list.find((c) => c.id === id) || null;
 }
 
 // Internal sync reorder — must be called INSIDE a transaction
@@ -200,9 +208,12 @@ export async function createProviderConnection(data) {
 }
 
 // Critical: OAuth refresh token race — atomic merge inside transaction
-export async function updateProviderConnection(id, data) {
+export async function updateProviderConnection(id, data, options = {}) {
   const updatedAt = new Date().toISOString();
   _patchConnectionInCache({ id, ...data, updatedAt });
+  if (options?.memoryOnly) {
+    return { id, ...data, updatedAt };
+  }
   try {
     const db = await getAdapter();
     let result;

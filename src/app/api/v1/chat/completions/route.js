@@ -40,18 +40,21 @@ export async function POST(request) {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
       });
     }
+    request._clientKeyValidated = true;
     
-    // Parse the body to extract the model (for logging fallback)
+    // Parse the body ONCE and pass via request._parsedBody to avoid 2x RAM spike on 400k-token requests
     let model = "unknown";
-    let reqBody = null;
+    let approxPromptTokens = 1000;
     try {
-      const clonedReq = request.clone();
-      reqBody = await clonedReq.json();
+      const contentLen = Number(request.headers.get("content-length")) || 0;
+      const reqBody = await request.json();
+      request._parsedBody = reqBody;
       model = reqBody.model || model;
+      approxPromptTokens = contentLen > 0 ? Math.ceil(contentLen / 4) : 1000;
     } catch (e) {}
 
     const response = await handleChat(request);
-    return await wrapResponseWithClientKeyLogging(response, authResult.keyData.id, model, reqBody);
+    return await wrapResponseWithClientKeyLogging(response, authResult.keyData.id, model, approxPromptTokens);
   }
 
   // Fallback to local handling (developer sk- key or other credentials)

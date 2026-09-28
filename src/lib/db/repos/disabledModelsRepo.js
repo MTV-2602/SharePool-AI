@@ -1,20 +1,22 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { makeKv } from "../helpers/kvStore.js";
 
 const SCOPE = "disabledModels";
+const disabledKv = makeKv(SCOPE);
 
 export async function getDisabledModels() {
-  const db = await getAdapter();
-  const rows = await db.all(`SELECT key, value FROM kv WHERE scope = ?`, [SCOPE]);
+  const all = await disabledKv.getAll();
   const out = {};
-  for (const r of rows) out[r.key] = parseJson(r.value, []);
+  for (const [k, v] of Object.entries(all)) {
+    out[k] = Array.isArray(v) ? v : parseJson(v, []);
+  }
   return out;
 }
 
 export async function getDisabledByProvider(providerAlias) {
-  const db = await getAdapter();
-  const row = await db.get(`SELECT value FROM kv WHERE scope = ? AND key = ?`, [SCOPE, providerAlias]);
-  return row ? (parseJson(row.value, []) || []) : [];
+  const all = await getDisabledModels();
+  return all[providerAlias] || [];
 }
 
 // Atomic read-merge-write inside a transaction (no JS yield mid-transaction).

@@ -30,7 +30,8 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 export async function handleChat(request, clientRawRequest = null) {
   let body;
   try {
-    body = await request.json();
+    body = request._parsedBody || await request.json();
+    delete request._parsedBody;
   } catch {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
@@ -69,7 +70,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
-  if (settings.requireApiKey) {
+  if (settings.requireApiKey && !request._clientKeyValidated) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
