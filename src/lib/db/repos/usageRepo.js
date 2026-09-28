@@ -323,6 +323,9 @@ export async function saveRequestUsage(entry) {
 let _clientKeysCache = { data: [], ts: 0 };
 const CLIENT_KEYS_CACHE_TTL_MS = 60_000;
 
+const _usageStatsCache = new Map();
+const USAGE_STATS_CACHE_TTL_MS = 15_000;
+
 export async function getUsageStats(period = "all") {
   const cachedEntry = _usageStatsCache.get(period);
   if (cachedEntry && Date.now() - cachedEntry.ts < USAGE_STATS_CACHE_TTL_MS) {
