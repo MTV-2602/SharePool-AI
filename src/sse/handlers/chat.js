@@ -37,16 +37,21 @@ export async function handleChat(request, clientRawRequest = null) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
 
-  // Build clientRawRequest for logging (if not provided)
+  // Pre-calculate estimated prompt tokens to avoid JSON.stringify on large payloads
+  const contentLen = Number(request.headers.get("content-length")) || 0;
+  body._estimatedPromptTokens = contentLen > 0 ? Math.ceil(contentLen / 4) : 1000;
+
+  // Build clientRawRequest for logging without retaining the full request body
   if (!clientRawRequest) {
     const url = new URL(request.url);
+    const headers = Object.fromEntries(request.headers.entries());
+    cacheClaudeHeaders(headers);
     clientRawRequest = {
-      endpoint: url.pathname,
-      body,
-      headers: Object.fromEntries(request.headers.entries())
+      endpoint: url.pathname
     };
+  } else if (clientRawRequest.headers) {
+    cacheClaudeHeaders(clientRawRequest.headers);
   }
-  cacheClaudeHeaders(clientRawRequest.headers);
 
   // Log request endpoint and model
   const url = new URL(request.url);

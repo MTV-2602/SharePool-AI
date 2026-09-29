@@ -133,17 +133,18 @@ export const ANTIGRAVITY_HEADERS = {
   "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
 };
 
-// Cloud Code Assist API — per-provider endpoints
+// Cloud Code Assist API — per-provider endpoints (each pulls from its own registry entry)
 export const CLOUD_CODE_API = {
+  // Default fallback properties for direct callers
   loadCodeAssist: PROVIDERS["gemini-cli"]?.oauth?.loadCodeAssistEndpoint || "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
   onboardUser: PROVIDERS["gemini-cli"]?.oauth?.onboardUserEndpoint || "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
   "gemini-cli": {
-    loadCodeAssist: PROVIDERS["gemini-cli"]?.oauth?.loadCodeAssistEndpoint || "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-    onboardUser: PROVIDERS["gemini-cli"]?.oauth?.onboardUserEndpoint || "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+    loadCodeAssist: PROVIDERS["gemini-cli"]?.oauth?.loadCodeAssistEndpoint,
+    onboardUser: PROVIDERS["gemini-cli"]?.oauth?.onboardUserEndpoint,
   },
   antigravity: {
-    loadCodeAssist: PROVIDERS.antigravity?.oauth?.loadCodeAssistEndpoint || "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-    onboardUser: PROVIDERS.antigravity?.oauth?.onboardUserEndpoint || "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+    loadCodeAssist: PROVIDERS.antigravity?.oauth?.loadCodeAssistEndpoint,
+    onboardUser: PROVIDERS.antigravity?.oauth?.onboardUserEndpoint,
   },
 };
 

@@ -39,34 +39,11 @@ function emitFunctionCall(functionCall, state, signature = null) {
 
 // Convert Gemini response chunk to OpenAI format
 export function geminiToOpenAIResponse(chunk, state) {
-  // Handle stream EOF flush: ensure finish_reason is emitted if upstream closed without one
-  if (!chunk) {
-    if (state?.messageId && !state.finishReason) {
-      const flushResults = [];
-      if (!state.geminiEmittedContent && (state.geminiToolCallCount || 0) === 0 && state.geminiReasoningBuffer) {
-        flushResults.push(buildChunk(chunkMeta(state), { content: state.geminiReasoningBuffer }, null));
-        state.geminiEmittedContent = true;
-      }
-      const finishReason = (state.geminiToolCallCount || 0) > 0 ? OPENAI_FINISH.TOOL_CALLS : OPENAI_FINISH.STOP;
-      const finalChunk = buildChunk(chunkMeta(state), {}, finishReason);
-      if (state.usage) finalChunk.usage = state.usage;
-      flushResults.push(finalChunk);
-      state.finishReason = finishReason;
-      return flushResults;
-    }
-    return null;
-  }
+  if (!chunk) return null;
   
   // Handle Antigravity wrapper
   const response = chunk.response || chunk;
-  if (!response) return null;
-
-  // Extract usage metadata even if candidates is absent on a trailing usage chunk
-  const usageMeta = response.usageMetadata || chunk.usageMetadata;
-  const geminiUsage = toOpenAIUsage(usageMeta, "gemini");
-  if (geminiUsage) state.usage = geminiUsage;
-
-  if (!response.candidates?.[0]) return null;
+  if (!response || !response.candidates?.[0]) return null;
 
   const results = [];
   const candidate = response.candidates[0];
@@ -78,8 +55,6 @@ export function geminiToOpenAIResponse(chunk, state) {
     state.model = response.modelVersion || state.model || "gemini";
     state.functionIndex = 0;
     state.geminiToolCallCount = 0;
-    state.geminiEmittedContent = false;
-    state.geminiReasoningBuffer = "";
     results.push(buildChunk(chunkMeta(state), { role: ROLE.ASSISTANT }, null));
   }
 
@@ -103,11 +78,6 @@ export function geminiToOpenAIResponse(chunk, state) {
         }
 
         if (hasTextContent) {
-          if (isThought) {
-            state.geminiReasoningBuffer = (state.geminiReasoningBuffer || "") + part.text;
-          } else {
-            state.geminiEmittedContent = true;
-          }
           results.push(buildChunk(
             chunkMeta(state),
             isThought ? reasoningDelta(part.text) : { content: part.text },
@@ -127,11 +97,6 @@ export function geminiToOpenAIResponse(chunk, state) {
       // can also stream thought parts without a signature; those must not be
       // surfaced as normal assistant content in OpenAI-compatible clients.
       if (part.text !== undefined && part.text !== "") {
-        if (isThought) {
-          state.geminiReasoningBuffer = (state.geminiReasoningBuffer || "") + part.text;
-        } else {
-          state.geminiEmittedContent = true;
-        }
         results.push(buildChunk(
           chunkMeta(state),
           isThought ? reasoningDelta(part.text) : { content: part.text },
@@ -149,7 +114,6 @@ export function geminiToOpenAIResponse(chunk, state) {
       // Inline data (images)
       const inlineData = part.inlineData || part.inline_data;
       if (inlineData?.data) {
-        state.geminiEmittedContent = true;
         const mimeType = inlineData.mimeType || inlineData.mime_type || DEFAULT_IMAGE_MIME;
         results.push(buildChunk(
           chunkMeta(state),
@@ -165,19 +129,16 @@ export function geminiToOpenAIResponse(chunk, state) {
     }
   }
 
+  // Usage metadata - extract before finish reason so we can include it
+  const usageMeta = response.usageMetadata || chunk.usageMetadata;
+  const geminiUsage = toOpenAIUsage(usageMeta, "gemini");
+  if (geminiUsage) state.usage = geminiUsage;
+
   // Finish reason - include usage in final chunk
   if (candidate.finishReason) {
     let finishReason = toOpenAIFinish(candidate.finishReason, "gemini");
     if (finishReason === OPENAI_FINISH.STOP && state.geminiToolCallCount > 0) {
       finishReason = OPENAI_FINISH.TOOL_CALLS;
-    }
-
-    // If Gemini stopped after emitting only thinking/reasoning (0 candidate tokens and 0 tool calls),
-    // also surface the reasoning text as assistant content so clients like Kilo Code / Cline / Roo Code
-    // do not fail the turn with "Response ended unexpectedly and may be incomplete."
-    if (!state.geminiEmittedContent && (state.geminiToolCallCount || 0) === 0 && state.geminiReasoningBuffer) {
-      results.push(buildChunk(chunkMeta(state), { content: state.geminiReasoningBuffer }, null));
-      state.geminiEmittedContent = true;
     }
     
     const finalChunk = buildChunk(chunkMeta(state), {}, finishReason);

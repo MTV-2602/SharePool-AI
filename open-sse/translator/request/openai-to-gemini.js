@@ -108,30 +108,24 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
         }
       } else if (role === ROLE.ASSISTANT) {
         const parts = [];
-        const text = content ? (typeof content === "string" ? content : extractTextContent(content)) : "";
-        const hasToolCalls = Array.isArray(msg.tool_calls) && msg.tool_calls.some(tc => tc.type === OPENAI_BLOCK.FUNCTION);
-        const reasoningText = msg.reasoning_content || (typeof msg.reasoning === "string" ? msg.reasoning : "");
 
-        // Thinking/reasoning → thought part with signature.
-        // 1) If a historical assistant turn had ONLY reasoning_content (no text and no tool_calls),
-        //    keep it as normal text so Antigravity's thought-stripper doesn't empty the turn and merge adjacent user turns.
-        // 2) If tool_calls are present in the same turn, do NOT push a separate dummy `{ thoughtSignature, text: "" }`
-        //    because the first functionCall part below already carries the turn's thoughtSignature.
-        if (reasoningText) {
+        // Thinking/reasoning → thought part with signature
+        if (msg.reasoning_content) {
           parts.push({
             thought: true,
-            text: reasoningText
+            text: msg.reasoning_content
           });
-          if (!hasToolCalls) {
-            parts.push({
-              thoughtSignature: signature,
-              text: ""
-            });
-          }
+          parts.push({
+            thoughtSignature: signature,
+            text: ""
+          });
         }
 
-        if (text) {
-          parts.push({ text });
+        if (content) {
+          const text = typeof content === "string" ? content : extractTextContent(content);
+          if (text) {
+            parts.push({ text });
+          }
         }
 
         if (msg.tool_calls && Array.isArray(msg.tool_calls)) {

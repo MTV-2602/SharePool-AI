@@ -271,6 +271,11 @@ async function getRecentHistorySlice() {
   }
 }
 
+export async function getUsageHistory(limit = 100) {
+  const slice = await getRecentHistorySlice();
+  return slice.slice(0, limit);
+}
+
 export async function saveRequestUsage(entry) {
   try {
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();

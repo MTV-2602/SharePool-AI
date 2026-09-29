@@ -27,9 +27,25 @@ export async function OPTIONS() {
   });
 }
 
+const MAX_REQUEST_BODY_BYTES = parseInt(process.env.MAX_REQUEST_BODY_BYTES || "4194304", 10);
+
 export async function POST(request) {  
   await ensureInitialized();
   
+  const contentLen = Number(request.headers.get("content-length")) || 0;
+  if (contentLen > MAX_REQUEST_BODY_BYTES) {
+    return new Response(JSON.stringify({
+      error: {
+        message: `Request payload too large (${(contentLen / 1024 / 1024).toFixed(1)}MB exceeds limit ${(MAX_REQUEST_BODY_BYTES / 1024 / 1024).toFixed(1)}MB)`,
+        type: "invalid_request_error",
+        code: "request_too_large"
+      }
+    }), {
+      status: 413,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    });
+  }
+
   const token = extractBearerToken(request);
   const isClientKey = token && (token.startsWith("ck-") || (token.startsWith("sk-") && token.split("-").length === 2));
   if (isClientKey) {
@@ -42,11 +58,10 @@ export async function POST(request) {
     }
     request._clientKeyValidated = true;
     
-    // Parse the body ONCE and pass via request._parsedBody to avoid 2x RAM spike on 400k-token requests
+    // Parse the body ONCE and pass via request._parsedBody to avoid 2x RAM spike on large requests
     let model = "unknown";
     let approxPromptTokens = 1000;
     try {
-      const contentLen = Number(request.headers.get("content-length")) || 0;
       const reqBody = await request.json();
       request._parsedBody = reqBody;
       model = reqBody.model || model;
