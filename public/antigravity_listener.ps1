@@ -33,8 +33,8 @@ Write-Host "--------------------------------------------------------------------
 Write-Host "HUONG DAN DANG NHAP:" -ForegroundColor White
 Write-Host "1. Nhan phim [Y] de mo trinh duyet dang nhap Google ngay bay gio." -ForegroundColor Yellow
 Write-Host "   (Hoac copy link ben duoi dan vao Profile Chrome/Edge co tai khoan Google can them)" -ForegroundColor Gray
-Write-Host "2. Chon tai khoan Google va bam Cho phep (Allow)." -ForegroundColor White
-Write-Host "3. Script se tu dong bat tai khoan va luu vao 9Router ma KHONG lo loi." -ForegroundColor Green
+Write-Host "2. Tren trinh duyet, chon tai khoan va bam nut [Sign in] hoac [Cho phep / Allow]." -ForegroundColor White
+Write-Host "3. Script se tu dong bat tai khoan va luu thang vao 9Router." -ForegroundColor Green
 Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
 Write-Host "Link dang nhap: " -ForegroundColor DarkYellow -NoNewline
 Write-Host $AUTH_URL -ForegroundColor Cyan
@@ -66,6 +66,7 @@ Write-Host ""
 Write-Host "[*] Dang cho Google gui ma xac thuc..." -ForegroundColor Cyan
 
 while ($true) {
+    $res = $null
     try {
         $context = $listener.GetContext()
         $req = $context.Request
@@ -79,11 +80,11 @@ while ($true) {
         }
 
         $code = $req.QueryString["code"]
-        $error = $req.QueryString["error"]
+        $oauthError = $req.QueryString["error"]
 
-        if ($error) {
-            Write-Host "[CANH BAO] Google tra ve loi: $error" -ForegroundColor Red
-            $html = "<html><body style='font-family:sans-serif;text-align:center;padding:50px;background:#18181b;color:#f87171;'><h2>Xac thuc that bai!</h2><p>$error</p></body></html>"
+        if ($oauthError) {
+            Write-Host "[CANH BAO] Google tra ve loi: $oauthError" -ForegroundColor Red
+            $html = "<html><body style='font-family:sans-serif;text-align:center;padding:50px;background:#18181b;color:#f87171;'><h2>Xac thuc that bai!</h2><p>$oauthError</p></body></html>"
             $buffer = [System.Text.Encoding]::UTF8.GetBytes($html)
             $res.ContentType = "text/html; charset=utf-8"
             $res.ContentLength64 = $buffer.Length
@@ -205,7 +206,6 @@ while ($true) {
         }
 
         # 4. Return success response to browser
-        $res.Headers.Add("Content-Type", "text/html; charset=utf-8")
         $html = @"
 <!DOCTYPE html>
 <html>
@@ -243,6 +243,7 @@ while ($true) {
 </html>
 "@
         $buffer = [System.Text.Encoding]::UTF8.GetBytes($html)
+        $res.ContentType = "text/html; charset=utf-8"
         $res.ContentLength64 = $buffer.Length
         $res.OutputStream.Write($buffer, 0, $buffer.Length)
         $res.Close()
@@ -266,6 +267,12 @@ while ($true) {
 
     } catch {
         Write-Host "[!] Gap loi trong luc xu ly request: $($_.Exception.Message)" -ForegroundColor Red
+        try {
+            if ($null -ne $res) {
+                $res.StatusCode = 500
+                $res.Close()
+            }
+        } catch {}
         Write-Host "[*] Tiep tuc lang nghe..." -ForegroundColor Cyan
     }
 }
