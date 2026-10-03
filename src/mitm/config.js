@@ -50,8 +50,8 @@ const MODEL_PATTERNS = {
     { match: /flash.*agent|agent.*flash|flash/i,                   alias: "gemini-3-flash" },
     { match: /pro.*low|low.*pro/i,                                 alias: "gemini-3.1-pro-low" },
     { match: /gemini.*pro|pro.*gemini/i,                           alias: "gemini-pro-agent" },
-    { match: /opus/i,                                              alias: "claude-opus-4-6-thinking" },
-    { match: /sonnet|claude/i,                                     alias: "claude-sonnet-4-6" },
+    { match: /opus/i,                                              alias: "claude-opus-5-5-high" },
+    { match: /sonnet|claude/i,                                     alias: "claude-sonnet-5-5-high" },
     { match: /gpt.*oss|oss/i,                                      alias: "gpt-oss-120b-medium" },
   ],
 };

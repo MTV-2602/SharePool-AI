@@ -58,8 +58,21 @@ export default {
     { id: "gemini-3.1-pro-high",         name: "Gemini 3.1 Pro High",         upstreamModelId: "gemini-pro-agent" },
     { id: "gemini-3.1-pro-low",          name: "Gemini 3.1 Pro Low",          upstreamModelId: "gemini-3.1-pro-low" },
     { id: "gemini-pro-agent",            name: "Gemini Pro Agent",            upstreamModelId: "gemini-pro-agent" },
-    { id: "claude-sonnet-4-6",           name: "Claude Sonnet 4.6 (Thinking)" },
-    { id: "claude-opus-4-6-thinking",    name: "Claude Opus 4.6 (Thinking)" },
+    // ── Claude 5.5 (Mới nhất) ────────────────────────────────────────────────
+    { id: "claude-sonnet-5-5-high",      name: "Claude Sonnet 5.5 (High)",      upstreamModelId: "claude-sonnet-5-5-high" },
+    { id: "claude-sonnet-5-5",           name: "Claude Sonnet 5.5",             upstreamModelId: "claude-sonnet-5-5-high" },
+    { id: "claude-sonnet-5.5",           name: "Claude Sonnet 5.5",             upstreamModelId: "claude-sonnet-5-5-high" },
+    { id: "claude-sonnet-5-5-medium",    name: "Claude Sonnet 5.5 (Medium)",    upstreamModelId: "claude-sonnet-5-5-medium" },
+    { id: "claude-sonnet-5-5-low",       name: "Claude Sonnet 5.5 (Low)",       upstreamModelId: "claude-sonnet-5-5-low" },
+    { id: "claude-opus-5-5-high",        name: "Claude Opus 5.5 (High)",        upstreamModelId: "claude-opus-5-5-high" },
+    { id: "claude-opus-5-5",             name: "Claude Opus 5.5",               upstreamModelId: "claude-opus-5-5-high" },
+    { id: "claude-opus-5.5",             name: "Claude Opus 5.5",               upstreamModelId: "claude-opus-5-5-high" },
+    { id: "claude-opus-5-5-medium",      name: "Claude Opus 5.5 (Medium)",      upstreamModelId: "claude-opus-5-5-medium" },
+    { id: "claude-opus-5-5-low",         name: "Claude Opus 5.5 (Low)",         upstreamModelId: "claude-opus-5-5-low" },
+
+    // ── Tương thích ngược Claude 4.6 (Auto -> 5.5) ───────────────────────────
+    { id: "claude-sonnet-4-6",           name: "Claude Sonnet 4.6 (Auto -> 5.5)", upstreamModelId: "claude-sonnet-5-5-high" },
+    { id: "claude-opus-4-6-thinking",    name: "Claude Opus 4.6 (Auto -> 5.5)",   upstreamModelId: "claude-opus-5-5-high" },
     { id: "gpt-oss-120b-medium",         name: "GPT-OSS 120B (Medium)" },
 
     // ── Alias 3.8 (mặc định chính cho khách hàng) ────────────────────────────

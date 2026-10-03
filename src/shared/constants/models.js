@@ -27,7 +27,8 @@ const PASSTHROUGH_PROVIDERS = new Set(
 export function isValidModel(aliasOrId, modelId) {
   if (isOpenAICompatibleProvider(aliasOrId)) return true;
   if (PASSTHROUGH_PROVIDERS.has(aliasOrId)) return true;
-  const models = MODELS[aliasOrId];
+  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
+  const models = MODELS[alias] || MODELS[aliasOrId];
   if (!models) return false;
   return models.some(m => m.id === modelId);
 }

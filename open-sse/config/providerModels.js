@@ -10,43 +10,49 @@ export { PROVIDER_MODELS };
 
 // Helper functions
 export function getProviderModels(aliasOrId) {
-  return PROVIDER_MODELS[aliasOrId] || [];
+  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
+  return PROVIDER_MODELS[alias] || [];
 }
 
 export function getDefaultModel(aliasOrId) {
-  const models = PROVIDER_MODELS[aliasOrId];
+  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
+  const models = PROVIDER_MODELS[alias];
   return models?.[0]?.id || null;
 }
 
 export function isValidModel(aliasOrId, modelId, passthroughProviders = new Set()) {
-  if (passthroughProviders.has(aliasOrId)) return true;
-  const models = PROVIDER_MODELS[aliasOrId];
+  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
+  if (passthroughProviders.has(alias) || passthroughProviders.has(aliasOrId)) return true;
+  const models = PROVIDER_MODELS[alias];
   if (!models) return false;
   return models.some(m => m.id === modelId);
 }
 
 export function findModelName(aliasOrId, modelId) {
-  const models = PROVIDER_MODELS[aliasOrId];
+  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
+  const models = PROVIDER_MODELS[alias];
   if (!models) return modelId;
   const found = models.find(m => m.id === modelId);
   return found?.name || modelId;
 }
 
 export function getModelTargetFormat(aliasOrId, modelId) {
-  const models = PROVIDER_MODELS[aliasOrId];
+  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
+  const models = PROVIDER_MODELS[alias];
   if (!models) return null;
   return modelTargetFormat(models.find(m => m.id === modelId));
 }
 
 export function getModelType(aliasOrId, modelId) {
-  const models = PROVIDER_MODELS[aliasOrId];
+  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
+  const models = PROVIDER_MODELS[alias];
   if (!models) return null;
   const found = models.find(m => m.id === modelId);
   return found?.kind || found?.type || null;
 }
 
 const THINKING_SUFFIX_RE = /^(.*)\(([^()]+)\)\s*$/;
-const DASH_THINKING_SUFFIX_RE = /^(gemini-[a-z0-9.-]+?)-(high|medium|low|minimal|extra-low)$/i;
+const DASH_THINKING_SUFFIX_RE = /^((?:gemini|claude|gpt)-[a-z0-9.-]+?)-(high|medium|low|minimal|extra-low)$/i;
 
 // Strip "(high)" / "(low)" / "(8192)" / "(none)" / "(auto)" thinking suffix from a model ID.
 export function stripThinkingSuffix(modelId) {
@@ -137,6 +143,18 @@ function resolveDynamicAntigravityUpstream(modelId, explicitUpstream = null) {
     const target = explicitUpstream || (isLow ? "gemini-3.1-pro-low" : "gemini-pro-agent");
     const effectiveLevel = normLevel || (target.endsWith("-low") ? "low" : "high");
     return `${target}(${effectiveLevel})`;
+  }
+
+  // Claude Sonnet family (claude-sonnet-5-5, claude-sonnet-5.5, claude-sonnet-4-6, claude-3-5-sonnet, etc.)
+  if (/^claude-(?:sonnet|3(?:-|\.)(?:5|7)-sonnet)(?:-\d+(?:[-.]\d+)?)?(?:-thinking)?$/i.test(baseModel)) {
+    const level = normLevel || "high";
+    return explicitUpstream ? (normLevel ? `claude-sonnet-5-5-${level}` : explicitUpstream) : `claude-sonnet-5-5-${level}`;
+  }
+
+  // Claude Opus family (claude-opus-5-5, claude-opus-5.5, claude-opus-4-6, claude-opus-4-6-thinking...)
+  if (/^claude-(?:opus|3(?:-|\.)(?:5|7)-opus)(?:-\d+(?:[-.]\d+)?)?(?:-thinking)?$/i.test(baseModel)) {
+    const level = normLevel || "high";
+    return explicitUpstream ? (normLevel ? `claude-opus-5-5-${level}` : explicitUpstream) : `claude-opus-5-5-${level}`;
   }
 
   return explicitUpstream || modelId;
