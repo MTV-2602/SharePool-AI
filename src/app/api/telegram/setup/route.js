@@ -4,10 +4,12 @@ import { getSettings } from '@/lib/localDb';
 export async function GET(request) {
   try {
     const settings = await getSettings().catch(() => ({}));
-    const CURRENT_VALID_TOKEN = '8101230396:AAEk6TMGXo6QLH2rlCwRt0-em5wnouroWxc';
-    let botToken = settings?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || CURRENT_VALID_TOKEN;
-    if (botToken.includes('AAE_l8KqCJ5yTruNTZSwOrQLSwsVc-DOuco')) {
-      botToken = CURRENT_VALID_TOKEN;
+    const botToken = process.env.TELEGRAM_BOT_TOKEN || settings?.TELEGRAM_BOT_TOKEN;
+    if (!botToken) {
+      return NextResponse.json({
+        ok: false,
+        error: 'TELEGRAM_BOT_TOKEN is not configured in environment or settings.'
+      }, { status: 400 });
     }
 
     // Determine host from request headers, strip 'api.' prefix if called from API domain

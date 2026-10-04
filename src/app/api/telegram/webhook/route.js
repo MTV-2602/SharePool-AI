@@ -80,11 +80,7 @@ export async function POST(request) {
       console.warn('[Telegram Webhook] getSettings fallback:', e?.message);
     }
 
-    const CURRENT_VALID_TOKEN = '8101230396:AAEk6TMGXo6QLH2rlCwRt0-em5wnouroWxc';
-    let botToken = settings?.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || CURRENT_VALID_TOKEN;
-    if (botToken.includes('AAE_l8KqCJ5yTruNTZSwOrQLSwsVc-DOuco')) {
-      botToken = CURRENT_VALID_TOKEN;
-    }
+    const botToken = process.env.TELEGRAM_BOT_TOKEN || settings?.TELEGRAM_BOT_TOKEN;
     const scriptUrl = settings?.COURSERA_SHEET_SCRIPT_URL || process.env.COURSERA_SHEET_SCRIPT_URL || process.env.GOOGLE_SHEET_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
 
     const sendTelegramMessage = async (chatId, text, options = {}) => {
