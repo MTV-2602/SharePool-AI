@@ -5,6 +5,7 @@ import { ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
 // === Gemini CLI === derive từ registry gemini-cli.transport
 export const GEMINI_CLI_VERSION = PROVIDERS["gemini-cli"]?.cliVersion;
 export const GEMINI_CLI_API_CLIENT = PROVIDERS["gemini-cli"]?.apiClient;
+export const CODEX_CLI_VERSION = PROVIDERS["codex"]?.cliVersion;
 
 // Map Node arch to Gemini CLI arch string (x64/x86/arm64/...)
 function geminiCLIArch() {

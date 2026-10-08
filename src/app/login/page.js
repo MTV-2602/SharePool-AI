@@ -320,9 +320,12 @@ export default function LoginPage() {
     if (
       m.startsWith("codex/") ||
       m.startsWith("cx/") ||
+      m.includes("gpt-6") ||
+      m.includes("gpt-5.6") ||
       m.includes("gpt-5.5") ||
-      m.includes("gpt-5.4-image") ||
-      m.includes("gpt-5.3")
+      m.includes("gpt-daybreak") ||
+      m.includes("gpt-reserve") ||
+      m.includes("codex-auto")
     ) {
       return "Codex";
     }
@@ -467,41 +470,43 @@ console.log(response.choices[0].message.content);
   };
 
   const getCodexMarkdown = () => {
-    return `# Hướng dẫn tích hợp Client (Codex Desktop App & IDEs)
+    return `# Hướng dẫn tích hợp Client (Codex CLI, Desktop App & IDEs)
 
 Hệ thống hỗ trợ 2 dòng model chính chạy qua cổng API Gateway:
-- **AntiGravity (Gemini / Claude / GPT-OSS)**: Sử dụng Model ID \`ag/gemini-3.8-flash-high\` (hoặc Combo ID \`gpt-5.4\`)
-- **Codex (ChatGPT-backed)**: Sử dụng Model ID \`gpt-5.5\`
+- **Codex (ChatGPT Plus/Pro)**: Flagship \`gpt-6.1-sol\`, \`gpt-6-astra\`, \`gpt-6-sol\`, \`gpt-5.6-sol[1m]\` (hoặc tiền tố \`cx/gpt-6.1-sol\`, \`cx/gpt-5.6-sol\`)
+- **AntiGravity (Gemini / Claude / GPT-OSS)**: Sử dụng Model ID \`ag/gemini-3.8-flash-high\`, \`ag/claude-sonnet-4-6\`, \`ag/claude-opus-4-6-thinking\`
 
 ---
 
 ## ⚡ 1. Cấu hình tự động 1-Click trên Terminal (Khuyên dùng)
-Copy và dán dòng lệnh bên dưới vào Terminal để hệ thống tự động tạo thư mục và ghi file cấu hình \`.codex/config.toml\` & \`.codex/auth.json\` với API Key của bạn:
+Copy và dán dòng lệnh bên dưới vào Terminal để hệ thống tự động tạo thư mục và ghi file cấu hình \`.codex/config.toml\` & \`.codex/auth.json\` với API Key của bạn (chuẩn Codex CLI 0.159+):
 
-### 🔷 Trên Windows (Mở PowerShell dán lệnh sau - Mặc định AntiGravity gpt-5.4):
+### 🔷 Trên Windows (Mở PowerShell dán lệnh sau - Mặc định model gpt-6.1-sol):
 \`\`\`powershell
-mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.4\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'
+mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model = \`"gpt-6.1-sol\`"\`nmodel_provider = \`"9router\`"\`n\`n[model_providers.9router]\`nname = \`"9Router\`"\`nbase_url = \`"${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`n\`n[model_providers.9router.http_headers]\`nAuthorization = \`"Bearer ${savedKey}\`"\`n\`n[agents]\`ndefault_subagent_model = \`"gpt-6.1-sol\`""; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'
 \`\`\`
 
 ### 🍎 Trên Mac / Linux (Mở Terminal dán lệnh sau):
 \`\`\`bash
 mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml
-model_reasoning_effort = "low"
-model_provider = "openai-custom"
-model = "gpt-5.4"
+model = "gpt-6.1-sol"
+model_provider = "9router"
 
-[model_providers.openai-custom]
-experimental_bearer_token = "${savedKey}"
-name = "VinAi"
+[model_providers.9router]
+name = "9Router"
 base_url = "${apiOrigin}/v1"
 wire_api = "responses"
-requires_openai_auth = false
-supports_websockets = false
+
+[model_providers.9router.http_headers]
+Authorization = "Bearer ${savedKey}"
+
+[agents]
+default_subagent_model = "gpt-6.1-sol"
 EOF
 echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json
 \`\`\`
 
-*(Lưu ý: Tắt hoàn toàn ứng dụng Codex Desktop App và mở lại để áp dụng cấu hình).*
+*(Lưu ý: Tắt hoàn toàn Codex CLI / Codex Desktop App và mở lại để áp dụng cấu hình).*
 
 ---
 
@@ -513,7 +518,7 @@ curl ${apiOrigin}/v1/chat/completions \\
   -H "Authorization: Bearer ${savedKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "ag/gemini-3.8-flash-high",
+    "model": "cx/gpt-6.1-sol",
     "messages": [{"role": "user", "content": "Xin chào! Kiểm tra kết nối API Gateway."}]
   }'
 \`\`\`
@@ -525,22 +530,41 @@ Nếu bạn muốn sửa file thủ công, hãy tìm file theo đường dẫn:
 - **Windows**: \`%USERPROFILE%\\.codex\\config.toml\` (Ví dụ: \`C:\\Users\\tên_user\\.codex\\config.toml\`)
 - **Mac / Linux**: \`~/.codex/config.toml\`
 
-### Mẫu file config.toml (Sử dụng model AntiGravity qua gpt-5.4):
+### Mẫu file config.toml (Chuẩn Codex CLI 0.159+ cho model gpt-6.1-sol):
 \`\`\`toml
-model_reasoning_effort = "low"
-model_provider = "openai-custom"
-model = "gpt-5.4"
+model = "gpt-6.1-sol"
+model_provider = "9router"
 
-[model_providers.openai-custom]
-experimental_bearer_token = "${savedKey}"
-name = "VinAi"
+[model_providers.9router]
+name = "9Router"
 base_url = "${apiOrigin}/v1"
 wire_api = "responses"
-requires_openai_auth = false
-supports_websockets = false
+
+[model_providers.9router.http_headers]
+Authorization = "Bearer ${savedKey}"
+
+[agents]
+default_subagent_model = "gpt-6.1-sol"
 \`\`\`
 
-### Mẫu file auth.json (Bypass Login):
+### Mẫu file config.toml (Cho model AntiGravity ag/gemini-3.8-flash-high):
+\`\`\`toml
+model = "ag/gemini-3.8-flash-high"
+model_provider = "9router"
+
+[model_providers.9router]
+name = "9Router"
+base_url = "${apiOrigin}/v1"
+wire_api = "responses"
+
+[model_providers.9router.http_headers]
+Authorization = "Bearer ${savedKey}"
+
+[agents]
+default_subagent_model = "ag/gemini-3.8-flash-high"
+\`\`\`
+
+### Mẫu file auth.json (Bypass Login cho Desktop App):
 \`\`\`json
 {
   "auth_mode": "apikey",
@@ -554,7 +578,7 @@ supports_websockets = false
 - **Provider**: Chọn \`OpenAI Compatible\` (hoặc Custom OpenAI)
 - **Base URL**: \`${apiOrigin}/v1\`
 - **API Key**: \`${savedKey}\`
-- **Model ID chuẩn**: \`ag/gemini-3.8-flash-high\` (hoặc \`ag/claude-sonnet-4-6\`, \`ag/gpt-oss-120b-medium\`, \`gpt-5.4\`, \`gpt-5.5\`)`;
+- **Model ID chuẩn**: \`cx/gpt-6.1-sol\`, \`cx/gpt-6-astra\`, \`cx/gpt-5.6-sol\`, \`ag/gemini-3.8-flash-high\`, \`ag/claude-sonnet-4-6\``;
   };
 
   const getOpenclawMarkdown = () => {
@@ -576,7 +600,7 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
 1. Mở hoặc tạo tệp cấu hình của OpenClaw theo hệ điều hành:
    - **Windows**: \`%USERPROFILE%\\.openclaw\\openclaw.json\` (Ví dụ: \`C:\\Users\\tên_user\\.openclaw\\openclaw.json\`)
    - **Mac / Linux**: \`~/.openclaw/openclaw.json\`
-2. Chỉnh sửa tệp **openclaw.json** và dán nội dung cấu hình nhà cung cấp \`9router\` vào phần \`models.providers\` (sử dụng tiền tố \`ag/\` chuẩn):
+2. Chỉnh sửa tệp **openclaw.json** và dán nội dung cấu hình nhà cung cấp \`9router\` vào phần \`models.providers\`:
 \`\`\`json
 {
   "models": {
@@ -586,11 +610,12 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
         "apiKey": "${savedKey}",
         "api": "openai-completions",
         "models": [
+          { "id": "cx/gpt-6.1-sol", "name": "cx/gpt-6.1-sol" },
+          { "id": "cx/gpt-6-astra", "name": "cx/gpt-6-astra" },
+          { "id": "cx/gpt-5.6-sol", "name": "cx/gpt-5.6-sol" },
           { "id": "ag/gemini-3.8-flash-high", "name": "ag/gemini-3.8-flash-high" },
           { "id": "ag/claude-sonnet-4-6", "name": "ag/claude-sonnet-4-6" },
-          { "id": "ag/gpt-oss-120b-medium", "name": "ag/gpt-oss-120b-medium" },
-          { "id": "gpt-5.4", "name": "gpt-5.4" },
-          { "id": "gpt-5.5", "name": "gpt-5.5" }
+          { "id": "ag/gpt-oss-120b-medium", "name": "ag/gpt-oss-120b-medium" }
         ]
       }
     }
@@ -598,13 +623,14 @@ Nếu bạn muốn cấu hình thủ công hoặc chạy OpenClaw từ xa:
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/ag/gemini-3.8-flash-high"
+        "primary": "9router/cx/gpt-6.1-sol"
       },
       "models": {
+        "9router/cx/gpt-6.1-sol": {},
+        "9router/cx/gpt-6-astra": {},
+        "9router/cx/gpt-5.6-sol": {},
         "9router/ag/gemini-3.8-flash-high": {},
-        "9router/ag/claude-sonnet-4-6": {},
-        "9router/gpt-5.4": {},
-        "9router/gpt-5.5": {}
+        "9router/ag/claude-sonnet-4-6": {}
       }
     }
   }
@@ -1638,10 +1664,10 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                         </div>
                         <div className="space-y-1 text-xs text-text-muted">
                           <div>
-                            <strong>Model Codex (ChatGPT-backed):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.5</code>
+                            <strong>Model Codex (Flagship mới):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-6.1-sol</code> (hoặc <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-6-astra</code>, <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.6-sol</code>)
                           </div>
                           <div className="mt-1">
-                            <strong>Model AntiGravity (Khuyên dùng):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">ag/gemini-3.8-flash-high</code> (hoặc <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">gpt-5.4</code>)
+                            <strong>Model AntiGravity (Khuyên dùng):</strong> <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">ag/gemini-3.8-flash-high</code> (hoặc <code className="bg-surface px-1.5 py-0.5 rounded border border-border text-text-main font-mono">ag/claude-sonnet-4-6</code>)
                           </div>
                         </div>
                       </div>
@@ -1650,7 +1676,7 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
 
                   <Card title="💻 Cấu hình trên Codex Desktop App / IDE" icon="laptop_mac">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
-                      <p>Sử dụng ứng dụng Codex Desktop App và tự động bypass màn hình login:</p>
+                      <p>Sử dụng ứng dụng Codex Desktop App và tự động bypass màn hình login (Chuẩn Codex CLI 0.159+):</p>
                       <div>
                         <p className="text-xs mb-2 font-semibold text-text-main">1. Tìm hoặc tạo thư mục cấu hình của Codex:</p>
                         <ul className="list-disc pl-5 text-xs mb-3 space-y-1">
@@ -1661,9 +1687,9 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                         <div className="space-y-4">
                           <div>
                             <div className="flex justify-between items-center mb-1.5">
-                              <span className="text-xs font-semibold text-text-main">Cấu hình file config.toml cho model Codex (gpt-5.5):</span>
+                              <span className="text-xs font-semibold text-text-main">Cấu hình file config.toml cho model Codex (gpt-6.1-sol):</span>
                               <button
-                                onClick={() => copyText(`model_reasoning_effort = \"low\"\nmodel_provider = \"openai-custom\"\nmodel = \"gpt-5.5\"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = \"${savedKey}\"\nname = \"VinAi\"\nbase_url = \"${apiOrigin}/v1\"\nwire_api = \"responses\"\nrequires_openai_auth = false\nsupports_websockets = false`, "tomlConfigCodex")}
+                                onClick={() => copyText(`model = \"gpt-6.1-sol\"\nmodel_provider = \"9router\"\n\n[model_providers.9router]\nname = \"9Router\"\nbase_url = \"${apiOrigin}/v1\"\nwire_api = \"responses\"\n\n[model_providers.9router.http_headers]\nAuthorization = \"Bearer ${savedKey}\"\n\n[agents]\ndefault_subagent_model = \"gpt-6.1-sol\"`, "tomlConfigCodex")}
                                 className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[14px]">
@@ -1673,25 +1699,27 @@ echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.jso
                               </button>
                             </div>
                             <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`model_reasoning_effort = "low"
-model_provider = "openai-custom"
-model = "gpt-5.5"
+{`model = "gpt-6.1-sol"
+model_provider = "9router"
 
-[model_providers.openai-custom]
-experimental_bearer_token = "${savedKey}"
-name = "VinAi"
+[model_providers.9router]
+name = "9Router"
 base_url = "${apiOrigin}/v1"
 wire_api = "responses"
-requires_openai_auth = false
-supports_websockets = false`}
+
+[model_providers.9router.http_headers]
+Authorization = "Bearer ${savedKey}"
+
+[agents]
+default_subagent_model = "gpt-6.1-sol"`}
                             </pre>
                           </div>
 
                           <div>
                             <div className="flex justify-between items-center mb-1.5">
-                              <span className="text-xs font-semibold text-text-main">Cấu hình file config.toml cho model AntiGravity (gpt-5.4):</span>
+                              <span className="text-xs font-semibold text-text-main">Cấu hình file config.toml cho model AntiGravity (ag/gemini-3.8-flash-high):</span>
                               <button
-                                onClick={() => copyText(`model_reasoning_effort = \"low\"\nmodel_provider = \"openai-custom\"\nmodel = \"gpt-5.4\"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = \"${savedKey}\"\nname = \"VinAi\"\nbase_url = \"${apiOrigin}/v1\"\nwire_api = \"responses\"\nrequires_openai_auth = false\nsupports_websockets = false`, "tomlConfigAG")}
+                                onClick={() => copyText(`model = \"ag/gemini-3.8-flash-high\"\nmodel_provider = \"9router\"\n\n[model_providers.9router]\nname = \"9Router\"\nbase_url = \"${apiOrigin}/v1\"\nwire_api = \"responses\"\n\n[model_providers.9router.http_headers]\nAuthorization = \"Bearer ${savedKey}\"\n\n[agents]\ndefault_subagent_model = \"ag/gemini-3.8-flash-high\"`, "tomlConfigAG")}
                                 className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[14px]">
@@ -1701,17 +1729,19 @@ supports_websockets = false`}
                               </button>
                             </div>
                             <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs overflow-x-auto text-text-main font-mono">
-{`model_reasoning_effort = "low"
-model_provider = "openai-custom"
-model = "gpt-5.4"
+{`model = "ag/gemini-3.8-flash-high"
+model_provider = "9router"
 
-[model_providers.openai-custom]
-experimental_bearer_token = "${savedKey}"
-name = "VinAi"
+[model_providers.9router]
+name = "9Router"
 base_url = "${apiOrigin}/v1"
 wire_api = "responses"
-requires_openai_auth = false
-supports_websockets = false`}
+
+[model_providers.9router.http_headers]
+Authorization = "Bearer ${savedKey}"
+
+[agents]
+default_subagent_model = "ag/gemini-3.8-flash-high"`}
                             </pre>
                           </div>
                         </div>
@@ -1795,23 +1825,43 @@ supports_websockets = false`}
                           <div className="bg-surface-2 border border-border rounded-lg p-3 flex flex-col justify-between gap-2">
                             <div>
                               <strong className="text-xs text-text-main block mb-1">Model Codex (ChatGPT-backed)</strong>
-                              <span className="text-xs text-text-muted">Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">gpt-5.5</code></span>
+                              <span className="text-xs text-text-muted">Chọn model OpenAI Codex:</span>
                             </div>
-                            <button
-                              onClick={() => copyText("gpt-5.5", "modelCodex55")}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors self-start"
-                            >
-                              <span className="material-symbols-outlined text-[13px]">
-                                {copiedField === "modelCodex55" ? "check" : "content_copy"}
-                              </span>
-                              {copiedField === "modelCodex55" ? "Đã copy gpt-5.5" : "Copy gpt-5.5"}
-                            </button>
+                            <div className="flex gap-1.5 flex-wrap">
+                              <button
+                                onClick={() => copyText("cx/gpt-6.1-sol", "modelCodex61")}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">
+                                  {copiedField === "modelCodex61" ? "check" : "content_copy"}
+                                </span>
+                                {copiedField === "modelCodex61" ? "Đã copy cx/gpt-6.1-sol" : "Copy cx/gpt-6.1-sol"}
+                              </button>
+                              <button
+                                onClick={() => copyText("cx/gpt-6-astra", "modelCodexAstra")}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">
+                                  {copiedField === "modelCodexAstra" ? "check" : "content_copy"}
+                                </span>
+                                {copiedField === "modelCodexAstra" ? "Đã copy cx/gpt-6-astra" : "Copy cx/gpt-6-astra"}
+                              </button>
+                              <button
+                                onClick={() => copyText("cx/gpt-5.6-sol", "modelCodex56")}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">
+                                  {copiedField === "modelCodex56" ? "check" : "content_copy"}
+                                </span>
+                                {copiedField === "modelCodex56" ? "Đã copy cx/gpt-5.6-sol" : "Copy cx/gpt-5.6-sol"}
+                              </button>
+                            </div>
                           </div>
 
                           <div className="bg-surface-2 border border-border rounded-lg p-3 flex flex-col justify-between gap-2">
                             <div>
                               <strong className="text-xs text-text-main block mb-1">Model AntiGravity (Khuyên dùng)</strong>
-                              <span className="text-xs text-text-muted">Model ID: <code className="bg-surface px-1.5 py-0.5 rounded border border-border font-mono text-text-main font-semibold">ag/gemini-3.8-flash-high</code></span>
+                              <span className="text-xs text-text-muted">Chọn model tốc độ cao:</span>
                             </div>
                             <div className="flex gap-1.5 flex-wrap">
                               <button
@@ -1832,15 +1882,6 @@ supports_websockets = false`}
                                 </span>
                                 {copiedField === "modelAGSonnetCodex" ? "Đã copy" : "Copy ag/claude-sonnet-4-6"}
                               </button>
-                              <button
-                                onClick={() => copyText("gpt-5.4", "modelGpt54")}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs cursor-pointer transition-colors"
-                              >
-                                <span className="material-symbols-outlined text-[13px]">
-                                  {copiedField === "modelGpt54" ? "check" : "content_copy"}
-                                </span>
-                                {copiedField === "modelGpt54" ? "Đã copy" : "Copy gpt-5.4"}
-                              </button>
                             </div>
                           </div>
                         </div>
@@ -1850,7 +1891,7 @@ supports_websockets = false`}
 
                   <Card title="🤖 Hướng dẫn Cài đặt & Kết nối Codex CLI" icon="terminal">
                     <div className="space-y-4 text-sm text-text-muted mt-2">
-                      <p>Codex CLI cho phép bạn chạy mô hình AI trực tiếp trong Terminal của máy tính. Dưới đây là hướng dẫn cài đặt và kết nối 1-Click về máy chủ 9Router:</p>
+                      <p>Codex CLI cho phép bạn chạy mô hình AI trực tiếp trong Terminal của máy tính. Dưới đây là hướng dẫn cài đặt và kết nối 1-Click về máy chủ 9Router (chuẩn Codex CLI 0.159+):</p>
 
                       <div className="space-y-4">
                         {/* Bước 1: Cài đặt */}
@@ -1883,9 +1924,9 @@ npm install -g @openai/codex
                           
                           <div>
                             <div className="flex justify-between items-center mb-1.5">
-                              <span className="text-xs font-semibold text-text-main">🔷 Trên Windows (Mở PowerShell dán lệnh này):</span>
+                              <span className="text-xs font-semibold text-text-main">🔷 Trên Windows (Mở PowerShell dán lệnh này - Mặc định gpt-6.1-sol):</span>
                               <button
-                                onClick={() => copyText(`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.5\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`, "cmdPsCodexCli")}
+                                onClick={() => copyText(`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model = \`"gpt-6.1-sol\`"\`nmodel_provider = \`"9router\`"\`n\`n[model_providers.9router]\`nname = \`"9Router\`"\`nbase_url = \`"${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`n\`n[model_providers.9router.http_headers]\`nAuthorization = \`"Bearer ${savedKey}\`"\`n\`n[agents]\`ndefault_subagent_model = \`"gpt-6.1-sol\`""; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`, "cmdPsCodexCli")}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
                               >
                                 <span className="material-symbols-outlined text-[13px]">
@@ -1895,7 +1936,7 @@ npm install -g @openai/codex
                               </button>
                             </div>
                             <pre className="bg-surface border border-border rounded p-2.5 text-xs font-mono text-text-main whitespace-pre-wrap break-all">
-{`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model_reasoning_effort = \`"low\`"\`nmodel_provider = \`"openai-custom\`"\`nmodel = \`"gpt-5.5\`"\`n\`n[model_providers.openai-custom]\`nexperimental_bearer_token = \`"${savedKey}\`"\`nname = \`"VinAi\`"\`nbase_url = \`"${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`nrequires_openai_auth = false\`nsupports_websockets = false"; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`}
+{`mkdir -Force $env:USERPROFILE\\.codex; Set-Content $env:USERPROFILE\\.codex\\config.toml "model = \`"gpt-6.1-sol\`"\`nmodel_provider = \`"9router\`"\`n\`n[model_providers.9router]\`nname = \`"9Router\`"\`nbase_url = \`"${apiOrigin}/v1\`"\`nwire_api = \`"responses\`"\`n\`n[model_providers.9router.http_headers]\`nAuthorization = \`"Bearer ${savedKey}\`"\`n\`n[agents]\`ndefault_subagent_model = \`"gpt-6.1-sol\`""; Set-Content $env:USERPROFILE\\.codex\\auth.json '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}'`}
                             </pre>
                           </div>
 
@@ -1903,7 +1944,7 @@ npm install -g @openai/codex
                             <div className="flex justify-between items-center mb-1.5">
                               <span className="text-xs font-semibold text-text-main">🍎 Trên Mac / Linux (Mở Terminal dán lệnh này):</span>
                               <button
-                                onClick={() => copyText(`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml\nmodel_reasoning_effort = "low"\nmodel_provider = "openai-custom"\nmodel = "gpt-5.5"\n\n[model_providers.openai-custom]\nexperimental_bearer_token = "${savedKey}"\nname = "VinAi"\nbase_url = "${apiOrigin}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nsupports_websockets = false\nEOF\necho '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`, "cmdBashCodexCli")}
+                                onClick={() => copyText(`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml\nmodel = "gpt-6.1-sol"\nmodel_provider = "9router"\n\n[model_providers.9router]\nname = "9Router"\nbase_url = "${apiOrigin}/v1"\nwire_api = "responses"\n\n[model_providers.9router.http_headers]\nAuthorization = "Bearer ${savedKey}"\n\n[agents]\ndefault_subagent_model = "gpt-6.1-sol"\nEOF\necho '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`, "cmdBashCodexCli")}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface border border-border hover:bg-surface-3 text-xs font-medium cursor-pointer transition-colors"
                               >
                                 <span className="material-symbols-outlined text-[13px]">
@@ -1914,17 +1955,19 @@ npm install -g @openai/codex
                             </div>
                             <pre className="bg-surface border border-border rounded p-2.5 text-xs font-mono text-text-main">
 {`mkdir -p ~/.codex && cat << 'EOF' > ~/.codex/config.toml
-model_reasoning_effort = "low"
-model_provider = "openai-custom"
-model = "gpt-5.5"
+model = "gpt-6.1-sol"
+model_provider = "9router"
 
-[model_providers.openai-custom]
-experimental_bearer_token = "${savedKey}"
-name = "VinAi"
+[model_providers.9router]
+name = "9Router"
 base_url = "${apiOrigin}/v1"
 wire_api = "responses"
-requires_openai_auth = false
-supports_websockets = false
+
+[model_providers.9router.http_headers]
+Authorization = "Bearer ${savedKey}"
+
+[agents]
+default_subagent_model = "gpt-6.1-sol"
 EOF
 echo '{"auth_mode":"apikey","OPENAI_API_KEY":"${savedKey}"}' > ~/.codex/auth.json`}
                             </pre>
@@ -1990,11 +2033,12 @@ codex "Viết một hàm Node.js kết nối Supabase"
         "apiKey": "${savedKey}",
         "api": "openai-completions",
         "models": [
+          { "id": "cx/gpt-6.1-sol", "name": "cx/gpt-6.1-sol" },
+          { "id": "cx/gpt-6-astra", "name": "cx/gpt-6-astra" },
+          { "id": "cx/gpt-5.6-sol", "name": "cx/gpt-5.6-sol" },
           { "id": "ag/gemini-3.8-flash-high", "name": "ag/gemini-3.8-flash-high" },
           { "id": "ag/claude-sonnet-4-6", "name": "ag/claude-sonnet-4-6" },
-          { "id": "ag/gpt-oss-120b-medium", "name": "ag/gpt-oss-120b-medium" },
-          { "id": "gpt-5.4", "name": "gpt-5.4" },
-          { "id": "gpt-5.5", "name": "gpt-5.5" }
+          { "id": "ag/gpt-oss-120b-medium", "name": "ag/gpt-oss-120b-medium" }
         ]
       }
     }
@@ -2002,19 +2046,20 @@ codex "Viết một hàm Node.js kết nối Supabase"
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/ag/gemini-3.8-flash-high"
+        "primary": "9router/cx/gpt-6.1-sol"
       },
       "models": {
+        "9router/cx/gpt-6.1-sol": {},
+        "9router/cx/gpt-6-astra": {},
+        "9router/cx/gpt-5.6-sol": {},
         "9router/ag/gemini-3.8-flash-high": {},
-        "9router/ag/claude-sonnet-4-6": {},
-        "9router/gpt-5.4": {},
-        "9router/gpt-5.5": {}
+        "9router/ag/claude-sonnet-4-6": {}
       }
     }
   }
 }`}</pre>
                           <button
-                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${apiOrigin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "ag/gemini-3.8-flash-high", "name": "ag/gemini-3.8-flash-high" },\n          { "id": "ag/claude-sonnet-4-6", "name": "ag/claude-sonnet-4-6" },\n          { "id": "ag/gpt-oss-120b-medium", "name": "ag/gpt-oss-120b-medium" },\n          { "id": "gpt-5.4", "name": "gpt-5.4" },\n          { "id": "gpt-5.5", "name": "gpt-5.5" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/ag/gemini-3.8-flash-high"\n      },\n      "models": {\n        "9router/ag/gemini-3.8-flash-high": {},\n        "9router/ag/claude-sonnet-4-6": {},\n        "9router/gpt-5.4": {},\n        "9router/gpt-5.5": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
+                            onClick={() => copyText(`{\n  "models": {\n    "providers": {\n      "9router": {\n        "baseUrl": "${apiOrigin}/v1",\n        "apiKey": "${savedKey}",\n        "api": "openai-completions",\n        "models": [\n          { "id": "cx/gpt-6.1-sol", "name": "cx/gpt-6.1-sol" },\n          { "id": "cx/gpt-6-astra", "name": "cx/gpt-6-astra" },\n          { "id": "cx/gpt-5.6-sol", "name": "cx/gpt-5.6-sol" },\n          { "id": "ag/gemini-3.8-flash-high", "name": "ag/gemini-3.8-flash-high" },\n          { "id": "ag/claude-sonnet-4-6", "name": "ag/claude-sonnet-4-6" },\n          { "id": "ag/gpt-oss-120b-medium", "name": "ag/gpt-oss-120b-medium" }\n        ]\n      }\n    }\n  },\n  "agents": {\n    "defaults": {\n      "model": {\n        "primary": "9router/cx/gpt-6.1-sol"\n      },\n      "models": {\n        "9router/cx/gpt-6.1-sol": {},\n        "9router/cx/gpt-6-astra": {},\n        "9router/cx/gpt-5.6-sol": {},\n        "9router/ag/gemini-3.8-flash-high": {},\n        "9router/ag/claude-sonnet-4-6": {}\n      }\n    }\n  }\n}`, "jsonConfigOpenClaw")}
                             className="absolute right-3 top-3 p-1 bg-surface hover:bg-surface-3 rounded border border-border cursor-pointer"
                             title="Copy cấu hình openclaw.json"
                           >
