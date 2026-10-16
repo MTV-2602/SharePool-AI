@@ -48,6 +48,10 @@ export async function POST(request) {
     headers: request.headers,
     body: JSON.stringify(body)
   });
+  if (isClientKey && authResult?.keyData) {
+    newRequest._clientKeyValidated = true;
+    newRequest._clientKeyData = authResult.keyData;
+  }
   
   const response = await handleChat(newRequest);
   

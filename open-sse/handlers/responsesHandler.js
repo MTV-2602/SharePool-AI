@@ -58,6 +58,17 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     try {
       const jsonResponse = await convertResponsesStreamToJson(response.body);
 
+      const isFailedOrError = !jsonResponse || jsonResponse.status === "failed" || Boolean(jsonResponse.error);
+      const isTerminalContract = jsonResponse?.status === "completed" || jsonResponse?.status === "incomplete";
+
+      if (isFailedOrError || !isTerminalContract) {
+        return {
+          success: false,
+          status: 502,
+          error: jsonResponse?.error?.message || "Upstream SSE stream failed"
+        };
+      }
+
       return {
         success: true,
         response: new Response(JSON.stringify(jsonResponse), {

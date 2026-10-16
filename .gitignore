@@ -40,6 +40,8 @@ repo_diff.md
 .env*
 vps_management_guide.md
 *.guide.md
+.cache/
+test/artifacts/
 
 
 ai-studio/

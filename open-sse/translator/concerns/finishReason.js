@@ -24,6 +24,9 @@ export function toOpenAIFinish(reason, format) {
         default: return reason || OPENAI_FINISH.STOP;
       }
     case "gemini":
+    case "antigravity":
+    case "gemini-cli":
+    case "vertex":
       switch (String(reason).toUpperCase()) {
         case GEMINI_FINISH.STOP: return OPENAI_FINISH.STOP;
         case GEMINI_FINISH.MAX_TOKENS: return OPENAI_FINISH.LENGTH;
@@ -42,6 +45,17 @@ export function toOpenAIFinish(reason, format) {
         case "max_tokens": return OPENAI_FINISH.LENGTH;
         default: return OPENAI_FINISH.STOP;
       }
+    case "openai-responses":
+    case "responses":
+      switch (reason) {
+        case "max_output_tokens":
+        case "max_tokens":
+        case "length": return OPENAI_FINISH.LENGTH;
+        case "content_filter": return OPENAI_FINISH.CONTENT_FILTER;
+        case "stop":
+        case "completed": return OPENAI_FINISH.STOP;
+        default: return reason || OPENAI_FINISH.STOP;
+      }
     default:
       return reason || OPENAI_FINISH.STOP;
   }
@@ -53,9 +67,27 @@ export function fromOpenAIFinish(reason, format) {
     case "claude":
       switch (reason) {
         case OPENAI_FINISH.STOP: return CLAUDE_STOP.END_TURN;
-        case OPENAI_FINISH.LENGTH: return CLAUDE_STOP.MAX_TOKENS;
+        case OPENAI_FINISH.LENGTH:
+        case "max_output_tokens":
+        case "max_tokens": return CLAUDE_STOP.MAX_TOKENS;
         case OPENAI_FINISH.TOOL_CALLS: return CLAUDE_STOP.TOOL_USE;
-        default: return CLAUDE_STOP.END_TURN;
+        case OPENAI_FINISH.CONTENT_FILTER: return CLAUDE_STOP.STOP_SEQUENCE;
+        case "incomplete": return null;
+        default: return (reason === "stop" || reason === "end_turn") ? CLAUDE_STOP.END_TURN : null;
+      }
+    case "gemini":
+    case "antigravity":
+    case "gemini-cli":
+    case "vertex":
+      switch (reason) {
+        case OPENAI_FINISH.STOP: return GEMINI_FINISH.STOP;
+        case OPENAI_FINISH.LENGTH:
+        case "max_output_tokens":
+        case "max_tokens": return GEMINI_FINISH.MAX_TOKENS;
+        case OPENAI_FINISH.TOOL_CALLS: return GEMINI_FINISH.STOP;
+        case OPENAI_FINISH.CONTENT_FILTER: return GEMINI_FINISH.SAFETY;
+        case "incomplete": return null;
+        default: return (reason === "stop") ? GEMINI_FINISH.STOP : null;
       }
     default:
       return reason;

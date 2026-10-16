@@ -21,6 +21,8 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { checkClientKeyModelAccess, createForbiddenResponse, detectProtocolFromRequest } from "@/lib/auth/clientModelGate.js";
+import { canonicalProvider } from "@/lib/auth/clientModelPolicy.js";
 
 /**
  * Handle chat completion request
@@ -87,7 +89,17 @@ export async function handleChat(request, clientRawRequest = null) {
     }
   }
 
-  if (!modelStr) {
+  // Preflight check for client key model permissions (combos, fusions, and single models)
+  if (request?._clientKeyData) {
+    const access = await checkClientKeyModelAccess(request._clientKeyData, modelStr);
+    if (!access.allowed) {
+      const protocol = detectProtocolFromRequest(request);
+      log.warn("AUTH", `Client key denied access to model '${modelStr}': ${access.reason}`);
+      return createForbiddenResponse(access.forbiddenModel || modelStr, protocol, access.reason);
+    }
+  }
+
+  if (typeof modelStr !== "string" || !modelStr.trim()) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
@@ -206,6 +218,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
+  // Concrete boundary recheck for client key access
+  if (request?._clientKeyData) {
+    const concreteAccess = await checkClientKeyModelAccess(request._clientKeyData, `${provider}/${model}`);
+    if (!concreteAccess.allowed) {
+      const protocol = detectProtocolFromRequest(request);
+      log.warn("AUTH", `Client key boundary denied access to '${provider}/${model}': ${concreteAccess.reason}`);
+      return createForbiddenResponse(concreteAccess.forbiddenModel || `${provider}/${model}`, protocol, concreteAccess.reason);
+    }
+  }
+
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   let lastError = null;
@@ -283,20 +305,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) {
-      const cleanActualModel = modelStr.startsWith("ag/")
-        ? modelStr.slice(3)
-        : modelStr.startsWith("antigravity/")
-        ? modelStr.slice(12)
-        : modelStr.startsWith("codex/")
-        ? modelStr.slice(6)
-        : modelStr;
+      const actualModel = model;
+      const actualProvider = canonicalProvider(provider);
 
       try {
-        result.response.headers.set("x-9r-actual-model", cleanActualModel);
+        result.response.headers.set("x-9r-actual-model", actualModel);
+        result.response.headers.set("x-9r-actual-provider", actualProvider);
         return result.response;
       } catch (e) {
         const newHeaders = new Headers(result.response.headers);
-        newHeaders.set("x-9r-actual-model", cleanActualModel);
+        newHeaders.set("x-9r-actual-model", actualModel);
+        newHeaders.set("x-9r-actual-provider", actualProvider);
         return new Response(result.response.body, {
           status: result.response.status,
           statusText: result.response.statusText,

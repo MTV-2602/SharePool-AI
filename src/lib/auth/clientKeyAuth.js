@@ -41,6 +41,47 @@ function setCachedKey(token, data) {
 function invalidateCachedKey(token) {
   keyCache.delete(token);
 }
+
+/**
+ * Invalidate client key in-memory and disk cache.
+ * Multi-process coherence note: In-memory Map cache is local to each Node.js process.
+ * Disk cache updates synchronize across worker processes sharing the filesystem on cache miss or TTL expiration (120s).
+ */
+export function invalidateClientKeyCache({ id, token } = {}) {
+  if (token) {
+    keyCache.delete(token);
+  }
+  if (id) {
+    for (const [t, entry] of keyCache.entries()) {
+      if (entry?.data?.id === id) {
+        keyCache.delete(t);
+      }
+    }
+    multiplierCache.delete(id);
+  }
+
+  try {
+    const diskMap = getDiskCache(DISK_CACHE_KEY, {});
+    let changed = false;
+    if (token && diskMap[token]) {
+      delete diskMap[token];
+      changed = true;
+    }
+    if (id) {
+      for (const [t, data] of Object.entries(diskMap)) {
+        if (data?.id === id) {
+          delete diskMap[t];
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      setDiskCache(DISK_CACHE_KEY, diskMap);
+    }
+  } catch (err) {
+    console.error("[ClientKeyAuth] Failed to invalidate disk cache:", err?.message || err);
+  }
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─── Rate limit sliding window (thay thế COUNT Supabase per request) ────────────
@@ -73,7 +114,7 @@ function checkRateLimitLocal(keyId, rateLimit) {
  * Returns { valid: true, keyData: {...} } or { valid: false, error: '...' }
  * Uses 120s in-memory cache to reduce Supabase round-trips.
  */
-export async function validateClientKey(bearerToken) {
+export async function validateClientKey(bearerToken, options = {}) {
   const token = (bearerToken || '').trim();
   if (!token) {
     return { valid: false, error: 'Invalid client key' };
@@ -92,6 +133,13 @@ export async function validateClientKey(bearerToken) {
     if (quota > 0 && used >= quota) {
       invalidateCachedKey(token); // Force refresh khi hết quota
       return { valid: false, error: 'Token quota exceeded' };
+    }
+    if (!options.skipRateLimit) {
+      const rateLimit = Number(cached.rate_limit_per_minute) || 60;
+      const rlResult = checkRateLimitLocal(cached.id, rateLimit);
+      if (!rlResult.allowed) {
+        return { valid: false, error: `Rate limit exceeded (${rateLimit}/min)` };
+      }
     }
     return { valid: true, keyData: cached };
   }
@@ -131,10 +179,12 @@ export async function validateClientKey(bearerToken) {
   }
 
   // Check rate limit bằng in-memory sliding window (thay thế COUNT Supabase)
-  const rateLimit = Number(keyData.rate_limit_per_minute) || 60;
-  const rlResult = checkRateLimitLocal(keyData.id, rateLimit);
-  if (!rlResult.allowed) {
-    return { valid: false, error: `Rate limit exceeded (${rateLimit}/min)` };
+  if (!options.skipRateLimit) {
+    const rateLimit = Number(keyData.rate_limit_per_minute) || 60;
+    const rlResult = checkRateLimitLocal(keyData.id, rateLimit);
+    if (!rlResult.allowed) {
+      return { valid: false, error: `Rate limit exceeded (${rateLimit}/min)` };
+    }
   }
 
   // Lưu vào cache
@@ -357,11 +407,10 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
     ? reqBodyOrTokens
     : (reqBodyOrTokens ? Math.ceil(JSON.stringify(reqBodyOrTokens).length / 4) : 1000);
 
-  // Nếu user gọi model cụ thể (vd: gemini-3.7-flash-high), giữ nguyên model đó cho log dashboard.
-  // Nếu gọi qua Combo (vd: gpt-5.4 / gpt-5.5), dùng internalModel từ header x-9r-actual-model.
+  // Ưu tiên internalModel từ header x-9r-actual-model (phản ánh model thực tế được phục vụ bởi route/combo bất kỳ).
+  // Nếu không có header, fallback về model được yêu cầu.
   const internalModel = response.headers.get("x-9r-actual-model");
-  const isCombo = !model || model === "gpt-5.4" || model === "gpt-5.5" || model.startsWith("combo-");
-  const actualModel = isCombo ? (internalModel || model || "unknown") : model;
+  const actualModel = internalModel || model || "unknown";
 
 
   const contentType = response.headers.get('content-type') || '';

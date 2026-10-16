@@ -1,6 +1,7 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
 import { extractBearerToken, validateClientKey, wrapResponseWithClientKeyLogging } from "@/lib/auth/clientKeyAuth.js";
+import { getEffectiveChatPayloadLimit } from "@/lib/settings/chatPayloadLimit";
 
 let initialized = false;
 
@@ -27,16 +28,16 @@ export async function OPTIONS() {
   });
 }
 
-const MAX_REQUEST_BODY_BYTES = parseInt(process.env.MAX_REQUEST_BODY_BYTES || "4194304", 10);
-
 export async function POST(request) {  
   await ensureInitialized();
   
+  // Header-only Content-Length detection (does not claim actual bytes hardcap on unchunked/streaming requests without Content-Length)
   const contentLen = Number(request.headers.get("content-length")) || 0;
-  if (contentLen > MAX_REQUEST_BODY_BYTES) {
+  const maxRequestBodyBytes = await getEffectiveChatPayloadLimit();
+  if (contentLen > maxRequestBodyBytes) {
     return new Response(JSON.stringify({
       error: {
-        message: `Request payload too large (${(contentLen / 1024 / 1024).toFixed(1)}MB exceeds limit ${(MAX_REQUEST_BODY_BYTES / 1024 / 1024).toFixed(1)}MB)`,
+        message: `Request payload too large (${(contentLen / 1024 / 1024).toFixed(1)}MiB exceeds limit ${(maxRequestBodyBytes / 1024 / 1024).toFixed(1)}MiB)`,
         type: "invalid_request_error",
         code: "request_too_large"
       }
@@ -57,6 +58,7 @@ export async function POST(request) {
       });
     }
     request._clientKeyValidated = true;
+    request._clientKeyData = authResult.keyData;
     
     // Parse the body ONCE and pass via request._parsedBody to avoid 2x RAM spike on large requests
     let model = "unknown";

@@ -9,6 +9,8 @@ import { getProviderConnections, getCombos, getCustomModels, getModelAliases } f
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { extractBearerToken, validateClientKey } from "@/lib/auth/clientKeyAuth.js";
+import { filterModelsForClientKey } from "@/lib/auth/clientModelGate.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -410,17 +412,36 @@ export async function OPTIONS() {
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
-export async function GET() {
+export async function GET(request) {
   try {
     const data = await buildModelsList([LLM_KIND]);
-    return Response.json({ object: "list", data }, {
+    let filteredData = data;
+
+    const token = request ? extractBearerToken(request) : null;
+    if (token) {
+      const isClientKey = token.startsWith("ck-") || (token.startsWith("sk-") && token.split("-").length === 2);
+      if (isClientKey) {
+        const auth = await validateClientKey(token, { skipRateLimit: true });
+        if (!auth.valid) {
+          return Response.json(
+            { error: { message: auth.error, type: "invalid_request_error" } },
+            { status: 401, headers: { "Access-Control-Allow-Origin": "*" } }
+          );
+        }
+        if (auth.keyData) {
+          filteredData = await filterModelsForClientKey(data, auth.keyData);
+        }
+      }
+    }
+
+    return Response.json({ object: "list", data: filteredData }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {
     console.log("Error fetching models:", error);
     return Response.json(
       { error: { message: error.message, type: "server_error" } },
-      { status: 500 }
+      { status: 500, headers: { "Access-Control-Allow-Origin": "*" } }
     );
   }
 }

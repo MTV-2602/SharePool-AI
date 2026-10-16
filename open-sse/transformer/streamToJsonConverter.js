@@ -22,20 +22,50 @@ function processSSEMessage(msg, state) {
   try { parsed = JSON.parse(dataStr); }
   catch { return; }
 
+  if (parsed.error) {
+    state.status = "failed";
+    state.error = typeof parsed.error === "object" ? parsed.error : { message: String(parsed.error) };
+    return;
+  }
+
   if (eventType === "response.created") {
     state.responseId = parsed.response?.id || state.responseId;
     state.created = parsed.response?.created_at || state.created;
+    if (parsed.response?.model) state.model = parsed.response.model;
+    if (parsed.response?.status) state.status = parsed.response.status;
   } else if (eventType === "response.output_item.done") {
     state.items.set(parsed.output_index ?? 0, parsed.item);
-  } else if (eventType === "response.completed" || eventType === "response.done") {
-    state.status = "completed";
-    if (parsed.response?.usage) {
-      state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
-      state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
-      state.usage.total_tokens = parsed.response.usage.total_tokens || 0;
+  } else if (eventType === "response.completed" || eventType === "response.done" || eventType === "response.incomplete") {
+    state.status = parsed.response?.status || (eventType === "response.incomplete" ? "incomplete" : "completed");
+    if (parsed.response?.incomplete_details) {
+      state.incomplete_details = parsed.response.incomplete_details;
     }
-  } else if (eventType === "response.failed") {
+    if (parsed.response?.model) state.model = parsed.response.model;
+    if (parsed.response?.usage && typeof parsed.response.usage === "object") {
+      const u = parsed.response.usage;
+      state.usage = {
+        ...u,
+        input_tokens: typeof u.input_tokens === "number" ? u.input_tokens : (typeof u.prompt_tokens === "number" ? u.prompt_tokens : 0),
+        output_tokens: typeof u.output_tokens === "number" ? u.output_tokens : (typeof u.completion_tokens === "number" ? u.completion_tokens : 0),
+        total_tokens: typeof u.total_tokens === "number" ? u.total_tokens : ((u.input_tokens || u.prompt_tokens || 0) + (u.output_tokens || u.completion_tokens || 0))
+      };
+      if (u.input_tokens_details && typeof u.input_tokens_details === "object") {
+        state.usage.input_tokens_details = { ...u.input_tokens_details };
+      }
+      if (u.output_tokens_details && typeof u.output_tokens_details === "object") {
+        state.usage.output_tokens_details = { ...u.output_tokens_details };
+      }
+      if (u.prompt_tokens_details && typeof u.prompt_tokens_details === "object") {
+        state.usage.prompt_tokens_details = { ...u.prompt_tokens_details };
+      }
+      if (u.completion_tokens_details && typeof u.completion_tokens_details === "object") {
+        state.usage.completion_tokens_details = { ...u.completion_tokens_details };
+      }
+    }
+  } else if (eventType === "response.failed" || eventType === "error") {
     state.status = "failed";
+    const err = parsed.response?.error || parsed.error || { message: "Stream failed" };
+    state.error = typeof err === "object" ? err : { message: String(err) };
   }
 }
 
@@ -92,12 +122,16 @@ export async function convertResponsesStreamToJson(stream) {
     output.push(state.items.get(i) || { type: "message", content: [], role: "assistant" });
   }
 
-  return {
+  const res = {
     id: state.responseId || `resp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     object: "response",
     created_at: state.created,
-    status: state.status || "completed",
+    status: state.status || "failed",
     output,
     usage: state.usage
   };
+  if (state.model) res.model = state.model;
+  if (state.incomplete_details) res.incomplete_details = state.incomplete_details;
+  if (state.error) res.error = state.error;
+  return res;
 }

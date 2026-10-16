@@ -2,6 +2,7 @@
 
 import { safeParseJSON } from "../concerns/json.js";
 import { OPENAI_BLOCK } from "../schema/index.js";
+import { isGemini4Model } from "../../providers/capabilities.js";
 
 // Unsupported JSON Schema constraints that should be removed for Antigravity
 export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
@@ -32,7 +33,14 @@ export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   "title", "optional", "deprecated", "if", "then", "else", "contentMediaType", "contentEncoding",
   // UI/Styling properties (from Cursor tools - NOT JSON Schema standard)
   "cornerRadius", "fillColor", "fontFamily", "fontSize", "fontWeight",
-  "gap", "padding", "strokeColor", "strokeThickness", "textColor"
+  "gap", "padding", "strokeColor", "strokeThickness", "textColor",
+  // Non-standard annotation/error keywords used by some MCP tool schemas (#4283).
+  // Gemini's schema proto has no field for these and rejects the whole request with
+  // "Unknown name X: Cannot find field" if any nested schema node carries them.
+  "errorMessage", "errorMessages", "x-errorMessage", "x-errorMessages",
+  "markdownDescription", "x-intellij-html-description",
+  "x-taplo-info", "x-taplo", "doNotSuggest", "suggestSortText",
+  "minProperties", "maxProperties"
 ];
 
 // Default safety settings
@@ -155,7 +163,13 @@ function removeUnsupportedKeywords(obj, keywords) {
 
     const value = obj[key];
     if (value && typeof value === "object") {
-      removeUnsupportedKeywords(value, keywords);
+      if (key === "properties" && !Array.isArray(value)) {
+        for (const sub of Object.values(value)) {
+          removeUnsupportedKeywords(sub, keywords);
+        }
+      } else {
+        removeUnsupportedKeywords(value, keywords);
+      }
     }
   }
 }
@@ -169,9 +183,13 @@ function convertConstToEnum(obj) {
     delete obj.const;
   }
 
-  for (const value of Object.values(obj)) {
+  for (const [key, value] of Object.entries(obj)) {
     if (value && typeof value === "object") {
-      convertConstToEnum(value);
+      if (key === "properties" && !Array.isArray(value)) {
+        for (const sub of Object.values(value)) convertConstToEnum(sub);
+      } else {
+        convertConstToEnum(value);
+      }
     }
   }
 }
@@ -188,9 +206,13 @@ function convertEnumValuesToStrings(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
+  for (const [key, value] of Object.entries(obj)) {
     if (value && typeof value === "object") {
-      convertEnumValuesToStrings(value);
+      if (key === "properties" && !Array.isArray(value)) {
+        for (const sub of Object.values(value)) convertEnumValuesToStrings(sub);
+      } else {
+        convertEnumValuesToStrings(value);
+      }
     }
   }
 }
@@ -222,9 +244,13 @@ function mergeAllOf(obj) {
     if (merged.required) obj.required = [...(obj.required || []), ...merged.required];
   }
 
-  for (const value of Object.values(obj)) {
+  for (const [key, value] of Object.entries(obj)) {
     if (value && typeof value === "object") {
-      mergeAllOf(value);
+      if (key === "properties" && !Array.isArray(value)) {
+        for (const sub of Object.values(value)) mergeAllOf(sub);
+      } else {
+        mergeAllOf(value);
+      }
     }
   }
 }
@@ -280,9 +306,13 @@ function flattenAnyOfOneOf(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
+  for (const [key, value] of Object.entries(obj)) {
     if (value && typeof value === "object") {
-      flattenAnyOfOneOf(value);
+      if (key === "properties" && !Array.isArray(value)) {
+        for (const sub of Object.values(value)) flattenAnyOfOneOf(sub);
+      } else {
+        flattenAnyOfOneOf(value);
+      }
     }
   }
 }
@@ -296,9 +326,13 @@ function flattenTypeArrays(obj) {
     obj.type = nonNullTypes.length > 0 ? nonNullTypes[0] : "string";
   }
 
-  for (const value of Object.values(obj)) {
+  for (const [key, value] of Object.entries(obj)) {
     if (value && typeof value === "object") {
-      flattenTypeArrays(value);
+      if (key === "properties" && !Array.isArray(value)) {
+        for (const sub of Object.values(value)) flattenTypeArrays(sub);
+      } else {
+        flattenTypeArrays(value);
+      }
     }
   }
 }
@@ -307,7 +341,14 @@ function flattenTypeArrays(obj) {
 function ensureObjectType(obj) {
   if (!obj || typeof obj !== "object") return;
   if (obj.properties && !obj.type) obj.type = "object";
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureObjectType(v);
+  for (const [key, v] of Object.entries(obj)) {
+    if (!v || typeof v !== "object") continue;
+    if (key === "properties" && !Array.isArray(v)) {
+      for (const sub of Object.values(v)) ensureObjectType(sub);
+    } else {
+      ensureObjectType(v);
+    }
+  }
 }
 
 // Convert prefixItems (tuple validation) to items — Gemini cannot express tuples,
@@ -325,9 +366,13 @@ function convertPrefixItems(obj) {
     delete obj.prefixItems;
   }
 
-  for (const value of Object.values(obj)) {
+  for (const [key, value] of Object.entries(obj)) {
     if (value && typeof value === "object") {
-      convertPrefixItems(value);
+      if (key === "properties" && !Array.isArray(value)) {
+        for (const sub of Object.values(value)) convertPrefixItems(sub);
+      } else {
+        convertPrefixItems(value);
+      }
     }
   }
 }
@@ -338,7 +383,14 @@ function ensureArrayItems(obj) {
   if (obj.type === "array" && !obj.items) {
     obj.items = { type: "string" };
   }
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
+  for (const [key, v] of Object.entries(obj)) {
+    if (!v || typeof v !== "object") continue;
+    if (key === "properties" && !Array.isArray(v)) {
+      for (const sub of Object.values(v)) ensureArrayItems(sub);
+    } else {
+      ensureArrayItems(v);
+    }
+  }
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
@@ -381,9 +433,13 @@ export function cleanJSONSchemaForAntigravity(schema) {
     }
 
     // Recurse into nested objects
-    for (const value of Object.values(obj)) {
+    for (const [key, value] of Object.entries(obj)) {
       if (value && typeof value === "object") {
-        cleanupRequired(value);
+        if (key === "properties" && !Array.isArray(value)) {
+          for (const sub of Object.values(value)) cleanupRequired(sub);
+        } else {
+          cleanupRequired(value);
+        }
       }
     }
   }
@@ -420,9 +476,13 @@ export function cleanJSONSchemaForAntigravity(schema) {
     }
 
     // Recurse into nested objects
-    for (const value of Object.values(obj)) {
+    for (const [key, value] of Object.entries(obj)) {
       if (value && typeof value === "object") {
-        addPlaceholders(value);
+        if (key === "properties" && !Array.isArray(value)) {
+          for (const sub of Object.values(value)) addPlaceholders(sub);
+        } else {
+          addPlaceholders(value);
+        }
       }
     }
   }
@@ -432,19 +492,108 @@ export function cleanJSONSchemaForAntigravity(schema) {
   return cleaned;
 }
 
+// Gemini / Cloud Code treat a `$ref` key inside functionResponse.response as a
+// pointer to functionResponse.parts and reject the request with
+// "The referenced name `#/$defs/...` in function_response.response does not match
+// to a display_name in the function_response.parts". Tool results that carry a
+// JSON Schema / OpenAPI document (webfetch, read, MCP) hit this, so rename the key.
+export const GEMINI_RESERVED_RESPONSE_KEYS = { "$ref": "_ref" };
+
+const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+
+// Recursively rename reserved keys in a tool-result payload (arrays/objects only).
+// Nonmutating. Retains existing key collisions losslessly.
+export function sanitizeFunctionResponsePayload(value) {
+  if (Array.isArray(value)) return value.map(sanitizeFunctionResponsePayload);
+  if (!value || typeof value !== "object") return value;
+
+  const out = {};
+  for (const [key, val] of Object.entries(value)) {
+    let targetKey = hasOwn(GEMINI_RESERVED_RESPONSE_KEYS, key) ? GEMINI_RESERVED_RESPONSE_KEYS[key] : key;
+    if (hasOwn(GEMINI_RESERVED_RESPONSE_KEYS, key)) {
+      if (hasOwn(value, targetKey) || hasOwn(out, targetKey)) {
+        let idx = 1;
+        let candidate = `${targetKey}_${idx}`;
+        while (hasOwn(value, candidate) || hasOwn(out, candidate)) {
+          idx++;
+          candidate = `${targetKey}_${idx}`;
+        }
+        targetKey = candidate;
+      }
+    }
+    const cleanVal = sanitizeFunctionResponsePayload(val);
+    if (targetKey === "__proto__") {
+      Object.defineProperty(out, "__proto__", {
+        value: cleanVal,
+        writable: true,
+        enumerable: true,
+        configurable: true
+      });
+    } else {
+      out[targetKey] = cleanVal;
+    }
+  }
+  return out;
+}
+
+// Return the part with a sanitized functionResponse.response (same reference when untouched)
+function sanitizeFunctionResponsePart(part) {
+  const response = part?.functionResponse?.response;
+  if (!response || typeof response !== "object") return part;
+  return {
+    ...part,
+    functionResponse: {
+      ...part.functionResponse,
+      response: sanitizeFunctionResponsePayload(response)
+    }
+  };
+}
+
+// Gemini 4 rejects a merged user turn whose last part is not a functionResponse (#4802)
+function moveFunctionResponsesLast(parts) {
+  const responses = parts.filter(p => p.functionResponse);
+  if (!responses.length) return parts;
+  return [...parts.filter(p => !p.functionResponse), ...responses];
+}
+
 // Merge adjacent same-role messages, strip empty parts, ensure initial user turn
-export function normalizeGeminiContents(contents) {
+export function normalizeGeminiContents(contents, model = null) {
+  const frLast = isGemini4Model(model);
   const out = [];
   for (const c of contents || []) {
     if (!c?.role || !Array.isArray(c.parts)) continue;
-    const parts = c.parts.filter(p => p && Object.keys(p).length > 0);
+    let parts = c.parts.filter(p => p && Object.keys(p).length > 0).map(sanitizeFunctionResponsePart);
     if (parts.length === 0) continue;
+    if (frLast && c.role === "user") {
+      parts = moveFunctionResponsesLast(parts);
+    }
     const last = out.at(-1);
-    if (last?.role === c.role) last.parts.push(...parts);
-    else out.push({ ...c, parts: [...parts] });
+    if (last?.role === c.role) {
+      last.parts.push(...parts);
+      if (frLast && last.role === "user") last.parts = moveFunctionResponsesLast(last.parts);
+    } else {
+      out.push({ ...c, parts: [...parts] });
+    }
   }
   if (out.length > 0 && out[0].role !== "user") {
     out.unshift({ role: "user", parts: [{ text: "..." }] });
+  }
+  if (out.length > 0 && out.at(-1).role === "model") {
+    const fnCalls = (out.at(-1).parts || []).filter(p => p && p.functionCall);
+    if (fnCalls.length > 0) {
+      const responses = fnCalls.map(p => {
+        const call = p.functionCall || {};
+        const fr = {
+          name: call.name || "tool",
+          response: { result: "Continue." }
+        };
+        if (call.id) fr.id = call.id;
+        return { functionResponse: fr };
+      });
+      out.push({ role: "user", parts: responses });
+    } else {
+      out.push({ role: "user", parts: [{ text: "Continue." }] });
+    }
   }
   return out;
 }

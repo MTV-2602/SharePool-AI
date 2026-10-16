@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { getChartData } from "@/lib/usageDb";
+import { getChartData } from "@/lib/usageDb.js";
 
-const VALID_PERIODS = new Set(["today", "24h", "7d", "30d", "60d"]);
+const VALID_PERIODS = new Set(["today", "24h", "7d", "30d", "60d", "all"]);
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request) {
   try {

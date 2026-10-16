@@ -1,6 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import ClientModelPolicyField, {
+  formatAllowlistForEditor,
+  parseAllowlistInput,
+  detectPreset,
+  extractRulesFromRaw,
+  PRESET_OPTIONS,
+} from "./components/ClientModelPolicyField";
+import GlobalPayloadLimitCard from "./components/GlobalPayloadLimitCard";
 
 export default function ClientKeysPage() {
   const [keys, setKeys] = useState([]);
@@ -20,18 +28,15 @@ export default function ClientKeysPage() {
   // Form states
   const [label, setLabel] = useState("");
   const [quotaTokens, setQuotaTokens] = useState(1000000); // 1M tokens default
-  const [maxConcurrent, setMaxConcurrent] = useState(5);
-  const [rateLimit, setRateLimit] = useState(60);
+  const [maxConcurrent, setMaxConcurrent] = useState(15);
+  const [rateLimit, setRateLimit] = useState(1024);
   const [expiresAt, setExpiresAt] = useState("");
   const [ownerNote, setOwnerNote] = useState("");
+  const [modelAllowlist, setModelAllowlist] = useState("");
   const [isActive, setIsActive] = useState(true);
 
   // Copy indicator
   const [copiedId, setCopiedId] = useState(null);
-
-  useEffect(() => {
-    fetchKeys();
-  }, []);
 
   const fetchKeys = async () => {
     setLoading(true);
@@ -50,8 +55,39 @@ export default function ClientKeysPage() {
     }
   };
 
+  useEffect(() => {
+    let ignore = false;
+    async function initKeys() {
+      try {
+        const res = await fetch("/api/client-keys");
+        const data = await res.json();
+        if (ignore) return;
+        if (res.ok) {
+          setKeys(data);
+        } else {
+          setError(data.error || "Failed to fetch client keys");
+        }
+      } catch (err) {
+        if (!ignore) setError("Failed to connect to backend");
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    initKeys();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   const handleCreate = async (e) => {
     e.preventDefault();
+    let parsedAllowlist = null;
+    try {
+      parsedAllowlist = parseAllowlistInput(modelAllowlist);
+    } catch (parseErr) {
+      alert(parseErr.message);
+      return;
+    }
     try {
       const res = await fetch("/api/client-keys", {
         method: "POST",
@@ -62,6 +98,7 @@ export default function ClientKeysPage() {
           quota_tokens: quotaTokens,
           max_concurrent: maxConcurrent,
           rate_limit_per_minute: rateLimit,
+          model_allowlist: parsedAllowlist,
           expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
         }),
       });
@@ -81,6 +118,13 @@ export default function ClientKeysPage() {
   const handleUpdate = async (e) => {
     e.preventDefault();
     if (!selectedKey) return;
+    let parsedAllowlist = null;
+    try {
+      parsedAllowlist = parseAllowlistInput(modelAllowlist);
+    } catch (parseErr) {
+      alert(parseErr.message);
+      return;
+    }
     try {
       const res = await fetch(`/api/client-keys/${selectedKey.id}`, {
         method: "PUT",
@@ -91,6 +135,7 @@ export default function ClientKeysPage() {
           quota_tokens: quotaTokens,
           max_concurrent: maxConcurrent,
           rate_limit_per_minute: rateLimit,
+          model_allowlist: parsedAllowlist,
           active: isActive,
           expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
         }),
@@ -147,6 +192,7 @@ export default function ClientKeysPage() {
     setMaxConcurrent(key.max_concurrent);
     setRateLimit(key.rate_limit_per_minute);
     setOwnerNote(key.owner_note || "");
+    setModelAllowlist(formatAllowlistForEditor(key.model_allowlist));
     setIsActive(key.active);
     setExpiresAt(key.expires_at ? new Date(key.expires_at).toISOString().split("T")[0] : "");
     setShowEditModal(true);
@@ -155,10 +201,11 @@ export default function ClientKeysPage() {
   const resetForm = () => {
     setLabel("");
     setQuotaTokens(1000000);
-    setMaxConcurrent(5);
-    setRateLimit(60);
+    setMaxConcurrent(15);
+    setRateLimit(1024);
     setExpiresAt("");
     setOwnerNote("");
+    setModelAllowlist("");
     setIsActive(true);
   };
 
@@ -199,6 +246,8 @@ export default function ClientKeysPage() {
         </div>
       )}
 
+      <GlobalPayloadLimitCard />
+
       {loading ? (
         <div className="flex justify-center items-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
@@ -218,6 +267,7 @@ export default function ClientKeysPage() {
                     <th className="px-6 py-4">Label</th>
                     <th className="px-6 py-4">Client API Key</th>
                     <th className="px-6 py-4">Usage (Tokens)</th>
+                    <th className="px-6 py-4">Allowed Models</th>
                     <th className="px-6 py-4 text-center">Concurrency</th>
                     <th className="px-6 py-4 text-center">Rate Limit</th>
                     <th className="px-6 py-4">Status</th>
@@ -266,6 +316,31 @@ export default function ClientKeysPage() {
                               ></div>
                             </div>
                           )}
+                        </td>
+                        <td className="px-6 py-4 text-xs font-mono">
+                          {(() => {
+                            const preset = detectPreset(key.model_allowlist);
+                            const opt = PRESET_OPTIONS.find((o) => o.id === preset);
+                            if (preset === "all") {
+                              return <span className="text-slate-500 font-sans">All models</span>;
+                            }
+                            if (opt && preset !== "custom") {
+                              return (
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-sans border ${opt.badgeClass}`}>
+                                  {opt.badge}
+                                </span>
+                              );
+                            }
+                            const rules = extractRulesFromRaw(key.model_allowlist);
+                            return (
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-800/60 max-w-[140px] truncate font-sans text-[11px]"
+                                title={rules.join(", ")}
+                              >
+                                {rules.length} custom rules
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 text-center text-slate-300 font-medium">
                           {key.max_concurrent}
@@ -389,6 +464,10 @@ export default function ClientKeysPage() {
                   />
                 </div>
               </div>
+              <ClientModelPolicyField
+                value={modelAllowlist}
+                onChange={setModelAllowlist}
+              />
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Notes</label>
                 <textarea
@@ -482,6 +561,10 @@ export default function ClientKeysPage() {
                   />
                 </div>
               </div>
+              <ClientModelPolicyField
+                value={modelAllowlist}
+                onChange={setModelAllowlist}
+              />
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Notes</label>
                 <textarea

@@ -177,15 +177,20 @@ function resolveDynamicAntigravityUpstream(modelId, explicitUpstream = null) {
         target = getLatestAntigravityFlashUpstream(normLevel || "high");
       }
     }
-    return normLevel ? `${target}(${normLevel})` : target;
+    const cleanTarget = stripThinkingSuffix(target);
+    const existingSuffix = target?.match?.(THINKING_SUFFIX_RE)?.[2]?.toLowerCase();
+    const effectiveLevel = normLevel || existingSuffix;
+    return effectiveLevel ? `${cleanTarget}(${effectiveLevel})` : cleanTarget;
   }
 
   // Pro family (gemini-pro-agent, gemini-3.1-pro, gemini-3.9-pro, gemini-4.x-pro...)
   if (/^gemini-(?:pro-agent|\d+(?:\.\d+)?-pro(?:-agent)?)$/i.test(baseModel)) {
     const isLow = normLevel === "low" || normLevel === "minimal";
     const target = explicitUpstream || (isLow ? "gemini-3.1-pro-low" : "gemini-pro-agent");
-    const effectiveLevel = normLevel || (target.endsWith("-low") ? "low" : "high");
-    return `${target}(${effectiveLevel})`;
+    const cleanTarget = stripThinkingSuffix(target);
+    const existingSuffix = target?.match?.(THINKING_SUFFIX_RE)?.[2]?.toLowerCase();
+    const effectiveLevel = normLevel || existingSuffix || (target.endsWith("-low") ? "low" : "high");
+    return `${cleanTarget}(${effectiveLevel})`;
   }
 
   // Claude Sonnet family (claude-sonnet-5-5, claude-sonnet-5.5, claude-sonnet-4-6, claude-3-5-sonnet, etc.)

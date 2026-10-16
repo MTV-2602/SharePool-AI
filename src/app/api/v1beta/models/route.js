@@ -1,4 +1,6 @@
 import { PROVIDER_MODELS } from "@/shared/constants/models";
+import { extractBearerToken, validateClientKey } from "@/lib/auth/clientKeyAuth.js";
+import { filterModelsForClientKey } from "@/lib/auth/clientModelGate.js";
 
 /**
  * Handle CORS preflight
@@ -17,7 +19,7 @@ export async function OPTIONS() {
  * GET /v1beta/models - Gemini compatible models list
  * Returns models in Gemini API format
  */
-export async function GET() {
+export async function GET(request) {
   try {
     // Collect all models from all providers
     const models = [];
@@ -35,10 +37,33 @@ export async function GET() {
       }
     }
 
-    return Response.json({ models });
+    let filteredModels = models;
+    const token = request ? extractBearerToken(request) : null;
+    if (token) {
+      const isClientKey = token.startsWith("ck-") || (token.startsWith("sk-") && token.split("-").length === 2);
+      if (isClientKey) {
+        const auth = await validateClientKey(token, { skipRateLimit: true });
+        if (!auth.valid) {
+          return Response.json(
+            { error: { message: auth.error, code: 401 } },
+            { status: 401, headers: { "Access-Control-Allow-Origin": "*" } }
+          );
+        }
+        if (auth.keyData) {
+          filteredModels = await filterModelsForClientKey(models, auth.keyData);
+        }
+      }
+    }
+
+    return Response.json({ models: filteredModels }, {
+      headers: { "Access-Control-Allow-Origin": "*" },
+    });
   } catch (error) {
     console.log("Error fetching models:", error);
-    return Response.json({ error: { message: error.message } }, { status: 500 });
+    return Response.json(
+      { error: { message: error.message } },
+      { status: 500, headers: { "Access-Control-Allow-Origin": "*" } }
+    );
   }
 }
 

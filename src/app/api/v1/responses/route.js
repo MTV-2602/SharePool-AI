@@ -38,6 +38,8 @@ export async function POST(request) {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
       });
     }
+    request._clientKeyValidated = true;
+    request._clientKeyData = authResult.keyData;
     
     // Parse the body to extract the model (for logging fallback)
     let model = "unknown";

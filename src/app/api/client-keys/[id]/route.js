@@ -1,6 +1,8 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { invalidateClientKeyCache } from '@/lib/auth/clientKeyAuth.js';
+import { validateModelAllowlistConfig } from '@/lib/auth/clientModelPolicy.js';
 
 // GET: Get single client key
 export async function GET(request, { params }) {
@@ -28,6 +30,13 @@ export async function PUT(request, { params }) {
     if (body.max_concurrent !== undefined) updateFields.max_concurrent = body.max_concurrent;
     if (body.rate_limit_per_minute !== undefined) updateFields.rate_limit_per_minute = body.rate_limit_per_minute;
     if (body.model_multiplier !== undefined) updateFields.model_multiplier = body.model_multiplier;
+    if (body.model_allowlist !== undefined) {
+      const validation = validateModelAllowlistConfig(body.model_allowlist);
+      if (!validation.valid) {
+        return NextResponse.json({ error: validation.error }, { status: 400 });
+      }
+      updateFields.model_allowlist = validation.normalized.length > 0 ? validation.serialized : null;
+    }
     if (body.active !== undefined) updateFields.active = body.active;
     if (body.expires_at !== undefined) updateFields.expires_at = body.expires_at;
 
@@ -39,6 +48,7 @@ export async function PUT(request, { params }) {
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    invalidateClientKeyCache({ id });
     return NextResponse.json(data);
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 400 });
@@ -54,5 +64,6 @@ export async function DELETE(request, { params }) {
     .eq('id', id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  invalidateClientKeyCache({ id });
   return NextResponse.json({ success: true });
 }

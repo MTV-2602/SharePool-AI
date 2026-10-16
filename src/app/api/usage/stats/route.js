@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getUsageStats } from "@/lib/usageDb";
+import { getUsageStats } from "@/lib/usageDb.js";
 
 const VALID_PERIODS = new Set(["today", "24h", "7d", "30d", "60d", "all"]);
 
