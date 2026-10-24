@@ -318,6 +318,27 @@ export function ClientKeyGuideInner({
           </Button>
         </div>
 
+        {/* 1-Click Antigravity Client Download Banner */}
+        <div className="bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-purple-900/40 p-3.5 rounded-xl border border-indigo-500/30 flex items-center justify-between gap-3 shadow-md">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-300">
+              <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
+              Bộ cài đặt Antigravity IDE (1-Click Client)
+            </div>
+            <div className="text-[11px] text-text-muted mt-0.5">
+              Tải tool kết nối tự động, mở lên là chat được ngay trong Antigravity IDE.
+            </div>
+          </div>
+          <a
+            href="/downloads/AiNoName-Client.zip"
+            download="AiNoName-Client.zip"
+            className="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs px-3.5 py-2 rounded-lg flex items-center gap-1.5 transition-all shadow-lg hover:shadow-indigo-500/20"
+          >
+            <span className="material-symbols-outlined text-[16px]">download</span>
+            Tải Tool (.zip)
+          </a>
+        </div>
+
         <div className="bg-surface p-3 rounded-xl border border-border flex items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="text-xs text-text-muted font-medium">Model ID</div>

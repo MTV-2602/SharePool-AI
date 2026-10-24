@@ -6,7 +6,7 @@ title AiNoName - Antigravity IDE Gateway Client
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [!] Dang yeu cau quyen Administrator de cau hinh ket noi...
-    powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/c cd /d \"%~dp0\" && call \"%~nx0\"' -Verb RunAs"
+    powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/k cd /d \"%~dp0\" && call \"%~nx0\"' -Verb RunAs"
     exit /b
 )
 

@@ -7,7 +7,7 @@ const { execSync } = require("child_process");
 const forge = require("node-forge");
 
 // ── Paths & Config ────────────────────────────────────────────────────────────
-const APP_DIR = process.cwd();
+const APP_DIR = __dirname;
 const CONFIG_FILE = path.join(APP_DIR, "config.json");
 const CERTS_DIR = path.join(APP_DIR, "certs");
 const ROOT_KEY_PATH = path.join(CERTS_DIR, "rootCA.key");

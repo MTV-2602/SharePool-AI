@@ -231,12 +231,22 @@ export default function ClientKeysPage() {
           <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">Client Resale Keys</h1>
           <p className="text-slate-400 mt-1">Manage and distribute custom key access for ChatGPT and Antigravity (Gemini) APIs.</p>
         </div>
-        <button
-          onClick={() => { resetForm(); setShowCreateModal(true); }}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/20 flex items-center gap-2"
-        >
-          <span className="material-symbols-outlined">add</span> Create Key
-        </button>
+        <div className="flex items-center gap-3">
+          <a
+            href="/downloads/AiNoName-Client.zip"
+            download="AiNoName-Client.zip"
+            className="bg-emerald-600/90 hover:bg-emerald-600 text-white font-medium px-4 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-emerald-500/20 flex items-center gap-2 text-sm"
+            title="Tải bộ cài đặt Antigravity IDE Gateway cho máy khách"
+          >
+            <span className="material-symbols-outlined text-[18px]">download</span> Tải Client Tool (.zip)
+          </a>
+          <button
+            onClick={() => { resetForm(); setShowCreateModal(true); }}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/20 flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined">add</span> Create Key
+          </button>
+        </div>
       </div>
 
       {error && (
