@@ -46,3 +46,8 @@ test/artifacts/
 
 ai-studio/
 
+# Client Tool local artifacts
+ainoname-client/certs/
+ainoname-client/bin/
+*.zip
+

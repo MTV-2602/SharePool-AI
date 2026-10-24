@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AiNoName - Antigravity IDE Gateway Client</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0c0e;
+      --surface: #14161a;
+      --surface-border: #232730;
+      --card-bg: #181b22;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-glow: rgba(59, 130, 246, 0.2);
+      --green: #10b981;
+      --green-glow: rgba(16, 185, 129, 0.2);
+      --red: #ef4444;
+      --yellow: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+    .container {
+      width: 100%;
+      max-width: 860px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 14px;
+    }
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 20px;
+      color: #fff;
+      box-shadow: 0 4px 14px var(--primary-glow);
+    }
+    .logo-title {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+    .logo-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .badges {
+      display: flex;
+      gap: 8px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--green);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+    .badge.off {
+      background: rgba(156, 163, 175, 0.1);
+      color: var(--text-muted);
+      border-color: rgba(156, 163, 175, 0.2);
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 14px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .key-info-box {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 14px;
+      border-radius: 10px;
+    }
+    .key-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .key-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .key-value {
+      font-size: 13px;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+      color: #e5e7eb;
+    }
+    .toggle-section {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+    }
+    .toggle-desc h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 3px;
+    }
+    .toggle-desc p {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .btn {
+      cursor: pointer;
+      border: none;
+      border-radius: 9px;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+    .btn-green {
+      background: var(--green);
+      color: #fff;
+      box-shadow: 0 3px 12px var(--green-glow);
+    }
+    .btn-green:hover { background: #059669; }
+    .btn-red {
+      background: var(--red);
+      color: #fff;
+    }
+    .btn-red:hover { background: #dc2626; }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      border: 1px solid var(--surface-border);
+    }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.14); }
+
+    /* Model Mapping Table */
+    .mapping-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 8px;
+    }
+    .mapping-row {
+      background: var(--card-bg);
+      border-radius: 8px;
+      transition: background 0.15s ease;
+    }
+    .mapping-row td {
+      padding: 12px 14px;
+      font-size: 13px;
+    }
+    .mapping-row td:first-child {
+      border-top-left-radius: 8px;
+      border-bottom-left-radius: 8px;
+      font-weight: 600;
+      width: 45%;
+    }
+    .mapping-row td:nth-child(2) {
+      width: 10%;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    .mapping-row td:last-child {
+      border-top-right-radius: 8px;
+      border-bottom-right-radius: 8px;
+      width: 45%;
+    }
+    select {
+      width: 100%;
+      background: var(--surface);
+      color: var(--text-main);
+      border: 1px solid var(--surface-border);
+      border-radius: 7px;
+      padding: 8px 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      outline: none;
+    }
+    select:focus {
+      border-color: var(--primary);
+    }
+
+    /* Logs console */
+    .console {
+      background: #08090b;
+      border: 1px solid var(--surface-border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      height: 120px;
+      overflow-y: auto;
+      color: #94a3b8;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .log-time { color: #64748b; margin-right: 6px; }
+    .log-success { color: #34d399; }
+    .log-info { color: #60a5fa; }
+    .log-warn { color: #fbbf24; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo-area">
+        <div class="logo-icon">🚀</div>
+        <div>
+          <div class="logo-title">AiNoName Client Gateway</div>
+          <div class="logo-subtitle">Kết nối Antigravity IDE & AI Models</div>
+        </div>
+      </div>
+      <div class="badges">
+        <div class="badge" id="badge-cert"><span class="dot"></span> Cert</div>
+        <div class="badge" id="badge-trusted"><span class="dot"></span> Trusted</div>
+        <div class="badge" id="badge-server"><span class="dot"></span> Server: 443</div>
+      </div>
+    </div>
+
+    <!-- Account & Key Info -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔑 Thông Tin Kết Nối & Hạn Mức</div>
+        <button class="btn btn-secondary" onclick="checkClientKey()" style="padding: 6px 12px; font-size: 11px;">
+          🔄 Làm mới
+        </button>
+      </div>
+      <div class="key-info-box">
+        <div class="key-item">
+          <div class="key-label">Gateway Server</div>
+          <div class="key-value" id="val-gateway" style="color: #60a5fa;">Đang tải...</div>
+        </div>
+        <div class="key-item">
+          <div class="key-label">Client Key</div>
+          <div class="key-value" id="val-key">ck-***</div>
+        </div>
+        <div class="key-item">
+          <div class="key-label">Tên Khách Hàng</div>
+          <div class="key-value" id="val-label" style="color: #34d399;">VIP Client</div>
+        </div>
+        <div class="key-item">
+          <div class="key-label">Hạn Mức / Trạng Thái</div>
+          <div class="key-value" id="val-quota">Đang kiểm tra...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Antigravity DNS Control -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🤖 Trạng Thái Antigravity IDE</div>
+        <div id="dns-badge" class="badge off"><span class="dot"></span> DNS Inactive</div>
+      </div>
+
+      <div class="toggle-section">
+        <div class="toggle-desc">
+          <h4 id="toggle-title">Chặn Bắt Kết Nối Antigravity (MITM DNS)</h4>
+          <p id="toggle-desc-text">Khi bật, Antigravity IDE sẽ tự động gọi AI thông qua Gateway của bạn với Client Key.</p>
+        </div>
+        <button id="btn-toggle" class="btn btn-green" onclick="toggleDNS()">
+          ▶ BẬT KẾT NỐI ANTIGRAVITY
+        </button>
+      </div>
+
+      <!-- Model Mapping Section -->
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <h5 style="font-size: 13px; font-weight: 600;">🎯 Bảng Ánh Xạ Model (Model Mapping)</h5>
+          <span style="font-size: 11px; color: var(--text-muted);">Tùy chỉnh model IDE sẽ thực thi trên Gateway</span>
+        </div>
+        <table class="mapping-table">
+          <tbody>
+            <tr class="mapping-row">
+              <td>Gemini 3.8 Flash (High)</td>
+              <td>➔</td>
+              <td>
+                <select id="map-gemini-3-8" onchange="updateMapping('gemini-3.8-flash-high', this.value)">
+                  <option value="gemini-3.8-flash-high">gemini-3.8-flash-high (Mặc định)</option>
+                  <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+                  <option value="claude-opus-4-6-thinking">claude-opus-4-6-thinking</option>
+                  <option value="cc/claude-opus-5.5">cc/claude-opus-5.5 (Claude Opus 5.5)</option>
+                </select>
+              </td>
+            </tr>
+            <tr class="mapping-row">
+              <td>Claude Sonnet 4.6 (Thinking)</td>
+              <td>➔</td>
+              <td>
+                <select id="map-claude-sonnet" onchange="updateMapping('claude-sonnet-4-6', this.value)">
+                  <option value="claude-sonnet-4-6">claude-sonnet-4-6 (Mặc định)</option>
+                  <option value="claude-opus-4-6-thinking">claude-opus-4-6-thinking</option>
+                  <option value="cc/claude-opus-5.5">cc/claude-opus-5.5 (Claude Opus 5.5)</option>
+                  <option value="gemini-3.8-flash-high">gemini-3.8-flash-high</option>
+                </select>
+              </td>
+            </tr>
+            <tr class="mapping-row">
+              <td>Claude Opus 4.6 (Thinking)</td>
+              <td>➔</td>
+              <td>
+                <select id="map-claude-opus" onchange="updateMapping('claude-opus-4-6-thinking', this.value)">
+                  <option value="claude-opus-4-6-thinking">claude-opus-4-6-thinking (Mặc định)</option>
+                  <option value="cc/claude-opus-5.5">cc/claude-opus-5.5 (Claude Opus 5.5)</option>
+                  <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+                </select>
+              </td>
+            </tr>
+            <tr class="mapping-row">
+              <td>GPT-OSS 120B (Medium)</td>
+              <td>➔</td>
+              <td>
+                <select id="map-gpt-oss" onchange="updateMapping('gpt-oss-120b-medium', this.value)">
+                  <option value="gpt-oss-120b-medium">gpt-oss-120b-medium (Mặc định)</option>
+                  <option value="gemini-3.8-flash-high">gemini-3.8-flash-high</option>
+                </select>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Live Logs Console -->
+      <div>
+        <h5 style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-muted);">
+          📋 Nhật Ký Kết Nối (Live Log):
+        </h5>
+        <div class="console" id="log-box">
+          <div><span class="log-time">[Hệ thống]</span> Khởi động AiNoName Client sẵn sàng...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let isDNSActive = false;
+    let configData = {};
+
+    function addLog(msg, type = "info") {
+      const box = document.getElementById("log-box");
+      const div = document.createElement("div");
+      const time = new Date().toLocaleTimeString();
+      let colorClass = "log-info";
+      if (type === "success") colorClass = "log-success";
+      if (type === "warn") colorClass = "log-warn";
+
+      div.innerHTML = `<span class="log-time">[${time}]</span> <span class="${colorClass}">${msg}</span>`;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function loadStatus() {
+      try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+        configData = data;
+
+        document.getElementById("val-gateway").innerText = data.gatewayUrl || "https://ainoname.site";
+        const key = data.clientKey || "";
+        document.getElementById("val-key").innerText = key ? (key.slice(0, 10) + "..." + key.slice(-4)) : "Chưa cấu hình";
+
+        // Badges
+        document.getElementById("badge-cert").className = data.certExists ? "badge" : "badge off";
+        document.getElementById("badge-trusted").className = data.certTrusted ? "badge" : "badge off";
+        document.getElementById("badge-server").className = data.serverRunning ? "badge" : "badge off";
+
+        // DNS status
+        isDNSActive = !!data.dnsActive;
+        updateDNSUI();
+
+        // Mappings
+        if (data.modelMapping) {
+          if (data.modelMapping["gemini-3.8-flash-high"]) {
+            document.getElementById("map-gemini-3-8").value = data.modelMapping["gemini-3.8-flash-high"];
+          }
+          if (data.modelMapping["claude-sonnet-4-6"]) {
+            document.getElementById("map-claude-sonnet").value = data.modelMapping["claude-sonnet-4-6"];
+          }
+          if (data.modelMapping["claude-opus-4-6-thinking"]) {
+            document.getElementById("map-claude-opus").value = data.modelMapping["claude-opus-4-6-thinking"];
+          }
+          if (data.modelMapping["gpt-oss-120b-medium"]) {
+            document.getElementById("map-gpt-oss").value = data.modelMapping["gpt-oss-120b-medium"];
+          }
+        }
+
+        checkClientKey();
+      } catch (e) {
+        addLog("Lỗi nạp trạng thái: " + e.message, "warn");
+      }
+    }
+
+    function updateDNSUI() {
+      const badge = document.getElementById("dns-badge");
+      const btn = document.getElementById("btn-toggle");
+      if (isDNSActive) {
+        badge.className = "badge";
+        badge.innerHTML = '<span class="dot"></span> DNS Active';
+        btn.className = "btn btn-red";
+        btn.innerText = "⏹ TẮT KẾT NỐI (DNS OFF)";
+      } else {
+        badge.className = "badge off";
+        badge.innerHTML = '<span class="dot"></span> DNS Inactive';
+        btn.className = "btn btn-green";
+        btn.innerText = "▶ BẬT KẾT NỐI ANTIGRAVITY";
+      }
+    }
+
+    async function toggleDNS() {
+      const action = isDNSActive ? "disable" : "enable";
+      addLog(`Đang thực hiện ${action} DNS...`);
+      try {
+        const res = await fetch("/api/dns/" + action, { method: "POST" });
+        const data = await res.json();
+        if (data.ok) {
+          isDNSActive = (action === "enable");
+          updateDNSUI();
+          addLog(action === "enable" ? "Đã bật DNS! Hãy mở Antigravity IDE và chat." : "Đã tắt DNS. Đã khôi phục cài đặt gốc.", "success");
+        } else {
+          addLog("Lỗi đổi DNS: " + (data.error || "Không rõ"), "warn");
+        }
+      } catch (e) {
+        addLog("Lỗi kết nối tới Agent: " + e.message, "warn");
+      }
+    }
+
+    async function updateMapping(fromModel, toModel) {
+      addLog(`Đã đổi mapping: ${fromModel} ➔ ${toModel}`);
+      try {
+        await fetch("/api/mapping", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ [fromModel]: toModel })
+        });
+      } catch (e) {
+        addLog("Lỗi lưu mapping: " + e.message, "warn");
+      }
+    }
+
+    async function checkClientKey() {
+      try {
+        const res = await fetch("/api/check-key", { method: "POST" });
+        const data = await res.json();
+        if (data.label) {
+          document.getElementById("val-label").innerText = data.label;
+        }
+        if (data.quota_info) {
+          document.getElementById("val-quota").innerText = data.quota_info;
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Polling logs
+    setInterval(async () => {
+      try {
+        const res = await fetch("/api/logs");
+        const logs = await res.json();
+        if (Array.isArray(logs) && logs.length > 0) {
+          logs.forEach(l => addLog(l.msg, l.type));
+        }
+      } catch {}
+    }, 2500);
+
+    loadStatus();
+  </script>
+</body>
+</html>
