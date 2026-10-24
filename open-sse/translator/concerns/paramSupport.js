@@ -12,6 +12,9 @@ const STRIP_RULES = [
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
   // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
   { provider: "cloudflare-ai", flattenContent: true },
+  // Current OpenAI models (gpt-5.x / gpt-6.x) reject `max_tokens` with HTTP 400
+  // ("Use 'max_completion_tokens' instead"). Clients send `max_tokens`, so rename it.
+  { provider: "openai", renameParams: { max_tokens: "max_completion_tokens" } },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
@@ -23,9 +26,16 @@ function matches(rule, model) {
 // Remove unsupported params from body in place; returns body.
 export function stripUnsupportedParams(provider, model, body) {
   if (!model || !body || typeof body !== "object") return body;
+  delete body._estimatedPromptTokens;
   for (const rule of STRIP_RULES) {
     if (rule.provider && rule.provider !== provider) continue;
     if (!matches(rule, model)) continue;
+    // Rename params (keeps an explicit target value if the client already sent one).
+    for (const [from, to] of Object.entries(rule.renameParams || {})) {
+      if (body[from] === undefined) continue;
+      if (body[to] === undefined) body[to] = body[from];
+      delete body[from];
+    }
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
     }

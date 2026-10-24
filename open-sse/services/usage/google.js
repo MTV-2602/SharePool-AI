@@ -185,13 +185,38 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     const hasSummaryQuotas = Object.keys(weeklyQuotas).length > 0;
 
     if ((!isFreeTier || !hasSummaryQuotas) && data.models) {
-      for (const [modelKey, info] of Object.entries(data.models)) {
-        if (!info?.quotaInfo || info.isInternal) {
-          continue;
-        }
+      const importantModels = [
+        'gemini-4-argon-high',
+        'gemini-4-argon-medium',
+        'gemini-4-argon-low',
+        'gemini-3.8-flash-high',
+        'gemini-3.8-flash-medium',
+        'gemini-3.8-flash-low',
+        'gemini-3.7-flash-high',
+        'gemini-3.7-flash-medium',
+        'gemini-3.7-flash-low',
+        'gemini-3.6-flash-high',
+        'gemini-3.6-flash-medium',
+        'gemini-3.6-flash-low',
+        'gemini-3.1-pro-high',
+        'gemini-pro-agent',
+        'gemini-3.1-pro-low',
+        'claude-sonnet-5-5-high',
+        'claude-sonnet-5-5-medium',
+        'claude-sonnet-5-5-low',
+        'claude-sonnet-5-5',
+        'claude-opus-5-5-high',
+        'claude-opus-5-5-medium',
+        'claude-opus-5-5-low',
+        'claude-opus-5-5',
+        'claude-sonnet-4-6',
+        'claude-opus-4-6-thinking',
+        'gpt-oss-120b-medium',
+        'gemini-3.1-flash-image',
+      ];
 
-        // Accept any Gemini 3+/Pro, Claude, GPT-OSS, or Image model (future-proof for Gemini 3.9, 4.0, etc.)
-        if (!/^(gemini-[3-9]|gemini-pro|claude-|gpt-oss-)/i.test(modelKey)) {
+      for (const [modelKey, info] of Object.entries(data.models)) {
+        if (!info?.quotaInfo || info.isInternal || !importantModels.includes(modelKey)) {
           continue;
         }
 

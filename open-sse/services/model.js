@@ -137,7 +137,7 @@ const MODEL_PREFIX_PROVIDERS = [
   [/^gpt-6-/, "codex"],
   [/^gpt-daybreak-/, "codex"],
   [/^gpt-reserve/, "codex"],
-  [/^claude-/, "anthropic"],
+  [/^claude-/, "claude"],
   // Bedrock inference profile IDs: us.anthropic.*, global.anthropic.*, eu.anthropic.*, etc.
   [/^(us|eu|ap|global)\.(anthropic|meta|amazon|mistral|xai)\./, "bedrock"],
   // Future-proof Antigravity Gemini matching: any gemini-3.x / gemini-4.x+ flash/pro/agent or thinking suffix

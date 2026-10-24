@@ -6,6 +6,7 @@ import { filterToOpenAIFormat } from "./formats/openai.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
 import { captureSessionId } from "../utils/sessionManager.js";
+import { ensureStreamToolCallIds } from "../utils/streamHelpers.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
 
@@ -150,6 +151,10 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   ensureInitialized();
   // If same format, return as-is
   if (sourceFormat === targetFormat) {
+    if (state && chunk && typeof chunk === "object") {
+      if (!state.streamToolCallIds) state.streamToolCallIds = new Map();
+      ensureStreamToolCallIds(chunk, state.streamToolCallIds);
+    }
     return [chunk];
   }
 
@@ -218,6 +223,8 @@ export function initState(sourceFormat) {
     inThinkingBlock: false,
     currentBlockIndex: null,
     toolCalls: new Map(),
+    // Tool-call ids already emitted to the client, keyed by tool-call index.
+    streamToolCallIds: new Map(),
     finishReason: null,
     finishReasonSent: false,
     usage: null,
