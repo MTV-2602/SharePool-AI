@@ -47,6 +47,12 @@ function loadConfig() {
   } catch (e) {
     console.error("Lỗi đọc config.json:", e.message);
   }
+  if (process.env.GATEWAY_URL) {
+    config.gatewayUrl = process.env.GATEWAY_URL.trim().replace(/\/+$/, "");
+  }
+  if (process.env.CLIENT_KEY) {
+    config.clientKey = process.env.CLIENT_KEY.trim();
+  }
 }
 
 function saveConfig() {
@@ -386,6 +392,31 @@ function startWebServer() {
         } catch {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false }));
+        }
+      });
+      return;
+    }
+
+    if (pathname === "/api/settings" && req.method === "POST") {
+      let body = "";
+      req.on("data", chunk => body += chunk);
+      req.on("end", () => {
+        try {
+          const { gatewayUrl, clientKey } = JSON.parse(body);
+          if (gatewayUrl && typeof gatewayUrl === "string") {
+            config.gatewayUrl = gatewayUrl.trim().replace(/\/+$/, "");
+            log(`🌐 Đã đổi Gateway URL sang: ${config.gatewayUrl}`, "info");
+          }
+          if (clientKey && typeof clientKey === "string") {
+            config.clientKey = clientKey.trim();
+            log(`🔑 Đã cập nhật Client Key mới`, "info");
+          }
+          saveConfig();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, gatewayUrl: config.gatewayUrl, clientKey: config.clientKey }));
+        } catch (e) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: e.message }));
         }
       });
       return;

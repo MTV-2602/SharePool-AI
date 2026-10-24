@@ -125,31 +125,90 @@
       align-items: center;
       gap: 8px;
     }
-    .key-info-box {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 12px;
-      background: rgba(0, 0, 0, 0.25);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      padding: 14px;
-      border-radius: 10px;
-    }
-    .key-item {
+    .settings-panel {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 14px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 16px;
+      border-radius: 12px;
     }
-    .key-label {
+    .field-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .field-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .input-group {
+      display: flex;
+      gap: 8px;
+    }
+    input[type="text"], input[type="password"] {
+      flex: 1;
+      background: var(--surface);
+      color: var(--text-main);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    input[type="text"]:focus, input[type="password"]:focus {
+      border-color: var(--primary);
+    }
+    .presets-bar {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .preset-chip {
+      cursor: pointer;
       font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--surface-border);
+      color: var(--text-muted);
+      transition: all 0.15s ease;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .preset-chip:hover {
+      background: var(--primary-glow);
+      border-color: var(--primary);
+      color: #93c5fd;
+    }
+    .key-info-mini {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .mini-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .mini-label {
+      font-size: 10px;
       color: var(--text-muted);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
     }
-    .key-value {
-      font-size: 13px;
+    .mini-val {
+      font-size: 12px;
       font-weight: 600;
-      font-family: 'JetBrains Mono', monospace;
-      color: #e5e7eb;
+      color: #34d399;
     }
     .toggle-section {
       display: flex;
@@ -285,30 +344,64 @@
       </div>
     </div>
 
-    <!-- Account & Key Info -->
+    <!-- Connection & Base URL Settings -->
     <div class="card">
       <div class="card-header">
-        <div class="card-title">🔑 Thông Tin Kết Nối & Hạn Mức</div>
+        <div class="card-title">🌐 Cấu Hình Gateway Base URL & Client Key</div>
         <button class="btn btn-secondary" onclick="checkClientKey()" style="padding: 6px 12px; font-size: 11px;">
-          🔄 Làm mới
+          🔄 Kiểm tra trạng thái
         </button>
       </div>
-      <div class="key-info-box">
-        <div class="key-item">
-          <div class="key-label">Gateway Server</div>
-          <div class="key-value" id="val-gateway" style="color: #60a5fa;">Đang tải...</div>
+
+      <div class="settings-panel">
+        <!-- Gateway Base URL -->
+        <div class="field-row">
+          <div class="field-label">
+            <span>Gateway Base URL (Điểm đến chuyển tiếp yêu cầu AI):</span>
+          </div>
+          <div class="input-group">
+            <input type="text" id="input-gateway" placeholder="https://ainoname.site hoặc http://localhost:20128" />
+            <button class="btn btn-secondary" onclick="saveGatewaySettings()" style="padding: 8px 16px;">
+              💾 Lưu
+            </button>
+          </div>
+          <!-- Quick Presets -->
+          <div class="presets-bar">
+            <span style="font-size: 11px; color: var(--text-muted); margin-right: 4px;">Nút chọn nhanh:</span>
+            <span class="preset-chip" onclick="setPreset('https://ainoname.site')">🌐 Production (https://ainoname.site)</span>
+            <span class="preset-chip" onclick="setPreset('http://localhost:20128')">💻 Local Test (http://localhost:20128)</span>
+            <span class="preset-chip" onclick="setPreset('http://localhost:20127')">💻 Local Test (http://localhost:20127)</span>
+          </div>
         </div>
-        <div class="key-item">
-          <div class="key-label">Client Key</div>
-          <div class="key-value" id="val-key">ck-***</div>
+
+        <!-- Client Key -->
+        <div class="field-row" style="margin-top: 6px;">
+          <div class="field-label">
+            <span>Client API Key:</span>
+            <a href="javascript:void(0)" onclick="toggleKeyVisibility()" style="font-size: 11px; color: #60a5fa; text-decoration: none;">Hiện / Ẩn Key</a>
+          </div>
+          <div class="input-group">
+            <input type="password" id="input-key" placeholder="ck-xxxx..." />
+            <button class="btn btn-secondary" onclick="saveGatewaySettings()" style="padding: 8px 16px;">
+              💾 Lưu Key
+            </button>
+          </div>
         </div>
-        <div class="key-item">
-          <div class="key-label">Tên Khách Hàng</div>
-          <div class="key-value" id="val-label" style="color: #34d399;">VIP Client</div>
-        </div>
-        <div class="key-item">
-          <div class="key-label">Hạn Mức / Trạng Thái</div>
-          <div class="key-value" id="val-quota">Đang kiểm tra...</div>
+
+        <!-- Real-time Quota Info -->
+        <div class="key-info-mini">
+          <div class="mini-item">
+            <div class="mini-label">Tên Gói / Khách Hàng</div>
+            <div class="mini-val" id="val-label">VIP Client</div>
+          </div>
+          <div class="mini-item">
+            <div class="mini-label">Hạn Mức Kết Nối</div>
+            <div class="mini-val" id="val-quota">Đang kiểm tra...</div>
+          </div>
+          <div class="mini-item">
+            <div class="mini-label">Cổng MITM Cục Bộ</div>
+            <div class="mini-val" style="color: #60a5fa;">127.0.0.1:443 (HTTPS)</div>
+          </div>
         </div>
       </div>
     </div>
@@ -316,14 +409,14 @@
     <!-- Antigravity DNS Control -->
     <div class="card">
       <div class="card-header">
-        <div class="card-title">🤖 Trạng Thái Antigravity IDE</div>
+        <div class="card-title">🤖 Điều Khiển Antigravity IDE</div>
         <div id="dns-badge" class="badge off"><span class="dot"></span> DNS Inactive</div>
       </div>
 
       <div class="toggle-section">
         <div class="toggle-desc">
-          <h4 id="toggle-title">Chặn Bắt Kết Nối Antigravity (MITM DNS)</h4>
-          <p id="toggle-desc-text">Khi bật, Antigravity IDE sẽ tự động gọi AI thông qua Gateway của bạn với Client Key.</p>
+          <h4 id="toggle-title">Chặn Bắt Kết Nối Antigravity (Hosts Redirect)</h4>
+          <p id="toggle-desc-text">Tự động trỏ daily-cloudcode-pa.googleapis.com về Gateway đang cấu hình.</p>
         </div>
         <button id="btn-toggle" class="btn btn-green" onclick="toggleDNS()">
           ▶ BẬT KẾT NỐI ANTIGRAVITY
@@ -422,9 +515,8 @@
         const data = await res.json();
         configData = data;
 
-        document.getElementById("val-gateway").innerText = data.gatewayUrl || "https://ainoname.site";
-        const key = data.clientKey || "";
-        document.getElementById("val-key").innerText = key ? (key.slice(0, 10) + "..." + key.slice(-4)) : "Chưa cấu hình";
+        document.getElementById("input-gateway").value = data.gatewayUrl || "https://ainoname.site";
+        document.getElementById("input-key").value = data.clientKey || "";
 
         // Badges
         document.getElementById("badge-cert").className = data.certExists ? "badge" : "badge off";
@@ -454,6 +546,39 @@
         checkClientKey();
       } catch (e) {
         addLog("Lỗi nạp trạng thái: " + e.message, "warn");
+      }
+    }
+
+    function setPreset(url) {
+      document.getElementById("input-gateway").value = url;
+      saveGatewaySettings();
+    }
+
+    function toggleKeyVisibility() {
+      const input = document.getElementById("input-key");
+      input.type = input.type === "password" ? "text" : "password";
+    }
+
+    async function saveGatewaySettings() {
+      const gatewayUrl = document.getElementById("input-gateway").value.trim();
+      const clientKey = document.getElementById("input-key").value.trim();
+      addLog(`Đang lưu cài đặt Gateway: ${gatewayUrl}...`);
+
+      try {
+        const res = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gatewayUrl, clientKey })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          addLog("Đã lưu cấu hình Gateway & Key thành công!", "success");
+          checkClientKey();
+        } else {
+          addLog("Lỗi lưu cấu hình: " + (data.error || "Không rõ"), "warn");
+        }
+      } catch (e) {
+        addLog("Lỗi kết nối tới Agent: " + e.message, "warn");
       }
     }
 

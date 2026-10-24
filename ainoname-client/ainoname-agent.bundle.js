@@ -17875,6 +17875,12 @@ function loadConfig() {
   } catch (e) {
     console.error("L\u1ED7i \u0111\u1ECDc config.json:", e.message);
   }
+  if (process.env.GATEWAY_URL) {
+    config.gatewayUrl = process.env.GATEWAY_URL.trim().replace(/\/+$/, "");
+  }
+  if (process.env.CLIENT_KEY) {
+    config.clientKey = process.env.CLIENT_KEY.trim();
+  }
 }
 function saveConfig() {
   try {
@@ -18182,6 +18188,30 @@ function startWebServer() {
         } catch {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false }));
+        }
+      });
+      return;
+    }
+    if (pathname === "/api/settings" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk) => body += chunk);
+      req.on("end", () => {
+        try {
+          const { gatewayUrl, clientKey } = JSON.parse(body);
+          if (gatewayUrl && typeof gatewayUrl === "string") {
+            config.gatewayUrl = gatewayUrl.trim().replace(/\/+$/, "");
+            log(`\u{1F310} \u0110\xE3 \u0111\u1ED5i Gateway URL sang: ${config.gatewayUrl}`, "info");
+          }
+          if (clientKey && typeof clientKey === "string") {
+            config.clientKey = clientKey.trim();
+            log(`\u{1F511} \u0110\xE3 c\u1EADp nh\u1EADt Client Key m\u1EDBi`, "info");
+          }
+          saveConfig();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, gatewayUrl: config.gatewayUrl, clientKey: config.clientKey }));
+        } catch (e) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: e.message }));
         }
       });
       return;
