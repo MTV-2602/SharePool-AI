@@ -71,8 +71,8 @@ export default {
     { id: "claude-opus-5-5-low",         name: "Claude Opus 5.5 (Low)",         upstreamModelId: "claude-opus-5-5-low" },
 
     // ── Tương thích ngược Claude 4.6 (Auto -> 5.5) ───────────────────────────
-    { id: "claude-sonnet-4-6",           name: "Claude Sonnet 4.6 (Auto -> 5.5)", upstreamModelId: "claude-sonnet-5-5-high" },
-    { id: "claude-opus-4-6-thinking",    name: "Claude Opus 4.6 (Auto -> 5.5)",   upstreamModelId: "claude-opus-5-5-high" },
+    { id: "claude-sonnet-4-6",           name: "Claude Sonnet 4.6 (Thinking)", upstreamModelId: "claude-sonnet-4-6" },
+    { id: "claude-opus-4-6-thinking",    name: "Claude Opus 4.6 (Thinking)",   upstreamModelId: "claude-opus-4-6-thinking" },
     { id: "gpt-oss-120b-medium",         name: "GPT-OSS 120B (Medium)" },
 
     // ── Gemini 4 Argon ────────────────────────────────────────────────────────
