@@ -644,6 +644,7 @@ function startMitmServer() {
   };
 
   mitmServer = https.createServer(sslOptions, async (req, res) => {
+    req.on("error", () => {});
     const chunks = [];
     req.on("data", chunk => chunks.push(chunk));
     req.on("end", async () => {
@@ -702,6 +703,7 @@ function startMitmServer() {
         const forwardHeaders = {
           "Content-Type": "application/json",
           "x-request-source": "local",
+          "Connection": "keep-alive",
         };
         if (config.clientKey) {
           forwardHeaders["Authorization"] = `Bearer ${config.clientKey}`;
@@ -710,24 +712,38 @@ function startMitmServer() {
           forwardHeaders["User-Agent"] = req.headers["user-agent"].replace(/antigravity\/[^\s]+/, `antigravity/${ANTIGRAVITY_IDE_VERSION}`);
         }
 
+        let clientAborted = false;
+        const abortController = new AbortController();
+        res.on("close", () => {
+          clientAborted = true;
+          try { abortController.abort(); } catch {}
+        });
+
         let forwardRes = null;
-        let status = 200;
+        let status = 0;
         let lastErrDetail = "";
-        const maxRetries = 2;
+        const maxRetries = 3;
+        const retryDelays = [3000, 6000, 10000]; // 3s, 6s, 10s giãn cách hợp lý
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          if (clientAborted) break;
+
           if (attempt > 0) {
-            log(`🔄 Đang thử lại kết nối Gateway (Lần ${attempt}/${maxRetries})...`, "warn");
-            await new Promise(r => setTimeout(r, 1500));
+            const delayMs = retryDelays[attempt - 1] || 5000;
+            log(`⏳ Tạm dừng ${delayMs / 1000}s trước khi thử lại Gateway (Lần ${attempt}/${maxRetries})...`, "warn");
+            await new Promise(r => setTimeout(r, delayMs));
           }
+
+          if (clientAborted) break;
 
           try {
             forwardRes = await fetch(forwardUrl, {
               method: "POST",
               headers: forwardHeaders,
-              body: JSON.stringify(body)
+              body: JSON.stringify(body),
+              signal: abortController.signal
             });
-            status = forwardRes.status || 200;
+            status = forwardRes.status || 0;
 
             if (status === 200) {
               break;
@@ -743,42 +759,48 @@ function startMitmServer() {
 
             // Retry on transient Cloudflare/Gateway errors: 520, 524, 502, 503, 504
             if ([520, 524, 502, 503, 504].includes(status) && attempt < maxRetries) {
-              log(`⚠️ Gateway tạm thời bận (${status}): ${lastErrDetail}. Sẽ thử lại ngay...`, "warn");
+              log(`⚠️ Gateway tạm thời bận (${status}): ${lastErrDetail}. Sẽ thử lại sau ít giây...`, "warn");
               continue;
             }
 
             break;
           } catch (fetchErr) {
-            lastErrDetail = fetchErr.message;
+            if (clientAborted) break;
+            const causeMsg = fetchErr.cause ? (fetchErr.cause.message || fetchErr.cause.code || String(fetchErr.cause)) : "";
+            lastErrDetail = causeMsg ? `${fetchErr.message} [${causeMsg}]` : fetchErr.message;
+            status = 502;
             if (attempt < maxRetries) {
-              log(`⚠️ Lỗi mạng Gateway (${fetchErr.message}). Sẽ thử lại ngay...`, "warn");
+              log(`⚠️ Mất kết nối tới Gateway (${lastErrDetail}). Sẽ thử lại sau ít giây...`, "warn");
               continue;
             }
             break;
           }
         }
 
-        if (!forwardRes || status !== 200) {
-          log(`❌ Gateway trả về lỗi (${status}): ${lastErrDetail}`, "warn");
+        if (clientAborted) {
+          log("⏹️ Người dùng đã hủy yêu cầu từ IDE.", "info");
+          return;
+        }
 
-          if (isStream) {
-            if (!res.headersSent) {
-              res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" });
-            }
-            res.end(`data: ${JSON.stringify({ error: { code: status || 502, message: `[AiNoName Gateway Lỗi ${status}]: ${lastErrDetail}`, status: "UNAVAILABLE" } })}\r\n\r\n`);
+        if (!forwardRes || status !== 200) {
+          if (!status || status === 200) status = 502;
+          log(`❌ Gateway không phản hồi (${status}): ${lastErrDetail}`, "warn");
+
+          if (!res.headersSent) {
+            res.writeHead(status, {
+              "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": "no-cache",
+              "Connection": "close"
+            });
+            res.end(JSON.stringify({
+              error: {
+                code: status,
+                message: `[AiNoName Gateway Lỗi ${status}]: ${lastErrDetail}`,
+                status: status === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE"
+              }
+            }));
           } else {
-            if (!res.headersSent) {
-              res.writeHead(502, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({
-                error: {
-                  code: 502,
-                  message: `[AiNoName Gateway Lỗi ${status}]: ${lastErrDetail}`,
-                  status: "UNAVAILABLE"
-                }
-              }));
-            } else {
-              res.end();
-            }
+            try { res.destroy(); } catch {}
           }
           return;
         }
@@ -801,24 +823,44 @@ function startMitmServer() {
 
         const reader = forwardRes.body.getReader();
         while (true) {
+          if (clientAborted || res.writableEnded || res.destroyed) {
+            try { await reader.cancel(); } catch {}
+            break;
+          }
           const { done, value } = await reader.read();
           if (done) break;
-          res.write(Buffer.from(value));
+          if (!res.writableEnded) {
+            res.write(Buffer.from(value));
+          }
         }
-        res.end();
+        if (!res.writableEnded) {
+          res.end();
+        }
         log(`Trả lời Antigravity [${mappedModel}] hoàn tất (Status: ${status})`, "success");
       } catch (err) {
         log(`Lỗi MITM Proxy: ${err.message}`, "warn");
-        if (isStream) {
-          if (!res.headersSent) res.writeHead(200, { "Content-Type": "text/event-stream" });
-          res.end(`data: ${JSON.stringify({ error: { message: err.message } })}\r\n\r\n`);
+        if (!res.headersSent) {
+          res.writeHead(500, {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "close"
+          });
+          res.end(JSON.stringify({
+            error: {
+              code: 500,
+              message: `[Lỗi MITM Proxy]: ${err.message}`,
+              status: "INTERNAL"
+            }
+          }));
         } else {
-          if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: { message: err.message } }));
+          try { res.destroy(); } catch {}
         }
       }
     });
   });
+
+  mitmServer.keepAliveTimeout = 65000;
+  mitmServer.headersTimeout = 66000;
 
   mitmServer.listen(config.mitmPort || 443, "127.0.0.1", () => {
     log(`🛡️ Máy chủ MITM HTTPS (HTTP/2 + HTTP/1.1) đang lắng nghe tại 127.0.0.1:443`, "success");

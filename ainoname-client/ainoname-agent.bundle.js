@@ -18449,6 +18449,8 @@ function startMitmServer() {
     }
   };
   mitmServer = https.createServer(sslOptions, async (req, res) => {
+    req.on("error", () => {
+    });
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", async () => {
@@ -18490,7 +18492,8 @@ function startMitmServer() {
         const forwardUrl = `${cleanGateway}/v1/chat/completions`;
         const forwardHeaders = {
           "Content-Type": "application/json",
-          "x-request-source": "local"
+          "x-request-source": "local",
+          "Connection": "keep-alive"
         };
         if (config.clientKey) {
           forwardHeaders["Authorization"] = `Bearer ${config.clientKey}`;
@@ -18498,22 +18501,36 @@ function startMitmServer() {
         if (req.headers["user-agent"]) {
           forwardHeaders["User-Agent"] = req.headers["user-agent"].replace(/antigravity\/[^\s]+/, `antigravity/${ANTIGRAVITY_IDE_VERSION}`);
         }
-        let forwardRes = null;
-        let status = 200;
-        let lastErrDetail = "";
-        const maxRetries = 2;
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          if (attempt > 0) {
-            log(`\u{1F504} \u0110ang th\u1EED l\u1EA1i k\u1EBFt n\u1ED1i Gateway (L\u1EA7n ${attempt}/${maxRetries})...`, "warn");
-            await new Promise((r) => setTimeout(r, 1500));
+        let clientAborted = false;
+        const abortController = new AbortController();
+        res.on("close", () => {
+          clientAborted = true;
+          try {
+            abortController.abort();
+          } catch {
           }
+        });
+        let forwardRes = null;
+        let status = 0;
+        let lastErrDetail = "";
+        const maxRetries = 3;
+        const retryDelays = [3e3, 6e3, 1e4];
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          if (clientAborted) break;
+          if (attempt > 0) {
+            const delayMs = retryDelays[attempt - 1] || 5e3;
+            log(`\u23F3 T\u1EA1m d\u1EEBng ${delayMs / 1e3}s tr\u01B0\u1EDBc khi th\u1EED l\u1EA1i Gateway (L\u1EA7n ${attempt}/${maxRetries})...`, "warn");
+            await new Promise((r) => setTimeout(r, delayMs));
+          }
+          if (clientAborted) break;
           try {
             forwardRes = await fetch(forwardUrl, {
               method: "POST",
               headers: forwardHeaders,
-              body: JSON.stringify(body)
+              body: JSON.stringify(body),
+              signal: abortController.signal
             });
-            status = forwardRes.status || 200;
+            status = forwardRes.status || 0;
             if (status === 200) {
               break;
             }
@@ -18525,40 +18542,46 @@ function startMitmServer() {
               lastErrDetail = errText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
             }
             if ([520, 524, 502, 503, 504].includes(status) && attempt < maxRetries) {
-              log(`\u26A0\uFE0F Gateway t\u1EA1m th\u1EDDi b\u1EADn (${status}): ${lastErrDetail}. S\u1EBD th\u1EED l\u1EA1i ngay...`, "warn");
+              log(`\u26A0\uFE0F Gateway t\u1EA1m th\u1EDDi b\u1EADn (${status}): ${lastErrDetail}. S\u1EBD th\u1EED l\u1EA1i sau \xEDt gi\xE2y...`, "warn");
               continue;
             }
             break;
           } catch (fetchErr) {
-            lastErrDetail = fetchErr.message;
+            if (clientAborted) break;
+            const causeMsg = fetchErr.cause ? fetchErr.cause.message || fetchErr.cause.code || String(fetchErr.cause) : "";
+            lastErrDetail = causeMsg ? `${fetchErr.message} [${causeMsg}]` : fetchErr.message;
+            status = 502;
             if (attempt < maxRetries) {
-              log(`\u26A0\uFE0F L\u1ED7i m\u1EA1ng Gateway (${fetchErr.message}). S\u1EBD th\u1EED l\u1EA1i ngay...`, "warn");
+              log(`\u26A0\uFE0F M\u1EA5t k\u1EBFt n\u1ED1i t\u1EDBi Gateway (${lastErrDetail}). S\u1EBD th\u1EED l\u1EA1i sau \xEDt gi\xE2y...`, "warn");
               continue;
             }
             break;
           }
         }
+        if (clientAborted) {
+          log("\u23F9\uFE0F Ng\u01B0\u1EDDi d\xF9ng \u0111\xE3 h\u1EE7y y\xEAu c\u1EA7u t\u1EEB IDE.", "info");
+          return;
+        }
         if (!forwardRes || status !== 200) {
-          log(`\u274C Gateway tr\u1EA3 v\u1EC1 l\u1ED7i (${status}): ${lastErrDetail}`, "warn");
-          if (isStream) {
-            if (!res.headersSent) {
-              res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" });
-            }
-            res.end(`data: ${JSON.stringify({ error: { code: status || 502, message: `[AiNoName Gateway L\u1ED7i ${status}]: ${lastErrDetail}`, status: "UNAVAILABLE" } })}\r
-\r
-`);
+          if (!status || status === 200) status = 502;
+          log(`\u274C Gateway kh\xF4ng ph\u1EA3n h\u1ED3i (${status}): ${lastErrDetail}`, "warn");
+          if (!res.headersSent) {
+            res.writeHead(status, {
+              "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": "no-cache",
+              "Connection": "close"
+            });
+            res.end(JSON.stringify({
+              error: {
+                code: status,
+                message: `[AiNoName Gateway L\u1ED7i ${status}]: ${lastErrDetail}`,
+                status: status === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE"
+              }
+            }));
           } else {
-            if (!res.headersSent) {
-              res.writeHead(502, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({
-                error: {
-                  code: 502,
-                  message: `[AiNoName Gateway L\u1ED7i ${status}]: ${lastErrDetail}`,
-                  status: "UNAVAILABLE"
-                }
-              }));
-            } else {
-              res.end();
+            try {
+              res.destroy();
+            } catch {
             }
           }
           return;
@@ -18579,26 +18602,49 @@ function startMitmServer() {
         }
         const reader = forwardRes.body.getReader();
         while (true) {
+          if (clientAborted || res.writableEnded || res.destroyed) {
+            try {
+              await reader.cancel();
+            } catch {
+            }
+            break;
+          }
           const { done, value } = await reader.read();
           if (done) break;
-          res.write(Buffer.from(value));
+          if (!res.writableEnded) {
+            res.write(Buffer.from(value));
+          }
         }
-        res.end();
+        if (!res.writableEnded) {
+          res.end();
+        }
         log(`Tr\u1EA3 l\u1EDDi Antigravity [${mappedModel}] ho\xE0n t\u1EA5t (Status: ${status})`, "success");
       } catch (err) {
         log(`L\u1ED7i MITM Proxy: ${err.message}`, "warn");
-        if (isStream) {
-          if (!res.headersSent) res.writeHead(200, { "Content-Type": "text/event-stream" });
-          res.end(`data: ${JSON.stringify({ error: { message: err.message } })}\r
-\r
-`);
+        if (!res.headersSent) {
+          res.writeHead(500, {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-cache",
+            "Connection": "close"
+          });
+          res.end(JSON.stringify({
+            error: {
+              code: 500,
+              message: `[L\u1ED7i MITM Proxy]: ${err.message}`,
+              status: "INTERNAL"
+            }
+          }));
         } else {
-          if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: { message: err.message } }));
+          try {
+            res.destroy();
+          } catch {
+          }
         }
       }
     });
   });
+  mitmServer.keepAliveTimeout = 65e3;
+  mitmServer.headersTimeout = 66e3;
   mitmServer.listen(config.mitmPort || 443, "127.0.0.1", () => {
     log(`\u{1F6E1}\uFE0F M\xE1y ch\u1EE7 MITM HTTPS (HTTP/2 + HTTP/1.1) \u0111ang l\u1EAFng nghe t\u1EA1i 127.0.0.1:443`, "success");
   });
