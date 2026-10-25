@@ -552,6 +552,76 @@ async function passthrough(req, res, bodyBuffer) {
   return passthroughHttps(req, res, bodyBuffer, req.headers, targetHost);
 }
 
+// ── Helper: Model Extraction & Schema Sanitization (Learned from 9router) ──
+function extractModel(url, body) {
+  let urlModel = null;
+  if (url) {
+    const m = url.match(/\/models\/([^/:]+)/);
+    if (m) urlModel = m[1];
+  }
+  let model = urlModel || body.model || body.request?.model || null;
+  const cleanModelName = String(model || "").replace(/^models\//, "");
+
+  if (cleanModelName === "gemini-3.6-flash-tiered" || cleanModelName === "gemini-3.7-flash-tiered" || cleanModelName === "gemini-3.8-flash-tiered") {
+    const ver = cleanModelName.includes("3.8") ? "3.8" : cleanModelName.includes("3.7") ? "3.7" : "3.6";
+    const rawLevel = body.request?.generationConfig?.thinkingConfig?.thinkingLevel
+      || body.generationConfig?.thinkingConfig?.thinkingLevel;
+    const level = ["high", "medium", "low"].includes(String(rawLevel).toLowerCase())
+      ? String(rawLevel).toLowerCase()
+      : "high";
+    return `gemini-${ver}-flash-${level}`;
+  }
+
+  if (!cleanModelName) return "gemini-3.8-flash-high";
+  if (/flash.*extra.*low|extra.*low.*flash|flash.*low|low.*flash/i.test(cleanModelName)) return "gemini-3.8-flash-low";
+  if (/flash.*medium|medium.*flash/i.test(cleanModelName)) return "gemini-3.8-flash-medium";
+  if (/flash.*agent|agent.*flash|flash/i.test(cleanModelName)) return "gemini-3.8-flash-high";
+  if (/opus.*5[.-]5|5[.-]5.*opus/i.test(cleanModelName)) return "claude-opus-5-5";
+  if (/sonnet.*5[.-]5|5[.-]5.*sonnet/i.test(cleanModelName)) return "claude-sonnet-5-5";
+  if (/opus/i.test(cleanModelName)) return "claude-opus-4-6-thinking";
+  if (/sonnet|claude/i.test(cleanModelName)) return "claude-sonnet-4-6";
+  if (/gpt.*oss|oss/i.test(cleanModelName)) return "gpt-oss-120b-medium";
+
+  return cleanModelName;
+}
+
+function resolveMappedModel(extractedModel) {
+  if (config.modelMapping[extractedModel]) {
+    return config.modelMapping[extractedModel];
+  }
+  for (const [k, v] of Object.entries(config.modelMapping)) {
+    if (extractedModel.includes(k) || k.includes(extractedModel)) {
+      return v;
+    }
+  }
+  return config.modelMapping["gemini-3.8-flash-high"] || extractedModel;
+}
+
+function cleanToolSchemas(tools) {
+  if (!Array.isArray(tools)) return;
+  const bannedKeywords = [
+    "$schema", "$defs", "definitions", "additionalProperties", "title",
+    "minLength", "maxLength", "default", "examples", "propertyNames", "patternProperties"
+  ];
+  const sanitize = (obj) => {
+    if (!obj || typeof obj !== "object") return;
+    for (const k of bannedKeywords) delete obj[k];
+    if (obj.properties && typeof obj.properties === "object") {
+      for (const val of Object.values(obj.properties)) sanitize(val);
+    }
+    if (obj.items && typeof obj.items === "object") {
+      sanitize(obj.items);
+    }
+  };
+  for (const group of tools) {
+    if (Array.isArray(group.functionDeclarations)) {
+      for (const fn of group.functionDeclarations) {
+        if (fn.parameters) sanitize(fn.parameters);
+      }
+    }
+  }
+}
+
 // ── MITM HTTPS Proxy (Port 443) ───────────────────────────────────────────────
 let mitmServer = null;
 
@@ -597,16 +667,26 @@ function startMitmServer() {
       // ── Handle Chat Prompt Routing to Gateway ──────────────────────────────
       const isStream = req.url.includes(":streamGenerateContent");
       try {
-        let originalModel = modelName;
-        if (!originalModel && req.url) {
-          const m = req.url.match(/\/models\/([^/:]+)/);
-          if (m) originalModel = m[1];
-        }
-        originalModel = originalModel || "gemini-3.8-flash-high";
-        const mappedModel = config.modelMapping[originalModel] || originalModel;
+        const originalModel = extractModel(req.url, body);
+        const mappedModel = resolveMappedModel(originalModel);
 
         log(`🚀 Gửi câu hỏi Antigravity: [${originalModel}] ➔ [${mappedModel}]`, "info");
         body.model = mappedModel;
+        body.userAgent = "antigravity";
+
+        // Strip blacklisted fields that trigger quota/schema errors on Google Gemini
+        delete body.requestType;
+        if (body.request) {
+          delete body.request.requestType;
+          delete body.request.thinking;
+          delete body.request.output_config;
+          delete body.request.reasoning_effort;
+        }
+
+        // Clean tool schemas to prevent Gemini 400 Bad Request
+        if (body.request?.tools) {
+          cleanToolSchemas(body.request.tools);
+        }
 
         // Apply Antigravity IDE version metadata override
         if (body.metadata && typeof body.metadata === "object") {
@@ -681,17 +761,24 @@ function startMitmServer() {
         if (!forwardRes || status !== 200) {
           log(`❌ Gateway trả về lỗi (${status}): ${lastErrDetail}`, "warn");
 
-          if (!res.headersSent) {
-            res.writeHead(502, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({
-              error: {
-                code: 502,
-                message: `[AiNoName Gateway Lỗi ${status}]: ${lastErrDetail}`,
-                status: "UNAVAILABLE"
-              }
-            }));
+          if (isStream) {
+            if (!res.headersSent) {
+              res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" });
+            }
+            res.end(`data: ${JSON.stringify({ error: { code: status || 502, message: `[AiNoName Gateway Lỗi ${status}]: ${lastErrDetail}`, status: "UNAVAILABLE" } })}\r\n\r\n`);
           } else {
-            res.end();
+            if (!res.headersSent) {
+              res.writeHead(502, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({
+                error: {
+                  code: 502,
+                  message: `[AiNoName Gateway Lỗi ${status}]: ${lastErrDetail}`,
+                  status: "UNAVAILABLE"
+                }
+              }));
+            } else {
+              res.end();
+            }
           }
           return;
         }
