@@ -44,6 +44,7 @@ const PUBLIC_API_PATHS = [
   "/api/telegram/setup",
   "/api/telegram-webhook",
   "/api/client-keys/check",
+  "/api/client-keys/download-tool",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).

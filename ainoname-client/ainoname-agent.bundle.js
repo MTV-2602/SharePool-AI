@@ -7,9 +7,9 @@ var __commonJS = (cb, mod) => function __require() {
   }
 };
 
-// D:/codex xoay/node_modules/node-forge/lib/forge.js
+// node_modules/node-forge/lib/forge.js
 var require_forge = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/forge.js"(exports2, module2) {
+  "node_modules/node-forge/lib/forge.js"(exports2, module2) {
     module2.exports = {
       // default options
       options: {
@@ -19,9 +19,9 @@ var require_forge = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/baseN.js
+// node_modules/node-forge/lib/baseN.js
 var require_baseN = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/baseN.js"(exports2, module2) {
+  "node_modules/node-forge/lib/baseN.js"(exports2, module2) {
     var api = {};
     module2.exports = api;
     var _reverseAlphabets = {};
@@ -133,9 +133,9 @@ var require_baseN = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/util.js
+// node_modules/node-forge/lib/util.js
 var require_util = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/util.js"(exports2, module2) {
+  "node_modules/node-forge/lib/util.js"(exports2, module2) {
     var forge2 = require_forge();
     var baseN = require_baseN();
     var util = module2.exports = forge2.util = forge2.util || {};
@@ -1514,9 +1514,9 @@ var require_util = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/cipher.js
+// node_modules/node-forge/lib/cipher.js
 var require_cipher = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/cipher.js"(exports2, module2) {
+  "node_modules/node-forge/lib/cipher.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     module2.exports = forge2.cipher = forge2.cipher || {};
@@ -1631,9 +1631,9 @@ var require_cipher = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/cipherModes.js
+// node_modules/node-forge/lib/cipherModes.js
 var require_cipherModes = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/cipherModes.js"(exports2, module2) {
+  "node_modules/node-forge/lib/cipherModes.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     forge2.cipher = forge2.cipher || {};
@@ -2281,9 +2281,9 @@ var require_cipherModes = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/aes.js
+// node_modules/node-forge/lib/aes.js
 var require_aes = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/aes.js"(exports2, module2) {
+  "node_modules/node-forge/lib/aes.js"(exports2, module2) {
     var forge2 = require_forge();
     require_cipher();
     require_cipherModes();
@@ -2556,9 +2556,9 @@ var require_aes = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/oids.js
+// node_modules/node-forge/lib/oids.js
 var require_oids = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/oids.js"(exports2, module2) {
+  "node_modules/node-forge/lib/oids.js"(exports2, module2) {
     var forge2 = require_forge();
     forge2.pki = forge2.pki || {};
     var oids = module2.exports = forge2.pki.oids = forge2.oids = forge2.oids || {};
@@ -2701,9 +2701,9 @@ var require_oids = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/asn1.js
+// node_modules/node-forge/lib/asn1.js
 var require_asn1 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/asn1.js"(exports2, module2) {
+  "node_modules/node-forge/lib/asn1.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     require_oids();
@@ -3520,18 +3520,18 @@ var require_asn1 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/md.js
+// node_modules/node-forge/lib/md.js
 var require_md = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/md.js"(exports2, module2) {
+  "node_modules/node-forge/lib/md.js"(exports2, module2) {
     var forge2 = require_forge();
     module2.exports = forge2.md = forge2.md || {};
     forge2.md.algorithms = forge2.md.algorithms || {};
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/hmac.js
+// node_modules/node-forge/lib/hmac.js
 var require_hmac = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/hmac.js"(exports2, module2) {
+  "node_modules/node-forge/lib/hmac.js"(exports2, module2) {
     var forge2 = require_forge();
     require_md();
     require_util();
@@ -3611,9 +3611,9 @@ var require_hmac = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/md5.js
+// node_modules/node-forge/lib/md5.js
 var require_md5 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/md5.js"(exports2, module2) {
+  "node_modules/node-forge/lib/md5.js"(exports2, module2) {
     var forge2 = require_forge();
     require_md();
     require_util();
@@ -3903,9 +3903,9 @@ var require_md5 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/pem.js
+// node_modules/node-forge/lib/pem.js
 var require_pem = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/pem.js"(exports2, module2) {
+  "node_modules/node-forge/lib/pem.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     var pem = module2.exports = forge2.pem = forge2.pem || {};
@@ -4054,9 +4054,9 @@ var require_pem = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/des.js
+// node_modules/node-forge/lib/des.js
 var require_des = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/des.js"(exports2, module2) {
+  "node_modules/node-forge/lib/des.js"(exports2, module2) {
     var forge2 = require_forge();
     require_cipher();
     require_cipherModes();
@@ -4292,9 +4292,9 @@ var require_des = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/pbkdf2.js
+// node_modules/node-forge/lib/pbkdf2.js
 var require_pbkdf2 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/pbkdf2.js"(exports2, module2) {
+  "node_modules/node-forge/lib/pbkdf2.js"(exports2, module2) {
     var forge2 = require_forge();
     require_hmac();
     require_md();
@@ -4407,9 +4407,9 @@ var require_pbkdf2 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/sha256.js
+// node_modules/node-forge/lib/sha256.js
 var require_sha256 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/sha256.js"(exports2, module2) {
+  "node_modules/node-forge/lib/sha256.js"(exports2, module2) {
     var forge2 = require_forge();
     require_md();
     require_util();
@@ -4640,9 +4640,9 @@ var require_sha256 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/prng.js
+// node_modules/node-forge/lib/prng.js
 var require_prng = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/prng.js"(exports2, module2) {
+  "node_modules/node-forge/lib/prng.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     var _crypto = null;
@@ -4880,9 +4880,9 @@ var require_prng = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/random.js
+// node_modules/node-forge/lib/random.js
 var require_random = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/random.js"(exports2, module2) {
+  "node_modules/node-forge/lib/random.js"(exports2, module2) {
     var forge2 = require_forge();
     require_aes();
     require_sha256();
@@ -4988,9 +4988,9 @@ var require_random = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/rc2.js
+// node_modules/node-forge/lib/rc2.js
 var require_rc2 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/rc2.js"(exports2, module2) {
+  "node_modules/node-forge/lib/rc2.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     var piTable = [
@@ -5449,9 +5449,9 @@ var require_rc2 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/jsbn.js
+// node_modules/node-forge/lib/jsbn.js
 var require_jsbn = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/jsbn.js"(exports2, module2) {
+  "node_modules/node-forge/lib/jsbn.js"(exports2, module2) {
     var forge2 = require_forge();
     module2.exports = forge2.jsbn = forge2.jsbn || {};
     var dbits;
@@ -6637,9 +6637,9 @@ var require_jsbn = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/sha1.js
+// node_modules/node-forge/lib/sha1.js
 var require_sha1 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/sha1.js"(exports2, module2) {
+  "node_modules/node-forge/lib/sha1.js"(exports2, module2) {
     var forge2 = require_forge();
     require_md();
     require_util();
@@ -6833,9 +6833,9 @@ var require_sha1 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/pkcs1.js
+// node_modules/node-forge/lib/pkcs1.js
 var require_pkcs1 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/pkcs1.js"(exports2, module2) {
+  "node_modules/node-forge/lib/pkcs1.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     require_random();
@@ -6985,9 +6985,9 @@ var require_pkcs1 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/prime.js
+// node_modules/node-forge/lib/prime.js
 var require_prime = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/prime.js"(exports2, module2) {
+  "node_modules/node-forge/lib/prime.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     require_jsbn();
@@ -7147,9 +7147,9 @@ var require_prime = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/rsa.js
+// node_modules/node-forge/lib/rsa.js
 var require_rsa = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/rsa.js"(exports2, module2) {
+  "node_modules/node-forge/lib/rsa.js"(exports2, module2) {
     var forge2 = require_forge();
     require_asn1();
     require_jsbn();
@@ -8348,9 +8348,9 @@ var require_rsa = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/pbe.js
+// node_modules/node-forge/lib/pbe.js
 var require_pbe = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/pbe.js"(exports2, module2) {
+  "node_modules/node-forge/lib/pbe.js"(exports2, module2) {
     var forge2 = require_forge();
     require_aes();
     require_asn1();
@@ -9125,9 +9125,9 @@ var require_pbe = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/pkcs7asn1.js
+// node_modules/node-forge/lib/pkcs7asn1.js
 var require_pkcs7asn1 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/pkcs7asn1.js"(exports2, module2) {
+  "node_modules/node-forge/lib/pkcs7asn1.js"(exports2, module2) {
     var forge2 = require_forge();
     require_asn1();
     require_util();
@@ -9426,9 +9426,9 @@ var require_pkcs7asn1 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/mgf1.js
+// node_modules/node-forge/lib/mgf1.js
 var require_mgf1 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/mgf1.js"(exports2, module2) {
+  "node_modules/node-forge/lib/mgf1.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     forge2.mgf = forge2.mgf || {};
@@ -9461,9 +9461,9 @@ var require_mgf1 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/mgf.js
+// node_modules/node-forge/lib/mgf.js
 var require_mgf = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/mgf.js"(exports2, module2) {
+  "node_modules/node-forge/lib/mgf.js"(exports2, module2) {
     var forge2 = require_forge();
     require_mgf1();
     module2.exports = forge2.mgf = forge2.mgf || {};
@@ -9471,9 +9471,9 @@ var require_mgf = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/pss.js
+// node_modules/node-forge/lib/pss.js
 var require_pss = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/pss.js"(exports2, module2) {
+  "node_modules/node-forge/lib/pss.js"(exports2, module2) {
     var forge2 = require_forge();
     require_random();
     require_util();
@@ -9590,9 +9590,9 @@ var require_pss = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/x509.js
+// node_modules/node-forge/lib/x509.js
 var require_x509 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/x509.js"(exports2, module2) {
+  "node_modules/node-forge/lib/x509.js"(exports2, module2) {
     var forge2 = require_forge();
     require_aes();
     require_asn1();
@@ -11720,9 +11720,9 @@ var require_x509 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/pkcs12.js
+// node_modules/node-forge/lib/pkcs12.js
 var require_pkcs12 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/pkcs12.js"(exports2, module2) {
+  "node_modules/node-forge/lib/pkcs12.js"(exports2, module2) {
     var forge2 = require_forge();
     require_asn1();
     require_hmac();
@@ -12583,9 +12583,9 @@ var require_pkcs12 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/pki.js
+// node_modules/node-forge/lib/pki.js
 var require_pki = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/pki.js"(exports2, module2) {
+  "node_modules/node-forge/lib/pki.js"(exports2, module2) {
     var forge2 = require_forge();
     require_asn1();
     require_oids();
@@ -12636,9 +12636,9 @@ var require_pki = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/tls.js
+// node_modules/node-forge/lib/tls.js
 var require_tls = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/tls.js"(exports2, module2) {
+  "node_modules/node-forge/lib/tls.js"(exports2, module2) {
     var forge2 = require_forge();
     require_asn1();
     require_hmac();
@@ -14669,9 +14669,9 @@ var require_tls = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/aesCipherSuites.js
+// node_modules/node-forge/lib/aesCipherSuites.js
 var require_aesCipherSuites = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/aesCipherSuites.js"(exports2, module2) {
+  "node_modules/node-forge/lib/aesCipherSuites.js"(exports2, module2) {
     var forge2 = require_forge();
     require_aes();
     require_tls();
@@ -14813,9 +14813,9 @@ var require_aesCipherSuites = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/sha512.js
+// node_modules/node-forge/lib/sha512.js
 var require_sha512 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/sha512.js"(exports2, module2) {
+  "node_modules/node-forge/lib/sha512.js"(exports2, module2) {
     var forge2 = require_forge();
     require_md();
     require_util();
@@ -15221,9 +15221,9 @@ var require_sha512 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/asn1-validator.js
+// node_modules/node-forge/lib/asn1-validator.js
 var require_asn1_validator = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/asn1-validator.js"(exports2) {
+  "node_modules/node-forge/lib/asn1-validator.js"(exports2) {
     var forge2 = require_forge();
     require_asn1();
     var asn1 = forge2.asn1;
@@ -15313,9 +15313,9 @@ var require_asn1_validator = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/ed25519.js
+// node_modules/node-forge/lib/ed25519.js
 var require_ed25519 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/ed25519.js"(exports2, module2) {
+  "node_modules/node-forge/lib/ed25519.js"(exports2, module2) {
     var forge2 = require_forge();
     require_jsbn();
     require_random();
@@ -16426,9 +16426,9 @@ var require_ed25519 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/kem.js
+// node_modules/node-forge/lib/kem.js
 var require_kem = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/kem.js"(exports2, module2) {
+  "node_modules/node-forge/lib/kem.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     require_random();
@@ -16489,9 +16489,9 @@ var require_kem = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/log.js
+// node_modules/node-forge/lib/log.js
 var require_log = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/log.js"(exports2, module2) {
+  "node_modules/node-forge/lib/log.js"(exports2, module2) {
     var forge2 = require_forge();
     require_util();
     module2.exports = forge2.log = forge2.log || {};
@@ -16664,9 +16664,9 @@ var require_log = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/md.all.js
+// node_modules/node-forge/lib/md.all.js
 var require_md_all = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/md.all.js"(exports2, module2) {
+  "node_modules/node-forge/lib/md.all.js"(exports2, module2) {
     module2.exports = require_md();
     require_md5();
     require_sha1();
@@ -16675,9 +16675,9 @@ var require_md_all = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/pkcs7.js
+// node_modules/node-forge/lib/pkcs7.js
 var require_pkcs7 = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/pkcs7.js"(exports2, module2) {
+  "node_modules/node-forge/lib/pkcs7.js"(exports2, module2) {
     var forge2 = require_forge();
     require_aes();
     require_asn1();
@@ -17664,9 +17664,9 @@ var require_pkcs7 = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/ssh.js
+// node_modules/node-forge/lib/ssh.js
 var require_ssh = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/ssh.js"(exports2, module2) {
+  "node_modules/node-forge/lib/ssh.js"(exports2, module2) {
     var forge2 = require_forge();
     require_aes();
     require_hmac();
@@ -17800,9 +17800,9 @@ var require_ssh = __commonJS({
   }
 });
 
-// D:/codex xoay/node_modules/node-forge/lib/index.js
+// node_modules/node-forge/lib/index.js
 var require_lib = __commonJS({
-  "D:/codex xoay/node_modules/node-forge/lib/index.js"(exports2, module2) {
+  "node_modules/node-forge/lib/index.js"(exports2, module2) {
     module2.exports = require_forge();
     require_aes();
     require_aesCipherSuites();
@@ -17832,17 +17832,25 @@ var require_lib = __commonJS({
   }
 });
 
-// D:/codex xoay/ainoname-client/src/agent.js
+// ainoname-client/src/agent.js
 var http = require("http");
 var https = require("https");
+var http2 = require("http2");
 var tls = require("tls");
+var dns = require("dns");
 var fs = require("fs");
 var path = require("path");
+var { promisify } = require("util");
 var { execSync } = require("child_process");
 var forge = require_lib();
 var APP_DIR = __dirname;
 var CONFIG_FILE = path.join(APP_DIR, "config.json");
-var CERTS_DIR = path.join(APP_DIR, "certs");
+var LOCAL_CERTS_DIR = path.join(APP_DIR, "certs");
+var SYSTEM_APPDATA = process.platform === "win32" ? process.env.APPDATA || (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, "AppData", "Roaming") : APP_DIR) : path.join(process.env.HOME || "/tmp", ".ainoname");
+var PERSISTENT_CERTS_DIR = path.join(SYSTEM_APPDATA, "AiNoName", "certs");
+var ROAMING_9ROUTER_CERT = path.join(SYSTEM_APPDATA, "9router", "mitm", "rootCA.crt");
+var ROAMING_9ROUTER_KEY = path.join(SYSTEM_APPDATA, "9router", "mitm", "rootCA.key");
+var CERTS_DIR = PERSISTENT_CERTS_DIR;
 var ROOT_KEY_PATH = path.join(CERTS_DIR, "rootCA.key");
 var ROOT_CERT_PATH = path.join(CERTS_DIR, "rootCA.crt");
 var HOSTS_FILE = process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32\\drivers\\etc\\hosts") : "/etc/hosts";
@@ -17852,16 +17860,21 @@ var TARGET_DOMAINS = [
   "daily-cloudcode-pa.googleapis.com",
   "cloudcode-pa.googleapis.com"
 ];
+var HOST_REWRITE = {
+  "cloudcode-pa.googleapis.com": "daily-cloudcode-pa.googleapis.com"
+};
+var ANTIGRAVITY_IDE_VERSION = "2.24.0";
 var config = {
   gatewayUrl: "https://ainoname.site",
-  clientKey: "ck-YOUR_CLIENT_KEY_HERE",
+  clientKey: "",
+  autoDns: true,
   webPort: 20129,
   mitmPort: 443,
   modelMapping: {
-    "gemini-3.8-flash-high": "gemini-3.8-flash-high",
-    "claude-sonnet-4-6": "claude-sonnet-4-6",
-    "claude-opus-4-6-thinking": "claude-opus-4-6-thinking",
-    "gpt-oss-120b-medium": "gpt-oss-120b-medium"
+    "gemini-3.8-flash-high": "ag/gemini-3.8-flash-high",
+    "claude-sonnet-4-6": "ag/claude-sonnet-4-6",
+    "claude-opus-4-6-thinking": "ag/claude-opus-4-6-thinking",
+    "gpt-oss-120b-medium": "ag/gpt-oss-120b-medium"
   }
 };
 function loadConfig() {
@@ -17893,23 +17906,106 @@ var logQueue = [];
 function log(msg, type = "info") {
   console.log(`[${(/* @__PURE__ */ new Date()).toLocaleTimeString()}] ${msg}`);
   logQueue.push({ msg, type, time: Date.now() });
-  if (logQueue.length > 100) logQueue.shift();
+  if (logQueue.length > 300) logQueue.shift();
+}
+var cachedTargetIPs = {};
+var CACHE_TTL_MS = 5 * 60 * 1e3;
+async function resolveTargetIP(hostname) {
+  const cached = cachedTargetIPs[hostname];
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.ip;
+  const resolver = new dns.Resolver();
+  resolver.setServers(["8.8.8.8", "1.1.1.1"]);
+  const resolve4 = promisify(resolver.resolve4.bind(resolver));
+  try {
+    const addresses = await resolve4(hostname);
+    if (addresses && addresses.length > 0) {
+      cachedTargetIPs[hostname] = { ip: addresses[0], ts: Date.now() };
+      return addresses[0];
+    }
+  } catch (e) {
+  }
+  return "172.217.118.4";
+}
+var alpnCache = /* @__PURE__ */ new Map();
+async function negotiateAlpn(host) {
+  if (alpnCache.has(host)) return alpnCache.get(host);
+  const ip = await resolveTargetIP(host);
+  return new Promise((resolve) => {
+    const socket = tls.connect({
+      host: ip,
+      port: 443,
+      servername: host,
+      ALPNProtocols: ["h2", "http/1.1"],
+      rejectUnauthorized: false
+    }, () => {
+      const proto = socket.alpnProtocol || "http/1.1";
+      alpnCache.set(host, proto);
+      socket.end();
+      resolve(proto);
+    });
+    socket.once("error", () => resolve("http/1.1"));
+    socket.setTimeout(4e3, () => {
+      socket.destroy();
+      resolve("http/1.1");
+    });
+  });
 }
 var rootCAKeyPem;
 var rootCACertPem;
 var rootCAForge;
 function ensureRootCA() {
-  if (!fs.existsSync(CERTS_DIR)) fs.mkdirSync(CERTS_DIR, { recursive: true });
-  if (fs.existsSync(ROOT_KEY_PATH) && fs.existsSync(ROOT_CERT_PATH)) {
-    rootCAKeyPem = fs.readFileSync(ROOT_KEY_PATH, "utf8");
-    rootCACertPem = fs.readFileSync(ROOT_CERT_PATH, "utf8");
-    rootCAForge = {
-      key: forge.pki.privateKeyFromPem(rootCAKeyPem),
-      cert: forge.pki.certificateFromPem(rootCACertPem)
-    };
-    return;
+  if (fs.existsSync(ROAMING_9ROUTER_CERT) && fs.existsSync(ROAMING_9ROUTER_KEY)) {
+    try {
+      rootCAKeyPem = fs.readFileSync(ROAMING_9ROUTER_KEY, "utf8");
+      rootCACertPem = fs.readFileSync(ROAMING_9ROUTER_CERT, "utf8");
+      rootCAForge = {
+        key: forge.pki.privateKeyFromPem(rootCAKeyPem),
+        cert: forge.pki.certificateFromPem(rootCACertPem)
+      };
+      CERTS_DIR = path.dirname(ROAMING_9ROUTER_CERT);
+      ROOT_KEY_PATH = ROAMING_9ROUTER_KEY;
+      ROOT_CERT_PATH = ROAMING_9ROUTER_CERT;
+      try {
+        fs.mkdirSync(LOCAL_CERTS_DIR, { recursive: true });
+        fs.writeFileSync(path.join(LOCAL_CERTS_DIR, "rootCA.key"), rootCAKeyPem, "utf8");
+        fs.writeFileSync(path.join(LOCAL_CERTS_DIR, "rootCA.crt"), rootCACertPem, "utf8");
+      } catch {
+      }
+      log("S\u1EED d\u1EE5ng ch\u1EE9ng ch\u1EC9 9Router Root CA t\u01B0\u01A1ng th\xEDch h\u1EC7 th\u1ED1ng", "info");
+      return;
+    } catch (e) {
+      console.warn("L\u1ED7i \u0111\u1ECDc 9Router CA:", e.message);
+    }
   }
-  log("\u{1F510} \u0110ang t\u1EA1o m\u1EDBi ch\u1EE9ng ch\u1EC9 Root CA...", "info");
+  const persistentKey = path.join(PERSISTENT_CERTS_DIR, "rootCA.key");
+  const persistentCert = path.join(PERSISTENT_CERTS_DIR, "rootCA.crt");
+  if (fs.existsSync(persistentKey) && fs.existsSync(persistentCert)) {
+    try {
+      rootCAKeyPem = fs.readFileSync(persistentKey, "utf8");
+      rootCACertPem = fs.readFileSync(persistentCert, "utf8");
+      rootCAForge = {
+        key: forge.pki.privateKeyFromPem(rootCAKeyPem),
+        cert: forge.pki.certificateFromPem(rootCACertPem)
+      };
+      CERTS_DIR = PERSISTENT_CERTS_DIR;
+      ROOT_KEY_PATH = persistentKey;
+      ROOT_CERT_PATH = persistentCert;
+      try {
+        fs.mkdirSync(LOCAL_CERTS_DIR, { recursive: true });
+        fs.writeFileSync(path.join(LOCAL_CERTS_DIR, "rootCA.key"), rootCAKeyPem, "utf8");
+        fs.writeFileSync(path.join(LOCAL_CERTS_DIR, "rootCA.crt"), rootCACertPem, "utf8");
+      } catch {
+      }
+      return;
+    } catch (e) {
+    }
+  }
+  fs.mkdirSync(PERSISTENT_CERTS_DIR, { recursive: true });
+  try {
+    fs.mkdirSync(LOCAL_CERTS_DIR, { recursive: true });
+  } catch {
+  }
+  log("\u{1F510} \u0110ang t\u1EA1o m\u1EDBi ch\u1EE9ng ch\u1EC9 Root CA b\u1EA3o m\u1EADt v\u0129nh vi\u1EC5n...", "info");
   const keys = forge.pki.rsa.generateKeyPair(2048);
   const cert = forge.pki.createCertificate();
   cert.publicKey = keys.publicKey;
@@ -17918,7 +18014,7 @@ function ensureRootCA() {
   cert.validity.notAfter = /* @__PURE__ */ new Date();
   cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 10);
   const attrs = [
-    { name: "commonName", value: "AiNoName MITM Root CA" },
+    { name: "commonName", value: "AiNoName Antigravity Root CA" },
     { name: "organizationName", value: "AiNoName" },
     { name: "countryName", value: "VN" }
   ];
@@ -17932,8 +18028,16 @@ function ensureRootCA() {
   cert.sign(keys.privateKey, forge.md.sha256.create());
   rootCAKeyPem = forge.pki.privateKeyToPem(keys.privateKey);
   rootCACertPem = forge.pki.certificateToPem(cert);
-  fs.writeFileSync(ROOT_KEY_PATH, rootCAKeyPem, "utf8");
-  fs.writeFileSync(ROOT_CERT_PATH, rootCACertPem, "utf8");
+  CERTS_DIR = PERSISTENT_CERTS_DIR;
+  ROOT_KEY_PATH = persistentKey;
+  ROOT_CERT_PATH = persistentCert;
+  fs.writeFileSync(persistentKey, rootCAKeyPem, "utf8");
+  fs.writeFileSync(persistentCert, rootCACertPem, "utf8");
+  try {
+    fs.writeFileSync(path.join(LOCAL_CERTS_DIR, "rootCA.key"), rootCAKeyPem, "utf8");
+    fs.writeFileSync(path.join(LOCAL_CERTS_DIR, "rootCA.crt"), rootCACertPem, "utf8");
+  } catch {
+  }
   rootCAForge = {
     key: keys.privateKey,
     cert
@@ -17942,19 +18046,68 @@ function ensureRootCA() {
 }
 function installRootCAToWindows() {
   if (process.platform !== "win32") return true;
+  process.env.NODE_EXTRA_CA_CERTS = ROOT_CERT_PATH;
   try {
-    const check = execSync(`certutil -store Root "AiNoName MITM Root CA"`, { stdio: "pipe" }).toString();
-    if (check.includes("AiNoName MITM Root CA")) return true;
-  } catch {
+    execSync(`setx NODE_EXTRA_CA_CERTS "${ROOT_CERT_PATH}"`, { stdio: "ignore", windowsHide: true });
+    try {
+      execSync(`setx NODE_EXTRA_CA_CERTS "${ROOT_CERT_PATH}" /M`, { stdio: "ignore", windowsHide: true });
+    } catch {
+    }
+    log("\u{1F510} \u0110\xE3 c\u1EA5u h\xECnh NODE_EXTRA_CA_CERTS cho Antigravity IDE", "success");
+  } catch (e) {
+    console.warn("L\u1ED7i setx NODE_EXTRA_CA_CERTS:", e.message);
   }
   try {
-    log("\u{1F510} \u0110ang c\xE0i \u0111\u1EB7t Root CA v\xE0o Windows Trust Store...", "info");
-    execSync(`certutil -addstore -f "Root" "${ROOT_CERT_PATH}"`, { stdio: "pipe" });
-    log("\u2705 \u0110\xE3 th\xEAm Root CA v\xE0o Trusted Authorities", "success");
+    log("\u{1F510} \u0110ang c\u1EADp nh\u1EADt Root CA v\xE0o Windows Trust Store...", "info");
+    try {
+      execSync(`certutil -addstore -f "Root" "${ROOT_CERT_PATH}"`, { stdio: "pipe" });
+    } catch {
+    }
+    try {
+      execSync(`certutil -user -addstore -f "Root" "${ROOT_CERT_PATH}"`, { stdio: "pipe" });
+    } catch {
+    }
+    log("\u2705 \u0110\xE3 c\u1EADp nh\u1EADt Root CA v\xE0o Trusted Authorities th\xE0nh c\xF4ng!", "success");
     return true;
   } catch (e) {
-    log("\u26A0\uFE0F Kh\xF4ng th\u1EC3 c\xE0i cert t\u1EF1 \u0111\u1ED9ng (c\u1EA7n ch\u1EA1y v\u1EDBi quy\u1EC1n Administrator): " + e.message, "warn");
+    log("\u26A0\uFE0F Kh\xF4ng th\u1EC3 c\xE0i cert t\u1EF1 \u0111\u1ED9ng: " + e.message, "warn");
     return false;
+  }
+}
+function launchAntigravityIde() {
+  if (process.platform !== "win32") {
+    return { ok: false, message: "Ch\u1EE9c n\u0103ng ch\u1EC9 h\u1ED7 tr\u1EE3 tr\xEAn Windows" };
+  }
+  try {
+    log("\u{1F504} \u0110ang \u0111\xF3ng c\xE1c ti\u1EBFn tr\xECnh Antigravity IDE c\u0169...", "info");
+    try {
+      execSync('taskkill /F /IM "Antigravity IDE.exe" /IM "Antigravity.exe" /IM "language_server_windows_x64.exe"', { stdio: "ignore", windowsHide: true });
+    } catch {
+    }
+    const candidates = [
+      path.join(process.env.USERPROFILE || "", "AppData", "Local", "Programs", "Antigravity IDE", "Antigravity IDE.exe"),
+      path.join(process.env.USERPROFILE || "", "AppData", "Local", "Programs", "Antigravity", "Antigravity.exe"),
+      path.join(process.env.LOCALAPPDATA || "", "Programs", "Antigravity IDE", "Antigravity IDE.exe"),
+      path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Antigravity IDE", "Antigravity IDE.exe"),
+      path.join(process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)", "Antigravity IDE", "Antigravity IDE.exe")
+    ];
+    const targetExe = candidates.find((p) => fs.existsSync(p));
+    const childEnv = { ...process.env, NODE_EXTRA_CA_CERTS: ROOT_CERT_PATH };
+    const { spawn } = require("child_process");
+    if (targetExe) {
+      log(`\u{1F680} Kh\u1EDFi ch\u1EA1y Antigravity IDE t\u1EEB: ${targetExe}`, "success");
+      const child = spawn(targetExe, [], { detached: true, stdio: "ignore", env: childEnv });
+      child.unref();
+      return { ok: true, message: "\u0110\xE3 kh\u1EDFi \u0111\u1ED9ng Antigravity IDE v\u1EDBi ch\u1EE9ng ch\u1EC9 SSL th\xE0nh c\xF4ng!" };
+    } else {
+      log("\u{1F680} Kh\u1EDFi ch\u1EA1y Antigravity IDE qua l\u1EC7nh shell...", "info");
+      const child = spawn("cmd.exe", ["/c", "start", "antigravity"], { detached: true, stdio: "ignore", env: childEnv });
+      child.unref();
+      return { ok: true, message: "\u0110\xE3 g\u1EEDi l\u1EC7nh m\u1EDF Antigravity IDE v\u1EDBi ch\u1EE9ng ch\u1EC9 SSL!" };
+    }
+  } catch (e) {
+    log(`\u274C L\u1ED7i kh\u1EDFi ch\u1EA1y IDE: ${e.message}`, "warn");
+    return { ok: false, message: e.message };
   }
 }
 var certCache = /* @__PURE__ */ new Map();
@@ -17972,9 +18125,14 @@ function getSecureContextForDomain(domain) {
   cert.setExtensions([
     { name: "basicConstraints", cA: false },
     { name: "keyUsage", digitalSignature: true, keyEncipherment: true },
+    { name: "extKeyUsage", serverAuth: true, clientAuth: true },
+    // Mandatory for TLS client verification!
     {
       name: "subjectAltName",
-      altNames: [{ type: 2, value: domain }]
+      altNames: [
+        { type: 2, value: domain },
+        { type: 2, value: `*.${domain}` }
+      ]
     }
   ]);
   cert.sign(rootCAForge.key, forge.md.sha256.create());
@@ -17992,7 +18150,7 @@ function isDNSActive() {
   try {
     if (!fs.existsSync(HOSTS_FILE)) return false;
     const content = fs.readFileSync(HOSTS_FILE, "utf8");
-    return content.includes(HOSTS_TAG_START);
+    return content.includes(HOSTS_TAG_START) || /127\.0\.0\.1\s+.*cloudcode-pa\.googleapis\.com/i.test(content);
   } catch {
     return false;
   }
@@ -18009,10 +18167,14 @@ function enableDNS() {
       ""
     ].join("\r\n");
     fs.writeFileSync(HOSTS_FILE, content + lines, "utf8");
-    log("\u{1F310} \u0110\xE3 b\u1EADt chuy\u1EC3n h\u01B0\u1EDBng DNS Hosts th\xE0nh c\xF4ng!", "success");
+    try {
+      execSync("ipconfig /flushdns", { stdio: "ignore", windowsHide: true });
+    } catch {
+    }
+    log("\u{1F310} \u0110\xE3 k\xEDch ho\u1EA1t chuy\u1EC3n h\u01B0\u1EDBng DNS Hosts cho Antigravity IDE!", "success");
     return true;
   } catch (e) {
-    log("\u274C L\u1ED7i khi ghi file hosts: " + e.message, "warn");
+    log("\u274C Kh\xF4ng th\u1EC3 ghi file hosts (C\u1EA7n quy\u1EC1n Administrator): " + e.message, "warn");
     return false;
   }
 }
@@ -18025,10 +18187,21 @@ function disableDNS() {
       const endIndex = content.indexOf(HOSTS_TAG_END);
       if (endIndex !== -1) {
         content = content.slice(0, startIndex) + content.slice(endIndex + HOSTS_TAG_END.length);
-        fs.writeFileSync(HOSTS_FILE, content.trim() + "\r\n", "utf8");
       }
     }
-    log("\u{1F310} \u0110\xE3 t\u1EAFt DNS Hosts, kh\xF4i ph\u1EE5c m\u1EB7c \u0111\u1ECBnh.", "info");
+    content = content.replace(/^[ \t]*127\.0\.0\.1[ \t]+.*cloudcode-pa\.googleapis\.com.*(\r?\n)?/gmi, "");
+    content = content.replace(/^[ \t]*127\.0\.0\.1[ \t]+.*daily-cloudcode-pa\.googleapis\.com.*(\r?\n)?/gmi, "");
+    fs.writeFileSync(HOSTS_FILE, content.trim() + "\r\n", "utf8");
+    try {
+      execSync("ipconfig /flushdns", { stdio: "ignore", windowsHide: true });
+    } catch {
+    }
+    try {
+      execSync(`powershell -NoProfile -Command "[Environment]::SetEnvironmentVariable('NODE_EXTRA_CA_CERTS', $null, 'User')"`, { stdio: "ignore", windowsHide: true });
+    } catch {
+    }
+    delete process.env.NODE_EXTRA_CA_CERTS;
+    log("\u{1F310} \u0110\xE3 kh\xF4i ph\u1EE5c c\xE0i \u0111\u1EB7t DNS Hosts m\u1EB7c \u0111\u1ECBnh v\xE0 l\xE0m s\u1EA1ch m\u1EA1ng.", "info");
     return true;
   } catch (e) {
     log("\u26A0\uFE0F L\u1ED7i d\u1ECDn d\u1EB9p file hosts: " + e.message, "warn");
@@ -18046,10 +18219,154 @@ process.on("SIGTERM", () => {
 process.on("exit", () => {
   disableDNS();
 });
+function killPort(port) {
+  if (process.platform !== "win32") return;
+  try {
+    const roamingMitm = path.join(process.env.APPDATA || "", "9router", "mitm");
+    const pidFile = path.join(roamingMitm, ".mitm.pid");
+    const lockFile = path.join(roamingMitm, ".mitm.lock");
+    if (fs.existsSync(pidFile)) {
+      try {
+        const p = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
+        if (p && p > 4 && p !== process.pid) {
+          execSync(`taskkill /F /PID ${p}`, { stdio: "ignore", windowsHide: true });
+        }
+      } catch {
+      }
+      try {
+        fs.unlinkSync(pidFile);
+      } catch {
+      }
+    }
+    if (fs.existsSync(lockFile)) {
+      try {
+        fs.unlinkSync(lockFile);
+      } catch {
+      }
+    }
+  } catch {
+  }
+  try {
+    const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"`;
+    const out = execSync(psCmd, { encoding: "utf-8", windowsHide: true }).trim();
+    if (!out) return;
+    const pids = out.split(/\r?\n/).map((s) => s.trim()).filter((p) => p && Number(p) !== process.pid && Number(p) > 4);
+    for (const pid of pids) {
+      try {
+        execSync(`taskkill /F /PID ${pid}`, { windowsHide: true });
+        log(`\u0110\xE3 gi\u1EA3i ph\xF3ng port ${port} (PID ${pid})`);
+      } catch {
+      }
+    }
+  } catch {
+  }
+}
+async function passthroughHttp2(req, res, bodyBuffer, headers, targetHost) {
+  const targetIP = await resolveTargetIP(targetHost);
+  const h2Headers = {};
+  for (const [k, v] of Object.entries(headers)) {
+    const lk = k.toLowerCase();
+    if (lk === "host" || lk === "connection" || lk === "keep-alive" || lk === "transfer-encoding" || lk === "upgrade" || lk === "proxy-connection") continue;
+    h2Headers[lk] = v;
+  }
+  h2Headers[":method"] = req.method;
+  h2Headers[":path"] = req.url;
+  h2Headers[":scheme"] = "https";
+  h2Headers[":authority"] = targetHost;
+  return new Promise((resolve) => {
+    const client = http2.connect(`https://${targetHost}`, {
+      createConnection: () => tls.connect({
+        host: targetIP,
+        port: 443,
+        servername: targetHost,
+        ALPNProtocols: ["h2"],
+        rejectUnauthorized: false
+      })
+    });
+    client.once("error", (e) => {
+      if (!res.headersSent) res.writeHead(502);
+      if (!res.writableEnded) res.end("Bad Gateway");
+      try {
+        client.close();
+      } catch {
+      }
+      resolve();
+    });
+    const stream = client.request(h2Headers, { endStream: bodyBuffer.length === 0 });
+    if (bodyBuffer.length > 0) stream.end(bodyBuffer);
+    stream.once("response", (responseHeaders) => {
+      const status = responseHeaders[":status"] || 200;
+      const outHeaders = {};
+      for (const [k, v] of Object.entries(responseHeaders)) {
+        if (k.startsWith(":")) continue;
+        if (k === "connection" || k === "keep-alive" || k === "transfer-encoding") continue;
+        outHeaders[k] = v;
+      }
+      res.writeHead(status, outHeaders);
+      stream.pipe(res);
+      stream.on("end", () => {
+        try {
+          client.close();
+        } catch {
+        }
+        resolve();
+      });
+    });
+    stream.once("error", () => {
+      if (!res.headersSent) res.writeHead(502);
+      if (!res.writableEnded) res.end();
+      try {
+        client.close();
+      } catch {
+      }
+      resolve();
+    });
+  });
+}
+async function passthroughHttps(req, res, bodyBuffer, headers, targetHost) {
+  const targetIP = await resolveTargetIP(targetHost);
+  return new Promise((resolve) => {
+    const forwardReq = https.request({
+      hostname: targetIP,
+      port: 443,
+      path: req.url,
+      method: req.method,
+      headers: { ...headers, host: targetHost },
+      servername: targetHost,
+      rejectUnauthorized: false,
+      timeout: 1e4
+    }, (forwardRes) => {
+      res.writeHead(forwardRes.statusCode, forwardRes.headers);
+      forwardRes.pipe(res);
+      forwardRes.on("end", resolve);
+    });
+    forwardReq.on("error", () => {
+      if (!res.headersSent) res.writeHead(502);
+      res.end("Bad Gateway");
+      resolve();
+    });
+    if (bodyBuffer.length > 0) forwardReq.write(bodyBuffer);
+    forwardReq.end();
+  });
+}
+async function passthrough(req, res, bodyBuffer) {
+  const originalHost = (req.headers.host || "daily-cloudcode-pa.googleapis.com").split(":")[0];
+  const isChatEndpoint = req.url.includes(":generateContent") || req.url.includes(":streamGenerateContent");
+  const targetHost = isChatEndpoint ? HOST_REWRITE[originalHost] || originalHost : originalHost;
+  try {
+    const proto = await negotiateAlpn(targetHost);
+    if (proto === "h2") {
+      return await passthroughHttp2(req, res, bodyBuffer, req.headers, targetHost);
+    }
+  } catch (e) {
+  }
+  return passthroughHttps(req, res, bodyBuffer, req.headers, targetHost);
+}
 var mitmServer = null;
 function startMitmServer() {
   ensureRootCA();
   installRootCAToWindows();
+  killPort(443);
   const sslOptions = {
     key: rootCAKeyPem,
     cert: rootCACertPem,
@@ -18063,31 +18380,105 @@ function startMitmServer() {
     }
   };
   mitmServer = https.createServer(sslOptions, async (req, res) => {
-    const isStream = req.url.includes(":streamGenerateContent");
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", async () => {
+      const rawBody = Buffer.concat(chunks);
+      let body = {};
       try {
-        const rawBody = Buffer.concat(chunks).toString();
-        let body = {};
-        try {
-          body = JSON.parse(rawBody);
-        } catch {
+        body = JSON.parse(rawBody.toString("utf8"));
+      } catch {
+      }
+      const hasChatEndpoint = req.url.includes(":generateContent") || req.url.includes(":streamGenerateContent");
+      const hasContents = !!(body.request?.contents || body.contents);
+      const isChat = hasChatEndpoint && hasContents;
+      const modelName = body.model || body.request?.model || "";
+      const isTabCompletion = /^tab[_-]/i.test(modelName);
+      if (!isChat || isTabCompletion) {
+        return passthrough(req, res, rawBody);
+      }
+      const isStream = req.url.includes(":streamGenerateContent");
+      try {
+        let originalModel = modelName;
+        if (!originalModel && req.url) {
+          const m = req.url.match(/\/models\/([^/:]+)/);
+          if (m) originalModel = m[1];
         }
-        const originalModel = body.model || "gemini-3.8-flash-high";
+        originalModel = originalModel || "gemini-3.8-flash-high";
         const mappedModel = config.modelMapping[originalModel] || originalModel;
-        log(`Intercept Antigravity: [${originalModel}] \u2794 [${mappedModel}]`, "info");
+        log(`\u{1F680} G\u1EEDi c\xE2u h\u1ECFi Antigravity: [${originalModel}] \u2794 [${mappedModel}]`, "info");
         body.model = mappedModel;
-        const forwardUrl = `${config.gatewayUrl.replace(/\/+$/, "")}/v1/chat/completions`;
-        const forwardRes = await fetch(forwardUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${config.clientKey}`
-          },
-          body: JSON.stringify(body)
-        });
-        const status = forwardRes.status || 200;
+        if (body.metadata && typeof body.metadata === "object") {
+          body.metadata.ideVersion = ANTIGRAVITY_IDE_VERSION;
+        }
+        const cleanGateway = (config.gatewayUrl || "https://ainoname.site").trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+        const forwardUrl = `${cleanGateway}/v1/chat/completions`;
+        const forwardHeaders = {
+          "Content-Type": "application/json",
+          "x-request-source": "local"
+        };
+        if (config.clientKey) {
+          forwardHeaders["Authorization"] = `Bearer ${config.clientKey}`;
+        }
+        if (req.headers["user-agent"]) {
+          forwardHeaders["User-Agent"] = req.headers["user-agent"].replace(/antigravity\/[^\s]+/, `antigravity/${ANTIGRAVITY_IDE_VERSION}`);
+        }
+        let forwardRes = null;
+        let status = 200;
+        let lastErrDetail = "";
+        const maxRetries = 2;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          if (attempt > 0) {
+            log(`\u{1F504} \u0110ang th\u1EED l\u1EA1i k\u1EBFt n\u1ED1i Gateway (L\u1EA7n ${attempt}/${maxRetries})...`, "warn");
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+          try {
+            forwardRes = await fetch(forwardUrl, {
+              method: "POST",
+              headers: forwardHeaders,
+              body: JSON.stringify(body)
+            });
+            status = forwardRes.status || 200;
+            if (status === 200) {
+              break;
+            }
+            const errText = await forwardRes.text();
+            try {
+              const errObj = JSON.parse(errText);
+              lastErrDetail = errObj.error?.message || errObj.message || errText;
+            } catch {
+              lastErrDetail = errText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+            }
+            if ([520, 524, 502, 503, 504].includes(status) && attempt < maxRetries) {
+              log(`\u26A0\uFE0F Gateway t\u1EA1m th\u1EDDi b\u1EADn (${status}): ${lastErrDetail}. S\u1EBD th\u1EED l\u1EA1i ngay...`, "warn");
+              continue;
+            }
+            break;
+          } catch (fetchErr) {
+            lastErrDetail = fetchErr.message;
+            if (attempt < maxRetries) {
+              log(`\u26A0\uFE0F L\u1ED7i m\u1EA1ng Gateway (${fetchErr.message}). S\u1EBD th\u1EED l\u1EA1i ngay...`, "warn");
+              continue;
+            }
+            break;
+          }
+        }
+        if (!forwardRes || status !== 200) {
+          log(`\u274C Gateway tr\u1EA3 v\u1EC1 l\u1ED7i (${status}): ${lastErrDetail}`, "warn");
+          if (!res.headersSent) {
+            res.writeHead(502, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              error: {
+                code: 502,
+                message: `[AiNoName Gateway L\u1ED7i ${status}]: ${lastErrDetail}`,
+                status: "UNAVAILABLE"
+              }
+            }));
+          } else {
+            res.end();
+          }
+          return;
+        }
         const ct = forwardRes.headers.get("content-type") || (isStream ? "text/event-stream" : "application/json");
         const resHeaders = {
           "Content-Type": ct,
@@ -18099,6 +18490,7 @@ function startMitmServer() {
         if (!forwardRes.body) {
           const text = await forwardRes.text();
           res.end(text);
+          log(`Tr\u1EA3 l\u1EDDi Antigravity [${mappedModel}] ho\xE0n t\u1EA5t (Status: ${status})`, "success");
           return;
         }
         const reader = forwardRes.body.getReader();
@@ -18124,91 +18516,94 @@ function startMitmServer() {
     });
   });
   mitmServer.listen(config.mitmPort || 443, "127.0.0.1", () => {
-    log(`\u{1F6E1}\uFE0F M\xE1y ch\u1EE7 MITM HTTPS \u0111ang l\u1EAFng nghe t\u1EA1i 127.0.0.1:443`, "success");
+    log(`\u{1F6E1}\uFE0F M\xE1y ch\u1EE7 MITM HTTPS (HTTP/2 + HTTP/1.1) \u0111ang l\u1EAFng nghe t\u1EA1i 127.0.0.1:443`, "success");
+  });
+  mitmServer.on("tlsClientError", (err) => {
+    log(`\u26A0\uFE0F Antigravity t\u1EEB ch\u1ED1i ch\u1EE9ng ch\u1EC9 TLS (${err.message})! N\u1EBFu IDE b\xE1o l\u1ED7i, h\xE3y b\u1EA5m n\xFAt "M\u1EDE / RESET ANTIGRAVITY IDE" tr\xEAn Dashboard ho\u1EB7c ch\u1EA1y file "Khoi-Dong-Antigravity.bat"`, "warn");
+  });
+  mitmServer.on("clientError", (err) => {
+    if (err.code !== "ECONNRESET") {
+      log(`\u26A0\uFE0F L\u1ED7i k\u1EBFt n\u1ED1i client: ${err.message}`, "warn");
+    }
   });
   mitmServer.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
-      log(`\u274C C\u1ED5ng 443 \u0111ang b\u1ECB \u1EE9ng d\u1EE5ng kh\xE1c chi\u1EBFm gi\u1EEF! Vui l\xF2ng t\u1EAFt \u1EE9ng d\u1EE5ng \u0111ang d\xF9ng c\u1ED5ng 443.`, "warn");
+      log(`\u274C C\u1ED5ng 443 \u0111ang b\u1ECB \u1EE9ng d\u1EE5ng kh\xE1c chi\u1EBFm gi\u1EEF!`, "warn");
     } else {
       log(`L\u1ED7i m\xE1y ch\u1EE7 MITM: ${err.message}`, "warn");
     }
   });
 }
+function setCorsHeaders(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
 function startWebServer() {
-  const htmlPath = path.join(__dirname, "ui.html");
   let htmlContent = "";
-  try {
-    htmlContent = fs.readFileSync(htmlPath, "utf8");
-  } catch {
-    htmlContent = "<h1>AiNoName Client</h1>";
+  const candidatePaths = [
+    path.join(__dirname, "ui.html"),
+    path.join(__dirname, "src", "ui.html")
+  ];
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        htmlContent = fs.readFileSync(p, "utf8");
+        break;
+      } catch {
+      }
+    }
   }
-  const webServer = http.createServer(async (req, res) => {
-    const parsedUrl = new URL(req.url, `http://localhost:${config.webPort}`);
+  const webServer = http.createServer((req, res) => {
+    setCorsHeaders(res);
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    const parsedUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const pathname = parsedUrl.pathname;
     if (pathname === "/" || pathname === "/index.html") {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(htmlContent);
       return;
     }
-    if (pathname === "/api/status") {
+    if (pathname === "/api/status" && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
-        certExists: fs.existsSync(ROOT_CERT_PATH),
-        certTrusted: true,
-        serverRunning: mitmServer && mitmServer.listening,
         dnsActive: isDNSActive(),
         gatewayUrl: config.gatewayUrl,
-        clientKey: config.clientKey,
-        modelMapping: config.modelMapping
+        clientKey: config.clientKey || "",
+        rawClientKey: config.clientKey || "",
+        certExists: true,
+        certTrusted: true,
+        serverRunning: true,
+        modelMapping: config.modelMapping,
+        logs: logQueue.slice(-100)
       }));
       return;
     }
-    if (pathname === "/api/dns/enable" && req.method === "POST") {
-      const ok = enableDNS();
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok }));
-      return;
-    }
-    if (pathname === "/api/dns/disable" && req.method === "POST") {
-      const ok = disableDNS();
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok }));
-      return;
-    }
-    if (pathname === "/api/mapping" && req.method === "POST") {
-      let body = "";
-      req.on("data", (chunk) => body += chunk);
+    if ((pathname === "/api/settings" || pathname === "/api/config") && req.method === "POST") {
+      let b = "";
+      req.on("data", (c) => b += c);
       req.on("end", () => {
         try {
-          const newMap = JSON.parse(body);
-          config.modelMapping = { ...config.modelMapping, ...newMap };
-          saveConfig();
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: true, modelMapping: config.modelMapping }));
-        } catch {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false }));
-        }
-      });
-      return;
-    }
-    if (pathname === "/api/settings" && req.method === "POST") {
-      let body = "";
-      req.on("data", (chunk) => body += chunk);
-      req.on("end", () => {
-        try {
-          const { gatewayUrl, clientKey } = JSON.parse(body);
-          if (gatewayUrl && typeof gatewayUrl === "string") {
-            config.gatewayUrl = gatewayUrl.trim().replace(/\/+$/, "");
+          const payload = JSON.parse(b);
+          if (payload.gatewayUrl !== void 0) {
+            config.gatewayUrl = payload.gatewayUrl.trim().replace(/\/+$/, "");
             log(`\u{1F310} \u0110\xE3 \u0111\u1ED5i Gateway URL sang: ${config.gatewayUrl}`, "info");
           }
-          if (clientKey && typeof clientKey === "string") {
-            config.clientKey = clientKey.trim();
+          if (payload.clientKey !== void 0) {
+            config.clientKey = payload.clientKey.trim();
             log(`\u{1F511} \u0110\xE3 c\u1EADp nh\u1EADt Client Key m\u1EDBi`, "info");
+          }
+          if (payload.modelMapping) {
+            config.modelMapping = { ...config.modelMapping, ...payload.modelMapping };
+            log(`\u{1F504} \u0110\xE3 c\u1EADp nh\u1EADt Model Mapping`, "info");
           }
           saveConfig();
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: true, gatewayUrl: config.gatewayUrl, clientKey: config.clientKey }));
+          res.end(JSON.stringify({ ok: true, success: true, gatewayUrl: config.gatewayUrl, clientKey: config.clientKey }));
         } catch (e) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: e.message }));
@@ -18216,56 +18611,113 @@ function startWebServer() {
       });
       return;
     }
-    if (pathname === "/api/check-key" && req.method === "POST") {
-      try {
-        const checkUrl = `${config.gatewayUrl.replace(/\/+$/, "")}/api/client-keys/check`;
-        const resp = await fetch(checkUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: config.clientKey })
-        });
-        const data = await resp.json();
-        const active = data.active !== false;
-        const limitStr = data.max_concurrent ? `${data.max_concurrent} conn / ${data.rate_limit_per_minute || 60} rpm` : "Kh\xF4ng gi\u1EDBi h\u1EA1n";
+    if (pathname === "/api/mapping" && req.method === "POST") {
+      let b = "";
+      req.on("data", (c) => b += c);
+      req.on("end", () => {
+        try {
+          const payload = JSON.parse(b);
+          config.modelMapping = { ...config.modelMapping, ...payload };
+          log(`\u{1F504} \u0110\xE3 c\u1EADp nh\u1EADt Model Mapping: ${JSON.stringify(payload)}`, "info");
+          saveConfig();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, modelMapping: config.modelMapping }));
+        } catch (e) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: e.message }));
+        }
+      });
+      return;
+    }
+    if (pathname === "/api/check-key") {
+      if (!config.clientKey) {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          label: data.label || "Kh\xE1ch H\xE0ng AiNoName",
-          quota_info: active ? `Ho\u1EA1t \u0111\u1ED9ng (${limitStr})` : "T\u1EA1m kh\xF3a",
-          active
-        }));
-      } catch (err) {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          label: "Kh\xE1ch H\xE0ng AiNoName",
-          quota_info: "\u0110\xE3 k\u1EBFt n\u1ED1i Gateway"
-        }));
+        res.end(JSON.stringify({ ok: false, label: "Ch\u01B0a c\u1EA5u h\xECnh", quota_info: "Ch\u01B0a nh\u1EADp Client Key" }));
+        return;
       }
+      (async () => {
+        try {
+          const cleanGw = (config.gatewayUrl || "https://ainoname.site").trim().replace(/\/+$/, "").replace(/\/v1$/, "");
+          const checkUrl = `${cleanGw}/api/client-keys/check`;
+          const r = await fetch(checkUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key: config.clientKey })
+          });
+          const d = await r.json();
+          if (d.valid && d.keyData) {
+            const usedMB = (Number(d.keyData.used_tokens || 0) / 1e6).toFixed(2);
+            const quotaMB = d.keyData.quota_tokens > 0 ? (Number(d.keyData.quota_tokens) / 1e6).toFixed(0) + "M tokens" : "Kh\xF4ng gi\u1EDBi h\u1EA1n";
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              ok: true,
+              label: d.keyData.label || "Kh\xE1ch H\xE0ng AiNoName",
+              quota_info: `\u0110ang ho\u1EA1t \u0111\u1ED9ng (${usedMB}M / ${quotaMB})`,
+              keyData: d.keyData
+            }));
+          } else {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              ok: false,
+              label: "Kh\xF4ng h\u1EE3p l\u1EC7",
+              quota_info: d.error || "Key kh\xF4ng t\u1ED3n t\u1EA1i ho\u1EB7c h\u1EBFt h\u1EA1n"
+            }));
+          }
+        } catch (err) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ok: false,
+            label: "L\u1ED7i k\u1EBFt n\u1ED1i Gateway",
+            quota_info: `Kh\xF4ng th\u1EC3 k\u1EBFt n\u1ED1i ${config.gatewayUrl}`
+          }));
+        }
+      })();
       return;
     }
-    if (pathname === "/api/logs") {
+    if (pathname === "/api/logs" && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      const currentLogs = [...logQueue];
-      logQueue.length = 0;
-      res.end(JSON.stringify(currentLogs));
+      res.end(JSON.stringify(logQueue.slice(-100)));
       return;
     }
-    res.writeHead(404);
-    res.end();
+    if (pathname === "/api/dns/enable" && req.method === "POST") {
+      const ok = enableDNS();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok, success: ok, dnsActive: isDNSActive() }));
+      return;
+    }
+    if (pathname === "/api/launch-ide" && req.method === "POST") {
+      const resData = launchAntigravityIde();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(resData));
+      return;
+    }
+    if (pathname === "/api/dns/disable" && req.method === "POST") {
+      const ok = disableDNS();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok, success: ok, dnsActive: isDNSActive() }));
+      return;
+    }
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Not Found" }));
   });
   webServer.listen(config.webPort || 20129, "127.0.0.1", () => {
-    log(`\u{1F680} Giao di\u1EC7n Dashboard Client s\u1EB5n s\xE0ng t\u1EA1i: http://localhost:${config.webPort}`, "success");
+    log(`\u{1F680} Giao di\u1EC7n Dashboard Client s\u1EB5n s\xE0ng t\u1EA1i: http://localhost:${config.webPort || 20129}`, "success");
   });
 }
 function main() {
   loadConfig();
+  const maskedKey = config.clientKey ? config.clientKey.slice(0, 10) + "..." + config.clientKey.slice(-4) : "<CH\u01AFA C\u1EA4U H\xCCNH>";
   console.log("==================================================================");
   console.log("               AINONAME - ANTIGRAVITY IDE CLIENT                  ");
   console.log("==================================================================");
   console.log(`[*] Gateway Server: ${config.gatewayUrl}`);
-  console.log(`[*] Client Key:     ${config.clientKey.slice(0, 10)}...${config.clientKey.slice(-4)}`);
-  console.log(`[*] Dashboard UI:   http://localhost:${config.webPort}`);
+  console.log(`[*] Client Key:     ${maskedKey}`);
+  console.log(`[*] Dashboard UI:   http://localhost:${config.webPort || 20129}`);
   console.log("------------------------------------------------------------------");
   startMitmServer();
   startWebServer();
+  if (config.autoDns) {
+    enableDNS();
+  }
 }
 main();

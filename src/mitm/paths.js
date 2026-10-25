@@ -14,9 +14,12 @@ function defaultDir() {
 function getDataDir() {
   const configured = process.env.DATA_DIR;
   if (!configured) return defaultDir();
+  // Ensure relative DATA_DIR is resolved relative to the repo/app root, not arbitrary process.cwd() (e.g. tmpdir)
+  const rootDir = path.resolve(__dirname, "..", "..");
+  const resolved = path.isAbsolute(configured) ? configured : path.resolve(rootDir, configured);
   try {
-    fs.mkdirSync(configured, { recursive: true });
-    return configured;
+    fs.mkdirSync(resolved, { recursive: true });
+    return resolved;
   } catch (e) {
     if (e?.code === "EACCES" || e?.code === "EPERM") {
       console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);

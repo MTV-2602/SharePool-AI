@@ -1,9 +1,9 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
 import { cookies } from 'next/headers';
 import { verifyDashboardAuthToken } from '@/lib/auth/dashboardSession';
 import { getSettings } from '@/lib/localDb';
+import { getAdapter } from '@/lib/db/driver';
 
 export async function POST(request) {
   // 1. Authenticate check: Admin only
@@ -30,27 +30,22 @@ export async function POST(request) {
   try {
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get('days') || '30');
+    const intervalStr = `-${days} days`;
+
+    const db = await getAdapter();
     
     // Prune client_key_usage_logs
-    const { data: logsPruned, error: logsError } = await supabase.rpc('exec_sql', {
-      query_text: `DELETE FROM client_key_usage_logs WHERE created_at < NOW() - CAST($1 AS interval)`,
-      query_params: [`${days} days`]
-    });
-
-    if (logsError) {
-      console.error("[Cleanup API] Failed to prune client_key_usage_logs:", logsError);
-      return NextResponse.json({ error: `Prune usage logs failed: ${logsError.message}` }, { status: 500 });
+    try {
+      db.run("DELETE FROM client_key_usage_logs WHERE datetime(created_at) < datetime('now', ?)", [intervalStr]);
+    } catch (e) {
+      console.warn("[Cleanup API] client_key_usage_logs prune warning:", e.message);
     }
 
     // Prune request_details
-    const { data: reqsPruned, error: reqsError } = await supabase.rpc('exec_sql', {
-      query_text: `DELETE FROM request_details WHERE timestamp < NOW() - CAST($1 AS interval)`,
-      query_params: [`${days} days`]
-    });
-
-    if (reqsError) {
-      console.error("[Cleanup API] Failed to prune request_details:", reqsError);
-      return NextResponse.json({ error: `Prune request details failed: ${reqsError.message}` }, { status: 500 });
+    try {
+      db.run("DELETE FROM request_details WHERE datetime(timestamp) < datetime('now', ?)", [intervalStr]);
+    } catch (e) {
+      console.warn("[Cleanup API] request_details prune warning:", e.message);
     }
 
     return NextResponse.json({

@@ -17,5 +17,9 @@ export {
   getCustomModels, addCustomModel, deleteCustomModel,
   getMitmAlias, setMitmAliasAll,
   getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing,
+  getAllClientKeys, getClientKeyById, getClientKeyByToken,
+  createClientKey, updateClientKey, deleteClientKey,
+  incrementClientKeyTokens, logClientKeyUsage,
+  getClientKeyUsageLogs, getClientKeyUsageSummary,
   exportDb, importDb,
 } from "@/lib/db/index.js";

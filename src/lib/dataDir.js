@@ -22,9 +22,10 @@ export function getDataDir() {
     return defaultDir();
   }
 
+  const resolved = path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
   try {
-    fs.mkdirSync(configured, { recursive: true });
-    return configured;
+    fs.mkdirSync(resolved, { recursive: true });
+    return resolved;
   } catch (e) {
     if (e?.code === "EACCES" || e?.code === "EPERM") {
       console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);

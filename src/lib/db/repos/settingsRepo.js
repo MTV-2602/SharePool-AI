@@ -1,20 +1,8 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { getDiskCache, setDiskCache } from "../helpers/diskCache.js";
-
-// ─── In-memory settings cache ─────────────────────────────────────────────────
-let _settingsCache = null;
-let _settingsCacheTs = 0;
-const SETTINGS_CACHE_TTL_MS = 60_000; // 60 giây
-const DISK_KEY = "repo:settings";
-
-function invalidateSettingsCache() {
-  _settingsCache = null;
-  _settingsCacheTs = 0;
-}
-// ─────────────────────────────────────────────────────────────────────────────
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
+const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
 
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
@@ -24,20 +12,34 @@ const DEFAULT_SETTINGS = {
   tailscaleEnabled: false,
   tailscaleUrl: "",
   stickyRoundRobinLimit: 3,
-  rateLimitCooldownSeconds: 300,
   providerStrategies: {},
+  quotaVisibility: {},
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
   comboStrategies: {},
+  capacityAdapter: {
+    vision: { enabled: true, roundRobin: false, models: [] },
+    pdf: { enabled: false, roundRobin: false, models: [] },
+    audioInput: { enabled: true, roundRobin: false, models: [] },
+    videoInput: { enabled: false, roundRobin: false, models: [] },
+  },
   requireLogin: true,
+  requireApiKey: true,
   tunnelDashboardAccess: true,
   authMode: "password",
+  ssoType: "oidc",
   oidcIssuerUrl: "",
   oidcClientId: "",
   oidcClientSecret: "",
   oidcScopes: "openid profile email",
   oidcLoginLabel: "Sign in with OIDC",
-  enableObservability: true,
+  samlEntryPoint: "",
+  samlIssuer: "urn:9router:sp",
+  samlCert: "",
+  samlLoginLabel: "Sign in with SAML SSO",
+  samlAttributeEmail: "email",
+  samlAttributeName: "name",
+  enableObservability: false,
   observabilityMaxRecords: 1000,
   observabilityBatchSize: 20,
   observabilityFlushIntervalMs: 5000,
@@ -48,18 +50,33 @@ const DEFAULT_SETTINGS = {
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   dnsToolEnabled: {},
   rtkEnabled: true,
+  headroomEnabled: false,
+  headroomUrl: DEFAULT_HEADROOM_URL,
+  headroomCompressUserMessages: false,
+  headroomTimeoutMs: 3000,
   cavemanEnabled: false,
   cavemanLevel: "full",
+  ponytailEnabled: false,
+  ponytailLevel: "full",
+  // User-authored system prompt, injected independently of the built-in savers.
+  customPromptEnabled: false,
+  customPrompt: "",
+  pxpipeEnabled: false,
+  pxpipeAutoInstall: true,
+  pxpipeMinChars: 25000,
+  pxpipeTimeoutMs: 15000,
+  // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
+  providerOverrides: {},
 };
 
 async function readRaw() {
   const db = await getAdapter();
-  const row = await db.get(`SELECT data FROM settings WHERE id = 1`);
+  const row = db.get(`SELECT data FROM settings WHERE id = 1`);
   return row ? parseJson(row.data, {}) : {};
 }
 
 // Merge raw settings with defaults; backward-compat for missing keys
-function mergeWithDefaults(raw) {
+export function mergeWithDefaults(raw) {
   const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
   for (const [key, defVal] of Object.entries(DEFAULT_SETTINGS)) {
     if (merged[key] === undefined) {
@@ -74,46 +91,37 @@ function mergeWithDefaults(raw) {
       }
     }
   }
+  if (merged.capacityAdapter && typeof merged.capacityAdapter === "object") {
+    for (const capKey of Object.keys(merged.capacityAdapter)) {
+      const entry = merged.capacityAdapter[capKey];
+      if (Array.isArray(entry?.models)) {
+        entry.models = entry.models.map((m) =>
+          m === "oc/mimo-v2.5-free" ? "oc/mimo-v2.6-flash-free" : m
+        );
+      }
+    }
+  }
   return merged;
 }
 
 export async function getSettings() {
-  if (_settingsCache && Date.now() - _settingsCacheTs < SETTINGS_CACHE_TTL_MS) {
-    return _settingsCache;
-  }
-  try {
-    const raw = await readRaw();
-    _settingsCache = mergeWithDefaults(raw);
-    _settingsCacheTs = Date.now();
-    setDiskCache(DISK_KEY, _settingsCache);
-    return _settingsCache;
-  } catch (err) {
-    console.warn("[settingsRepo] Transient DB error reading settings, using cached/default:", err?.message || err);
-    if (_settingsCache) {
-      _settingsCacheTs = Date.now();
-      return _settingsCache;
-    }
-    const disk = getDiskCache(DISK_KEY, null);
-    _settingsCache = mergeWithDefaults(disk || {});
-    _settingsCacheTs = Date.now();
-    return _settingsCache;
-  }
+  const raw = await readRaw();
+  return mergeWithDefaults(raw);
 }
 
 // Atomic read-merge-write inside transaction (prevents losing concurrent updates)
 export async function updateSettings(updates) {
   const db = await getAdapter();
   let next;
-  await db.transaction(async () => {
-    const row = await db.get(`SELECT data FROM settings WHERE id = 1`);
+  db.transaction(function () {
+    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
     next = { ...current, ...updates };
-    await db.run(
+    db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-      [stringifyJson(next)]
+      [stringifyJson(next)],
     );
   });
-  invalidateSettingsCache(); // Xóa cache sau khi update
   return mergeWithDefaults(next);
 }
 

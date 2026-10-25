@@ -1,11 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { getDiskCache, setDiskCache } from "../helpers/diskCache.js";
-
-const POOLS_CACHE_TTL_MS = 60_000;
-const DISK_KEY = "repo:proxyPools";
-let _poolsCache = { data: null, ts: 0 };
 
 function rowToPool(row) {
   if (!row) return null;
@@ -32,9 +27,9 @@ function poolToRow(p) {
   };
 }
 
-async function upsert(db, p) {
+function upsert(db, p) {
   const r = poolToRow(p);
-  await db.run(
+  db.run(
     `INSERT INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt)
      VALUES(?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
@@ -44,44 +39,21 @@ async function upsert(db, p) {
   );
 }
 
-async function loadAllPools() {
-  if (_poolsCache.data && Date.now() - _poolsCache.ts < POOLS_CACHE_TTL_MS) {
-    return _poolsCache.data;
-  }
-  try {
-    const db = await getAdapter();
-    const rows = await db.all(`SELECT * FROM proxyPools`);
-    const list = rows.map(rowToPool);
-    list.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
-    _poolsCache = { data: list, ts: Date.now() };
-    setDiskCache(DISK_KEY, list);
-    return list;
-  } catch (err) {
-    if (_poolsCache.data) {
-      _poolsCache.ts = Date.now();
-      return _poolsCache.data;
-    }
-    const disk = getDiskCache(DISK_KEY, []);
-    _poolsCache = { data: disk, ts: Date.now() };
-    return disk;
-  }
-}
-
 export async function getProxyPools(filter = {}) {
-  let list = await loadAllPools();
-  if (filter.isActive !== undefined) {
-    const want = !!filter.isActive;
-    list = list.filter((p) => !!p.isActive === want);
-  }
-  if (filter.testStatus) {
-    list = list.filter((p) => p.testStatus === filter.testStatus);
-  }
+  const db = await getAdapter();
+  const where = [];
+  const params = [];
+  if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
+  if (filter.testStatus) { where.push("testStatus = ?"); params.push(filter.testStatus); }
+  const sql = `SELECT * FROM proxyPools${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
+  const list = db.all(sql, params).map(rowToPool);
+  list.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
   return list;
 }
 
 export async function getProxyPoolById(id) {
-  const list = await loadAllPools();
-  return list.find((p) => p.id === id) || null;
+  const db = await getAdapter();
+  return rowToPool(db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]));
 }
 
 export async function createProxyPool(data) {
@@ -101,34 +73,31 @@ export async function createProxyPool(data) {
     createdAt: now,
     updatedAt: now,
   };
-  await upsert(db, pool);
-  _poolsCache = { data: null, ts: 0 };
+  upsert(db, pool);
   return pool;
 }
 
 export async function updateProxyPool(id, data) {
   const db = await getAdapter();
   let result = null;
-  await db.transaction(async () => {
-    const row = await db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
     if (!row) return;
     const merged = { ...rowToPool(row), ...data, updatedAt: new Date().toISOString() };
-    await upsert(db, merged);
+    upsert(db, merged);
     result = merged;
   });
-  _poolsCache = { data: null, ts: 0 };
   return result;
 }
 
 export async function deleteProxyPool(id) {
   const db = await getAdapter();
   let removed = null;
-  await db.transaction(async () => {
-    const row = await db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
     if (!row) return;
     removed = rowToPool(row);
-    await db.run(`DELETE FROM proxyPools WHERE id = ?`, [id]);
+    db.run(`DELETE FROM proxyPools WHERE id = ?`, [id]);
   });
-  _poolsCache = { data: null, ts: 0 };
   return removed;
 }

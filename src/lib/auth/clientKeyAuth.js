@@ -1,11 +1,16 @@
-import { supabase } from '../supabase.js';
 import { extractUsage } from "open-sse/utils/usageTracking.js";
 import { getDiskCache, setDiskCache } from "../db/helpers/diskCache.js";
+import { 
+  getClientKeyByToken, 
+  getClientKeyById, 
+  incrementClientKeyTokens, 
+  logClientKeyUsage as logClientKeyUsageInDb 
+} from "../db/repos/clientKeysRepo.js";
 
 // Cache of sent quota alerts to avoid spamming (keyId -> timestamp)
 const sentQuotaAlerts = new Map();
 
-// ─── In-memory + Disk cache: giảm số lần query Supabase ───────────────────────────
+// ─── In-memory + Disk cache: giảm số lần query DB ───────────────────────────
 const KEY_CACHE_TTL_MS = 120_000;
 const DISK_CACHE_KEY = "auth:clientKeysByToken";
 const keyCache = new Map(); // token -> { data, expiresAt }
@@ -28,7 +33,6 @@ function getStaleCachedKey(token) {
 
 function setCachedKey(token, data) {
   keyCache.set(token, { data, expiresAt: Date.now() + KEY_CACHE_TTL_MS });
-  // Giới hạn cache size để tránh memory leak
   if (keyCache.size > 5000) {
     const firstKey = keyCache.keys().next().value;
     keyCache.delete(firstKey);
@@ -44,8 +48,6 @@ function invalidateCachedKey(token) {
 
 /**
  * Invalidate client key in-memory and disk cache.
- * Multi-process coherence note: In-memory Map cache is local to each Node.js process.
- * Disk cache updates synchronize across worker processes sharing the filesystem on cache miss or TTL expiration (120s).
  */
 export function invalidateClientKeyCache({ id, token } = {}) {
   if (token) {
@@ -82,37 +84,31 @@ export function invalidateClientKeyCache({ id, token } = {}) {
     console.error("[ClientKeyAuth] Failed to invalidate disk cache:", err?.message || err);
   }
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
-// ─── Rate limit sliding window (thay thế COUNT Supabase per request) ────────────
+// ─── Rate limit sliding window ──────────────────────────────────────────────
 const rateLimitWindows = new Map();
 const RATE_WINDOW_MS = 60_000;
 
 function checkRateLimitLocal(keyId, rateLimit) {
   const now = Date.now();
   const cutoff = now - RATE_WINDOW_MS;
-  // Lọc timestamps cũ
   const window = (rateLimitWindows.get(keyId) || []).filter(t => t > cutoff);
   if (window.length >= rateLimit) {
     rateLimitWindows.set(keyId, window);
     return { allowed: false, count: window.length };
   }
-  // Ghi timestamp mới
   window.push(now);
   rateLimitWindows.set(keyId, window);
-  // Giới hạn entries để tránh memory leak
   if (rateLimitWindows.size > 10000) {
     const firstKey = rateLimitWindows.keys().next().value;
     rateLimitWindows.delete(firstKey);
   }
   return { allowed: true, count: window.length };
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Validates a client key (prefix `ck-`) against Supabase.
+ * Validates a client key (prefix `ck-` or `sk-`) against SQLite database.
  * Returns { valid: true, keyData: {...} } or { valid: false, error: '...' }
- * Uses 120s in-memory cache to reduce Supabase round-trips.
  */
 export async function validateClientKey(bearerToken, options = {}) {
   const token = (bearerToken || '').trim();
@@ -120,10 +116,9 @@ export async function validateClientKey(bearerToken, options = {}) {
     return { valid: false, error: 'Invalid client key' };
   }
 
-  // Thử lấy từ cache trước
+  // Check cache first
   const cached = getCachedKey(token);
   if (cached) {
-    // Vẫn kiểm tra quota từ cached data (nhanh, không tốn DB call)
     if (cached.expires_at && new Date(cached.expires_at) < new Date()) {
       invalidateCachedKey(token);
       return { valid: false, error: 'Client key has expired' };
@@ -131,11 +126,11 @@ export async function validateClientKey(bearerToken, options = {}) {
     const quota = Number(cached.quota_tokens) || 0;
     const used = Number(cached.used_tokens) || 0;
     if (quota > 0 && used >= quota) {
-      invalidateCachedKey(token); // Force refresh khi hết quota
+      invalidateCachedKey(token);
       return { valid: false, error: 'Token quota exceeded' };
     }
     if (!options.skipRateLimit) {
-      const rateLimit = Number(cached.rate_limit_per_minute) || 60;
+      const rateLimit = Number(cached.rate_limit_per_minute) || 1024;
       const rlResult = checkRateLimitLocal(cached.id, rateLimit);
       if (!rlResult.allowed) {
         return { valid: false, error: `Rate limit exceeded (${rateLimit}/min)` };
@@ -144,70 +139,62 @@ export async function validateClientKey(bearerToken, options = {}) {
     return { valid: true, keyData: cached };
   }
 
-  // Cache miss → query Supabase (bao gồm luôn model_multiplier để tránh query lần 2)
-  const { data: keys, error } = await supabase
-    .from('client_keys')
-    .select('*')
-    .eq('key', token)
-    .eq('active', true)
-    .limit(1);
-
-  if (error || !keys?.length) {
-    if (error) {
-      console.error('[ClientKeyAuth] Supabase query error:', error.message);
-      const stale = getStaleCachedKey(token);
-      if (stale) {
-        setCachedKey(token, stale);
-        return { valid: true, keyData: stale };
-      }
+  // Cache miss → query local SQLite via repository
+  let keyData;
+  try {
+    keyData = await getClientKeyByToken(token, { includeInactive: false });
+  } catch (err) {
+    console.error('[ClientKeyAuth] SQLite query error:', err.message);
+    const stale = getStaleCachedKey(token);
+    if (stale) {
+      setCachedKey(token, stale);
+      return { valid: true, keyData: stale };
     }
-    return { valid: false, error: 'Invalid or inactive client key' };
+    return { valid: false, error: 'Database error validating client key' };
   }
 
-  const keyData = keys[0];
+  if (!keyData || keyData.active === false || keyData.active === 0) {
+    return { valid: false, error: 'Invalid or inactive client key' };
+  }
 
   // Check expiration
   if (keyData.expires_at && new Date(keyData.expires_at) < new Date()) {
     return { valid: false, error: 'Client key has expired' };
   }
 
-  // Check token quota (ensure numeric comparison)
+  // Check token quota
   const quota = Number(keyData.quota_tokens) || 0;
   const used = Number(keyData.used_tokens) || 0;
   if (quota > 0 && used >= quota) {
     return { valid: false, error: 'Token quota exceeded' };
   }
 
-  // Check rate limit bằng in-memory sliding window (thay thế COUNT Supabase)
+  // Check rate limit
   if (!options.skipRateLimit) {
-    const rateLimit = Number(keyData.rate_limit_per_minute) || 60;
+    const rateLimit = Number(keyData.rate_limit_per_minute) || 1024;
     const rlResult = checkRateLimitLocal(keyData.id, rateLimit);
     if (!rlResult.allowed) {
       return { valid: false, error: `Rate limit exceeded (${rateLimit}/min)` };
     }
   }
 
-  // Lưu vào cache
+  // Save to cache
   setCachedKey(token, keyData);
 
   return { valid: true, keyData };
 }
 
-
-// Cache model_multiplier theo keyId (không cần TTL — cùng lifecycle với keyCache)
-const multiplierCache = new Map(); // clientKeyId -> model_multiplier object
+// Cache model_multiplier per keyId
+const multiplierCache = new Map();
 
 /**
  * Log token usage for a client key after request completion.
- * model_multiplier lấy từ keyCache (SELECT * đã có sẵn) — không query lại.
  */
 export async function logClientKeyUsage(clientKeyId, model, promptTokens, completionTokens) {
   let multiplier = 1;
   try {
-    // ưu tiên lấy model_multiplier từ keyCache (SELECT * đã fetch sẵn trong validateClientKey)
     let mm = multiplierCache.get(clientKeyId);
     if (!mm) {
-      // Tìm trong keyCache theo clientKeyId
       for (const entry of keyCache.values()) {
         if (entry.data?.id === clientKeyId) {
           mm = entry.data.model_multiplier || {};
@@ -217,16 +204,9 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
       }
     }
     if (!mm) {
-      // Chỉ query Supabase nếu cache miss hoàn toàn (hiếm khi xảy ra)
-      const { data: keys, error: fetchError } = await supabase
-        .from('client_keys')
-        .select('model_multiplier')
-        .eq('id', clientKeyId)
-        .limit(1);
-      if (fetchError) {
-        console.error('[ClientKeyAuth] Failed to fetch key multiplier:', fetchError.message);
-      } else if (keys?.length) {
-        mm = keys[0].model_multiplier || {};
+      const keyData = await getClientKeyById(clientKeyId);
+      if (keyData) {
+        mm = keyData.model_multiplier || {};
         multiplierCache.set(clientKeyId, mm);
         if (multiplierCache.size > 500) {
           const firstKey = multiplierCache.keys().next().value;
@@ -238,7 +218,6 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
       if (mm[model] !== undefined) {
         multiplier = Number(mm[model]) || 1;
       } else {
-        // Fallback pattern matching
         for (const [keyPattern, value] of Object.entries(mm)) {
           if (model.includes(keyPattern)) {
             multiplier = Number(value) || 1;
@@ -253,96 +232,55 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
 
   const billedTokens = Math.ceil((promptTokens + completionTokens) * multiplier);
 
-  // ── Chạy song song: ghi log VÀ cập nhật used_tokens cùng lúc ────────────────
-  // increment_client_key_tokens: 1 RPC call = UPDATE + trả về {used_tokens, quota_tokens}
-  // Thay thế 3 calls cũ: exec_sql UPDATE + fallback SELECT/UPDATE + SELECT quota check
-  const [insertResult, rpcResult] = await Promise.allSettled([
-    supabase.from('client_key_usage_logs').insert({
+  try {
+    // 1. Insert usage log into SQLite
+    await logClientKeyUsageInDb({
       client_key_id: clientKeyId,
       model,
       prompt_tokens: promptTokens,
       completion_tokens: completionTokens,
       billed_tokens: billedTokens,
-    }),
-    supabase.rpc('increment_client_key_tokens', {
-      p_key_id: clientKeyId,
-      p_tokens: billedTokens,
-    }),
-  ]);
+    });
 
-  if (insertResult.status === 'rejected' || insertResult.value?.error) {
-    const err = insertResult.value?.error || insertResult.reason;
-    console.warn('[ClientKeyAuth] Failed to insert usage log:', err?.message || err);
-  }
+    // 2. Increment used_tokens in SQLite
+    const updated = await incrementClientKeyTokens(clientKeyId, billedTokens);
+    const used = Number(updated?.used_tokens) || 0;
+    const quota = Number(updated?.quota_tokens) || 0;
 
-  // Dùng kết quả trả về từ RPC để check quota alert — không cần query thêm
-  if (rpcResult.status === 'rejected' || rpcResult.value?.error) {
-    const err = rpcResult.value?.error || rpcResult.reason;
-    const errMsg = String(err?.message || err || '');
-    console.warn('[ClientKeyAuth] Failed to increment used_tokens:', errMsg);
-    // Chỉ chạy fallback nếu không phải lỗi circuit breaker / timeout của Supabase
-    if (!errMsg.includes('circuit') && !errMsg.includes('timeout') && !errMsg.includes('503') && !errMsg.includes('504')) {
-      try {
-        await supabase.rpc('exec_sql', {
-          query_text: 'UPDATE client_keys SET used_tokens = used_tokens + CAST($1 AS bigint) WHERE id = CAST($2 AS uuid)',
-          query_params: [billedTokens, clientKeyId],
-        });
-      } catch (fallbackErr) {
-        console.warn('[ClientKeyAuth] Fallback update failed:', fallbackErr?.message || fallbackErr);
+    // Update in-memory cache
+    for (const entry of keyCache.values()) {
+      if (entry.data?.id === clientKeyId) {
+        entry.data.used_tokens = used;
+        break;
       }
     }
-  } else {
-    // Lấy used/quota từ kết quả RPC — không tốn thêm round-trip
-    const rows = rpcResult.value?.data;
-    const updatedRow = Array.isArray(rows) ? rows[0] : rows;
-    if (updatedRow) {
-      const used = Number(updatedRow.used_tokens) || 0;
-      const quota = Number(updatedRow.quota_tokens) || 0;
 
-      // ── Sync used_tokens mới vào keyCache để quota check trong 30s tiếp chính xác ──
-      for (const [tk, entry] of keyCache.entries()) {
-        if (entry.data?.id === clientKeyId) {
-          entry.data.used_tokens = used; // cập nhật in-place, giữ nguyên TTL
-          break;
-        }
-      }
-      // ────────────────────────────────────────────────────────────────────────────────
-
-      if (quota > 0) {
-        const pct = (used / quota) * 100;
-        if (pct >= 90) {
-          const keyId = clientKeyId.toString();
-          const now = Date.now();
-          const lastAlertTime = sentQuotaAlerts.get(keyId) || 0;
-          if (now - lastAlertTime > 12 * 60 * 60 * 1000) {
-            sentQuotaAlerts.set(keyId, now);
-            const { sendTelegramAlert } = await import('@/lib/telegramAlert.js');
-            // Lấy key/label từ cache
-            let keyLabel = 'Unnamed Key';
-            let maskedKey = 'unknown';
-            for (const entry of keyCache.values()) {
-              if (entry.data?.id === clientKeyId) {
-                keyLabel = entry.data.label || keyLabel;
-                maskedKey = entry.data.key
-                  ? entry.data.key.slice(0, 7) + '...' + entry.data.key.slice(-4)
-                  : maskedKey;
-                break;
-              }
-            }
-            sendTelegramAlert(
-              '⚠️ <b>[9Router Alert] Client Key Quota Near Limit (>= 90%)</b>\n' +
-              '• Key Label: <code>' + keyLabel + '</code>\n' +
-              '• Key Value: <code>' + maskedKey + '</code>\n' +
-              '• Used: <code>' + used.toLocaleString() + '</code> tokens\n' +
-              '• Quota: <code>' + quota.toLocaleString() + '</code> tokens\n' +
-              '• Usage: <b>' + pct.toFixed(2) + '%</b>'
-            ).catch(err => console.error('[QuotaAlert] Alert failed:', err));
-          }
+    // 3. Telegram quota alert if >= 90%
+    if (quota > 0) {
+      const pct = (used / quota) * 100;
+      if (pct >= 90) {
+        const keyIdStr = clientKeyId.toString();
+        const now = Date.now();
+        const lastAlertTime = sentQuotaAlerts.get(keyIdStr) || 0;
+        if (now - lastAlertTime > 12 * 60 * 60 * 1000) {
+          sentQuotaAlerts.set(keyIdStr, now);
+          const { sendTelegramAlert } = await import('@/lib/telegramAlert.js');
+          let keyLabel = updated?.label || 'Client Key';
+          let maskedKey = updated?.key ? (updated.key.slice(0, 7) + '...' + updated.key.slice(-4)) : 'unknown';
+          sendTelegramAlert(
+            '⚠️ <b>[9Router Alert] Client Key Quota Near Limit (>= 90%)</b>\n' +
+            '• Key Label: <code>' + keyLabel + '</code>\n' +
+            '• Key Value: <code>' + maskedKey + '</code>\n' +
+            '• Used: <code>' + used.toLocaleString() + '</code> tokens\n' +
+            '• Quota: <code>' + quota.toLocaleString() + '</code> tokens\n' +
+            '• Usage: <b>' + pct.toFixed(2) + '%</b>'
+          ).catch(err => console.error('[QuotaAlert] Alert failed:', err));
         }
       }
     }
+  } catch (err) {
+    console.warn('[ClientKeyAuth] Error recording usage:', err.message);
   }
-  // ─────────────────────────────────────────────────────────────────────────────
 }
 
 /**
@@ -373,9 +311,8 @@ export function extractBearerToken(request) {
 }
 
 /**
- * Wrap a Next.js Response to intercept, read tokens usage, and log it to Supabase.
+ * Wrap a Next.js Response to intercept, read tokens usage, and log it to SQLite.
  */
-
 function extractTextFromChunk(parsed) {
   if (!parsed) return "";
   if (parsed.choices?.[0]?.delta?.content) {
@@ -407,11 +344,8 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
     ? reqBodyOrTokens
     : (reqBodyOrTokens ? Math.ceil(JSON.stringify(reqBodyOrTokens).length / 4) : 1000);
 
-  // Ưu tiên internalModel từ header x-9r-actual-model (phản ánh model thực tế được phục vụ bởi route/combo bất kỳ).
-  // Nếu không có header, fallback về model được yêu cầu.
   const internalModel = response.headers.get("x-9r-actual-model");
   const actualModel = internalModel || model || "unknown";
-
 
   const contentType = response.headers.get('content-type') || '';
   const isStream = contentType.includes('text/event-stream');
@@ -454,7 +388,6 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                 }
               }
 
-              // Fallback if no usage was returned in stream
               if (!hasLogged) {
                 const completionTokens = Math.max(1, Math.floor(accumulatedLen / 4));
                 logClientKeyUsage(clientKeyId, actualModel, fallbackPromptTokens, completionTokens)
@@ -465,15 +398,12 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
               break;
             }
 
-            // Forward the chunk to the client
             controller.enqueue(value);
 
-            // Process chunk for usage logging
             const text = decoder.decode(value, { stream: true });
             buffer += text;
 
             const lines = buffer.split(/\r?\n/);
-            // Keep the last partial line in buffer
             buffer = lines.pop() || '';
 
             for (const line of lines) {
@@ -483,20 +413,16 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                   try {
                     const parsed = JSON.parse(dataStr);
                     accumulatedLen += extractTextFromChunk(parsed).length;
-                    // Check if usage information exists using general extractUsage (supports OpenAI, Responses API, Gemini, Claude)
                     const usage = extractUsage(parsed);
                     if (usage) {
                       const { prompt_tokens = 0, completion_tokens = 0 } = usage;
                       if (prompt_tokens > 0 || completion_tokens > 0) {
                         hasLogged = true;
-                        // Log usage asynchronously to not block the stream finish
                         logClientKeyUsage(clientKeyId, actualModel, prompt_tokens, completion_tokens)
                           .catch(err => console.error('[ClientKeyAuth] Failed to log usage:', err.message));
                       }
                     }
-                  } catch (e) {
-                    // Ignore parse errors (likely partial or empty lines)
-                  }
+                  } catch (e) {}
                 }
               }
             }

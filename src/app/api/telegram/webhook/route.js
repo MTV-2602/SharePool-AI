@@ -1,8 +1,35 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getAdapter } from '@/lib/db/driver';
+import { DATA_FILE } from '@/lib/db/paths';
 import { getSettings } from '@/lib/localDb';
+import { sendBackupToChat, isUserAllowed, getStats, getServerMetrics } from '@/lib/telegramBackup';
 
 const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+
+// Keyboard layout for authorized users
+const MAIN_KEYBOARD = {
+  keyboard: [
+    [{ text: '📦 Lấy Backup Data Ngay' }],
+    [{ text: '📊 Trạng Thái Hệ Thống' }, { text: '👥 Danh Sách Tài Khoản' }],
+    [{ text: '🔑 Danh Sách Client Key' }, { text: 'ℹ️ Hướng Dẫn' }]
+  ],
+  resize_keyboard: true,
+  persistent: true
+};
+
+function maskEmail(email = '') {
+  const parts = email.split('@');
+  if (parts.length !== 2) return email;
+  const name = parts[0];
+  const domain = parts[1];
+  if (name.length <= 4) return `${name.slice(0, 1)}***@${domain}`;
+  return `${name.slice(0, 2)}***${name.slice(-2)}@${domain}`;
+}
+
+function maskKey(key = '') {
+  if (!key || key.length < 12) return key;
+  return `${key.slice(0, 8)}...${key.slice(-4)}`;
+}
 
 function parseCourseraSheetAccounts(text = '') {
   const lines = text
@@ -35,19 +62,15 @@ function parseHotmailLine(line) {
 
   const email = parts[0].toLowerCase();
   const password = parts[1];
-  
   if (!email || !password || !EMAIL_REGEX.test(email)) return null;
 
-  if (parts.length === 2) {
-    return { email, password, refresh_token: null, client_id: null, totp_secret: null };
-  }
-  if (parts.length === 3) {
-    return { email, password, refresh_token: null, client_id: null, totp_secret: parts[2] };
-  }
-  if (parts.length === 4) {
-    return { email, password, refresh_token: parts[2], client_id: parts[3], totp_secret: null };
-  }
-  return { email, password, refresh_token: parts[2], client_id: parts[3], totp_secret: parts[4] };
+  return {
+    email,
+    password,
+    totp_secret: parts[2] || null,
+    client_id: parts[3] || null,
+    refresh_token: parts[4] || null
+  };
 }
 
 async function pushToGoogleSheet(scriptUrl, sheetName = '', data = []) {
@@ -81,105 +104,224 @@ export async function POST(request) {
     }
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN || settings?.TELEGRAM_BOT_TOKEN;
-    const scriptUrl = settings?.COURSERA_SHEET_SCRIPT_URL || process.env.COURSERA_SHEET_SCRIPT_URL || process.env.GOOGLE_SHEET_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbwoKn2sauopOfF2fp6K4RFJD5cD2F4Jhr3Xz1vdhidPuz2BZHO63ZahKhJYNH5rjXsV/exec';
+    if (!botToken) {
+      return NextResponse.json({ ok: false, error: 'TELEGRAM_BOT_TOKEN not configured' });
+    }
 
-    const sendTelegramMessage = async (chatId, text, options = {}) => {
-      if (!botToken) return;
+    const sendTelegramMessage = async (chatId, text, extraOptions = {}) => {
       try {
-        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        const payload = {
+          chat_id: chatId,
+          text,
+          parse_mode: 'HTML',
+          reply_markup: MAIN_KEYBOARD,
+          ...extraOptions
+        };
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text,
-            parse_mode: 'HTML',
-            ...options
-          }),
+          body: JSON.stringify(payload)
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.ok) {
-          console.error('[Telegram Send Error]', data);
-        }
       } catch (err) {
-        console.error('[Telegram Send Error]', err);
+        console.error('[Telegram Send Error]', err.message);
       }
     };
 
     let update;
     try {
       update = await request.json();
-    } catch (e) {
+    } catch {
       return NextResponse.json({ ok: true, message: 'Invalid JSON payload' });
     }
 
     const message = update?.message;
-    if (!message?.text) return NextResponse.json({ ok: true });
+    if (!message) return NextResponse.json({ ok: true });
 
-    const chatId = message.chat.id;
-    const text = message.text.trim();
+    const chatId = message.chat?.id;
+    const senderId = message.from?.id || chatId;
+    const text = String(message.text || '').trim();
 
-    // 1. Check if it's a command
-    if (text.startsWith('/')) {
-      if (text === '/start' || text === '/help') {
-        await sendTelegramMessage(chatId, 
-          '<b>👋 Welcome to 9Router Bot!</b>\n\n' +
-          '<b>Commands:</b>\n' +
-          '/listhotmail - List last 20 hotmails\n' +
-          '/status - System status\n\n' +
-          '<b>Quick Import Formats (Send directly):</b>\n' +
-          '• <b>Coursera (CSV):</b> <code>email,password,courseCode</code>\n' +
-          '• <b>Hotmail (Pipe):</b> <code>email|password</code> or <code>email|password|totp</code>'
-        );
-        return NextResponse.json({ ok: true });
-      }
+    if (!chatId) return NextResponse.json({ ok: true });
 
-      if (text === '/listhotmail') {
-        let list = 'No accounts';
-        try {
-          const { data } = await supabase
-            .from('hotmail_accounts')
-            .select('email, status, usage_count')
-            .order('created_at', { ascending: false })
-            .limit(20);
-          list = data?.map(a => `• ${a.email} [${a.status}] (${a.usage_count} uses)`).join('\n') || list;
-        } catch (e) {}
-
-        await sendTelegramMessage(chatId, `<b>📧 Hotmail Accounts:</b>\n${list}`);
-        return NextResponse.json({ ok: true });
-      }
-
-      if (text === '/status') {
-        let hotmailCount = 0;
-        let keyCount = 0;
-        try {
-          const res1 = await supabase.from('hotmail_accounts').select('*', { count: 'exact', head: true });
-          hotmailCount = res1.count || 0;
-          const res2 = await supabase.from('client_keys').select('*', { count: 'exact', head: true });
-          keyCount = res2.count || 0;
-        } catch (e) {}
-
-        await sendTelegramMessage(chatId,
-          `<b>📊 System Status:</b>\n` +
-          `📧 Hotmail accounts: ${hotmailCount}\n` +
-          `🔑 Client keys: ${keyCount}`
-        );
-        return NextResponse.json({ ok: true });
-      }
-
-      await sendTelegramMessage(chatId, 'Unknown command. Type /start for help.');
+    // 🔒 Security: Check allowed users
+    if (!isUserAllowed(senderId) && !isUserAllowed(chatId)) {
+      await sendTelegramMessage(
+        chatId,
+        `⛔ <b>Từ chối truy cập!</b>\nBạn không có quyền tương tác với bot này.\nID của bạn: <code>${senderId}</code>`
+      );
       return NextResponse.json({ ok: true });
     }
 
-    // 2. Parse text lines for Hotmail or Coursera format
+    // 📦 1. TẢI BACKUP DATABASE (Button or Command)
+    if (text === '📦 Lấy Backup Data Ngay' || text === '/backup' || text === '/getdb') {
+      await sendTelegramMessage(chatId, `⏳ <i>Đang đóng băng cơ sở dữ liệu SQLite và nén file an toàn...</i>`);
+      try {
+        const res = await sendBackupToChat({ chatId, botToken, trigger: 'manual' });
+        console.log(`[Telegram Webhook] Đã gửi backup cho chat ${chatId}: ${res.filename} (${res.gzSizeKB} KB)`);
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ <b>Lỗi tạo bản sao lưu:</b> ${err.message}`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // 📊 2. TRẠNG THÁI HỆ THỐNG (VPS Hardware Metrics & Accounts)
+    if (text === '📊 Trạng Thái Hệ Thống' || text === '/status') {
+      try {
+        const stats = await getStats();
+        const vps = getServerMetrics();
+
+        const statusMsg = [
+          `<b>📊 TRẠNG THÁI HỆ THỐNG VPS & 9ROUTER</b>`,
+          `━━━━━━━━━━━━━━━━━━━`,
+          `🖥 <b>THÔNG SỐ MÁY CHỦ VPS:</b>`,
+          `• <b>CPU Load:</b> <code>${vps.cpuLoad}</code>`,
+          `• <b>RAM VPS:</b> <code>${vps.mem.usedMB} MB / ${vps.mem.totalMB} MB (${vps.mem.percent}%) — Trống: ${vps.mem.freeMB} MB</code>`,
+          `• <b>Ổ cứng (Disk):</b> <code>${vps.disk.usedGB} GB / ${vps.disk.totalGB} GB (Trống: ${vps.disk.freeGB} GB)</code>`,
+          `• <b>Uptime hệ thống:</b> <code>${vps.uptimeStr}</code>`,
+          `• <b>RAM tiến trình 9Router:</b> <code>${vps.nodeMemMB} MB</code>`,
+          `━━━━━━━━━━━━━━━━━━━`,
+          `🤖 <b>TÀI KHOẢN AI ĐANG KẾT NỐI:</b>`,
+          `• <b>Antigravity:</b> <code>${stats.agActive}</code> hoạt động${stats.agInactive > 0 ? ` (<code>${stats.agInactive}</code> lỗi 401)` : ''}`,
+          `• <b>Claude Code:</b> <code>${stats.claudeCount}</code> tài khoản`,
+          `• <b>OpenAI Codex:</b> <code>${stats.codexCount}</code> tài khoản`,
+          `• <b>Client Keys quản lý:</b> <code>${stats.clientKeysCount}</code> keys`,
+          `🗄 <b>Cơ sở dữ liệu:</b> <code>SQLite (Local VPS)</code>`,
+          ``,
+          `<i>Bấm nút bên dưới để lấy bản sao lưu ngay lập tức.</i>`
+        ].join('\n');
+
+        await sendTelegramMessage(chatId, statusMsg);
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ Lỗi đọc trạng thái: ${err.message}`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // 👥 3. DANH SÁCH TÀI KHOẢN THEO NHÓM
+    if (text === '👥 Danh Sách Tài Khoản' || text === '/accounts') {
+      try {
+        const adapter = await getAdapter();
+        const accounts = (await adapter.all('SELECT id, provider, authType, email, name, isActive FROM providerConnections ORDER BY provider, id')) || [];
+
+        if (accounts.length === 0) {
+          await sendTelegramMessage(chatId, `ℹ️ Chưa có tài khoản AI nào được cấu hình trong SQLite.`);
+          return NextResponse.json({ ok: true });
+        }
+
+        const lines = [
+          `<b>👥 DANH SÁCH TÀI KHOẢN AI (${accounts.length} KẾT NỐI)</b>`,
+          `━━━━━━━━━━━━━━━━━━━`
+        ];
+
+        // Group by provider
+        const grouped = {};
+        for (const acc of accounts) {
+          const prov = acc.provider || 'khác';
+          if (!grouped[prov]) grouped[prov] = [];
+          grouped[prov].push(acc);
+        }
+
+        const providerNames = {
+          antigravity: '🤖 Antigravity (Google)',
+          codex: '🧠 OpenAI Codex',
+          claude: '✨ Claude Code',
+          anthropic: '✨ Anthropic Official',
+          gemini: '💎 Google Gemini API'
+        };
+
+        for (const [prov, list] of Object.entries(grouped)) {
+          const header = providerNames[prov] || `🔹 ${prov.toUpperCase()}`;
+          lines.push(`<b>${header} (${list.length}):</b>`);
+          list.forEach((acc, idx) => {
+            const statusIcon = acc.isActive ? '🟢' : '🔴';
+            const statusText = acc.isActive ? '' : ' <i>(Tắt/Lỗi)</i>';
+            const display = acc.email ? maskEmail(acc.email) : (acc.name || acc.id?.slice(0, 8));
+            lines.push(`  ${idx + 1}. ${statusIcon} <code>${display}</code>${statusText}`);
+          });
+          lines.push(``);
+        }
+
+        await sendTelegramMessage(chatId, lines.join('\n'));
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ Lỗi đọc danh sách tài khoản: ${err.message}`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // 🔑 4. DANH SÁCH CLIENT KEYS
+    if (text === '🔑 Danh Sách Client Key' || text === '/keys') {
+      try {
+        const adapter = await getAdapter();
+        const keys = (await adapter.all('SELECT key, label, quota_tokens, used_tokens, active FROM client_keys ORDER BY created_at DESC')) || [];
+
+        if (keys.length === 0) {
+          await sendTelegramMessage(chatId, `ℹ️ Chưa có Client Key nào trong hệ thống.`);
+          return NextResponse.json({ ok: true });
+        }
+
+        const lines = [
+          `<b>🔑 DANH SÁCH CLIENT KEYS (${keys.length})</b>`,
+          `━━━━━━━━━━━━━━━━━━━`
+        ];
+
+        keys.forEach((k, idx) => {
+          const statusIcon = k.active ? '🟢' : '🔴';
+          const label = k.label || 'Không tên';
+          const masked = maskKey(k.key);
+          const used = Number(k.used_tokens || 0).toLocaleString();
+          lines.push(`${idx + 1}. ${statusIcon} <b>${label}</b>`);
+          lines.push(`   Key: <code>${masked}</code>`);
+          lines.push(`   Đã dùng: <code>${used}</code> tokens`);
+        });
+
+        await sendTelegramMessage(chatId, lines.join('\n'));
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ Lỗi đọc danh sách client key: ${err.message}`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // ℹ️ 5. HƯỚNG DẪN / HELP / START
+    if (text === '/start' || text === '/help' || text === 'ℹ️ Hướng Dẫn' || text === '/menu') {
+      const welcome = [
+        `<b>👋 XIN CHÀO BẠN ĐẾN VỚI 9ROUTER BOT!</b>`,
+        ``,
+        `Bot hỗ trợ quản trị hệ thống và sao lưu cơ sở dữ liệu tự động.`,
+        ``,
+        `<b>Các chức năng chính:</b>`,
+        `• <b>📦 Lấy Backup Data Ngay:</b> Nhận file nén <code>.sqlite.gz</code> chứa toàn bộ tài khoản & key ngay lập tức.`,
+        `• <b>📊 Trạng Thái Hệ Thống:</b> Xem thông số máy chủ VPS (CPU, RAM, Ổ cứng, Uptime) & tài khoản AI.`,
+        `• <b>👥 Danh Sách Tài Khoản:</b> Xem danh sách chi tiết các tài khoản theo nhóm (Antigravity, Codex, Claude).`,
+        `• <b>🔑 Danh Sách Client Key:</b> Tra cứu mức độ sử dụng token của các key.`,
+        ``,
+        `<i>⏰ Hệ thống cũng sẽ tự động gửi bản sao lưu mới nhất vào lúc 00:00 hàng ngày.</i>`
+      ].join('\n');
+
+      await sendTelegramMessage(chatId, welcome);
+      return NextResponse.json({ ok: true });
+    }
+
+    // 6. HOTMAIL & COURSERA PARSER (Tương thích ngược)
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     const hasPipe = lines.some(l => l.includes('|'));
 
     if (hasPipe) {
-      // Import Hotmail
       try {
-        await sendTelegramMessage(chatId, `⏳ Đang nhập ${lines.length} tài khoản Hotmail vào cơ sở dữ liệu...`);
+        await sendTelegramMessage(chatId, `⏳ Đang nhập ${lines.length} tài khoản Hotmail vào SQLite...`);
+        const adapter = await getAdapter();
         let successCount = 0;
         let errorCount = 0;
+
+        const insertSql = `
+          INSERT INTO hotmail_accounts (email, password, totp_secret, client_id, refresh_token, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'available', datetime('now'), datetime('now'))
+          ON CONFLICT(email) DO UPDATE SET
+            password = excluded.password,
+            totp_secret = coalesce(excluded.totp_secret, hotmail_accounts.totp_secret),
+            client_id = coalesce(excluded.client_id, hotmail_accounts.client_id),
+            refresh_token = coalesce(excluded.refresh_token, hotmail_accounts.refresh_token),
+            updated_at = datetime('now')
+        `;
 
         for (const line of lines) {
           const cred = parseHotmailLine(line);
@@ -187,71 +329,59 @@ export async function POST(request) {
             errorCount++;
             continue;
           }
-
-          const { error } = await supabase
-            .from('hotmail_accounts')
-            .upsert({
-              email: cred.email,
-              password: cred.password,
-              totp_secret: cred.totp_secret || null,
-              client_id: cred.client_id || null,
-              refresh_token: cred.refresh_token || null,
-              status: 'available'
-            }, { onConflict: 'email' });
-
-          if (error) errorCount++; else successCount++;
+          try {
+            await adapter.run(insertSql, [cred.email, cred.password, cred.totp_secret, cred.client_id, cred.refresh_token]);
+            successCount++;
+          } catch {
+            errorCount++;
+          }
         }
 
         const resMsg = [
-          `<b>✅ KẾT QUẢ NHẬP HOTMAIL</b>`,
+          `<b>✅ KẾT QUẢ NHẬP HOTMAIL (SQLITE)</b>`,
           `• Thành công: <code>${successCount}</code>`,
-          `• Lỗi/Sai format: <code>${errorCount}</code>`
+          `• Lỗi/Sai định dạng: <code>${errorCount}</code>`
         ].join('\n');
         await sendTelegramMessage(chatId, resMsg);
       } catch (err) {
-        await sendTelegramMessage(chatId, `❌ Lỗi hệ thống khi nhập Hotmail: ${err.message}`);
+        await sendTelegramMessage(chatId, `❌ Lỗi khi nhập Hotmail: ${err.message}`);
       }
-    } else {
-      // Try parsing as Coursera accounts list
-      const accounts = parseCourseraSheetAccounts(text);
-      if (accounts.length > 0) {
-        try {
-          await sendTelegramMessage(chatId, `⏳ Đang thêm ${accounts.length} tài khoản Coursera vào Sheet...`);
-          
-          const targetScriptUrl = scriptUrl;
-          if (!targetScriptUrl) {
-            throw new Error('COURSERA_SHEET_SCRIPT_URL is not configured on server.');
-          }
-
-          const sheetData = accounts.map(a => [a.email, a.password, a.courseCode]);
-          await pushToGoogleSheet(targetScriptUrl, '', sheetData);
-
-          const successLines = [
-            `<b>✅ ĐÃ THÊM ${accounts.length} TÀI KHOẢN COURSERA VÀO SHEET</b>`,
-            '',
-            ...accounts.map((a, i) => `${i + 1}. <code>${a.email}</code> | <code>${a.password}</code>${a.courseCode ? ` | Course: <code>${a.courseCode}</code>` : ''}`),
-            '',
-            'Paste tiếp format <code>email,password,courseCode</code> để nhập nhanh.'
-          ];
-          await sendTelegramMessage(chatId, successLines.join('\n'));
-        } catch (err) {
-          await sendTelegramMessage(chatId, `❌ Lỗi khi thêm Coursera: ${err.message}`);
-        }
-      } else {
-        // Unknown format
-        await sendTelegramMessage(chatId, 
-          '<b>⚠️ Format không đúng</b>\n\n' +
-          'Vui lòng gửi danh sách tài khoản theo định dạng:\n' +
-          '• <b>Coursera (CSV):</b> <code>email,password,courseCode</code>\n' +
-          '• <b>Hotmail (Pipe):</b> <code>email|password</code> or <code>email|password|totp</code>'
-        );
-      }
+      return NextResponse.json({ ok: true });
     }
 
+    // Coursera parse
+    const courseraAccounts = parseCourseraSheetAccounts(text);
+    if (courseraAccounts.length > 0) {
+      try {
+        const scriptUrl = settings?.COURSERA_SHEET_SCRIPT_URL || process.env.COURSERA_SHEET_SCRIPT_URL;
+        if (!scriptUrl) {
+          throw new Error('Chưa cấu hình COURSERA_SHEET_SCRIPT_URL');
+        }
+        await sendTelegramMessage(chatId, `⏳ Đang thêm ${courseraAccounts.length} tài khoản Coursera vào Sheet...`);
+        const sheetData = courseraAccounts.map(a => [a.email, a.password, a.courseCode]);
+        await pushToGoogleSheet(scriptUrl, '', sheetData);
+
+        const successLines = [
+          `<b>✅ ĐÃ THÊM ${courseraAccounts.length} TÀI KHOẢN COURSERA VÀO SHEET</b>`,
+          '',
+          ...courseraAccounts.map((a, i) => `${i + 1}. <code>${a.email}</code> | <code>${a.password}</code>${a.courseCode ? ` | Course: <code>${a.courseCode}</code>` : ''}`)
+        ];
+        await sendTelegramMessage(chatId, successLines.join('\n'));
+      } catch (err) {
+        await sendTelegramMessage(chatId, `❌ Lỗi khi thêm Coursera: ${err.message}`);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // Default response if not recognized
+    await sendTelegramMessage(
+      chatId,
+      `💡 <i>Vui lòng chọn một chức năng trên bàn phím menu bên dưới hoặc gõ /backup để nhận file sao lưu.</i>`
+    );
     return NextResponse.json({ ok: true });
+
   } catch (err) {
     console.error('[Telegram Webhook Error]', err);
-    // Always return HTTP 200 to Telegram so Telegram does not disable or fail the webhook
     return NextResponse.json({ ok: false, error: err.message });
   }
 }

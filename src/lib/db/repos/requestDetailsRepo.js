@@ -15,10 +15,25 @@ async function getObservabilityConfig() {
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
-    const envEnabled = process.env.OBSERVABILITY_ENABLED === "true";
-    const enabled = typeof settings.enableObservability2 === "boolean"
-      ? settings.enableObservability2
-      : envEnabled;
+    const envRequestLogs = process.env.ENABLE_REQUEST_LOGS;
+    if (envRequestLogs !== undefined) {
+      const enabled = envRequestLogs.toLowerCase() === "true";
+      cachedConfig = {
+        enabled,
+        maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
+        batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
+        flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
+        maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+      };
+      cachedConfigTs = Date.now();
+      return cachedConfig;
+    }
+    const envFallback = process.env.OBSERVABILITY_ENABLED !== "false";
+    const uiFlag = typeof settings.enableObservability === "boolean";
+    const enabled = uiFlag
+      ? settings.enableObservability
+      : envFallback;
+
     cachedConfig = {
       enabled,
       maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
@@ -53,6 +68,8 @@ function sanitizeHeaders(headers) {
   return sanitized;
 }
 
+export const __test__ = { sanitizeHeaders };
+
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
   const random = Math.random().toString(36).substring(2, 8);
@@ -61,24 +78,11 @@ function generateDetailId(model) {
 }
 
 function truncateField(obj, maxSize) {
-  if (!obj || typeof obj !== "object") return {};
-  // Fast path for large messages array to avoid JSON.stringify on 5MB payloads
-  if (Array.isArray(obj.messages) && obj.messages.length > 10) {
-    return {
-      _truncated: true,
-      _preview: `[Large messages array: ${obj.messages.length} messages]`,
-      model: obj.model,
-    };
+  const str = JSON.stringify(obj || {});
+  if (str.length > maxSize) {
+    return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
   }
-  try {
-    const str = JSON.stringify(obj);
-    if (str.length > maxSize) {
-      return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
-    }
-    return obj;
-  } catch {
-    return { _truncated: true, _preview: "[Unstringifiable object]" };
-  }
+  return obj || {};
 }
 
 async function flushToDatabase() {
@@ -92,7 +96,7 @@ async function flushToDatabase() {
       const db = await getAdapter();
       const config = await getObservabilityConfig();
 
-      await db.transaction(async () => {
+      db.transaction(() => {
         for (const item of items) {
           if (!item.id) item.id = generateDetailId(item.model);
           if (!item.timestamp) item.timestamp = new Date().toISOString();
@@ -111,17 +115,18 @@ async function flushToDatabase() {
             providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
             providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
             response: truncateField(item.response, config.maxJsonSize),
+            pxpipe: item.pxpipe || undefined,
           };
 
-          await db.run(
+          db.run(
             `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
             [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
           );
         }
 
-        const cnt = await db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
         if (cnt && cnt.c > config.maxRecords) {
-          await db.run(
+          db.run(
             `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
             [cnt.c - config.maxRecords]
           );
@@ -129,7 +134,7 @@ async function flushToDatabase() {
       });
     }
   } catch (e) {
-    console.warn("[requestDetailsRepo] Batch write skipped/failed:", e?.message || e);
+    console.error("[requestDetailsRepo] Batch write failed:", e);
   } finally {
     isFlushing = false;
   }
@@ -137,15 +142,15 @@ async function flushToDatabase() {
 
 export async function saveRequestDetail(detail) {
   const config = await getObservabilityConfig();
-  if (!config.enabled) return;
+  if (!config.enabled) {return;}
 
-  // Prevent memory accumulation by limiting buffer size
-  if (writeBuffer.length > 50) writeBuffer.splice(0, 20);
   writeBuffer.push(detail);
 
+  // Trigger immediate flush if batch threshold reached.
+  // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.
   if (writeBuffer.length >= config.batchSize) {
     if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    flushToDatabase().catch(() => {});
+    flushToDatabase().catch((e) => console.error("[requestDetailsRepo] flush err:", e));
   } else if (!flushTimer) {
     flushTimer = setTimeout(() => {
       flushTimer = null;
@@ -167,7 +172,7 @@ export async function getRequestDetails(filter = {}) {
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-  const cntRow = await db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params);
+  const cntRow = db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params);
   const totalItems = cntRow ? cntRow.c : 0;
 
   const page = filter.page || 1;
@@ -175,7 +180,7 @@ export async function getRequestDetails(filter = {}) {
   const totalPages = Math.ceil(totalItems / pageSize);
   const offset = (page - 1) * pageSize;
 
-  const rows = await db.all(
+  const rows = db.all(
     `SELECT data FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, offset]
   );
@@ -187,9 +192,15 @@ export async function getRequestDetails(filter = {}) {
   };
 }
 
+export async function getDistinctProviders() {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider ASC`);
+  return rows.map((r) => r.provider);
+}
+
 export async function getRequestDetailById(id) {
   const db = await getAdapter();
-  const row = await db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
+  const row = db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
   return row ? parseJson(row.data, null) : null;
 }
 
@@ -199,21 +210,15 @@ const _shutdownHandler = async () => {
 };
 
 function ensureShutdownHandler() {
-  if (typeof process === "undefined") return;
-  const p = process;
-  const onFn = p["on"];
-  const offFn = p["off"];
-  if (typeof onFn === "function" && typeof offFn === "function") {
-    offFn.call(p, "beforeExit", _shutdownHandler);
-    offFn.call(p, "SIGINT", _shutdownHandler);
-    offFn.call(p, "SIGTERM", _shutdownHandler);
-    offFn.call(p, "exit", _shutdownHandler);
+  process.off("beforeExit", _shutdownHandler);
+  process.off("SIGINT", _shutdownHandler);
+  process.off("SIGTERM", _shutdownHandler);
+  process.off("exit", _shutdownHandler);
 
-    onFn.call(p, "beforeExit", _shutdownHandler);
-    onFn.call(p, "SIGINT", _shutdownHandler);
-    onFn.call(p, "SIGTERM", _shutdownHandler);
-    onFn.call(p, "exit", _shutdownHandler);
-  }
+  process.on("beforeExit", _shutdownHandler);
+  process.on("SIGINT", _shutdownHandler);
+  process.on("SIGTERM", _shutdownHandler);
+  process.on("exit", _shutdownHandler);
 }
 
 ensureShutdownHandler();

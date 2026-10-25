@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
 import { parseModelAllowlist } from '@/lib/auth/clientModelPolicy.js';
+import { getClientKeyByToken } from '@/lib/db/repos/clientKeysRepo.js';
 
 const NO_STORE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -34,23 +34,15 @@ export async function POST(request) {
       return jsonResponse({ error: 'Mã API Key không đúng định dạng (phải bắt đầu bằng ck- hoặc sk-).' }, 400);
     }
 
-    // Query key from client_keys table, projecting model_allowlist and user-facing fields
-    const { data: keyData, error } = await supabase
-      .from('client_keys')
-      .select('id, key, label, quota_tokens, used_tokens, active, expires_at, max_concurrent, rate_limit_per_minute, created_at, model_allowlist')
-      .eq('key', trimmedKey)
-      .maybeSingle();
-
-    if (error) {
-      return jsonResponse({ error: 'Lỗi truy vấn cơ sở dữ liệu: ' + error.message }, 500);
-    }
+    // Query key from client_keys table in SQLite
+    const keyData = await getClientKeyByToken(trimmedKey, { includeInactive: true });
 
     if (!keyData) {
       return jsonResponse({ error: 'Mã API Key không tồn tại trong hệ thống. Vui lòng kiểm tra lại.' }, 404);
     }
 
     // Check if key is active
-    if (keyData.active === false) {
+    if (keyData.active === false || keyData.active === 0) {
       return jsonResponse({
         error: 'Mã API Key này đã bị vô hiệu hóa bởi quản trị viên.',
         keyData: {
@@ -81,7 +73,7 @@ export async function POST(request) {
     // Check if quota exceeded (allow 0 as infinite)
     const isQuotaExceeded = keyData.quota_tokens > 0 && keyData.used_tokens >= keyData.quota_tokens;
 
-    // Derive sanitized normalized policy from token-matched database row, not client-supplied
+    // Derive sanitized normalized policy from token-matched database row
     const modelPolicy = parseModelAllowlist(keyData.model_allowlist);
 
     return jsonResponse({

@@ -1,5 +1,9 @@
-// Latest schema version — bumped when a migration is added in ./migrations/
-export const SCHEMA_VERSION = 1;
+// ⚠️ AGENT/DEV: Bump this by +1 EVERY TIME you change the schema below
+// (add/remove/alter a table, column, or index in TABLES). It drives the
+// pre-change safety backup in migrate.js: when the stored version is lower,
+// one lightweight DB backup is taken before applying schema changes. Forgetting
+// to bump only skips that backup — it does NOT break the additive auto-sync.
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -79,6 +83,10 @@ export const TABLES = {
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
       createdAt: "TEXT NOT NULL",
+      // Per-key access control. Additive columns, picked up by
+      // syncSchemaFromTables() on boot; existing rows read as unrestricted (0).
+      accessRestricted: "INTEGER DEFAULT 0",
+      accessAllow: "TEXT",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
   },
@@ -147,6 +155,36 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
+  },
+  client_keys: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      key: "TEXT UNIQUE NOT NULL",
+      label: "TEXT",
+      owner_note: "TEXT",
+      quota_tokens: "INTEGER DEFAULT 0",
+      used_tokens: "INTEGER DEFAULT 0",
+      max_concurrent: "INTEGER DEFAULT 15",
+      rate_limit_per_minute: "INTEGER DEFAULT 1024",
+      model_multiplier: "TEXT",
+      model_allowlist: "TEXT",
+      active: "INTEGER DEFAULT 1",
+      expires_at: "TEXT",
+      created_at: "TEXT NOT NULL",
+      updated_at: "TEXT NOT NULL",
+    },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_ck_key ON client_keys(key)"],
+  },
+  client_key_usage_logs: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      key_id: "TEXT NOT NULL",
+      model: "TEXT",
+      tokens: "INTEGER DEFAULT 0",
+      cost: "REAL DEFAULT 0",
+      created_at: "TEXT NOT NULL",
+    },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_ckul_key_id ON client_key_usage_logs(key_id)"],
   },
 };
 

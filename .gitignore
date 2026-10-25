@@ -51,3 +51,10 @@ ainoname-client/certs/
 ainoname-client/bin/
 *.zip
 
+
+backups/
+scripts/test-*
+scripts/cleanup-*
+*.backup.js
+*.backup/
+*.backup*

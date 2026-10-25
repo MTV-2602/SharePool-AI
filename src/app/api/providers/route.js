@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+// import { supabase } from "@/lib/supabase";
 import {
   getProviderConnections,
   createProviderConnection,
@@ -64,9 +64,9 @@ export async function GET() {
     // Fetch chatgpt_credentials to see which connection email is saved in Kho Acc
     let credMap = {};
     try {
-      const { data: gptCreds } = await supabase
-        .from('chatgpt_credentials')
-        .select('email');
+      const { getDb } = await import("@/lib/db/driver.js");
+      const db = await getDb();
+      const gptCreds = await db.all("SELECT email FROM chatgpt_credentials");
       if (gptCreds) {
         gptCreds.forEach(c => {
           if (c.email) {

@@ -588,6 +588,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
         stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
+          DATA_DIR: DATA_DIR,
           ROUTER_API_KEY: apiKey,
           NODE_ENV: "production",
           MITM_ROUTER_BASE: mitmRouterBase,
@@ -601,6 +602,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     // instead of /root when sudo resets the environment.
     const inlineCmd = [
       `HOME=${shellQuoteSingle(os.homedir())}`,
+      `DATA_DIR=${shellQuoteSingle(DATA_DIR)}`,
       `ROUTER_API_KEY=${shellQuoteSingle(apiKey)}`,
       `MITM_ROUTER_BASE=${shellQuoteSingle(mitmRouterBase)}`,
       "NODE_ENV=production",
@@ -622,7 +624,8 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
-        ROUTER_API_KEY: apiKey,
+        DATA_DIR: DATA_DIR,
+          ROUTER_API_KEY: apiKey,
         NODE_ENV: "production",
         MITM_ROUTER_BASE: mitmRouterBase,
       },

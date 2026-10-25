@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import JSZip from "jszip";
 import ClientModelPolicyField, {
   formatAllowlistForEditor,
   parseAllowlistInput,
@@ -37,6 +38,28 @@ export default function ClientKeysPage() {
 
   // Copy indicator
   const [copiedId, setCopiedId] = useState(null);
+
+  const [downloadingId, setDownloadingId] = useState(null);
+
+  const handleDownloadTool = (key) => {
+    try {
+      setDownloadingId(key.id);
+      const gateway = typeof window !== "undefined" ? window.location.origin : "https://ainoname.site";
+      const cleanLabel = (key.label || "client").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const downloadUrl = `/api/client-keys/download-tool?key=${encodeURIComponent(key.key)}&label=${encodeURIComponent(cleanLabel)}&gateway=${encodeURIComponent(gateway)}`;
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.setAttribute("download", `AiNoName-Client-${cleanLabel}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Loi tai zip:", err);
+      window.location.href = `/api/client-keys/download-tool?key=${encodeURIComponent(key.key)}`;
+    } finally {
+      setTimeout(() => setDownloadingId(null), 1200);
+    }
+  };
 
   const fetchKeys = async () => {
     setLoading(true);
@@ -311,6 +334,13 @@ export default function ClientKeysPage() {
                                 {copiedId === key.id ? "check" : "content_copy"}
                               </span>
                             </button>
+                            <button
+                              onClick={() => handleDownloadTool(key)}
+                              className="text-slate-500 hover:text-emerald-400 transition-colors"
+                              title="Tải Tool 1-Click (Gắn sẵn Key này)"
+                            >
+                              <span className="material-symbols-outlined text-sm">download</span>
+                            </button>
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -377,6 +407,17 @@ export default function ClientKeysPage() {
                           {key.expires_at ? formatDate(key.expires_at) : "Never"}
                         </td>
                         <td className="px-6 py-4 text-right space-x-2">
+                          <button
+                            onClick={() => handleDownloadTool(key)}
+                            disabled={downloadingId === key.id}
+                            className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 disabled:opacity-50 px-3 py-1.5 rounded-lg transition-colors border border-emerald-500/30 inline-flex items-center gap-1.5 text-xs font-semibold"
+                            title="Tải Tool Antigravity 1-Click (Đã nạp sẵn Client Key)"
+                          >
+                            <span className={`material-symbols-outlined text-sm ${downloadingId === key.id ? "animate-spin" : ""}`}>
+                              {downloadingId === key.id ? "sync" : "bolt"}
+                            </span>
+                            {downloadingId === key.id ? "Đang nén..." : "1-Click Tool"}
+                          </button>
                           <button
                             onClick={() => fetchLogs(key)}
                             className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-colors border border-slate-700/80 inline-flex items-center gap-1 text-xs"

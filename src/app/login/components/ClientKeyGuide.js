@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import JSZip from "jszip";
 import { Card, Button } from "@/shared/components";
 import {
   describePolicy,
@@ -207,6 +208,27 @@ export function ClientKeyGuideInner({
     }
   };
 
+  const [downloadingTool, setDownloadingTool] = useState(false);
+  const handleDownloadClientTool = () => {
+    try {
+      setDownloadingTool(true);
+      const gateway = typeof window !== "undefined" ? window.location.origin : (apiOrigin || "https://ainoname.site");
+      const safeSuffix = apiKey ? apiKey.slice(-8) : "key";
+      const downloadUrl = `/api/client-keys/download-tool?key=${encodeURIComponent(apiKey)}&label=${encodeURIComponent(safeSuffix)}&gateway=${encodeURIComponent(gateway)}`;
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.setAttribute("download", `AiNoName-Client-${safeSuffix}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Loi zip client:", err);
+      window.location.href = `/api/client-keys/download-tool?key=${encodeURIComponent(apiKey)}`;
+    } finally {
+      setTimeout(() => setDownloadingTool(false), 1200);
+    }
+  };
+
   const safeQuickBaseUrl = useMemo(() => {
     if (snippets?.baseUrl) return snippets.baseUrl;
     try {
@@ -329,14 +351,16 @@ export function ClientKeyGuideInner({
               Tải tool kết nối tự động, mở lên là chat được ngay trong Antigravity IDE.
             </div>
           </div>
-          <a
-            href="/downloads/AiNoName-Client.zip"
-            download="AiNoName-Client.zip"
-            className="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs px-3.5 py-2 rounded-lg flex items-center gap-1.5 transition-all shadow-lg hover:shadow-indigo-500/20"
+          <button
+            onClick={handleDownloadClientTool}
+            disabled={downloadingTool}
+            className="shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium text-xs px-3.5 py-2 rounded-lg flex items-center gap-1.5 transition-all shadow-lg hover:shadow-indigo-500/20 cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[16px]">download</span>
-            Tải Tool (.zip)
-          </a>
+            <span className={`material-symbols-outlined text-[16px] ${downloadingTool ? "animate-spin" : ""}`}>
+              {downloadingTool ? "sync" : "download"}
+            </span>
+            {downloadingTool ? "Đang chuẩn bị..." : "Tải Tool 1-Click (.zip)"}
+          </button>
         </div>
 
         <div className="bg-surface p-3 rounded-xl border border-border flex items-center justify-between gap-2">

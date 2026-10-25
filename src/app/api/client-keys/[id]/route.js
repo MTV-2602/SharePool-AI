@@ -1,20 +1,15 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getClientKeyById, updateClientKey, deleteClientKey } from '@/lib/db/repos/clientKeysRepo.js';
 import { invalidateClientKeyCache } from '@/lib/auth/clientKeyAuth.js';
 import { validateModelAllowlistConfig } from '@/lib/auth/clientModelPolicy.js';
 
 // GET: Get single client key
 export async function GET(request, { params }) {
   const { id } = await params;
-  const { data, error } = await supabase
-    .from('client_keys')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 });
-  return NextResponse.json(data);
+  const key = await getClientKeyById(id);
+  if (!key) return NextResponse.json({ error: "Client key not found" }, { status: 404 });
+  return NextResponse.json(key);
 }
 
 // PUT: Update client key
@@ -40,14 +35,8 @@ export async function PUT(request, { params }) {
     if (body.active !== undefined) updateFields.active = body.active;
     if (body.expires_at !== undefined) updateFields.expires_at = body.expires_at;
 
-    const { data, error } = await supabase
-      .from('client_keys')
-      .update(updateFields)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const data = await updateClientKey(id, updateFields);
+    if (!data) return NextResponse.json({ error: "Failed to update client key" }, { status: 404 });
     invalidateClientKeyCache({ id });
     return NextResponse.json(data);
   } catch (err) {
@@ -58,12 +47,7 @@ export async function PUT(request, { params }) {
 // DELETE: Delete client key
 export async function DELETE(request, { params }) {
   const { id } = await params;
-  const { error } = await supabase
-    .from('client_keys')
-    .delete()
-    .eq('id', id);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  await deleteClientKey(id);
   invalidateClientKeyCache({ id });
   return NextResponse.json({ success: true });
 }

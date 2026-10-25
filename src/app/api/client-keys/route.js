@@ -1,8 +1,8 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { validateModelAllowlistConfig } from '@/lib/auth/clientModelPolicy.js';
+import { getAllClientKeys, createClientKey } from '@/lib/db/repos/clientKeysRepo.js';
 
 function generateClientKey() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -15,13 +15,12 @@ function generateClientKey() {
 
 // GET: List all client keys
 export async function GET() {
-  const { data, error } = await supabase
-    .from('client_keys')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  try {
+    const data = await getAllClientKeys();
+    return NextResponse.json(data);
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 }
 
 // POST: Create a new client key
@@ -53,14 +52,8 @@ export async function POST(request) {
       expires_at: body.expires_at || null,
     };
 
-    const { data, error } = await supabase
-      .from('client_keys')
-      .insert(newKey)
-      .select()
-      .single();
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json(data, { status: 201 });
+    const saved = await createClientKey(newKey);
+    return NextResponse.json(saved, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 400 });
   }

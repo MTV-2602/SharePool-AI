@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { getProviderConnections } from "@/lib/localDb";
 
 // GET /api/accounts/expired
-// Return the list of ChatGPT credentials that are either missing from the provider connections pool
-// or currently in error/failed state, so the extension can automatically log in and refresh them.
 export async function GET(request) {
   try {
     // 1. Extension Push Token check
@@ -25,15 +24,8 @@ export async function GET(request) {
       return NextResponse.json({ error: "Unauthorized extension token" }, { status: 403 });
     }
 
-    // 2. Fetch all Codex provider connections from database
-    const { data: connections, error: connError } = await supabase
-      .from("provider_connections")
-      .select("*")
-      .eq("provider", "codex");
-
-    if (connError) {
-      return NextResponse.json({ error: connError.message }, { status: 500 });
-    }
+    // 2. Fetch all Codex provider connections from local SQLite database
+    const connections = await getProviderConnections({ provider: "codex" });
 
     // 3. Fetch all ChatGPT credentials
     const { data: credentials, error: credError } = await supabase
@@ -47,11 +39,11 @@ export async function GET(request) {
     const expired = [];
     const now = new Date();
 
-    for (const cred of credentials) {
+    for (const cred of (credentials || [])) {
       const credEmail = (cred.email || "").trim().toLowerCase();
       
       const upstream = connections.find(c => {
-        const connEmail = (c.email || "").trim().toLowerCase();
+        const connEmail = (c.email || c.name || "").trim().toLowerCase();
         return connEmail === credEmail;
       });
 
@@ -62,14 +54,12 @@ export async function GET(request) {
         needsLogin = true;
         reason = "Chua co trong pool upstream";
       } else {
-        // Status checks: 9Router stores status in test_status/testStatus and active status in is_active/isActive
-        const testStatus = upstream.test_status || upstream.testStatus || "";
-        const isActive = upstream.is_active !== undefined ? upstream.is_active : upstream.isActive;
+        const testStatus = upstream.testStatus || upstream.test_status || "";
+        const isActive = upstream.isActive !== undefined ? upstream.isActive : upstream.is_active;
 
         const isFailed = testStatus === "error" || testStatus === "failed";
         const isInactive = isActive === false || isActive === 0;
 
-        // If the account has been disabled manually by the admin, do not request re-login
         if (!isInactive && isFailed) {
           needsLogin = true;
           reason = "Loi phien lam viec (pool)";
@@ -77,7 +67,6 @@ export async function GET(request) {
       }
 
       if (needsLogin) {
-        // Check lock status: lock lasts for 5 minutes
         let isLocked = false;
         if (cred.reserved_at) {
           const lockedTime = new Date(cred.reserved_at);
