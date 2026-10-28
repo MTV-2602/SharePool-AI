@@ -91,6 +91,8 @@ export async function getAdapter() {
   return state.initPromise;
 }
 
+export const getDb = getAdapter;
+
 export function getAdapterSync() {
   if (!state.instance) throw new Error("[DB] adapter not initialized — await getAdapter() first");
   return state.instance;

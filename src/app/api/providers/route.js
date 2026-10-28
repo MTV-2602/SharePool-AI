@@ -64,8 +64,8 @@ export async function GET() {
     // Fetch chatgpt_credentials to see which connection email is saved in Kho Acc
     let credMap = {};
     try {
-      const { getDb } = await import("@/lib/db/driver.js");
-      const db = await getDb();
+      const { getAdapter } = await import("@/lib/db/driver.js");
+      const db = await getAdapter();
       const gptCreds = await db.all("SELECT email FROM chatgpt_credentials");
       if (gptCreds) {
         gptCreds.forEach(c => {
