@@ -13,8 +13,9 @@ $CLIENT_SECRET = "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"
 $REDIRECT_URI = "http://localhost:$PORT/auth/callback"
 $SCOPES = "email profile https://www.googleapis.com/auth/cloud-platform"
 
-$SUPABASE_URL = "https://eslfxpccttexenmsybbq.supabase.co"
-$SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzbGZ4cGNjdHRleGVubXN5YmJxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDYwMDAwMywiZXhwIjoyMDkwMTc2MDAzfQ.TJgHkn87uDqWT4W984gnNRIzDU7P5CKB6JyBTukIinA"
+# 9Router Server URL (Mac dinh: https://ainoname.site - Co the ghi de bang bien moi truong ROUTER_URL)
+$DEFAULT_ROUTER_URL = "https://ainoname.site"
+$ROUTER_URL = if ($env:ROUTER_URL) { $env:ROUTER_URL.TrimEnd('/') } else { $DEFAULT_ROUTER_URL }
 
 $AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth?client_id=$CLIENT_ID&response_type=code&redirect_uri=[REDIRECT]&scope=[SCOPE]&access_type=offline&prompt=consent"
 $AUTH_URL = $AUTH_URL.Replace("[REDIRECT]", [System.Uri]::EscapeDataString($REDIRECT_URI)).Replace("[SCOPE]", [System.Uri]::EscapeDataString($SCOPES))
@@ -25,7 +26,8 @@ Write-Host "             9ROUTER - BO LANG NGHE VA TU DONG THEM ANTIGRAVITY     
 Write-Host "================================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  [*] Dang lang nghe tai cong: http://localhost:$PORT/" -ForegroundColor Green
-Write-Host "  [*] Co che: Tu dong doi ma OAuth voi Google -> Luu thang vao Supabase 9Router" -ForegroundColor Gray
+Write-Host "  [*] Server 9Router         : $ROUTER_URL" -ForegroundColor Cyan
+Write-Host "  [*] Co che                 : Doi ma OAuth -> Luu truc tiep vao 9Router SQLite" -ForegroundColor Gray
 Write-Host "  [*] Cua so nay chay lien tuc de ban dang nhap nhieu tai khoan lien tiep." -ForegroundColor Gray
 Write-Host "  [*] Nhan [Ctrl + C] de thoat khi da them xong." -ForegroundColor Gray
 Write-Host ""
@@ -34,7 +36,7 @@ Write-Host "HUONG DAN DANG NHAP:" -ForegroundColor White
 Write-Host "1. Nhan phim [Y] de mo trinh duyet dang nhap Google ngay bay gio." -ForegroundColor Yellow
 Write-Host "   (Hoac copy link ben duoi dan vao Profile Chrome/Edge co tai khoan Google can them)" -ForegroundColor Gray
 Write-Host "2. Tren trinh duyet, chon tai khoan va bam nut [Sign in] hoac [Cho phep / Allow]." -ForegroundColor White
-Write-Host "3. Script se tu dong bat tai khoan va luu thang vao 9Router." -ForegroundColor Green
+Write-Host "3. Script se tu dong bat tai khoan va luu thang vao 9Router SQLite." -ForegroundColor Green
 Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
 Write-Host "Link dang nhap: " -ForegroundColor DarkYellow -NoNewline
 Write-Host $AUTH_URL -ForegroundColor Cyan
@@ -146,89 +148,70 @@ while ($true) {
             Write-Host "[!] Khong lay duoc email, se dung ten mac dinh." -ForegroundColor Gray
         }
 
-        # 3. Save into Supabase provider_connections
-        $expiresAt = (Get-Date).ToUniversalTime().AddSeconds($expiresIn).ToString("o")
-        $connDataObj = [ordered]@{
-            accessToken   = $accessToken
-            refreshToken  = $refreshToken
-            expiresAt     = $expiresAt
-            expiresIn     = $expiresIn
-            projectId     = "aicode-consumers"
-            testStatus    = "active"
-            scope         = $scope
-            lastRefreshAt = (Get-Date).ToUniversalTime().ToString("o")
-            errorCode     = $null
-            lastError     = $null
-            backoffLevel  = 0
-        }
-        $connDataJson = $connDataObj | ConvertTo-Json -Compress
-
-        $dbHeaders = @{
-            "apikey"        = $SUPABASE_KEY
-            "Authorization" = "Bearer $SUPABASE_KEY"
-            "Prefer"        = "return=representation"
-        }
-
+        # 3. Save into 9Router SQLite via API
+        Write-Host "[*] Dang luu tai khoan vao 9Router ($ROUTER_URL)..." -ForegroundColor Cyan
         $savedSuccess = $false
+        $errorDetail = ""
         try {
-            # Check existing connection by email
-            $existing = Invoke-RestMethod -Uri "$SUPABASE_URL/rest/v1/provider_connections?email=eq.$userEmail&provider=eq.antigravity&select=id" -Headers $dbHeaders -Method Get
-            
-            if ($existing -and $existing.Count -gt 0) {
-                $updateBody = @{
-                    name       = $userEmail
-                    is_active  = 1
-                    data       = $connDataJson
-                    updated_at = (Get-Date).ToUniversalTime().ToString("o")
-                } | ConvertTo-Json
+            $importPayload = @{
+                refreshToken = $refreshToken
+                accessToken  = $accessToken
+                expiresIn    = $expiresIn
+                email        = $userEmail
+                scope        = $scope
+                projectId    = "aicode-consumers"
+            } | ConvertTo-Json
 
-                Invoke-RestMethod -Uri "$SUPABASE_URL/rest/v1/provider_connections?id=eq.$($existing[0].id)" -Method Patch -Body $updateBody -ContentType "application/json" -Headers $dbHeaders | Out-Null
-                Write-Host "[OK] Da cap nhat tai khoan da co san: $userEmail" -ForegroundColor Green
+            $importRes = Invoke-RestMethod -Uri "$ROUTER_URL/api/oauth/antigravity/import" -Method Post -Body $importPayload -ContentType "application/json"
+            if ($importRes.success) {
+                $savedSuccess = $true
+                Write-Host "[OK] Da luu tai khoan thanh cong vao 9Router SQLite: $userEmail" -ForegroundColor Green
             } else {
-                $newId = [guid]::NewGuid().ToString()
-                $insertBody = @{
-                    id        = $newId
-                    provider  = "antigravity"
-                    auth_type = "oauth"
-                    name      = $userEmail
-                    email     = $userEmail
-                    priority  = 1
-                    is_active = 1
-                    data      = $connDataJson
-                } | ConvertTo-Json
-
-                Invoke-RestMethod -Uri "$SUPABASE_URL/rest/v1/provider_connections" -Method Post -Body $insertBody -ContentType "application/json" -Headers $dbHeaders | Out-Null
-                Write-Host "[OK] Da them tai khoan moi: $userEmail" -ForegroundColor Green
+                $errorDetail = $importRes.error
+                Write-Host "[LOI] 9Router tra ve loi: $errorDetail" -ForegroundColor Red
             }
-            $savedSuccess = $true
         } catch {
-            Write-Host "[LOI] Luu vao Supabase that bai: $($_.Exception.Message)" -ForegroundColor Red
+            $errorDetail = $_.Exception.Message
+            Write-Host "[LOI] Khong the gui du lieu toi 9Router ($ROUTER_URL): $errorDetail" -ForegroundColor Red
+            Write-Host "[GOI Y] Kiem tra ket noi mang hoac dia chi server $ROUTER_URL" -ForegroundColor Yellow
         }
 
-        # 4. Return success response to browser
+        # 4. Return response to browser
+        $cardTitle = if ($savedSuccess) { "THEM TAI KHOAN THANH CONG!" } else { "CANH BAO: CHUA LUU VAO 9ROUTER" }
+        $cardColor = if ($savedSuccess) { "#10b981" } else { "#facc15" }
+        $cardIcon  = if ($savedSuccess) { "&#10004;" } else { "&#9888;" }
+        $cardDesc  = if ($savedSuccess) {
+            "Tai khoan Antigravity da duoc luu thang vao Database SQLite cua 9Router."
+        } else {
+            "Token hop le nhung khong the gui ve 9Router ($errorDetail). Refresh Token da duoc copy vao Clipboard de luu du phong."
+        }
+        $badgeText = if ($savedSuccess) { "9Router Da San Sang" } else { "Luu Y Ket Noi Server" }
+        $badgeBg   = if ($savedSuccess) { "#065f46" } else { "#713f12" }
+        $badgeFg   = if ($savedSuccess) { "#34d399" } else { "#fde047" }
+
         $html = @"
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
-    <title>OAuth Success - 9Router</title>
+    <title>OAuth Result - 9Router</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #09090b; color: #f4f4f5; text-align: center; padding: 60px 20px; }
         .card { max-width: 520px; margin: 0 auto; background: #18181b; border: 1px solid #27272a; border-radius: 16px; padding: 40px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
-        .icon { font-size: 54px; margin-bottom: 16px; color: #10b981; }
-        h2 { margin: 0 0 12px; font-size: 24px; color: #10b981; }
+        .icon { font-size: 54px; margin-bottom: 16px; color: $cardColor; }
+        h2 { margin: 0 0 12px; font-size: 24px; color: $cardColor; }
         p { color: #a1a1aa; line-height: 1.6; font-size: 15px; margin: 8px 0; }
         .email { font-weight: 600; color: #38bdf8; background: #0c4a6e33; padding: 4px 12px; border-radius: 6px; display: inline-block; margin: 10px 0; }
-        .badge { background: #065f46; color: #34d399; font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 999px; display: inline-block; margin-top: 15px; }
+        .badge { background: $badgeBg; color: $badgeFg; font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 999px; display: inline-block; margin-top: 15px; }
     </style>
 </head>
 <body>
     <div class="card">
-        <div class="icon">&#10004;</div>
-        <h2>THEM TAI KHOAN THANH CONG!</h2>
+        <div class="icon">$cardIcon</div>
+        <h2>$cardTitle</h2>
         <div class="email">$userEmail</div>
-        <p>Tai khoan Antigravity da duoc luu thang vao Database cua 9Router.</p>
-        <div class="badge">9Router Da San Sang</div>
+        <p>$cardDesc</p>
+        <div class="badge">$badgeText</div>
         <p style="font-size: 12px; color: #71717a; margin-top: 24px;">Tab nay se tu dong dong sau 3 giay...</p>
     </div>
     <script>
@@ -237,7 +220,7 @@ while ($true) {
                 window.opener.postMessage({ type: "oauth_callback", data: { code: "$code", state: "" } }, "*");
             } catch(e) {}
         }
-        setTimeout(function(){ window.close(); }, 3000);
+        setTimeout(function(){ window.close(); }, 3500);
     </script>
 </body>
 </html>
@@ -248,7 +231,7 @@ while ($true) {
         $res.OutputStream.Write($buffer, 0, $buffer.Length)
         $res.Close()
 
-        # Try to copy refresh token to clipboard
+        # Copy refresh token to clipboard
         try {
             Set-Clipboard -Value $refreshToken
             $clipMsg = "(Da copy Refresh Token vao Clipboard)"
@@ -257,10 +240,14 @@ while ($true) {
         }
 
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor Green
-        Write-Host "[THANH CONG] TAI KHOAN: $userEmail" -ForegroundColor Yellow
+        Write-Host "[HOAN TAT] TAI KHOAN: $userEmail" -ForegroundColor Yellow
         Write-Host "[+] Project ID: aicode-consumers" -ForegroundColor White
         Write-Host "[+] Refresh Token: $($refreshToken.Substring(0, [Math]::Min(25, $refreshToken.Length)))... $clipMsg" -ForegroundColor Gray
-        Write-Host "[+] Tinh trang: Da luu thanh cong vao 9Router!" -ForegroundColor Green
+        if ($savedSuccess) {
+            Write-Host "[+] Tinh trang: Da luu thanh cong vao 9Router SQLite!" -ForegroundColor Green
+        } else {
+            Write-Host "[!] Tinh trang: Chua luu vao server 9Router ($errorDetail)" -ForegroundColor Yellow
+        }
         Write-Host "--------------------------------------------------------------------------------" -ForegroundColor Green
         Write-Host ""
         Write-Host "[*] Cua so van dang tiep tuc lang nghe! Ban co the dang nhap tiep acc khac..." -ForegroundColor Cyan

@@ -235,6 +235,11 @@ export async function POST(request, { params }) {
       return NextResponse.json({ ok: true, authUrl, state });
     }
 
+    if (action === "import" && provider === "antigravity") {
+      const { POST: handleAgImport } = await import("@/app/api/oauth/antigravity/import/route.js");
+      return handleAgImport(request);
+    }
+
     if (action === "exchange") {
       const { code, redirectUri, codeVerifier, state, meta } = body;
 
