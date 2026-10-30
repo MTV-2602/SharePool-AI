@@ -1,9 +1,9 @@
-const { log, err } = require("../logger");
+﻿const { log, err } = require("../logger");
 
 const DEFAULT_LOCAL_ROUTER = "http://localhost:20128";
 const ROUTER_BASE = String(process.env.MITM_ROUTER_BASE || DEFAULT_LOCAL_ROUTER)
   .trim()
-  .replace(/\/+$/, "") || DEFAULT_LOCAL_ROUTER;
+  .replace(/\/+$/, "").replace(/\/v1$/, "") || DEFAULT_LOCAL_ROUTER;
 const API_KEY = process.env.ROUTER_API_KEY;
 
 // Headers that must not be forwarded to 9Router
