@@ -1,7 +1,7 @@
 // Gemini helper functions for translator
 
 import { safeParseJSON } from "../concerns/json.js";
-import { OPENAI_BLOCK } from "../schema/index.js";
+import { DEFAULT_IMAGE_MIME, OPENAI_BLOCK } from "../schema/index.js";
 import { isGemini4Model } from "../../providers/capabilities.js";
 
 // Unsupported JSON Schema constraints that should be removed for Antigravity
@@ -52,6 +52,17 @@ export const DEFAULT_SAFETY_SETTINGS = [
   { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "OFF" }
 ];
 
+function remoteImageMimeType(url) {
+  let pathname;
+  try { pathname = new URL(url).pathname.toLowerCase(); }
+  catch { return DEFAULT_IMAGE_MIME; }
+  if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) return "image/jpeg";
+  if (pathname.endsWith(".webp")) return "image/webp";
+  if (pathname.endsWith(".gif")) return "image/gif";
+  if (pathname.endsWith(".bmp")) return "image/bmp";
+  return DEFAULT_IMAGE_MIME;
+}
+
 // Convert OpenAI content to Gemini parts
 export function convertOpenAIContentToParts(content) {
   const parts = [];
@@ -76,7 +87,7 @@ export function convertOpenAIContentToParts(content) {
         }
       } else if (item.type === OPENAI_BLOCK.IMAGE_URL && item.image_url?.url && (item.image_url.url.startsWith("http://") || item.image_url.url.startsWith("https://"))) {
         parts.push({
-          fileData: { fileUri: item.image_url.url, mimeType: "image/*" }
+          fileData: { fileUri: item.image_url.url, mimeType: remoteImageMimeType(item.image_url.url) }
         });
       } else if (item.type === OPENAI_BLOCK.INPUT_AUDIO && item.input_audio?.data) {
         const format = item.input_audio.format || "wav";
@@ -163,13 +174,7 @@ function removeUnsupportedKeywords(obj, keywords) {
 
     const value = obj[key];
     if (value && typeof value === "object") {
-      if (key === "properties" && !Array.isArray(value)) {
-        for (const sub of Object.values(value)) {
-          removeUnsupportedKeywords(sub, keywords);
-        }
-      } else {
-        removeUnsupportedKeywords(value, keywords);
-      }
+      removeUnsupportedKeywords(value, keywords);
     }
   }
 }
@@ -183,13 +188,9 @@ function convertConstToEnum(obj) {
     delete obj.const;
   }
 
-  for (const [key, value] of Object.entries(obj)) {
+  for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
-      if (key === "properties" && !Array.isArray(value)) {
-        for (const sub of Object.values(value)) convertConstToEnum(sub);
-      } else {
-        convertConstToEnum(value);
-      }
+      convertConstToEnum(value);
     }
   }
 }
@@ -206,13 +207,9 @@ function convertEnumValuesToStrings(obj) {
     }
   }
 
-  for (const [key, value] of Object.entries(obj)) {
+  for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
-      if (key === "properties" && !Array.isArray(value)) {
-        for (const sub of Object.values(value)) convertEnumValuesToStrings(sub);
-      } else {
-        convertEnumValuesToStrings(value);
-      }
+      convertEnumValuesToStrings(value);
     }
   }
 }
@@ -244,13 +241,9 @@ function mergeAllOf(obj) {
     if (merged.required) obj.required = [...(obj.required || []), ...merged.required];
   }
 
-  for (const [key, value] of Object.entries(obj)) {
+  for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
-      if (key === "properties" && !Array.isArray(value)) {
-        for (const sub of Object.values(value)) mergeAllOf(sub);
-      } else {
-        mergeAllOf(value);
-      }
+      mergeAllOf(value);
     }
   }
 }
@@ -306,13 +299,9 @@ function flattenAnyOfOneOf(obj) {
     }
   }
 
-  for (const [key, value] of Object.entries(obj)) {
+  for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
-      if (key === "properties" && !Array.isArray(value)) {
-        for (const sub of Object.values(value)) flattenAnyOfOneOf(sub);
-      } else {
-        flattenAnyOfOneOf(value);
-      }
+      flattenAnyOfOneOf(value);
     }
   }
 }
@@ -323,16 +312,33 @@ function flattenTypeArrays(obj) {
 
   if (obj.type && Array.isArray(obj.type)) {
     const nonNullTypes = obj.type.filter(t => t !== "null");
-    obj.type = nonNullTypes.length > 0 ? nonNullTypes[0] : "string";
+    if (nonNullTypes.length === 0) {
+      obj.type = "string";
+    } else if (nonNullTypes.length === 1) {
+      obj.type = nonNullTypes[0];
+    } else {
+      // Multiple types: choose best fitting type (prefer structural clues then string over boolean/number)
+      if (obj.properties && nonNullTypes.includes("object")) {
+        obj.type = "object";
+      } else if (obj.items && typeof obj.items === "object" && Object.keys(obj.items).length > 0 && obj.items.type && nonNullTypes.includes("array")) {
+        obj.type = "array";
+      } else if (nonNullTypes.includes("string")) {
+        obj.type = "string";
+      } else if (nonNullTypes.includes("number")) {
+        obj.type = "number";
+      } else if (nonNullTypes.includes("integer")) {
+        obj.type = "integer";
+      } else if (nonNullTypes.includes("boolean")) {
+        obj.type = "boolean";
+      } else {
+        obj.type = nonNullTypes[0];
+      }
+    }
   }
 
-  for (const [key, value] of Object.entries(obj)) {
+  for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
-      if (key === "properties" && !Array.isArray(value)) {
-        for (const sub of Object.values(value)) flattenTypeArrays(sub);
-      } else {
-        flattenTypeArrays(value);
-      }
+      flattenTypeArrays(value);
     }
   }
 }
@@ -366,13 +372,9 @@ function convertPrefixItems(obj) {
     delete obj.prefixItems;
   }
 
-  for (const [key, value] of Object.entries(obj)) {
+  for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
-      if (key === "properties" && !Array.isArray(value)) {
-        for (const sub of Object.values(value)) convertPrefixItems(sub);
-      } else {
-        convertPrefixItems(value);
-      }
+      convertPrefixItems(value);
     }
   }
 }
@@ -380,16 +382,56 @@ function convertPrefixItems(obj) {
 // Gemini requires items on every type:"array" schema — fill a permissive placeholder
 function ensureArrayItems(obj) {
   if (!obj || typeof obj !== "object") return;
-  if (obj.type === "array" && !obj.items) {
-    obj.items = { type: "string" };
-  }
-  for (const [key, v] of Object.entries(obj)) {
-    if (!v || typeof v !== "object") continue;
-    if (key === "properties" && !Array.isArray(v)) {
-      for (const sub of Object.values(v)) ensureArrayItems(sub);
-    } else {
-      ensureArrayItems(v);
+  if (obj.type === "array") {
+    if (!obj.items || typeof obj.items !== "object" || Object.keys(obj.items).length === 0) {
+      obj.items = { type: "string" };
+    } else if (!obj.items.type) {
+      if (obj.items.properties) {
+        obj.items.type = "object";
+      } else if (obj.items.items) {
+        obj.items.type = "array";
+      } else {
+        obj.items.type = "string";
+      }
     }
+  }
+  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
+}
+
+// Gemini Schema proto validation rules:
+// 1. Schema.items predicate: $type == Type.ARRAY. If type is not "array", items field MUST NOT exist.
+// 2. Schema.properties / required predicate: $type == Type.OBJECT. If type is not "object", properties and required MUST NOT exist.
+function enforceTypeConstraints(obj) {
+  if (!obj || typeof obj !== "object") return;
+
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === "object") {
+      enforceTypeConstraints(value);
+    }
+  }
+
+  if (obj.type === "array") {
+    delete obj.properties;
+    delete obj.required;
+    if (!obj.items || typeof obj.items !== "object" || Object.keys(obj.items).length === 0) {
+      obj.items = { type: "string" };
+    } else if (!obj.items.type) {
+      if (obj.items.properties) {
+        obj.items.type = "object";
+      } else if (obj.items.items) {
+        obj.items.type = "array";
+      } else {
+        obj.items.type = "string";
+      }
+    }
+  } else {
+    // Non-array schemas MUST NOT carry items
+    delete obj.items;
+  }
+
+  if (obj.type !== "object") {
+    delete obj.properties;
+    delete obj.required;
   }
 }
 
@@ -433,13 +475,9 @@ export function cleanJSONSchemaForAntigravity(schema) {
     }
 
     // Recurse into nested objects
-    for (const [key, value] of Object.entries(obj)) {
+    for (const value of Object.values(obj)) {
       if (value && typeof value === "object") {
-        if (key === "properties" && !Array.isArray(value)) {
-          for (const sub of Object.values(value)) cleanupRequired(sub);
-        } else {
-          cleanupRequired(value);
-        }
+        cleanupRequired(value);
       }
     }
   }
@@ -476,18 +514,17 @@ export function cleanJSONSchemaForAntigravity(schema) {
     }
 
     // Recurse into nested objects
-    for (const [key, value] of Object.entries(obj)) {
+    for (const value of Object.values(obj)) {
       if (value && typeof value === "object") {
-        if (key === "properties" && !Array.isArray(value)) {
-          for (const sub of Object.values(value)) addPlaceholders(sub);
-        } else {
-          addPlaceholders(value);
-        }
+        addPlaceholders(value);
       }
     }
   }
 
   addPlaceholders(cleaned);
+
+  // Phase 6: Enforce Gemini protobuf type predicates (items only on array, properties/required only on object)
+  enforceTypeConstraints(cleaned);
 
   return cleaned;
 }
@@ -499,39 +536,13 @@ export function cleanJSONSchemaForAntigravity(schema) {
 // JSON Schema / OpenAPI document (webfetch, read, MCP) hit this, so rename the key.
 export const GEMINI_RESERVED_RESPONSE_KEYS = { "$ref": "_ref" };
 
-const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
-
-// Recursively rename reserved keys in a tool-result payload (arrays/objects only).
-// Nonmutating. Retains existing key collisions losslessly.
+// Recursively rename reserved keys in a tool-result payload (arrays/objects only)
 export function sanitizeFunctionResponsePayload(value) {
   if (Array.isArray(value)) return value.map(sanitizeFunctionResponsePayload);
   if (!value || typeof value !== "object") return value;
-
   const out = {};
   for (const [key, val] of Object.entries(value)) {
-    let targetKey = hasOwn(GEMINI_RESERVED_RESPONSE_KEYS, key) ? GEMINI_RESERVED_RESPONSE_KEYS[key] : key;
-    if (hasOwn(GEMINI_RESERVED_RESPONSE_KEYS, key)) {
-      if (hasOwn(value, targetKey) || hasOwn(out, targetKey)) {
-        let idx = 1;
-        let candidate = `${targetKey}_${idx}`;
-        while (hasOwn(value, candidate) || hasOwn(out, candidate)) {
-          idx++;
-          candidate = `${targetKey}_${idx}`;
-        }
-        targetKey = candidate;
-      }
-    }
-    const cleanVal = sanitizeFunctionResponsePayload(val);
-    if (targetKey === "__proto__") {
-      Object.defineProperty(out, "__proto__", {
-        value: cleanVal,
-        writable: true,
-        enumerable: true,
-        configurable: true
-      });
-    } else {
-      out[targetKey] = cleanVal;
-    }
+    out[GEMINI_RESERVED_RESPONSE_KEYS[key] ?? key] = sanitizeFunctionResponsePayload(val);
   }
   return out;
 }
@@ -540,13 +551,7 @@ export function sanitizeFunctionResponsePayload(value) {
 function sanitizeFunctionResponsePart(part) {
   const response = part?.functionResponse?.response;
   if (!response || typeof response !== "object") return part;
-  return {
-    ...part,
-    functionResponse: {
-      ...part.functionResponse,
-      response: sanitizeFunctionResponsePayload(response)
-    }
-  };
+  return { ...part, functionResponse: { ...part.functionResponse, response: sanitizeFunctionResponsePayload(response) } };
 }
 
 // Gemini 4 rejects a merged user turn whose last part is not a functionResponse (#4802)
@@ -556,24 +561,19 @@ function moveFunctionResponsesLast(parts) {
   return [...parts.filter(p => !p.functionResponse), ...responses];
 }
 
-// Merge adjacent same-role messages, strip empty parts, ensure initial user turn
+// Merge adjacent same-role messages, strip empty parts, ensure initial and terminal user turns
 export function normalizeGeminiContents(contents, model = null) {
   const frLast = isGemini4Model(model);
   const out = [];
   for (const c of contents || []) {
     if (!c?.role || !Array.isArray(c.parts)) continue;
-    let parts = c.parts.filter(p => p && Object.keys(p).length > 0).map(sanitizeFunctionResponsePart);
+    const parts = c.parts.filter(p => p && Object.keys(p).length > 0).map(sanitizeFunctionResponsePart);
     if (parts.length === 0) continue;
-    if (frLast && c.role === "user") {
-      parts = moveFunctionResponsesLast(parts);
-    }
     const last = out.at(-1);
     if (last?.role === c.role) {
       last.parts.push(...parts);
-      if (frLast && last.role === "user") last.parts = moveFunctionResponsesLast(last.parts);
-    } else {
-      out.push({ ...c, parts: [...parts] });
-    }
+      if (frLast) last.parts = moveFunctionResponsesLast(last.parts);
+    } else out.push({ ...c, parts: [...parts] });
   }
   if (out.length > 0 && out[0].role !== "user") {
     out.unshift({ role: "user", parts: [{ text: "..." }] });

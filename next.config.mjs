@@ -12,7 +12,12 @@ const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
-  serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],
+  // undici must stay external: webpack vendored copy drops the per-request
+  // dispatcher connect options (ecdhCurve) — the built server then RSTs on DPI-shaped networks.
+  serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite", "open", "@aws-sdk/credential-providers", "wreq-js", "undici"],
+  outputFileTracingIncludes: {
+    "*": ["./node_modules/undici/**/*"]
+  },
   turbopack: {
     root: tracingRoot
   },

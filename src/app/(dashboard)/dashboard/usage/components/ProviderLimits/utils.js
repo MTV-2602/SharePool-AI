@@ -376,10 +376,11 @@ export function parseQuotaData(provider, data) {
       case "antigravity":
         if (data.quotas) {
           const entries = Object.entries(data.quotas);
-          const weeklyKeys = new Set(["gemini_weekly", "claude_gpt_weekly"]);
-          const sessionKeys = new Set(["gemini_session", "claude_gpt_session"]);
+          const weeklyKeys = new Set(["gemini_weekly", "claude_gpt_weekly", "gemini_argon_weekly"]);
+          const sessionKeys = new Set(["gemini_session", "claude_gpt_session", "gemini_argon_session"]);
           const summaryKeys = new Set([...weeklyKeys, ...sessionKeys]);
-          const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image"));
+          const argonModels = entries.filter(([k]) => k.startsWith("gemini-") && k.includes("argon"));
+          const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image") && !k.includes("argon"));
           const claudeModels = entries.filter(([k]) => k.startsWith("claude-"));
           const imageModels = entries.filter(([k]) => k.includes("image"));
           const summaryModels = entries.filter(([k]) => summaryKeys.has(k));
@@ -388,6 +389,8 @@ export function parseQuotaData(provider, data) {
           // Summary keys from retrieveUserQuotaSummary
           const hasGeminiWeekly = Boolean(data.quotas.gemini_weekly);
           const hasGeminiSession = Boolean(data.quotas.gemini_session);
+          const hasArgonWeekly = Boolean(data.quotas.gemini_argon_weekly);
+          const hasArgonSession = Boolean(data.quotas.gemini_argon_session);
           const hasClaudeWeekly = Boolean(data.quotas.claude_gpt_weekly);
           const hasClaudeSession = Boolean(data.quotas.claude_gpt_session);
 
@@ -426,6 +429,53 @@ export function parseQuotaData(provider, data) {
           // Show Gemini weekly row if present
           if (hasGeminiWeekly) {
             summaryModels.filter(([k]) => k === "gemini_weekly").forEach(([modelKey, quota]) => {
+              normalizedQuotas.push({
+                name: quota.displayName || modelKey,
+                modelKey,
+                used: quota.used || 0,
+                total: quota.total || 0,
+                resetAt: quota.resetAt || null,
+                remainingPercentage: quota.remainingPercentage,
+              });
+            });
+          }
+
+          // 1b. Gemini 4 Argon Family (separate quota bucket on Pro plans):
+          if (hasArgonSession) {
+            summaryModels.filter(([k]) => k === "gemini_argon_session").forEach(([modelKey, quota]) => {
+              normalizedQuotas.push({
+                name: quota.displayName || modelKey,
+                modelKey,
+                used: quota.used || 0,
+                total: quota.total || 0,
+                resetAt: quota.resetAt || null,
+                remainingPercentage: quota.remainingPercentage,
+              });
+            });
+          } else if (!hasArgonWeekly && argonModels.length > 0) {
+            const rep = argonModels.reduce((min, cur) =>
+              (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
+            )[1];
+            const geminiSessionResetAt = data.quotas.gemini_session?.resetAt;
+            const geminiWeeklyResetAt = data.quotas.gemini_weekly?.resetAt;
+            const sharesMainGeminiPool =
+              (hasGeminiSession && rep.resetAt === geminiSessionResetAt && rep.remainingPercentage === data.quotas.gemini_session?.remainingPercentage) ||
+              (hasGeminiWeekly && rep.resetAt === geminiWeeklyResetAt && rep.remainingPercentage === data.quotas.gemini_weekly?.remainingPercentage);
+
+            if (!sharesMainGeminiPool) {
+              normalizedQuotas.push({
+                name: "Gemini 4 Argon",
+                modelKey: "gemini_argon",
+                used: rep.used || 0,
+                total: rep.total || 0,
+                resetAt: rep.resetAt || null,
+                remainingPercentage: rep.remainingPercentage,
+              });
+            }
+          }
+
+          if (hasArgonWeekly) {
+            summaryModels.filter(([k]) => k === "gemini_argon_weekly").forEach(([modelKey, quota]) => {
               normalizedQuotas.push({
                 name: quota.displayName || modelKey,
                 modelKey,
@@ -643,8 +693,14 @@ export function parseQuotaData(provider, data) {
     const orderMap = new Map(modelOrder.map((m, i) => [m.id, i]));
     
     normalizedQuotas.sort((a, b) => {
-      const keyA = a.modelKey || a.name;
-      const keyB = b.modelKey || b.name;
+      let keyA = a.modelKey || a.name;
+      let keyB = b.modelKey || b.name;
+      if (keyA === "gemini_argon" || keyA === "gemini_argon_session") keyA = "gemini-4-argon-high";
+      if (keyA === "gemini" || keyA === "gemini_session") keyA = "gemini-3.8-flash-high";
+      if (keyA === "claude" || keyA === "claude_gpt_session") keyA = "claude-sonnet-4-6";
+      if (keyB === "gemini_argon" || keyB === "gemini_argon_session") keyB = "gemini-4-argon-high";
+      if (keyB === "gemini" || keyB === "gemini_session") keyB = "gemini-3.8-flash-high";
+      if (keyB === "claude" || keyB === "claude_gpt_session") keyB = "claude-sonnet-4-6";
       const orderA = orderMap.get(keyA) ?? 999;
       const orderB = orderMap.get(keyB) ?? 999;
       return orderA - orderB;
