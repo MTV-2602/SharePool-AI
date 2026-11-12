@@ -5,22 +5,24 @@ import { openAICompletionToResponses } from "../../translator/concerns/responses
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
+import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse, openAICompletionToGeminiResponse, isGeminiFormat } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
     return openAICompletionToClaudeMessage(responseBody);
   }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
-    return openAICompletionToResponses(responseBody);
+    return openAICompletionToResponses(responseBody, customToolNames);
   }
   if (targetFormat === FORMATS.OPENAI && isGeminiFormat(sourceFormat)) {
     return openAICompletionToGeminiResponse(responseBody);
@@ -155,7 +157,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -166,6 +168,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     if (!parsed) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    }
+    if (parsed.error) {
+      const upstreamStatus = Number(parsed.error.status);
+      const status = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599
+        ? upstreamStatus
+        : HTTP_STATUS.BAD_GATEWAY;
+      appendLog({ status: `FAILED ${status}` });
+      return createErrorResult(status, parsed.error.message || "Upstream SSE stream failed");
     }
     responseBody = parsed;
   } else {
@@ -195,7 +205,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
+    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   const isResponsesApiResponse = sourceFormat === FORMATS.OPENAI_RESPONSES && translatedResponse?.object === "response";
@@ -263,8 +273,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   return {
     success: true,
-    response: new Response(JSON.stringify(translatedResponse), {
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+    response: new Response(JSON.stringify(restoreToolNames(translatedResponse, toolNameMap)), {
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", ...upstreamResponseHeaders(providerResponse.headers) }
     })
   };
 }

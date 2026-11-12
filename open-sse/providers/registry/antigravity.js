@@ -17,7 +17,7 @@ export default {
     deprecationNotice: "RISK_NOTICE",
   },
   category: "oauth",
-  serviceKinds: ["llm", "image"],
+  serviceKinds: ["llm", "image", "webSearch"],
   transport: {
     baseUrls: [
       ANTIGRAVITY_IDE_BASE_URL,
@@ -99,6 +99,9 @@ export default {
     { id: "gemini-3.7-flash",            name: "Gemini 3.7 Flash",            upstreamModelId: "gemini-3.8-flash-high(high)" },
     { id: "gemini-3.7-flash-medium",     name: "Gemini 3.7 Flash (Medium)",   upstreamModelId: "gemini-3.8-flash-medium(medium)" },
     { id: "gemini-3.7-flash-low",        name: "Gemini 3.7 Flash (Low)",      upstreamModelId: "gemini-3.8-flash-low(low)" },
+    { id: "gemini-3.6-flash-high",       name: "Gemini 3.6 Flash (High)",     upstreamModelId: "gemini-3.6-flash-tiered(high)" },
+    { id: "gemini-3.6-flash-medium",     name: "Gemini 3.6 Flash (Medium)",   upstreamModelId: "gemini-3.6-flash-tiered(medium)" },
+    { id: "gemini-3.6-flash-low",        name: "Gemini 3.6 Flash (Low)",      upstreamModelId: "gemini-3.6-flash-tiered(low)" },
 
     // ── Image generation ──────────────────────────────────────────────────────
     { id: "gemini-3.1-flash-image", name: "Gemini 3.1 Flash (Image)", kind: "image", imageGen: true, capabilities: ["textToImage"] },
@@ -121,6 +124,11 @@ export default {
     onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
     loadCodeAssistUserAgent: ANTIGRAVITY_IDE_USER_AGENT,
     refreshLeadMs: 300000,
+  },
+  searchViaChat: {
+    defaultModel: "gemini-2.5-flash",
+    endpoint: `${ANTIGRAVITY_IDE_BASE_URL}/v1internal:generateContent`,
+    freeTier: "Free — Google Search grounding through an Antigravity OAuth account.",
   },
   features: {
     usage: true,

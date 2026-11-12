@@ -1,5 +1,6 @@
 import { PROVIDERS } from "../config/providers.js";
 import { OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import { ROLE } from "../translator/schema/roles.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
 const OPENAI_COMPATIBLE_DEFAULTS = {
@@ -19,9 +20,15 @@ function isAnthropicCompatible(provider) {
   return typeof provider === "string" && provider.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
 }
 
-function getOpenAICompatibleType(provider) {
-  if (!isOpenAICompatible(provider)) return "chat";
-  return provider.includes("responses") ? "responses" : "chat";
+// Resolve the API type (chat vs responses) for an openai-compatible node.
+// The stored apiType on the connection's providerSpecificData (kept in sync with
+// the node on create/update) is authoritative. Falls back to the node ID
+// substring for legacy nodes created before apiType was persisted — their IDs
+// embed the type: openai-compatible-<chat|responses>-<uuid>.
+export function resolveOpenAICompatibleApiType(provider, credentials = null) {
+  const stored = credentials?.providerSpecificData?.apiType;
+  if (stored === "chat" || stored === "responses") return stored;
+  return typeof provider === "string" && provider.includes("responses") ? "responses" : "chat";
 }
 
 // Detect request format from body structure
@@ -105,9 +112,9 @@ export function detectFormat(body) {
 }
 
 // Get provider config (internal — no external runtime consumer)
-function getProviderConfig(provider) {
+function getProviderConfig(provider, credentials = null) {
   if (isOpenAICompatible(provider)) {
-    const apiType = getOpenAICompatibleType(provider);
+    const apiType = resolveOpenAICompatibleApiType(provider, credentials);
     return {
       ...PROVIDERS.openai,
       format: apiType === "responses" ? "openai-responses" : "openai",
@@ -125,14 +132,14 @@ function getProviderConfig(provider) {
 }
 
 // Get target format for provider
-export function getTargetFormat(provider) {
+export function getTargetFormat(provider, credentials = null) {
   if (isOpenAICompatible(provider)) {
-    return getOpenAICompatibleType(provider) === "responses" ? "openai-responses" : "openai";
+    return resolveOpenAICompatibleApiType(provider, credentials) === "responses" ? "openai-responses" : "openai";
   }
   if (isAnthropicCompatible(provider)) {
     return "claude";
   }
-  const config = getProviderConfig(provider);
+  const config = getProviderConfig(provider, credentials);
   return config.format || "openai";
 }
 
@@ -160,9 +167,10 @@ export function hasThinkingConfig(body) {
 }
 
 // Normalize provider-native thinking config based on last message role.
-// OpenAI reasoning_effort is request-level and must survive tool-result turns.
+// OpenAI tool results continue a user turn and must retain its thinking intent.
 export function normalizeThinkingConfig(body) {
-  if (!isLastMessageFromUser(body)) {
+  const lastMessage = body.messages?.[body.messages.length - 1];
+  if (!isLastMessageFromUser(body) && lastMessage?.role !== ROLE.TOOL) {
     delete body.thinking;
   }
   return body;

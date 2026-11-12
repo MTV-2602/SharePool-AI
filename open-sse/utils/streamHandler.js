@@ -192,6 +192,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
+  let abortMessage = "upstream connection lost";
   const t0 = Date.now();
   const tag = "STREAM";
   const clearStall = () => {
@@ -201,6 +202,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     clearStall();
     stallTimer = setTimeout(() => {
       stallTimer = null;
+      abortMessage = "stream stall timeout";
       dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
       streamController.handleError?.(new Error("stream stall timeout"));
       streamController.abort?.();
@@ -247,7 +249,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
     wrappedController,
-    onAbortTerminal
+    onAbortTerminal ? () => onAbortTerminal(abortMessage) : null
   );
 }
 

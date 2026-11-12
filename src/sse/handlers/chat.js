@@ -8,12 +8,13 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
-import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
+import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -47,18 +48,17 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!clientRawRequest) {
     const url = new URL(request.url);
     const headers = Object.fromEntries(request.headers.entries());
-    cacheClaudeHeaders(headers);
     clientRawRequest = {
       endpoint: url.pathname,
       headers,
     };
-  } else if (clientRawRequest.headers) {
-    cacheClaudeHeaders(clientRawRequest.headers);
   }
 
   // Log request endpoint and model
   const url = new URL(request.url);
-  const modelStr = body.model;
+  // Claude Code marks a 1M-context request as `<model>[1m]`; strip marker so resolution succeeds
+  const { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
+  if (contextMarker) body.model = modelStr;
 
   // Count messages (support both messages[] and input[] formats)
   const msgCount = body.messages?.length || body.input?.length || 0;
@@ -233,6 +233,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let lastHeaders = null;
 
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
@@ -243,14 +244,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);
         return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable", lastHeaders);
     }
 
     // Log account selection
@@ -350,6 +351,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
+      lastHeaders = upstreamResponseHeaders(result.response?.headers);
       continue;
     }
 
