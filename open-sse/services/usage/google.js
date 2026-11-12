@@ -186,6 +186,9 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
 
     if ((!isFreeTier || !hasSummaryQuotas) && data.models) {
       const importantModels = [
+        'gemini-4-carbon-high',
+        'gemini-4-carbon-medium',
+        'gemini-4-carbon-low',
         'gemini-4-argon-high',
         'gemini-4-argon-medium',
         'gemini-4-argon-low',

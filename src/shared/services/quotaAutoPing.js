@@ -211,7 +211,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   const usage = await handler.getUsage(connection.accessToken, proxyOptions);
   const quotas = usage?.quotas || {};
   const quota = quotas?.[providerConfig.quotaKey];
-  const resetAt = quota?.resetAt;
+  let resetAt = quota?.resetAt;
   if (!resetAt) return;
 
   state.resetCache[key] = resetAt;
@@ -220,14 +220,28 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   if (isQuotaExhausted(quota)) return;
 
   const now = Date.now();
-  const resetKey = normalizeResetKey(resetAt);
+  let resetKey = normalizeResetKey(resetAt);
   const lastPingedResetKey = connection.lastPingedResetKey || normalizeResetKey(connection.lastPingedResetAt);
+
+  // A tick may miss Claude's short lead window and observe the next reset.
+  // Catch up the unpinged cached deadline, without marking that next cycle
+  // as pinged. Keep the fresh reset in resetCache for subsequent ticks.
+  if (!providerConfig.pingWhenResetAtSlides && cachedReset
+    && lastPingedResetKey !== normalizeResetKey(cachedReset)
+    && shouldPingForReset(providerConfig, cachedReset, cachedReset, now)) {
+    resetAt = cachedReset;
+    resetKey = normalizeResetKey(cachedReset);
+  }
 
   // Claude waits for reset. Codex pings only when resetAt slides, which means the 5h window is inactive.
   if (!shouldPingForReset(providerConfig, cachedReset, resetAt, now)) return;
   if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)) return;
   if (lastPingedResetKey === resetKey) return;
 
+  // Retain a caught-up deadline on HTTP failures or thrown transport errors so
+  // the failure cooldown delays its retry rather than discarding the cycle.
+  const catchingUpReset = resetAt !== quota?.resetAt;
+  if (catchingUpReset) state.resetCache[key] = resetAt;
   const ok = await handler.sendPing(connection, providerConfig, proxyOptions, deps);
   if (!ok) {
     // Do not mark reset as pinged unless upstream accepted the tiny request.
@@ -236,6 +250,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
     return;
   }
 
+  if (catchingUpReset) state.resetCache[key] = quota.resetAt;
   delete state.failureCache[key];
   await deps.updateProviderConnection(connection.id, {
     lastPingedResetAt: resetAt,

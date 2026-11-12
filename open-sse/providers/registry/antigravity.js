@@ -75,6 +75,12 @@ export default {
     { id: "claude-opus-4-6-thinking",    name: "Claude Opus 4.6 (Thinking)",   upstreamModelId: "claude-opus-4-6-thinking" },
     { id: "gpt-oss-120b-medium",         name: "GPT-OSS 120B (Medium)" },
 
+    // ── Gemini 4 Carbon ───────────────────────────────────────────────────────
+    { id: "gemini-4-carbon-high",        name: "Gemini 4 Carbon (High)",      upstreamModelId: "gemini-4-carbon-high(high)" },
+    { id: "gemini-4-carbon-medium",      name: "Gemini 4 Carbon (Medium)",    upstreamModelId: "gemini-4-carbon-medium(medium)" },
+    { id: "gemini-4-carbon-low",         name: "Gemini 4 Carbon (Low)",       upstreamModelId: "gemini-4-carbon-low(low)" },
+    { id: "gemini-4-carbon",             name: "Gemini 4 Carbon",             upstreamModelId: "gemini-4-carbon-medium(medium)" },
+
     // ── Gemini 4 Argon ────────────────────────────────────────────────────────
     { id: "gemini-4-argon-high",         name: "Gemini 4 Argon (High)",       upstreamModelId: "gemini-4-argon-high(high)" },
     { id: "gemini-4-argon-medium",       name: "Gemini 4 Argon (Medium)",     upstreamModelId: "gemini-4-argon-medium(medium)" },
