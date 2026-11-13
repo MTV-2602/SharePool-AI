@@ -1,4 +1,4 @@
-import { extractUsage } from "open-sse/utils/usageTracking.js";
+import { extractUsage, mergeUsage, canonicalizeUsage } from "open-sse/utils/usageTracking.js";
 import { getDiskCache, setDiskCache } from "../db/helpers/diskCache.js";
 import { 
   getClientKeyByToken, 
@@ -190,7 +190,7 @@ const multiplierCache = new Map();
 /**
  * Log token usage for a client key after request completion.
  */
-export async function logClientKeyUsage(clientKeyId, model, promptTokens, completionTokens) {
+export async function logClientKeyUsage(clientKeyId, model, promptTokens, completionTokens, provider = null) {
   let multiplier = 1;
   try {
     let mm = multiplierCache.get(clientKeyId);
@@ -237,6 +237,7 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
     await logClientKeyUsageInDb({
       client_key_id: clientKeyId,
       model,
+      provider,
       prompt_tokens: promptTokens,
       completion_tokens: completionTokens,
       billed_tokens: billedTokens,
@@ -346,6 +347,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
 
   const internalModel = response.headers.get("x-9r-actual-model");
   const actualModel = internalModel || model || "unknown";
+  const actualProvider = response.headers.get("x-9r-actual-provider") || null;
 
   const contentType = response.headers.get('content-type') || '';
   const isStream = contentType.includes('text/event-stream');
@@ -355,8 +357,30 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
     const decoder = new TextDecoder();
 
     let buffer = '';
-    let hasLogged = false;
+    let accumulatedUsage = null;
     let accumulatedLen = 0;
+    let hasLogged = false;
+
+    const recordUsageOnce = () => {
+      if (hasLogged) return;
+      hasLogged = true;
+
+      try {
+        if (accumulatedUsage && (accumulatedUsage.prompt_tokens > 0 || accumulatedUsage.completion_tokens > 0 || accumulatedUsage.cached_tokens > 0 || accumulatedUsage.input_tokens > 0 || accumulatedUsage.output_tokens > 0)) {
+          const canonical = canonicalizeUsage(accumulatedUsage) || accumulatedUsage;
+          const promptTokens = canonical.prompt_tokens || 0;
+          const completionTokens = canonical.completion_tokens || 0;
+          logClientKeyUsage(clientKeyId, actualModel, promptTokens, completionTokens, actualProvider)
+            .catch(err => console.error('[ClientKeyAuth] Failed to log usage:', err.message));
+        } else {
+          const completionTokens = Math.max(1, Math.floor(accumulatedLen / 4));
+          logClientKeyUsage(clientKeyId, actualModel, fallbackPromptTokens, completionTokens, actualProvider)
+            .catch(err => console.error('[ClientKeyAuth] Failed to log fallback usage:', err.message));
+        }
+      } catch (err) {
+        console.error('[ClientKeyAuth] Failed to calculate and log usage:', err.message);
+      }
+    };
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -375,12 +399,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                         accumulatedLen += extractTextFromChunk(parsed).length;
                         const usage = extractUsage(parsed);
                         if (usage) {
-                          const { prompt_tokens = 0, completion_tokens = 0 } = usage;
-                          if (prompt_tokens > 0 || completion_tokens > 0) {
-                            hasLogged = true;
-                            logClientKeyUsage(clientKeyId, actualModel, prompt_tokens, completion_tokens)
-                              .catch(err => console.error('[ClientKeyAuth] Failed to log usage:', err.message));
-                          }
+                          accumulatedUsage = mergeUsage(accumulatedUsage, usage);
                         }
                       } catch (e) {}
                     }
@@ -388,17 +407,17 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                 }
               }
 
-              if (!hasLogged) {
-                const completionTokens = Math.max(1, Math.floor(accumulatedLen / 4));
-                logClientKeyUsage(clientKeyId, actualModel, fallbackPromptTokens, completionTokens)
-                  .catch(err => console.error('[ClientKeyAuth] Failed to log fallback usage:', err.message));
-              }
+              recordUsageOnce();
 
-              controller.close();
+              try {
+                controller.close();
+              } catch (e) {}
               break;
             }
 
-            controller.enqueue(value);
+            try {
+              controller.enqueue(value);
+            } catch (e) {}
 
             const text = decoder.decode(value, { stream: true });
             buffer += text;
@@ -415,12 +434,7 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
                     accumulatedLen += extractTextFromChunk(parsed).length;
                     const usage = extractUsage(parsed);
                     if (usage) {
-                      const { prompt_tokens = 0, completion_tokens = 0 } = usage;
-                      if (prompt_tokens > 0 || completion_tokens > 0) {
-                        hasLogged = true;
-                        logClientKeyUsage(clientKeyId, actualModel, prompt_tokens, completion_tokens)
-                          .catch(err => console.error('[ClientKeyAuth] Failed to log usage:', err.message));
-                      }
+                      accumulatedUsage = mergeUsage(accumulatedUsage, usage);
                     }
                   } catch (e) {}
                 }
@@ -429,8 +443,13 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
           }
         } catch (err) {
           console.error('[ClientKeyAuth] Stream processing error:', err);
+          recordUsageOnce();
           try { controller.error(err); } catch {}
         }
+      },
+      cancel() {
+        recordUsageOnce();
+        try { reader.cancel(); } catch {}
       }
     });
 
@@ -445,17 +464,17 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
       const body = await clonedResponse.json();
       
       let usage = extractUsage(body);
-      if (!usage) {
-        const content = body.choices?.[0]?.message?.content || body.content || "";
-        usage = {
-          prompt_tokens: fallbackPromptTokens,
-          completion_tokens: Math.max(1, Math.floor(content.length / 4))
-        };
-      }
-      if (usage) {
-        const { prompt_tokens = 0, completion_tokens = 0 } = usage;
-        logClientKeyUsage(clientKeyId, actualModel, prompt_tokens, completion_tokens)
+      if (usage && (usage.prompt_tokens > 0 || usage.completion_tokens > 0 || usage.input_tokens > 0 || usage.output_tokens > 0)) {
+        const canonical = canonicalizeUsage(usage) || usage;
+        const promptTokens = canonical.prompt_tokens || 0;
+        const completionTokens = canonical.completion_tokens || 0;
+        logClientKeyUsage(clientKeyId, actualModel, promptTokens, completionTokens, actualProvider)
           .catch(err => console.error('[ClientKeyAuth] Failed to log non-stream usage:', err.message));
+      } else {
+        const content = body.choices?.[0]?.message?.content || body.content || "";
+        const completionTokens = Math.max(1, Math.floor(content.length / 4));
+        logClientKeyUsage(clientKeyId, actualModel, fallbackPromptTokens, completionTokens, actualProvider)
+          .catch(err => console.error('[ClientKeyAuth] Failed to log non-stream fallback usage:', err.message));
       }
     } catch (err) {
       console.error('[ClientKeyAuth] Failed to parse non-stream response for logging:', err.message);

@@ -110,13 +110,27 @@ export default function LoginPage() {
             m = m.slice(12);
           } else if (m.startsWith("codex/")) {
             m = m.slice(6);
+          } else if (m.startsWith("cx/")) {
+            m = m.slice(3);
+          } else if (m.startsWith("claude/")) {
+            m = m.slice(7);
+          } else if (m.startsWith("cc/")) {
+            m = m.slice(3);
+          } else if (m.startsWith("anthropic/")) {
+            m = m.slice(10);
           }
           return m;
         };
-        const normalizedLogs = (data.logs || []).map(log => ({ ...log, model: cleanModelName(log.model) }));
+        const normalizedLogs = (data.logs || []).map(log => ({
+          ...log,
+          rawModel: log.model,
+          model: cleanModelName(log.model)
+        }));
         const normalizedSummary = (data.summary || []).reduce((acc, item) => {
-          const modelName = cleanModelName(item.model);
-          const existing = acc.find(x => x.model === modelName);
+          const rawModel = item.model || "";
+          const modelName = cleanModelName(rawModel);
+          const itemProvider = item.provider || "";
+          const existing = acc.find(x => x.model === modelName && (x.provider || "") === itemProvider);
           if (existing) {
             existing.prompt_tokens += Number(item.prompt_tokens) || 0;
             existing.completion_tokens += Number(item.completion_tokens) || 0;
@@ -125,7 +139,9 @@ export default function LoginPage() {
           } else {
             acc.push({
               ...item,
+              rawModel,
               model: modelName,
+              provider: item.provider || null,
               prompt_tokens: Number(item.prompt_tokens) || 0,
               completion_tokens: Number(item.completion_tokens) || 0,
               billed_tokens: Number(item.billed_tokens) || 0,
@@ -329,7 +345,17 @@ export default function LoginPage() {
     setTimeout(() => setCopiedField(""), 2000);
   };
 
-  const getProviderFromModel = (model) => {
+  const getProviderFromModel = (model, explicitProvider) => {
+    if (explicitProvider) {
+      const p = String(explicitProvider).toLowerCase().trim();
+      if (p === "antigravity" || p === "gemini") return "Antigravity";
+      if (p === "codex") return "Codex";
+      if (p === "anthropic" || p === "claude") return "Anthropic";
+      if (p === "openai") return "OpenAI";
+      if (p === "deepseek") return "DeepSeek";
+      if (p === "meta" || p === "llama") return "Meta";
+      return explicitProvider.charAt(0).toUpperCase() + explicitProvider.slice(1);
+    }
     if (!model) return "N/A";
     const m = model.toLowerCase();
     
@@ -361,7 +387,7 @@ export default function LoginPage() {
     }
 
     if (m.includes("gpt-") || m.startsWith("gpt") || m.includes("o1") || m.includes("o3")) return "OpenAI";
-    if (m.includes("claude")) return "Anthropic";
+    if (m.includes("claude") || m.startsWith("cc/")) return "Anthropic";
     if (m.includes("deepseek")) return "DeepSeek";
     if (m.includes("llama") || m.includes("meta")) return "Meta";
     return "Custom/Other";
@@ -379,7 +405,7 @@ export default function LoginPage() {
   const getProviderSummary = () => {
     const summary = {};
     usageSummary.forEach((log) => {
-      const provider = getProviderFromModel(log.model);
+      const provider = getProviderFromModel(log.rawModel || log.model, log.provider);
       if (!summary[provider]) {
         summary[provider] = {
           name: provider,
@@ -664,7 +690,7 @@ export default function LoginPage() {
                               })
                             : "Không rõ";
                           
-                          const provider = getProviderFromModel(log.model);
+                          const provider = getProviderFromModel(log.rawModel || log.model, log.provider);
                           
                           let modelBadgeColor = "bg-surface-3 text-text-muted border border-border";
                           if (log.model?.includes("gemini")) {

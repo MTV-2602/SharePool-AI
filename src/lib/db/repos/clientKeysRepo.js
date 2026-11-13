@@ -117,28 +117,52 @@ export async function logClientKeyUsage(logData) {
   const id = logData.id || crypto.randomUUID();
   const keyId = logData.client_key_id || logData.key_id;
   const model = logData.model || "";
+  const provider = logData.provider || null;
   const promptTokens = logData.prompt_tokens || 0;
   const completionTokens = logData.completion_tokens || 0;
   const billedTokens = logData.billed_tokens || (promptTokens + completionTokens) || logData.tokens || 0;
   const cost = logData.cost || 0;
   const createdAt = logData.created_at || new Date().toISOString();
 
-  db.run(`
-    INSERT INTO client_key_usage_logs (
-      id, client_key_id, key_id, model, prompt_tokens, completion_tokens, billed_tokens, tokens, cost, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    id,
-    keyId,
-    keyId,
-    model,
-    promptTokens,
-    completionTokens,
-    billedTokens,
-    billedTokens,
-    cost,
-    createdAt
-  ]);
+  const cols = db.all("PRAGMA table_info(client_key_usage_logs)");
+  const hasProvider = cols.some((c) => c.name === "provider");
+
+  if (hasProvider) {
+    db.run(`
+      INSERT INTO client_key_usage_logs (
+        id, client_key_id, key_id, model, provider, prompt_tokens, completion_tokens, billed_tokens, tokens, cost, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      id,
+      keyId,
+      keyId,
+      model,
+      provider,
+      promptTokens,
+      completionTokens,
+      billedTokens,
+      billedTokens,
+      cost,
+      createdAt
+    ]);
+  } else {
+    db.run(`
+      INSERT INTO client_key_usage_logs (
+        id, client_key_id, key_id, model, prompt_tokens, completion_tokens, billed_tokens, tokens, cost, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      id,
+      keyId,
+      keyId,
+      model,
+      promptTokens,
+      completionTokens,
+      billedTokens,
+      billedTokens,
+      cost,
+      createdAt
+    ]);
+  }
 }
 
 export async function getClientKeyUsageLogs(keyId, limit = 100) {
@@ -151,6 +175,24 @@ export async function getClientKeyUsageLogs(keyId, limit = 100) {
 
 export async function getClientKeyUsageSummary(keyId) {
   const db = await getAdapter();
+  const cols = db.all("PRAGMA table_info(client_key_usage_logs)");
+  const hasProvider = cols.some((c) => c.name === "provider");
+
+  if (hasProvider) {
+    return db.all(`
+      SELECT 
+        model,
+        provider,
+        COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+        COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+        COALESCE(SUM(billed_tokens), 0) AS billed_tokens,
+        COUNT(*) AS count
+      FROM client_key_usage_logs
+      WHERE client_key_id = ? OR key_id = ?
+      GROUP BY model, provider
+    `, [keyId, keyId]);
+  }
+
   return db.all(`
     SELECT 
       model,
