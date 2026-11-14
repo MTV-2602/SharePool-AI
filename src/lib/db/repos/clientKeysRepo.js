@@ -105,6 +105,18 @@ export async function deleteClientKey(id) {
   return true;
 }
 
+let hasProviderColumnCached = null;
+function checkHasProviderColumn(db) {
+  if (hasProviderColumnCached !== null) return hasProviderColumnCached;
+  try {
+    const cols = db.all("PRAGMA table_info(client_key_usage_logs)");
+    hasProviderColumnCached = cols.some((c) => c.name === "provider");
+  } catch {
+    hasProviderColumnCached = false;
+  }
+  return hasProviderColumnCached;
+}
+
 export async function incrementClientKeyTokens(keyId, tokens) {
   const db = await getAdapter();
   db.run("UPDATE client_keys SET used_tokens = used_tokens + ? WHERE id = ?", [tokens, keyId]);
@@ -124,8 +136,7 @@ export async function logClientKeyUsage(logData) {
   const cost = logData.cost || 0;
   const createdAt = logData.created_at || new Date().toISOString();
 
-  const cols = db.all("PRAGMA table_info(client_key_usage_logs)");
-  const hasProvider = cols.some((c) => c.name === "provider");
+  const hasProvider = checkHasProviderColumn(db);
 
   if (hasProvider) {
     db.run(`
@@ -175,21 +186,20 @@ export async function getClientKeyUsageLogs(keyId, limit = 100) {
 
 export async function getClientKeyUsageSummary(keyId) {
   const db = await getAdapter();
-  const cols = db.all("PRAGMA table_info(client_key_usage_logs)");
-  const hasProvider = cols.some((c) => c.name === "provider");
+  const hasProvider = checkHasProviderColumn(db);
 
   if (hasProvider) {
     return db.all(`
       SELECT 
         model,
-        provider,
+        COALESCE(provider, '') AS provider,
         COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
         COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
         COALESCE(SUM(billed_tokens), 0) AS billed_tokens,
         COUNT(*) AS count
       FROM client_key_usage_logs
       WHERE client_key_id = ? OR key_id = ?
-      GROUP BY model, provider
+      GROUP BY model, COALESCE(provider, '')
     `, [keyId, keyId]);
   }
 

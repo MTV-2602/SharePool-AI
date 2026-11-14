@@ -273,13 +273,14 @@ function transformOpenAISSEToGeminiSSE(upstreamResponse, model) {
     // No flush() needed: Gemini SSE ends by stream close, not a sentinel
   });
 
+  const responseHeaders = new Headers(upstreamResponse.headers);
+  responseHeaders.set("Content-Type", "text/event-stream");
+  responseHeaders.set("Cache-Control", "no-cache");
+  responseHeaders.set("Access-Control-Allow-Origin", "*");
+
   return new Response(upstreamResponse.body.pipeThrough(transformStream), {
     status: 200,
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Access-Control-Allow-Origin": "*",
-    },
+    headers: responseHeaders,
   });
 }
 
@@ -290,6 +291,10 @@ function transformOpenAISSEToGeminiSSE(upstreamResponse, model) {
 async function convertOpenAIResponseToGemini(response, model) {
   if (!response.ok) return response;
 
+  const responseHeaders = new Headers(response.headers);
+  responseHeaders.set("Content-Type", "application/json");
+  responseHeaders.set("Access-Control-Allow-Origin", "*");
+
   let body;
   try {
     body = await response.json();
@@ -298,18 +303,18 @@ async function convertOpenAIResponseToGemini(response, model) {
   }
 
   if (body.candidates) return Response.json(body, {
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+    headers: responseHeaders
   });
 
   if (body.error) return Response.json(body, {
     status: response.status,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+    headers: responseHeaders
   });
 
   const choice = body.choices?.[0];
   if (!choice) {
     return Response.json(body, {
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      headers: responseHeaders
     });
   }
 
@@ -347,6 +352,6 @@ async function convertOpenAIResponseToGemini(response, model) {
   }
 
   return Response.json(geminiResponse, {
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+    headers: responseHeaders
   });
 }

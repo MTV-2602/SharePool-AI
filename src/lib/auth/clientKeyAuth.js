@@ -338,6 +338,43 @@ function extractTextFromChunk(parsed) {
   return "";
 }
 
+function inferProviderFromModel(model) {
+  if (!model) return null;
+  const m = String(model).toLowerCase().trim();
+  if (
+    m.startsWith("codex/") ||
+    m.startsWith("cx/") ||
+    m.includes("gpt-6") ||
+    m.includes("gpt-5.6") ||
+    m.includes("gpt-5.5") ||
+    m.includes("gpt-daybreak") ||
+    m.includes("gpt-reserve") ||
+    m.includes("codex-auto")
+  ) {
+    return "codex";
+  }
+  if (
+    m.startsWith("antigravity/") ||
+    m.startsWith("ag/") ||
+    m.includes("gemini") ||
+    m.includes("gpt-oss") ||
+    m.includes("claude-sonnet-4") ||
+    m.includes("claude-opus-4") ||
+    m === "gpt-5.4"
+  ) {
+    return "antigravity";
+  }
+  if (m.includes("claude") || m.startsWith("cc/") || m.startsWith("claude/") || m.startsWith("anthropic/")) {
+    return "anthropic";
+  }
+  if (m.includes("gpt-") || m.startsWith("gpt") || m.includes("o1") || m.includes("o3")) {
+    return "openai";
+  }
+  if (m.includes("deepseek")) return "deepseek";
+  if (m.includes("llama") || m.includes("meta")) return "meta";
+  return null;
+}
+
 export async function wrapResponseWithClientKeyLogging(response, clientKeyId, model, reqBodyOrTokens = null) {
   if (!response.ok) return response;
 
@@ -347,7 +384,8 @@ export async function wrapResponseWithClientKeyLogging(response, clientKeyId, mo
 
   const internalModel = response.headers.get("x-9r-actual-model");
   const actualModel = internalModel || model || "unknown";
-  const actualProvider = response.headers.get("x-9r-actual-provider") || null;
+  const headerProvider = response.headers.get("x-9r-actual-provider");
+  const actualProvider = headerProvider || inferProviderFromModel(actualModel || model) || null;
 
   const contentType = response.headers.get('content-type') || '';
   const isStream = contentType.includes('text/event-stream');
