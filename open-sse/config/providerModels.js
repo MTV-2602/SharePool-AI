@@ -112,6 +112,32 @@ export function getModelMeta(aliasOrId, modelId) {
 
 export function registerLiveAntigravityModels(modelIds = []) {}
 
+// Extra request params a model declares (registry `params`), e.g. ["input_type"].
+// Empty array when the model declares none — callers treat that as "no extra params".
+export function getModelParams(aliasOrId, modelId) {
+  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
+  return modelParams(findModel(PROVIDER_MODELS[alias], modelId, alias));
+}
+
+// Requested level → tier suffixes to try, most specific first; the last one is the
+// collapsed tier every tiered family has. A promoted tier (xhigh/max) is only honored on
+// a tier-preset entry whose upstreamModelId carries the same "(level)" — e.g. ag
+// gemini-4-hydrogen-xhigh — so standalone ids such as ws/gpt-5.4-xhigh never get
+// picked up by a reasoning_effort sent for gpt-5.4.
+const TIER_FALLBACKS = { xhigh: ["xhigh", "high"], max: ["max", "xhigh", "high"], minimal: ["low"] };
+
+function findTierEntry(models, baseId, level, aliasOrId) {
+  const tiers = TIER_FALLBACKS[level] || [level];
+  for (const [i, tier] of tiers.entries()) {
+    const entry = findModel(models, `${baseId}-${tier}`, aliasOrId);
+    if (!entry) continue;
+    const isPromoted = i < tiers.length - 1;
+    if (isPromoted && !String(entry.upstreamModelId || "").endsWith(`(${tier})`)) continue;
+    return { entry, tier };
+  }
+  return null;
+}
+
 export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
   const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
   const models = PROVIDER_MODELS[alias];

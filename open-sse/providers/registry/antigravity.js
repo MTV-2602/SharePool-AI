@@ -59,11 +59,13 @@ export default {
     { id: "gemini-3.1-pro-low",          name: "Gemini 3.1 Pro Low",          upstreamModelId: "gemini-3.1-pro-low" },
     { id: "gemini-pro-agent",            name: "Gemini Pro Agent",            upstreamModelId: "gemini-pro-agent" },
     // ── Claude 5.5 (Mới nhất) ────────────────────────────────────────────────
+    { id: "claude-sonnet-5-5-max",       name: "Claude Sonnet 5.5 (Max)",       upstreamModelId: "claude-sonnet-5-5-max(max)" },
     { id: "claude-sonnet-5-5-high",      name: "Claude Sonnet 5.5 (High)",      upstreamModelId: "claude-sonnet-5-5-high(high)" },
     { id: "claude-sonnet-5-5",           name: "Claude Sonnet 5.5",             upstreamModelId: "claude-sonnet-5-5-high(high)" },
     { id: "claude-sonnet-5.5",           name: "Claude Sonnet 5.5",             upstreamModelId: "claude-sonnet-5-5-high(high)" },
     { id: "claude-sonnet-5-5-medium",    name: "Claude Sonnet 5.5 (Medium)",    upstreamModelId: "claude-sonnet-5-5-medium(medium)" },
     { id: "claude-sonnet-5-5-low",       name: "Claude Sonnet 5.5 (Low)",       upstreamModelId: "claude-sonnet-5-5-low(low)" },
+    { id: "claude-opus-5-5-max",         name: "Claude Opus 5.5 (Max)",         upstreamModelId: "claude-opus-5-5-max(max)" },
     { id: "claude-opus-5-5-high",        name: "Claude Opus 5.5 (High)",        upstreamModelId: "claude-opus-5-5-high(high)" },
     { id: "claude-opus-5-5",             name: "Claude Opus 5.5",               upstreamModelId: "claude-opus-5-5-high(high)" },
     { id: "claude-opus-5.5",             name: "Claude Opus 5.5",               upstreamModelId: "claude-opus-5-5-high(high)" },

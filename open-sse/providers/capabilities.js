@@ -112,6 +112,7 @@ export const MODEL_CAPABILITIES = {
   // Opus 5.5 rejects thinking.type "disabled" and forced tool_choice (any/tool) with 400.
   "claude-opus-5-5":                   { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingCanDisable: false, forcedToolChoice: false },
   "claude-opus-5-5-thinking":          { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingCanDisable: false, forcedToolChoice: false },
+  "claude-opus-5-5-max":         { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingCanDisable: false, forcedToolChoice: false },
   "claude-opus-5-5-high":              { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingCanDisable: false, forcedToolChoice: false },
   "claude-opus-5-5-medium":            { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingCanDisable: false, forcedToolChoice: false },
   "claude-opus-5-5-low":               { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingCanDisable: false, forcedToolChoice: false },
@@ -132,6 +133,7 @@ export const MODEL_CAPABILITIES = {
   // Sonnet 5.5 rejects thinking.type "disabled" (use "between_tools") and forced tool_choice (any/tool).
   "claude-sonnet-5-5": { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingOffType: "between_tools", forcedToolChoice: false },
   "claude-sonnet-5-5-thinking": { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingOffType: "between_tools", forcedToolChoice: false },
+  "claude-sonnet-5-5-max":       { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingOffType: "between_tools", forcedToolChoice: false },
   "claude-sonnet-5-5-high": { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingOffType: "between_tools", forcedToolChoice: false },
   "claude-sonnet-5-5-medium": { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingOffType: "between_tools", forcedToolChoice: false },
   "claude-sonnet-5-5-low": { vision: true, pdf: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000, thinkingOffType: "between_tools", forcedToolChoice: false },
@@ -198,6 +200,9 @@ export const MODEL_CAPABILITIES = {
   "kimi-k3":           { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   "k3":                { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   "kimi-k3.1-pro":     { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
+  // Kimi Code's official ids omit the "kimi-" platform prefix.
+  "k3.1-pro":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
+  "k3.1-pro-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   "kimi-for-coding":   { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-for-coding-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-k2.7-code":    { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
@@ -417,6 +422,28 @@ export const PROVIDER_CAPABILITIES = {
   "ollama": {
     "deepseek-v4.1-flash:cloud": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
   },
+  // Alibaba Token Plan — same infrastructure as QwenCloud, same model specs.
+  "alitp-intl": {
+    "qwen4-max":         { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 393216 },
+    "qwen4-max-preview": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 393216 },
+    "qwen3.8-max":       { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.8-flash":     { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.7-max":       { vision: false, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.7-plus":      { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 131072 },
+    "deepseek-v4-pro-0813": { reasoning: true, thinkingFormat: "deepseek", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 393216 },
+  },
+  // QwenCloud Token Plan — model pages publish a 1M window for the Qwen4/Qwen3.7/
+  // Qwen3.8 lines (Qwen4 Max: 393K output, text+image+video in; others: 131K out),
+  // while the generic *qwen* patterns cap at 262K/65K.
+  "qwencloud": {
+    "qwen4-max":         { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 393216 },
+    "qwen4-max-preview": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 393216 },
+    "qwen3.8-max":       { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.8-flash":     { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.7-max":       { vision: false, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.7-plus":      { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 131072 },
+    "deepseek-v4-pro-0813": { reasoning: true, thinkingFormat: "deepseek", thinkingEffortSupported: true, contextWindow: 1000000, maxOutput: 393216 },
+  },
   // MiniMax Code (mcode) credits lane — Anthropic messages on mavis; thinking
   // is adaptive effort via output_config (claude-adaptive). Limits from
   // magpie's minimax plugin static catalog (live probes pending). M2.7 pair
@@ -521,7 +548,11 @@ export const PATTERN_CAPABILITIES = [
 
   // ── Gemini (all 2.0+ multimodal + google_search grounding, 1M ctx) ─
   { pattern: "*gemini*image*",  caps: { vision: true, imageOutput: true, contextWindow: 1048576 } },
-  // Gemini 4 (Argon): no "minimal" tier (400) and no thinkingBudget — LOW/MEDIUM/HIGH only, cannot disable.
+  // Gemini 4 Hydrogen: text/image/video/audio/PDF in, 1M unified window, 64K per request
+  // (models/gemini-4-hydrogen: inputTokenLimit 1048576, outputTokenLimit 65536). Levels in thinkingLevels.js.
+  // longDecode: a max_tokens above 64K runs CONTINUATION hops up to 1M (utils/geminiLongDecode.js).
+  { pattern: "*gemini-4-hydrogen*", caps: { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536, longDecode: true } },
+  // Gemini 4 (Carbon/Argon): no "minimal" tier (400) and no thinkingBudget — LOW/MEDIUM/HIGH only, cannot disable.
   { pattern: "*gemini-4*",      caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-3.8*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-3.7*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
@@ -882,7 +913,7 @@ export function getCapabilitiesForModel(provider, model) {
   return refine(null, provider, model);
 }
 
-// Gemini 4 (Argon) drops sampling params and requires functionResponse-last merged user turns.
+// Gemini 4 (Hydrogen/Carbon/Argon) drops sampling params and requires functionResponse-last merged user turns.
 export function isGemini4Model(model) {
   return /(?:^|\/)gemini-4(?:$|[-.])/i.test(String(model || ""));
 }

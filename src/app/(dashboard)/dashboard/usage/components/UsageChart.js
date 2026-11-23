@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import Card from "@/shared/components/Card";
+import { fmtCompactTokens } from "./tokenDisplay";
 
 const fmtTokens = (n) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -27,7 +28,7 @@ export const VIEW_CONFIG = {
     dataKey: "tokens",
     stroke: "#6366f1",
     fillId: "gradTokens",
-    formatter: fmtTokens,
+    formatter: fmtCompactTokens,
   },
   requests: {
     label: "Requests",

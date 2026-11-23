@@ -13,6 +13,7 @@ import {
   Cell,
 } from "recharts";
 import Card from "@/shared/components/Card";
+import { fmtCompactTokens } from "./tokenDisplay";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers";
 
 const FALLBACK_COLORS = {
@@ -72,7 +73,7 @@ export default function TopModelsChart({ byModel }) {
       .slice(0, 5);
   }, [byModel, viewMode]);
 
-  const fmt = viewMode === "tokens" ? fmtTokens : String;
+  const fmt = viewMode === "tokens" ? fmtCompactTokens : String;
   const label = viewMode === "tokens" ? "Tokens" : "Requests";
 
   return (

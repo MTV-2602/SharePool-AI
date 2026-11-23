@@ -4,6 +4,7 @@ import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { safeParseJSON } from "../concerns/json.js";
 import { parseDataUri } from "../concerns/image.js";
+import { stripAnthropicBillingHeader } from "../concerns/message.js";
 import { extractTextContent } from "../formats/gemini.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";

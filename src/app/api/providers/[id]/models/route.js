@@ -4,6 +4,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 
@@ -158,13 +159,28 @@ const PROVIDER_MODELS_CONFIG = {
     parseResponse: parseCodexModels
   },
   antigravity: {
-    url: "https://cloudcode-pa.googleapis.com/v1internal:models",
+    // Live per-account catalog. fetchAvailableModels returns an object map
+    // { models: { "<id>": { displayName, maxTokens, ... } } }.
+    // Requires the Hub client fingerprint headers, otherwise Google returns 403.
+    url: `${ANTIGRAVITY_IDE_BASE_URL}/v1internal:fetchAvailableModels`,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
+      "X-Client-Name": "antigravity",
+      "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
+    },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     body: {},
-    parseResponse: (data) => data.models || []
+    parseResponse: (data) => {
+      const models = data?.models;
+      if (!models || typeof models !== "object") return [];
+      return Object.entries(models).map(([id, m]) => ({
+        id,
+        name: m.displayName || id,
+      }));
+    },
   },
   github: {
     url: "https://api.githubcopilot.com/models",

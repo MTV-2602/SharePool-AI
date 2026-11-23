@@ -144,6 +144,10 @@ function resolveFormat(targetFormat, model, provider) {
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
+  if (targetFormat === "antigravity") {
+    if (caps.thinkingFormat === "claude-adaptive") return "gemini-level";
+    if (caps.thinkingFormat === "claude-budget") return "gemini-budget";
+  }
   const isOpenAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
   if (caps.thinkingFormat && !(isOpenAIWire && NATIVE_ONLY_FORMATS.has(caps.thinkingFormat))) {
     return caps.thinkingFormat;
@@ -317,7 +321,7 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "",
       break;
     }
     case "gemini-level": {
-      let level = none ? "minimal" : toGeminiThinkingLevel(eff);
+      let level = none ? "minimal" : toGeminiThinkingLevel(eff, supportedLevels);
       // Models without a "minimal" tier (Gemini 4) reject it with 400 — clamp to the lowest supported level.
       const lowest = supportedLevels?.find((l) => l !== "none");
       if (supportedLevels?.length && lowest && !supportedLevels.includes(level)) level = lowest;
