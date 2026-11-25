@@ -323,12 +323,12 @@ export default function ClientModelPolicyField({ value, onChange }) {
   const currentRules = extractRulesFromRaw(value);
 
   return (
-    <div className="space-y-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+    <div className="space-y-3 bg-surface-2 p-4 rounded-xl border border-border-subtle">
       <div>
-        <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-          Model Permission Policy
+        <label className="block text-xs font-semibold text-text-main uppercase tracking-wider mb-1">
+          Model được phép
         </label>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-text-muted">
           Chọn cấu hình mẫu hoặc nhập danh sách quyền truy cập model cho Client Key.
         </p>
       </div>
@@ -344,8 +344,8 @@ export default function ClientModelPolicyField({ value, onChange }) {
               htmlFor={radioInputId}
               className={`flex items-start gap-2 p-2.5 rounded-lg border cursor-pointer transition-all ${
                 isSelected
-                  ? "bg-indigo-950/50 border-indigo-500 text-indigo-100 shadow-sm shadow-indigo-500/10"
-                  : "bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/40 hover:text-slate-300"
+                  ? "bg-brand-500/10 border-brand-500/50 text-text-main"
+                  : "bg-surface border-border-subtle text-text-muted hover:bg-surface-3 hover:text-text-main"
               }`}
             >
               <input
@@ -355,7 +355,7 @@ export default function ClientModelPolicyField({ value, onChange }) {
                 value={opt.id}
                 checked={isSelected}
                 onChange={() => handlePresetSelect(opt.id)}
-                className="mt-0.5 text-indigo-600 focus:ring-indigo-500 bg-slate-950 border-slate-700"
+                className="mt-0.5 accent-brand-500"
               />
               <div className="text-left">
                 <div className="text-xs font-medium leading-none">{opt.label}</div>
@@ -367,20 +367,20 @@ export default function ClientModelPolicyField({ value, onChange }) {
 
       {/* Custom Rules Input (Visible whenever Custom preset is active) */}
       <div className="space-y-1.5">
-        <div className="flex justify-between items-center text-xs">
-          <span className="text-slate-400 font-medium">
-            Active Rules:{" "}
-            <span className="text-slate-200 font-mono">
-              {currentRules.length > 0 ? currentRules.join(", ") : "All models allowed (unrestricted)"}
+        <div className="flex flex-wrap justify-between items-center gap-2 text-xs">
+          <span className="text-text-muted font-medium">
+            Quyền đang chọn{" "}
+            <span className="break-all text-text-main font-mono">
+              {currentRules.length > 0 ? currentRules.join(", ") : "Tất cả model"}
             </span>
           </span>
           {!isCustomMode && (
             <button
               type="button"
               onClick={() => handlePresetSelect("custom")}
-              className="text-[11px] text-indigo-400 hover:text-indigo-300 underline"
+              className="text-[11px] text-brand-500 hover:underline underline"
             >
-              Edit custom rules
+              Sửa quyền tùy chỉnh
             </button>
           )}
         </div>
@@ -391,9 +391,9 @@ export default function ClientModelPolicyField({ value, onChange }) {
               placeholder="e.g. family:gemini, codex/gpt-5.6-terra[1m], claude-3-7-sonnet"
               value={value || ""}
               onChange={handleCustomTextChange}
-              className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl px-3 py-2 text-slate-200 focus:outline-none transition-colors h-16 resize-none font-mono text-xs"
+              className="w-full bg-surface border border-border-subtle focus:border-brand-500 rounded-xl px-3 py-2 text-text-main focus:outline-none transition-colors h-16 resize-none font-mono text-xs"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-[11px] text-text-muted mt-1">
               Nhập các rule phân cách bằng dấu phẩy. Hỗ trợ prefix `family:gemini`, `family:codex`, `family:claude`, hoặc tên model cụ thể (hỗ trợ suffix [1m]).
             </p>
           </div>
@@ -401,35 +401,35 @@ export default function ClientModelPolicyField({ value, onChange }) {
       </div>
 
       {/* Policy Security & Usage Routing Guidance - Collapsible by default to keep modal compact */}
-      <details className="group bg-slate-900/90 rounded-lg border border-slate-800 text-[11px] text-slate-400 overflow-hidden">
-        <summary className="p-3 cursor-pointer select-none flex items-center justify-between font-medium text-slate-300 hover:bg-slate-800/40 transition-colors">
+      <details className="group bg-surface rounded-lg border border-border-subtle text-[11px] text-text-muted overflow-hidden">
+        <summary className="p-3 cursor-pointer select-none flex items-center justify-between font-medium text-text-main hover:bg-surface-2 transition-colors">
           <span className="flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-sm text-indigo-400">shield</span>
+            <span className="material-symbols-outlined text-sm text-brand-500">shield</span>
             <span>Nguyên tắc kiểm soát quyền truy cập model &amp; ghi nhận Usage</span>
           </span>
-          <span className="material-symbols-outlined text-sm text-slate-400 transition-transform duration-200 group-open:rotate-180">
+          <span className="material-symbols-outlined text-sm text-text-muted transition-transform duration-200 group-open:rotate-180">
             expand_more
           </span>
         </summary>
-        <div className="p-3.5 pt-2 border-t border-slate-800/80 space-y-2">
-          <ul className="list-disc list-inside space-y-1.5 pl-1 text-slate-400">
+        <div className="p-3.5 pt-2 border-t border-border-subtle space-y-2">
+          <ul className="list-disc list-inside space-y-1.5 pl-1 text-text-muted">
             <li>
-              <strong className="text-slate-300">Tên model gửi vs Model thực tế (Combo Routing):</strong> Client có thể gửi tên combo (ví dụ: <code className="text-indigo-300">gpt-5.5</code>). Hệ thống kiểm soát quyền dựa trên model thực tế mà combo định tuyến tới (ví dụ: <code className="text-indigo-300">ag/gemini-3.8-flash-high</code>). Key &quot;Gemini Only&quot; vẫn được phép gọi nếu combo chỉ trỏ tới Gemini, nhưng request gọi trực tiếp tới model GPT thực tế sẽ bị chặn.
+              <strong className="text-text-main">Tên model gửi vs Model thực tế (Combo Routing):</strong> Client có thể gửi tên combo (ví dụ: <code className="text-brand-500">gpt-5.5</code>). Hệ thống kiểm soát quyền dựa trên model thực tế mà combo định tuyến tới (ví dụ: <code className="text-brand-500">ag/gemini-3.8-flash-high</code>). Key &quot;Gemini Only&quot; vẫn được phép gọi nếu combo chỉ trỏ tới Gemini, nhưng request gọi trực tiếp tới model GPT thực tế sẽ bị chặn.
             </li>
             <li>
-              <strong className="text-slate-300">Ghi nhận Usage theo Model thực tế (Actual Model):</strong> Bảng thống kê và log sử dụng ghi nhận theo model thực tế phục vụ request (từ header <code className="text-indigo-300">x-9r-actual-model</code>), không ghi theo tên combo thô.
+              <strong className="text-text-main">Ghi nhận Usage theo Model thực tế (Actual Model):</strong> Bảng thống kê và log sử dụng ghi nhận theo model thực tế phục vụ request (từ header <code className="text-brand-500">x-9r-actual-model</code>), không ghi theo tên combo thô.
             </li>
             <li>
-              <strong className="text-slate-300">Quy tắc Fail-Closed trên Fallback:</strong> Nếu combo cấu hình nhiều model dự phòng, TẤT CẢ các fallback targets đều phải được cấp phép trong policy của key. Nếu có dù chỉ một target vi phạm, toàn bộ request sẽ bị từ chối 403 ngay từ preflight gate.
+              <strong className="text-text-main">Quy tắc Fail-Closed trên Fallback:</strong> Nếu combo cấu hình nhiều model dự phòng, TẤT CẢ các fallback targets đều phải được cấp phép trong policy của key. Nếu có dù chỉ một target vi phạm, toàn bộ request sẽ bị từ chối 403 ngay từ preflight gate.
             </li>
             <li>
-              <strong className="text-slate-300">Phạm vi Gemini Only (Loại trừ Gemma &amp; Antigravity Claude):</strong> Preset Gemini Only (<code className="text-indigo-300">family:gemini</code>) chỉ cho phép model Gemini (<code className="text-indigo-300">gemini-*</code>). Tuyệt đối KHÔNG cấp quyền cho model Gemma (Gemini excludes Gemma) và không cấp quyền cho Claude qua Antigravity (<code className="text-amber-300">ag/claude-*</code>).
+              <strong className="text-text-main">Phạm vi Gemini Only (Loại trừ Gemma &amp; Antigravity Claude):</strong> Preset Gemini Only (<code className="text-brand-500">family:gemini</code>) chỉ cho phép model Gemini (<code className="text-brand-500">gemini-*</code>). Tuyệt đối KHÔNG cấp quyền cho model Gemma (Gemini excludes Gemma) và không cấp quyền cho Claude qua Antigravity (<code className="text-amber-300">ag/claude-*</code>).
             </li>
             <li>
-              <strong className="text-slate-300">Phân biệt Nhà cung cấp Codex vs Ứng dụng Client Codex (Codex application != Codex model):</strong> Preset GPT/Codex (<code className="text-indigo-300">family:codex</code>) kiểm soát quyền gọi tới upstream Codex provider. Ứng dụng client Codex hoàn toàn có thể gọi model Gemini nếu key được cấp quyền Gemini và combo định tuyến tương ứng.
+              <strong className="text-text-main">Phân biệt Nhà cung cấp Codex vs Ứng dụng Client Codex (Codex application != Codex model):</strong> Preset GPT/Codex (<code className="text-brand-500">family:codex</code>) kiểm soát quyền gọi tới upstream Codex provider. Ứng dụng client Codex hoàn toàn có thể gọi model Gemini nếu key được cấp quyền Gemini và combo định tuyến tương ứng.
             </li>
             <li>
-              <strong className="text-slate-300">Tự động tái kiểm tra:</strong> Khi danh sách fallback của combo thay đổi trong tương lai, hệ thống tự động đối soát lại theo chính sách đã cấp.
+              <strong className="text-text-main">Tự động tái kiểm tra:</strong> Khi danh sách fallback của combo thay đổi trong tương lai, hệ thống tự động đối soát lại theo chính sách đã cấp.
             </li>
           </ul>
         </div>

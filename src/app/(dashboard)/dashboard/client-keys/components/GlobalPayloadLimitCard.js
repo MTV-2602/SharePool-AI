@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useId } from "react";
+import { Badge, Button, Card, Input } from "@/shared/components";
 
 const MIN_MIB = 1;
 const MAX_MIB = 32;
-const DEFAULT_MIB = 8;
 const BYTES_PER_MIB = 1048576; // 1024 * 1024
 const MIN_BYTES = MIN_MIB * BYTES_PER_MIB;
 const MAX_BYTES = MAX_MIB * BYTES_PER_MIB;
@@ -47,7 +47,6 @@ export default function GlobalPayloadLimitCard() {
   const [inputMiB, setInputMiB] = useState("");
   const [effectiveBytes, setEffectiveBytes] = useState(null);
   const [effectiveSource, setEffectiveSource] = useState(null);
-  const [savedBytes, setSavedBytes] = useState(null);
   const [isFractional, setIsFractional] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -76,7 +75,6 @@ export default function GlobalPayloadLimitCard() {
 
         setEffectiveBytes(effective);
         setEffectiveSource(source);
-        setSavedBytes(saved);
 
         const targetBytes = (saved !== null && typeof saved === "number" && Number.isSafeInteger(saved))
           ? saved
@@ -158,7 +156,6 @@ export default function GlobalPayloadLimitCard() {
       const serverSaved = data.chatCompletionsMaxBodyBytes ?? null;
       setEffectiveBytes(serverEffective);
       setEffectiveSource(serverSource);
-      setSavedBytes(serverSaved);
 
       const targetBytes = (serverSaved !== null && typeof serverSaved === "number" && Number.isSafeInteger(serverSaved))
         ? serverSaved
@@ -209,7 +206,6 @@ export default function GlobalPayloadLimitCard() {
       const serverSource = data.payloadLimit.source;
       setEffectiveBytes(serverEffective);
       setEffectiveSource(serverSource);
-      setSavedBytes(null);
 
       const seed = getEditorSeedFromBytes(serverEffective);
       setInputMiB(seed.inputMiB);
@@ -224,165 +220,49 @@ export default function GlobalPayloadLimitCard() {
     }
   };
 
-  const getSourceBadge = () => {
-    if (loading) {
-      return (
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-slate-800/60 text-slate-400 border-slate-700/50">
-          Đang tải...
-        </span>
-      );
-    }
-    switch (effectiveSource) {
-      case "saved":
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-950/70 text-emerald-300 border-emerald-800/60">
-            Tùy chỉnh (Đã lưu)
-          </span>
-        );
-      case "env":
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-blue-950/70 text-blue-300 border-blue-800/60">
-            Biến môi trường (ENV)
-          </span>
-        );
-      case "default":
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-slate-800/80 text-slate-400 border-slate-700/60">
-            Mặc định hệ thống (8 MiB)
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-amber-950/70 text-amber-300 border-amber-800/60">
-            Chưa xác định
-          </span>
-        );
-    }
+  const sourceLabels = {
+    saved: "Tùy chỉnh",
+    env: "Biến môi trường",
+    default: "Mặc định",
   };
 
   return (
-    <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800 p-6 rounded-2xl shadow-xl space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
-        <div>
+    <Card padding="none">
+      <details className="group">
+        <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-indigo-400">tune</span>
-            <h2 className="text-xl font-bold text-slate-100">
-              Giới hạn request chung (Chat Completions)
-            </h2>
+            <span className="material-symbols-outlined text-[18px] text-text-muted" aria-hidden="true">tune</span>
+            <h2 className="text-sm font-semibold">Giới hạn kích thước request</h2>
           </div>
-          <p className="text-sm text-slate-400 mt-1">
-            Cấu hình kích thước tối đa cho payload request gửi tới /v1/chat/completions (từ {MIN_MIB} đến {MAX_MIB} MiB).
-          </p>
-        </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <span className="text-xs text-slate-400">Nguồn áp dụng:</span>
-          {getSourceBadge()}
-        </div>
-      </div>
-
-      {error && (
-        <div className="bg-red-500/15 border border-red-500/30 text-red-200 p-3 rounded-xl flex items-center gap-3 text-sm">
-          <span className="material-symbols-outlined text-red-400 text-base">error</span>
-          <span>{error}</span>
-        </div>
-      )}
-
-      {success && (
-        <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 p-3 rounded-xl flex items-center gap-3 text-sm">
-          <span className="material-symbols-outlined text-emerald-400 text-base">check_circle</span>
-          <span>{success}</span>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-        <div className="bg-slate-800/40 border border-slate-800 rounded-xl p-3.5">
-          <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">Hiệu lực hiện tại</div>
-          <div className="text-lg font-semibold text-slate-100 mt-1 flex items-baseline gap-2">
-            {loading ? (
-              <span className="text-sm text-slate-400 font-normal">Đang kiểm tra...</span>
-            ) : effectiveBytes !== null ? (
-              <>
-                <span>{formatMiBTruthful(effectiveBytes)}</span>
-                <span className="text-xs text-slate-400 font-mono">({effectiveBytes.toLocaleString()} bytes)</span>
-              </>
+          <div className="flex items-center gap-2">
+            {loading ? <Badge>Đang tải</Badge> : effectiveBytes === null ? (
+              <Badge variant="error">Không tải được</Badge>
             ) : (
-              <span className="text-sm text-slate-400 font-normal">Chưa rõ (Lỗi tải)</span>
+              <Badge>{formatMiBTruthful(effectiveBytes)} · {sourceLabels[effectiveSource]}</Badge>
             )}
+            <span className="material-symbols-outlined text-[18px] text-text-muted group-open:rotate-180" aria-hidden="true">expand_more</span>
           </div>
-          {savedBytes !== null && (
-            <div className="text-[11px] text-slate-400 mt-1">
-              Giá trị lưu riêng: {formatMiBTruthful(savedBytes)}
-            </div>
+        </summary>
+        <div className="space-y-3 border-t border-border-subtle p-4">
+          <p className="text-sm text-text-muted">Áp dụng cho <code>/v1/chat/completions</code>. Nhập từ {MIN_MIB} đến {MAX_MIB} MiB.</p>
+          {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
+          {success && <p role="status" className="text-sm text-green-600 dark:text-green-400">{success}</p>}
+          {isFractional && (
+            <p className="text-sm text-text-muted">
+              Giá trị hiện tại là {formatMiBTruthful(effectiveBytes)}. Chọn một số nguyên MiB để thay thế.
+            </p>
           )}
+          <form onSubmit={handleSave} className="flex flex-wrap items-end gap-2">
+            <Input id={inputId} label="Giới hạn (MiB)" type="number" min={MIN_MIB} max={MAX_MIB} step="1"
+              value={inputMiB} onChange={(event) => setInputMiB(event.target.value)}
+              disabled={loading || saving} className="w-36" />
+            <Button type="submit" icon="save" loading={saving} disabled={loading || !inputMiB.trim()}>Lưu</Button>
+            <Button type="button" variant="secondary" icon="restart_alt" onClick={handleReset} disabled={loading || saving}>
+              Kế thừa cấu hình
+            </Button>
+          </form>
         </div>
-
-        <div className="md:col-span-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="relative flex-1">
-            <label htmlFor={inputId} className="block text-xs font-medium text-slate-400 mb-1">
-              Giới hạn mới (MiB)
-            </label>
-            <div className="relative">
-              <input
-                id={inputId}
-                type="number"
-                min={MIN_MIB}
-                max={MAX_MIB}
-                step="1"
-                value={inputMiB}
-                onChange={(e) => {
-                  setInputMiB(e.target.value);
-                }}
-                disabled={loading || saving}
-                placeholder={String(DEFAULT_MIB)}
-                className="w-full bg-slate-800/80 border border-slate-700/80 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors pr-14 disabled:opacity-50 text-sm"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 pointer-events-none">
-                MiB
-              </span>
-            </div>
-            {isFractional && (
-              <p className="text-xs text-amber-300/90 mt-1.5 flex items-center gap-1">
-                <span className="material-symbols-outlined text-xs">info</span>
-                <span>
-                  Cấu hình hiện tại có kích thước lẻ ({formatMiBTruthful(savedBytes ?? effectiveBytes)}). Vui lòng chọn số nguyên MiB ({MIN_MIB}–{MAX_MIB}) để thay thế.
-                </span>
-              </p>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 pt-0 sm:pt-5">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={loading || saving || !String(inputMiB ?? "").trim()}
-              className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-600/50 text-white font-medium px-4 py-2 rounded-xl transition-all shadow-md hover:shadow-indigo-500/20 flex items-center justify-center gap-2 text-sm disabled:cursor-not-allowed"
-            >
-              {saving ? (
-                <>
-                  <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
-                  <span>Đang lưu...</span>
-                </>
-              ) : (
-                <>
-                  <span className="material-symbols-outlined text-base">save</span>
-                  <span>Lưu</span>
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={loading || saving}
-              title="Đặt lại để kế thừa biến môi trường MAX_REQUEST_BODY_BYTES hoặc mặc định 8 MiB"
-              className="flex-1 sm:flex-none bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/50 text-slate-300 font-medium px-3.5 py-2 rounded-xl transition-all border border-slate-700 flex items-center justify-center gap-1.5 text-sm disabled:cursor-not-allowed"
-            >
-              <span className="material-symbols-outlined text-base">restart_alt</span>
-              <span>Kế thừa / Đặt lại</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      </details>
+    </Card>
   );
 }
