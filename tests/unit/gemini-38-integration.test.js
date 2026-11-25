@@ -118,7 +118,7 @@ describe("Gemini 3.8 MITM tools and catalog", () => {
     const agCatalog = source.match(/\n  ag: \[([\s\S]*?)\n  \],/)?.[1] || "";
 
     expect(agCatalog).toContain("gemini-3.8-flash-high");
-    expect(agCatalog).toContain("gemini-3.8-flash-medium");
+    expect(agCatalog).not.toContain("gemini-3.8-flash-medium");
     expect(agCatalog).toContain("gemini-3.8-flash-low");
   });
 });

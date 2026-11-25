@@ -17,8 +17,8 @@ Bộ công cụ kết nối **1-Click** tự động dành riêng cho khách hà
    - **LƯU Ý:** Giữ nguyên cửa sổ đen trong suốt quá trình làm việc với Antigravity IDE.
 
 3. **Mở Antigravity IDE & Chat:**
-   - Mở ứng dụng **Antigravity IDE** trên máy tính.
-   - Chọn model bạn muốn (`Gemini 3.8 Flash High`, `Claude Sonnet 4.6`, `Claude Opus 4.6 Thinking`, `GPT-OSS 120B`...) và chat ngay!
+   - Nếu IDE đã mở từ trước, dùng nút **Mở / Reset Antigravity IDE** trong dashboard để IDE nạp chứng chỉ.
+   - Chọn **Gemini 4 Hydrogen** trong IDE. Mức **Extra High** được gửi tới `ag/gemini-4-hydrogen-xhigh`.
    - Không cần nhập bất kỳ API key nào trong IDE.
 
 4. **Tắt kết nối:**
@@ -26,6 +26,10 @@ Bộ công cụ kết nối **1-Click** tự động dành riêng cho khách hà
    - File hosts của máy sẽ tự động được dọn dẹp sạch sẽ, khôi phục cài đặt gốc của máy tính.
 
 ---
+
+## Cập nhật từ bản client cũ
+
+Đóng cửa sổ gateway cũ, giải nén gói mới rồi chạy lại `AiNoName-Antigravity.bat`. Nếu muốn giữ Client Key và ánh xạ đã lưu, chỉ chép `ainoname-agent.bundle.js` từ gói mới vào thư mục cũ trước khi mở lại.
 
 ## ⚙️ Dành cho Quản trị viên (Admin):
 - File `config.json` đã được tạo sẵn Client Key tương ứng với người dùng khi tải về từ Dashboard.

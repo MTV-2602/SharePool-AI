@@ -555,21 +555,32 @@ async function passthrough(req, res, bodyBuffer) {
 }
 
 // ── Helper: Model Extraction & Schema Sanitization (Learned from 9router) ──
-function extractModel(url, body) {
-  let urlModel = null;
-  if (url) {
-    const m = url.match(/\/models\/([^/:]+)/);
-    if (m) urlModel = m[1];
-  }
-  let model = urlModel || body.model || body.request?.model || null;
-  const cleanModelName = String(model || "").replace(/^models\//, "");
+const GEMINI_TIER_MODEL = /^(gemini-4-(?:hydrogen|carbon|argon|neon)|gemini-3\.8-flash)(?:-tiered|-(extra[-_ ]?high|xhigh|high|medium|low))?(?:\((extra[-_ ]?high|xhigh|high|medium|low)\))?$/i;
+const MODELS_WITH_EXTRA_HIGH = new Set(["gemini-4-hydrogen", "gemini-4-neon"]);
 
-  const modernGemini = /^(gemini-4-(?:hydrogen|carbon|argon|neon)|gemini-3\.8-flash)(?:-tiered|-((?:x?high)|medium|low))?(?:\((x?high|medium|low)\))?$/i.exec(cleanModelName);
+function getRequestedModel(url, body) {
+  const urlModel = url?.match(/\/models\/([^/:]+)/)?.[1];
+  return String(urlModel || body.model || body.request?.model || "").replace(/^models\//, "");
+}
+
+function normalizeThinkingLevel(raw) {
+  const level = String(raw ?? "").trim().toLowerCase().replace(/[ _-]/g, "").replace(/^thinkinglevel/, "");
+  if (level === "extrahigh" || level === "xhigh") return "xhigh";
+  if (level === "minimal") return "low";
+  return ["high", "medium", "low"].includes(level) ? level : null;
+}
+
+function normalizeIdeModel(cleanModelName, body) {
+  const modernGemini = GEMINI_TIER_MODEL.exec(cleanModelName);
   if (modernGemini) {
-    const requestedTier = modernGemini[2] || modernGemini[3]
-      || body.request?.generationConfig?.thinkingConfig?.thinkingLevel
-      || body.generationConfig?.thinkingConfig?.thinkingLevel;
-    return `${modernGemini[1].toLowerCase()}-${String(requestedTier).toLowerCase() === "low" ? "low" : "high"}`;
+    const family = modernGemini[1].toLowerCase();
+    const namedTier = normalizeThinkingLevel(modernGemini[3] || modernGemini[2]);
+    const requestedTier = normalizeThinkingLevel(body.request?.generationConfig?.thinkingConfig?.thinkingLevel
+      ?? body.generationConfig?.thinkingConfig?.thinkingLevel
+      ?? body.thinkingConfig?.thinkingLevel
+      ?? body.reasoning_effort);
+    const tier = namedTier === "xhigh" ? namedTier : requestedTier || namedTier || "high";
+    return `${family}-${tier === "xhigh" && !MODELS_WITH_EXTRA_HIGH.has(family) ? "high" : tier}`;
   }
 
   if (cleanModelName === "gemini-3.6-flash-tiered" || cleanModelName === "gemini-3.7-flash-tiered") {
@@ -599,7 +610,11 @@ function resolveMappedModel(extractedModel) {
   if (config.modelMapping[extractedModel]) {
     return config.modelMapping[extractedModel];
   }
-  if (/^(gemini-4-(?:hydrogen|carbon|argon|neon)|gemini-3\.8-flash)-(?:low|high)$/.test(extractedModel)) {
+  if (extractedModel === "gemini-4-hydrogen-sonar") {
+    // Sonar is absent from the gateway catalog. Keep its fallback in the Hydrogen family.
+    return "ag/gemini-4-hydrogen-low";
+  }
+  if (GEMINI_TIER_MODEL.test(extractedModel)) {
     return `ag/${extractedModel}`;
   }
   for (const [k, v] of Object.entries(config.modelMapping)) {
@@ -608,6 +623,23 @@ function resolveMappedModel(extractedModel) {
     }
   }
   return config.modelMapping["gemini-3.8-flash-high"] || extractedModel;
+}
+
+function applyMappedThinking(body, model) {
+  const match = /^(?:ag|antigravity)\/(.+)$/.exec(model);
+  const tier = match && normalizeThinkingLevel(GEMINI_TIER_MODEL.exec(match[1])?.[2]);
+  if (!tier) return;
+
+  // The gateway forwards native Antigravity requests without translating this field.
+  const request = body.request || body;
+  const generationConfig = request.generationConfig ??= {};
+  const previous = generationConfig.thinkingConfig || body.generationConfig?.thinkingConfig || body.thinkingConfig;
+  const thinkingConfig = { ...previous, thinkingLevel: tier };
+  delete thinkingConfig.thinkingBudget;
+  generationConfig.thinkingConfig = thinkingConfig;
+  delete body.thinkingConfig;
+  delete body.reasoning_effort;
+  if (request !== body && body.generationConfig) delete body.generationConfig.thinkingConfig;
 }
 
 function cleanToolSchemas(tools) {
@@ -680,13 +712,15 @@ function startMitmServer() {
 
       // ── Handle Chat Prompt Routing to Gateway ──────────────────────────────
       const isStream = req.url.includes(":streamGenerateContent");
+      let clientAborted = false;
       try {
-        const originalModel = extractModel(req.url, body);
-        const mappedModel = resolveMappedModel(originalModel);
+        const originalModel = getRequestedModel(req.url, body);
+        const mappedModel = resolveMappedModel(normalizeIdeModel(originalModel, body));
 
-        log(`🚀 Gửi câu hỏi Antigravity: [${originalModel}] ➔ [${mappedModel}]`, "info");
+        log(`🚀 Gửi yêu cầu Antigravity: [${originalModel || "mặc định"}] ➔ [${mappedModel}]`, "info");
         body.model = mappedModel;
         body.userAgent = "antigravity";
+        applyMappedThinking(body, mappedModel);
 
         // Strip blacklisted fields that trigger quota/schema errors on Google Gemini
         delete body.requestType;
@@ -725,9 +759,9 @@ function startMitmServer() {
           forwardHeaders["User-Agent"] = req.headers["user-agent"].replace(/antigravity\/[^\s]+/, `antigravity/${ANTIGRAVITY_IDE_VERSION}`);
         }
 
-        let clientAborted = false;
         const abortController = new AbortController();
         res.on("close", () => {
+          if (res.writableFinished) return;
           clientAborted = true;
           try { abortController.abort(); } catch {}
         });
@@ -791,13 +825,14 @@ function startMitmServer() {
         }
 
         if (clientAborted) {
-          log("⏹️ Người dùng đã hủy yêu cầu từ IDE.", "info");
+          log("⏹️ IDE đã đóng kết nối trước khi nhận đủ phản hồi.", "info");
           return;
         }
 
         if (!forwardRes || status !== 200) {
           if (!status || status === 200) status = 502;
-          log(`❌ Gateway không phản hồi (${status}): ${lastErrDetail}`, "warn");
+          const outcome = forwardRes ? "Gateway trả lỗi" : "Không kết nối được gateway";
+          log(`❌ ${outcome} (${status}): ${lastErrDetail}`, "warn");
 
           if (!res.headersSent) {
             res.writeHead(status, {
@@ -846,11 +881,19 @@ function startMitmServer() {
             res.write(Buffer.from(value));
           }
         }
+        if (clientAborted) {
+          log("⏹️ IDE đã đóng kết nối trước khi nhận đủ phản hồi.", "info");
+          return;
+        }
         if (!res.writableEnded) {
           res.end();
         }
         log(`Trả lời Antigravity [${mappedModel}] hoàn tất (Status: ${status})`, "success");
       } catch (err) {
+        if (clientAborted) {
+          log("⏹️ IDE đã đóng kết nối trước khi nhận đủ phản hồi.", "info");
+          return;
+        }
         log(`Lỗi MITM Proxy: ${err.message}`, "warn");
         if (!res.headersSent) {
           res.writeHead(500, {

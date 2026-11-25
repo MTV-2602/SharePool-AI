@@ -19110,18 +19110,26 @@ async function passthrough(req, res, bodyBuffer) {
   }
   return passthroughHttps(req, res, bodyBuffer, req.headers, targetHost);
 }
-function extractModel(url, body) {
-  let urlModel = null;
-  if (url) {
-    const m = url.match(/\/models\/([^/:]+)/);
-    if (m) urlModel = m[1];
-  }
-  let model = urlModel || body.model || body.request?.model || null;
-  const cleanModelName = String(model || "").replace(/^models\//, "");
-  const modernGemini = /^(gemini-4-(?:hydrogen|carbon|argon|neon)|gemini-3\.8-flash)(?:-tiered|-((?:x?high)|medium|low))?(?:\((x?high|medium|low)\))?$/i.exec(cleanModelName);
+var GEMINI_TIER_MODEL = /^(gemini-4-(?:hydrogen|carbon|argon|neon)|gemini-3\.8-flash)(?:-tiered|-(extra[-_ ]?high|xhigh|high|medium|low))?(?:\((extra[-_ ]?high|xhigh|high|medium|low)\))?$/i;
+var MODELS_WITH_EXTRA_HIGH = /* @__PURE__ */ new Set(["gemini-4-hydrogen", "gemini-4-neon"]);
+function getRequestedModel(url, body) {
+  const urlModel = url?.match(/\/models\/([^/:]+)/)?.[1];
+  return String(urlModel || body.model || body.request?.model || "").replace(/^models\//, "");
+}
+function normalizeThinkingLevel(raw) {
+  const level = String(raw ?? "").trim().toLowerCase().replace(/[ _-]/g, "").replace(/^thinkinglevel/, "");
+  if (level === "extrahigh" || level === "xhigh") return "xhigh";
+  if (level === "minimal") return "low";
+  return ["high", "medium", "low"].includes(level) ? level : null;
+}
+function normalizeIdeModel(cleanModelName, body) {
+  const modernGemini = GEMINI_TIER_MODEL.exec(cleanModelName);
   if (modernGemini) {
-    const requestedTier = modernGemini[2] || modernGemini[3] || body.request?.generationConfig?.thinkingConfig?.thinkingLevel || body.generationConfig?.thinkingConfig?.thinkingLevel;
-    return `${modernGemini[1].toLowerCase()}-${String(requestedTier).toLowerCase() === "low" ? "low" : "high"}`;
+    const family = modernGemini[1].toLowerCase();
+    const namedTier = normalizeThinkingLevel(modernGemini[3] || modernGemini[2]);
+    const requestedTier = normalizeThinkingLevel(body.request?.generationConfig?.thinkingConfig?.thinkingLevel ?? body.generationConfig?.thinkingConfig?.thinkingLevel ?? body.thinkingConfig?.thinkingLevel ?? body.reasoning_effort);
+    const tier = namedTier === "xhigh" ? namedTier : requestedTier || namedTier || "high";
+    return `${family}-${tier === "xhigh" && !MODELS_WITH_EXTRA_HIGH.has(family) ? "high" : tier}`;
   }
   if (cleanModelName === "gemini-3.6-flash-tiered" || cleanModelName === "gemini-3.7-flash-tiered") {
     const ver = cleanModelName.includes("3.7") ? "3.7" : "3.6";
@@ -19144,7 +19152,10 @@ function resolveMappedModel(extractedModel) {
   if (config.modelMapping[extractedModel]) {
     return config.modelMapping[extractedModel];
   }
-  if (/^(gemini-4-(?:hydrogen|carbon|argon|neon)|gemini-3\.8-flash)-(?:low|high)$/.test(extractedModel)) {
+  if (extractedModel === "gemini-4-hydrogen-sonar") {
+    return "ag/gemini-4-hydrogen-low";
+  }
+  if (GEMINI_TIER_MODEL.test(extractedModel)) {
     return `ag/${extractedModel}`;
   }
   for (const [k, v] of Object.entries(config.modelMapping)) {
@@ -19153,6 +19164,20 @@ function resolveMappedModel(extractedModel) {
     }
   }
   return config.modelMapping["gemini-3.8-flash-high"] || extractedModel;
+}
+function applyMappedThinking(body, model) {
+  const match = /^(?:ag|antigravity)\/(.+)$/.exec(model);
+  const tier = match && normalizeThinkingLevel(GEMINI_TIER_MODEL.exec(match[1])?.[2]);
+  if (!tier) return;
+  const request = body.request || body;
+  const generationConfig = request.generationConfig ??= {};
+  const previous = generationConfig.thinkingConfig || body.generationConfig?.thinkingConfig || body.thinkingConfig;
+  const thinkingConfig = { ...previous, thinkingLevel: tier };
+  delete thinkingConfig.thinkingBudget;
+  generationConfig.thinkingConfig = thinkingConfig;
+  delete body.thinkingConfig;
+  delete body.reasoning_effort;
+  if (request !== body && body.generationConfig) delete body.generationConfig.thinkingConfig;
 }
 function cleanToolSchemas(tools) {
   if (!Array.isArray(tools)) return;
@@ -19225,12 +19250,14 @@ function startMitmServer() {
         return passthrough(req, res, rawBody);
       }
       const isStream = req.url.includes(":streamGenerateContent");
+      let clientAborted = false;
       try {
-        const originalModel = extractModel(req.url, body);
-        const mappedModel = resolveMappedModel(originalModel);
-        log(`\u{1F680} G\u1EEDi c\xE2u h\u1ECFi Antigravity: [${originalModel}] \u2794 [${mappedModel}]`, "info");
+        const originalModel = getRequestedModel(req.url, body);
+        const mappedModel = resolveMappedModel(normalizeIdeModel(originalModel, body));
+        log(`\u{1F680} G\u1EEDi y\xEAu c\u1EA7u Antigravity: [${originalModel || "m\u1EB7c \u0111\u1ECBnh"}] \u2794 [${mappedModel}]`, "info");
         body.model = mappedModel;
         body.userAgent = "antigravity";
+        applyMappedThinking(body, mappedModel);
         delete body.requestType;
         if (body.request) {
           delete body.request.requestType;
@@ -19257,9 +19284,9 @@ function startMitmServer() {
         if (req.headers["user-agent"]) {
           forwardHeaders["User-Agent"] = req.headers["user-agent"].replace(/antigravity\/[^\s]+/, `antigravity/${ANTIGRAVITY_IDE_VERSION}`);
         }
-        let clientAborted = false;
         const abortController = new AbortController();
         res.on("close", () => {
+          if (res.writableFinished) return;
           clientAborted = true;
           try {
             abortController.abort();
@@ -19315,12 +19342,13 @@ function startMitmServer() {
           }
         }
         if (clientAborted) {
-          log("\u23F9\uFE0F Ng\u01B0\u1EDDi d\xF9ng \u0111\xE3 h\u1EE7y y\xEAu c\u1EA7u t\u1EEB IDE.", "info");
+          log("\u23F9\uFE0F IDE \u0111\xE3 \u0111\xF3ng k\u1EBFt n\u1ED1i tr\u01B0\u1EDBc khi nh\u1EADn \u0111\u1EE7 ph\u1EA3n h\u1ED3i.", "info");
           return;
         }
         if (!forwardRes || status !== 200) {
           if (!status || status === 200) status = 502;
-          log(`\u274C Gateway kh\xF4ng ph\u1EA3n h\u1ED3i (${status}): ${lastErrDetail}`, "warn");
+          const outcome = forwardRes ? "Gateway tr\u1EA3 l\u1ED7i" : "Kh\xF4ng k\u1EBFt n\u1ED1i \u0111\u01B0\u1EE3c gateway";
+          log(`\u274C ${outcome} (${status}): ${lastErrDetail}`, "warn");
           if (!res.headersSent) {
             res.writeHead(status, {
               "Content-Type": "application/json; charset=utf-8",
@@ -19371,11 +19399,19 @@ function startMitmServer() {
             res.write(Buffer.from(value));
           }
         }
+        if (clientAborted) {
+          log("\u23F9\uFE0F IDE \u0111\xE3 \u0111\xF3ng k\u1EBFt n\u1ED1i tr\u01B0\u1EDBc khi nh\u1EADn \u0111\u1EE7 ph\u1EA3n h\u1ED3i.", "info");
+          return;
+        }
         if (!res.writableEnded) {
           res.end();
         }
         log(`Tr\u1EA3 l\u1EDDi Antigravity [${mappedModel}] ho\xE0n t\u1EA5t (Status: ${status})`, "success");
       } catch (err) {
+        if (clientAborted) {
+          log("\u23F9\uFE0F IDE \u0111\xE3 \u0111\xF3ng k\u1EBFt n\u1ED1i tr\u01B0\u1EDBc khi nh\u1EADn \u0111\u1EE7 ph\u1EA3n h\u1ED3i.", "info");
+          return;
+        }
         log(`L\u1ED7i MITM Proxy: ${err.message}`, "warn");
         if (!res.headersSent) {
           res.writeHead(500, {
