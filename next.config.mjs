@@ -41,6 +41,7 @@ const nextConfig = {
       "./ainoname-client/*.bat",
       "./ainoname-client/run.ps1",
       "./ainoname-client/ainoname-agent.bundle.js",
+      "./ainoname-client/update-manifest.json",
       "./ainoname-client/ui.html",
       "./ainoname-client/README.md",
     ]

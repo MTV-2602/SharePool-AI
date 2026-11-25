@@ -17,6 +17,8 @@
     "dev:bun": "bun --bun next dev --webpack --port 20127",
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/custom-server.js",
+    "client:package": "npm exec --yes --package=esbuild@0.25.12 -- esbuild ainoname-client/src/agent.js --bundle --platform=node --loader:.html=text --loader:.pem=text --outfile=ainoname-client/ainoname-agent.bundle.js && node scripts/repack-client.js",
+    "client:release": "npm run client:package && node scripts/sign-client-update.cjs",
     "cli:pack": "npm --prefix cli run pack:cli",
     "cli:publish": "npm --prefix cli run publish:cli"
   },

@@ -390,6 +390,8 @@
     .log-success { color: #34d399; }
     .log-info { color: #60a5fa; }
     .log-warn { color: #fbbf24; }
+    .update-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; padding: 12px 16px; border: 1px solid #334155; border-radius: 12px; background: #172238; }
+    .update-banner[hidden] { display: none; }
   </style>
 </head>
 <body>
@@ -408,6 +410,11 @@
         <div class="badge" id="badge-trusted"><span class="dot"></span> Trusted CA</div>
         <div class="badge" id="badge-server"><span class="dot"></span> Port 443</div>
       </div>
+    </div>
+
+    <div class="update-banner" id="update-banner" hidden>
+      <span id="update-message" role="status" aria-live="polite"></span>
+      <button type="button" class="btn btn-primary" id="update-button">Cập nhật</button>
     </div>
 
     <!-- Main Status Hero Card -->
@@ -600,6 +607,61 @@
     const API_BASE = window.location.protocol.startsWith('http') ? '' : 'http://localhost:20129';
     let isDNSActive = false;
     let configData = {};
+    let updatingClient = false;
+    const updateBanner = document.getElementById("update-banner");
+    const updateButton = document.getElementById("update-button");
+    const updateMessage = document.getElementById("update-message");
+
+    async function checkClientUpdate() {
+      if (updatingClient || !window.location.protocol.startsWith("http")) return;
+      try {
+        const res = await fetch("/api/update", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        updateBanner.hidden = !data.available;
+        if (data.available) updateMessage.textContent = `Có bản AiNoName Client mới (${data.available}).`;
+      } catch {}
+    }
+
+    updateButton.addEventListener("click", async () => {
+      if (updatingClient) return;
+      updatingClient = true;
+      updateButton.disabled = true;
+      updateMessage.textContent = "Đang tải và xác minh bản cập nhật…";
+      try {
+        const res = await fetch("/api/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Không cập nhật được client.");
+        if (!data.updated) {
+          updateMessage.textContent = "Client đã là bản mới nhất.";
+          updateButton.hidden = true;
+          return;
+        }
+
+        updateMessage.textContent = "Đã cập nhật. Đang khởi động lại gateway…";
+        for (let attempt = 0; attempt < 25; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          try {
+            const status = await fetch("/api/update?local=1", { cache: "no-store", signal: AbortSignal.timeout(1500) });
+            if (status.ok && (await status.json()).version === data.version) {
+              window.location.reload();
+              return;
+            }
+          } catch {}
+        }
+        updateButton.hidden = true;
+        updateMessage.textContent = "Bản mới đã được lưu. Nếu gateway chưa mở lại, hãy chạy AiNoName-Antigravity.bat.";
+      } catch (error) {
+        updateMessage.textContent = error.message;
+      } finally {
+        updatingClient = false;
+        updateButton.disabled = false;
+      }
+    });
 
     function addLog(msg, type = "info") {
       const box = document.getElementById("log-box");
@@ -866,6 +928,8 @@
     }, 2000);
 
     loadStatus();
+    checkClientUpdate();
+    setInterval(checkClientUpdate, 15 * 60 * 1000);
   </script>
 </body>
 </html>

@@ -8,6 +8,10 @@ const path = require("path");
 const { promisify } = require("util");
 const { execSync } = require("child_process");
 const forge = require("node-forge");
+const htmlContent = require("./ui.html");
+const releaseVersion = require("./release-version.json");
+const updatePublicKey = require("./update-public-key.pem");
+const { checkForUpdate, installUpdate } = require("./updater.js");
 
 // ── Paths & Config ────────────────────────────────────────────────────────────
 const APP_DIR = __dirname;
@@ -41,6 +45,10 @@ const HOST_REWRITE = {
 };
 
 const ANTIGRAVITY_IDE_VERSION = "2.24.0";
+const UPDATE_RESTART_CODE = 77;
+let activeChatRequests = 0;
+let updateInProgress = false;
+let restartingForUpdate = false;
 
 let config = {
   gatewayUrl: "https://ainoname.site",
@@ -710,6 +718,15 @@ function startMitmServer() {
         return passthrough(req, res, rawBody);
       }
 
+      if (restartingForUpdate) {
+        res.writeHead(503, { "Content-Type": "application/json", "Retry-After": "10" });
+        res.end(JSON.stringify({ error: { message: "AiNoName Client đang khởi động lại sau khi cập nhật." } }));
+        return;
+      }
+      if (res.destroyed) return;
+      activeChatRequests++;
+      res.once("close", () => { activeChatRequests--; });
+
       // ── Handle Chat Prompt Routing to Gateway ──────────────────────────────
       const isStream = req.url.includes(":streamGenerateContent");
       let clientAborted = false;
@@ -948,19 +965,71 @@ function setCorsHeaders(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
-function startWebServer() {
-  let htmlContent = "";
-  const candidatePaths = [
-    path.join(__dirname, "ui.html"),
-    path.join(__dirname, "src", "ui.html")
-  ];
-  for (const p of candidatePaths) {
-    if (fs.existsSync(p)) {
-      try { htmlContent = fs.readFileSync(p, "utf8"); break; } catch {}
+async function handleClientUpdate(req, res) {
+  const send = (status, data, onSent) => {
+    res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+    res.end(JSON.stringify(data), onSent);
+  };
+  const port = config.webPort || 20129;
+  const hosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`]);
+  const host = req.headers.host;
+  const origin = req.headers.origin;
+  if (!hosts.has(host) || (origin && origin !== `http://${host}`)) {
+    return send(403, { error: "Hãy mở trang cập nhật từ dashboard AiNoName Client trên máy này." });
+  }
+  const supported = process.env.AINONAME_RESTART_ON_UPDATE === "1" && path.basename(__filename) === "ainoname-agent.bundle.js";
+  if (!supported) return send(200, { version: releaseVersion, supported: false });
+
+  if (req.method === "GET") {
+    if (new URL(req.url, `http://${host}`).searchParams.get("local") === "1") {
+      return send(200, { version: releaseVersion, supported });
+    }
+    try {
+      const release = await checkForUpdate(releaseVersion, updatePublicKey);
+      return send(200, { version: releaseVersion, supported, available: release?.version ?? null });
+    } catch (error) {
+      return send(502, { version: releaseVersion, supported, error: error.message });
     }
   }
 
+  if (req.method !== "POST" || origin !== `http://${host}` || req.headers["content-type"] !== "application/json") {
+    return send(403, { error: "Yêu cầu cập nhật phải đến từ dashboard AiNoName Client." });
+  }
+  if (updateInProgress || activeChatRequests > 0) {
+    return send(409, { error: "Đợi IDE trả lời xong hoặc lần cập nhật đang chạy hoàn tất rồi thử lại." });
+  }
+
+  req.resume();
+  updateInProgress = true;
+  try {
+    const version = await installUpdate({
+      currentVersion: releaseVersion,
+      publicKey: updatePublicKey,
+      bundlePath: __filename,
+      canInstall() {
+        if (activeChatRequests > 0) throw new Error("IDE đang trả lời. Đợi lượt này hoàn tất rồi bấm cập nhật lại.");
+        restartingForUpdate = true;
+      },
+    });
+    if (!version) return send(200, { version: releaseVersion, updated: false });
+    log(`Đã cài AiNoName Client bản ${version}. Đang khởi động lại gateway...`, "success");
+    send(200, { version, updated: true });
+    setTimeout(() => process.exit(UPDATE_RESTART_CODE), 750);
+  } catch (error) {
+    restartingForUpdate = false;
+    send(502, { error: error.message });
+  } finally {
+    if (!restartingForUpdate) updateInProgress = false;
+  }
+}
+
+function startWebServer() {
+
   const webServer = http.createServer((req, res) => {
+    if (req.url?.split("?", 1)[0] === "/api/update") {
+      void handleClientUpdate(req, res);
+      return;
+    }
     setCorsHeaders(res);
     if (req.method === "OPTIONS") {
       res.writeHead(204);
@@ -972,7 +1041,7 @@ function startWebServer() {
     const pathname = parsedUrl.pathname;
 
     if (pathname === "/" || pathname === "/index.html") {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
       res.end(htmlContent);
       return;
     }

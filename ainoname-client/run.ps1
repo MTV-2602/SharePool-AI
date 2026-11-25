@@ -139,7 +139,14 @@ function Cleanup-Hosts {
 }
 
 try {
-    & $nodeCmd $agentPath
+    $env:AINONAME_RESTART_ON_UPDATE = "1"
+    do {
+        & $nodeCmd $agentPath
+        $agentExitCode = $LASTEXITCODE
+        if ($agentExitCode -eq 77) {
+            Write-Host "[*] Da cap nhat AiNoName Client. Dang khoi dong lai Gateway..." -ForegroundColor Cyan
+        }
+    } while ($agentExitCode -eq 77)
 } finally {
     Cleanup-Hosts
 }

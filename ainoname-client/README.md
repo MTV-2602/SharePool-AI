@@ -29,8 +29,16 @@ Bộ công cụ kết nối **1-Click** tự động dành riêng cho khách hà
 
 ## Cập nhật từ bản client cũ
 
-Đóng cửa sổ gateway cũ, giải nén gói mới rồi chạy lại `AiNoName-Antigravity.bat`. Nếu muốn giữ Client Key và ánh xạ đã lưu, chỉ chép `ainoname-agent.bundle.js` từ gói mới vào thư mục cũ trước khi mở lại.
+Đóng cửa sổ gateway cũ. Giải nén gói mới và chép `config.json` từ thư mục cũ sang để giữ Client Key và cấu hình. Mở `AiNoName-Antigravity.bat` trong thư mục mới.
+
+Ở các lần sau, dashboard hiện nút **Cập nhật** khi có bản mới. Đợi IDE trả lời xong rồi bấm nút. Gateway sẽ xác minh bản tải về, thay bộ chạy và tự mở lại. Client Key, Gateway URL và ánh xạ model nằm trong `config.json`.
 
 ## ⚙️ Dành cho Quản trị viên (Admin):
 - File `config.json` đã được tạo sẵn Client Key tương ứng với người dùng khi tải về từ Dashboard.
 - Nếu muốn đổi server chuyển tiếp sang máy chủ Local (khi test), mở giao diện `http://localhost:20129` -> Mở phần **Cài đặt nâng cao** -> Bấm chọn **Local Test (:20128)** -> Bấm **Lưu URL**.
+
+### Phát hành bản cập nhật client
+
+1. Tăng số trong `ainoname-client/src/release-version.json`.
+2. Chạy `npm run client:release` tại dự án chính. Lệnh ký dùng khóa riêng ở `%LOCALAPPDATA%\AiNoName\release-signing\client-ed25519.pem` hoặc đường dẫn `AINONAME_RELEASE_KEY`. Khóa riêng chỉ cần trên máy ký.
+3. Sau khi kiểm thử, cập nhật `ainoname-agent.bundle.js` và `update-manifest.json` trong thư mục `ainoname-client` của VPS. Đưa manifest lên sau bundle. Cập nhật thêm các tệp launcher trong cùng thư mục nếu chúng thay đổi để ZIP tải mới có launcher mới.

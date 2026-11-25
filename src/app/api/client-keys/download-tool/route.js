@@ -6,6 +6,22 @@ import AdmZip from "adm-zip";
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
+    const clientDir = path.join(process.cwd(), "ainoname-client");
+    const update = searchParams.get("update");
+    if (update !== null) {
+      if (update !== "manifest" && update !== "bundle") {
+        return NextResponse.json({ error: "Unknown update asset" }, { status: 400 });
+      }
+      const file = path.join(clientDir, update === "manifest" ? "update-manifest.json" : "ainoname-agent.bundle.js");
+      if (!fs.existsSync(file)) return NextResponse.json({ error: "Client update unavailable" }, { status: 404 });
+      return new NextResponse(fs.readFileSync(file), {
+        headers: {
+          "Content-Type": update === "manifest" ? "application/json" : "application/octet-stream",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
     const key = searchParams.get("key") || "";
     const gateway = searchParams.get("gateway");
     const label = searchParams.get("label") || "client";
@@ -15,7 +31,6 @@ export async function GET(request) {
     const defaultGateway = `${protoHeader}://${hostHeader}`;
     const gatewayUrl = (gateway && gateway.trim()) ? gateway.trim().replace(/\/+$/, "") : defaultGateway;
 
-    const clientDir = path.join(process.cwd(), "ainoname-client");
     if (!fs.existsSync(clientDir)) {
       return NextResponse.json({ error: "Client tool folder not found on server" }, { status: 500 });
     }
