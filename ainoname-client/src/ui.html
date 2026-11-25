@@ -391,7 +391,7 @@
     .log-info { color: #60a5fa; }
     .log-warn { color: #fbbf24; }
     .update-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; padding: 12px 16px; border: 1px solid #334155; border-radius: 12px; background: #172238; }
-    .update-banner[hidden] { display: none; }
+    .update-message { margin-top: 4px; color: #aabbd1; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -412,9 +412,12 @@
       </div>
     </div>
 
-    <div class="update-banner" id="update-banner" hidden>
-      <span id="update-message" role="status" aria-live="polite"></span>
-      <button type="button" class="btn btn-primary" id="update-button">Cập nhật</button>
+    <div class="update-banner">
+      <div>
+        <strong id="client-version">Phiên bản AiNoName Client</strong>
+        <div class="update-message" id="update-message" role="status" aria-live="polite">Đang kiểm tra cập nhật…</div>
+      </div>
+      <button type="button" class="btn btn-secondary" id="update-button" disabled>Kiểm tra cập nhật</button>
     </div>
 
     <!-- Main Status Hero Card -->
@@ -608,23 +611,52 @@
     let isDNSActive = false;
     let configData = {};
     let updatingClient = false;
-    const updateBanner = document.getElementById("update-banner");
+    let checkingClient = false;
+    let availableUpdate = null;
+    const clientVersion = document.getElementById("client-version");
     const updateButton = document.getElementById("update-button");
     const updateMessage = document.getElementById("update-message");
 
+    function showUpdateAction(version) {
+      availableUpdate = version;
+      updateButton.textContent = version ? "Cập nhật" : "Kiểm tra cập nhật";
+      updateButton.classList.toggle("btn-primary", !!version);
+      updateButton.classList.toggle("btn-secondary", !version);
+    }
+
     async function checkClientUpdate() {
-      if (updatingClient || !window.location.protocol.startsWith("http")) return;
+      if (updatingClient || checkingClient) return;
+      if (!window.location.protocol.startsWith("http")) {
+        updateMessage.textContent = "Mở dashboard trên localhost để kiểm tra cập nhật.";
+        return;
+      }
+      checkingClient = true;
+      updateButton.disabled = true;
+      updateMessage.textContent = "Đang kiểm tra cập nhật…";
       try {
         const res = await fetch("/api/update", { cache: "no-store" });
-        if (!res.ok) return;
         const data = await res.json();
-        updateBanner.hidden = !data.available;
-        if (data.available) updateMessage.textContent = `Có bản AiNoName Client mới (${data.available}).`;
-      } catch {}
+        if (data.version) clientVersion.textContent = `AiNoName Client · Bản ${data.version}`;
+        if (!res.ok) throw new Error(data.error || "Không kiểm tra được bản cập nhật.");
+        showUpdateAction(data.available || null);
+        updateMessage.textContent = !data.supported
+          ? "Chạy AiNoName-Antigravity.bat để bật cập nhật."
+          : data.available ? `Có bản ${data.available} sẵn sàng cài đặt.` : "Đang dùng bản mới nhất.";
+      } catch (error) {
+        showUpdateAction(null);
+        updateMessage.textContent = error.message;
+      } finally {
+        checkingClient = false;
+        updateButton.disabled = false;
+      }
     }
 
     updateButton.addEventListener("click", async () => {
-      if (updatingClient) return;
+      if (updatingClient || checkingClient) return;
+      if (!availableUpdate) {
+        await checkClientUpdate();
+        return;
+      }
       updatingClient = true;
       updateButton.disabled = true;
       updateMessage.textContent = "Đang tải và xác minh bản cập nhật…";
@@ -637,8 +669,8 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Không cập nhật được client.");
         if (!data.updated) {
-          updateMessage.textContent = "Client đã là bản mới nhất.";
-          updateButton.hidden = true;
+          showUpdateAction(null);
+          updateMessage.textContent = "Đang dùng bản mới nhất.";
           return;
         }
 
@@ -653,7 +685,7 @@
             }
           } catch {}
         }
-        updateButton.hidden = true;
+        showUpdateAction(null);
         updateMessage.textContent = "Bản mới đã được lưu. Nếu gateway chưa mở lại, hãy chạy AiNoName-Antigravity.bat.";
       } catch (error) {
         updateMessage.textContent = error.message;

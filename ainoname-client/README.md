@@ -31,7 +31,7 @@ Bộ công cụ kết nối **1-Click** tự động dành riêng cho khách hà
 
 Đóng cửa sổ gateway cũ. Giải nén gói mới và chép `config.json` từ thư mục cũ sang để giữ Client Key và cấu hình. Mở `AiNoName-Antigravity.bat` trong thư mục mới.
 
-Ở các lần sau, dashboard hiện nút **Cập nhật** khi có bản mới. Đợi IDE trả lời xong rồi bấm nút. Gateway sẽ xác minh bản tải về, thay bộ chạy và tự mở lại. Client Key, Gateway URL và ánh xạ model nằm trong `config.json`.
+Từ bản 2, mục cập nhật nằm ngay đầu dashboard `http://localhost:20129`. Bấm **Kiểm tra cập nhật** để xem trạng thái. Khi có bản mới, nút đổi thành **Cập nhật**. Đợi IDE trả lời xong rồi bấm nút. Gateway sẽ xác minh bản tải về, thay bộ chạy và tự mở lại. Client Key, Gateway URL và ánh xạ model nằm trong `config.json`.
 
 ## ⚙️ Dành cho Quản trị viên (Admin):
 - File `config.json` đã được tạo sẵn Client Key tương ứng với người dùng khi tải về từ Dashboard.
