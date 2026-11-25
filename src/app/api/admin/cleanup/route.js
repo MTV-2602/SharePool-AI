@@ -41,11 +41,11 @@ export async function POST(request) {
       console.warn("[Cleanup API] client_key_usage_logs prune warning:", e.message);
     }
 
-    // Prune request_details
+    // Prune requestDetails
     try {
-      db.run("DELETE FROM request_details WHERE datetime(timestamp) < datetime('now', ?)", [intervalStr]);
+      db.run("DELETE FROM requestDetails WHERE datetime(timestamp) < datetime('now', ?)", [intervalStr]);
     } catch (e) {
-      console.warn("[Cleanup API] request_details prune warning:", e.message);
+      console.warn("[Cleanup API] requestDetails prune warning:", e.message);
     }
 
     return NextResponse.json({

@@ -20,6 +20,9 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  * @property {Object}  [oauth]        OAuth flow config (see OAuthConfig). Builds PROVIDER_OAUTH[id].
  * @property {Object}  [media]        Non-LLM services (see MediaConfig). Builds PROVIDER_MEDIA[id].
  * @property {Array}   [models]       Model list; omit = no model key, [] = explicit empty.
+ *                                   Each entry may declare `params: [...]` — extra request
+ *                                   params the model requires (e.g. ["input_type"] for
+ *                                   NVIDIA's asymmetric embedding models).
  * @property {Object}  [features]     Feature flags, e.g. {usage:true}.
  * @property {Object}  [thinkingConfig] Reasoning UI: {options:[...],defaultMode}.
  * @property {boolean} [passthroughModels] Forward client model id untouched.
@@ -36,6 +39,13 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  * MediaConfig: { serviceKinds:[...], ttsConfig, sttConfig, embeddingConfig, imageConfig,
  *   searchViaChat:{defaultModel,pricingUrl}, hiddenKinds } — each *Config: {baseUrl,authType,authHeader,
  *   format,defaultModel,models:[{id,name,dimensions?}]}.
+ *
+ * imageConfig.modelMap (optional): maps a client-facing model id to a provider-resolved id when
+ *   those differ — e.g. the HuggingFace Inference Providers router, where a Hub id like
+ *   `black-forest-labs/FLUX.1-schnell` is addressed as `fal-ai/fal-ai/flux/schnell`. A value is
+ *   either the provider path, or `{path, task}` when the request shape differs per task
+ *   (HuggingFace uses task:"image-to-image" to move the prompt under `parameters.prompt`).
+ *   Ignored by providers whose model ids are sent verbatim.
  */
 
 // Shared transport defaults — provider only overrides fields that differ.

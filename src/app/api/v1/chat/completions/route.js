@@ -1,6 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
-import { extractBearerToken, validateClientKey, wrapResponseWithClientKeyLogging } from "@/lib/auth/clientKeyAuth.js";
+import { extractBearerToken, isClientKeyToken, validateClientKey, wrapResponseWithClientKeyLogging } from "@/lib/auth/clientKeyAuth.js";
 import { getEffectiveChatPayloadLimit } from "@/lib/settings/chatPayloadLimit";
 
 let initialized = false;
@@ -28,10 +28,10 @@ export async function OPTIONS() {
   });
 }
 
-export async function POST(request) {  
+export async function POST(request) {
   await ensureInitialized();
-  
-  // Header-only Content-Length detection (does not claim actual bytes hardcap on unchunked/streaming requests without Content-Length)
+
+  // Header-only Content-Length detection
   const contentLen = Number(request.headers.get("content-length")) || 0;
   const maxRequestBodyBytes = await getEffectiveChatPayloadLimit();
   if (contentLen > maxRequestBodyBytes) {
@@ -48,8 +48,7 @@ export async function POST(request) {
   }
 
   const token = extractBearerToken(request);
-  const isClientKey = token && (token.startsWith("ck-") || (token.startsWith("sk-") && token.split("-").length === 2));
-  if (isClientKey) {
+  if (isClientKeyToken(token)) {
     const authResult = await validateClientKey(token);
     if (!authResult.valid) {
       return new Response(JSON.stringify({ error: { message: authResult.error } }), {
@@ -59,8 +58,7 @@ export async function POST(request) {
     }
     request._clientKeyValidated = true;
     request._clientKeyData = authResult.keyData;
-    
-    // Parse the body ONCE and pass via request._parsedBody to avoid 2x RAM spike on large requests
+
     let model = "unknown";
     let approxPromptTokens = 1000;
     try {
@@ -68,13 +66,13 @@ export async function POST(request) {
       request._parsedBody = reqBody;
       model = reqBody.model || model;
       approxPromptTokens = contentLen > 0 ? Math.ceil(contentLen / 4) : 1000;
-    } catch (e) {}
+    } catch {}
 
     const response = await handleChat(request);
     return await wrapResponseWithClientKeyLogging(response, authResult.keyData.id, model, approxPromptTokens);
   }
 
-  // Fallback to local handling (developer sk- key or other credentials)
+  // Fallback to local handling
   return await handleChat(request);
 }
 

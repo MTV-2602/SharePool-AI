@@ -5,6 +5,8 @@
   "webPort": 20129,
   "mitmPort": 443,
   "modelMapping": {
+    "gemini-4-hydrogen-high": "ag/gemini-4-hydrogen-high",
+    "gemini-4-hydrogen-low": "ag/gemini-4-hydrogen-low",
     "gemini-3.8-flash-high": "ag/gemini-3.8-flash-high",
     "claude-sonnet-4-6": "ag/claude-sonnet-4-6",
     "claude-opus-4-6-thinking": "ag/claude-opus-4-6-thinking",

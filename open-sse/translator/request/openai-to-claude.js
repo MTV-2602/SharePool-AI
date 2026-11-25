@@ -40,7 +40,10 @@ export function openaiToClaudeRequest(model, body, stream) {
     // Extract system messages
     for (const msg of body.messages) {
       if (msg.role === ROLE.SYSTEM) {
-        systemParts.push(typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n"));
+        const textParts = Array.isArray(msg.content)
+          ? msg.content.filter(part => part.type === OPENAI_BLOCK.TEXT).map(part => part.text)
+          : [msg.content];
+        systemParts.push(...textParts.map(stripAnthropicBillingHeader).filter(Boolean));
       }
     }
 

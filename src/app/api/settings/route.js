@@ -3,14 +3,6 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
-import { cookies } from "next/headers";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
-import {
-  isValidPayloadLimit,
-  publishPayloadLimit,
-  getPayloadLimitMetadata,
-  PAYLOAD_LIMIT_SETTING_KEY,
-} from "@/lib/settings/chatPayloadLimit";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,6 +10,9 @@ export const revalidate = 0;
 const SETTINGS_RESPONSE_HEADERS = {
   "Cache-Control": "no-store"
 };
+
+// Secrets must never be mass-assigned from request body (CWE-915)
+const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 
 export async function GET() {
   try {
@@ -28,8 +23,6 @@ export async function GET() {
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
     
-    safeSettings.payloadLimit = getPayloadLimitMetadata(settings);
-
     return NextResponse.json({ 
       ...safeSettings, 
       enableRequestLogs,
@@ -46,33 +39,8 @@ export async function PATCH(request) {
   try {
     const body = await request.json();
 
-    // Reject spoofing computed metadata write
-    if (Object.prototype.hasOwnProperty.call(body, "payloadLimit")) {
-      return NextResponse.json(
-        { error: "Cannot write computed metadata 'payloadLimit'" },
-        { status: 400 }
-      );
-    }
-
-    // Guard payload limit field modifications before password work or persistence
-    // Requires verified dashboard auth_token cookie even if requireLogin=false
-    if (Object.prototype.hasOwnProperty.call(body, PAYLOAD_LIMIT_SETTING_KEY)) {
-      const cookieStore = await cookies();
-      const token = cookieStore.get("auth_token")?.value;
-      if (!token || !(await verifyDashboardAuthToken(token))) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
-
-      const val = body[PAYLOAD_LIMIT_SETTING_KEY];
-      if (!isValidPayloadLimit(val)) {
-        return NextResponse.json(
-          {
-            error: "Invalid chatCompletionsMaxBodyBytes: must be a safe integer between 1048576 (1MiB) and 33554432 (32MiB), or null to inherit",
-          },
-          { status: 400 }
-        );
-      }
-    }
+    // Strip protected secrets before any internal handling sets them
+    for (const key of PROTECTED_SETTING_KEYS) delete body[key];
 
     // If updating password, hash it
     if (body.newPassword) {
@@ -110,11 +78,6 @@ export async function PATCH(request) {
 
     const settings = await updateSettings(body);
 
-    // Publish to bounded cache only after persistence success
-    if (Object.prototype.hasOwnProperty.call(body, PAYLOAD_LIMIT_SETTING_KEY)) {
-      publishPayloadLimit(settings[PAYLOAD_LIMIT_SETTING_KEY]);
-    }
-
     // Apply outbound proxy settings immediately (no restart required)
     if (
       Object.prototype.hasOwnProperty.call(body, "outboundProxyEnabled") ||
@@ -133,9 +96,20 @@ export async function PATCH(request) {
       resetComboRotation();
     }
 
+    if (
+      Object.prototype.hasOwnProperty.call(body, "claudeAutoPing") ||
+      Object.prototype.hasOwnProperty.call(body, "codexAutoPing")
+    ) {
+      // Keep the scheduler absent when no account opted in; load its provider graph only on demand.
+      import("@/shared/services/quotaAutoPing")
+        .then(({ configureQuotaAutoPing }) => {
+          configureQuotaAutoPing(settings);
+        })
+        .catch((error) => console.warn("[AutoPing] settings update failed:", error.message));
+    }
+
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
-    safeSettings.payloadLimit = getPayloadLimitMetadata(settings);
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);

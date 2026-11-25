@@ -14,7 +14,12 @@ import { timestampSlug, getAppVersion } from "./version.js";
 const KEEP_BACKUPS = 3;
 
 // Tables excluded from safety backups (large, non-critical, reproducible).
-const BACKUP_EXCLUDE_TABLES = ["requestDetails"];
+const BACKUP_EXCLUDE_TABLES = [
+  "requestDetails",
+  "hotmail_accounts",
+  "chatgpt_credentials",
+  "oauth_states",
+];
 
 export function makeBackupDir(label) {
   ensureDirs();

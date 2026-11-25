@@ -284,6 +284,11 @@ export async function logClientKeyUsage(clientKeyId, model, promptTokens, comple
   }
 }
 
+export function isClientKeyToken(token) {
+  if (typeof token !== "string" || !token) return false;
+  return token.startsWith("ck-") || (token.startsWith("sk-") && token.split("-").length === 2);
+}
+
 /**
  * Extract Bearer token from request headers.
  */
@@ -357,7 +362,13 @@ function inferProviderFromModel(model) {
     m.startsWith("antigravity/") ||
     m.startsWith("ag/") ||
     m.includes("gemini") ||
+    m.includes("hydrogen") ||
+    m.includes("neon") ||
+    m.includes("carbon") ||
+    m.includes("argon") ||
     m.includes("gpt-oss") ||
+    m.includes("claude-sonnet-5") ||
+    m.includes("claude-opus-5") ||
     m.includes("claude-sonnet-4") ||
     m.includes("claude-opus-4") ||
     m === "gpt-5.4"

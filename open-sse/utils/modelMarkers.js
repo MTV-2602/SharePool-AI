@@ -18,4 +18,3 @@ export function stripModelContextMarker(modelStr) {
   if (!match) return { model: modelStr, contextMarker: null };
   return { model: trimmed.slice(0, -match[0].length), contextMarker: match[0].slice(1, -1).toLowerCase() };
 }
-

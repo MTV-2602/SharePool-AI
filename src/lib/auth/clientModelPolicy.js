@@ -11,12 +11,12 @@ export function normalizeModelId(modelId) {
   return modelId.replace(/(\d)-(\d)/g, "$1.$2");
 }
 
-// Strips thinking suffix: e.g. "(high)" or "-high" / "-low" / "-medium" / "-minimal" / "-extra-low"
+// Strips thinking suffix: e.g. "(high)" or "-xhigh" / "-high" / "-low" / "-medium" / "-minimal" / "-extra-low" / "-max"
 export function stripThinking(modelId) {
   if (typeof modelId !== "string") return modelId;
   return modelId
     .replace(/\([^()]+\)\s*$/, "")
-    .replace(/-(high|medium|low|minimal|extra-low)$/i, "");
+    .replace(/-(xhigh|high|medium|low|minimal|extra-low|max)$/i, "");
 }
 
 // Canonical provider alias map for strict provider identity comparison

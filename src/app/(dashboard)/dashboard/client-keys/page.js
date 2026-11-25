@@ -256,7 +256,7 @@ export default function ClientKeysPage() {
         </div>
         <div className="flex items-center gap-3">
           <a
-            href="/downloads/AiNoName-Client.zip"
+            href="/api/client-keys/download-tool"
             download="AiNoName-Client.zip"
             className="bg-emerald-600/90 hover:bg-emerald-600 text-white font-medium px-4 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-emerald-500/20 flex items-center gap-2 text-sm"
             title="Tải bộ cài đặt Antigravity IDE Gateway cho máy khách"

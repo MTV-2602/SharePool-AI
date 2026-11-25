@@ -95,7 +95,8 @@ export async function getComboModels(modelStr) {
 
 // A bare `claude-*` id infers provider "anthropic" (API key). When no anthropic
 // connection is active but a Claude OAuth connection is, use "claude" instead of
-// failing with "No active credentials for provider: anthropic".
+// failing with "No active credentials for provider: anthropic" (same idea as the
+// Codex-only gpt-* rules in open-sse/services/model.js).
 async function fallbackToClaudeOAuth(info) {
   if (info?.provider !== "anthropic") return info;
   const hasActive = async (provider) =>

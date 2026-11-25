@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { isAntigravityDisplayModel } from "@/shared/utils/antigravityDisplay.js";
 import { Card, Button, Badge, Modal, Input, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
 
@@ -38,15 +39,10 @@ export default function AntigravityToolCard({
   }, [initialStatus]);
 
   useEffect(() => {
-    if (isExpanded && !status) {
-      fetchStatus();
-      loadSavedMappings();
-      fetchModelAliases();
-    }
-    if (isExpanded) {
-      loadSavedMappings();
-      fetchModelAliases();
-    }
+    if (!isExpanded) return;
+    if (!status) fetchStatus();
+    loadSavedMappings();
+    fetchModelAliases();
   }, [isExpanded]);
 
   const loadSavedMappings = async () => {
@@ -243,6 +239,8 @@ export default function AntigravityToolCard({
               className="size-8 object-contain rounded-lg"
               sizes="32px"
               onError={(e) => { e.target.style.display = "none"; }}
+            loading="lazy"
+            decoding="async"
             />
           </div>
           <div className="min-w-0">
@@ -341,7 +339,7 @@ export default function AntigravityToolCard({
                 )}
               </div>
 
-              {tool.defaultModels.map((model) => (
+              {tool.defaultModels.filter((model) => isAntigravityDisplayModel(model.id)).map((model) => (
                 <div key={model.alias} className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">{model.name}</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
@@ -467,15 +465,17 @@ export default function AntigravityToolCard({
       </Modal>
 
       {/* Model Select Modal */}
-      <ModelSelectModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSelect={handleModelSelect}
-        selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null}
-        activeProviders={activeProviders}
-        modelAliases={modelAliases}
-        title={`Select model for ${currentEditingAlias}`}
-      />
+      {modalOpen && (
+        <ModelSelectModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSelect={handleModelSelect}
+          selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          title={`Select model for ${currentEditingAlias}`}
+        />
+      )}
     </Card>
   );
 }

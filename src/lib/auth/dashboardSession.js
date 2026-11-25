@@ -1,22 +1,27 @@
 import { SignJWT, jwtVerify } from "jose";
+import bcrypt from "bcryptjs";
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { DATA_DIR } from "@/lib/dataDir";
+import { getSettings } from "@/lib/localDb";
 
 const DEFAULT_PASSWORD = "123456";
-let SECRET = null;
+const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
 
-const JWT_SECRET_FALLBACK = "9router-jwt-secret-stable-key-portal-fallback";
-
-async function getJwtSecret() {
+function loadJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  return JWT_SECRET_FALLBACK;
+  const file = path.join(DATA_DIR, "jwt-secret");
+  try {
+    return fs.readFileSync(file, "utf8").trim();
+  } catch {}
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const generated = crypto.randomBytes(32).toString("hex");
+  fs.writeFileSync(file, generated, { mode: 0o600 });
+  return generated;
 }
 
-async function getSecretKey() {
-  if (!SECRET) {
-    const secretStr = await getJwtSecret();
-    SECRET = new TextEncoder().encode(secretStr);
-  }
-  return SECRET;
-}
+const SECRET = new TextEncoder().encode(loadJwtSecret());
 
 export function shouldUseSecureCookie(request) {
   const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";
@@ -26,19 +31,17 @@ export function shouldUseSecureCookie(request) {
 }
 
 export async function createDashboardAuthToken(claims = {}) {
-  const key = await getSecretKey();
   return new SignJWT({ authenticated: true, ...claims })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("24h")
-    .sign(key);
+    .sign(SECRET);
 }
 
 export async function verifyDashboardAuthToken(token) {
   if (!token) return false;
   try {
-    const key = await getSecretKey();
-    await jwtVerify(token, key);
+    await jwtVerify(token, SECRET);
     return true;
   } catch {
     return false;
@@ -48,8 +51,7 @@ export async function verifyDashboardAuthToken(token) {
 export async function getDashboardAuthSession(token) {
   if (!token) return null;
   try {
-    const key = await getSecretKey();
-    const { payload } = await jwtVerify(token, key);
+    const { payload } = await jwtVerify(token, SECRET);
     return payload;
   } catch {
     return null;
@@ -63,6 +65,7 @@ export async function setDashboardAuthCookie(cookieStore, request, claims = {}) 
     secure: shouldUseSecureCookie(request),
     sameSite: "lax",
     path: "/",
+    maxAge: SESSION_MAX_AGE_SEC,
   });
 }
 
@@ -73,8 +76,6 @@ export function clearDashboardAuthCookie(cookieStore) {
 // Verify the current dashboard password (re-auth for sensitive actions).
 export async function verifyDashboardPassword(password) {
   if (typeof password !== "string" || !password) return false;
-  const { getSettings } = await import("@/lib/localDb");
-  const bcrypt = await import("bcryptjs");
   const settings = await getSettings();
   const storedHash = settings?.password;
   if (storedHash) return bcrypt.compare(password, storedHash);

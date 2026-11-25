@@ -11,11 +11,11 @@ export const NOUS_ATTRIBUTION = {
   tags: ["product=9router", "client=9router", "user=9router"],
 };
 
-// === Gemini CLI === derive từ registry gemini-cli.transport
+// === Gemini CLI === derived from registry gemini-cli.transport
 export const GEMINI_CLI_VERSION = PROVIDERS["gemini-cli"]?.cliVersion;
 export const GEMINI_CLI_API_CLIENT = PROVIDERS["gemini-cli"]?.apiClient;
 
-// === Codex CLI === derive từ registry codex.transport
+// === Codex CLI === derived from registry codex.transport
 export const CODEX_CLI_VERSION = PROVIDERS["codex"]?.cliVersion;
 
 // Map Node arch to Gemini CLI arch string (x64/x86/arm64/...)
@@ -30,7 +30,7 @@ export function geminiCLIUserAgent(model = "unknown") {
 }
 
 // === GitHub Copilot ===
-// Derive từ registry github.transport.copilot
+// Derived from registry github.transport.copilot
 const _ghCopilot = PROVIDERS.github?.copilot || {};
 export const GITHUB_COPILOT = {
   VSCODE_VERSION: _ghCopilot.vscodeVersion,
@@ -209,7 +209,7 @@ export const ANTIGRAVITY_PROMPT_REWRITES = [
 // Official Antigravity 2.33.0 identity, sent ahead of every generation request.
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity Agent, a powerful agentic AI coding assistant designed by the Google engineering team.\nYou are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\nThe USER will send you requests, which you must always prioritize addressing. User requests are enclosed within <USER_REQUEST> tags.";
 
-// Derive từ registry oauth.refreshLeadMs
+// Derived from registry oauth.refreshLeadMs
 export const REFRESH_LEAD_MS = Object.fromEntries(
   Object.entries(PROVIDER_OAUTH).filter(([, o]) => o.refreshLeadMs).map(([id, o]) => [id, o.refreshLeadMs])
 );
@@ -219,7 +219,6 @@ export const OAUTH_ENDPOINTS = {
   google:    { token: "https://oauth2.googleapis.com/token", auth: "https://accounts.google.com/o/oauth2/auth" },
   openai:    { token: PROVIDER_OAUTH["codex"]?.tokenUrl, auth: PROVIDER_OAUTH["codex"]?.authorizeUrl },
   anthropic: { token: PROVIDER_OAUTH["claude"]?.tokenUrl, auth: "https://api.anthropic.com/v1/oauth/authorize" }, // ≠ claude.authorizeUrl (claude.ai login) — keep
-  qwen:      { token: PROVIDER_OAUTH["qwen"]?.tokenUrl, auth: PROVIDER_OAUTH["qwen"]?.deviceCodeUrl },
   iflow:     { token: PROVIDER_OAUTH["iflow"]?.tokenUrl, auth: PROVIDER_OAUTH["iflow"]?.authorizeUrl },
   github:    { token: PROVIDER_OAUTH["github"]?.tokenUrl, auth: PROVIDER_OAUTH["github"]?.authorizeUrl, deviceCode: PROVIDER_OAUTH["github"]?.deviceCodeUrl },
 };

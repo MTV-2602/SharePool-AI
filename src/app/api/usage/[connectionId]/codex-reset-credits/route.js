@@ -1,3 +1,4 @@
+// Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
 
 import { getProviderConnectionById } from "@/lib/localDb";
@@ -5,11 +6,12 @@ import { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from 
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "../route.js";
 
-const AUTH_EXPIRED_PATTERNS = ["token_expired", "invalid_token", "unauthorized", "re-authenticate", "401"];
+const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
 
 function isAuthExpiredResult(result) {
-  if (!result) return false;
-  const values = [result.code, result.message, String(result.status || "")].filter(Boolean).map((v) => String(v).toLowerCase());
+  const values = [result?.message, result?.code, result?.raw?.detail, result?.raw?.error]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
   return values.some((value) => AUTH_EXPIRED_PATTERNS.some((pattern) => value.includes(pattern)));
 }
 
@@ -20,28 +22,28 @@ function isAuthExpiredError(error) {
 function getResponseForConsumeResult(result, redeemRequestId) {
   if (result.ok) {
     return Response.json({
-      success: true,
       code: result.code,
-      windowsReset: result.windowsReset,
+      reset: true,
+      windows_reset: result.windowsReset,
       redeemRequestId,
-      message: result.message || "Reset credit consumed successfully.",
-      raw: result.raw,
+      credit: result.raw?.credit || null,
     });
   }
 
   if (result.noCredit) {
     return Response.json({
-      success: false,
       code: "no_credit",
-      message: result.message || "No reset credits available.",
-      raw: result.raw,
+      reset: false,
+      windows_reset: result.windowsReset,
+      message: "No Codex reset credits available.",
     }, { status: 409 });
   }
 
   return Response.json({
-    error: result.message || "Failed to consume reset credit.",
-    code: result.code,
-    raw: result.raw,
+    code: result.code || "unknown_response",
+    reset: false,
+    windows_reset: result.windowsReset,
+    message: result.message || "Codex reset credit consume returned an unexpected response.",
   }, { status: result.status >= 400 && result.status < 500 ? result.status : 502 });
 }
 

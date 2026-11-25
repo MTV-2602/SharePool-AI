@@ -1,4 +1,5 @@
 import { KIRO_CONFIG, assertValidAwsRegion } from "../constants/oauth.js";
+import { buildKiroIdentityHeaders } from "open-sse/shared/kiroIdentity.js";
 
 /**
  * Kiro OAuth Service
@@ -260,11 +261,9 @@ export class KiroService {
   }
 
   /**
-   * List available CodeWhisperer profiles for a token (or API key) and return
-   * the best-matching profileArn. AWS SSO OIDC logins return no profileArn, so
-   * it must be fetched separately — the same call works for API-key auth.
-   * Accepts both `arn` and `profileArn` response field names (the API-key
-   * JSON-1.0 surface returns `arn`).
+   * List available CodeWhisperer profiles for OAuth/IDC tokens and return the
+   * best-matching profileArn. API keys use the Amazon Q model catalog instead;
+   * ListAvailableProfiles does not support TokenType=API_KEY.
    */
   async listAvailableProfiles(accessToken, region = "us-east-1") {
     assertValidAwsRegion(region);
@@ -277,6 +276,7 @@ export class KiroService {
         "x-amz-target": "AmazonCodeWhispererService.ListAvailableProfiles",
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
+        ...buildKiroIdentityHeaders({ accessToken }),
       },
       body: JSON.stringify({ maxResults: 10 }),
     });
@@ -294,10 +294,40 @@ export class KiroService {
   }
 
   /**
-   * Validate an API-key credential by listing profiles with it. API keys are
-   * long-lived bearer tokens (no refresh), so the only way to validate one is
-   * to make an authenticated CodeWhisperer call. Returns a credential object
-   * ready to persist as a "kiro" connection with authMethod="api_key".
+   * Validate an API key against the Amazon Q model catalog. A bearer-only call
+   * to ListAvailableProfiles can return HTTP 200 with an empty list for an
+   * arbitrary key, so it is not proof that the key can run inference.
+   */
+  async listAvailableApiKeyModels(apiKey, region = "us-east-1") {
+    assertValidAwsRegion(region);
+    const params = new URLSearchParams({ origin: "AI_EDITOR" });
+    const endpoint = `https://q.${region}.amazonaws.com/ListAvailableModels?${params}`;
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "TokenType": "API_KEY",
+        "Accept": "application/json",
+        ...buildKiroIdentityHeaders({ apiKey }),
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to list API-key models: ${error}`);
+    }
+
+    const data = await response.json();
+    const models = Array.isArray(data?.models) ? data.models : [];
+    if (models.length === 0) {
+      throw new Error("API key returned no available models");
+    }
+    return models;
+  }
+
+  /**
+   * Validate an API-key credential through the same Amazon Q surface used for
+   * inference. API keys are account-bound but do not require a profileArn.
    */
   async validateApiKey(apiKey, region = "us-east-1") {
     if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
@@ -305,9 +335,8 @@ export class KiroService {
     }
     const trimmed = apiKey.trim();
 
-    let profileArn = null;
     try {
-      profileArn = await this.listAvailableProfiles(trimmed, region);
+      await this.listAvailableApiKeyModels(trimmed, region);
     } catch (error) {
       throw new Error(`API key validation failed: ${error.message}`);
     }
@@ -315,7 +344,7 @@ export class KiroService {
     return {
       accessToken: trimmed,
       refreshToken: null,
-      profileArn,
+      profileArn: null,
       region,
       authMethod: "api_key",
     };
@@ -335,6 +364,7 @@ export class KiroService {
         "x-amz-target": target,
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
+        ...buildKiroIdentityHeaders({ accessToken, providerSpecificData: { profileArn } }),
       },
       body: JSON.stringify({
         origin: "AI_EDITOR",

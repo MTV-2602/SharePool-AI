@@ -229,6 +229,16 @@ export const MODEL_CAPABILITIES = {
   "north-mini-code-free":    { reasoning: true, thinkingFormat: "openai", contextWindow: 256000, maxOutput: 64000 },
   "ring-2.6-1t-free":        { reasoning: true, thinkingFormat: "openai", contextWindow: 262000, maxOutput: 66000 },
   "x-preview-f-free":        { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+  "longcat-2.5-free":        { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 262144 },
+  "iceman-free":             { reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 131072 },
+  "inkling-2-small-free":    { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "beam-free":               { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "flint-40b-free":          { reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 65536 },
+  "nemotron-3.5-super-vl-free": { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+  "jev-1.13-free":           { reasoning: false, thinkingFormat: "openai", contextWindow: 64000, maxOutput: 32000 },
+  "nemotron-3.5-lightning-free": { reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 262144 },
+  "hy4-flash-free":          { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 65536 },
+  "tidepool-alpha-free":     { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
 };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
@@ -248,13 +258,20 @@ const DEVIN_CLI_GPT_CAPS = { vision: true, reasoning: true, search: true, thinki
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // Native /v1/models resolves latest to Large 4 (2026-11-13); older Large IDs and resellers keep their own limits.
+  "mistral": {
+    "mistral-large-latest": { vision: true, contextWindow: 1048576 },
+    "mistral-large-4": { vision: true, contextWindow: 1048576 },
+    "mistral-large-4-0": { vision: true, contextWindow: 1048576 },
+  },
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
     "nvidia/nemotron-3.5-bolt-e4b": { tools: true, contextWindow: 128000, maxOutput: 8192 },
     "nvidia/nemotron-3.5-lightning-30b-a3b": { tools: false, reasoning: true, thinkingFormat: "openai", contextWindow: 128000, maxOutput: 8192 },
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": { tools: false, reasoning: true, thinkingFormat: "openai", contextWindow: 128000, maxOutput: 8192 },
-    "nvidia/nemotron-3-ultra-550b-a55b": { tools: false, reasoning: true, thinkingFormat: "openai", contextWindow: 128000, maxOutput: 8192 },
+    // Hosted endpoint accepted 1,000,057 prompt tokens and the streamed Read/Edit/Read fixture (2026-11-13).
+    "nvidia/nemotron-3-ultra-550b-a55b": { tools: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 8192 },
     "poolside/laguna-xs-2.1": { tools: true, contextWindow: 200000, maxOutput: 32000 },
     "meta/llama-guard-4-12b": { tools: false, contextWindow: 128000, maxOutput: 4096 },
     "nvidia/riva-translate-4b-instruct-v2": { tools: false, contextWindow: 128000, maxOutput: 4096 },

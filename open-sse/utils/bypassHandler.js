@@ -252,9 +252,6 @@ function mergeChunksToResponse(chunks, sourceFormat) {
         const startUsage = messageStart.message.usage;
         const deltaUsage = messageDelta?.usage;
         if (startUsage || deltaUsage) {
-          const mergedInputTokens = (startUsage?.input_tokens > 0)
-            ? startUsage.input_tokens
-            : (deltaUsage?.input_tokens ?? startUsage?.input_tokens);
           finalChunk.usage = {
             ...(startUsage || {}),
             ...(deltaUsage || {}),
@@ -264,8 +261,8 @@ function mergeChunksToResponse(chunks, sourceFormat) {
             ...(startUsage?.cache_creation_input_tokens !== undefined
               ? { cache_creation_input_tokens: startUsage.cache_creation_input_tokens }
               : {}),
-            ...(mergedInputTokens !== undefined
-              ? { input_tokens: mergedInputTokens }
+            ...(startUsage?.input_tokens !== undefined
+              ? { input_tokens: startUsage.input_tokens }
               : {})
           };
         }

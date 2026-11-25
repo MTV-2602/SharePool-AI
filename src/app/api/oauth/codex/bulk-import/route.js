@@ -1,83 +1,47 @@
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
-import { supabase } from "@/lib/supabase";
 
 /**
  * POST /api/oauth/codex/bulk-import
- * Bulk import multiple codex (OAuth) account JSON objects or raw lines in one call.
+ * Bulk import multiple codex (OAuth) account JSON objects in one call.
  *
  * Body accepts any of:
  *   - Array:    [{...}, {...}]
  *   - Single:   {...}
  *   - Wrapped:  { accounts: [{...}, ...] }
- *   - Raw Text: "email1|token1\nemail2|token2"
+ *
+ * Each item must contain at least `accessToken`. Missing email / chatgpt
+ * account info is best-effort backfilled from the JWT (idToken or accessToken).
+ *
+ * Tokens are NEVER echoed back in the response.
  */
 export async function POST(request) {
-  let accounts = [];
-  let rawBody = "";
-
+  let body;
   try {
-    rawBody = await request.text();
-    try {
-      const parsed = JSON.parse(rawBody);
-      // Normalize JSON to array
-      if (Array.isArray(parsed)) {
-        accounts = parsed;
-      } else if (parsed && typeof parsed === "object" && Array.isArray(parsed.accounts)) {
-        accounts = parsed.accounts;
-      } else if (parsed && typeof parsed === "object") {
-        accounts = [parsed];
-      }
-    } catch (_) {
-      // It's raw text lines! Parse line-by-line (format: email|token or just token)
-      const lines = rawBody.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      for (const line of lines) {
-        let token = '';
-        let email = '';
-        if (line.includes('|')) {
-          const parts = line.split('|').map(p => p.trim());
-          const foundToken = parts.find(p => p.startsWith('ey') || p.length > 80);
-          if (foundToken) {
-            token = foundToken;
-            email = parts.find(p => p !== foundToken) || '';
-          }
-        } else if (line.startsWith('ey') || line.length > 80) {
-          token = line;
-        }
-
-        if (token) {
-          // Decode JWT token to get email if possible
-          if (!email) {
-            try {
-              const parts = token.split('.');
-              if (parts.length >= 2) {
-                let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-                while (base64.length % 4) base64 += '=';
-                const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
-                email = payload['https://api.openai.com/profile']?.email || payload.email || '';
-              }
-            } catch (_) {}
-          }
-          if (email) {
-            accounts.push({
-              email: email.toLowerCase().trim(),
-              accessToken: token
-            });
-          }
-        }
-      }
-    }
+    body = await request.json();
   } catch (err) {
     return NextResponse.json(
-      { error: `Invalid input format: ${err.message}` },
+      { error: `Invalid JSON body: ${err.message}` },
       { status: 400 }
     );
   }
 
+  // Normalize to array
+  let accounts;
+  if (Array.isArray(body)) {
+    accounts = body;
+  } else if (body && typeof body === "object" && Array.isArray(body.accounts)) {
+    accounts = body.accounts;
+  } else if (body && typeof body === "object") {
+    accounts = [body];
+  } else {
+    accounts = null;
+  }
+
   if (!Array.isArray(accounts) || accounts.length === 0) {
     return NextResponse.json(
-      { error: "No accounts provided or parsed" },
+      { error: "No accounts provided" },
       { status: 400 }
     );
   }
@@ -86,6 +50,8 @@ export async function POST(request) {
   let success = 0;
   let failed = 0;
 
+  // SERIAL loop — createProviderConnection reads max(priority) and reorders
+  // inside a transaction. Parallel calls would race on priority assignment.
   for (let i = 0; i < accounts.length; i++) {
     const raw = accounts[i];
     try {
@@ -93,6 +59,7 @@ export async function POST(request) {
         throw new Error("Item is not an object");
       }
 
+      // Strip server-controlled fields
       const {
         id: _id,
         provider: _provider,
@@ -126,12 +93,6 @@ export async function POST(request) {
         item.providerSpecificData = psd;
       }
 
-      if (!item.email) {
-        throw new Error("Could not determine email address for connection");
-      }
-
-      const emailClean = item.email.toLowerCase().trim();
-
       // Compute expiresAt from expiresIn if absent
       if (!item.expiresAt && typeof item.expiresIn === "number" && item.expiresIn > 0) {
         item.expiresAt = new Date(Date.now() + item.expiresIn * 1000).toISOString();
@@ -142,28 +103,10 @@ export async function POST(request) {
       if (item.isActive === undefined) item.isActive = true;
       if (!item.lastRefreshAt) item.lastRefreshAt = new Date().toISOString();
 
-      // Enforce Hotmail account existence: if not exists, create with status available
-      const { data: existingHotmail } = await supabase
-        .from('hotmail_accounts')
-        .select('id')
-        .eq('email', emailClean)
-        .limit(1);
-
-      if (!existingHotmail || existingHotmail.length === 0) {
-        await supabase
-          .from('hotmail_accounts')
-          .insert({
-            email: emailClean,
-            status: 'available',
-            usage_count: 0
-          });
-      }
-
       const created = await createProviderConnection({
         provider: "codex",
         authType: "oauth",
         ...item,
-        email: emailClean,
       });
 
       results.push({ index: i, ok: true, id: created.id });

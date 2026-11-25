@@ -1,10 +1,6 @@
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
-  try {
-    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-  } catch (e) {
-    throw mod = 0, e;
-  }
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
 // node_modules/node-forge/lib/forge.js
@@ -937,15 +933,15 @@ var require_util = __commonJS({
       var chr1, chr2, chr3;
       var i = 0;
       while (i < input.length) {
-        chr1 = input.charCodeAt(i++);
+        chr1 = input.charCodeAt(i++) & 255;
         chr2 = input.charCodeAt(i++);
         chr3 = input.charCodeAt(i++);
         line += _base64.charAt(chr1 >> 2);
-        line += _base64.charAt((chr1 & 3) << 4 | chr2 >> 4);
+        line += _base64.charAt((chr1 & 3) << 4 | (chr2 & 255) >> 4);
         if (isNaN(chr2)) {
           line += "==";
         } else {
-          line += _base64.charAt((chr2 & 15) << 2 | chr3 >> 6);
+          line += _base64.charAt((chr2 & 15) << 2 | (chr3 & 255) >> 6);
           line += isNaN(chr3) ? "=" : _base64.charAt(chr3 & 63);
         }
         if (maxline && line.length > maxline) {
@@ -1683,9 +1679,17 @@ var require_cipherModes = __commonJS({
         return false;
       }
       var len = output.length();
+      if (len === 0) {
+        return true;
+      }
       var count = output.at(len - 1);
-      if (count > this.blockSize << 2) {
+      if (count === 0 || count > this.blockSize || count > len) {
         return false;
+      }
+      for (var i = 2; i <= count; ++i) {
+        if (output.at(len - i) !== count) {
+          return false;
+        }
       }
       output.truncate(count);
       return true;
@@ -1748,9 +1752,17 @@ var require_cipherModes = __commonJS({
         return false;
       }
       var len = output.length();
+      if (len === 0) {
+        return true;
+      }
       var count = output.at(len - 1);
-      if (count > this.blockSize << 2) {
+      if (count === 0 || count > this.blockSize || count > len) {
         return false;
+      }
+      for (var i = 2; i <= count; ++i) {
+        if (output.at(len - i) !== count) {
+          return false;
+        }
       }
       output.truncate(count);
       return true;
@@ -2009,10 +2021,13 @@ var require_cipherModes = __commonJS({
       } else {
         additionalData = forge2.util.createBuffer();
       }
-      if ("tagLength" in options) {
-        this._tagLength = options.tagLength;
+      if (options.tagLength !== void 0 && options.tagLength !== null) {
+        this._tagLength = Number(options.tagLength);
       } else {
         this._tagLength = 128;
+      }
+      if ([128, 120, 112, 104, 96, 64, 32].indexOf(this._tagLength) === -1) {
+        throw new Error("Invalid tag length.");
       }
       this._tag = null;
       if (options.decrypt) {
@@ -2964,7 +2979,10 @@ var require_asn1 = __commonJS({
             var subOptions = {
               // enforce strict mode to avoid parsing ASN.1 from plain data
               strict: true,
-              decodeBitStrings: true
+              // only decode one level of BIT STRINGs, nested decoding has
+              // quadratic cost due to copies for change detection
+              decodeBitStrings: false,
+              maxDepth: options.maxDepth
             };
             var composed = _fromDer(bytes, remaining, depth + 1, subOptions);
             var used = start - bytes.length();
@@ -3068,12 +3086,16 @@ var require_asn1 = __commonJS({
     asn1.oidToDer = function(oid) {
       var values = oid.split(".");
       var bytes = forge2.util.createBuffer();
-      bytes.putByte(40 * parseInt(values[0], 10) + parseInt(values[1], 10));
+      var first = parseInt(values[0], 10);
+      var second = parseInt(values[1], 10);
+      if (!(first >= 0 && first <= 2 && second >= 0) || first < 2 && second > 39) {
+        throw new Error("Invalid OID; the first two arcs are out of range.");
+      }
       var last, valueBytes, value, b;
-      for (var i = 2; i < values.length; ++i) {
+      for (var i = 1; i < values.length; ++i) {
         last = true;
         valueBytes = [];
-        value = parseInt(values[i], 10);
+        value = i === 1 ? 40 * first + second : parseInt(values[i], 10);
         if (value > 4294967295) {
           throw new Error("OID value too large; max is 32-bits.");
         }
@@ -3097,9 +3119,9 @@ var require_asn1 = __commonJS({
       if (typeof bytes === "string") {
         bytes = forge2.util.createBuffer(bytes);
       }
-      var b = bytes.getByte();
-      oid = Math.floor(b / 40) + "." + b % 40;
+      var b;
       var value = 0;
+      var first = true;
       while (bytes.length() > 0) {
         if (value > 70368744177663) {
           throw new Error("OID value too large; max is 53-bits.");
@@ -3109,7 +3131,13 @@ var require_asn1 = __commonJS({
         if (b & 128) {
           value += b & 127;
         } else {
-          oid += "." + (value + b);
+          value += b;
+          if (first) {
+            oid = value < 80 ? Math.floor(value / 40) + "." + value % 40 : "2." + (value - 80);
+            first = false;
+          } else {
+            oid += "." + value;
+          }
           value = 0;
         }
       }
@@ -3945,12 +3973,13 @@ var require_pem = __commonJS({
     };
     pem.decode = function(str) {
       var rval = [];
-      var rMessage = /\s*-----BEGIN ([A-Z0-9- ]+)-----\r?\n?([\x21-\x7e\s]+?(?:\r?\n\r?\n))?([:A-Za-z0-9+\/=\s]+?)-----END \1-----/g;
-      var rHeader = /([\x21-\x7e]+):\s*([\x21-\x7e\s^:]+)/;
+      str = String(str);
+      var messages = _pemMessageScanner(str);
+      var rHeader = /(?:^|[^\x21-\x7e])([\x21-\x7e]+):\s*([\x21-\x7e\s^:]+)/;
       var rCRLF = /\r?\n/;
       var match;
       while (true) {
-        match = rMessage.exec(str);
+        match = messages.next();
         if (!match) {
           break;
         }
@@ -3973,7 +4002,7 @@ var require_pem = __commonJS({
         var lines = match[2].split(rCRLF);
         var li = 0;
         while (match && li < lines.length) {
-          var line = lines[li].replace(/\s+$/, "");
+          var line = rtrim(lines[li]);
           for (var nl = li + 1; nl < lines.length; ++nl) {
             var next = lines[nl];
             if (!/\s/.test(next[0])) {
@@ -4050,6 +4079,140 @@ var require_pem = __commonJS({
     }
     function ltrim(str) {
       return str.replace(/^\s+/, "");
+    }
+    function rtrim(str) {
+      var end = str.length;
+      while (end > 0 && /\s/.test(str.charAt(end - 1))) {
+        --end;
+      }
+      return str.substring(0, end);
+    }
+    function _pemMessageScanner(str) {
+      var rBody = /[:A-Za-z0-9+\/=\s]/;
+      var rNotBody = /[^:A-Za-z0-9+\/=\s]/g;
+      var rNotHeader = /[^\x21-\x7e\s]/g;
+      var rLabel = /[A-Z0-9- ]/;
+      function indexOfRegex(regex, i) {
+        regex.lastIndex = i;
+        var match = regex.exec(str);
+        return match ? match.index : str.length;
+      }
+      function labelAt(i) {
+        for (var j = i; j < str.length && rLabel.test(str.charAt(j)); ++j) {
+          if (j > i && str.substr(j, 5) === "-----") {
+            return str.substring(i, j);
+          }
+        }
+        return null;
+      }
+      function blankLineEnd(i) {
+        if (str.charAt(i) === "\r") {
+          ++i;
+        }
+        if (str.charAt(i) !== "\n") {
+          return -1;
+        }
+        if (str.charAt(++i) === "\r") {
+          ++i;
+        }
+        return str.charAt(i) === "\n" ? i + 1 : -1;
+      }
+      function firstBlankLine(start2, end2) {
+        for (var i = start2; i < end2; ++i) {
+          var v = blankLineEnd(i);
+          if (v !== -1 && v < end2) {
+            return i;
+          }
+        }
+        return -1;
+      }
+      var ends = {};
+      for (var end = str.indexOf("-----END "); end !== -1; end = str.indexOf("-----END ", end + 1)) {
+        var endLabel = labelAt(end + 9);
+        var start = end;
+        while (start > 0 && rBody.test(str.charAt(start - 1))) {
+          --start;
+        }
+        var blank = firstBlankLine(start, end);
+        if (endLabel !== null && blank !== -1) {
+          var key = "$" + endLabel;
+          (ends[key] = ends[key] || []).push({ end, blank });
+        }
+      }
+      var pos = 0;
+      var headerEnd = -1;
+      return {
+        next: function() {
+          var begin;
+          while ((begin = str.indexOf("-----BEGIN ", pos)) !== -1) {
+            pos = begin + 1;
+            var label = labelAt(begin + 11);
+            if (label === null) {
+              continue;
+            }
+            var q = begin + 16 + label.length;
+            var bodyEnd = indexOfRegex(rNotBody, q);
+            var bodyEndOk = str.substr(bodyEnd, 9) === "-----END " && labelAt(bodyEnd + 9) === label;
+            if (q > headerEnd) {
+              headerEnd = indexOfRegex(rNotHeader, q);
+            }
+            var later = null;
+            var list = ends["$" + label];
+            if (list) {
+              var lo = 0;
+              var hi = list.length;
+              while (lo < hi) {
+                var mid = lo + hi >> 1;
+                if (list[mid].end > bodyEnd) {
+                  hi = mid;
+                } else {
+                  lo = mid + 1;
+                }
+              }
+              later = list[lo] || null;
+            }
+            var starts = [];
+            if (str.charAt(q) === "\r") {
+              if (str.charAt(q + 1) === "\n") {
+                starts.push(q + 2);
+              }
+              starts.push(q + 1);
+            } else if (str.charAt(q) === "\n") {
+              starts.push(q + 1);
+            }
+            starts.push(q);
+            for (var i = 0; i < starts.length; ++i) {
+              var t = starts[i];
+              var blank2 = bodyEndOk ? firstBlankLine(t + 1, bodyEnd) : -1;
+              var end2 = bodyEnd;
+              if (blank2 === -1 && later) {
+                blank2 = later.blank;
+                end2 = later.end;
+              }
+              if (blank2 !== -1 && blank2 <= headerEnd) {
+                var v = blankLineEnd(blank2);
+                pos = end2 + 14 + label.length;
+                return [
+                  str.substring(begin, pos),
+                  label,
+                  str.substring(t, v),
+                  str.substring(v, end2)
+                ];
+              }
+              if (bodyEndOk && t < bodyEnd) {
+                pos = bodyEnd + 14 + label.length;
+                return [
+                  str.substring(begin, pos),
+                  label,
+                  void 0,
+                  str.substring(t, bodyEnd)
+                ];
+              }
+            }
+          }
+          return null;
+        }
+      };
     }
   }
 });
@@ -4820,11 +4983,11 @@ var require_prng = __commonJS({
             if (err) {
               return callback(err);
             }
-            callback(null, bytes.toString());
+            callback(null, bytes.toString("binary"));
           });
         };
         ctx.seedFileSync = function(needed) {
-          return _crypto.randomBytes(needed).toString();
+          return _crypto.randomBytes(needed).toString("binary");
         };
       } else {
         ctx.seedFile = function(needed, callback) {
@@ -5268,7 +5431,7 @@ var require_rc2 = __commonJS({
       var T = key.length();
       var T1 = effKeyBits;
       var T8 = Math.ceil(T1 / 8);
-      var TM = 255 >> (T1 & 7);
+      var TM = 255 >> (-T1 & 7);
       var i;
       for (i = T; i < 128; i++) {
         L.putByte(piTable[L.at(i - 1) + L.at(i - T) & 255]);
@@ -5453,6 +5616,7 @@ var require_rc2 = __commonJS({
 var require_jsbn = __commonJS({
   "node_modules/node-forge/lib/jsbn.js"(exports2, module2) {
     var forge2 = require_forge();
+    require_util();
     module2.exports = forge2.jsbn = forge2.jsbn || {};
     var dbits;
     var canary = 244837814094590;
@@ -5500,7 +5664,7 @@ var require_jsbn = __commonJS({
       }
       return c;
     }
-    if (typeof navigator === "undefined") {
+    if (forge2.util.isNodejs) {
       BigInteger.prototype.am = am3;
       dbits = 28;
     } else if (j_lm && navigator.appName == "Microsoft Internet Explorer") {
@@ -6488,7 +6652,7 @@ var require_jsbn = __commonJS({
       return r;
     }
     function bnModInverse(m) {
-      if (this.signum() == 0) {
+      if (this.signum() <= 0 || m.signum() <= 0) {
         return BigInteger.ZERO;
       }
       var ac = m.isEven();
@@ -7367,6 +7531,41 @@ var require_rsa = __commonJS({
         capture: "digest"
       }]
     };
+    var _encodeDigestInfo = function(oid, digest, withParameters) {
+      var digestAlgorithm = [asn1.create(
+        asn1.Class.UNIVERSAL,
+        asn1.Type.OID,
+        false,
+        asn1.oidToDer(oid).getBytes()
+      )];
+      if (withParameters) {
+        digestAlgorithm.push(asn1.create(
+          asn1.Class.UNIVERSAL,
+          asn1.Type.NULL,
+          false,
+          ""
+        ));
+      }
+      return asn1.toDer(asn1.create(
+        asn1.Class.UNIVERSAL,
+        asn1.Type.SEQUENCE,
+        true,
+        [
+          asn1.create(
+            asn1.Class.UNIVERSAL,
+            asn1.Type.SEQUENCE,
+            true,
+            digestAlgorithm
+          ),
+          asn1.create(
+            asn1.Class.UNIVERSAL,
+            asn1.Type.OCTETSTRING,
+            false,
+            digest
+          )
+        ]
+      )).getBytes();
+    };
     var emsaPkcs1v15encode = function(md) {
       var oid;
       if (md.algorithm in pki.oids) {
@@ -7870,6 +8069,13 @@ var require_rsa = __commonJS({
                   );
                 }
               }
+              var withParameters = _encodeDigestInfo(oid, capture.digest, true);
+              var withoutParameters = _encodeDigestInfo(oid, capture.digest, false);
+              if (d2.substring(0, withParameters.length) !== withParameters && d2.substring(0, withoutParameters.length) !== withoutParameters) {
+                throw new Error(
+                  "ASN.1 object does not contain a valid RSASSA-PKCS1-v1_5 DigestInfo value."
+                );
+              }
               return digest2 === capture.digest;
             }
           };
@@ -7980,6 +8186,9 @@ var require_rsa = __commonJS({
         var error = new Error("Cannot read private key. ASN.1 object does not contain an RSAPrivateKey.");
         error.errors = errors;
         throw error;
+      }
+      if (capture.privateKeyVersion !== "\0" || obj.value.length !== 9) {
+        throw new Error("Cannot read private key. Only two-prime RSAPrivateKey version 0 is supported.");
       }
       var n, e, d, p, q, dP, dQ, qInv;
       n = forge2.util.createBuffer(capture.privateKeyModulus).toHex();
@@ -8830,6 +9039,9 @@ var require_pbe = __commonJS({
     };
     pki.pbe.generatePkcs12Key = function(password, salt, id, iter, n, md) {
       var j, l;
+      if (!(iter >= 1)) {
+        throw new Error("PKCS#12 key derivation iteration count must be >= 1.");
+      }
       if (typeof md === "undefined" || md === null) {
         if (!("sha1" in forge2.md)) {
           throw new Error('"sha1" hash algorithm unavailable.');
@@ -10115,6 +10327,7 @@ var require_x509 = __commonJS({
     };
     var _verifySignature = function(options) {
       var cert = options.certificate;
+      var publicKey = options.publicKey || cert.publicKey;
       var scheme;
       switch (cert.signatureOid) {
         case oids.sha1WithRSAEncryption:
@@ -10152,7 +10365,7 @@ var require_x509 = __commonJS({
           );
           break;
       }
-      return cert.publicKey.verify(
+      return publicKey.verify(
         options.md.digest().getBytes(),
         options.signature,
         scheme
@@ -10372,7 +10585,8 @@ var require_x509 = __commonJS({
         }
         if (md !== null) {
           rval = _verifySignature({
-            certificate: cert,
+            certificate: child,
+            publicKey: cert.publicKey,
             md,
             signature: child.signature
           });
@@ -10627,6 +10841,14 @@ var require_x509 = __commonJS({
               default:
             }
           }
+        } else if (e.name === "nameConstraints" && e.id === "2.5.29.30") {
+          try {
+            var nc = _readNameConstraints(asn1.fromDer(e.value));
+            e.permittedSubtrees = nc.permittedSubtrees;
+            e.excludedSubtrees = nc.excludedSubtrees;
+            e.unsupportedSubtreeRange = nc.unsupportedSubtreeRange;
+          } catch (ex) {
+          }
         } else if (e.name === "subjectKeyIdentifier") {
           var ev = asn1.fromDer(e.value);
           e.subjectKeyIdentifier = forge2.util.bytesToHex(ev.value);
@@ -10634,6 +10856,60 @@ var require_x509 = __commonJS({
       }
       return e;
     };
+    function _readNameConstraints(ev) {
+      var rval = {
+        permittedSubtrees: [],
+        excludedSubtrees: [],
+        unsupportedSubtreeRange: false
+      };
+      if (ev.tagClass !== asn1.Class.UNIVERSAL || ev.type !== asn1.Type.SEQUENCE || !forge2.util.isArray(ev.value)) {
+        throw new Error("Invalid nameConstraints extension.");
+      }
+      for (var i = 0; i < ev.value.length; ++i) {
+        var trees = ev.value[i];
+        var list;
+        if (trees.tagClass === asn1.Class.CONTEXT_SPECIFIC && trees.type === 0) {
+          list = rval.permittedSubtrees;
+        } else if (trees.tagClass === asn1.Class.CONTEXT_SPECIFIC && trees.type === 1) {
+          list = rval.excludedSubtrees;
+        } else {
+          throw new Error("Invalid nameConstraints extension.");
+        }
+        if (!forge2.util.isArray(trees.value)) {
+          throw new Error("Invalid nameConstraints extension.");
+        }
+        for (var n = 0; n < trees.value.length; ++n) {
+          var subtree = trees.value[n];
+          if (subtree.type !== asn1.Type.SEQUENCE || !forge2.util.isArray(subtree.value) || subtree.value.length === 0 || subtree.value[0].tagClass !== asn1.Class.CONTEXT_SPECIFIC) {
+            throw new Error("Invalid nameConstraints extension.");
+          }
+          var gn = subtree.value[0];
+          var base = {
+            type: gn.type,
+            value: gn.value
+          };
+          if (gn.type === 4 && forge2.util.isArray(gn.value) && gn.value.length === 1 && gn.value[0].type === asn1.Type.SEQUENCE && forge2.util.isArray(gn.value[0].value)) {
+            base.attributes = pki.RDNAttributesAsArray(gn.value[0]);
+          }
+          for (var m = 1; m < subtree.value.length; ++m) {
+            var bd = subtree.value[m];
+            if (bd.tagClass === asn1.Class.CONTEXT_SPECIFIC && bd.type === 0) {
+              base.minimum = asn1.derToInteger(bd.value);
+              if (base.minimum !== 0) {
+                rval.unsupportedSubtreeRange = true;
+              }
+            } else if (bd.tagClass === asn1.Class.CONTEXT_SPECIFIC && bd.type === 1) {
+              base.maximum = asn1.derToInteger(bd.value);
+              rval.unsupportedSubtreeRange = true;
+            } else {
+              throw new Error("Invalid nameConstraints extension.");
+            }
+          }
+          list.push(base);
+        }
+      }
+      return rval;
+    }
     pki.certificationRequestFromAsn1 = function(obj, computeHash) {
       var capture = {};
       var errors = [];
@@ -11567,6 +11843,382 @@ var require_x509 = __commonJS({
       certificate_unknown: "forge.pki.CertificateUnknown",
       unknown_ca: "forge.pki.UnknownCertificateAuthority"
     };
+    var _generalNameTypes = {
+      0: "otherName",
+      1: "rfc822Name",
+      2: "dNSName",
+      3: "x400Address",
+      4: "directoryName",
+      5: "ediPartyName",
+      6: "uniformResourceIdentifier",
+      7: "iPAddress",
+      8: "registeredID"
+    };
+    var _maxNameConstraintChecks = 1 << 20;
+    function _getNameConstraints(cert) {
+      var rval = [];
+      for (var i = 0; i < cert.extensions.length; ++i) {
+        var ext = cert.extensions[i];
+        if (ext.id !== "2.5.29.30") {
+          continue;
+        }
+        var nc;
+        try {
+          var value = ext.value;
+          if (typeof value === "string") {
+            value = asn1.fromDer(value);
+          }
+          nc = _readNameConstraints(value);
+        } catch (ex) {
+          rval.push({ invalid: true });
+          continue;
+        }
+        rval.push({
+          permitted: _prepareSubtrees(nc.permittedSubtrees),
+          excluded: _prepareSubtrees(nc.excludedSubtrees)
+        });
+      }
+      return rval;
+    }
+    function _prepareSubtrees(subtrees) {
+      var rval = [];
+      for (var i = 0; i < subtrees.length; ++i) {
+        var subtree = subtrees[i];
+        var st = { type: subtree.type, supported: _isSupportedSubtree(subtree) };
+        if (st.supported) {
+          switch (st.type) {
+            case 1:
+              var at = subtree.value.lastIndexOf("@");
+              st.local = at === -1 ? null : subtree.value.substr(0, at);
+              st.host = subtree.value.substr(at + 1).toLowerCase();
+              break;
+            case 2:
+            case 6:
+              st.host = subtree.value.toLowerCase();
+              break;
+            case 4:
+              st.attributes = _canonicalAttributes(subtree.attributes);
+              break;
+            case 7:
+              st.value = subtree.value;
+              break;
+          }
+        }
+        rval.push(st);
+      }
+      return rval;
+    }
+    function _isSupportedSubtree(subtree) {
+      if (subtree.minimum && subtree.minimum !== 0 || "maximum" in subtree) {
+        return false;
+      }
+      switch (subtree.type) {
+        case 1:
+        case 2:
+        case 6:
+          return typeof subtree.value === "string";
+        case 4:
+          return forge2.util.isArray(subtree.attributes);
+        case 7:
+          return typeof subtree.value === "string" && (subtree.value.length === 8 || subtree.value.length === 32);
+      }
+      return false;
+    }
+    function _canonicalAttributes(attrs) {
+      var rval = [];
+      for (var i = 0; i < attrs.length; ++i) {
+        var value = attrs[i].value;
+        if (typeof value === "string") {
+          value = value.replace(/[ \t\n\v\f\r]+/g, " ");
+          if (value.charAt(0) === " ") {
+            value = value.substr(1);
+          }
+          if (value.charAt(value.length - 1) === " ") {
+            value = value.substr(0, value.length - 1);
+          }
+          value = value.replace(/[A-Z]+/g, function(s) {
+            return s.toLowerCase();
+          });
+        }
+        rval.push({ type: attrs[i].type, value });
+      }
+      return rval;
+    }
+    function _isHostName(value) {
+      if (typeof value !== "string") {
+        return false;
+      }
+      var labels = false;
+      for (var i = 0; i < value.length; ++i) {
+        var c = value.charAt(i);
+        if (/[a-zA-Z0-9_]/.test(c)) {
+          continue;
+        }
+        if (i > 0 && i < value.length - 1) {
+          if (c === "-") {
+            continue;
+          }
+          var next = value.charAt(i + 1);
+          if (c === "." && next !== "." && next !== "-" && value.charAt(i - 1) !== "-") {
+            labels = true;
+            continue;
+          }
+        }
+        return false;
+      }
+      return labels;
+    }
+    function _getConstrainedNames(cert, leaf) {
+      var rval = { names: [], unsupported: {}, types: {} };
+      var attrs = cert.subject.attributes;
+      var i;
+      if (attrs.length > 0) {
+        _addConstrainedName(rval, 4, attrs);
+      }
+      for (i = 0; i < attrs.length; ++i) {
+        if (attrs[i].type === oids.emailAddress) {
+          _addConstrainedName(rval, 1, attrs[i].value);
+        }
+      }
+      var hasDnsName = false;
+      for (i = 0; i < cert.extensions.length; ++i) {
+        var san = cert.extensions[i];
+        if (san.id !== "2.5.29.17") {
+          continue;
+        }
+        var altNames = san.altNames || [];
+        for (var n = 0; n < altNames.length; ++n) {
+          var altName = altNames[n];
+          var value = altName.value;
+          if (altName.type === 2) {
+            hasDnsName = true;
+          }
+          switch (altName.type) {
+            case 4:
+              value = null;
+              if (forge2.util.isArray(altName.value) && altName.value.length === 1 && altName.value[0].type === asn1.Type.SEQUENCE && forge2.util.isArray(altName.value[0].value)) {
+                value = pki.RDNAttributesAsArray(altName.value[0]);
+              }
+              break;
+            case 7:
+              if (altName.ip) {
+                value = forge2.util.bytesFromIP(altName.ip);
+              }
+              break;
+          }
+          _addConstrainedName(rval, altName.type, value);
+        }
+      }
+      if (leaf && !hasDnsName) {
+        for (i = 0; i < attrs.length; ++i) {
+          if (attrs[i].type === oids.commonName && _isHostName(attrs[i].value)) {
+            _addConstrainedName(rval, 2, attrs[i].value);
+          }
+        }
+      }
+      return rval;
+    }
+    function _addConstrainedName(names, type, value) {
+      var name = { type, value };
+      var ok = false;
+      names.types[type] = true;
+      switch (type) {
+        case 1:
+          ok = typeof value === "string" && value.lastIndexOf("@") !== -1;
+          if (ok) {
+            var at = value.lastIndexOf("@");
+            name.local = value.substr(0, at);
+            name.host = value.substr(at + 1).toLowerCase();
+          }
+          break;
+        case 2:
+          ok = typeof value === "string";
+          if (ok) {
+            name.host = value.toLowerCase();
+          }
+          break;
+        case 4:
+          ok = forge2.util.isArray(value);
+          if (ok) {
+            name.attributes = _canonicalAttributes(value);
+          }
+          break;
+        case 6:
+          var m = typeof value === "string" && /^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/([^\/?#]*)/.exec(value);
+          if (m) {
+            var host = m[1].substr(m[1].lastIndexOf("@") + 1);
+            if (host.charAt(0) === "[") {
+              name.host = null;
+            } else {
+              var colon = host.indexOf(":");
+              if (colon !== -1) {
+                host = host.substr(0, colon);
+              }
+              name.host = host.toLowerCase();
+            }
+            ok = host.length > 0;
+          }
+          break;
+        case 7:
+          ok = typeof value === "string" && (value.length === 4 || value.length === 16);
+          break;
+      }
+      if (ok) {
+        names.names.push(name);
+      } else {
+        names.unsupported[type] = true;
+      }
+    }
+    function _hostMatchesConstraint(host, base) {
+      if (base.length === 0) {
+        return true;
+      }
+      if (base.charAt(0) === ".") {
+        return host.length > base.length && host.substr(host.length - base.length) === base;
+      }
+      return host === base;
+    }
+    function _nameMatchesConstraint(name, subtree) {
+      var value = name.host;
+      var base = subtree.host;
+      var i;
+      switch (name.type) {
+        case 1:
+          if (subtree.local !== null) {
+            return (subtree.local === "" || name.local === subtree.local) && value === base;
+          }
+          return _hostMatchesConstraint(value, base);
+        case 2:
+          if (base.length === 0) {
+            return true;
+          }
+          if (base.charAt(0) === ".") {
+            return value.length > base.length && value.substr(value.length - base.length) === base;
+          }
+          return value === base || value.length > base.length && value.substr(value.length - base.length - 1) === "." + base;
+        case 6:
+          return value !== null && _hostMatchesConstraint(value, base);
+        case 4:
+          var battrs = subtree.attributes;
+          var attrs = name.attributes;
+          if (battrs.length > attrs.length) {
+            return false;
+          }
+          for (i = 0; i < battrs.length; ++i) {
+            if (battrs[i].type !== attrs[i].type || battrs[i].value !== attrs[i].value) {
+              return false;
+            }
+          }
+          return true;
+        case 7:
+          value = name.value;
+          base = subtree.value;
+          if (base.length !== value.length * 2) {
+            return false;
+          }
+          for (i = 0; i < value.length; ++i) {
+            var mask = base.charCodeAt(value.length + i);
+            if ((value.charCodeAt(i) & mask) !== (base.charCodeAt(i) & mask)) {
+              return false;
+            }
+          }
+          return true;
+      }
+      return false;
+    }
+    function _nameToString(name) {
+      if (name.type === 4) {
+        var parts = [];
+        for (var i = 0; i < name.value.length; ++i) {
+          var attr = name.value[i];
+          parts.push((attr.shortName || attr.name || attr.type) + "=" + attr.value);
+        }
+        return parts.join(", ");
+      }
+      if (name.type === 7) {
+        return forge2.util.bytesToIP(name.value);
+      }
+      return name.value;
+    }
+    function _checkNameConstraints(cert, constraints, count, leaf, work) {
+      if (count === 0) {
+        return null;
+      }
+      var subject = _getConstrainedNames(cert, leaf);
+      var names = subject.names;
+      var i;
+      var n;
+      var k;
+      var nc;
+      var subtree;
+      var typeName;
+      for (i = 0; i < count && work.checks <= _maxNameConstraintChecks; ++i) {
+        nc = constraints[i];
+        work.checks += (names.length + 1) * (nc.invalid ? 1 : nc.permitted.length + nc.excluded.length + 1);
+      }
+      if (work.checks > _maxNameConstraintChecks) {
+        return {
+          message: "Certificate name constraints require too many checks.",
+          error: pki.certificateError.unsupported_certificate
+        };
+      }
+      for (i = 0; i < count; ++i) {
+        nc = constraints[i];
+        if (nc.invalid) {
+          return {
+            message: "Certificate name constraint could not be parsed.",
+            error: pki.certificateError.unsupported_certificate
+          };
+        }
+        var all = nc.permitted.concat(nc.excluded);
+        for (n = 0; n < all.length; ++n) {
+          subtree = all[n];
+          if (subtree.type in subject.unsupported || !subtree.supported && subtree.type in subject.types) {
+            typeName = _generalNameTypes[subtree.type] || String(subtree.type);
+            return {
+              message: "Certificate name constraint of type " + typeName + " is not supported.",
+              error: pki.certificateError.unsupported_certificate,
+              nameType: typeName
+            };
+          }
+        }
+      }
+      for (k = 0; k < names.length; ++k) {
+        var name = names[k];
+        for (i = 0; i < count; ++i) {
+          nc = constraints[i];
+          var found = false;
+          var matched = false;
+          for (n = 0; !matched && n < nc.permitted.length; ++n) {
+            subtree = nc.permitted[n];
+            if (subtree.type === name.type) {
+              found = true;
+              matched = _nameMatchesConstraint(name, subtree);
+            }
+          }
+          if (found && !matched) {
+            return {
+              message: "Certificate subject name is not permitted by a name constraint.",
+              error: pki.certificateError.bad_certificate,
+              nameValue: _nameToString(name),
+              nameType: _generalNameTypes[name.type]
+            };
+          }
+          for (n = 0; n < nc.excluded.length; ++n) {
+            subtree = nc.excluded[n];
+            if (subtree.type === name.type && _nameMatchesConstraint(name, subtree)) {
+              return {
+                message: "Certificate subject name is excluded by a name constraint.",
+                error: pki.certificateError.bad_certificate,
+                nameValue: _nameToString(name),
+                nameType: _generalNameTypes[name.type]
+              };
+            }
+          }
+        }
+      }
+      return null;
+    }
     pki.verifyCertificateChain = function(caStore, chain, options) {
       if (typeof options === "function") {
         options = { verify: options };
@@ -11577,6 +12229,34 @@ var require_x509 = __commonJS({
       var validityCheckDate = options.validityCheckDate;
       if (typeof validityCheckDate === "undefined") {
         validityCheckDate = /* @__PURE__ */ new Date();
+      }
+      var ncList = [];
+      var ncCount = [];
+      var ncWork = { checks: 0 };
+      var last = certs[certs.length - 1];
+      if (last && !last.isIssuer(last)) {
+        var anchors = caStore.getIssuer(last);
+        anchors = anchors ? forge2.util.isArray(anchors) ? anchors.slice() : [anchors] : [];
+        for (var ai = 0; ai < anchors.length; ++ai) {
+          var anchorNc = _getNameConstraints(anchors[ai]);
+          if (anchorNc.length > 0) {
+            var anchorVerified = false;
+            try {
+              anchorVerified = anchors[ai].verify(last);
+            } catch (ex) {
+            }
+            for (var an = 0; anchorVerified && an < anchorNc.length; ++an) {
+              ncList.push(anchorNc[an]);
+            }
+          }
+        }
+      }
+      for (var ci = certs.length - 1; ci >= 0; --ci) {
+        ncCount[ci] = ncList.length;
+        var certNc = ci > 0 ? _getNameConstraints(certs[ci]) : [];
+        for (var cn = 0; cn < certNc.length; ++cn) {
+          ncList.push(certNc[cn]);
+        }
       }
       var first = true;
       var error = null;
@@ -11607,10 +12287,7 @@ var require_x509 = __commonJS({
             }
           }
           if (parent) {
-            var parents = parent;
-            if (!forge2.util.isArray(parents)) {
-              parents = [parents];
-            }
+            var parents = forge2.util.isArray(parent) ? parent.slice() : [parent];
             var verified = false;
             while (!verified && parents.length > 0) {
               parent = parents.shift();
@@ -11639,14 +12316,24 @@ var require_x509 = __commonJS({
             error: pki.certificateError.bad_certificate
           };
         }
+        if (error === null && (first || !cert.isIssuer(cert))) {
+          error = _checkNameConstraints(
+            cert,
+            ncList,
+            ncCount[depth],
+            first,
+            ncWork
+          );
+        }
         if (error === null) {
           var se = {
             keyUsage: true,
-            basicConstraints: true
+            basicConstraints: true,
+            nameConstraints: true
           };
           for (var i = 0; error === null && i < cert.extensions.length; ++i) {
             var ext = cert.extensions[i];
-            if (ext.critical && !(ext.name in se)) {
+            if (ext.critical && (!(ext.name in se) || ext.name === "nameConstraints" && ext.id !== "2.5.29.30")) {
               error = {
                 message: "Certificate has an unsupported critical extension.",
                 error: pki.certificateError.unsupported_certificate
@@ -11655,7 +12342,7 @@ var require_x509 = __commonJS({
           }
         }
         if (error === null && (!first || chain.length === 0 && (!parent || selfSigned))) {
-          var bcExt = cert.getExtension("basicConstraints");
+          var bcExt = cert.getExtension({ id: "2.5.29.19" });
           var keyUsageExt = cert.getExtension("keyUsage");
           if (keyUsageExt !== null) {
             if (!keyUsageExt.keyCertSign || bcExt === null) {
@@ -11677,7 +12364,7 @@ var require_x509 = __commonJS({
               error: pki.certificateError.bad_certificate
             };
           }
-          if (error === null && keyUsageExt !== null && "pathLenConstraint" in bcExt) {
+          if (error === null && bcExt !== null && "pathLenConstraint" in bcExt) {
             var pathLen = depth - 1;
             if (pathLen > bcExt.pathLenConstraint) {
               error = {
@@ -12061,6 +12748,9 @@ var require_pkcs12 = __commonJS({
         }
         var macSalt = new forge2.util.ByteBuffer(capture.macSalt);
         var macIterations = "macIterations" in capture ? parseInt(forge2.util.bytesToHex(capture.macIterations), 16) : 1;
+        if (!(macIterations >= 1)) {
+          throw new Error("PKCS#12 MAC iteration count must be >= 1.");
+        }
         var macKey = p12.generateKey(
           password,
           macSalt,
@@ -12970,6 +13660,16 @@ var require_tls = __commonJS({
           });
         }
         if (client) {
+          if (msg.compression_method !== tls2.CompressionMethod.none) {
+            return c.error(c, {
+              message: "Unsupported compression method.",
+              send: true,
+              alert: {
+                level: tls2.Alert.Level.fatal,
+                description: tls2.Alert.Description.illegal_parameter
+              }
+            });
+          }
           c.session.compressionMethod = msg.compression_method;
         } else {
           c.session.compressionMethod = tls2.CompressionMethod.none;
@@ -13322,7 +14022,7 @@ var require_tls = __commonJS({
           }
         });
       }
-      if (c.serverCertificate === null) {
+      if (c.session.serverCertificate === null) {
         var error = {
           message: "No server certificate provided. Not enough security.",
           send: true,
@@ -13346,8 +14046,8 @@ var require_tls = __commonJS({
               error.alert.description = ret;
             }
           }
-          return c.error(c, error);
         }
+        return c.error(c, error);
       }
       if (c.session.certificateRequest !== null) {
         record = tls2.createRecord(c, {
@@ -13565,7 +14265,7 @@ var require_tls = __commonJS({
       b.read -= 4;
       var bytes = b.bytes(length + 4);
       b.read += 4;
-      if (type in hsTable[c.entity][c.expect]) {
+      if (type in hsTable[c.entity][c.expect] && (c.session || c.entity === tls2.ConnectionEnd.server)) {
         if (c.entity === tls2.ConnectionEnd.server && !c.open && !c.fail) {
           c.handshaking = true;
           c.session = {
@@ -13603,7 +14303,7 @@ var require_tls = __commonJS({
       var length = b.getInt16();
       var payload = b.getBytes(length);
       if (type === tls2.HeartbeatMessageType.heartbeat_request) {
-        if (c.handshaking || length > payload.length) {
+        if (c.handshakes === 0 || c.handshaking || length > payload.length) {
           return c.process();
         }
         tls2.queue(c, tls2.createRecord(c, {
@@ -14518,6 +15218,7 @@ var require_tls = __commonJS({
                     description: tls2.Alert.Description.unexpected_message
                   }
                 });
+                return rval;
               }
             }
             c2.record.ready = true;
@@ -14582,24 +15283,48 @@ var require_tls = __commonJS({
           tls2.flush(c);
         }
       };
+      var _processing = false;
+      var _processNext = false;
+      var _processRecord = function(c2) {
+        var rval = 0;
+        if (!c2.fail) {
+          if (c2.record !== null && c2.record.ready && c2.record.fragment.isEmpty()) {
+            c2.record = null;
+          }
+          if (c2.record === null) {
+            rval = _readRecordHeader(c2);
+          }
+          if (!c2.fail && c2.record !== null && !c2.record.ready) {
+            rval = _readRecord(c2);
+          }
+          if (!c2.fail && c2.record !== null && c2.record.ready) {
+            _update(c2, c2.record);
+          }
+        }
+        return rval;
+      };
       c.process = function(data) {
         var rval = 0;
         if (data) {
           c.input.putBytes(data);
         }
-        if (!c.fail) {
-          if (c.record !== null && c.record.ready && c.record.fragment.isEmpty()) {
-            c.record = null;
+        if (_processing && typeof data === "undefined") {
+          _processNext = true;
+          return rval;
+        }
+        var processing = _processing;
+        var processNext = _processNext;
+        _processing = true;
+        _processNext = false;
+        try {
+          rval = _processRecord(c);
+          while (_processNext) {
+            _processNext = false;
+            _processRecord(c);
           }
-          if (c.record === null) {
-            rval = _readRecordHeader(c);
-          }
-          if (!c.fail && c.record !== null && !c.record.ready) {
-            rval = _readRecord(c);
-          }
-          if (!c.fail && c.record !== null && c.record.ready) {
-            _update(c, c.record);
-          }
+        } finally {
+          _processing = processing;
+          _processNext = processNext;
         }
         return rval;
       };
@@ -15722,6 +16447,9 @@ var require_ed25519 = __commonJS({
       if (unpackneg(q, pk)) {
         return -1;
       }
+      if (_isSmallOrder(q)) {
+        return -1;
+      }
       if (!_isCanonicalSignatureScalar(sm, 32)) {
         return -1;
       }
@@ -15761,6 +16489,24 @@ var require_ed25519 = __commonJS({
         }
       }
       return false;
+    }
+    function _isSmallOrder(p) {
+      var i;
+      var t = new NativeBuffer(32);
+      var r = [gf(p[0]), gf(p[1]), gf(p[2]), gf(p[3])];
+      for (i = 0; i < 3; ++i) {
+        add(r, r);
+      }
+      pack(t, r);
+      if (t[0] !== 1) {
+        return false;
+      }
+      for (i = 1; i < 32; ++i) {
+        if (t[i] !== 0) {
+          return false;
+        }
+      }
+      return true;
     }
     function modL(r, x) {
       var carry, i, j, k;
@@ -16643,7 +17389,7 @@ var require_log = __commonJS({
     var logger;
     var levelHandlers;
     var f;
-    if (sConsoleLogger !== null && typeof window !== "undefined" && window.location) {
+    if (sConsoleLogger !== null && typeof window !== "undefined" && window.location && window.location.href && typeof URL === "function") {
       query = new URL(window.location.href).searchParams;
       if (query.has("console.level")) {
         forge2.log.setLevel(
@@ -17778,7 +18524,7 @@ var require_ssh = __commonJS({
     };
     function _addBigIntegerToBuffer(buffer, val) {
       var hexVal = val.toString(16);
-      if (hexVal[0] >= "8") {
+      if (hexVal[0] >= "8" && hexVal.length % 2 === 0) {
         hexVal = "00" + hexVal;
       }
       var bytes = forge2.util.hexToBytes(hexVal);
@@ -17871,6 +18617,8 @@ var config = {
   webPort: 20129,
   mitmPort: 443,
   modelMapping: {
+    "gemini-4-hydrogen-high": "ag/gemini-4-hydrogen-high",
+    "gemini-4-hydrogen-low": "ag/gemini-4-hydrogen-low",
     "gemini-3.8-flash-high": "ag/gemini-3.8-flash-high",
     "claude-sonnet-4-6": "ag/claude-sonnet-4-6",
     "claude-opus-4-6-thinking": "ag/claude-opus-4-6-thinking",
@@ -18370,8 +19118,13 @@ function extractModel(url, body) {
   }
   let model = urlModel || body.model || body.request?.model || null;
   const cleanModelName = String(model || "").replace(/^models\//, "");
-  if (cleanModelName === "gemini-3.6-flash-tiered" || cleanModelName === "gemini-3.7-flash-tiered" || cleanModelName === "gemini-3.8-flash-tiered") {
-    const ver = cleanModelName.includes("3.8") ? "3.8" : cleanModelName.includes("3.7") ? "3.7" : "3.6";
+  const modernGemini = /^(gemini-4-(?:hydrogen|carbon|argon|neon)|gemini-3\.8-flash)(?:-tiered|-((?:x?high)|medium|low))?(?:\((x?high|medium|low)\))?$/i.exec(cleanModelName);
+  if (modernGemini) {
+    const requestedTier = modernGemini[2] || modernGemini[3] || body.request?.generationConfig?.thinkingConfig?.thinkingLevel || body.generationConfig?.thinkingConfig?.thinkingLevel;
+    return `${modernGemini[1].toLowerCase()}-${String(requestedTier).toLowerCase() === "low" ? "low" : "high"}`;
+  }
+  if (cleanModelName === "gemini-3.6-flash-tiered" || cleanModelName === "gemini-3.7-flash-tiered") {
+    const ver = cleanModelName.includes("3.7") ? "3.7" : "3.6";
     const rawLevel = body.request?.generationConfig?.thinkingConfig?.thinkingLevel || body.generationConfig?.thinkingConfig?.thinkingLevel;
     const level = ["high", "medium", "low"].includes(String(rawLevel).toLowerCase()) ? String(rawLevel).toLowerCase() : "high";
     return `gemini-${ver}-flash-${level}`;
@@ -18390,6 +19143,9 @@ function extractModel(url, body) {
 function resolveMappedModel(extractedModel) {
   if (config.modelMapping[extractedModel]) {
     return config.modelMapping[extractedModel];
+  }
+  if (/^(gemini-4-(?:hydrogen|carbon|argon|neon)|gemini-3\.8-flash)-(?:low|high)$/.test(extractedModel)) {
+    return `ag/${extractedModel}`;
   }
   for (const [k, v] of Object.entries(config.modelMapping)) {
     if (extractedModel.includes(k) || k.includes(extractedModel)) {

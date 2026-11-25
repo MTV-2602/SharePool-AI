@@ -6,13 +6,9 @@ import AdmZip from "adm-zip";
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const key = searchParams.get("key");
+    const key = searchParams.get("key") || "";
     const gateway = searchParams.get("gateway");
     const label = searchParams.get("label") || "client";
-
-    if (!key) {
-      return NextResponse.json({ error: "Client key is required" }, { status: 400 });
-    }
 
     const hostHeader = request.headers.get("host") || "localhost:20128";
     const protoHeader = request.headers.get("x-forwarded-proto") || (hostHeader.includes("localhost") ? "http" : "https");
@@ -52,6 +48,8 @@ export async function GET(request) {
       webPort: 20129,
       mitmPort: 443,
       modelMapping: {
+        "gemini-4-hydrogen-high": "ag/gemini-4-hydrogen-high",
+        "gemini-4-hydrogen-low": "ag/gemini-4-hydrogen-low",
         "gemini-3.8-flash-high": "ag/gemini-3.8-flash-high",
         "claude-sonnet-4-6": "ag/claude-sonnet-4-6",
         "claude-opus-4-6-thinking": "ag/claude-opus-4-6-thinking",
@@ -64,7 +62,7 @@ export async function GET(request) {
     const zipBuffer = zip.toBuffer();
     const safeKeySuffix = key.length > 8 ? key.slice(-8) : key;
     const cleanLabel = label.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const filename = `AiNoName-Client-${cleanLabel}-${safeKeySuffix}.zip`;
+    const filename = key ? `AiNoName-Client-${cleanLabel}-${safeKeySuffix}.zip` : "AiNoName-Client.zip";
 
     return new NextResponse(zipBuffer, {
       status: 200,

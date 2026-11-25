@@ -2,36 +2,22 @@
 
 import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
-import { useRouter } from "next/navigation";
-import ClientKeyGuide from "./components/ClientKeyGuide";
 
 export default function LoginPage() {
-  const [password, setPassword] = useState(""); // input field value (can be admin pass or API key)
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [resetHint, setResetHint] = useState("");
   const [retryAfter, setRetryAfter] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasPassword, setHasPassword] = useState(null);
   const [authMode, setAuthMode] = useState("password");
+  const [ssoType, setSsoType] = useState("oidc");
   const [oidcConfigured, setOidcConfigured] = useState(false);
   const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
+  const [samlConfigured, setSamlConfigured] = useState(false);
+  const [samlLoginLabel, setSamlLoginLabel] = useState("Sign in with SAML SSO");
   const [mustChange, setMustChange] = useState(false);
   const [newPassword, setNewPassword] = useState("");
-  
-  // Client Portal states
-  const [savedKey, setSavedKey] = useState(null);
-  const [keyData, setKeyData] = useState(null);
-  const [activeTab, setActiveTab] = useState("usage");
-  const [copiedField, setCopiedField] = useState("");
-  const [origin, setOrigin] = useState("https://ainoname.site");
-  const [apiOrigin, setApiOrigin] = useState("https://api.ainoname.site");
-  const [showKey, setShowKey] = useState(false);
-  const [usageLogs, setUsageLogs] = useState([]);
-  const [usageSummary, setUsageSummary] = useState([]);
-  const [loadingLogs, setLoadingLogs] = useState(false);
-  const [showDetailedLogs, setShowDetailedLogs] = useState(false);
-
-  const router = useRouter();
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -41,237 +27,76 @@ export default function LoginPage() {
   }, [retryAfter]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOrigin(window.location.origin);
-      setApiOrigin(window.location.origin);
-      
-      // Check if clientKey is stored in localStorage
-      const storedClientKey = localStorage.getItem("clientKey");
-      if (storedClientKey) {
-        setSavedKey(storedClientKey);
-        fetchClientKeyDetails(storedClientKey, { isRestore: true });
-      } else {
-        checkAdminAuth();
-      }
-    }
-  }, []);
+    async function checkAuth() {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
 
-  const checkAdminAuth = async () => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+      try {
+        const res = await fetch(`${baseUrl}/api/auth/status`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
 
-    try {
-      const res = await fetch(`${baseUrl}/api/auth/status`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.requireLogin === false) {
-          router.push("/dashboard");
-          router.refresh();
-          return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.authenticated === true || data.requireLogin === false) {
+            window.location.assign("/dashboard");
+            return;
+          }
+          setHasPassword(!!data.hasPassword);
+          setAuthMode(data.authMode || "password");
+          setSsoType(data.ssoType || "oidc");
+          setOidcConfigured(data.oidcConfigured === true);
+          setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
+          setSamlConfigured(data.samlConfigured === true);
+          setSamlLoginLabel(data.samlLoginLabel || "Sign in with SAML SSO");
+        } else {
+          // Safe fallback on non-OK response to avoid infinite loading state.
+          setHasPassword(true);
         }
-        setHasPassword(!!data.hasPassword);
-        setAuthMode(data.authMode || "password");
-        setOidcConfigured(data.oidcConfigured === true);
-        setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
-      } else {
+      } catch (err) {
+        clearTimeout(timeoutId);
         setHasPassword(true);
       }
-    } catch (err) {
-      clearTimeout(timeoutId);
-      setHasPassword(true);
     }
-  };
+    checkAuth();
+  }, []);
 
-  const fetchUsageLogs = async (keyId, currentKey) => {
-    const keyToUse = currentKey || savedKey;
-    if (!keyToUse) return;
-
-    setLoadingLogs(true);
-    try {
-      const res = await fetch(`/api/client-keys/${keyId}/usage?limit=50&include_summary=true`, {
-        headers: {
-          "Authorization": `Bearer ${keyToUse}`,
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache"
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const cleanModelName = (modelName) => {
-          let m = modelName || "";
-          if (m.startsWith("ag/")) {
-            m = m.slice(3);
-          } else if (m.startsWith("antigravity/")) {
-            m = m.slice(12);
-          } else if (m.startsWith("codex/")) {
-            m = m.slice(6);
-          } else if (m.startsWith("cx/")) {
-            m = m.slice(3);
-          } else if (m.startsWith("claude/")) {
-            m = m.slice(7);
-          } else if (m.startsWith("cc/")) {
-            m = m.slice(3);
-          } else if (m.startsWith("anthropic/")) {
-            m = m.slice(10);
-          }
-          return m;
-        };
-        const normalizedLogs = (data.logs || []).map(log => ({
-          ...log,
-          rawModel: log.model,
-          model: cleanModelName(log.model)
-        }));
-        const normalizedSummary = (data.summary || []).reduce((acc, item) => {
-          const rawModel = item.model || "";
-          const modelName = cleanModelName(rawModel);
-          const itemProvider = item.provider || "";
-          const existing = acc.find(x => x.model === modelName && (x.provider || "") === itemProvider);
-          if (existing) {
-            existing.prompt_tokens += Number(item.prompt_tokens) || 0;
-            existing.completion_tokens += Number(item.completion_tokens) || 0;
-            existing.billed_tokens += Number(item.billed_tokens) || 0;
-            existing.count += Number(item.count) || 0;
-          } else {
-            acc.push({
-              ...item,
-              rawModel,
-              model: modelName,
-              provider: item.provider || null,
-              prompt_tokens: Number(item.prompt_tokens) || 0,
-              completion_tokens: Number(item.completion_tokens) || 0,
-              billed_tokens: Number(item.billed_tokens) || 0,
-              count: Number(item.count) || 0
-            });
-          }
-          return acc;
-        }, []);
-        setUsageLogs(normalizedLogs);
-        setUsageSummary(normalizedSummary);
-      }
-    } catch (err) {
-      console.error("Lỗi khi tải lịch sử sử dụng:", err);
-    } finally {
-      setLoadingLogs(false);
-    }
-  };
-
-  const fetchClientKeyDetails = async (k, options = {}) => {
-    const { isRestore = false, isRefresh = false } = options;
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/client-keys/check", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache"
-        },
-        body: JSON.stringify({ key: k }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setKeyData(data.keyData);
-        setSavedKey(k);
-        localStorage.setItem("clientKey", k);
-        fetchUsageLogs(data.keyData.id, k);
-
-        if (isRefresh) {
-          // Quota refresh preserves current tab, does not change active tab
-        } else {
-          // Direct login, fallback login, or session restore: always default to guide tab
-          if (data.keyData?.id) {
-            localStorage.removeItem("clientGuideDismissed_" + data.keyData.id);
-          }
-          setActiveTab("guide");
-        }
-      } else {
-        setError(data.error || "Có lỗi xảy ra khi kiểm tra Key.");
-        setKeyData(null);
-        localStorage.removeItem("clientKey");
-        setSavedKey(null);
-        // Fall back to checking admin auth status
-        checkAdminAuth();
-      }
-    } catch (err) {
-      setError("Không thể kết nối đến máy chủ. Vui lòng thử lại.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLoginSubmit = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const inputKey = password.trim();
-    if (!inputKey) return;
-
     setLoading(true);
     setError("");
     setResetHint("");
 
-    // If it looks like a client key (starts with ck- or sk-), try client verification directly
-    if (inputKey.startsWith("ck-") || inputKey.startsWith("sk-")) {
-      await fetchClientKeyDetails(inputKey, { isRestore: false, isRefresh: false });
-      return;
-    }
-
-    // Try admin password login first
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: inputKey }),
+        body: JSON.stringify({ password }),
       });
 
       if (res.ok) {
         const data = await res.json();
         if (data.mustChangePassword) {
           setMustChange(true);
-          setLoading(false);
           return;
         }
-        router.push("/dashboard");
-        router.refresh();
+        window.location.assign("/dashboard");
       } else {
-        // If admin login fails, try to verify as a client key just in case (e.g. custom key format)
-        const checkRes = await fetch("/api/client-keys/check", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache"
-        },
-          body: JSON.stringify({ key: inputKey }),
-        });
-        
-        if (checkRes.ok) {
-          const checkData = await checkRes.json();
-          setKeyData(checkData.keyData);
-          setSavedKey(inputKey);
-          localStorage.setItem("clientKey", inputKey);
-          localStorage.removeItem("clientGuideDismissed_" + checkData.keyData.id);
-          setActiveTab("guide");
-          fetchUsageLogs(checkData.keyData.id, inputKey);
-        } else {
-          // If both fail, show admin error
-          const data = await res.json();
-          setError(data.error || "Mật khẩu quản trị hoặc mã API Key không hợp lệ");
-          if (data.resetHint) setResetHint(data.resetHint);
-          if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
-        }
+        const data = await res.json();
+        setError(data.error || "Invalid password");
+        if (data.resetHint) setResetHint(data.resetHint);
+        if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
       }
     } catch (err) {
-      setError("Có lỗi kết nối xảy ra. Vui lòng thử lại.");
+      setError("An error occurred. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
+  // Force a new password before entering the dashboard (default + remote).
   const handleSetNewPassword = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -283,14 +108,13 @@ export default function LoginPage() {
         body: JSON.stringify({ currentPassword: password, newPassword }),
       });
       if (res.ok) {
-        router.push("/dashboard");
-        router.refresh();
+        window.location.assign("/dashboard");
       } else {
         const data = await res.json();
-        setError(data.error || "Lỗi đặt mật khẩu");
+        setError(data.error || "Failed to set password");
       }
     } catch (err) {
-      setError("Có lỗi xảy ra. Vui lòng thử lại.");
+      setError("An error occurred. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -300,527 +124,20 @@ export default function LoginPage() {
     window.location.href = "/api/auth/oidc/start";
   };
 
-  const handleClientLogout = () => {
-    if (keyData?.id) {
-      localStorage.removeItem("clientGuideDismissed_" + keyData.id);
-    }
-    localStorage.removeItem("clientKey");
-    setSavedKey(null);
-    setKeyData(null);
-    setActiveTab("usage");
-    setPassword("");
-    setError("");
-    checkAdminAuth();
+  const handleSamlLogin = () => {
+    window.location.href = "/api/auth/saml/start";
   };
 
-  const copyText = (text, fieldName) => {
-    if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(() => {
-        try {
-          const el = document.createElement("textarea");
-          el.value = text;
-          el.setAttribute("readonly", "");
-          el.style.position = "absolute";
-          el.style.left = "-9999px";
-          document.body.appendChild(el);
-          el.select();
-          document.execCommand("copy");
-          document.body.removeChild(el);
-        } catch (e) {}
-      });
-    } else {
-      try {
-        const el = document.createElement("textarea");
-        el.value = text;
-        el.setAttribute("readonly", "");
-        el.style.position = "absolute";
-        el.style.left = "-9999px";
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand("copy");
-        document.body.removeChild(el);
-      } catch (e) {}
-    }
-    setCopiedField(fieldName);
-    setTimeout(() => setCopiedField(""), 2000);
-  };
+  const isSsoEnabled = ["sso", "oidc", "saml", "both"].includes(authMode);
+  const activeSsoType = ssoType || (authMode === "saml" ? "saml" : "oidc");
 
-  const getProviderFromModel = (model, explicitProvider) => {
-    if (explicitProvider) {
-      const p = String(explicitProvider).toLowerCase().trim();
-      if (p === "antigravity" || p === "gemini") return "Antigravity";
-      if (p === "codex") return "Codex";
-      if (p === "anthropic" || p === "claude") return "Anthropic";
-      if (p === "openai") return "OpenAI";
-      if (p === "deepseek") return "DeepSeek";
-      if (p === "meta" || p === "llama") return "Meta";
-      return explicitProvider.charAt(0).toUpperCase() + explicitProvider.slice(1);
-    }
-    if (!model) return "N/A";
-    const m = model.toLowerCase();
-    
-    // Codex models
-    if (
-      m.startsWith("codex/") ||
-      m.startsWith("cx/") ||
-      m.includes("gpt-6") ||
-      m.includes("gpt-5.6") ||
-      m.includes("gpt-5.5") ||
-      m.includes("gpt-daybreak") ||
-      m.includes("gpt-reserve") ||
-      m.includes("codex-auto")
-    ) {
-      return "Codex";
-    }
+  const samlAvailable = isSsoEnabled && activeSsoType === "saml" && samlConfigured;
+  const oidcAvailable = isSsoEnabled && activeSsoType === "oidc" && oidcConfigured;
+  const ssoAvailable = samlAvailable || oidcAvailable;
 
-    // Antigravity models (All Gemini models, AG slots, Claude on AG, GPT-OSS, gpt-5.4 combo)
-    if (
-      m.startsWith("antigravity/") || 
-      m.startsWith("ag/") ||
-      m.includes("gemini") ||
-      m.includes("gpt-oss") ||
-      m.includes("claude-sonnet-4") ||
-      m.includes("claude-opus-4") ||
-      m === "gpt-5.4"
-    ) {
-      return "Antigravity";
-    }
+  const passwordAvailable = authMode === "password" || authMode === "both" || !ssoAvailable;
 
-    if (m.includes("gpt-") || m.startsWith("gpt") || m.includes("o1") || m.includes("o3")) return "OpenAI";
-    if (m.includes("claude") || m.startsWith("cc/")) return "Anthropic";
-    if (m.includes("deepseek")) return "DeepSeek";
-    if (m.includes("llama") || m.includes("meta")) return "Meta";
-    return "Custom/Other";
-  };
-
-  // Calculations for stats
-  const used = keyData?.used_tokens || 0;
-  const total = keyData?.quota_tokens || 0;
-  const isInfinite = total === 0 || total >= 999999999999;
-  const remaining = isInfinite ? 0 : Math.max(0, total - used);
-  const usagePct = isInfinite ? 0 : Math.min(100, Math.round((used / total) * 100));
-  const costUsd = (used / 1000000) * 5.0;
-
-  // Group logs by provider for aggregation
-  const getProviderSummary = () => {
-    const summary = {};
-    usageSummary.forEach((log) => {
-      const provider = getProviderFromModel(log.rawModel || log.model, log.provider);
-      if (!summary[provider]) {
-        summary[provider] = {
-          name: provider,
-          prompt: 0,
-          completion: 0,
-          total: 0,
-          count: 0,
-          models: new Set()
-        };
-      }
-      summary[provider].prompt += log.prompt_tokens || 0;
-      summary[provider].completion += log.completion_tokens || 0;
-      summary[provider].total += log.billed_tokens || 0;
-      summary[provider].count += log.count || 0;
-      if (log.model) {
-        summary[provider].models.add(log.model);
-      }
-    });
-    return Object.values(summary).map(p => ({
-      ...p,
-      models: Array.from(p.models)
-    }));
-  };
-
-  const summaryData = getProviderSummary();
-
-  const oidcAvailable = oidcConfigured && ["oidc", "both"].includes(authMode);
-  const passwordAvailable = authMode !== "oidc" || !oidcConfigured;
-
-  // --- Render Client Portal ---
-  if (keyData) {
-    return (
-      <div className="min-h-screen bg-bg text-text-main selection:bg-brand-500 selection:text-white pb-12">
-        <header className="border-b border-border bg-surface/80 backdrop-blur-md sticky top-0 z-20">
-          <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                <span className="material-symbols-outlined text-[24px]">vpn_key</span>
-              </div>
-              <div>
-                <h1 className="text-xl font-bold tracking-tight">ainoname Client Portal</h1>
-                <p className="text-xs text-text-muted">
-                  Key: <span className="font-mono text-primary/80">{keyData.label || "Unnamed Key"}</span>
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => fetchClientKeyDetails(savedKey, { isRefresh: true })}
-                disabled={loading}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border text-sm font-medium hover:bg-surface-2 transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                <span className={`material-symbols-outlined text-[16px] ${loading ? "animate-spin" : ""}`}>
-                  refresh
-                </span>
-                Làm mới
-              </button>
-              <button
-                onClick={handleClientLogout}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 text-sm font-medium transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">logout</span>
-                Đăng xuất
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <main className="max-w-6xl mx-auto px-4 mt-8">
-          <div className="flex gap-2 border-b border-border pb-4 mb-6">
-            <button
-              onClick={() => {
-                setActiveTab("usage");
-              }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === "usage"
-                  ? "bg-primary text-white shadow-md shadow-primary/20"
-                  : "text-text-muted hover:bg-surface-2"
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">data_usage</span>
-              Hạn mức sử dụng
-            </button>
-            <button
-              onClick={() => setActiveTab("guide")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === "guide"
-                  ? "bg-primary text-white shadow-md shadow-primary/20"
-                  : "text-text-muted hover:bg-surface-2"
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">menu_book</span>
-              Hướng dẫn kết nối máy khách
-            </button>
-          </div>
-
-          {activeTab === "usage" && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-sm text-text-muted">Đã sử dụng</p>
-                      <h3 className="text-3xl font-extrabold mt-1 text-primary">{used.toLocaleString()}</h3>
-                      <p className="text-xs text-text-muted mt-2">Tokens</p>
-                    </div>
-                    <div className="p-3 bg-primary/10 rounded-xl text-primary">
-                      <span className="material-symbols-outlined text-[24px]">trending_up</span>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-sm text-text-muted">Còn lại</p>
-                      <h3 className="text-3xl font-extrabold mt-1 text-green-500">
-                        {isInfinite ? "∞" : remaining.toLocaleString()}
-                      </h3>
-                      <p className="text-xs text-text-muted mt-2">Tokens</p>
-                    </div>
-                    <div className="p-3 bg-green-500/10 rounded-xl text-green-500">
-                      <span className="material-symbols-outlined text-[24px]">hourglass_empty</span>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-sm text-text-muted">Tổng Quota</p>
-                      <h3 className="text-3xl font-extrabold mt-1">
-                        {isInfinite ? "Không giới hạn" : total.toLocaleString()}
-                      </h3>
-                      <p className="text-xs text-text-muted mt-2">Tokens</p>
-                    </div>
-                    <div className="p-3 bg-surface-3 rounded-xl text-text-muted">
-                      <span className="material-symbols-outlined text-[24px]">database</span>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-
-              {!isInfinite && (
-                <Card>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium">Tỷ lệ tiêu thụ</span>
-                      <span className="font-bold">{usagePct}%</span>
-                    </div>
-                    <div className="w-full bg-surface-3 rounded-full h-3 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          usagePct > 80 ? "bg-red-500" : "bg-primary"
-                        }`}
-                        style={{ width: `${usagePct}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-text-muted">
-                      Hạn mức sẽ tự khóa khi đạt đến 100% dung lượng. Vui lòng liên hệ quản trị viên để mua thêm.
-                    </p>
-                  </div>
-                </Card>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card title="Chi tiết Key" icon="info">
-                  <div className="space-y-4 mt-2">
-                    <div className="flex justify-between border-b border-border pb-2 text-sm">
-                      <span className="text-text-muted">Trạng thái:</span>
-                      <span className="font-semibold text-green-500 flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-ping" />
-                        Hoạt động
-                      </span>
-                    </div>
-                    <div className="flex justify-between border-b border-border pb-2 text-sm">
-                      <span className="text-text-muted">Ngày hết hạn:</span>
-                      <span className="font-semibold">
-                        {keyData.expires_at
-                          ? new Date(keyData.expires_at).toLocaleDateString("vi-VN", {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            })
-                          : "Vô thời hạn"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between border-b border-border pb-2 text-sm">
-                      <span className="text-text-muted">Chi phí ước tính (~USD):</span>
-                      <span className="font-semibold text-primary">
-                        ${costUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
-                      </span>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card title="Giới hạn kỹ thuật" icon="speed">
-                  <div className="space-y-4 mt-2">
-                    <div className="flex justify-between border-b border-border pb-2 text-sm">
-                      <span className="text-text-muted">Tần suất tối đa (Rate Limit):</span>
-                      <span className="font-semibold">{keyData.rate_limit_per_minute} requests / phút</span>
-                    </div>
-                    <div className="flex justify-between border-b border-border pb-2 text-sm">
-                      <span className="text-text-muted">Kết nối đồng thời (Concurrency):</span>
-                      <span className="font-semibold">{keyData.max_concurrent} session(s)</span>
-                    </div>
-                    <div className="flex justify-between border-b border-border pb-2 text-sm">
-                      <span className="text-text-muted">Định danh Key:</span>
-                      <div className="flex items-center gap-1 font-mono text-xs text-text-muted">
-                        <span>{savedKey.slice(0, 10)}...{savedKey.slice(-10)}</span>
-                        <button
-                          onClick={() => copyText(savedKey, "fullKey")}
-                          className="p-1 hover:bg-surface-3 rounded cursor-pointer"
-                          title="Copy Key"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">
-                            {copiedField === "fullKey" ? "check" : "content_copy"}
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-
-              <Card 
-                title={showDetailedLogs ? "Lịch sử yêu cầu (chi tiết)" : "Thống kê theo nhà cung cấp"} 
-                icon="history"
-                action={
-                  usageLogs.length > 0 && (
-                    <button
-                      onClick={() => setShowDetailedLogs(!showDetailedLogs)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-border bg-surface hover:bg-surface-2 text-text-main text-xs font-semibold transition-colors cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {showDetailedLogs ? "leaderboard" : "list"}
-                      </span>
-                      {showDetailedLogs ? "Xem tổng hợp" : "Xem chi tiết"}
-                    </button>
-                  )
-                }
-              >
-                {loadingLogs ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-text-muted">
-                    <span className="material-symbols-outlined animate-spin text-[32px] text-primary">
-                      sync
-                    </span>
-                    <p className="text-sm mt-2">Đang tải lịch sử sử dụng...</p>
-                  </div>
-                ) : usageLogs.length === 0 ? (
-                  <div className="text-center py-12 text-text-muted">
-                    <span className="material-symbols-outlined text-[36px]">
-                      history_toggle_off
-                    </span>
-                    <p className="text-sm mt-2">Không có lịch sử yêu cầu nào gần đây.</p>
-                  </div>
-                ) : showDetailedLogs ? (
-                  // Detailed logs view
-                  <div className="overflow-x-auto -mx-6 px-6 max-h-[400px] overflow-y-auto">
-                    <table className="w-full text-left border-collapse text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-text-muted font-medium text-xs uppercase tracking-wider">
-                          <th className="pb-3 pr-4">Thời gian</th>
-                          <th className="pb-3 px-4">Provider</th>
-                          <th className="pb-3 px-4">Model</th>
-                          <th className="pb-3 px-4 text-right">Prompt</th>
-                          <th className="pb-3 px-4 text-right">Completion</th>
-                          <th className="pb-3 pl-4 text-right">Tổng (Billed)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {usageLogs.map((log) => {
-                          const dateStr = log.created_at
-                            ? new Date(log.created_at).toLocaleString("vi-VN", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                second: "2-digit",
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                              })
-                            : "Không rõ";
-                          
-                          const provider = getProviderFromModel(log.rawModel || log.model, log.provider);
-                          
-                          let modelBadgeColor = "bg-surface-3 text-text-muted border border-border";
-                          if (log.model?.includes("gemini")) {
-                            modelBadgeColor = "bg-blue-500/10 text-blue-400 border border-blue-500/20";
-                          } else if (log.model?.includes("gpt") || log.model?.includes("o1") || log.model?.includes("o3")) {
-                            modelBadgeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-                          } else if (log.model?.includes("claude")) {
-                            modelBadgeColor = "bg-amber-500/10 text-amber-400 border border-amber-500/20";
-                          } else if (log.model?.includes("deepseek")) {
-                            modelBadgeColor = "bg-purple-500/10 text-purple-400 border border-purple-500/20";
-                          }
-
-                          return (
-                            <tr key={log.id} className="border-b border-border/50 hover:bg-surface-2/30 transition-colors last:border-0">
-                              <td className="py-3 pr-4 font-mono text-xs text-text-muted whitespace-nowrap">
-                                {dateStr}
-                              </td>
-                              <td className="py-3 px-4 font-medium text-text-main whitespace-nowrap">
-                                {provider}
-                              </td>
-                              <td className="py-3 px-4 whitespace-nowrap">
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-medium ${modelBadgeColor}`}>
-                                  {log.model}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-right font-mono text-text-muted whitespace-nowrap">
-                                {(log.prompt_tokens || 0).toLocaleString()}
-                              </td>
-                              <td className="py-3 px-4 text-right font-mono text-text-muted whitespace-nowrap">
-                                {(log.completion_tokens || 0).toLocaleString()}
-                              </td>
-                              <td className="py-3 pl-4 text-right font-mono font-semibold text-primary whitespace-nowrap">
-                                {(log.billed_tokens || 0).toLocaleString()}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  // Aggregated summary view
-                  <div className="overflow-x-auto -mx-6 px-6 max-h-[400px] overflow-y-auto">
-                    <table className="w-full text-left border-collapse text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-text-muted font-medium text-xs uppercase tracking-wider">
-                          <th className="pb-3 pr-4">Nhà cung cấp</th>
-                          <th className="pb-3 px-4 text-center">Yêu cầu</th>
-                          <th className="pb-3 px-4">Models đã gọi</th>
-                          <th className="pb-3 px-4 text-right">Tổng Prompt</th>
-                          <th className="pb-3 px-4 text-right">Tổng Completion</th>
-                          <th className="pb-3 pl-4 text-right">Tổng Billed</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {summaryData.map((row) => {
-                          let providerColor = "text-text-main";
-                          if (row.name === "Google Gemini") providerColor = "text-blue-400 font-semibold";
-                          else if (row.name === "OpenAI") providerColor = "text-emerald-400 font-semibold";
-                          else if (row.name === "Anthropic") providerColor = "text-amber-400 font-semibold";
-                          else if (row.name === "DeepSeek") providerColor = "text-purple-400 font-semibold";
-                          else if (row.name === "Antigravity") providerColor = "text-amber-500 font-semibold";
-                          else if (row.name === "Codex") providerColor = "text-indigo-400 font-semibold";
-
-                          return (
-                            <tr key={row.name} className="border-b border-border/50 hover:bg-surface-2/30 transition-colors last:border-0">
-                              <td className={`py-4 pr-4 whitespace-nowrap ${providerColor}`}>
-                                {row.name}
-                              </td>
-                              <td className="py-4 px-4 text-center font-mono whitespace-nowrap">
-                                {row.count.toLocaleString()}
-                              </td>
-                              <td className="py-4 px-4 max-w-xs md:max-w-md">
-                                <div className="flex flex-wrap gap-1">
-                                  {row.models.map((model) => {
-                                    let modelBadgeColor = "bg-surface-3 text-text-muted border border-border";
-                                    if (model.includes("gemini")) {
-                                      modelBadgeColor = "bg-blue-500/10 text-blue-400 border border-blue-500/20";
-                                    } else if (model.includes("gpt") || model.includes("o1") || model.includes("o3")) {
-                                      modelBadgeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-                                    } else if (model.includes("claude")) {
-                                      modelBadgeColor = "bg-amber-500/10 text-amber-400 border border-amber-500/20";
-                                    } else if (model.includes("deepseek")) {
-                                      modelBadgeColor = "bg-purple-500/10 text-purple-400 border border-purple-500/20";
-                                    }
-                                    return (
-                                      <span key={model} className={`px-2 py-0.5 rounded-full text-xs font-mono font-medium whitespace-nowrap ${modelBadgeColor}`}>
-                                        {model}
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              </td>
-                              <td className="py-4 px-4 text-right font-mono text-text-muted whitespace-nowrap">
-                                {row.prompt.toLocaleString()}
-                              </td>
-                              <td className="py-4 px-4 text-right font-mono text-text-muted whitespace-nowrap">
-                                {row.completion.toLocaleString()}
-                              </td>
-                              <td className="py-4 pl-4 text-right font-mono font-semibold text-primary whitespace-nowrap">
-                                {row.total.toLocaleString()}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </Card>
-            </div>
-          )}
-
-          {activeTab === "guide" && (
-            <ClientKeyGuide
-              key={`${savedKey || keyData?.key || ""}_${apiOrigin}`}
-              apiKey={savedKey || keyData?.key || ""}
-              keyData={keyData}
-              apiOrigin={apiOrigin}
-              onDismiss={() => {
-                setActiveTab("usage");
-              }}
-            />
-          )}
-        </main>
-      </div>
-    );
-  }
-
-  // --- Render Unified Login Form ---
+  // Show loading state while checking password
   if (hasPassword === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg p-4">
@@ -834,11 +151,18 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg p-4 relative overflow-hidden">
+      {/* Faint grid background */}
       <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
       <div className="relative z-10 w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-primary mb-2">ainoname Portal</h1>
-          <p className="text-text-muted">Nhập Admin Key hoặc API Key để tiếp tục</p>
+          <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
+          <p className="text-text-muted">
+            {samlAvailable
+              ? "Sign in with SAML 2.0 Single Sign-On"
+              : oidcAvailable
+              ? "Sign in with your OIDC provider to access the dashboard"
+              : "Enter your password to access the dashboard"}
+          </p>
         </div>
 
         <Card>
@@ -864,79 +188,81 @@ export default function LoginPage() {
               </Button>
             </form>
           ) : (
-            <div className="flex flex-col gap-4">
-              {oidcAvailable && (
-                <Button type="button" variant="primary" className="w-full" onClick={handleOidcLogin}>
-                  {oidcLoginLabel}
+          <div className="flex flex-col gap-4">
+            {samlAvailable && (
+              <Button type="button" variant="primary" className="w-full" onClick={handleSamlLogin}>
+                {samlLoginLabel}
+              </Button>
+            )}
+
+            {oidcAvailable && (
+              <Button type="button" variant="primary" className="w-full" onClick={handleOidcLogin}>
+                {oidcLoginLabel}
+              </Button>
+            )}
+
+            {ssoAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
+
+            {passwordAvailable ? (
+              <form onSubmit={handleLogin} className="flex flex-col gap-4">
+                {isSsoEnabled && !ssoAvailable && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                    {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login is enabled, but configuration is incomplete. Password login is still available for recovery.
+                  </p>
+                )}
+
+                {authMode === "both" && ssoAvailable && (
+                  <p className="text-xs text-text-muted text-center">
+                    Password and {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login are both enabled.
+                  </p>
+                )}
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Password</label>
+                  <Input
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoFocus={!oidcAvailable}
+                  />
+                  {error && <p className="text-xs text-red-500">{error}</p>}
+                  {retryAfter > 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
+                    </p>
+                  )}
+                  {resetHint && (
+                    <p className="text-xs text-text-muted">
+                      Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                    </p>
+                  )}
+                </div>
+
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className="w-full"
+                  loading={loading}
+                  disabled={retryAfter > 0}
+                >
+                  {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
                 </Button>
-              )}
 
-              {oidcAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
-
-              {passwordAvailable ? (
-                <form onSubmit={handleLoginSubmit} className="flex flex-col gap-4">
-                  {((authMode === "oidc" && !oidcConfigured) || (authMode === "both" && !oidcConfigured)) && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
-                      OIDC login is enabled, but issuer fields are not configured yet. Password login is still available.
-                    </p>
-                  )}
-
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">Khóa truy cập</label>
-                    <div className="relative">
-                      <Input
-                        type={showKey ? "text" : "password"}
-                        placeholder="Nhập Admin Key hoặc API Key..."
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        autoFocus={!oidcAvailable}
-                        className="pr-10"
-                      />
-                      <button
-                        type="button"
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main cursor-pointer"
-                        onClick={() => setShowKey(!showKey)}
-                        tabIndex={-1}
-                      >
-                        <span className="material-symbols-outlined text-[18px] select-none">
-                          {showKey ? "visibility_off" : "visibility"}
-                        </span>
-                      </button>
-                    </div>
-                    {error && <p className="text-xs text-red-500">{error}</p>}
-                    {retryAfter > 0 && (
-                      <p className="text-xs text-amber-600 dark:text-amber-400">
-                        Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
-                      </p>
-                    )}
-                    {resetHint && (
-                      <p className="text-xs text-text-muted">
-                        Quên mật khẩu? Liên hệ quản trị viên ainoname để được hỗ trợ đặt lại mật khẩu.
-                      </p>
-                    )}
-                  </div>
-
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    className="w-full"
-                    loading={loading}
-                    disabled={retryAfter > 0}
-                  >
-                    {retryAfter > 0 ? `Wait ${retryAfter}s` : "Đăng nhập"}
-                  </Button>
-
-                  {hasPassword === false && (
-                    <p className="text-xs text-center text-amber-600 dark:text-amber-400">
-                      Security risk: no password set. You will be asked to set one when logging in remotely.
-                    </p>
-                  )}
-                </form>
-              ) : (
-                error && <p className="text-xs text-red-500">{error}</p>
-              )}
-            </div>
+                <p className="text-xs text-center text-text-muted mt-2">
+                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+                </p>
+                {hasPassword === false && (
+                  <p className="text-xs text-center text-amber-600 dark:text-amber-400">
+                    Security risk: no password set. You will be asked to set one when logging in remotely.
+                  </p>
+                )}
+              </form>
+            ) : (
+              error && <p className="text-xs text-red-500">{error}</p>
+            )}
+          </div>
           )}
         </Card>
       </div>

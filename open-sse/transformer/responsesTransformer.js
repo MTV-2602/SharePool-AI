@@ -225,27 +225,16 @@ export function createResponsesApiTransformStream(logger = null) {
   const sendCompleted = (controller) => {
     if (!state.completedSent) {
       state.completedSent = true;
-      const response = {
-        id: state.responseId,
-        object: "response",
-        created_at: state.created,
-        status: "completed",
-        background: false,
-        error: null
-      };
-      if (state.usage) {
-        response.usage = {
-          input_tokens: state.usage.prompt_tokens || 0,
-          output_tokens: state.usage.completion_tokens || 0,
-          total_tokens: state.usage.total_tokens || 0,
-          input_tokens_details: {
-            cached_tokens: state.usage.prompt_tokens_details?.cached_tokens || state.usage.prompt_cache_hit_tokens || 0
-          }
-        };
-      }
       emit(controller, "response.completed", {
         type: "response.completed",
-        response
+        response: {
+          id: state.responseId,
+          object: "response",
+          created_at: state.created,
+          status: "completed",
+          background: false,
+          error: null
+        }
       });
     }
   };
@@ -273,10 +262,6 @@ export function createResponsesApiTransformStream(logger = null) {
           parsed = JSON.parse(dataStr);
         } catch {
           continue;
-        }
-
-        if (parsed.usage) {
-          state.usage = parsed.usage;
         }
 
         if (!parsed.choices?.length) continue;
@@ -348,6 +333,9 @@ export function createResponsesApiTransformStream(logger = null) {
 
           // Regular text content
           if (content) {
+            // The answer starts, so thinking is over. Upstreams that send reasoning via
+            // reasoning_content never emit "</think>", so close it here rather than at finish.
+            closeReasoning(controller);
             if (!state.msgItemAdded[idx]) {
               state.msgItemAdded[idx] = true;
               const msgId = `msg_${state.responseId}_${idx}`;
@@ -387,6 +375,7 @@ export function createResponsesApiTransformStream(logger = null) {
 
         // Handle tool_calls
         if (delta.tool_calls) {
+          closeReasoning(controller);
           closeMessage(controller, idx);
 
           for (const tc of delta.tool_calls) {

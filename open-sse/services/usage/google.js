@@ -3,7 +3,6 @@
  */
 
 import { CLIENT_METADATA } from "../../config/appConstants.js";
-import { registerLiveAntigravityModels } from "../../config/providerModels.js";
 import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION, ANTIGRAVITY_OAUTH_CLIENT } from "../../providers/shared.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
 import { fetchAntigravityWeeklyQuota } from "./antigravity-weekly.js";
@@ -122,10 +121,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
   try {
     // Fetch subscription info once — reuse for both projectId and plan
     const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions);
-    const projectId =
-      normalizeCloudCodeProjectId(subscriptionInfo?.cloudaicompanionProject) ||
-      normalizeCloudCodeProjectId(providerSpecificData?.projectId) ||
-      null;
+    const projectId = subscriptionInfo?.cloudaicompanionProject || null;
 
     const response = await fetchWithTimeout(ANTIGRAVITY_CONFIG.quotaApiUrl, {
       method: "POST",
@@ -160,38 +156,33 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     }
 
     const data = await response.json();
-    if (data?.models) {
-      registerLiveAntigravityModels(Object.keys(data.models));
-    }
     const quotas = {};
-
-    // Best-effort weekly & 5h session quota summary from retrieveUserQuotaSummary
-    let weeklyQuotas = {};
-    try {
-      weeklyQuotas = await fetchAntigravityWeeklyQuota(
-        accessToken,
-        projectId,
-        proxyOptions
-      );
-    } catch {
-      weeklyQuotas = {};
-    }
 
     // Detect tier: free-tier accounts only have weekly quotas (no separate 5h window).
     // On free-tier, fetchAvailableModels returns misleading per-model quota info
-    // unless weeklyQuotas failed to return anything (in which case we fall back to data.models).
+    // (missing remainingFraction defaults to 0, or reflects the weekly limit not a 5h window).
     const paidTierId = subscriptionInfo?.paidTier?.id;
     const isFreeTier = !paidTierId || paidTierId === "free-tier";
-    const hasSummaryQuotas = Object.keys(weeklyQuotas).length > 0;
 
-    if ((!isFreeTier || !hasSummaryQuotas) && data.models) {
+    // Parse model quotas only for paid-tier accounts.
+    // Free-tier accounts skip this — their only meaningful quota is the weekly limit.
+    if (!isFreeTier && data.models) {
+      // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
       const importantModels = [
+        'gemini-4-hydrogen-xhigh',
+        'gemini-4-hydrogen-high',
+        'gemini-4-hydrogen-medium',
+        'gemini-4-hydrogen-low',
         'gemini-4-carbon-high',
         'gemini-4-carbon-medium',
         'gemini-4-carbon-low',
         'gemini-4-argon-high',
         'gemini-4-argon-medium',
         'gemini-4-argon-low',
+        'gemini-4-neon-xhigh',
+        'gemini-4-neon-high',
+        'gemini-4-neon-medium',
+        'gemini-4-neon-low',
         'gemini-3.8-flash-high',
         'gemini-3.8-flash-medium',
         'gemini-3.8-flash-low',
@@ -205,12 +196,10 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'gemini-pro-agent',
         'gemini-3.1-pro-low',
         'claude-sonnet-5-5-max',
-        'claude-sonnet-5-5-max',
         'claude-sonnet-5-5-high',
         'claude-sonnet-5-5-medium',
         'claude-sonnet-5-5-low',
         'claude-sonnet-5-5',
-        'claude-opus-5-5-max',
         'claude-opus-5-5-max',
         'claude-opus-5-5-high',
         'claude-opus-5-5-medium',
@@ -219,11 +208,18 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'claude-sonnet-4-6',
         'claude-opus-4-6-thinking',
         'gpt-oss-120b-medium',
+        // Image generation models
         'gemini-3.1-flash-image',
       ];
 
       for (const [modelKey, info] of Object.entries(data.models)) {
-        if (!info?.quotaInfo || info.isInternal || !importantModels.includes(modelKey)) {
+        // Skip models without quota info
+        if (!info.quotaInfo) {
+          continue;
+        }
+
+        // Skip internal models and non-important models
+        if (info.isInternal || !importantModels.includes(modelKey)) {
           continue;
         }
 
@@ -235,6 +231,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         const remaining = Math.round(total * remainingFraction);
         const used = total - remaining;
 
+        // Use modelKey as key (matches PROVIDER_MODELS id)
         quotas[modelKey] = {
           used,
           total,
@@ -244,27 +241,16 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           displayName: info.displayName || modelKey,
         };
       }
-    } else if (isFreeTier && data.models) {
-      // On free tier when weeklyQuotas is present, still include standalone image generation models if available
-      for (const [modelKey, info] of Object.entries(data.models)) {
-        if (!info?.quotaInfo || info.isInternal || !modelKey.includes("image")) {
-          continue;
-        }
-        const remainingFraction = info.quotaInfo.remainingFraction || 0;
-        const total = 1000;
-        const remaining = Math.round(total * remainingFraction);
-        quotas[modelKey] = {
-          used: total - remaining,
-          total,
-          resetAt: parseResetTime(info.quotaInfo.resetTime),
-          remainingPercentage: remainingFraction * 100,
-          unlimited: false,
-          displayName: info.displayName || modelKey,
-        };
-      }
     }
 
-    if (hasSummaryQuotas) {
+    // Best-effort weekly quota overlay — never blocks or breaks per-model results
+    try {
+      const weeklyQuotas = await fetchAntigravityWeeklyQuota(
+        accessToken,
+        projectId,
+        proxyOptions
+      );
+
       // Reconcile short-window session quota if models are exhausted:
       // If every model in a family is locked/exhausted (remainingPercentage === 0)
       // until a future reset time, update the 5h session row (not the weekly row).
@@ -316,6 +302,8 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       }
 
       Object.assign(quotas, weeklyQuotas);
+    } catch {
+      // Silently ignore — weekly is best-effort
     }
 
     return {

@@ -10,4 +10,3 @@ export function upstreamResponseHeaders(headers) {
   });
   return out;
 }
-

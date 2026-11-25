@@ -1,3 +1,0 @@
-{
-  "/api/auth/oidc/callback/route": "app/api/auth/oidc/callback/route.js"
-}

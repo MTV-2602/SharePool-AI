@@ -49,6 +49,8 @@ let config = {
   webPort: 20129,
   mitmPort: 443,
   modelMapping: {
+    "gemini-4-hydrogen-high": "ag/gemini-4-hydrogen-high",
+    "gemini-4-hydrogen-low": "ag/gemini-4-hydrogen-low",
     "gemini-3.8-flash-high": "ag/gemini-3.8-flash-high",
     "claude-sonnet-4-6": "ag/claude-sonnet-4-6",
     "claude-opus-4-6-thinking": "ag/claude-opus-4-6-thinking",
@@ -562,8 +564,16 @@ function extractModel(url, body) {
   let model = urlModel || body.model || body.request?.model || null;
   const cleanModelName = String(model || "").replace(/^models\//, "");
 
-  if (cleanModelName === "gemini-3.6-flash-tiered" || cleanModelName === "gemini-3.7-flash-tiered" || cleanModelName === "gemini-3.8-flash-tiered") {
-    const ver = cleanModelName.includes("3.8") ? "3.8" : cleanModelName.includes("3.7") ? "3.7" : "3.6";
+  const modernGemini = /^(gemini-4-(?:hydrogen|carbon|argon|neon)|gemini-3\.8-flash)(?:-tiered|-((?:x?high)|medium|low))?(?:\((x?high|medium|low)\))?$/i.exec(cleanModelName);
+  if (modernGemini) {
+    const requestedTier = modernGemini[2] || modernGemini[3]
+      || body.request?.generationConfig?.thinkingConfig?.thinkingLevel
+      || body.generationConfig?.thinkingConfig?.thinkingLevel;
+    return `${modernGemini[1].toLowerCase()}-${String(requestedTier).toLowerCase() === "low" ? "low" : "high"}`;
+  }
+
+  if (cleanModelName === "gemini-3.6-flash-tiered" || cleanModelName === "gemini-3.7-flash-tiered") {
+    const ver = cleanModelName.includes("3.7") ? "3.7" : "3.6";
     const rawLevel = body.request?.generationConfig?.thinkingConfig?.thinkingLevel
       || body.generationConfig?.thinkingConfig?.thinkingLevel;
     const level = ["high", "medium", "low"].includes(String(rawLevel).toLowerCase())
@@ -588,6 +598,9 @@ function extractModel(url, body) {
 function resolveMappedModel(extractedModel) {
   if (config.modelMapping[extractedModel]) {
     return config.modelMapping[extractedModel];
+  }
+  if (/^(gemini-4-(?:hydrogen|carbon|argon|neon)|gemini-3\.8-flash)-(?:low|high)$/.test(extractedModel)) {
+    return `ag/${extractedModel}`;
   }
   for (const [k, v] of Object.entries(config.modelMapping)) {
     if (extractedModel.includes(k) || k.includes(extractedModel)) {

@@ -1,6 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
-import { extractBearerToken, validateClientKey, wrapResponseWithClientKeyLogging } from "@/lib/auth/clientKeyAuth.js";
+import { extractBearerToken, isClientKeyToken, validateClientKey, wrapResponseWithClientKeyLogging } from "@/lib/auth/clientKeyAuth.js";
 
 let initialized = false;
 
@@ -27,20 +27,8 @@ export async function OPTIONS() {
  */
 export async function POST(request) {
   await ensureInitialized();
-  
-  const token = extractBearerToken(request);
-  const isClientKey = token && (token.startsWith("ck-") || (token.startsWith("sk-") && token.split("-").length === 2));
-  let authResult = null;
-  if (isClientKey) {
-    authResult = await validateClientKey(token);
-    if (!authResult.valid) {
-      return new Response(JSON.stringify({ error: { message: authResult.error } }), {
-        status: 401,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-      });
-    }
-  }
 
+  const token = extractBearerToken(request);
   const body = await request.json();
   body._compact = true;
   const newRequest = new Request(request.url, {
@@ -48,15 +36,22 @@ export async function POST(request) {
     headers: request.headers,
     body: JSON.stringify(body)
   });
-  if (isClientKey && authResult?.keyData) {
+
+  if (isClientKeyToken(token)) {
+    const authResult = await validateClientKey(token);
+    if (!authResult.valid) {
+      return new Response(JSON.stringify({ error: { message: authResult.error } }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      });
+    }
     newRequest._clientKeyValidated = true;
     newRequest._clientKeyData = authResult.keyData;
-  }
-  
-  const response = await handleChat(newRequest);
-  
-  if (isClientKey && authResult) {
+    newRequest._parsedBody = body;
+
+    const response = await handleChat(newRequest);
     return await wrapResponseWithClientKeyLogging(response, authResult.keyData.id, body.model || "unknown", body);
   }
-  return response;
+
+  return await handleChat(newRequest);
 }

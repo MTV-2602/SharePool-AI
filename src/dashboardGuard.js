@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
+import { getSettings, validateApiKey } from "@/lib/localDb";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+import { isClientKeyToken, validateClientKey } from "@/lib/auth/clientKeyAuth";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
 let cachedCliToken = null;
 async function getCliToken() {
-  if (process.env.NEXT_RUNTIME === "edge") {
-    return "disabled-on-edge";
-  }
-  const machineIdModule = "@/shared/utils/machineId";
-  const { getConsistentMachineId } = await import(machineIdModule);
   if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
   return cachedCliToken;
 }
@@ -30,26 +29,19 @@ const PUBLIC_API_PATHS = [
   "/api/auth/logout",
   "/api/auth/status",
   "/api/auth/oidc",
+  "/api/auth/saml",
   "/api/version",
   "/api/settings/require-login",
-  "/api/chatgpt-extension-push",
-  "/api/chatgpt-oauth-callback",
-  "/api/accounts/expired",
-  "/api/hotmail/new",
-  "/api/hotmail/release",
-  "/api/hotmail/mark-used",
-  "/api/hotmail/read",
-  "/api/oauth/codex/init",
   "/api/oauth/antigravity/import",
   "/api/telegram/webhook",
   "/api/telegram/setup",
-  "/api/telegram-webhook",
   "/api/client-keys/check",
   "/api/client-keys/download-tool",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
-const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex"];
+// Keep root-level rewrites here too: middleware runs before Next.js rewrites.
+const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex", "/responses"];
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
@@ -59,6 +51,9 @@ const ALWAYS_PROTECTED = [
   "/api/version/update",
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
+  "/api/oauth/zed/auto-import",
+  "/api/oauth/minimax-code/lease",
+  "/api/oauth/minimax-code-global/lease",
 ];
 
 // Require auth, but allow through if requireLogin is disabled
@@ -95,26 +90,51 @@ const LOCAL_ONLY_PATHS = [
   "/api/tunnel/disable",
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
+  "/api/oauth/zed/auto-import",
+  "/api/oauth/minimax-code/lease",
+  "/api/oauth/minimax-code-global/lease",
   "/api/auth/reset-password",
+  "/api/headroom/start",
+  "/api/headroom/stop",
+  "/api/headroom/proxy",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
+// Accepts a Host header, a URL hostname or a raw socket address. Splitting on the first
+// colon only works for IPv4 and would reduce every IPv6 form to "", so a dual-stack
+// listener handing back ::ffff:127.0.0.1 would not read as loopback.
 function isLoopbackHostname(h) {
   if (!h) return false;
-  const name = h.split(":")[0].replace(/^\[|\]$/g, "").toLowerCase();
+  let name = String(h).trim().toLowerCase();
+  if (name.startsWith("[")) {
+    const end = name.indexOf("]");
+    if (end === -1) return false;
+    name = name.slice(1, end);
+  } else if (name.indexOf(":") !== -1 && name.indexOf(":") === name.lastIndexOf(":")) {
+    name = name.slice(0, name.indexOf(":"));
+  }
+  if (name.startsWith("::ffff:")) name = name.slice(7);
   return LOOPBACK_HOSTS.has(name);
 }
 
-export function isLocalRequest(request) {
-  // Trusted peer IP from TCP socket (custom-server.js); unspoofable. Primary anchor for "local".
-  const realIp = request.headers.get("x-9r-real-ip");
-  if (realIp) {
-    if (!isLoopbackHostname(realIp)) return false;
-  } else if (!isLoopbackHostname(request.headers.get("host"))) {
-    // Fallback for bare server.js (dev) without custom-server: legacy Host-based check.
-    return false;
+function isLoopbackPeer(request) {
+  if (hasTrustedPeerHeaders(request)) {
+    return isLoopbackHostname(request.headers.get("x-9r-real-ip"));
   }
+  // Bare `next dev` forks its server, so the wrapper never loads and no peer address
+  // reaches us. Host is spoofable, so this stays confined to development.
+  if (process.env.NODE_ENV === "development") {
+    return isLoopbackHostname(request.headers.get("host"));
+  }
+  return false;
+}
+
+export function isLocalRequest(request) {
+  // Stamped by custom-server.js when forwarding headers exist: request came through
+  // a reverse proxy, so the loopback socket is the proxy hop, not the end-user.
+  if (request.headers.get("x-9r-via-proxy")) return false;
+  if (!isLoopbackPeer(request)) return false;
   const origin = request.headers.get("origin");
   if (origin) {
     try {
@@ -129,75 +149,34 @@ function isPublicLlmApi(pathname) {
 }
 
 function extractApiKey(request) {
-  const authHeader = (request.headers.get("authorization") || request.headers.get("Authorization") || "").trim();
-  if (authHeader.startsWith("Bearer ")) {
-    return authHeader.slice(7).trim();
-  }
-  if (authHeader.startsWith("sk-") || authHeader.startsWith("ck-")) {
-    return authHeader;
-  }
-
-  const googKey = request.headers.get("x-goog-api-key") || request.headers.get("X-Goog-Api-Key");
-  if (googKey) return googKey.trim();
-
-  const xApiKey = request.headers.get("x-api-key") || request.headers.get("X-Api-Key");
-  if (xApiKey) return xApiKey.trim();
-
-  try {
-    const url = new URL(request.url);
-    const keyParam = url.searchParams.get("key");
-    if (keyParam) return keyParam.trim();
-  } catch (e) {}
-
-  return null;
-}
-
-async function validateApiKeyDirect(key) {
-  if (process.env.NEXT_RUNTIME === "edge") {
-    const { supabase } = await import("@/lib/supabase");
-    if (!supabase) return false;
-    const { data, error } = await supabase
-      .from('api_keys')
-      .select('is_active')
-      .eq('key', key)
-      .limit(1);
-    if (error || !data || data.length === 0) return false;
-    return data[0].is_active === true || data[0].is_active === 1;
-  } else {
-    const { validateApiKey } = await import("@/lib/localDb");
-    return await validateApiKey(key);
-  }
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
+  const apiKeyHeader = request.headers.get("x-api-key");
+  if (apiKeyHeader) return apiKeyHeader;
+  const googleApiKeyHeader = request.headers.get("x-goog-api-key");
+  if (googleApiKeyHeader) return googleApiKeyHeader;
+  return request.nextUrl.searchParams?.get("key") || null;
 }
 
 async function hasValidApiKey(request) {
   const apiKey = extractApiKey(request);
   if (!apiKey) return false;
-  return await validateApiKeyDirect(apiKey);
+  if (await validateApiKey(apiKey)) return true;
+  if (isClientKeyToken(apiKey)) {
+    try {
+      const result = await validateClientKey(apiKey, { skipRateLimit: true });
+      return !!result?.valid;
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 async function canAccessPublicLlmApi(request) {
-  if (isLocalRequest(request)) return { authorized: true };
-  if (await hasValidCliToken(request)) return { authorized: true };
-
-  const apiKey = extractApiKey(request);
-  if (!apiKey) return { authorized: false, error: "API key required for remote API access" };
-
-  try {
-    const isValidAdmin = await validateApiKeyDirect(apiKey);
-    if (isValidAdmin) return { authorized: true };
-  } catch (err) {
-    console.error("[Guard] Admin key validation failed:", err);
-  }
-
-  try {
-    const { validateClientKey } = await import("@/lib/auth/clientKeyAuth.js");
-    const clientResult = await validateClientKey(apiKey);
-    if (clientResult.valid) return { authorized: true };
-    return { authorized: false, error: clientResult.error || "Invalid client key" };
-  } catch (err) {
-    console.error("[Guard] Failed to validate client key:", err);
-    return { authorized: false, error: `Client key validation error: ${err.message}` };
-  }
+  if (isLocalRequest(request)) return true;
+  if (await hasValidCliToken(request)) return true;
+  return await hasValidApiKey(request);
 }
 
 async function canAccessLocalOnlyRoute(request) {
@@ -212,47 +191,12 @@ async function hasValidToken(request) {
   return await verifyDashboardAuthToken(token);
 }
 
-// In-memory cache for middleware guard so DB outages never block routing
-let _guardSettingsCache = { requireLogin: true, tunnelDashboardAccess: true };
-let _guardSettingsTs = 0;
-const GUARD_SETTINGS_TTL = 60_000;
-
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
 async function loadSettings() {
-  const now = Date.now();
-  if (_guardSettingsCache && (now - _guardSettingsTs < GUARD_SETTINGS_TTL)) {
-    return _guardSettingsCache;
-  }
   try {
-    if (process.env.NEXT_RUNTIME === "edge") {
-      const { supabase } = await import("@/lib/supabase");
-      if (!supabase) return _guardSettingsCache;
-      // Strict 1s timeout for Edge middleware: routing must NEVER stall on slow DB
-      const queryPromise = supabase
-        .from('settings')
-        .select('data')
-        .eq('id', 1)
-        .maybeSingle();
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Guard settings timeout")), 1000)
-      );
-      const res = await Promise.race([queryPromise, timeoutPromise]);
-      const { data, error } = res || {};
-      if (error || !data) return _guardSettingsCache;
-      const raw = typeof data.data === 'string' ? JSON.parse(data.data) : data.data;
-      _guardSettingsCache = raw;
-      _guardSettingsTs = Date.now();
-      return raw;
-    } else {
-      const { getSettings } = await import("@/lib/localDb");
-      const res = await getSettings();
-      _guardSettingsCache = res;
-      _guardSettingsTs = Date.now();
-      return res;
-    }
-  } catch (err) {
-    // Fail-fast and return cached/default settings
-    return _guardSettingsCache;
+    return await getSettings();
+  } catch {
+    return null;
   }
 }
 
@@ -265,9 +209,12 @@ async function isAuthenticated(request) {
 
 function isPublicApi(pathname) {
   if (isPublicLlmApi(pathname)) return true;
-  if (pathname.match(/^\/api\/client-keys\/[^/]+\/usage$/)) return true;
+  if (/^\/api\/client-keys\/[^/]+\/usage$/.test(pathname)) return true;
   return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
+
+// Shared with src/proxy.js — the mimo login branch must respect dashboard auth.
+export { isAuthenticated };
 
 export const __test__ = {
   isLocalRequest,
@@ -295,9 +242,8 @@ export async function proxy(request) {
   }
 
   if (isPublicLlmApi(pathname)) {
-    const authResult = await canAccessPublicLlmApi(request);
-    if (authResult.authorized) return NextResponse.next();
-    return NextResponse.json({ error: authResult.error }, { status: 401 });
+    if (await canAccessPublicLlmApi(request)) return NextResponse.next();
+    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
@@ -310,13 +256,6 @@ export async function proxy(request) {
 
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
-    // 1. If valid JWT auth token is already present, grant access immediately (0ms)
-    const token = request.cookies.get("auth_token")?.value;
-    if (token && await verifyDashboardAuthToken(token)) {
-      return NextResponse.next();
-    }
-
-    // 2. Check if requireLogin is disabled (using in-memory cache/fast timeout)
     let requireLogin = true;
     let tunnelDashboardAccess = true;
 
@@ -342,6 +281,16 @@ export async function proxy(request) {
 
     // If login not required, allow through
     if (!requireLogin) return NextResponse.next();
+
+    // Verify JWT token
+    const token = request.cookies.get("auth_token")?.value;
+    if (token) {
+      if (await verifyDashboardAuthToken(token)) {
+        return NextResponse.next();
+      } else {
+        return NextResponse.redirect(new URL("/login", request.url));
+      }
+    }
 
     return NextResponse.redirect(new URL("/login", request.url));
   }

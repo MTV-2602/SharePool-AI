@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -173,19 +173,29 @@ export const TABLES = {
       created_at: "TEXT NOT NULL",
       updated_at: "TEXT NOT NULL",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_ck_key ON client_keys(key)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ck_key ON client_keys(key)",
+      "CREATE INDEX IF NOT EXISTS idx_ck_active ON client_keys(active)",
+    ],
   },
   client_key_usage_logs: {
     columns: {
       id: "TEXT PRIMARY KEY",
       key_id: "TEXT NOT NULL",
       model: "TEXT",
-      provider: "TEXT",
       tokens: "INTEGER DEFAULT 0",
       cost: "REAL DEFAULT 0",
       created_at: "TEXT NOT NULL",
+      client_key_id: "TEXT",
+      prompt_tokens: "INTEGER DEFAULT 0",
+      completion_tokens: "INTEGER DEFAULT 0",
+      billed_tokens: "INTEGER DEFAULT 0",
+      provider: "TEXT",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_ckul_key_id ON client_key_usage_logs(key_id)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ckul_key_id ON client_key_usage_logs(key_id, created_at DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_ckul_client_key_id ON client_key_usage_logs(client_key_id, created_at DESC)",
+    ],
   },
 };
 

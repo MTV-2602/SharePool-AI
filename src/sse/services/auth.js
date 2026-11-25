@@ -1,13 +1,22 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
-import { getModelQuotaFromCache } from "./antigravityQuota.js";
+import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+
+const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
+
+function githubMonthlyResetMs(status, errorText, provider) {
+  if (resolveProviderId(provider) !== "github" || Number(status) !== 402) return null;
+  if (!String(errorText || "").toLowerCase().includes(GITHUB_MONTHLY_USAGE_LIMIT)) return null;
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+}
 
 /**
  * Get provider credentials from localDb
@@ -22,6 +31,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  const requestedModel = options?.requestedModel || model;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -37,7 +47,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (FREE_PROVIDERS[providerId]?.noAuth) {
       const settings = await getSettings();
       const override = (settings.providerStrategies || {})[providerId] || {};
-      const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: override.proxyPoolId || "" });
+      const strategy = override.rotateStrategy || "none";
+      let pickedId = override.proxyPoolId || null;
+      if (strategy !== "none") {
+        const allPools = await getProxyPools({ isActive: true });
+        const poolIds = allPools.filter(p => p.proxyUrl).map(p => p.id);
+        pickedId = pickProxyPoolId(poolIds, strategy, providerId);
+      }
+      const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pickedId || "" });
       return {
         id: "noauth",
         connectionName: "Public",
@@ -49,6 +66,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           connectionNoProxy: resolvedProxy.connectionNoProxy,
           connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
           vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+          strictProxy: resolvedProxy.strictProxy === true,
         },
       };
     }
@@ -61,14 +79,20 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // Antigravity quota cache is lazy: only populated after that account returns 409/429.
     const isAntigravity = providerId === "antigravity";
+    const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
 
-    // Filter out model-locked, excluded, and Antigravity quota-exhausted connections
+    // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
-      if (isAntigravity && model) {
-        const quota = getModelQuotaFromCache(c.id, model);
+      const enabled = c.providerSpecificData?.enabledModels;
+      if (providerId === "codex" && Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel)) return false;
+      // Antigravity: skip if live quota exhausted for this model
+      if (isAntigravity && model && antigravityQuotaCache) {
+        const connQuotas = antigravityQuotaCache.get(c.id);
+        const quota = getAntigravityModelQuota(connQuotas, model) || connQuotas?.[model];
         if (quota && quota.remainingPercentage <= 0 && quota.resetAt && new Date(quota.resetAt).getTime() > Date.now()) {
           const account = c.id?.slice(0, 8) || "unknown";
           log.info("AG_QUOTA", `${account} | CACHE_BLOCK ${model} — skip upstream until ${quota.resetAt}`);
@@ -89,12 +113,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     });
 
     if (availableConnections.length === 0) {
-      // Find earliest lock expiry or lazy Antigravity quota-cache reset across all connections for retry timing
+      // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
       const lockedConns = connections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
-      if (isAntigravity && model) {
+      if (isAntigravity && model && antigravityQuotaCache) {
         connections.forEach((c) => {
-          const resetAt = getModelQuotaFromCache(c.id, model)?.resetAt;
+          const connQuotas = antigravityQuotaCache.get(c.id);
+          const quota = getAntigravityModelQuota(connQuotas, model) || connQuotas?.[model];
+          const resetAt = quota?.resetAt;
           if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
         });
       }
@@ -146,11 +172,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (current && current.lastUsedAt && currentCount < stickyLimit) {
         // Stay with current account
         connection = current;
-        // Update lastUsedAt and increment count in memory/disk cache without blocking on DB
+        // Update lastUsedAt and increment count (await to ensure persistence)
         await updateProviderConnection(connection.id, {
           lastUsedAt: new Date().toISOString(),
           consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
-        }, { memoryOnly: true });
+        });
       } else {
         // Pick the least recently used (excluding current if possible)
         const sortedByOldest = [...availableConnections].sort((a, b) => {
@@ -162,11 +188,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
         connection = sortedByOldest[0];
 
-        // Update lastUsedAt and reset count to 1 in memory/disk cache without blocking on DB
+        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
         await updateProviderConnection(connection.id, {
           lastUsedAt: new Date().toISOString(),
           consecutiveUseCount: 1
-        }, { memoryOnly: true });
+        });
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
@@ -194,6 +220,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         connectionNoProxy: resolvedProxy.connectionNoProxy,
         connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
         vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+        strictProxy: resolvedProxy.strictProxy === true,
       },
       connectionId: connection.id,
       // Include current status for optimization check
@@ -223,34 +250,29 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
 
+  // GitHub premium-request exhaustion is account-wide until the next UTC month.
+  const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
+
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
-  if (resetsAtMs && resetsAtMs > Date.now()) {
+  if (githubResetAtMs) {
     shouldFallback = true;
-    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    cooldownMs = githubResetAtMs - Date.now();
+    newBackoffLevel = 0;
+  } else if (resetsAtMs && resetsAtMs > Date.now()) {
+    shouldFallback = true;
+    // Antigravity quota API provides exact per-model resetAt. Do not truncate it.
+    cooldownMs = resolveProviderId(provider) === "antigravity"
+      ? resetsAtMs - Date.now()
+      : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
   } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel, resolveProviderId(provider)));
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  // Allow custom override for rate limit cooldown from Web Admin Settings (per-provider or global)
-  if (status === 429 || Number(status) === 429) {
-    try {
-      const settings = await getSettings();
-      const providerId = provider ? resolveProviderId(provider) : null;
-      const providerOverride = providerId ? ((settings.providerStrategies || {})[providerId] || {}) : {};
-      const customSec = providerOverride.rateLimitCooldownSeconds ?? settings.rateLimitCooldownSeconds;
-      if (customSec && Number(customSec) > 0) {
-        cooldownMs = Number(customSec) * 1000;
-      }
-    } catch (e) {
-      console.error("[markAccountUnavailable] Failed to resolve custom cooldown from settings:", e);
-    }
-  }
-
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(model, cooldownMs);
+  const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
+  const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
@@ -261,29 +283,12 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     backoffLevel: newBackoffLevel ?? backoffLevel
   });
 
-    const lockKey = Object.keys(lockUpdate)[0];
+  const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
 
   if (provider && status && reason) {
-    console.error(`â Œ ${provider} [${status}]: ${reason}`);
-  }
-
-  // Send Telegram Alert for account lock
-  try {
-    const cooldownSec = Math.round(cooldownMs / 1000);
-    const { sendTelegramAlert } = await import("@/lib/telegramAlert.js");
-    sendTelegramAlert(
-      `⚠️ <b>[9Router Alert] Upstream Account Locked</b>\n` +
-      `• Account: <code>${connName}</code>\n` +
-      `• Provider: <code>${provider || 'unknown'}</code>\n` +
-      `• Model: <code>${model || 'all'}</code>\n` +
-      `• Status: <code>${status}</code>\n` +
-      `• Cooldown: <code>${cooldownSec}s</code>\n` +
-      `• Reason: <code>${reason}</code>`
-    ).catch(err => console.error('[markAccountUnavailable] Alert failed:', err));
-  } catch (err) {
-    console.error('[markAccountUnavailable] Failed to send Telegram alert:', err.message);
+    console.error(`❌ ${provider} [${status}]: ${reason}`);
   }
 
   return { shouldFallback: true, cooldownMs };
@@ -327,7 +332,13 @@ export async function clearAccountError(connectionId, currentConnection, model =
 
   // Only reset error state if no active locks remain
   if (remainingActiveLocks.length === 0) {
-    Object.assign(clearObj, { testStatus: "active", lastError: null, lastErrorAt: null, backoffLevel: 0 });
+    Object.assign(clearObj, {
+      testStatus: "active",
+      lastError: null,
+      errorCode: null,
+      lastErrorAt: null,
+      backoffLevel: 0
+    });
   }
 
   await updateProviderConnection(connectionId, clearObj);
@@ -343,26 +354,11 @@ export function extractApiKey(request) {
     return authHeader.slice(7);
   }
 
-  // Check Gemini x-goog-api-key header
-  const googKey = request.headers.get("x-goog-api-key");
-  if (googKey) {
-    return googKey;
-  }
-
   // Check Anthropic x-api-key header
   const xApiKey = request.headers.get("x-api-key");
   if (xApiKey) {
     return xApiKey;
   }
-
-  // Check query parameter ?key=
-  try {
-    const url = new URL(request.url);
-    const keyParam = url.searchParams.get("key");
-    if (keyParam) {
-      return keyParam;
-    }
-  } catch (e) {}
 
   return null;
 }
@@ -372,24 +368,5 @@ export function extractApiKey(request) {
  */
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
-
-  // 1. Check developer/admin API keys (localDb)
-  const isDevKey = await validateApiKey(apiKey);
-  if (isDevKey) return true;
-
-  // 2. Check Client Resale Keys (Supabase)
-  const isClientKeyFormat = apiKey.startsWith("ck-") || (apiKey.startsWith("sk-") && apiKey.split("-").length === 2);
-  if (isClientKeyFormat) {
-    try {
-      const { validateClientKey } = await import("@/lib/auth/clientKeyAuth.js");
-      const clientKeyResult = await validateClientKey(apiKey);
-      if (clientKeyResult.valid) {
-        return true;
-      }
-    } catch (e) {
-      console.error("[Auth] Error validating client key in isValidApiKey:", e);
-    }
-  }
-
-  return false;
+  return await validateApiKey(apiKey);
 }

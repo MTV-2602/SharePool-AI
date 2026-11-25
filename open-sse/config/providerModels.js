@@ -1,10 +1,9 @@
 import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
 import { PROVIDER_MODELS } from "../providers/index.js";
-import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
+import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, modelParams, normalizeModelId } from "../providers/models/schema.js";
 import { CODEX_REVIEW_SUFFIX, isMuseSparkModel, opencodeFamilyFormats } from "../providers/models/helpers.js";
 import { FORMATS } from "../translator/formats.js";
-
 export { PROVIDER_MODELS };
 
 // OpenCode providers sharing the endpoint-family fallback for unknown model ids
@@ -13,13 +12,11 @@ const isOpenCodeAlias = (aliasOrId) => !aliasOrId || ["oc", "opencode", "ocg", "
 
 // Helper functions
 export function getProviderModels(aliasOrId) {
-  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
-  return PROVIDER_MODELS[alias] || [];
+  return PROVIDER_MODELS[aliasOrId] || [];
 }
 
 export function getDefaultModel(aliasOrId) {
-  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
-  const models = PROVIDER_MODELS[alias];
+  const models = PROVIDER_MODELS[aliasOrId];
   return models?.[0]?.id || null;
 }
 
@@ -44,16 +41,14 @@ function findModel(models, modelId, aliasOrId) {
 }
 
 export function isValidModel(aliasOrId, modelId, passthroughProviders = new Set()) {
-  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
-  if (passthroughProviders.has(alias) || passthroughProviders.has(aliasOrId)) return true;
-  const models = PROVIDER_MODELS[alias];
+  if (passthroughProviders.has(aliasOrId)) return true;
+  const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return false;
   return !!findModel(models, modelId, aliasOrId);
 }
 
 export function findModelName(aliasOrId, modelId) {
-  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
-  const models = PROVIDER_MODELS[alias];
+  const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return modelId;
   const found = findModel(models, modelId, aliasOrId);
   return found?.name || modelId;
@@ -63,8 +58,7 @@ export function getModelTargetFormat(aliasOrId, modelId) {
   if (isOpenCodeAlias(aliasOrId) && isMuseSparkModel(modelId)) {
     return FORMATS.OPENAI_RESPONSES;
   }
-  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
-  const models = PROVIDER_MODELS[alias];
+  const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
   const found = findModel(models, modelId, aliasOrId);
   if (found) return modelTargetFormat(found);
@@ -87,36 +81,21 @@ export function getModelSupportedFormats(aliasOrId, modelId) {
 }
 
 export function getModelType(aliasOrId, modelId) {
-  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
-  const models = PROVIDER_MODELS[alias];
+  const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
   const found = findModel(models, modelId, aliasOrId);
   return found?.kind || found?.type || null;
 }
 
-const THINKING_SUFFIX_RE = /^(.*)\(([^()]+)\)\s*$/;
-const DASH_THINKING_SUFFIX_RE = /^((?:gemini|claude|gpt)-[a-z0-9.-]+?)-(high|medium|low|minimal|extra-low)$/i;
-
-// Strip "(high)" / "(low)" / "(8192)" / "(none)" / "(auto)" thinking suffix from a model ID.
-export function stripThinkingSuffix(modelId) {
-  if (typeof modelId !== "string") return modelId;
-  const m = modelId.match(THINKING_SUFFIX_RE);
-  return m ? m[1].trim() : modelId;
-}
-
 // Raw registry entry for a model (suffix-aware) — executor lookups of per-model hints (e.g. defaultLocation).
 export function getModelMeta(aliasOrId, modelId) {
-  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
-  return findModel(PROVIDER_MODELS[alias], modelId, alias) || null;
+  return findModel(PROVIDER_MODELS[aliasOrId], modelId, aliasOrId) || null;
 }
-
-export function registerLiveAntigravityModels(modelIds = []) {}
 
 // Extra request params a model declares (registry `params`), e.g. ["input_type"].
 // Empty array when the model declares none — callers treat that as "no extra params".
 export function getModelParams(aliasOrId, modelId) {
-  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
-  return modelParams(findModel(PROVIDER_MODELS[alias], modelId, alias));
+  return modelParams(findModel(PROVIDER_MODELS[aliasOrId], modelId, aliasOrId));
 }
 
 // Requested level → tier suffixes to try, most specific first; the last one is the
@@ -139,34 +118,31 @@ function findTierEntry(models, baseId, level, aliasOrId) {
 }
 
 export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
-  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
-  const models = PROVIDER_MODELS[alias];
-
   // Split off thinking suffix "(level)" so lookup hits the base id; re-append it to
   // the result so downstream applyThinking still sees the suffix (body.model is stripped separately).
   const sufMatch = typeof modelId === "string" ? modelId.match(/\([^()]+\)\s*$/) : null;
   const suffix = sufMatch ? sufMatch[0] : "";
   const baseId = suffix ? modelId.slice(0, sufMatch.index).trim() : modelId;
+  const models = PROVIDER_MODELS[aliasOrId];
 
   // Resolve requested thinking level from suffix or client request body
-  const rawSuffix = suffix ? suffix.slice(1, -1).trim().toLowerCase() : "";
-  let tier = rawSuffix === "xhigh" || rawSuffix === "max" ? "high" : rawSuffix === "minimal" ? "low" : rawSuffix;
-  if (!tier && clientBody && typeof clientBody === "object") {
+  let level = suffix ? suffix.slice(1, -1).trim().toLowerCase() : "";
+  if (!level && clientBody && typeof clientBody === "object") {
     const rawEffort = clientBody.reasoning_effort || clientBody.output_config?.effort || (typeof clientBody.reasoning === "object" ? clientBody.reasoning?.effort : null);
     if (typeof rawEffort === "string" && rawEffort) {
-      const v = rawEffort.toLowerCase().trim();
-      tier = v === "xhigh" || v === "max" ? "high" : v === "minimal" ? "low" : v;
+      level = rawEffort.toLowerCase().trim();
     } else if (clientBody.thinking && typeof clientBody.thinking === "object") {
       const b = Number(clientBody.thinking.budget_tokens);
       if (Number.isFinite(b) && b > 0) {
-        tier = b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
+        level = b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
       }
     }
   }
 
   // Look for tiered variant first if a tier was requested (e.g. gemini-3.8-flash-high)
-  const tieredId = tier ? `${baseId}-${tier}` : null;
-  const found = (tieredId && findModel(models, tieredId, alias)) || findModel(models, baseId, alias);
+  const tierHit = level ? findTierEntry(models, baseId, level, aliasOrId) : null;
+  const tier = tierHit?.tier || (TIER_FALLBACKS[level]?.at(-1) ?? level);
+  const found = tierHit?.entry || findModel(models, baseId, aliasOrId);
   const resolvedId = found?.upstreamModelId || found?.id;
   if (resolvedId) {
     const presetMatch = resolvedId.match(/\([^()]+\)\s*$/);
@@ -174,15 +150,14 @@ export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
     const resolvedBase = presetSuffix ? resolvedId.slice(0, presetMatch.index).trim() : resolvedId;
     return resolvedBase + (suffix || (presetSuffix && tier ? `(${tier})` : presetSuffix));
   }
-  if (alias === "cx" && typeof baseId === "string" && baseId.endsWith(CODEX_REVIEW_SUFFIX)) {
+  if (aliasOrId === "cx" && typeof baseId === "string" && baseId.endsWith(CODEX_REVIEW_SUFFIX)) {
     return baseId.slice(0, -CODEX_REVIEW_SUFFIX.length) + suffix;
   }
   return baseId + suffix;
 }
 
 export function getModelQuotaFamily(aliasOrId, modelId) {
-  const alias = PROVIDER_ID_TO_ALIAS[aliasOrId] || aliasOrId;
-  const models = PROVIDER_MODELS[alias];
+  const models = PROVIDER_MODELS[aliasOrId];
   return modelQuotaFamily(findModel(models, modelId, aliasOrId));
 }
 

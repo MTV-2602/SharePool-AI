@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { getAdapter } from '@/lib/db/driver';
-import { DATA_FILE } from '@/lib/db/paths';
 import { getSettings } from '@/lib/localDb';
 import { sendBackupToChat, isUserAllowed, getStats, getServerMetrics } from '@/lib/telegramBackup';
 
@@ -52,25 +51,6 @@ function parseCourseraSheetAccounts(text = '') {
     });
   }
   return accounts;
-}
-
-function parseHotmailLine(line) {
-  const cleanLine = line.trim();
-  const separator = cleanLine.includes('|') ? '|' : ':';
-  const parts = cleanLine.split(separator).map(p => p.trim());
-  if (parts.length < 2) return null;
-
-  const email = parts[0].toLowerCase();
-  const password = parts[1];
-  if (!email || !password || !EMAIL_REGEX.test(email)) return null;
-
-  return {
-    email,
-    password,
-    totp_secret: parts[2] || null,
-    client_id: parts[3] || null,
-    refresh_token: parts[4] || null
-  };
 }
 
 async function pushToGoogleSheet(scriptUrl, sheetName = '', data = []) {
@@ -298,54 +278,6 @@ export async function POST(request) {
       ].join('\n');
 
       await sendTelegramMessage(chatId, welcome);
-      return NextResponse.json({ ok: true });
-    }
-
-    // 6. HOTMAIL & COURSERA PARSER (Tương thích ngược)
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const hasPipe = lines.some(l => l.includes('|'));
-
-    if (hasPipe) {
-      try {
-        await sendTelegramMessage(chatId, `⏳ Đang nhập ${lines.length} tài khoản Hotmail vào SQLite...`);
-        const adapter = await getAdapter();
-        let successCount = 0;
-        let errorCount = 0;
-
-        const insertSql = `
-          INSERT INTO hotmail_accounts (email, password, totp_secret, client_id, refresh_token, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, 'available', datetime('now'), datetime('now'))
-          ON CONFLICT(email) DO UPDATE SET
-            password = excluded.password,
-            totp_secret = coalesce(excluded.totp_secret, hotmail_accounts.totp_secret),
-            client_id = coalesce(excluded.client_id, hotmail_accounts.client_id),
-            refresh_token = coalesce(excluded.refresh_token, hotmail_accounts.refresh_token),
-            updated_at = datetime('now')
-        `;
-
-        for (const line of lines) {
-          const cred = parseHotmailLine(line);
-          if (!cred || !cred.email) {
-            errorCount++;
-            continue;
-          }
-          try {
-            await adapter.run(insertSql, [cred.email, cred.password, cred.totp_secret, cred.client_id, cred.refresh_token]);
-            successCount++;
-          } catch {
-            errorCount++;
-          }
-        }
-
-        const resMsg = [
-          `<b>✅ KẾT QUẢ NHẬP HOTMAIL (SQLITE)</b>`,
-          `• Thành công: <code>${successCount}</code>`,
-          `• Lỗi/Sai định dạng: <code>${errorCount}</code>`
-        ].join('\n');
-        await sendTelegramMessage(chatId, resMsg);
-      } catch (err) {
-        await sendTelegramMessage(chatId, `❌ Lỗi khi nhập Hotmail: ${err.message}`);
-      }
       return NextResponse.json({ ok: true });
     }
 

@@ -324,17 +324,3 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
   log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | UPSTREAM_${status} ${model} — quota exhausted; CACHE_BLOCK until ${quota.resetAt}`);
   return resetMs;
 }
-
-
-/**
- * Backward-compatibility helpers for local auth and quota lookups.
- */
-export function resolveQuotaForModel(quotas, model) {
-  return getAntigravityModelQuota(quotas, model);
-}
-
-export function getModelQuotaFromCache(connectionId, model) {
-  const quotas = quotaCache.get(connectionId);
-  if (!quotas) return null;
-  return getAntigravityModelQuota(quotas, model) || quotas[model] || null;
-}

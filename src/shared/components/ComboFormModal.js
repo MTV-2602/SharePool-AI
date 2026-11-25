@@ -6,7 +6,7 @@ import Input from "./Input";
 import Button from "./Button";
 import ModelSelectModal from "./ModelSelectModal";
 
-const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-\/]+$/;
+const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 // Inline editable model item
 function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
@@ -166,11 +166,21 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
         </div>
       </Modal>
 
-      <ModelSelectModal isOpen={showModelSelect} onClose={() => setShowModelSelect(false)}
-        onSelect={handleAddModel} onDeselect={handleDeselectModel}
-        activeProviders={activeProviders} modelAliases={modelAliases}
-        title="Add Model to Combo" kindFilter={kindFilter}
-        addedModelValues={models} closeOnSelect={false} />
+      {showModelSelect && (
+        <ModelSelectModal isOpen={showModelSelect} onClose={() => setShowModelSelect(false)}
+          onSelect={handleAddModel} onDeselect={handleDeselectModel}
+          onSelectBatch={(items) => {
+            const vals = items.map((m) => m?.value || m?.name || m).filter(Boolean);
+            setModels((prev) => [...new Set([...prev, ...vals])]);
+          }}
+          onDeselectBatch={(items) => {
+            const vals = new Set(items.map((m) => m?.value || m?.name || m).filter(Boolean));
+            setModels((prev) => prev.filter((m) => !vals.has(m)));
+          }}
+          activeProviders={activeProviders} modelAliases={modelAliases}
+          title="Add Model to Combo" kindFilter={kindFilter}
+          addedModelValues={models} closeOnSelect={false} />
+      )}
     </>
   );
 }

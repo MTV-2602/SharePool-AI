@@ -11,6 +11,9 @@ export function toOpenAIFinish(reason, format) {
         case CLAUDE_STOP.MAX_TOKENS: return OPENAI_FINISH.LENGTH;
         case CLAUDE_STOP.TOOL_USE: return OPENAI_FINISH.TOOL_CALLS;
         case CLAUDE_STOP.STOP_SEQUENCE: return OPENAI_FINISH.STOP;
+        // A refusal is a blocked turn, not a clean stop: with the default mapping an
+        // OpenAI client saw finish_reason "stop" and an empty message (9Router logged
+        // "succeeded", OUT 0) and could not tell it from a real answer.
         case CLAUDE_STOP.REFUSAL: return OPENAI_FINISH.CONTENT_FILTER;
         default: return OPENAI_FINISH.STOP;
       }
@@ -25,9 +28,6 @@ export function toOpenAIFinish(reason, format) {
         default: return reason || OPENAI_FINISH.STOP;
       }
     case "gemini":
-    case "antigravity":
-    case "gemini-cli":
-    case "vertex":
       switch (String(reason).toUpperCase()) {
         case GEMINI_FINISH.STOP: return OPENAI_FINISH.STOP;
         case GEMINI_FINISH.MAX_TOKENS: return OPENAI_FINISH.LENGTH;
@@ -46,17 +46,6 @@ export function toOpenAIFinish(reason, format) {
         case "max_tokens": return OPENAI_FINISH.LENGTH;
         default: return OPENAI_FINISH.STOP;
       }
-    case "openai-responses":
-    case "responses":
-      switch (reason) {
-        case "max_output_tokens":
-        case "max_tokens":
-        case "length": return OPENAI_FINISH.LENGTH;
-        case "content_filter": return OPENAI_FINISH.CONTENT_FILTER;
-        case "stop":
-        case "completed": return OPENAI_FINISH.STOP;
-        default: return reason || OPENAI_FINISH.STOP;
-      }
     default:
       return reason || OPENAI_FINISH.STOP;
   }
@@ -68,27 +57,10 @@ export function fromOpenAIFinish(reason, format) {
     case "claude":
       switch (reason) {
         case OPENAI_FINISH.STOP: return CLAUDE_STOP.END_TURN;
-        case OPENAI_FINISH.LENGTH:
-        case "max_output_tokens":
-        case "max_tokens": return CLAUDE_STOP.MAX_TOKENS;
+        case OPENAI_FINISH.LENGTH: return CLAUDE_STOP.MAX_TOKENS;
         case OPENAI_FINISH.TOOL_CALLS: return CLAUDE_STOP.TOOL_USE;
-        case OPENAI_FINISH.CONTENT_FILTER: return CLAUDE_STOP.STOP_SEQUENCE;
-        case "incomplete": return null;
-        default: return (reason === "stop" || reason === "end_turn") ? CLAUDE_STOP.END_TURN : null;
-      }
-    case "gemini":
-    case "antigravity":
-    case "gemini-cli":
-    case "vertex":
-      switch (reason) {
-        case OPENAI_FINISH.STOP: return GEMINI_FINISH.STOP;
-        case OPENAI_FINISH.LENGTH:
-        case "max_output_tokens":
-        case "max_tokens": return GEMINI_FINISH.MAX_TOKENS;
-        case OPENAI_FINISH.TOOL_CALLS: return GEMINI_FINISH.STOP;
-        case OPENAI_FINISH.CONTENT_FILTER: return GEMINI_FINISH.SAFETY;
-        case "incomplete": return null;
-        default: return (reason === "stop") ? GEMINI_FINISH.STOP : null;
+        case OPENAI_FINISH.CONTENT_FILTER: return CLAUDE_STOP.REFUSAL;
+        default: return CLAUDE_STOP.END_TURN;
       }
     default:
       return reason;

@@ -65,7 +65,7 @@ export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1
 
 // Keep-alive socket TTL. Cap it below upstream/edge idle windows (Cloudflare, AWS Global
 // Accelerator / NVIDIA NIM) that drop idle sockets without a TCP RST. keepAliveMaxTimeout is
-// clamped to the same value so an upstream Keep-Alive header cannot extend it to 600s.
+// clamped to the same value so an upstream `Keep-Alive` header cannot extend it to 600s.
 export const DEFAULT_KEEPALIVE_TIMEOUT_MS = 4 * 1000;
 export const FRESH_RETRY_KEEPALIVE_TIMEOUT_MS = 1;
 export const FETCH_KEEPALIVE_TIMEOUT_MS = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", DEFAULT_KEEPALIVE_TIMEOUT_MS);

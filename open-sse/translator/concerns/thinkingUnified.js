@@ -184,9 +184,15 @@ function normalizeOpenAILevel(level, supportedLevels) {
   return "xhigh";
 }
 
-function toGeminiThinkingLevel(cfg) {
-  const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
-  return effortToThinkingLevel(raw);
+function toGeminiThinkingLevel(cfg, supportedLevels) {
+  const raw = (cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high")).toLowerCase();
+  const level = raw === "ultra" ? "max" : raw;
+  if (supportedLevels?.length) {
+    if (supportedLevels.includes(level)) return level;
+    if (level === "max" && supportedLevels.includes("xhigh")) return "xhigh";
+    if ((level === "max" || level === "xhigh") && supportedLevels.includes("high")) return "high";
+  }
+  return effortToThinkingLevel(level);
 }
 
 function toKimiReasoningEffort(cfg) {

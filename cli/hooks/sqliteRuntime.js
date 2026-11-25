@@ -6,7 +6,14 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const BETTER_SQLITE3_VERSION = "12.6.2";
+// Gate the pinned version by Node major, mirroring src/lib/db/driver.js gating
+// style: 13.x is N-API and ships per-platform prebuilds inside the package, so
+// it needs no ABI-specific download. It requires Node >= 22; older runtimes stay
+// on 12.6.2, which fetches an ABI-specific binary via prebuild-install.
+const [NODE_MAJOR] = process.versions.node.split(".").map(Number);
+const USE_NAPI_BUILD = NODE_MAJOR >= 22;
+const BETTER_SQLITE3_VERSION = USE_NAPI_BUILD ? "13.0.3" : "12.6.2";
+const SQL_JS_VERSION = "1.14.1";
 
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
@@ -44,9 +51,23 @@ function hasModule(name) {
   return fs.existsSync(path.join(getRuntimeNodeModules(), name, "package.json"));
 }
 
+function isGlibcRuntime() {
+  try { return Boolean(process.report?.getReport()?.header?.glibcVersionRuntime); } catch { return true; }
+}
+
+// 12.x compiles/downloads into build/Release; 13.x ships prebuilds/<platform>-<arch>.node.
+function getBetterSqliteBinary() {
+  const root = path.join(getRuntimeNodeModules(), "better-sqlite3");
+  const platform = process.platform === "linux" && !isGlibcRuntime() ? "linuxmusl" : process.platform;
+  return [
+    path.join(root, "build", "Release", "better_sqlite3.node"),
+    path.join(root, "prebuilds", `${platform}-${process.arch}.node`),
+  ].find((file) => fs.existsSync(file));
+}
+
 function isBetterSqliteBinaryValid() {
-  const binary = path.join(getRuntimeNodeModules(), "better-sqlite3", "build", "Release", "better_sqlite3.node");
-  if (!fs.existsSync(binary)) return false;
+  const binary = getBetterSqliteBinary();
+  if (!binary) return false;
   try {
     const fd = fs.openSync(binary, "r");
     const buf = Buffer.alloc(4);
@@ -75,7 +96,8 @@ function summarizeNpmError(stderr = "") {
 }
 
 function runNpmInstall({ cwd, pkgs, extraArgs = [], timeout = 180000 }) {
-  const args = ["install", ...pkgs, "--no-audit", "--no-fund", "--prefer-online", ...extraArgs];
+  // Global npm lifecycle hooks inherit npm_config_global=true; cwd alone cannot override it.
+  const args = ["install", ...pkgs, "--global=false", "--no-audit", "--no-fund", "--prefer-online", ...extraArgs];
   const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
   const res = spawnSync(npmCmd, args, {
     cwd,
@@ -90,6 +112,7 @@ function runNpmInstall({ cwd, pkgs, extraArgs = [], timeout = 180000 }) {
 function npmInstall(pkgs, opts = {}) {
   const cwd = ensureRuntimeDir();
   const extra = opts.optional ? ["--no-save"] : [];
+  if (opts.ignoreScripts) extra.push("--ignore-scripts");
   if (!opts.silent) console.log("⏳ Installing SQLite engine (first run)...");
   const res = runNpmInstall({ cwd, pkgs, extraArgs: extra, timeout: opts.timeout || 180000 });
   if (!res.ok && !opts.silent) {
@@ -102,20 +125,39 @@ function npmInstall(pkgs, opts = {}) {
 }
 
 // Public: ensure better-sqlite3 native module is installed in user-writable
-// runtime dir. sql.js is bundled in bin/app already; node:sqlite is built-in.
-// This is purely a *speed optimization* — app works without it via fallbacks.
+// runtime dir. sql.js may be bundled in bin/app, but npm publish strips .wasm
+// from nested node_modules — verify and reinstall if missing. node:sqlite is
+// built-in. This is purely a *speed optimization* — app works without
+// better-sqlite3 via fallbacks.
+function isSqlJsWasmValid() {
+  const bundledWasm = path.join(__dirname, "..", "app", "node_modules", "sql.js", "dist", "sql-wasm.wasm");
+  if (fs.existsSync(bundledWasm)) return true;
+  const runtimeWasm = path.join(getRuntimeNodeModules(), "sql.js", "dist", "sql-wasm.wasm");
+  return fs.existsSync(runtimeWasm);
+}
+
 function ensureSqliteRuntime({ silent = false } = {}) {
   ensureRuntimeDir();
+
+  let sqlJsOk = isSqlJsWasmValid();
+  if (!sqlJsOk) {
+    sqlJsOk = npmInstall([`sql.js@${SQL_JS_VERSION}`], { silent });
+    if (sqlJsOk) sqlJsOk = isSqlJsWasmValid();
+  }
 
   const needBetterSqlite = !hasModule("better-sqlite3") || !isBetterSqliteBinaryValid();
   if (!needBetterSqlite) {
     if (!silent) console.log("✅ SQLite engine ready");
-    return { betterSqlite: true };
+    return { betterSqlite: true, sqlJs: sqlJsOk };
   }
 
-  const ok = npmInstall([`better-sqlite3@${BETTER_SQLITE3_VERSION}`], { optional: true, silent });
+  // npm injects an implicit `node-gyp rebuild` for any package carrying a
+  // binding.gyp, which would demand build tools even though 13.x already bundles
+  // the binary — skip scripts so the bundled prebuild is used as-is.
+  const ok = npmInstall([`better-sqlite3@${BETTER_SQLITE3_VERSION}`], { optional: true, silent, ignoreScripts: USE_NAPI_BUILD });
   return {
     betterSqlite: ok && hasModule("better-sqlite3") && isBetterSqliteBinaryValid(),
+    sqlJs: sqlJsOk,
   };
 }
 

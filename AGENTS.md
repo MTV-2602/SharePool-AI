@@ -8,7 +8,7 @@
 
 * **`D:\codex xoay` (DỰ ÁN CHÍNH / MAIN PROJECT):**
   - Đây là kho mã nguồn làm việc chính của người dùng (Git repository: `MTV-2602/SharePool-AI`, nhánh `main`).
-  - Chứa toàn bộ tính năng và logic tùy biến riêng: Database SQLite nội bộ (`/data/db/data.sqlite`), hệ thống auth `client_keys`, bộ công cụ `ainoname-client`, MITM router, Hotmail integration, Telegram notification bot, v.v.
+  - Chứa toàn bộ tính năng và logic tùy biến riêng: Database SQLite nội bộ (`/data/db/data.sqlite`), hệ thống auth `client_keys`, bộ công cụ `ainoname-client`, MITM router, Telegram notification bot, v.v.
   - **Mọi chỉnh sửa code, tích hợp tính năng mới, kiểm tra build (`npm run build`) và commit Git đều PHẢI thực hiện tại đây.**
 
 * **`D:\9router` (KHO THAM KHẢO GỐC / UPSTREAM REFERENCE):**

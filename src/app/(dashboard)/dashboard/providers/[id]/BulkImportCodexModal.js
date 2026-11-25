@@ -5,12 +5,11 @@ import PropTypes from "prop-types";
 import { Button, Modal } from "@/shared/components";
 import { translate } from "@/i18n/runtime";
 
-const PLACEHOLDER = `email@hotmail.com|eyJhbGc...
-email2@hotmail.com|eyJhbGc...
-Or JSON format:
-[
+const PLACEHOLDER = `[
   {
     "accessToken": "eyJhbGc...",
+    "refreshToken": "rt_...",
+    "idToken": "eyJhbGc...",
     "email": "user@example.com"
   }
 ]`;
@@ -45,29 +44,26 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
     const trimmed = jsonText.trim();
     if (!trimmed) return;
 
-    let bodyContent = trimmed;
-    let contentType = "text/plain";
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (err) {
+      setParseError(`${translate("Invalid JSON")}: ${err.message}`);
+      return;
+    }
 
-    // Attempt to determine if it is JSON
-    if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        const accounts = normalizeToArray(parsed);
-        if (accounts && accounts.length > 0) {
-          bodyContent = JSON.stringify(accounts);
-          contentType = "application/json";
-        }
-      } catch (err) {
-        // Fallback to text parsing on the server
-      }
+    const accounts = normalizeToArray(parsed);
+    if (!accounts || accounts.length === 0) {
+      setParseError(translate("No accounts found in input"));
+      return;
     }
 
     setSubmitting(true);
     try {
       const res = await fetch("/api/oauth/codex/bulk-import", {
         method: "POST",
-        headers: { "Content-Type": contentType },
-        body: bodyContent,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accounts }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -92,7 +88,7 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
       <div className="flex flex-col gap-4">
         <p className="text-xs text-text-muted">
           {translate(
-            "Paste a list of accounts (one per line, format: email|token) or a JSON array of accounts."
+            "Paste an array of codex account JSON objects. Each must include accessToken (and ideally refreshToken, idToken)."
           )}
         </p>
 

@@ -32,12 +32,16 @@ Thumbs.db
 
 # Next.js build output
 .next/
+.next-cli-build/
+cli/.build-home/
+out/
 
 # Scratch & Dev artifacts
 scratch/
 code_diff.txt
 repo_diff.md
 .env*
+!.env.example
 vps_management_guide.md
 *.guide.md
 .cache/

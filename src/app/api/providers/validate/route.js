@@ -5,6 +5,14 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbe
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
+import { buildCommandCodeHeaders } from "open-sse/shared/commandCodeHeaders.js";
+import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
+import {
+  createNousApiKeyProbe,
+  getNousApiKeyValidationError,
+  isNousApiKeyAccepted,
+} from "open-sse/services/nous.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
@@ -20,7 +28,7 @@ async function probeWebProvider(provider, apiKey) {
   if (!cfg) return null;
   if (cfg.authType === "none") return true; // no-auth (e.g. searxng)
 
-  let url = cfg.baseUrl;
+  let url = cfg.validateUrl || cfg.baseUrl;
   const headers = { "Content-Type": "application/json" };
   let body;
 
@@ -89,7 +97,11 @@ export async function POST(request) {
     const { apiKey, providerSpecificData } = body;
 
     const isNoAuth = AI_PROVIDERS[provider]?.noAuth === true;
-    if (!provider || (!apiKey && provider !== "ollama-local" && !isNoAuth)) {
+    // Same exemption as the create route: a provider can name a providerSpecificData field
+    // that replaces the API key (Bedrock's `profile`), so validating that setup must not 400.
+    const apiKeySubstitute = AI_PROVIDERS[provider]?.apiKeyOptionalWith;
+    const hasApiKeySubstitute = !!(apiKeySubstitute && providerSpecificData?.[apiKeySubstitute]);
+    if (!provider || (!apiKey && provider !== "ollama-local" && !isNoAuth && !hasApiKeySubstitute)) {
       return NextResponse.json({ error: "Provider and API key required" }, { status: 400 });
     }
 
@@ -156,17 +168,26 @@ export async function POST(request) {
           normalizedBase = normalizedBase.slice(0, -9); // remove /messages
         }
 
-        const modelsUrl = `${normalizedBase}/models`;
+        const messagesUrl = `${normalizedBase}/v1/messages`;
+        const model = node.defaultModel || "claude-3-haiku-20240307";
 
-        const res = await fetch(modelsUrl, {
+        const res = await fetch(messagesUrl, {
+          method: "POST",
           headers: {
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
-            "Authorization": `Bearer ${apiKey}`
+            "content-type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
           },
+          body: JSON.stringify({
+            model,
+            max_tokens: 1,
+            messages: [{ role: "user", content: "test" }],
+          }),
         });
 
-        isValid = res.ok;
+        // 400/529 still confirms key accepted; only 401/403 = bad key
+        isValid = res.status !== 401 && res.status !== 403;
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key",
@@ -225,6 +246,12 @@ export async function POST(request) {
         });
       }
 
+      // AWS-signed providers (Bedrock) have no bearer key for the generic probes below, which
+      // would reject bedrock outright and send bedrock-xai to a literal "{region}" host.
+      if (AI_PROVIDERS[provider]?.credentialForm === "aws") {
+        return NextResponse.json(await probeBedrockCredentials({ apiKey, providerSpecificData }, fetch));
+      }
+
       // Generic probe for webSearch/webFetch providers (config-driven)
       const webResult = await probeWebProvider(provider, apiKey);
       if (webResult !== null) {
@@ -244,6 +271,21 @@ export async function POST(request) {
       }
 
       switch (provider) {
+        case "fal-ai": {
+          // Match saved-connection tests: check auth without queueing a paid image.
+          const res = await fetch("https://api.fal.ai/v1/models?limit=1", {
+            headers: { Authorization: `Key ${apiKey}` },
+            signal: AbortSignal.timeout(8000),
+          });
+          isValid = res.ok;
+          if (!isValid) {
+            error = res.status === 401 || res.status === 403
+              ? "Invalid API key"
+              : `Unable to verify API key (Fal returned ${res.status})`;
+          }
+          break;
+        }
+
         case "openai":
           const openaiRes = await fetch("https://api.openai.com/v1/models", {
             headers: { "Authorization": `Bearer ${apiKey}` },
@@ -287,17 +329,31 @@ export async function POST(request) {
           isValid = openrouterRes.ok;
           break;
 
+
+        case "nous": {
+          // Nous exposes /models publicly, so a models request cannot validate
+          // the Portal key. Use the smallest authenticated inference instead.
+          const probe = createNousApiKeyProbe(apiKey);
+          const res = await fetch(probe.url, {
+            ...probe.options,
+            signal: AbortSignal.timeout(8000),
+          });
+          isValid = isNousApiKeyAccepted(res.status);
+          if (!isValid) error = getNousApiKeyValidationError(res.status);
+          break;
+        }
         case "glm":
         case "glm-cn":
         case "kimi":
         case "minimax":
         case "minimax-cn":
         case "alicode-intl":
+        case "alims-intl":
         case "alicode":
         case "agentrouter": {
           // Use baseUrl from PROVIDERS (DRY); separate openai-format vs claude-format flow
           const cfg = PROVIDERS[provider];
-          const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl";
+          const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl" || provider === "alims-intl";
 
           if (isOpenAiFormat) {
             const testModel = getDefaultModel(provider);
@@ -359,6 +415,8 @@ export async function POST(request) {
         case "assemblyai":
         case "nanobanana":
         case "chutes":
+        case "runcrate":
+        case "synthetic":
         case "xiaomi-mimo":
         case "xiaomi-tokenplan":
         case "nvidia": {
@@ -372,10 +430,13 @@ export async function POST(request) {
           };
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-          const res = await fetch(endpoints[provider], { headers });
+          const res = await fetch(endpoints[provider], { headers, signal: AbortSignal.timeout(8000) });
           // xai returns 400 for bad key, 403 for valid-but-no-credit. Other providers use 401.
           if (provider === "xai") {
             isValid = res.status === 200 || res.status === 403;
+          } else if (provider === "xiaomi-tokenplan") {
+            // /models returns 403 for valid keys lacking list permission; only 401 means invalid
+            isValid = res.status !== 401;
           } else {
             isValid = res.ok;
           }
@@ -383,9 +444,11 @@ export async function POST(request) {
         }
 
         case "opencode-go": {
-          const res = await fetch("https://opencode.ai/zen/go/v1/chat/completions", {
+          // ponytail: session id derived from key hash so validate looks like a normal session; upgrade path = per-request session from executor
+          const sessionId = "validate-" + (await import("node:crypto")).createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
+          const res = await fetch("https://opencode.ai/inference/go/openai/v1/chat/completions", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}`, "x-opencode-session": sessionId },
             body: JSON.stringify({
               model: getDefaultModel("opencode-go"),
               messages: [{ role: "user", content: "ping" }],
@@ -407,12 +470,7 @@ export async function POST(request) {
           }, false);
           const res = await fetch(cfg.baseUrl, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(cfg.headers || {}),
-              "x-session-id": crypto.randomUUID(),
-              "Authorization": `Bearer ${apiKey}`,
-            },
+            headers: buildCommandCodeHeaders({ apiKey, sessionId: payload.threadId }),
             body: JSON.stringify(payload),
           });
           isValid = res.status !== 401 && res.status !== 403;
@@ -565,6 +623,21 @@ export async function POST(request) {
             error = "Invalid session cookie — re-paste __Secure-next-auth.session-token from perplexity.ai";
           } else {
             isValid = true;
+          }
+          break;
+        }
+
+        case "qoder":
+        case "qoder-cn": {
+          // PAT (pt-...) needs the job-token exchange before it can sign
+          // anything — the generic OpenAI-compat probe below can't validate it.
+          try {
+            const resolved = await resolveQoderCredentials({ provider, apiKey, providerSpecificData }, null, AbortSignal.timeout(8000));
+            const result = await resolveQoderModels(resolved, { forceRefresh: true });
+            isValid = !!result?.models?.length;
+          } catch (err) {
+            isValid = false;
+            error = err.message;
           }
           break;
         }

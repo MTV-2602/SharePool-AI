@@ -1,15 +1,18 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Badge, Toggle } from "@/shared/components";
+import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
+  const proxyBtnRef = useRef(null);
+  const [proxyDropdownStyle, setProxyDropdownStyle] = useState(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
   const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
@@ -23,6 +26,18 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       : hasLegacyProxy
         ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
         : "";
+  const autoPingTooltip = (() => {
+    if (!autoPing) return "";
+    const activeModes = [];
+    if (autoPing.reactiveOn) activeModes.push("On reset");
+    if (autoPing.scheduleOn) activeModes.push(`Scheduled (${autoPing.scheduleSummary || "active"})`);
+    if (activeModes.length > 0) {
+      return `Auto-ping active: ${activeModes.join(" + ")}. Click to configure.`;
+    }
+    return autoPing.provider === "codex"
+      ? "Auto-starts the next 5h Codex window after reset or on schedule. Click to configure."
+      : "Auto-starts a new window on quota reset or fixed schedule. Click to configure.";
+  })();
 
   let maskedProxyUrl = "";
   if (boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl) {
@@ -44,16 +59,50 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     proxyBadgeVariant = "error";
   }
 
-  // Close dropdown when clicking outside
+  // Render via portal + fixed positioning so ancestor overflow (scrollable
+  // connections list) can't clip the dropdown
+  const toggleProxyDropdown = () => {
+    if (showProxyDropdown) {
+      setShowProxyDropdown(false);
+      return;
+    }
+    const rect = proxyBtnRef.current?.getBoundingClientRect();
+    if (!rect) {
+      setShowProxyDropdown(true);
+      return;
+    }
+    const estimatedHeight = ((proxyPools?.length || 0) + 1) * 34 + 8;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const flipUp = spaceBelow < estimatedHeight && rect.top > spaceBelow;
+    setProxyDropdownStyle({
+      position: "fixed",
+      right: window.innerWidth - rect.right,
+      ...(flipUp
+        ? { bottom: window.innerHeight - rect.top + 4, maxHeight: Math.max(rect.top - 8, 120) }
+        : { top: rect.bottom + 4, maxHeight: Math.max(spaceBelow - 8, 120) }),
+    });
+    setShowProxyDropdown(true);
+  };
+
+  // Close dropdown when clicking outside, scrolling, or resizing
   useEffect(() => {
     if (!showProxyDropdown) return;
-    const handler = (e) => {
-      if (proxyDropdownRef.current && !proxyDropdownRef.current.contains(e.target)) {
-        setShowProxyDropdown(false);
-      }
+    const handleClick = (e) => {
+      if (
+        proxyDropdownRef.current?.contains(e.target) ||
+        proxyBtnRef.current?.contains(e.target)
+      ) return;
+      setShowProxyDropdown(false);
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    const close = () => setShowProxyDropdown(false);
+    document.addEventListener("mousedown", handleClick);
+    window.addEventListener("resize", close);
+    document.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      window.removeEventListener("resize", close);
+      document.removeEventListener("scroll", close, true);
+    };
   }, [showProxyDropdown]);
 
   const handleSelectProxy = async (poolId) => {
@@ -69,12 +118,18 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const rowAuthType = connection.authType || (isOAuth ? "oauth" : "apikey");
   const isOAuthConnection = rowAuthType === "oauth";
   const isCookieConnection = rowAuthType === "cookie";
-  const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
-  const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
-  const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-  const displayName = isOAuthConnection
-    ? (isEmail(connection.email) ? connection.email : (isEmail(connection.name) ? connection.name : (connection.name || connection.email || connection.displayName || "OAuth Account")))
-    : (connection.name || connection.email || connection.displayName || "API Key");
+  const isLeaseConnection = rowAuthType === "mcode-lease";
+  const authIcon = isLeaseConnection ? "desktop_windows" : isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
+  const authLabel = isLeaseConnection ? "Desktop Lease" : isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
+  const displayName = connection.name?.trim()
+    || connection.email?.trim()
+    || connection.displayName?.trim()
+    || (isLeaseConnection ? "Desktop Lease" : isOAuthConnection ? "OAuth Account" : isCookieConnection ? "Cookie Account" : "API Key");
+  const secondaryDisplayName = connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()
+    ? connection.email.trim()
+    : connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()
+      ? connection.displayName.trim()
+      : null;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -152,6 +207,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
+          {secondaryDisplayName && (
+            <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
+          )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
@@ -159,11 +217,6 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
-            {connection.hasCredentialsInKho !== undefined && (
-              <Badge variant={connection.hasCredentialsInKho ? "success" : "default"} size="sm">
-                {connection.hasCredentialsInKho ? "Trong kho" : "Thiếu kho"}
-              </Badge>
-            )}
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
@@ -208,9 +261,10 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         <div className="grid flex-1 grid-cols-3 gap-1 sm:flex sm:flex-none">
           {/* Proxy button with inline dropdown */}
           {(proxyPools || []).length > 0 && (
-            <div className="relative" ref={proxyDropdownRef}>
+            <div>
               <button
-                onClick={() => setShowProxyDropdown((v) => !v)}
+                ref={proxyBtnRef}
+                onClick={toggleProxyDropdown}
                 className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${hasAnyProxy ? "text-primary" : "text-text-muted hover:text-primary"}`}
                 disabled={updatingProxy}
               >
@@ -219,8 +273,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 </span>
                 <span className="text-[10px] leading-tight">Proxy</span>
               </button>
-              {showProxyDropdown && (
-                <div className="absolute right-0 top-full z-50 mt-1 max-w-[78vw] min-w-[160px] rounded-lg border border-border bg-bg py-1 shadow-lg">
+              {showProxyDropdown && createPortal(
+                <div
+                  ref={proxyDropdownRef}
+                  style={proxyDropdownStyle}
+                  className="z-50 max-w-[78vw] min-w-[160px] overflow-y-auto rounded-lg border border-border bg-bg py-1 shadow-lg"
+                >
                   <button
                     onClick={() => handleSelectProxy("__none__")}
                     className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
@@ -236,9 +294,21 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                       {pool.name}
                     </button>
                   ))}
-                </div>
+                </div>,
+                document.body
               )}
             </div>
+          )}
+          {autoPing && (
+            <Tooltip text={autoPingTooltip}>
+              <button
+                onClick={autoPing.onConfigure}
+                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPing.isActive ? "text-primary" : "text-text-muted hover:text-primary"}`}
+              >
+                <span className="material-symbols-outlined text-[18px]">bolt</span>
+                <span className="text-[10px] leading-tight">Auto-ping</span>
+              </button>
+            </Tooltip>
           )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>
@@ -292,5 +362,13 @@ ConnectionRow.propTypes = {
   oneByOneStatus: PropTypes.shape({
     state: PropTypes.string,
     error: PropTypes.string,
+  }),
+  autoPing: PropTypes.shape({
+    isActive: PropTypes.bool,
+    provider: PropTypes.string,
+    reactiveOn: PropTypes.bool,
+    scheduleOn: PropTypes.bool,
+    scheduleSummary: PropTypes.string,
+    onConfigure: PropTypes.func,
   }),
 };

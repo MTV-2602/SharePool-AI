@@ -69,12 +69,18 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
-// Client keys (reseller keys)
+// Client keys
 export {
-  getAllClientKeys, getClientKeyById, getClientKeyByToken,
-  createClientKey, updateClientKey, deleteClientKey,
-  incrementClientKeyTokens, logClientKeyUsage,
-  getClientKeyUsageLogs, getClientKeyUsageSummary,
+  getAllClientKeys,
+  getClientKeyById,
+  getClientKeyByToken,
+  createClientKey,
+  updateClientKey,
+  deleteClientKey,
+  incrementClientKeyTokens,
+  logClientKeyUsage,
+  getClientKeyUsageLogs,
+  getClientKeyUsageSummary,
 } from "./repos/clientKeysRepo.js";
 
 // Export/import full DB

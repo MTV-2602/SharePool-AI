@@ -4,7 +4,7 @@ import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 export const QUOTA_CACHE_KEY = "quotaCacheData";
 export const REFRESH_INTERVAL_MS = 60000;
 // Claude usage/quota endpoint rate-limits; poll it less often than other providers
-export const CLAUDE_REFRESH_INTERVAL_MS = 180000;
+export const CLAUDE_REFRESH_INTERVAL_MS = 600000;
 export const DEPLETED_QUOTA_THRESHOLD = 5;
 export const AUTO_REFRESH_STORAGE_KEY = "quotaAutoRefresh";
 export const CONNECTIONS_PAGE_SIZE = 20;
@@ -300,6 +300,12 @@ export function calculatePercentage(used, total) {
  * @returns {number} Remaining percentage (0-100)
  */
 export function getRemainingPercentage(quota) {
+  if (quota?.percentage !== undefined) {
+    // Providers may report the used share; the UI renders the remaining one.
+    const value = quota.percentageIsUsed === true ? 100 - quota.percentage : quota.percentage;
+    return Math.max(0, Math.round(value));
+  }
+
   if (quota?.remaining !== undefined) {
     return Math.max(0, Math.round(quota.remaining));
   }
@@ -394,7 +400,7 @@ export function parseQuotaData(provider, data) {
           const hasClaudeWeekly = Boolean(data.quotas.claude_gpt_weekly);
           const hasClaudeSession = Boolean(data.quotas.claude_gpt_session);
 
-          // 1. Gemini Family:
+          // 1. Gemini Family (Flash / Pro):
           if (hasGeminiSession) {
             summaryModels.filter(([k]) => k === "gemini_session").forEach(([modelKey, quota]) => {
               normalizedQuotas.push({
@@ -545,7 +551,8 @@ export function parseQuotaData(provider, data) {
           });
 
           // 4. Other models:
-          // In Antigravity, GPT-OSS is explicitly documented by Google as part of the "Claude and GPT models" group.
+          // In Antigravity, GPT-OSS is explicitly documented by Google as part of the "Claude and GPT models" group:
+          // ("Models within this group: Claude Opus, Claude Sonnet, GPT-OSS").
           // When summary quotas (claude_gpt_session / claude_gpt_weekly) are present, GPT-OSS is already represented
           // by the "Claude & GPT" family rows. We only include otherModels if no summary exists for that pool.
           if (!hasClaudeWeekly && !hasClaudeSession) {
@@ -600,17 +607,43 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "qoder":
+      case "qoder-cn":
+        // Qoder ships a `user` quota, an optional `organization` quota and —
+        // when the account has redeemed a free-credit promo — an `addOn`
+        // bucket. All share the shape {total, used, remaining, unit, resetAt}.
+        // Skip any bucket whose total is 0: `personal_standard` accounts
+        // report `user` as 0/0 (their grant lives in `addOn`) and most
+        // accounts never have an organization bucket, so rendering "0/0"
+        // rows is noise. Buckets holding an actual grant always have
+        // total > 0 and are kept.
+        // Don't forward Qoder's `remaining` field: it's an absolute credit
+        // count, but getRemainingPercentage / QuotaTable interpret
+        // `remaining` as a 0-100 percentage and would render 348 credits
+        // as "348%". The percentage is computed from used/total instead.
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
-            if (quotaType === "organization" && (!quota || (Number(quota.total) || 0) === 0)) {
+            if (!quota || (Number(quota.total) || 0) === 0) {
               return;
             }
             normalizedQuotas.push({
-              name: quotaType === "user" ? "Personal" : quotaType === "organization" ? "Organization" : quotaType,
+              name:
+                quotaType === "user"
+                  ? "Personal"
+                  : quotaType === "organization"
+                    ? "Organization"
+                    : quotaType === "addOn"
+                      ? "Add-on"
+                      : quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
               unit: quota.unit,
               resetAt: quota.resetAt || null,
+              // Qoder reports open-ended plans as a 9999 sentinel; the service
+              // turns that into neverExpires so the row can read
+              // "Never expires" instead of "N/A" or a year-9999 date.
+              neverExpires: quota.neverExpires === true,
+              // Present on add-on credits: links to Qoder's own usage page.
+              detailUrl: quota.detailUrl || null,
             });
           });
         }
@@ -618,6 +651,7 @@ export function parseQuotaData(provider, data) {
 
       case "claude":
         if (data.message) {
+          // Handle error message case
           normalizedQuotas.push({
             name: "error",
             used: 0,
@@ -631,6 +665,8 @@ export function parseQuotaData(provider, data) {
               name,
               used: quota.used || 0,
               total: quota.total || 0,
+              remaining: quota.remaining !== undefined ? quota.remaining : Math.max(0, (quota.total || 100) - (quota.used || 0)),
+              remainingPercentage: quota.remainingPercentage !== undefined ? quota.remainingPercentage : calculatePercentage(quota.used, quota.total),
               resetAt: quota.resetAt || null,
             });
           });
@@ -638,6 +674,10 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "vercel-ai-gateway":
+        // Vercel returns currency credit balance, not request quotas.
+        // The 'Remaining (USD)' row needs explicit remainingPercentage because
+        // its used/total values would otherwise compute the wrong direction
+        // (e.g. used=95.5 / total=100 → 4% instead of 96%).
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
@@ -652,6 +692,11 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "codebuddy-cn":
+      case "codebuddy-intl":
+        // CodeBuddy CN/Intl mix recurring refill packs ("Monthly"/"Weekly"/...)
+        // with one-shot bonus packs ("Bonus Pack N"). Forward `recurring`
+        // so the UI can show "Expires in" for bonus packs (whose resetAt is
+        // a hard expiry, not a refresh) instead of "Reset in".
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
@@ -665,7 +710,74 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
-      default:
+      case "grok-cli":
+        // Grok Build credits (on-demand window + prepaid balance).
+        // Do NOT forward absolute `remaining` — getRemainingPercentage treats
+        // it as a 0–100 percentage (same as Qoder). Use remainingPercentage.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "kimi":
+        // Weekly / Ratelimit from /v1/usages. Prefer remainingPercentage only.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "deepseek":
+        // Credit balance — remainingPercentage only (no absolute remaining).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+              isCreditBalance: quota.isCreditBalance ?? true,
+              currency: quota.currency || (name.includes("(") ? name.slice(name.indexOf("(") + 1, name.indexOf(")")) : "USD"),
+            });
+          });
+        }
+        break;
+
+      case "cursor":
+        // Plan spend is USD (cents from GetCurrentPeriodUsage). Forward
+        // remainingPercentage only — do not pass absolute remaining (UI treats it as %).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "groq":
+        // Requests/Tokens rate-limit windows from response headers — absolute
+        // used/total (calculatePercentage derives the bar), like Codex/Kiro.
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
@@ -676,14 +788,134 @@ export function parseQuotaData(provider, data) {
             });
           });
         }
+        break;
+
+      case "ollama":
+        // Session (5h) / Weekly (7d) / Monthly usage % from ollama.com/api/balance (or /api/usage).
+        // remainingPercentage only — no absolute remaining (UI treats remaining as %).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+              isCreditBalance: quota.isCreditBalance,
+              currency: quota.currency,
+              unit: quota.unit,
+              unlimited: quota.unlimited,
+            });
+          });
+        }
+        break;
+
+      case "clinepass":
+        // five_hour / weekly / monthly percentUsed windows from
+        // /api/v1/users/me/plan/usage-limits. remainingPercentage only.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "zed":
+        // Edit predictions + optional hosted model_requests; unlimited uses remainingPercentage.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+              unlimited: quota.unlimited,
+            });
+          });
+        }
+        break;
+
+      case "minimax-code":
+      case "minimax-code-global":
+        // Service already returns dashboard-shaped rows: a credits balance
+        // (isCreditBalance → 💰 with the amount as total) plus M Plan rate
+        // windows as 0-100 percent rows. Pass through, preserving extras.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remaining: quota.remaining,
+              remainingPercentage: quota.remainingPercentage,
+              resetAt: quota.resetAt || null,
+              message: quota.message,
+              isCreditBalance: quota.isCreditBalance,
+              currency: quota.currency,
+            });
+          });
+        }
+        break;
+
+      case "opendesign-go":
+      case "deeprelay":
+      case "synthetic":
+        // Gateway quota rows: windows carry remainingPercentage; wallet/spend
+        // rows also carry a currency unit and an explicit unlimited flag.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name: quota.name || name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remainingPercentage: quota.remainingPercentage,
+              resetAt: quota.resetAt || null,
+              unlimited: quota.unlimited,
+              unit: quota.unit,
+              windowStart: quota.windowStart,
+            });
+          });
+        }
+        break;
+
+      default:
+        // Generic fallback for unknown providers
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name: quota.name || name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              percentage: quota.percentage,
+              colorPercentage: quota.colorPercentage,
+              percentageIsUsed: quota.percentageIsUsed === true,
+              resetAt: quota.resetAt || null,
+              emptyMessage: quota.emptyMessage || null,
+            });
+          });
+        }
     }
   } catch (error) {
     console.error(`Error parsing quota data for ${provider}:`, error);
     return [];
   }
 
-  // Antigravity is already ordered cleanly by family (Gemini 5h -> Gemini Weekly -> Claude & GPT 5h -> Claude & GPT Weekly -> Image)
-  if (provider?.toLowerCase() === "antigravity") {
+  if (provider?.toLowerCase() === "claude") {
+    const CLAUDE_QUOTA_ORDER = {
+      "session (5h)": 0,
+      "weekly (7d)": 1,
+      "weekly fable (7d)": 2,
+      "weekly opus (7d)": 3,
+      "weekly sonnet (7d)": 4,
+    };
+    normalizedQuotas.sort((a, b) => (CLAUDE_QUOTA_ORDER[a.name] ?? 99) - (CLAUDE_QUOTA_ORDER[b.name] ?? 99));
     return normalizedQuotas;
   }
 
@@ -693,6 +925,7 @@ export function parseQuotaData(provider, data) {
     const orderMap = new Map(modelOrder.map((m, i) => [m.id, i]));
     
     normalizedQuotas.sort((a, b) => {
+      // Use modelKey for antigravity (mapped to family anchor), otherwise use name
       let keyA = a.modelKey || a.name;
       let keyB = b.modelKey || b.name;
       if (keyA === "gemini_argon" || keyA === "gemini_argon_session") keyA = "gemini-4-argon-high";

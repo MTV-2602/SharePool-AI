@@ -28,6 +28,10 @@ export function normalizeAllowList(list) {
 
 /**
  * Build the access object from the two apiKeys columns.
+ *
+ * Fails CLOSED: the restricted flag has its own INTEGER column, so a corrupt or
+ * unparsable allow list can only ever shrink what a restricted key may call
+ * (to nothing); it can never turn a restricted key into an unrestricted one.
  */
 export function keyAccessFromColumns(restrictedCol, allowCol) {
   const restricted = restrictedCol === 1 || restrictedCol === true;
@@ -50,6 +54,8 @@ export function keyAccessToColumns(access) {
 
 /**
  * Validate client input for an access update ({ restricted, allow }).
+ * Rejects rather than repairs: wrong types, too many entries, overlong entries.
+ * @returns {{ ok: true, value: {restricted: boolean, allow: string[]} } | { ok: false, error: string }}
  */
 export function validateKeyAccessInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {

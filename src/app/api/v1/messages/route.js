@@ -1,6 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
-import { extractBearerToken, validateClientKey, wrapResponseWithClientKeyLogging } from "@/lib/auth/clientKeyAuth.js";
+import { extractBearerToken, isClientKeyToken, validateClientKey, wrapResponseWithClientKeyLogging } from "@/lib/auth/clientKeyAuth.js";
 
 let initialized = false;
 
@@ -32,10 +32,9 @@ export async function OPTIONS() {
  */
 export async function POST(request) {
   await ensureInitialized();
-  
+
   const token = extractBearerToken(request);
-  const isClientKey = token && (token.startsWith("ck-") || (token.startsWith("sk-") && token.split("-").length === 2));
-  if (isClientKey) {
+  if (isClientKeyToken(token)) {
     const authResult = await validateClientKey(token);
     if (!authResult.valid) {
       return new Response(JSON.stringify({ error: { message: authResult.error } }), {
@@ -45,15 +44,14 @@ export async function POST(request) {
     }
     request._clientKeyValidated = true;
     request._clientKeyData = authResult.keyData;
-    
-    // Parse the body to extract the model (for logging fallback)
+
     let model = "unknown";
     let reqBody = null;
     try {
-      const clonedReq = request.clone();
-      reqBody = await clonedReq.json();
+      reqBody = await request.json();
+      request._parsedBody = reqBody;
       model = reqBody.model || model;
-    } catch (e) {}
+    } catch {}
 
     const response = await handleChat(request);
     return await wrapResponseWithClientKeyLogging(response, authResult.keyData.id, model, reqBody);
@@ -61,3 +59,4 @@ export async function POST(request) {
 
   return await handleChat(request);
 }
+

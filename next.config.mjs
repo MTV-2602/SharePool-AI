@@ -12,33 +12,55 @@ const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
-  // undici must stay external: webpack vendored copy drops the per-request
-  // dispatcher connect options (ecdhCurve) — the built server then RSTs on DPI-shaped networks.
+  output: "standalone",
+  // `open` must stay external. It derives its own directory from `import.meta.url`, and
+  // webpack replaces that with the absolute path of the BUILD machine as a string literal.
+  // A release built on macOS therefore ships `file:///Users/.../open/index.js`, which
+  // `fileURLToPath` rejects on Windows ("File URL path must be absolute" — no drive
+  // letter). That throw happens at module scope, so every consumer of `open` dies on
+  // import — including xAI/Grok token refresh, which loads the OAuth service that imports
+  // it. Keeping it external preserves the real `import.meta.url` at runtime.
+  // @aws-sdk/credential-providers must stay external for the same class of reason: it reads
+  // ~/.aws/config and the SSO token cache from disk at runtime and resolves its credential
+  // plugins by dynamic require, neither of which survives bundling.
+  // wreq-js resolves its rust native binding by relative require paths from its own
+  // package dir — bundling breaks those paths ("Failed to load native module").
+  // undici must stay external too: webpack's vendored copy drops the per-request
+  // `dispatcher` connect options (ecdhCurve) — the built server then RSTs on
+  // DPI-shaped networks while the dev server (real undici) passes.
   serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite", "open", "@aws-sdk/credential-providers", "wreq-js", "undici"],
-  outputFileTracingIncludes: {
-    "*": ["./node_modules/undici/**/*"]
-  },
   turbopack: {
     root: tracingRoot
   },
+  outputFileTracingRoot: tracingRoot,
+  outputFileTracingIncludes: {
+    // serverExternalPackages keeps undici external; dynamic import("undici")
+    // alone doesn't pull it into the trace, so force-ship the real package.
+    "*": ["./node_modules/undici/**/*"],
+    "/api/client-keys/download-tool": [
+      "./ainoname-client/*.bat",
+      "./ainoname-client/run.ps1",
+      "./ainoname-client/ainoname-agent.bundle.js",
+      "./ainoname-client/ui.html",
+      "./ainoname-client/README.md",
+    ]
+  },
   outputFileTracingExcludes: {
-    "*": ["./gitbook/**/*"]
+    "*": ["./gitbook/**/*", "./data/**/*", "./backups/**/*", "./ainoname-client/certs/**/*", "./ainoname-client/config.json"]
   },
   images: {
     unoptimized: true
-  },
-  typescript: {
-    ignoreBuildErrors: true,
   },
   env: {},
   experimental: {
     // #1529/#1572: LLM clients can send long context or base64 image payloads through /v1 rewrites.
     proxyClientMaxBodySize,
+    // Cache fetch responses across HMR refreshes for faster dev reloads.
+    serverComponentsHmrCache: true,
+    // Tree-shake heavy barrel imports to cut compile + bundle size
+    optimizePackageImports: ["@xyflow/react", "@dnd-kit/core", "@dnd-kit/sortable", "material-symbols", "marked"],
   },
   webpack: (config, { isServer }) => {
-    // Prevent Webpack from resolving symlinks to realpath outside workspace
-    config.resolve.symlinks = false;
-
     // Ignore fs/path modules in browser bundle
     if (!isServer) {
       config.resolve.fallback = {
@@ -47,8 +69,12 @@ const nextConfig = {
         path: false,
       };
     }
-    // Exclude logs, .next, gitbook subapp from watcher
-    config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next|gitbook|cli)[\\/]/ };
+    // Exclude non-source dirs from watcher to reduce inotify load
+    config.watchOptions = {
+      ...config.watchOptions,
+      aggregateTimeout: 300,
+      ignored: /[\\/](node_modules|\.git|logs|\.next|\.next-cli-build|gitbook|cli|open-sse\.old|tests|docs)[\\/]/,
+    };
     return config;
   },
   async rewrites() {
@@ -64,6 +90,22 @@ const nextConfig = {
       {
         source: "/codex/:path*",
         destination: "/api/v1/responses"
+      },
+      {
+        source: "/responses",
+        destination: "/api/v1/responses"
+      },
+      {
+        source: "/systemone",
+        destination: "/api/v1/systemone"
+      },
+      {
+        source: "/v1beta/:path*",
+        destination: "/api/v1beta/:path*"
+      },
+      {
+        source: "/v1beta",
+        destination: "/api/v1beta"
       },
       {
         source: "/v1/:path*",
